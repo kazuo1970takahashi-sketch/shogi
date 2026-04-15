@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>沼津支部 月例将棋大会 運営サイト</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:15px;color:#222;background:#f5f5f0;line-height:1.7}
+.header{background:#1F3864;color:#fff;padding:20px 24px;text-align:center}
+.header h1{font-size:22px;font-weight:500;margin-bottom:4px}
+.header p{font-size:13px;opacity:0.75}
+.container{max-width:800px;margin:0 auto;padding:24px 16px}
+.card{background:#fff;border-radius:12px;padding:24px;margin-bottom:20px;border:1px solid #e0e0e0}
+h2{font-size:18px;font-weight:500;color:#1F3864;border-left:4px solid #1F3864;padding-left:12px;margin-bottom:16px}
+h3{font-size:15px;font-weight:500;color:#1F3864;margin:16px 0 8px}
+p{margin-bottom:10px;color:#333}
+ul,ol{padding-left:20px;margin-bottom:10px}
+li{margin-bottom:6px;color:#333}
+.app-link{display:block;background:#1F3864;color:#fff;text-align:center;padding:16px;border-radius:10px;font-size:16px;font-weight:500;text-decoration:none;margin-bottom:12px}
+.app-link:hover{background:#0C2347}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;margin-right:6px;margin-bottom:4px}
+.badge-blue{background:#e6f1fb;color:#0C447C}
+.badge-green{background:#eaf3de;color:#27500A}
+.badge-amber{background:#faeeda;color:#633806}
+.step{display:flex;gap:12px;margin-bottom:12px;align-items:flex-start}
+.step-num{background:#1F3864;color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;flex-shrink:0;margin-top:2px}
+.step-body{flex:1}
+.step-title{font-weight:500;margin-bottom:2px}
+table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:14px}
+th{background:#e8f0f8;color:#1F3864;padding:8px 12px;text-align:left;border-bottom:2px solid #2E75B6}
+td{padding:8px 12px;border-bottom:1px solid #eee}
+.note{background:#faeeda;border-left:4px solid #EF9F27;padding:10px 14px;border-radius:0 8px 8px 0;font-size:13px;color:#633806;margin-bottom:12px}
+.footer{text-align:center;padding:24px;font-size:12px;color:#888}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>沼津支部 月例将棋大会</h1>
+  <p>運営サイト - 役員向け</p>
+</div>
+
+<div class="container">
+
+  <!-- アプリリンク -->
+  <div class="card">
+    <h2>運営ツール</h2>
+    <a class="app-link" href="shogi_v4.html">大会運営アプリを開く</a>
+    <p style="font-size:13px;color:#888;text-align:center">スマートフォンのブラウザで開いてください</p>
+    <div style="margin-top:12px">
+      <span class="badge badge-blue">参加者登録・会費計算</span>
+      <span class="badge badge-blue">ペアリング自動生成・再生成</span>
+      <span class="badge badge-blue">対戦相手変更</span>
+      <span class="badge badge-blue">勝敗入力・修正</span>
+      <span class="badge badge-blue">順位自動計算（A/B/C）</span>
+      <span class="badge badge-blue">対戦成績・報告書PDF出力</span>
+      <span class="badge badge-blue">データ保存・復元</span>
+      <span class="badge badge-blue">名前の一括編集</span>
+    </div>
+  </div>
+
+  <!-- 当日の流れ -->
+  <div class="card">
+    <h2>当日の流れ</h2>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">受付【役割分担で効率化】</div>
+        <p>負荷を分散するため、以下の役割分担で進める。</p>
+        <ul>
+          <li><strong>受付係</strong>：対局カード記入依頼・集金を担当</li>
+          <li><strong>登録係</strong>：記入されたカードの苗字のみ素早くアプリに登録→1回戦ペアリング自動生成→対局カードに手合いを記入</li>
+        </ul>
+        <div class="note">奇数になった場合は運営者が参加して偶数にしてから「登録完了・対局開始」を押す</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">1回戦対局中に情報を整備</div>
+        <p>1回戦の対局中に余裕を持って以下を行う。</p>
+        <ul>
+          <li>「名前を一括編集」ボタンでフルネームに修正</li>
+          <li>各行のドロップダウンで支部員区分・種別を入力→会費が自動計算される</li>
+          <li>集金額とアプリの計算結果を突き合わせ</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">2・3回戦【比較的スムーズ】</div>
+        <p>対局カードを回収後、勝敗をアプリに登録して「確定して次へ」を押すと次回戦のペアリングが自動生成される。生成された手合いを対局カードに記入する。</p>
+        <div class="note">組み合わせを変えたい場合は「組み合わせを再生成」ボタンを押す。特定の対局のみ変えたい場合は「対戦相手変更」ボタンを押す</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">4回戦終了・表彰</div>
+        <p>最後の勝敗をアプリに入力したら、「最終結果」タブに順位が即座に表示される。この画面を見ながらそのまま表彰式を行うことで転記の待ち時間をゼロにできる。対局表への転記やPDF出力は表彰後に余裕を持って行う。</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <div class="step-title">報告書の出力</div>
+        <p>「最終結果」タブ下部の報告書情報欄に開催日・時間・担当役員・申し送り事項を入力し、「報告書をPDF出力」ボタンを押す。印刷ダイアログで「PDFとして保存」を選ぶ。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 参加費 -->
+  <div class="card">
+    <h2>参加費</h2>
+    <table>
+      <thead><tr><th>区分</th><th>一般</th><th>中学生以下</th></tr></thead>
+      <tbody>
+        <tr><td>支部員</td><td>500円</td><td>無料</td></tr>
+        <tr><td>支部員以外</td><td>1,000円</td><td>500円</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 賞品 -->
+  <div class="card">
+    <h2>賞品</h2>
+    <table>
+      <thead><tr><th>順位</th><th>一般</th><th>こども</th></tr></thead>
+      <tbody>
+        <tr><td>優勝</td><td>図書券または商品券 2,000円</td><td>1,000円</td></tr>
+        <tr><td>準優勝</td><td>1,000円</td><td>500円</td></tr>
+        <tr><td>3位</td><td>500円</td><td>500円</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:#888">※A級・B級それぞれに賞品を用意（合計14,000円）</p>
+  </div>
+
+  <!-- スイス式ルール -->
+  <div class="card">
+    <h2>スイス式トーナメントのルール</h2>
+
+    <h3>ペアリング</h3>
+    <ul>
+      <li>1回戦：順番に組み合わせ</li>
+      <li>2回戦以降：同じ勝ち数の人同士で対戦</li>
+      <li>すでに対戦した相手とは再戦しない</li>
+      <li>同星で組めない場合は隣の勝ち数の人と対戦</li>
+      <li>奇数になった場合は運営者が参加して偶数を保つ</li>
+    </ul>
+
+    <h3>順位決定（優先順位順）</h3>
+    <ol>
+      <li><strong>A（勝ち数）</strong>が多い人が上位</li>
+      <li><strong>B（SOS）</strong>：対戦相手の最終勝ち数合計が多い人が上位</li>
+      <li><strong>C（SODOS）</strong>：自分が勝った相手の最終勝ち数合計が多い人が上位</li>
+      <li><strong>直接対決</strong>：対戦がある場合は勝者が上位</li>
+      <li><strong>くじ引き</strong>：それでも同率の場合</li>
+    </ol>
+
+    <h3>持ち時間</h3>
+    <p>総平手25分切れ負け（時間不足の場合は20分）</p>
+  </div>
+
+  <!-- 注意事項 -->
+  <div class="card">
+    <h2>注意事項</h2>
+    <ul>
+      <li>データはお使いの端末のブラウザ内に自動保存されます。他の端末とは共有できません。</li>
+      <li>「保存」ボタンでJSONファイルとしてバックアップできます。誤ってブラウザを閉じた場合は「読み込み」ボタンで復元できます。</li>
+      <li>大会中はブラウザを閉じないでください。データが消える場合があります。</li>
+      <li>氏名以外の個人情報は扱っていないため、セキュリティ上の心配はありません。</li>
+      <li>大会結果はHP掲載のため、当日夜までメールにて沼津支部事務局へ送付してください。</li>
+    </ul>
+  </div>
+
+</div>
+
+<div class="footer">
+  沼津支部 月例将棋大会 運営サイト
+</div>
+
+</body>
+</html>
