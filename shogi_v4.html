@@ -808,22 +808,19 @@ function renderTournament(cls){
     for(var i=0;i<state.pairings[cls].length;i++){
       var m=state.pairings[cls][i];
       var n1=getName(m.p1,cls),n2=getName(m.p2,cls);
-      var w=m.winner?'勝者：'+escapeHtml(getName(m.winner,cls)):'未入力';
-      var wc=m.winner?'#27500A':'#888';
       html+='<div class="pairing-card" style="position:relative">'
         +'<button style="position:absolute;top:6px;right:6px;padding:3px 7px;border-radius:5px;border:1px solid #ccc;background:#fff;font-size:11px;color:#888;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
         +'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:4px">'
         +'<div style="display:flex;flex-direction:column;align-items:center">'
         +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+escapeHtml(n1)+'</button>'
-        +(m.winner===m.p1?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'<div style="height:18px"></div>')
+        +(m.winner===m.p1?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
         +'</div>'
         +'<span style="font-weight:500;color:#888;padding-top:12px">vs</span>'
         +'<div style="display:flex;flex-direction:column;align-items:center">'
         +'<button class="winner-btn'+(m.winner===m.p2?' selected':'')+'" id="wb_'+cls+'_'+i+'_p2">'+escapeHtml(n2)+'</button>'
-        +(m.winner===m.p2?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'<div style="height:18px"></div>')
+        +(m.winner===m.p2?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
         +'</div>'
         +'</div>'
-        +'<div style="font-size:13px;color:'+wc+';font-weight:'+(m.winner?'bold':'400')+'">'+w+'</div>'
         +'</div>';
     }
     html+='<div style="display:flex;gap:8px;margin-top:8px">'
