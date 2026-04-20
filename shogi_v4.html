@@ -409,6 +409,10 @@ function removePlayer(id,cls){
     var pm=state.pairings[cls][i];
     if(pm.p1===id||pm.p2===id){inPairings=true;break;}
   }
+  if(inPairings){
+    alert(name+'は進行中の対局に登録されているため削除できません。\n\n先に「対戦相手変更」で別の選手に差し替えてから削除してください。');
+    return;
+  }
   var pastMatches=0;
   for(var r=0;r<state.results[cls].length;r++){
     for(var mi=0;mi<state.results[cls][r].length;mi++){
@@ -417,7 +421,6 @@ function removePlayer(id,cls){
     }
   }
   var msg=name+'を削除しますか？';
-  if(inPairings)msg+='\n\n⚠ 進行中の対局に登録されています。先に「対戦相手変更」で別の選手に差し替えてください。';
   if(pastMatches>0)msg+='\n\n⚠ 過去'+pastMatches+'試合分の対戦履歴があります。削除しても履歴は残りますが、順位表で名前が「(削除)」と表示されます。';
   if(!confirm(msg))return;
   var arr=state.players[cls];
@@ -768,7 +771,7 @@ function renderTournament(cls){
   for(var i=0;i<sorted.length;i++){
     var p=sorted[i];
     var tags='';
-    for(var j=0;j<played[p.id].length;j++)tags+='<span class="history-tag">'+getName(played[p.id][j],cls)+'</span>';
+    for(var j=0;j<played[p.id].length;j++)tags+='<span class="history-tag">'+escapeHtml(getName(played[p.id][j],cls))+'</span>';
     html+='<div style="margin-bottom:4px"><strong style="font-size:12px">'+escapeHtml(p.name)+'</strong>：'+(tags||'なし')+'</div>';
   }
   html+='</div>';
@@ -805,7 +808,7 @@ function renderTournament(cls){
     for(var i=0;i<state.pairings[cls].length;i++){
       var m=state.pairings[cls][i];
       var n1=getName(m.p1,cls),n2=getName(m.p2,cls);
-      var w=m.winner?'勝者：'+getName(m.winner,cls):'未入力';
+      var w=m.winner?'勝者：'+escapeHtml(getName(m.winner,cls)):'未入力';
       var wc=m.winner?'#27500A':'#888';
       html+='<div class="pairing-card" style="position:relative">'
         +'<button style="position:absolute;top:6px;right:6px;padding:3px 7px;border-radius:5px;border:1px solid #ccc;background:#fff;font-size:11px;color:#888;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
