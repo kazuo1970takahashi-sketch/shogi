@@ -134,7 +134,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     <div id="result-A"></div>
     <div id="result-B" style="margin-top:16px"></div>
     <div style="margin-top:16px;text-align:right" class="no-print">
-      <button class="btn-primary" onclick="printResults()">対戦成績をPDF出力</button>
+      <button class="btn-primary" onclick="printResults()">対戦成績を印刷 / PDF保存</button>
     </div>
     <div class="section no-print" style="margin-top:16px">
       <h2>大会報告書</h2>
@@ -168,7 +168,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
         <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">申し送り事項</label>
         <textarea id="rep-note" placeholder="特になし" style="width:100%;height:60px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical"></textarea>
       </div>
-      <button class="btn-primary" id="downloadReportBtn" onclick="downloadReport()">報告書をPDF出力</button>
+      <button class="btn-primary" id="downloadReportBtn" onclick="downloadReport()">報告書を印刷 / PDF保存</button>
     </div>
   </div>
 </div>
@@ -182,8 +182,88 @@ var state = {
   started: false
 };
 
-function save(){try{localStorage.setItem('shogi_v3',JSON.stringify(state))}catch(e){}}
-function load(){try{var d=localStorage.getItem('shogi_v3');if(d)state=JSON.parse(d)}catch(e){}}
+var STORAGE_KEY='shogi_v4';
+var LEGACY_STORAGE_KEYS=['shogi_v3'];
+
+function escapeHtml(value){
+  return String(value==null?'':value)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
+function normalizeState(raw){
+  var base={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false};
+  var s=raw&&typeof raw==='object'?raw:{};
+  base.rounds=Number(s.rounds)||4;
+  base.started=!!s.started;
+  ['A','B'].forEach(function(cls){
+    var players=(s.players&&Array.isArray(s.players[cls]))?s.players[cls]:[];
+    base.players[cls]=players.map(function(p,idx){
+      return {
+        id:p&&p.id?p.id:('restored_'+cls+'_'+idx+'_'+Date.now()),
+        name:p&&p.name?String(p.name):'',
+        cls:cls,
+        member:p&&p.member==='other'?'other':'member',
+        grade:p&&p.grade==='chu'?'chu':'ippan'
+      };
+    }).filter(function(p){return p.name;});
+
+    base.pairings[cls]=((s.pairings&&Array.isArray(s.pairings[cls]))?s.pairings[cls]:[]).map(function(m){
+      return {p1:m&&m.p1?m.p1:'',p2:m&&m.p2?m.p2:'',winner:m&&m.winner?m.winner:null};
+    }).filter(function(m){return m.p1&&m.p2;});
+
+    base.results[cls]=((s.results&&Array.isArray(s.results[cls]))?s.results[cls]:[]).map(function(round){
+      return Array.isArray(round)?round.map(function(m){
+        return {p1:m&&m.p1?m.p1:'',p2:m&&m.p2?m.p2:'',winner:m&&m.winner?m.winner:null};
+      }).filter(function(m){return m.p1&&m.p2;}):[];
+    });
+  });
+  return base;
+}
+
+function pairHasRematch(cls,p1,p2){
+  for(var r=0;r<state.results[cls].length;r++){
+    for(var m=0;m<state.results[cls][r].length;m++){
+      var match=state.results[cls][r][m];
+      if((match.p1===p1&&match.p2===p2)||(match.p1===p2&&match.p2===p1))return true;
+    }
+  }
+  return false;
+}
+
+function getDuplicatePlayersInPairings(cls){
+  var used={};
+  var dups=[];
+  for(var i=0;i<state.pairings[cls].length;i++){
+    var m=state.pairings[cls][i];
+    if(!m)continue;
+    [m.p1,m.p2].forEach(function(pid){
+      if(!pid)return;
+      if(used[pid]&&dups.indexOf(pid)<0)dups.push(pid);
+      used[pid]=true;
+    });
+  }
+  return dups;
+}
+
+function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}catch(e){}}
+function load(){
+  try{
+    var d=localStorage.getItem(STORAGE_KEY);
+    if(!d){
+      for(var i=0;i<LEGACY_STORAGE_KEYS.length;i++){
+        d=localStorage.getItem(LEGACY_STORAGE_KEYS[i]);
+        if(d)break;
+      }
+    }
+    if(d)state=normalizeState(JSON.parse(d));
+  }catch(e){
+    state=normalizeState(state);
+  }
+}
 
 function showTab(t){
   document.getElementById('pane-reg').style.display=t==='reg'?'block':'none';
@@ -323,7 +403,23 @@ function addPlayer(){
 }
 
 function removePlayer(id,cls){
-  if(!confirm('削除しますか？'))return;
+  var name=getName(id,cls);
+  var inPairings=false;
+  for(var i=0;i<state.pairings[cls].length;i++){
+    var pm=state.pairings[cls][i];
+    if(pm.p1===id||pm.p2===id){inPairings=true;break;}
+  }
+  var pastMatches=0;
+  for(var r=0;r<state.results[cls].length;r++){
+    for(var mi=0;mi<state.results[cls][r].length;mi++){
+      var rm=state.results[cls][r][mi];
+      if(rm.p1===id||rm.p2===id)pastMatches++;
+    }
+  }
+  var msg=name+'を削除しますか？';
+  if(inPairings)msg+='\n\n⚠ 進行中の対局に登録されています。先に「対戦相手変更」で別の選手に差し替えてください。';
+  if(pastMatches>0)msg+='\n\n⚠ 過去'+pastMatches+'試合分の対戦履歴があります。削除しても履歴は残りますが、順位表で名前が「(削除)」と表示されます。';
+  if(!confirm(msg))return;
   var arr=state.players[cls];
   state.players[cls]=arr.filter(function(p){return p.id!==id;});
   renderRegList();save();
@@ -447,7 +543,7 @@ function startTournament(){
 function getName(id,cls){
   var players=state.players[cls];
   for(var i=0;i<players.length;i++){if(players[i].id===id)return players[i].name;}
-  return id;
+  return '(削除)';
 }
 
 function getWins(cls){
@@ -575,6 +671,25 @@ function changePairing(cls,idx){
     var p1=document.getElementById('chg-p1').value;
     var p2=document.getElementById('chg-p2').value;
     if(p1===p2){alert('同じ選手を先手・後手両方に選べません');return;}
+
+    var duplicateConflict=false;
+    for(var i=0;i<state.pairings[cls].length;i++){
+      if(i===idx)continue;
+      var pair=state.pairings[cls][i];
+      if(pair.p1===p1||pair.p2===p1||pair.p1===p2||pair.p2===p2){
+        duplicateConflict=true;
+        break;
+      }
+    }
+    if(duplicateConflict){
+      alert('選んだ選手は、すでに別の対局に入っています。重複しない組み合わせにしてください。');
+      return;
+    }
+
+    if(pairHasRematch(cls,p1,p2)){
+      if(!confirm('この組み合わせは過去に対戦済みです。再戦として保存しますか？'))return;
+    }
+
     state.pairings[cls][idx]={p1:p1,p2:p2,winner:null};
     document.getElementById('chg-modal').remove();
     renderTournament(cls);save();
@@ -591,14 +706,27 @@ function submitRound(cls){
       }
     }
   }
+  var playerMap={};
+  for(var pi=0;pi<state.players[cls].length;pi++){
+    playerMap[state.players[cls][pi].id]=true;
+  }
   var usedIds={};
   for(var i=0;i<state.pairings[cls].length;i++){
     var m=state.pairings[cls][i];
+    if(!playerMap[m.p1]||!playerMap[m.p2]){alert((i+1)+'試合目に登録されていない選手が含まれています。「対戦相手変更」または「組み合わせを再生成」で修正してください。');return;}
     if(usedIds[m.p1]){alert(getName(m.p1,cls)+'が複数の対局に登録されています。対戦相手を修正してください。');return;}
     if(usedIds[m.p2]){alert(getName(m.p2,cls)+'が複数の対局に登録されています。対戦相手を修正してください。');return;}
     if(m.p1===m.p2){alert(getName(m.p1,cls)+'が同じ対局の先手・後手に登録されています。対戦相手を修正してください。');return;}
     usedIds[m.p1]=true;
     usedIds[m.p2]=true;
+  }
+  var missing=[];
+  for(var i=0;i<state.players[cls].length;i++){
+    var p=state.players[cls][i];
+    if(!usedIds[p.id])missing.push(p.name);
+  }
+  if(missing.length>0){
+    alert('次の参加者が対局に登録されていません：\n'+missing.join('、')+'\n\n「対戦相手変更」または「組み合わせを再生成」で全員を対局に入れてください。');return;
   }
   state.results[cls].push(JSON.parse(JSON.stringify(state.pairings[cls])));
   state.pairings[cls]=[];
@@ -633,7 +761,7 @@ function renderTournament(cls){
   for(var i=0;i<sorted.length;i++){
     var p=sorted[i];var w=wins[p.id]||0;
     var total=0;for(var r=0;r<state.results[cls].length;r++){for(var m=0;m<state.results[cls][r].length;m++){var mm=state.results[cls][r][m];if(mm.p1===p.id||mm.p2===p.id)total++;}}
-    html+='<div class="score-card"><div class="sname">'+p.name+'</div><div class="swins">'+w+'</div><div style="font-size:11px;color:#888">'+w+'勝'+(total-w)+'敗</div></div>';
+    html+='<div class="score-card"><div class="sname">'+escapeHtml(p.name)+'</div><div class="swins">'+w+'</div><div style="font-size:11px;color:#888">'+w+'勝'+(total-w)+'敗</div></div>';
   }
   html+='</div>';
   html+='<h3>対戦済みリスト</h3><div style="margin-bottom:12px">';
@@ -641,7 +769,7 @@ function renderTournament(cls){
     var p=sorted[i];
     var tags='';
     for(var j=0;j<played[p.id].length;j++)tags+='<span class="history-tag">'+getName(played[p.id][j],cls)+'</span>';
-    html+='<div style="margin-bottom:4px"><strong style="font-size:12px">'+p.name+'</strong>：'+(tags||'なし')+'</div>';
+    html+='<div style="margin-bottom:4px"><strong style="font-size:12px">'+escapeHtml(p.name)+'</strong>：'+(tags||'なし')+'</div>';
   }
   html+='</div>';
 
@@ -655,10 +783,10 @@ function renderTournament(cls){
         var pw=pm.winner?getName(pm.winner,cls):'未入力';
         var pc=pm.winner?'#27500A':'#A32D2D';
         html+='<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:#f8f8f8;border-radius:6px;margin-bottom:3px">'
-          +'<span style="display:inline-block;width:7em;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ pn1 +'</span>'
+          +'<span style="display:inline-block;width:7em;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ escapeHtml(pn1) +'</span>'
           +'<span style="font-size:13px;color:#888">vs</span>'
-          +'<span style="display:inline-block;width:7em;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ pn2 +'</span>'
-          +'<span style="font-size:12px;color:'+pc+';font-weight:500;white-space:nowrap;margin-left:4px">'+pw+'</span>'
+          +'<span style="display:inline-block;width:7em;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ escapeHtml(pn2) +'</span>'
+          +'<span style="font-size:12px;color:'+pc+';font-weight:500;white-space:nowrap;margin-left:4px">'+escapeHtml(pw)+'</span>'
           +'<button id="editpast_'+cls+'_'+rr+'_'+mm+'" style="padding:2px 8px;font-size:11px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;margin-left:auto;flex-shrink:0">修正</button>'
           +'</div>';
     }
@@ -669,7 +797,11 @@ function renderTournament(cls){
   if(done){
     html+='<div class="final-done">全'+state.rounds+'局終了！「最終結果」タブで確認してください。</div>';
   } else if(state.pairings[cls].length>0){
+    var duplicatePlayers=getDuplicatePlayersInPairings(cls);
     html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3>'+roundNum+'回戦 組み合わせ</h3><span style="background:#2E75B6;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px">'+roundNum+' / '+state.rounds+'回戦</span></div>';
+    if(duplicatePlayers.length>0){
+      html+='<div class="alert alert-err">同じ選手が複数の対局に入っています：'+escapeHtml(duplicatePlayers.map(function(pid){return getName(pid,cls);}).join('、'))+'</div>';
+    }
     for(var i=0;i<state.pairings[cls].length;i++){
       var m=state.pairings[cls][i];
       var n1=getName(m.p1,cls),n2=getName(m.p2,cls);
@@ -679,12 +811,12 @@ function renderTournament(cls){
         +'<button style="position:absolute;top:6px;right:6px;padding:3px 7px;border-radius:5px;border:1px solid #ccc;background:#fff;font-size:11px;color:#888;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
         +'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:4px">'
         +'<div style="display:flex;flex-direction:column;align-items:center">'
-        +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+n1+'</button>'
+        +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+escapeHtml(n1)+'</button>'
         +(m.winner===m.p1?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'<div style="height:18px"></div>')
         +'</div>'
         +'<span style="font-weight:500;color:#888;padding-top:12px">vs</span>'
         +'<div style="display:flex;flex-direction:column;align-items:center">'
-        +'<button class="winner-btn'+(m.winner===m.p2?' selected':'')+'" id="wb_'+cls+'_'+i+'_p2">'+n2+'</button>'
+        +'<button class="winner-btn'+(m.winner===m.p2?' selected':'')+'" id="wb_'+cls+'_'+i+'_p2">'+escapeHtml(n2)+'</button>'
         +(m.winner===m.p2?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'<div style="height:18px"></div>')
         +'</div>'
         +'</div>'
@@ -737,10 +869,10 @@ function editPastResult(cls,roundIdx,matchIdx){
   modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
   modal.innerHTML='<div style="background:#fff;border-radius:12px;padding:24px;width:320px;">'
     +'<h3 style="margin-bottom:16px;font-size:16px;font-weight:500;color:#1F3864">'+(roundIdx+1)+'回戦 結果の修正</h3>'
-    +'<p style="margin-bottom:16px;font-size:14px">'+n1+' vs '+n2+'</p>'
+    +'<p style="margin-bottom:16px;font-size:14px">'+escapeHtml(n1)+' vs '+escapeHtml(n2)+'</p>'
     +'<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">'
-    +'<button id="ep-p1" style="padding:10px;border-radius:8px;border:2px solid '+(match.winner===match.p1?'#1F3864':'#ccc')+';background:'+(match.winner===match.p1?'#1F3864':'#fff')+';color:'+(match.winner===match.p1?'#fff':'#222')+';font-size:14px;cursor:pointer">'+n1+' の勝ち</button>'
-    +'<button id="ep-p2" style="padding:10px;border-radius:8px;border:2px solid '+(match.winner===match.p2?'#1F3864':'#ccc')+';background:'+(match.winner===match.p2?'#1F3864':'#fff')+';color:'+(match.winner===match.p2?'#fff':'#222')+';font-size:14px;cursor:pointer">'+n2+' の勝ち</button>'
+    +'<button id="ep-p1" style="padding:10px;border-radius:8px;border:2px solid '+(match.winner===match.p1?'#1F3864':'#ccc')+';background:'+(match.winner===match.p1?'#1F3864':'#fff')+';color:'+(match.winner===match.p1?'#fff':'#222')+';font-size:14px;cursor:pointer">'+escapeHtml(n1)+' の勝ち</button>'
+    +'<button id="ep-p2" style="padding:10px;border-radius:8px;border:2px solid '+(match.winner===match.p2?'#1F3864':'#ccc')+';background:'+(match.winner===match.p2?'#1F3864':'#fff')+';color:'+(match.winner===match.p2?'#fff':'#222')+';font-size:14px;cursor:pointer">'+escapeHtml(n2)+' の勝ち</button>'
 
     +'</div>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end">'
@@ -829,7 +961,7 @@ function renderResults(){
         html+='<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px">';
         html+=badge;
         html+='<div style="display:flex;flex-direction:column;gap:2px">';
-        html+='<span style="font-weight:500;font-size:15px">'+f.p.name+'</span>';
+        html+='<span style="font-weight:500;font-size:15px">'+escapeHtml(f.p.name)+'</span>';
         html+='<div style="font-size:12px;color:#555">勝<strong>'+f.A+'</strong>　負'+(state.rounds-f.A)+'　相手:'+f.B+'　勝相手:'+f.C+'</div>';
         html+='</div>';
         html+='</div>';
@@ -848,7 +980,7 @@ function renderResults(){
           html+='<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;overflow:hidden">';
           html+='<div style="color:#888;font-size:10px;margin-bottom:2px">'+(r+1)+'回戦</div>';
           html+='<div style="font-weight:bold;color:'+markColor+';font-size:16px;line-height:1">'+markStr+'</div>';
-          html+='<div style="color:#555;font-size:10px;margin-top:2px">'+getName(oppId,cls)+'('+oppWins+')</div>';
+          html+='<div style="color:#555;font-size:10px;margin-top:2px">'+escapeHtml(getName(oppId,cls))+'('+oppWins+')</div>';
           html+='</div>';
         }
         html+='</div></div>';
@@ -862,7 +994,7 @@ function renderResults(){
         var f=finals[idx];var rank=idx+1;
         var rowCls=rank===1?'row-r1':rank===2?'row-r2':rank===3?'row-r3':'';
         var badge=rank===1?'<span class="badge b1">1位</span>':rank===2?'<span class="badge b2">2位</span>':rank===3?'<span class="badge b3">3位</span>':rank+'位';
-        html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+f.p.name+'</td>';
+        html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+escapeHtml(f.p.name)+'</td>';
         for(var r=0;r<state.rounds;r++){
           var round=state.results[cls][r];
           if(!round){html+='<td style="color:#ccc">-</td>';continue;}
@@ -874,7 +1006,7 @@ function renderResults(){
           var won=match.winner===f.p.id;
           var markColor=won?'#27500A':'#222';
           var markStr=match.winner===null?'－':(won?'○':'●');
-          html+='<td><span style="font-weight:bold;color:'+markColor+'">'+markStr+'</span><br><small style="color:#333">'+getName(oppId,cls)+'('+oppWins+')</small></td>';
+          html+='<td><span style="font-weight:bold;color:'+markColor+'">'+markStr+'</span><br><small style="color:#333">'+escapeHtml(getName(oppId,cls))+'('+oppWins+')</small></td>';
         }
         html+='<td><strong>'+f.A+'</strong></td><td>'+(state.rounds-f.A)+'</td><td>'+f.B+'</td><td>'+f.C+'</td></tr>';
       }
@@ -915,7 +1047,7 @@ function loadData(e){
   reader.onload=function(ev){
     try{
       var loaded=JSON.parse(ev.target.result);
-      state=loaded;
+      state=normalizeState(loaded);
       save();
       renderRegList();
       if(state.started){
@@ -960,7 +1092,7 @@ function printResults(){
       var bg=rank===1?'#fef8e7':rank===2?'#f5f5f5':rank===3?'#eaf3fb':'#fff';
       html+='<tr style="background:'+bg+'">';
       html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;font-weight:bold">'+rank+'位</td>';
-      html+='<td style="padding:6px 8px;border:1px solid #ccc;font-weight:bold">'+f.p.name+'</td>';
+      html+='<td style="padding:6px 8px;border:1px solid #ccc;font-weight:bold">'+escapeHtml(f.p.name)+'</td>';
       for(var r=0;r<state.rounds;r++){
         var round=state.results[cls][r];
         if(!round){html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;color:#ccc">-</td>';continue;}
@@ -973,7 +1105,7 @@ function printResults(){
         var won=match.winner===f.p.id;
         var color=won?'#27500A':'#222';
         var markStr2=match.winner===null?'－':(won?'○':'●');
-        html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center"><span style="font-weight:bold;color:'+color+'">'+markStr2+'</span><br><small style="color:#333">'+oppName+'('+oppWins+')</small></td>';
+        html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center"><span style="font-weight:bold;color:'+color+'">'+markStr2+'</span><br><small style="color:#333">'+escapeHtml(oppName)+'('+oppWins+')</small></td>';
       }
       html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;font-weight:bold">'+f.A+'</td>';
       html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+(state.rounds-f.A)+'</td>';
@@ -1043,7 +1175,7 @@ function downloadReport(){
     var p=players[idx];
     var name=p?p.name:'';
     return '<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">'+label+'</td>'
-      +'<td style="padding:6px 10px;border:1px solid #999;">'+name+'</td>'
+      +'<td style="padding:6px 10px;border:1px solid #999;">'+escapeHtml(name)+'</td>'
       +'<td style="padding:6px 10px;border:1px solid #999;"></td></tr>';
   }
 
@@ -1055,17 +1187,17 @@ function downloadReport(){
     +'<h2 style="text-align:center;font-size:16px;margin-bottom:16px">沼津支部月例将棋大会報告書</h2>'
     +'<table>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold;width:120px">日付</td>'
-    +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+date+'</td></tr>'
+    +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+escapeHtml(date)+'</td></tr>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">時間</td>'
-    +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+start+' 〜 '+end+'</td></tr>'
+    +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+escapeHtml(start)+' 〜 '+escapeHtml(end)+'</td></tr>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">場所</td>'
-    +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+place+'</td></tr>'
+    +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+escapeHtml(place)+'</td></tr>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">担当役員</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;width:80px">正</td>'
-    +'<td style="padding:6px 10px;border:1px solid #999;">'+sei+'</td></tr>'
+    +'<td style="padding:6px 10px;border:1px solid #999;">'+escapeHtml(sei)+'</td></tr>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0"></td>'
     +'<td style="padding:6px 10px;border:1px solid #999;">副</td>'
-    +'<td style="padding:6px 10px;border:1px solid #999;">'+fuku+'</td></tr>'
+    +'<td style="padding:6px 10px;border:1px solid #999;">'+escapeHtml(fuku)+'</td></tr>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">参加人数</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+allCount+'名</td></tr>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">収支</td>'
@@ -1090,7 +1222,7 @@ function downloadReport(){
     +'<br>'
     +'<table>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold;width:120px">申し送り事項</td>'
-    +'<td style="padding:6px 10px;border:1px solid #999;height:60px">'+note.split('\n').join('<br>')+'</td></tr>'
+    +'<td style="padding:6px 10px;border:1px solid #999;height:60px">'+escapeHtml(note).split('\n').join('<br>')+'</td></tr>'
     +'</table>'
     +'<p style="margin-top:12px;font-size:11px">※ホームページ掲載の為、当日夜までにFAX（943-9443）、メールまたは直接沼津支部事務局まで</p>'
     +'<p style="font-size:11px">※役員会で会計長へ収支報告書として提出ください。</p>'
@@ -1111,7 +1243,10 @@ function downloadReport(){
 function resetAll(){
   if(!confirm('全データをリセットしますか？'))return;
   state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false};
-  try{localStorage.removeItem('shogi_v3');}catch(e){}
+  try{
+    localStorage.removeItem(STORAGE_KEY);
+    for(var i=0;i<LEGACY_STORAGE_KEYS.length;i++)localStorage.removeItem(LEGACY_STORAGE_KEYS[i]);
+  }catch(e){}
   renderRegList();
   showTab('reg');
   showMsg('リセットしました','ok');
