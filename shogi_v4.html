@@ -31,6 +31,13 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .fee-bar{margin-top:12px;padding:10px 14px;background:#e8f0f8;border-radius:8px;font-size:14px}
 .separator{border:none;border-top:1px solid #eee;margin:12px 0}
 .player-row{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#f8fbff;border:1px solid #d0e4f7;border-radius:8px;margin-bottom:6px;flex-wrap:wrap}
+.player-row-main{display:flex;flex:1;gap:6px;align-items:center;flex-wrap:wrap;min-width:0}
+.player-row-actions{display:flex;gap:6px;align-items:center;margin-left:auto}
+.player-row-buttons{display:flex;gap:6px;align-items:center}
+@media(max-width:600px){
+  .player-row-main{width:100%;flex:unset}
+  .player-row-actions{width:100%;margin-left:0;justify-content:space-between}
+}
 .player-name{font-weight:500;min-width:70px;font-size:14px}
 .player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:14px}
 .sel-sm{height:34px;padding:0 6px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff;font-family:inherit}
@@ -359,15 +366,19 @@ function makePlayerRow(p,cls,i){
   var div=document.createElement('div');
   div.className='player-row';
 
+  // 1段目: 情報(番号・名前・支部員区分・種別)
+  var mainDiv=document.createElement('div');
+  mainDiv.className='player-row-main';
+
   var num=document.createElement('span');
   num.style.cssText='color:#888;font-size:12px;min-width:28px';
   num.textContent=cls+(i+1);
-  div.appendChild(num);
+  mainDiv.appendChild(num);
 
   var name=document.createElement('span');
   name.className='player-name';
   name.textContent=p.name;
-  div.appendChild(name);
+  mainDiv.appendChild(name);
 
   var mSel=document.createElement('select');
   mSel.className='sel-sm';
@@ -378,7 +389,7 @@ function makePlayerRow(p,cls,i){
   mSel.addEventListener('change',(function(pid,c){return function(){
     updateField(pid,c,'member',this.value);
   };})(p.id,cls));
-  div.appendChild(mSel);
+  mainDiv.appendChild(mSel);
 
   var gSel=document.createElement('select');
   gSel.className='sel-sm';
@@ -389,25 +400,40 @@ function makePlayerRow(p,cls,i){
   gSel.addEventListener('change',(function(pid,c){return function(){
     updateField(pid,c,'grade',this.value);
   };})(p.id,cls));
-  div.appendChild(gSel);
+  mainDiv.appendChild(gSel);
+
+  div.appendChild(mainDiv);
+
+  // 2段目: 左=料金(情報)、右=操作ボタン群(名前編集・削除)
+  // スマホでは space-between で左右に分離
+  // PCでは main の右に詰めて並ぶ
+  var actionsDiv=document.createElement('div');
+  actionsDiv.className='player-row-actions';
 
   var fee=getFee(p.member||'member',p.grade||'ippan');
   var feeSpan=document.createElement('span');
   feeSpan.className='player-fee';
   feeSpan.textContent=fee===0?'無料':fee.toLocaleString()+'円';
-  div.appendChild(feeSpan);
+  actionsDiv.appendChild(feeSpan);
+
+  // 操作ボタン群を1単位にまとめる(スマホの space-between で右端にまとめて配置)
+  var buttonsDiv=document.createElement('div');
+  buttonsDiv.className='player-row-buttons';
 
   var editBtn=document.createElement('button');
   editBtn.className='btn-sm';
   editBtn.textContent='名前編集';
   editBtn.addEventListener('click',(function(pid,c){return function(){editPlayer(pid,c);};})(p.id,cls));
-  div.appendChild(editBtn);
+  buttonsDiv.appendChild(editBtn);
 
   var delBtn=document.createElement('button');
   delBtn.className='btn-sm btn-danger';
   delBtn.textContent='削除';
   delBtn.addEventListener('click',(function(pid,c){return function(){removePlayer(pid,c);};})(p.id,cls));
-  div.appendChild(delBtn);
+  buttonsDiv.appendChild(delBtn);
+
+  actionsDiv.appendChild(buttonsDiv);
+  div.appendChild(actionsDiv);
 
   return div;
 }
