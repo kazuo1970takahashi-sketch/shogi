@@ -478,8 +478,12 @@ function removePlayer(id,cls){
       if(rm.p1===id||rm.p2===id)pastMatches++;
     }
   }
+  // 大会開始後で過去対局がある参加者は削除禁止（calcFinalがstate.players前提のため、TypeErrorで最終結果タブが落ちる）
+  if(state.started&&pastMatches>0){
+    alert(name+'は過去'+pastMatches+'試合分の対戦履歴があるため、大会開始後は削除できません。\n\n誤って登録した場合は「リセット」で大会をやり直してください。');
+    return;
+  }
   var msg=name+'を削除しますか？';
-  if(pastMatches>0)msg+='\n\n⚠ 過去'+pastMatches+'試合分の対戦履歴があります。削除しても履歴は残りますが、順位表で名前が「(削除)」と表示されます。';
   if(!confirm(msg))return;
   var arr=state.players[cls];
   state.players[cls]=arr.filter(function(p){return p.id!==id;});
@@ -662,18 +666,32 @@ function generatePairing(cls){
   function backtrack(idx,allowRematch){
     while(idx<sorted.length&&pairedArr[idx])idx++;
     if(idx>=sorted.length)return true;
-    // 相手候補をランダムな順番で試す
-    var candidates=[];
+    // 候補を勝数差で評価。同勝ち数グループ内はランダム順、グループ間は勝数差昇順
+    var pi=sorted[idx];
+    var piWins=wins[pi.id]||0;
+    // 勝数差ごとにバケット化
+    var buckets={};
     for(var j=idx+1;j<sorted.length;j++){
       if(pairedArr[j])continue;
-      var pi=sorted[idx],pj=sorted[j];
+      var pj=sorted[j];
       if(!allowRematch&&played[pi.id].indexOf(pj.id)>=0)continue;
-      candidates.push(j);
+      var diff=Math.abs((wins[pj.id]||0)-piWins);
+      if(!buckets[diff])buckets[diff]=[];
+      buckets[diff].push(j);
     }
-    // candidatesをシャッフル
-    for(var ci=candidates.length-1;ci>0;ci--){
-      var cj=Math.floor(Math.random()*(ci+1));
-      var ct=candidates[ci];candidates[ci]=candidates[cj];candidates[cj]=ct;
+    // 勝数差昇順でバケットを並べ、各バケット内をシャッフルしてフラット化
+    var diffs=[];
+    for(var dk in buckets){if(buckets.hasOwnProperty(dk))diffs.push(Number(dk));}
+    diffs.sort(function(a,b){return a-b;});
+    var candidates=[];
+    for(var di=0;di<diffs.length;di++){
+      var bucket=buckets[diffs[di]];
+      // Fisher-Yatesでバケット内をシャッフル
+      for(var bi=bucket.length-1;bi>0;bi--){
+        var bj=Math.floor(Math.random()*(bi+1));
+        var bt=bucket[bi];bucket[bi]=bucket[bj];bucket[bj]=bt;
+      }
+      for(var bk=0;bk<bucket.length;bk++)candidates.push(bucket[bk]);
     }
     for(var ci=0;ci<candidates.length;ci++){
       var j=candidates[ci];
