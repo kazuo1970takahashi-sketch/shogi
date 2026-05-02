@@ -264,7 +264,7 @@ function getDuplicatePlayersInPairings(cls){
 }
 
 function normalizeState(raw){
-  var base={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false};
+  var base={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''}};
   var s=raw&&typeof raw==='object'?raw:{};
   base.rounds=Number(s.rounds)||4;
   base.started=!!s.started;
@@ -280,17 +280,24 @@ function normalizeState(raw){
       };
     }).filter(function(p){return p.name;});
 
-    base.pairings[cls]=((s.pairings&&Array.isArray(s.pairings[cls]))?s.pairings[cls]:[]).map(function(m){
-      return {p1:m&&m.p1?m.p1:'',p2:m&&m.p2?m.p2:'',winner:m&&m.winner?m.winner:null};
-    }).filter(function(m){return m.p1&&m.p2;});
+    // 実在 player id のみ許可。p1/p2 が未登録なら除去、winner が p1/p2 と一致しないなら null 化
+    var validIds={};
+    for(var i=0;i<base.players[cls].length;i++)validIds[base.players[cls][i].id]=true;
+    function sanitizeMatch(m){
+      var p1=m&&m.p1&&validIds[m.p1]?m.p1:'';
+      var p2=m&&m.p2&&validIds[m.p2]?m.p2:'';
+      var winner=m&&m.winner?m.winner:null;
+      if(winner!==p1&&winner!==p2)winner=null;
+      return {p1:p1,p2:p2,winner:winner};
+    }
+
+    base.pairings[cls]=((s.pairings&&Array.isArray(s.pairings[cls]))?s.pairings[cls]:[])
+      .map(sanitizeMatch).filter(function(m){return m.p1&&m.p2;});
 
     base.results[cls]=((s.results&&Array.isArray(s.results[cls]))?s.results[cls]:[]).map(function(round){
-      return Array.isArray(round)?round.map(function(m){
-        return {p1:m&&m.p1?m.p1:'',p2:m&&m.p2?m.p2:'',winner:m&&m.winner?m.winner:null};
-      }).filter(function(m){return m.p1&&m.p2;}):[];
+      return Array.isArray(round)?round.map(sanitizeMatch).filter(function(m){return m.p1&&m.p2;}):[];
     });
   });
-  base.report={date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''};
   if(s.report&&typeof s.report==='object'){
     ['date','place','start','end','sei','fuku','note'].forEach(function(k){
       if(typeof s.report[k]==='string')base.report[k]=s.report[k];
@@ -303,7 +310,7 @@ function normalizeState(raw){
 // STORAGE: localStorageへの保存と復元(旧版キーからの移行込み)
 // ============================================================
 
-function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}catch(e){showMsg('保存に失敗しました','error');}}
+function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}catch(e){notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります。JSONバックアップを保存してください。');}}
 function load(){
   try{
     var d=localStorage.getItem(STORAGE_KEY);
@@ -337,6 +344,17 @@ function showTab(t){
 function showMsg(text,type){
   var el=document.getElementById('reg-msg');
   el.innerHTML=text?'<div class="alert alert-'+type+'">'+escapeHtml(text)+'</div>':'';
+}
+
+// 致命的エラーは登録タブが見えていない可能性があるため alert で通知（重複連発を避けるため直近メッセージで抑止）
+var _lastErr={text:'',at:0};
+function notifyError(text){
+  showMsg(text,'err');
+  var now=Date.now();
+  if(_lastErr.text===text&&now-_lastErr.at<3000)return;
+  _lastErr={text:text,at:now};
+  var regVisible=document.getElementById('pane-reg').style.display!=='none';
+  if(!regVisible)alert(text);
 }
 
 function renderRegList(){
@@ -1216,6 +1234,7 @@ function loadData(e){
       var loaded=JSON.parse(ev.target.result);
       state=normalizeState(loaded);
       save();
+      populateReportFields();
       renderRegList();
       if(state.started){
         if(isTournamentDone()){
@@ -1308,9 +1327,10 @@ function printResults(){
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob);
   var win=window.open(url,'_blank');
-  if(!win){alert('ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。');return;}
+  if(!win){URL.revokeObjectURL(url);alert('ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。');return;}
   win.focus();
   setTimeout(function(){win.print();},800);
+  setTimeout(function(){URL.revokeObjectURL(url);},60000);
 }
 
 function getTopPlayers(cls){
@@ -1404,9 +1424,10 @@ function downloadReport(){
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob);
   var win=window.open(url,'_blank');
-  if(!win){alert('ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。');return;}
+  if(!win){URL.revokeObjectURL(url);alert('ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。');return;}
   win.focus();
   setTimeout(function(){win.print();},800);
+  setTimeout(function(){URL.revokeObjectURL(url);},60000);
 }
 
 function resetAll(){

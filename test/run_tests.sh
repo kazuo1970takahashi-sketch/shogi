@@ -216,13 +216,17 @@ fi
 echo ""
 echo "【第3層補足】テストデータでのnormalizeState堅牢性確認"
 for f in "$SCRIPT_DIR"/data_*.json; do
-  name=$(basename $f .json)
-  python3 -c "
-import json,re
-with open('$f') as fp: data=json.load(fp)
-# 単純なJSON parse OKチェック
-print('  ✓ $name: JSONパースOK')
-" 2>&1 | head -1
+  name=$(basename "$f" .json)
+  output=$(python3 -c "
+import json,sys
+with open('$f') as fp: json.load(fp)
+" 2>&1)
+  rc=$?
+  if [ $rc -eq 0 ] && [ -z "$output" ]; then
+    ok "$name: JSONパースOK"
+  else
+    ng "$name: Python例外/エラー → $(echo "$output" | head -1)"
+  fi
 done
 
 # ============================================
