@@ -21,9 +21,37 @@ jobs:
           OUT=$(bash test/run_tests.sh shogi_v4.html | tee /dev/stderr)
           echo "$OUT" | grep -q "PASS=48, FAIL=0" || { echo "::error::run_tests.sh did not report PASS=48 FAIL=0"; exit 1; }
 
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: npm audit（高・致命的脆弱性のみFAIL）
+        run: npm audit --audit-level=high
+      - name: HTMLバリデーション（index.html / shogi_v4.html）
+        run: |
+          npm install --save-dev html-validate
+          npx html-validate index.html shogi_v4.html || true
+      - name: Secrets検出（APIキー・パスワードのコミット漏れ）
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: HEAD~1
+          head: HEAD
+          extra_args: --only-verified
+
   e2e-test:
     name: E2E (Playwright)
-    needs: unit-test
+    needs: [unit-test, security-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
