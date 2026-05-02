@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大会運営マニュアル（スマホ版）</title>
+<style>
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+    font-size: 15px;
+    margin: 0;
+    padding: 12px;
+    background: #f7f7f7;
+    color: #111;
+  }
+  h1 {
+    font-size: 16px;
+    color: #27500A;
+    border-bottom: 2px solid #27500A;
+    padding-bottom: 6px;
+    margin: 0 0 12px;
+  }
+  .section {
+    background: #fff;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  .section-header {
+    background: #27500A;
+    color: #fff;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 8px 12px;
+  }
+  .section-header.trouble {
+    background: #c0392b;
+  }
+  .section-body {
+    padding: 10px 12px;
+  }
+  ul.check {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  ul.check li {
+    padding: 6px 0;
+    border-bottom: 1px solid #eee;
+    line-height: 1.5;
+  }
+  ul.check li:last-child { border-bottom: none; }
+  ul.check li::before {
+    content: "□ ";
+    font-size: 16px;
+    color: #27500A;
+  }
+  .important::before {
+    content: "⚠️ ";
+  }
+  .important {
+    color: #c0392b;
+    font-weight: bold;
+  }
+  .note {
+    background: #fff8e1;
+    border-left: 3px solid #f39c12;
+    padding: 8px 10px;
+    margin: 8px 0 0;
+    font-size: 13px;
+    border-radius: 0 4px 4px 0;
+    line-height: 1.6;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  td {
+    border: 1px solid #ddd;
+    padding: 7px 8px;
+    vertical-align: top;
+  }
+  td:first-child {
+    background: #f9f9f9;
+    font-weight: bold;
+    width: 40%;
+  }
+  .url-box {
+    background: #f0f0f0;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: monospace;
+    font-size: 12px;
+    word-break: break-all;
+    margin-bottom: 8px;
+  }
+  .footer {
+    text-align: center;
+    font-size: 11px;
+    color: #999;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<h1>月例将棋大会 当日マニュアル</h1>
+
+<div class="section">
+  <div class="section-header">1. 大会開始前</div>
+  <div class="section-body">
+    <div class="url-box">https://kazuo1970takahashi-sketch.github.io/shogi/</div>
+    <ul class="check">
+      <li>参加者を登録する</li>
+      <li class="important">「JSONバックアップ保存」を押す</li>
+      <li>「大会開始」を押す</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header">2. 各ラウンド（毎回）</div>
+  <div class="section-body">
+    <ul class="check">
+      <li>「ペアリング生成」で組み合わせ確認</li>
+      <li>対局実施 → 勝者を入力</li>
+      <li>「ラウンド確定」を押す</li>
+      <li class="important">「JSONバックアップ保存」を押す</li>
+    </ul>
+    <div class="note">
+      保存すると shogi_YYYYMMDD_HHMM.json がダウンロードされます。ファイルの存在を必ず確認してください。
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header">3. 大会終了後</div>
+  <div class="section-body">
+    <ul class="check">
+      <li>「成績」タブで順位確認</li>
+      <li class="important">「JSONバックアップ保存」を押す（最終）</li>
+      <li>印刷 または 報告書ダウンロード</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header trouble">4. トラブル時</div>
+  <div class="section-body">
+    <table>
+      <tr>
+        <td>ブラウザが落ちた</td>
+        <td>「読み込み」→ 直前の JSON を選択</td>
+      </tr>
+      <tr>
+        <td>端末が壊れた</td>
+        <td>別端末でアプリを開き同じ JSON を「読み込み」</td>
+      </tr>
+      <tr>
+        <td>JSON が見当たらない</td>
+        <td>ダウンロードフォルダで「shogi_」で検索</td>
+      </tr>
+    </table>
+    <div class="note">
+      ℹ️ 連絡先は別途ご確認ください。
+    </div>
+  </div>
+</div>
+
+<div class="footer">沼津将棋支部 月例大会運営ツール — docs/manual_sp.html</div>
+
+</body>
+</html>

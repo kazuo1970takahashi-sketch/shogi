@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>月例将棋大会 当日運営マニュアル</title>
+<style>
+  @media print {
+    body { margin: 0; }
+    .no-print { display: none; }
+  }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+    font-size: 13px;
+    margin: 16px 20px;
+    color: #111;
+    max-width: 720px;
+  }
+  h1 {
+    font-size: 16px;
+    border-bottom: 2px solid #27500A;
+    padding-bottom: 4px;
+    margin-bottom: 12px;
+  }
+  h2 {
+    font-size: 13px;
+    background: #27500A;
+    color: #fff;
+    padding: 4px 8px;
+    margin: 12px 0 6px;
+    border-radius: 3px;
+  }
+  h2.trouble {
+    background: #c0392b;
+  }
+  ul {
+    margin: 0 0 6px 0;
+    padding-left: 20px;
+    line-height: 1.8;
+  }
+  li { margin-bottom: 2px; }
+  .check { list-style: none; padding-left: 4px; }
+  .check li::before { content: "□ "; font-size: 14px; }
+  .note {
+    background: #fff8e1;
+    border-left: 3px solid #f39c12;
+    padding: 5px 8px;
+    margin: 6px 0;
+    font-size: 12px;
+  }
+  .url {
+    font-family: monospace;
+    background: #f5f5f5;
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin: 6px 0;
+  }
+  td, th {
+    border: 1px solid #ccc;
+    padding: 4px 8px;
+  }
+  th { background: #f0f0f0; }
+  .footer {
+    margin-top: 16px;
+    font-size: 11px;
+    color: #666;
+    border-top: 1px solid #ccc;
+    padding-top: 6px;
+  }
+  button.no-print {
+    margin-bottom: 12px;
+    padding: 6px 14px;
+    background: #27500A;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<button class="no-print" onclick="window.print()">印刷する</button>
+
+<h1>沼津支部 月例将棋大会 当日運営マニュアル</h1>
+
+<h2>1. 大会開始前</h2>
+<ul class="check">
+  <li>アプリを開く：<span class="url">https://kazuo1970takahashi-sketch.github.io/shogi/</span></li>
+  <li>参加者を登録する（名前・支部員区分・学年）</li>
+  <li><strong>「JSONバックアップ保存」を押す</strong>（ファイル名を確認してダウンロード完了を確認）</li>
+  <li>「大会開始」を押す</li>
+</ul>
+
+<h2>2. 各ラウンド（毎回繰り返す）</h2>
+<ul class="check">
+  <li>「ペアリング生成」を押して組み合わせを確認</li>
+  <li>対局を実施する</li>
+  <li>勝者をアプリに入力する</li>
+  <li>「ラウンド確定」を押す</li>
+  <li><strong>「JSONバックアップ保存」を押す</strong>（毎ラウンド必須）</li>
+</ul>
+
+<div class="note">
+  ⚠️ 保存を忘れると、ブラウザを閉じたときにデータが消えます。<br>
+  保存すると「shogi_YYYYMMDD_HHMM.json」というファイルがダウンロードされます。
+</div>
+
+<h2>3. 大会終了後</h2>
+<ul class="check">
+  <li>「成績」タブで順位を確認</li>
+  <li><strong>「JSONバックアップ保存」を押す</strong>（最終バックアップ）</li>
+  <li>必要に応じて「印刷」または「報告書ダウンロード」を実行</li>
+</ul>
+
+<h2 class="trouble">4. トラブル時の復旧手順</h2>
+
+<table>
+  <tr>
+    <th>状況</th>
+    <th>対処</th>
+  </tr>
+  <tr>
+    <td>ブラウザが落ちた・誤ってリセットした</td>
+    <td>「読み込み」ボタン → 直前に保存した JSON ファイルを選択</td>
+  </tr>
+  <tr>
+    <td>端末が壊れた・バッテリー切れ</td>
+    <td>別の端末でアプリを開き、同じ JSON ファイルを「読み込み」で復元</td>
+  </tr>
+  <tr>
+    <td>JSON ファイルが見当たらない</td>
+    <td>端末のダウンロードフォルダを確認（shogi_で始まるファイル）</td>
+  </tr>
+</table>
+
+<div class="note">
+  ℹ️ 連絡先は別途ご確認ください。
+</div>
+
+<div class="footer">
+  沼津将棋支部 月例大会運営ツール — docs/manual_print.html
+</div>
+
+</body>
+</html>
