@@ -1,0 +1,20 @@
+# OS が生成するファイル
+.DS_Store
+Thumbs.db
+
+# エディタ
+.vscode/
+.idea/
+*.swp
+*~
+
+# バックアップ・汚染版(Git 履歴で代替)
+*.bak
+*.contaminated.*
+
+# ローカル限定
+HANDOFF_LOCAL.md
+HANDOFF.md.contaminated.bak
+
+# ai-requests のうちローカル限定のもの
+ai-requests/local/

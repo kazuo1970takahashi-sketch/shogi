@@ -1,0 +1,14 @@
+{
+  "players": {
+    "A": [
+      {"id":"x1","name":"名前あり","cls":"A"},
+      {"name":"IDなし"},
+      {"id":"x3"},
+      {"id":"x4","name":"","cls":"A"}
+    ]
+  },
+  "rounds": "abc",
+  "pairings": null,
+  "results": "壊れたデータ",
+  "started": "true"
+}

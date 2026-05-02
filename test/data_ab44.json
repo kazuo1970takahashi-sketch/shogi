@@ -1,0 +1,26 @@
+{
+  "players": {
+    "A": [
+      {"id":"a1","name":"青木","cls":"A","member":"member","grade":"ippan"},
+      {"id":"a2","name":"伊藤","cls":"A","member":"member","grade":"ippan"},
+      {"id":"a3","name":"上田","cls":"A","member":"other","grade":"ippan"},
+      {"id":"a4","name":"江口","cls":"A","member":"other","grade":"chu"}
+    ],
+    "B": [
+      {"id":"b1","name":"小野","cls":"B","member":"member","grade":"ippan"},
+      {"id":"b2","name":"加藤","cls":"B","member":"member","grade":"chu"},
+      {"id":"b3","name":"木村","cls":"B","member":"other","grade":"ippan"},
+      {"id":"b4","name":"小林","cls":"B","member":"other","grade":"chu"}
+    ]
+  },
+  "rounds": 4,
+  "pairings": {
+    "A": [{"p1":"a1","p2":"a3","winner":null},{"p1":"a2","p2":"a4","winner":null}],
+    "B": [{"p1":"b1","p2":"b3","winner":null},{"p1":"b2","p2":"b4","winner":null}]
+  },
+  "results": {
+    "A": [[{"p1":"a1","p2":"a2","winner":"a1"},{"p1":"a3","p2":"a4","winner":"a3"}]],
+    "B": [[{"p1":"b1","p2":"b2","winner":"b1"},{"p1":"b3","p2":"b4","winner":"b3"}]]
+  },
+  "started": true
+}

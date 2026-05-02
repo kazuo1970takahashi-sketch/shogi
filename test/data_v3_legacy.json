@@ -1,0 +1,13 @@
+{
+  "players": {
+    "A": [
+      {"id":"old1","name":"旧データ太郎","cls":"A","member":"member","grade":"ippan"},
+      {"id":"old2","name":"旧データ次郎","cls":"A","member":"other","grade":"ippan"}
+    ],
+    "B": []
+  },
+  "rounds": 4,
+  "pairings": {"A":[],"B":[]},
+  "results": {"A":[],"B":[]},
+  "started": false
+}

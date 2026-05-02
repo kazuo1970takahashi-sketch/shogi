@@ -1,0 +1,15 @@
+{
+  "players": {
+    "A": [
+      {"id":"p001","name":"田中太郎","cls":"A","member":"member","grade":"ippan"},
+      {"id":"p002","name":"鈴木一郎","cls":"A","member":"member","grade":"ippan"},
+      {"id":"p003","name":"佐藤花子","cls":"A","member":"other","grade":"ippan"},
+      {"id":"p004","name":"高橋次郎","cls":"A","member":"other","grade":"chu"}
+    ],
+    "B": []
+  },
+  "rounds": 4,
+  "pairings": {"A":[],"B":[]},
+  "results": {"A":[],"B":[]},
+  "started": false
+}
