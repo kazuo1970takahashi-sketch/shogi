@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # リファクタリング3層テスト
-# 使い方: ./run_tests.sh <対象html> [比較元html(オプション)]
-# 例: ./run_tests.sh /home/claude/shogi_stage2_after.html /home/claude/shogi_stage1_after.html
+# 使い方: bash test/run_tests.sh <対象html> [比較元html(オプション)]
+# 例: bash test/run_tests.sh shogi_v4.html archive/shogi_stage1_before.html
 
 # set -e は使わない(grep が空ヒットで非ゼロを返すため、各テストで判定する)
-TARGET="${1:-/home/claude/shogi_v4_v3.html}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TARGET="${1:-shogi_v4.html}"
 COMPARE="${2:-}"
 
 if [ ! -f "$TARGET" ]; then echo "✗ 対象ファイルなし: $TARGET"; exit 1; fi
@@ -214,7 +215,7 @@ fi
 # ============================================
 echo ""
 echo "【第3層補足】テストデータでのnormalizeState堅牢性確認"
-for f in /home/claude/test/data_*.json; do
+for f in "$SCRIPT_DIR"/data_*.json; do
   name=$(basename $f .json)
   python3 -c "
 import json,re
@@ -229,7 +230,6 @@ done
 # ============================================
 echo ""
 echo "【ペアリング性質テスト】"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/test_pairing_properties.js" ]; then
   if node "$SCRIPT_DIR/test_pairing_properties.js" "$TARGET" > /tmp/pairing_test_out.log 2>&1; then
     ok "ペアリング性質テスト 全PASS"
