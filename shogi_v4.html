@@ -1199,7 +1199,21 @@ function renderResults(){
   });
 }
 
+// クリップボード優先、非対応(http等)はファイルダウンロードにフォールバック
 function saveData(){
+  var json=JSON.stringify(state,null,2);
+  if(navigator.clipboard&&navigator.clipboard.writeText&&window.isSecureContext){
+    navigator.clipboard.writeText(json).then(function(){
+      alert('JSONをクリップボードにコピーしました。\n\nメモ帳やEvernoteに貼り付けて保管してください。');
+    }).catch(function(){
+      saveDataAsFile(json);
+    });
+    return;
+  }
+  saveDataAsFile(json);
+}
+
+function saveDataAsFile(json){
   try{
     var now=new Date();
     var y=now.getFullYear();
@@ -1208,7 +1222,6 @@ function saveData(){
     var hh=('0'+now.getHours()).slice(-2);
     var mm=('0'+now.getMinutes()).slice(-2);
     var filename='shogi_'+y+m+d+'_'+hh+mm+'.json';
-    var json=JSON.stringify(state,null,2);
     var blob=new Blob([json],{type:'application/json'});
     var url=URL.createObjectURL(blob);
     var a=document.createElement('a');
@@ -1224,6 +1237,24 @@ function saveData(){
   }
 }
 
+// 読み込み済みの生JSON文字列をstate反映してUIを更新（ファイル/貼り付け共通）
+function applyLoadedJson(rawText){
+  var loaded=JSON.parse(rawText);
+  state=normalizeState(loaded);
+  save();
+  populateReportFields();
+  renderRegList();
+  if(state.started){
+    if(isTournamentDone()){
+      showTab('result');
+    } else {
+      showTab('tournament');
+    }
+  } else {
+    showTab('reg');
+  }
+}
+
 function loadData(e){
   var file=e.target.files[0];
   if(!file)return;
@@ -1231,27 +1262,65 @@ function loadData(e){
   var reader=new FileReader();
   reader.onload=function(ev){
     try{
-      var loaded=JSON.parse(ev.target.result);
-      state=normalizeState(loaded);
-      save();
-      populateReportFields();
-      renderRegList();
-      if(state.started){
-        if(isTournamentDone()){
-          showTab('result');
-        } else {
-          showTab('tournament');
-        }
-      } else {
-        showTab('reg');
-      }
+      applyLoadedJson(ev.target.result);
       alert('データを読み込みました');
     } catch(err){
       alert('読み込みに失敗しました。正しいファイルか確認してください');
     }
     e.target.value='';
+    var lm=document.getElementById('load-modal');if(lm)lm.remove();
   };
   reader.readAsText(file);
+}
+
+function loadFromPaste(){
+  var ta=document.getElementById('load-paste-area');
+  if(!ta)return;
+  var text=ta.value.trim();
+  if(!text){alert('JSONを貼り付けてください');return;}
+  if(!confirm('現在のデータを上書きして読み込みますか？'))return;
+  try{
+    applyLoadedJson(text);
+    var lm=document.getElementById('load-modal');if(lm)lm.remove();
+    alert('データを読み込みました');
+  }catch(err){
+    alert('読み込みに失敗しました。正しいJSONか確認してください');
+  }
+}
+
+function openLoadModal(){
+  var existing=document.getElementById('load-modal');
+  if(existing)existing.remove();
+  var modal=document.createElement('div');
+  modal.id='load-modal';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML='<div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:360px;max-height:90vh;overflow-y:auto">'
+    +'<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">データを読み込み</h3>'
+    +'<button id="load-pick-file" class="btn-primary" style="width:100%;padding:12px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-size:14px;cursor:pointer">ファイルから読み込み</button>'
+    +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:12px">─ または ─</div>'
+    +'<label style="font-size:12px;color:#666;display:block;margin-bottom:4px">JSONを貼り付け</label>'
+    +'<textarea id="load-paste-area" placeholder="ここにJSONを貼り付けてください" style="width:100%;height:120px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:monospace;resize:vertical"></textarea>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
+    +'<button id="load-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
+    +'<button id="load-from-paste" disabled style="padding:8px 16px;border-radius:8px;border:none;background:#ccc;color:#fff;font-size:14px;cursor:not-allowed">貼り付けから読み込む</button>'
+    +'</div></div>';
+  document.body.appendChild(modal);
+
+  document.getElementById('load-pick-file').addEventListener('click',function(){
+    document.getElementById('loadFile').click();
+  });
+  document.getElementById('load-cancel').addEventListener('click',function(){
+    modal.remove();
+  });
+  var ta=document.getElementById('load-paste-area');
+  var btn=document.getElementById('load-from-paste');
+  ta.addEventListener('input',function(){
+    var has=ta.value.trim().length>0;
+    btn.disabled=!has;
+    btn.style.background=has?'#1F3864':'#ccc';
+    btn.style.cursor=has?'pointer':'not-allowed';
+  });
+  btn.addEventListener('click',loadFromPaste);
 }
 
 function printResults(){
@@ -1438,7 +1507,7 @@ function resetAll(){
     for(var i=0;i<LEGACY_STORAGE_KEYS.length;i++)localStorage.removeItem(LEGACY_STORAGE_KEYS[i]);
   }catch(e){}
   // 開きっぱなしのモーダルを閉じる
-  ['bulk-edit-modal','edit-past-modal','chg-modal'].forEach(function(mid){
+  ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
     var m=document.getElementById(mid);if(m)m.remove();
   });
   renderRegList();
@@ -1468,7 +1537,7 @@ function resetAll(){
 
 function bindHeaderEvents(){
   document.getElementById('saveBtn').addEventListener('click',saveData);
-  document.getElementById('loadBtn').addEventListener('click',function(){document.getElementById('loadFile').click();});
+  document.getElementById('loadBtn').addEventListener('click',openLoadModal);
   document.getElementById('loadFile').addEventListener('change',loadData);
   document.getElementById('resetBtn').addEventListener('click',resetAll);
 }
