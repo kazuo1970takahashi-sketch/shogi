@@ -83,7 +83,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
 <div class="header">
   <div><h1>沼津支部 月例将棋大会 運営ツール</h1></div>
   <div style="display:flex;gap:8px;align-items:center">
-    <button class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">保存</button>
+    <button class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">JSONバックアップ保存</button>
     <button class="btn-sm no-print" id="loadBtn" style="background:#185FA5;color:#fff;border-color:#185FA5">読み込み</button>
     <input type="file" id="loadFile" accept=".json" style="display:none">
     <button class="btn-danger btn-sm no-print" id="resetBtn">リセット</button>
@@ -296,7 +296,7 @@ function normalizeState(raw){
 // STORAGE: localStorageへの保存と復元(旧版キーからの移行込み)
 // ============================================================
 
-function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}catch(e){}}
+function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}catch(e){showMsg('保存に失敗しました','error');}}
 function load(){
   try{
     var d=localStorage.getItem(STORAGE_KEY);
@@ -1175,24 +1175,28 @@ function renderResults(){
 }
 
 function saveData(){
-  var now=new Date();
-  var y=now.getFullYear();
-  var m=('0'+(now.getMonth()+1)).slice(-2);
-  var d=('0'+now.getDate()).slice(-2);
-  var hh=('0'+now.getHours()).slice(-2);
-  var mm=('0'+now.getMinutes()).slice(-2);
-  var filename='shogi_'+y+m+d+'_'+hh+mm+'.json';
-  var json=JSON.stringify(state,null,2);
-  var blob=new Blob([json],{type:'application/json'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');
-  a.href=url;
-  a.download=filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  alert(filename+'に保存しました');
+  try{
+    var now=new Date();
+    var y=now.getFullYear();
+    var m=('0'+(now.getMonth()+1)).slice(-2);
+    var d=('0'+now.getDate()).slice(-2);
+    var hh=('0'+now.getHours()).slice(-2);
+    var mm=('0'+now.getMinutes()).slice(-2);
+    var filename='shogi_'+y+m+d+'_'+hh+mm+'.json';
+    var json=JSON.stringify(state,null,2);
+    var blob=new Blob([json],{type:'application/json'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;
+    a.download=filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    alert(filename+'に保存しました');
+  }catch(e){
+    alert('保存に失敗しました');
+  }
 }
 
 function loadData(e){
