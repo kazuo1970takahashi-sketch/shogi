@@ -30,6 +30,9 @@ li{margin-bottom:6px;color:#333}
 table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:14px}
 th{background:#e8f0f8;color:#1F3864;padding:8px 12px;text-align:left;border-bottom:2px solid #2E75B6}
 td{padding:8px 12px;border-bottom:1px solid #eee}
+.cell-rank{white-space:nowrap}
+.cell-amt{white-space:nowrap;text-align:right}
+th.cell-amt{text-align:right}
 .note{background:#faeeda;border-left:4px solid #EF9F27;padding:10px 14px;border-radius:0 8px 8px 0;font-size:13px;color:#633806;margin-bottom:12px}
 .footer{text-align:center;padding:24px;font-size:12px;color:#888}
 </style>
@@ -120,10 +123,11 @@ td{padding:8px 12px;border-bottom:1px solid #eee}
   <div class="card">
     <h2>参加費</h2>
     <table>
-      <thead><tr><th>区分</th><th>一般</th><th>中学生以下</th></tr></thead>
+      <colgroup><col style="width:40%"><col style="width:30%"><col style="width:30%"></colgroup>
+      <thead><tr><th>区分</th><th class="cell-amt">一般</th><th class="cell-amt">中学生以下</th></tr></thead>
       <tbody>
-        <tr><td>支部員</td><td>500円</td><td>無料</td></tr>
-        <tr><td>支部員以外</td><td>1,000円</td><td>500円</td></tr>
+        <tr><td class="cell-rank">支部員</td><td class="cell-amt">500円</td><td class="cell-amt">無料</td></tr>
+        <tr><td class="cell-rank">支部員以外</td><td class="cell-amt">1,000円</td><td class="cell-amt">500円</td></tr>
       </tbody>
     </table>
   </div>
@@ -132,11 +136,12 @@ td{padding:8px 12px;border-bottom:1px solid #eee}
   <div class="card">
     <h2>賞品</h2>
     <table>
-      <thead><tr><th>順位</th><th>一般</th><th>こども</th></tr></thead>
+      <colgroup><col style="width:20%"><col style="width:50%"><col style="width:30%"></colgroup>
+      <thead><tr><th>順位</th><th class="cell-amt">一般</th><th class="cell-amt">こども</th></tr></thead>
       <tbody>
-        <tr><td>優勝</td><td>図書券または商品券 2,000円</td><td>1,000円</td></tr>
-        <tr><td>準優勝</td><td>1,000円</td><td>500円</td></tr>
-        <tr><td>3位</td><td>500円</td><td>500円</td></tr>
+        <tr><td class="cell-rank">優勝</td><td class="cell-amt">図書券または商品券<br>2,000円</td><td class="cell-amt">1,000円</td></tr>
+        <tr><td class="cell-rank">準優勝</td><td class="cell-amt">1,000円</td><td class="cell-amt">500円</td></tr>
+        <tr><td class="cell-rank">3位</td><td class="cell-amt">500円</td><td class="cell-amt">500円</td></tr>
       </tbody>
     </table>
     <p style="font-size:13px;color:#888">※A級・B級それぞれに賞品を用意（合計7,000円）</p>
