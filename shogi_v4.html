@@ -1499,9 +1499,10 @@ function bindTabEvents(){
 }
 
 function populateReportFields(){
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''};
   ['date','place','start','end','sei','fuku','note'].forEach(function(k){
     var el=document.getElementById('rep-'+k);
-    if(el)el.value=state.report[k];
+    if(el)el.value=state.report[k]||'';
   });
 }
 
@@ -1510,6 +1511,7 @@ function bindReportEvents(){
     var el=document.getElementById('rep-'+k);
     if(!el)return;
     el.addEventListener('input',function(e){
+      if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''};
       state.report[k]=e.target.value;
       save();
     });
