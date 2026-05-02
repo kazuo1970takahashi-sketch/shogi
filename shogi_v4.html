@@ -186,7 +186,8 @@ var state = {
   rounds: 4,
   pairings: {A:[], B:[]},
   results: {A:[], B:[]},
-  started: false
+  started: false,
+  report: {date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''}
 };
 
 var STORAGE_KEY='shogi_v4';
@@ -289,6 +290,12 @@ function normalizeState(raw){
       }).filter(function(m){return m.p1&&m.p2;}):[];
     });
   });
+  base.report={date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''};
+  if(s.report&&typeof s.report==='object'){
+    ['date','place','start','end','sei','fuku','note'].forEach(function(k){
+      if(typeof s.report[k]==='string')base.report[k]=s.report[k];
+    });
+  }
   return base;
 }
 
@@ -1404,7 +1411,7 @@ function downloadReport(){
 
 function resetAll(){
   if(!confirm('全データをリセットしますか？'))return;
-  state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false};
+  state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}};
   try{
     localStorage.removeItem(STORAGE_KEY);
     for(var i=0;i<LEGACY_STORAGE_KEYS.length;i++)localStorage.removeItem(LEGACY_STORAGE_KEYS[i]);
@@ -1470,6 +1477,24 @@ function bindTabEvents(){
   });
 }
 
+function populateReportFields(){
+  ['date','place','start','end','sei','fuku','note'].forEach(function(k){
+    var el=document.getElementById('rep-'+k);
+    if(el)el.value=state.report[k];
+  });
+}
+
+function bindReportEvents(){
+  ['date','place','start','end','sei','fuku','note'].forEach(function(k){
+    var el=document.getElementById('rep-'+k);
+    if(!el)return;
+    el.addEventListener('input',function(e){
+      state.report[k]=e.target.value;
+      save();
+    });
+  });
+}
+
 // 全体として大会が完了しているか(参加者のいるクラスが全て全ラウンド消化済みか)
 function isTournamentDone(){
   var hasAnyClass=false;
@@ -1485,6 +1510,7 @@ function isTournamentDone(){
 
 function initApp(){
   load();
+  populateReportFields();
   renderRegList();
   if(state.started){
     if(isTournamentDone()){
@@ -1499,6 +1525,7 @@ document.addEventListener('DOMContentLoaded',function(){
   bindHeaderEvents();
   bindRegistrationEvents();
   bindTabEvents();
+  bindReportEvents();
   initApp();
 });
 </script>
