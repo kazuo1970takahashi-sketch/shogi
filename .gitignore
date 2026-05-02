@@ -18,3 +18,8 @@ HANDOFF.md.contaminated.bak
 
 # ai-requests のうちローカル限定のもの
 ai-requests/local/
+
+# Node / Playwright
+node_modules/
+test-results/
+playwright-report/
