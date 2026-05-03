@@ -175,7 +175,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
         <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">申し送り事項</label>
         <textarea id="rep-note" placeholder="特になし" style="width:100%;height:60px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical"></textarea>
       </div>
-      <button class="btn-primary" id="downloadReportBtn" onclick="downloadReport()">報告書を印刷 / PDF保存</button>
+      <button class="btn-primary" id="downloadReportBtn">報告書を印刷 / PDF保存</button>
     </div>
   </div>
 </div>
@@ -1376,16 +1376,23 @@ function printResults(){
     return html;
   }
 
+  // B07: A クラスが空(参加者0でテーブル空文字)なら page-break-before の空白ページを挿入しない
+  var tableA=buildTable('A',winA);
+  var tableB=buildTable('B',winB);
+  var pageBreak=(tableA&&tableB)?'<div style="page-break-before:always"></div>':'';
+
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
     +'<title>沼津支部月例将棋大会 対戦成績</title>'
-    +'<style>body{font-family:sans-serif;font-size:13px;padding:16px}'
+    +'<style>@page{size:A4;margin:10mm}'
+    +'body{font-family:sans-serif;font-size:13px;padding:16px}'
     +'h2{font-size:16px;color:#1F3864;border-left:4px solid #1F3864;padding-left:10px;margin-bottom:8px}'
+    +'tr,td{page-break-inside:avoid}'
     +'@media print{body{padding:0}.no-print{display:none}}</style>'
     +'</head><body>'
     +'<h2>スイス式トーナメント　対戦成績</h2>'
-    +buildTable('A',winA)
-    +'<div style="page-break-before:always"></div>'
-    +buildTable('B',winB)
+    +tableA
+    +pageBreak
+    +tableB
     +'</body></html>';
 
   var now=new Date();
@@ -1398,7 +1405,11 @@ function printResults(){
   var win=window.open(url,'_blank');
   if(!win){URL.revokeObjectURL(url);alert('ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。');return;}
   win.focus();
-  setTimeout(function(){win.print();},800);
+  // B05: setTimeout(800) → load イベント、B08: 印刷後に afterprint で win.close()
+  win.addEventListener('load',function(){
+    win.addEventListener('afterprint',function(){win.close();});
+    win.print();
+  });
   setTimeout(function(){URL.revokeObjectURL(url);},60000);
 }
 
@@ -1439,8 +1450,10 @@ function downloadReport(){
 
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
     +'<title>沼津支部月例将棋大会報告書</title>'
-    +'<style>body{font-family:sans-serif;font-size:13px;padding:20px}'
+    +'<style>@page{size:A4;margin:10mm}'
+    +'body{font-family:sans-serif;font-size:13px;padding:20px}'
     +'table{border-collapse:collapse;width:100%}'
+    +'tr,td{page-break-inside:avoid}'
     +'@media print{body{padding:0}}</style></head><body>'
     +'<h2 style="text-align:center;font-size:16px;margin-bottom:16px">沼津支部月例将棋大会報告書</h2>'
     +'<table>'
@@ -1495,7 +1508,11 @@ function downloadReport(){
   var win=window.open(url,'_blank');
   if(!win){URL.revokeObjectURL(url);alert('ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。');return;}
   win.focus();
-  setTimeout(function(){win.print();},800);
+  // B05: setTimeout(800) → load イベント、B08: 印刷後に afterprint で win.close()
+  win.addEventListener('load',function(){
+    win.addEventListener('afterprint',function(){win.close();});
+    win.print();
+  });
   setTimeout(function(){URL.revokeObjectURL(url);},60000);
 }
 
@@ -1560,11 +1577,6 @@ function bindTabEvents(){
   document.getElementById('tab-reg').addEventListener('click',function(){showTab('reg');});
   document.getElementById('tab-tournament').addEventListener('click',function(){showTab('tournament');});
   document.getElementById('tab-result').addEventListener('click',function(){showTab('result');});
-  // 最終結果タブ表示時: 報告書PDFボタンを再バインド
-  document.getElementById('tab-result').addEventListener('click',function(){
-    var btn=document.getElementById('downloadReportBtn');
-    if(btn)btn.onclick=downloadReport;
-  });
 }
 
 function populateReportFields(){
@@ -1585,6 +1597,8 @@ function bindReportEvents(){
       save();
     });
   });
+  var btn=document.getElementById('downloadReportBtn');
+  if(btn)btn.addEventListener('click',downloadReport);
 }
 
 // 全体として大会が完了しているか(参加者のいるクラスが全て全ラウンド消化済みか)
