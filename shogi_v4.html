@@ -83,17 +83,17 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
 <div class="header">
   <div><h1>沼津支部 月例将棋大会 運営ツール</h1></div>
   <div style="display:flex;gap:8px;align-items:center">
-    <button class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">JSONバックアップ保存</button>
-    <button class="btn-sm no-print" id="loadBtn" style="background:#185FA5;color:#fff;border-color:#185FA5">読み込み</button>
+    <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">JSONバックアップ保存</button>
+    <button type="button" class="btn-sm no-print" id="loadBtn" style="background:#185FA5;color:#fff;border-color:#185FA5">読み込み</button>
     <input type="file" id="loadFile" accept=".json" style="display:none">
-    <button class="btn-danger btn-sm no-print" id="resetBtn">リセット</button>
+    <button type="button" class="btn-danger btn-sm no-print" id="resetBtn">リセット</button>
   </div>
 </div>
 <div class="container">
   <div class="tab-bar no-print">
-    <button class="tab active" id="tab-reg">参加者登録</button>
-    <button class="tab" id="tab-tournament">対局管理</button>
-    <button class="tab" id="tab-result">最終結果</button>
+    <button type="button" class="tab active" id="tab-reg">参加者登録</button>
+    <button type="button" class="tab" id="tab-tournament">対局管理</button>
+    <button type="button" class="tab" id="tab-result">最終結果</button>
   </div>
   <div id="pane-reg">
     <div class="section">
@@ -104,21 +104,21 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
           <option value="A">Aクラス</option>
           <option value="B">Bクラス</option>
         </select>
-        <button class="btn-primary" id="addBtn">追加</button>
+        <button type="button" class="btn-primary" id="addBtn">追加</button>
       </div>
       <div id="reg-msg"></div>
       <div class="grid2" style="margin-top:12px">
         <div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
             <h3 style="margin-bottom:0">Aクラス <span id="a-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
-            <button id="bulkEditA" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
+            <button type="button" id="bulkEditA" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
           </div>
           <div id="a-list"></div>
         </div>
         <div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
             <h3 style="margin-bottom:0">Bクラス <span id="b-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
-            <button id="bulkEditB" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
+            <button type="button" id="bulkEditB" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
           </div>
           <div id="b-list"></div>
         </div>
@@ -126,7 +126,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
       <div id="fee-summary" style="margin-top:12px"></div>
       <hr class="separator">
       <div class="flex">
-        <button class="btn-primary" id="startBtn">登録完了・対局開始</button>
+        <button type="button" class="btn-primary" id="startBtn">登録完了・対局開始</button>
         <span style="font-size:12px;color:#888">※奇数の場合は運営者を追加してから開始</span>
       </div>
     </div>
@@ -141,7 +141,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     <div id="result-A"></div>
     <div id="result-B" style="margin-top:16px"></div>
     <div style="margin-top:16px;text-align:right" class="no-print">
-      <button class="btn-primary" onclick="printResults()">対戦成績を印刷 / PDF保存</button>
+      <button type="button" class="btn-primary" onclick="printResults()">対戦成績を印刷 / PDF保存</button>
     </div>
     <div class="section no-print" style="margin-top:16px">
       <h2>大会報告書</h2>
@@ -175,7 +175,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
         <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">申し送り事項</label>
         <textarea id="rep-note" placeholder="特になし" style="width:100%;height:60px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical"></textarea>
       </div>
-      <button class="btn-primary" id="downloadReportBtn">報告書を印刷 / PDF保存</button>
+      <button type="button" class="btn-primary" id="downloadReportBtn">報告書を印刷 / PDF保存</button>
     </div>
   </div>
 </div>

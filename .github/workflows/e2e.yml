@@ -38,9 +38,7 @@ jobs:
       - name: npm audit（高・致命的脆弱性のみFAIL）
         run: npm audit --audit-level=high
       - name: HTMLバリデーション（index.html / shogi_v4.html）
-        run: |
-          npm install --save-dev html-validate
-          npx html-validate index.html shogi_v4.html || true
+        run: npx html-validate index.html shogi_v4.html
       - name: Secrets検出（APIキー・パスワードのコミット漏れ）
         uses: trufflesecurity/trufflehog@main
         with:
