@@ -454,6 +454,47 @@ console.log('[テスト4] 削除クラッシュ非再現（開始後・過去対
   }
 }
 
+// ----------------------------------------------------------------
+// テスト5: 三すくみ — A・B・C 同勝数で直接対決が循環しても calcFinal はクラッシュせず順位は permutation
+// ----------------------------------------------------------------
+console.log('');
+console.log('[テスト5] 三すくみ順位 (A→B→C→A 循環)');
+{
+  // 3 人で総当たり: 全員 1勝1敗
+  // p1 が p2 に勝、p2 が p3 に勝、p3 が p1 に勝 → サイクル
+  // A=B=C 全員同じ。直接対決は循環でソート関数は推移性を満たさないが、結果は permutation を返すべき
+  const state = {
+    players:{A:[
+      {id:'p1',name:'A',cls:'A',member:'member',grade:'ippan'},
+      {id:'p2',name:'B',cls:'A',member:'member',grade:'ippan'},
+      {id:'p3',name:'C',cls:'A',member:'member',grade:'ippan'}
+    ], B:[]},
+    rounds:3,
+    pairings:{A:[], B:[]},
+    results:{A:[
+      [{p1:'p1',p2:'p2',winner:'p1'}],
+      [{p1:'p2',p2:'p3',winner:'p2'}],
+      [{p1:'p3',p2:'p1',winner:'p3'}]
+    ], B:[]},
+    started:true
+  };
+  const {api} = makeSandbox(jsCode);
+  api.setState(deepClone(state));
+  let crashed=false; let result=null;
+  try{ result = api.calcFinal('A'); }catch(e){ crashed=true; console.log('      例外: '+e.message); }
+  if(crashed){ ng('5: calcFinal が三すくみでクラッシュ'); }
+  else if(!Array.isArray(result) || result.length!==3){
+    ng('5: 戻り値長さ異常', 'len='+(result && result.length));
+  } else {
+    const ids = result.map(function(r){return r.p.id;}).sort();
+    if(ids[0]==='p1' && ids[1]==='p2' && ids[2]==='p3'){
+      ok('5: 三すくみで calcFinal は3人 permutation を返す ('+result.map(function(r){return r.p.name;}).join('→')+')');
+    } else {
+      ng('5: 3人が揃っていない', JSON.stringify(ids));
+    }
+  }
+}
+
 console.log('');
 console.log('=== 結果: PASS='+pass+', FAIL='+fail+' ===');
 process.exit(fail===0 ? 0 : 1);

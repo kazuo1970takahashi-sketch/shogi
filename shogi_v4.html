@@ -312,18 +312,21 @@ function normalizeState(raw){
 
 function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}catch(e){notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります。JSONバックアップを保存してください。');}}
 function load(){
-  try{
-    var d=localStorage.getItem(STORAGE_KEY);
-    if(!d){
-      for(var i=0;i<LEGACY_STORAGE_KEYS.length;i++){
-        d=localStorage.getItem(LEGACY_STORAGE_KEYS[i]);
-        if(d)break;
-      }
+  // 現行キー → 旧キーの順に試行。各 key は parse 失敗時に次の key にフォールバック。
+  var keys=[STORAGE_KEY].concat(LEGACY_STORAGE_KEYS);
+  for(var i=0;i<keys.length;i++){
+    var d=null;
+    try{d=localStorage.getItem(keys[i]);}catch(e){continue;}
+    if(!d)continue;
+    try{
+      state=normalizeState(JSON.parse(d));
+      return;
+    }catch(e){
+      // この key の JSON は壊れている → 次の key を試す
     }
-    if(d)state=normalizeState(JSON.parse(d));
-  }catch(e){
-    state=normalizeState(state);
   }
+  // すべての key が空 or 壊れている → 初期 state を normalize
+  state=normalizeState(state);
 }
 
 // ============================================================

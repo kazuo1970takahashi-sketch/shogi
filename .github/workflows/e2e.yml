@@ -19,7 +19,8 @@ jobs:
         run: |
           set -o pipefail
           OUT=$(bash test/run_tests.sh shogi_v4.html | tee /dev/stderr)
-          echo "$OUT" | grep -q "PASS=48, FAIL=0" || { echo "::error::run_tests.sh did not report PASS=48 FAIL=0"; exit 1; }
+          # FAIL は 0 必須。PASS は今後増えるので "FAIL=0" のみゲート
+          echo "$OUT" | grep -qE "PASS=[0-9]+, FAIL=0" || { echo "::error::run_tests.sh did not report FAIL=0"; exit 1; }
 
   security-scan:
     name: Security Scan

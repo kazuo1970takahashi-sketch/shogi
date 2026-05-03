@@ -182,5 +182,129 @@ for (const tc of testCases) {
     fail++;
   }
 }
+// ============================================================
+// T02: localStorage フォールバック・sanitizeMatch テスト
+// ============================================================
+
+// localStorage に値を仕込んで initApp() を実行し、最終的な state を取得
+function runInitAppFromLocalStorage(jsCode, lsData) {
+  const ctx = makeContext(null);
+  for (const k in lsData) ctx.localStorage._[k] = lsData[k];
+  const fn = new Function(
+    'document', 'window', 'localStorage', 'alert', 'confirm', 'prompt',
+    'FileReader', 'Blob', 'URL',
+    `${jsCode}
+     initApp();
+     return state;`
+  );
+  return fn(ctx.document, ctx.window, ctx.localStorage,
+    () => {}, () => true, () => null,
+    function(){}, function(){},
+    {createObjectURL: () => '', revokeObjectURL: () => {}});
+}
+
+// rawState を normalizeState に通し、sanitize 後の状態と calcFinal 例外有無を返す
+function runNormalizeAndCalcFinal(jsCode, rawState) {
+  const ctx = makeContext(null);
+  const fn = new Function(
+    'document', 'window', 'localStorage', 'alert', 'confirm', 'prompt',
+    'FileReader', 'Blob', 'URL', 'rawState',
+    `${jsCode}
+     var normalized = normalizeState(rawState);
+     state = normalized;
+     var crashed = false;
+     var err = null;
+     try { calcFinal('A'); } catch(e) { crashed = true; err = String(e.message || e); }
+     return { state: normalized, crashed: crashed, err: err };`
+  );
+  return fn(ctx.document, ctx.window, ctx.localStorage,
+    () => {}, () => true, () => null,
+    function(){}, function(){},
+    {createObjectURL: () => '', revokeObjectURL: () => {}}, rawState);
+}
+
+console.log('\n--- T02: localStorage フォールバック・sanitizeMatch ---');
+
+// シナリオ1: shogi_v4 が壊れたJSON、shogi_v3 が正常 → v3 のデータで initApp 成功
+try {
+  const v3Data = JSON.stringify({
+    players: { A: [{ id: 'v3p1', name: 'V3プレイヤー', cls: 'A', member: 'member', grade: 'ippan' }], B: [] },
+    rounds: 4, pairings: { A: [], B: [] }, results: { A: [], B: [] }, started: false
+  });
+  const result = runInitAppFromLocalStorage(js, {
+    shogi_v4: '{ this is broken json',
+    shogi_v3: v3Data
+  });
+  if (result.players.A.length === 1 && result.players.A[0].name === 'V3プレイヤー') {
+    console.log('  ✓ シナリオ1: v4破損→v3正常 で v3データロード'); pass++;
+  } else {
+    console.log('  ✗ シナリオ1: v3 にフォールバックされていない', JSON.stringify(result.players.A));
+    fail++;
+  }
+} catch (e) {
+  console.log('  ✗ シナリオ1: 実行エラー -', e.message.substring(0, 200));
+  fail++;
+}
+
+// シナリオ2: shogi_v4・shogi_v3 両方が壊れている → 初期state(空・未開始)
+try {
+  const result = runInitAppFromLocalStorage(js, {
+    shogi_v4: '{{{ totally broken',
+    shogi_v3: '~~~ also broken'
+  });
+  if (result.players.A.length === 0 && result.players.B.length === 0 && result.started === false) {
+    console.log('  ✓ シナリオ2: 両方破損→初期state'); pass++;
+  } else {
+    console.log('  ✗ シナリオ2: 初期stateになっていない', 'A=', result.players.A.length, 'B=', result.players.B.length, 'started=', result.started);
+    fail++;
+  }
+} catch (e) {
+  console.log('  ✗ シナリオ2: 実行エラー -', e.message.substring(0, 200));
+  fail++;
+}
+
+// シナリオ3: 不明なplayer idを含む pairings/results を normalizeState に渡す → sanitizeMatchで除去、calcFinalがクラッシュしない
+try {
+  const rawState = {
+    players: { A: [
+      { id: 'p1', name: '実在A', cls: 'A', member: 'member', grade: 'ippan' },
+      { id: 'p2', name: '実在B', cls: 'A', member: 'member', grade: 'ippan' }
+    ], B: [] },
+    rounds: 4,
+    // pairings に未登録の id 'pX', 'pY' を混入
+    pairings: { A: [
+      { p1: 'pX', p2: 'pY', winner: 'pX' },
+      { p1: 'p1', p2: 'pZ', winner: 'pZ' }
+    ], B: [] },
+    // results にも未登録 id を混入。winner も p1/p2 と無関係なケース
+    results: { A: [
+      [
+        { p1: 'pA', p2: 'pB', winner: 'pA' },
+        { p1: 'p1', p2: 'p2', winner: 'pBOGUS' }
+      ]
+    ], B: [] },
+    started: true
+  };
+  const result = runNormalizeAndCalcFinal(js, rawState);
+  // sanitizeMatch でpairings/resultsの不正エントリは除去される
+  const okPairings = result.state.pairings.A.length === 0;
+  const r0 = result.state.results.A[0] || [];
+  // r0 内: pA/pB は除去、p1/p2 は残るが winner は pBOGUS で null 化
+  const okResults = r0.length === 1 && r0[0].p1 === 'p1' && r0[0].p2 === 'p2' && r0[0].winner === null;
+  const okNoCrash = !result.crashed;
+  if (okPairings && okResults && okNoCrash) {
+    console.log('  ✓ シナリオ3: sanitizeMatch で不正id除去・calcFinal非クラッシュ'); pass++;
+  } else {
+    console.log('  ✗ シナリオ3: sanitize結果が想定外',
+      'pairings=', JSON.stringify(result.state.pairings.A),
+      'results[0]=', JSON.stringify(r0),
+      'crashed=', result.crashed, 'err=', result.err);
+    fail++;
+  }
+} catch (e) {
+  console.log('  ✗ シナリオ3: 実行エラー -', e.message.substring(0, 200));
+  fail++;
+}
+
 console.log(`\n結果: PASS=${pass}, FAIL=${fail}`);
 process.exit(fail === 0 ? 0 : 1);

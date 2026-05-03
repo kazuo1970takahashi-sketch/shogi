@@ -230,7 +230,7 @@ with open('$f') as fp: json.load(fp)
 done
 
 # ============================================
-# ペアリング性質テスト（P1-2修正検証）
+# ペアリング性質テスト（P1-2修正検証 + T01 三すくみ）
 # ============================================
 echo ""
 echo "【ペアリング性質テスト】"
@@ -243,6 +243,22 @@ if [ -f "$SCRIPT_DIR/test_pairing_properties.js" ]; then
   fi
 else
   warn "test_pairing_properties.js が見つからない"
+fi
+
+# ============================================
+# タブ選択 + localStorageフォールバック + sanitizeMatch テスト
+# ============================================
+echo ""
+echo "【タブ選択 + T02 localStorageフォールバック】"
+if [ -f "$SCRIPT_DIR/test_tab_selection.js" ]; then
+  if node "$SCRIPT_DIR/test_tab_selection.js" "$TARGET" > /tmp/tab_test_out.log 2>&1; then
+    ok "タブ選択 + T02 フォールバック 全PASS"
+  else
+    ng "タブ選択 + T02 フォールバック 失敗"
+    cat /tmp/tab_test_out.log
+  fi
+else
+  warn "test_tab_selection.js が見つからない"
 fi
 
 # ============================================
