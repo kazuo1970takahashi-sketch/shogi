@@ -352,6 +352,8 @@ function load(){
 
 var BRANCH_MASTER_KEY='shogi_branch_master';
 var BRANCH_MASTER_SCHEMA_VERSION=1;
+// 仕様書 v6 §3.7 / Codex Minor #2: 同一セッション内で crypto 不在通知を1度だけ出すためのフラグ
+var _phaseA2State={cryptoNotificationShown:false};
 
 function createEmptyBranchMaster(){
   return {schema_version:BRANCH_MASTER_SCHEMA_VERSION,updated_at:new Date().toISOString(),members:[]};
@@ -637,6 +639,15 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
             attachMemberIdToPlayer(p,member);
           }catch(e){
             if(typeof console!=='undefined'&&console.warn)console.warn('member_id 生成失敗。スキップ',e);
+            // 仕様書 v6 §3.7 / Codex Minor #2: crypto.randomUUID 不在の専用通知
+            // （同一セッション内では1度のみ。過剰繰返し防止）
+            var emsg=(e&&e.message)?String(e.message):'';
+            if(emsg.indexOf('crypto.randomUUID')>=0&&!_phaseA2State.cryptoNotificationShown){
+              if(typeof showMsg==='function'){
+                showMsg('お使いのブラウザは古いため、参加者の自動登録ができませんでした。ブラウザ更新を推奨します。','warn');
+              }
+              _phaseA2State.cryptoNotificationShown=true;
+            }
             continue;
           }
         }
@@ -1032,18 +1043,25 @@ function renderMasterTab(){
 // MIGRATION WIZARD (F9): 過去大会JSONを支部マスタに統合
 // ============================================================
 
-function buildMigrationModalHtml(){
-  return '<div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-width:90vw;max-height:85vh;overflow-y:auto">'
-    +'<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">過去大会の統合</h3>'
-    +'<p style="font-size:13px;color:#555;line-height:1.6;margin-bottom:12px">過去の大会JSONファイルを読み込んで、支部マスタを構築します。複数選択できます。</p>'
-    +'<div style="margin-bottom:12px">'
-    +'<input type="file" id="mig-files" accept=".json" multiple style="font-size:13px;width:100%">'
-    +'</div>'
-    +'<div id="mig-status" style="font-size:13px;color:#555;margin-bottom:12px;min-height:1.5em;line-height:1.6"></div>'
-    +'<div style="display:flex;gap:8px;justify-content:flex-end">'
-    +'<button type="button" id="mig-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">閉じる</button>'
-    +'<button type="button" class="btn-primary" id="mig-run">統合を実行</button>'
-    +'</div></div>';
+// 仕様書 v6 §3.6 / Codex Minor #1: 破損マスタ状態でマイグレ起動時に警告を表示。
+// opts.corrupted=true のとき、モーダル冒頭に警告バナーを描画。
+function buildMigrationModalHtml(opts){
+  var corrupted=!!(opts&&opts.corrupted);
+  var html='<div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-width:90vw;max-height:85vh;overflow-y:auto">';
+  if(corrupted){
+    html+='<div class="mig-corrupt-warning" style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#92400e;line-height:1.5">⚠️ 既存の支部マスタが破損していました。このマイグレーションで再構築されます（既存マスタは破棄されます）。</div>';
+  }
+  html+='<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">過去大会の統合</h3>';
+  html+='<p style="font-size:13px;color:#555;line-height:1.6;margin-bottom:12px">過去の大会JSONファイルを読み込んで、支部マスタを構築します。複数選択できます。</p>';
+  html+='<div style="margin-bottom:12px">';
+  html+='<input type="file" id="mig-files" accept=".json" multiple style="font-size:13px;width:100%">';
+  html+='</div>';
+  html+='<div id="mig-status" style="font-size:13px;color:#555;margin-bottom:12px;min-height:1.5em;line-height:1.6"></div>';
+  html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
+  html+='<button type="button" id="mig-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">閉じる</button>';
+  html+='<button type="button" class="btn-primary" id="mig-run">統合を実行</button>';
+  html+='</div></div>';
+  return html;
 }
 
 function bindMigrationModalEvents(){
@@ -1076,10 +1094,13 @@ function bindMigrationModalEvents(){
 function openMigrationWizard(){
   var existing=document.getElementById('mig-modal');
   if(existing)existing.remove();
+  // 仕様書 v6 §3.6 / Codex Minor #1: 破損マスタを検出したらモーダルに警告を表示
+  var master=loadBranchMaster();
+  var corrupted=!!(master&&master._loaded_with_corruption);
   var modal=document.createElement('div');
   modal.id='mig-modal';
   modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML=buildMigrationModalHtml();
+  modal.innerHTML=buildMigrationModalHtml({corrupted:corrupted});
   document.body.appendChild(modal);
   bindMigrationModalEvents();
 }

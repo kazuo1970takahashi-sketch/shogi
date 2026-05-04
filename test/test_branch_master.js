@@ -84,6 +84,8 @@ function loadEnv(path, opts) {
        buildPastParticipantsPanelHtml:buildPastParticipantsPanelHtml,
        buildYomiInputModalHtml:buildYomiInputModalHtml,
        applyYomiInputsToMaster:applyYomiInputsToMaster,
+       buildMigrationModalHtml:buildMigrationModalHtml,
+       _phaseA2State:_phaseA2State,
        isValidYmd:isValidYmd,
        todayYmd:todayYmd,
        normalizeBranchMaster:normalizeBranchMaster,
@@ -917,6 +919,62 @@ const env = loadEnv(targetPath);
 
   // ChatGPT M1 反映: yomi 空が0名のときダイアログの代わりに直接追加されること（条件分岐の基本確認）
   // 実フロー（DOM 含む）は addSelectedPastParticipants だが、テストでは applyYomiInputsToMaster の境界を確認
+}
+
+// ============================================================
+// Phase A-2 §3.6 / §3.7: Codex Minor #1 / #2
+// ============================================================
+
+// Minor #1: 破損マスタ警告
+{
+  var htmlNormal=env.buildMigrationModalHtml();
+  assert(htmlNormal.indexOf('既存の支部マスタが破損していました')<0,'Minor #1: 通常マスタでマイグレ起動 → 警告なし');
+  assert(htmlNormal.indexOf('過去大会の統合')>=0,'Minor #1: 通常マスタで本来のヘッダーは表示');
+
+  var htmlOptsFalse=env.buildMigrationModalHtml({corrupted:false});
+  assert(htmlOptsFalse.indexOf('既存の支部マスタが破損していました')<0,'Minor #1: corrupted:false でも警告なし');
+
+  var htmlCorrupted=env.buildMigrationModalHtml({corrupted:true});
+  assert(htmlCorrupted.indexOf('既存の支部マスタが破損していました')>=0,'Minor #1: 破損マスタ → 警告バナー表示');
+  assert(htmlCorrupted.indexOf('再構築されます')>=0,'Minor #1: 警告に再構築の説明を含む');
+  assert(htmlCorrupted.indexOf('mig-corrupt-warning')>=0,'Minor #1: 警告バナーに識別 class が付く');
+  // 警告は本来のヘッダーより前に出る（順序確認）
+  var idxWarn=htmlCorrupted.indexOf('既存の支部マスタが破損していました');
+  var idxHead=htmlCorrupted.indexOf('過去大会の統合');
+  assert(idxWarn>=0&&idxHead>=0&&idxWarn<idxHead,'Minor #1: 警告がヘッダーより前に出る');
+}
+
+// Minor #2: crypto 不在通知（noCrypto 環境で env をロード）
+{
+  const envNc = loadEnv(targetPath, {noCrypto:true});
+  // 初期状態
+  assert(envNc._phaseA2State.cryptoNotificationShown===false,'Minor #2: 初期状態で通知フラグ false');
+
+  // state を最小構成でセット（参加者1名）
+  envNc._setState({
+    tournament_id:'',
+    players:{A:[{id:'p1',name:'山田太郎',cls:'A',member:'member',grade:'ippan'}],B:[]},
+    report:{}
+  });
+
+  // 1度目の syncBranchMasterOnSave → crypto throw を内部 catch、通知フラグ true
+  envNc.syncBranchMasterOnSave();
+  assert(envNc._phaseA2State.cryptoNotificationShown===true,'Minor #2: 1回目の crypto エラーで通知フラグが true になる');
+
+  // 2度目の呼び出し → フラグは true のまま（過剰繰返し防止）
+  envNc.syncBranchMasterOnSave();
+  assert(envNc._phaseA2State.cryptoNotificationShown===true,'Minor #2: 2回目以降も true 維持（過剰繰返し防止）');
+
+  // crypto 利用可能な環境では通知フラグは初期 false のまま
+  const envOk = loadEnv(targetPath);
+  assert(envOk._phaseA2State.cryptoNotificationShown===false,'Minor #2: crypto 正常環境で初期状態 false');
+  envOk._setState({
+    tournament_id:'',
+    players:{A:[{id:'p1',name:'山田太郎',cls:'A',member:'member',grade:'ippan'}],B:[]},
+    report:{}
+  });
+  envOk.syncBranchMasterOnSave();
+  assert(envOk._phaseA2State.cryptoNotificationShown===false,'Minor #2: crypto 正常環境では通知フラグ false のまま');
 }
 
 // 結果出力
