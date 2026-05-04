@@ -78,6 +78,8 @@ function loadEnv(path, opts) {
        createEmptyBranchMaster:createEmptyBranchMaster,
        generateMemberId:generateMemberId,
        normalizePersonName:normalizePersonName,
+       normalizeYomi:normalizeYomi,
+       getYomiInitialRow:getYomiInitialRow,
        isValidYmd:isValidYmd,
        todayYmd:todayYmd,
        normalizeBranchMaster:normalizeBranchMaster,
@@ -598,6 +600,86 @@ const env = loadEnv(targetPath);
   assert(env.isValidYmd(null)===false,'isValidYmd: null → false');
   assert(env.isValidYmd(undefined)===false,'isValidYmd: undefined → false');
   assert(env.isValidYmd(20260415)===false,'isValidYmd: 数値 → false');
+}
+
+// ============================================================
+// Phase A-2 §3.4 / §3.5: normalizeYomi / getYomiInitialRow
+// ============================================================
+
+// normalizeYomi
+{
+  // カタカナ → ひらがな変換
+  assertEq(env.normalizeYomi('ヤマダ'),'やまだ','normalizeYomi: 全角カタカナ → ひらがな');
+  assertEq(env.normalizeYomi('サトウタロウ'),'さとうたろう','normalizeYomi: 複数文字カタカナ → ひらがな');
+
+  // 前後空白除去
+  assertEq(env.normalizeYomi('  たろう  '),'たろう','normalizeYomi: 前後半角空白除去');
+  assertEq(env.normalizeYomi('　たろう　'),'たろう','normalizeYomi: 前後全角空白除去');
+
+  // 全角・半角空白の削除（途中含めて削除）
+  assertEq(env.normalizeYomi('やまだ たろう'),'やまだたろう','normalizeYomi: 途中半角空白削除');
+  assertEq(env.normalizeYomi('やまだ　たろう'),'やまだたろう','normalizeYomi: 途中全角空白削除');
+
+  // 長音符（ー）保持
+  assertEq(env.normalizeYomi('らーめん'),'らーめん','normalizeYomi: 長音符保持');
+  assertEq(env.normalizeYomi('ラーメン'),'らーめん','normalizeYomi: カタカナ＋長音符 → ひらがな＋長音符');
+
+  // 小書き文字保持
+  assertEq(env.normalizeYomi('しゃーろっく'),'しゃーろっく','normalizeYomi: 小書き文字保持（ゃ・っ）');
+
+  // 空文字・null・undefined・非文字列 → 空文字
+  assertEq(env.normalizeYomi(''),'','normalizeYomi: 空文字は空文字');
+  assertEq(env.normalizeYomi(null),'','normalizeYomi: null は空文字');
+  assertEq(env.normalizeYomi(undefined),'','normalizeYomi: undefined は空文字');
+  assertEq(env.normalizeYomi(123),'','normalizeYomi: 数値は空文字');
+  assertEq(env.normalizeYomi({}),'','normalizeYomi: オブジェクトは空文字');
+
+  // ヴ → ゔ、ヵ → ゕ、ヶ → ゖ
+  assertEq(env.normalizeYomi('ヴァイオリン'),'ゔぁいおりん','normalizeYomi: ヴ → ゔ');
+  assertEq(env.normalizeYomi('ヵヶ'),'ゕゖ','normalizeYomi: ヵ → ゕ、ヶ → ゖ');
+
+  // 半角カナはそのまま（A-2 非対応明記、ChatGPT M2 反映）
+  assertEq(env.normalizeYomi('ｻﾄｳ'),'ｻﾄｳ','normalizeYomi: 半角カナは変換しない（A-2 非対応）');
+}
+
+// getYomiInitialRow
+{
+  // 各行の判定（清音）
+  assertEq(env.getYomiInitialRow('あい'),'a','getYomiInitialRow: あ → a 行');
+  assertEq(env.getYomiInitialRow('かき'),'ka','getYomiInitialRow: か → ka 行');
+  assertEq(env.getYomiInitialRow('さし'),'sa','getYomiInitialRow: さ → sa 行');
+  assertEq(env.getYomiInitialRow('たち'),'ta','getYomiInitialRow: た → ta 行');
+  assertEq(env.getYomiInitialRow('なに'),'na','getYomiInitialRow: な → na 行');
+  assertEq(env.getYomiInitialRow('はひ'),'ha','getYomiInitialRow: は → ha 行');
+  assertEq(env.getYomiInitialRow('まみ'),'ma','getYomiInitialRow: ま → ma 行');
+  assertEq(env.getYomiInitialRow('やゆ'),'ya','getYomiInitialRow: や → ya 行');
+  assertEq(env.getYomiInitialRow('らり'),'ra','getYomiInitialRow: ら → ra 行');
+  assertEq(env.getYomiInitialRow('わを'),'wa','getYomiInitialRow: わ → wa 行');
+
+  // 濁音・半濁音は同行
+  assertEq(env.getYomiInitialRow('がっこう'),'ka','getYomiInitialRow: が → ka 行（濁音）');
+  assertEq(env.getYomiInitialRow('ざるそば'),'sa','getYomiInitialRow: ざ → sa 行（濁音）');
+  assertEq(env.getYomiInitialRow('だるま'),'ta','getYomiInitialRow: だ → ta 行（濁音）');
+  assertEq(env.getYomiInitialRow('ばんごう'),'ha','getYomiInitialRow: ば → ha 行（濁音）');
+  assertEq(env.getYomiInitialRow('ぱんだ'),'ha','getYomiInitialRow: ぱ → ha 行（半濁音）');
+
+  // 小書き文字も同行
+  assertEq(env.getYomiInitialRow('ぁ'),'a','getYomiInitialRow: ぁ → a 行（小書き）');
+  assertEq(env.getYomiInitialRow('ょ'),'ya','getYomiInitialRow: ょ → ya 行（小書き）');
+  assertEq(env.getYomiInitialRow('っ'),'ta','getYomiInitialRow: っ → ta 行（小書き）');
+
+  // 「他」判定
+  assertEq(env.getYomiInitialRow(''),'other','getYomiInitialRow: 空文字 → other');
+  assertEq(env.getYomiInitialRow(null),'other','getYomiInitialRow: null → other');
+  assertEq(env.getYomiInitialRow(undefined),'other','getYomiInitialRow: undefined → other');
+  assertEq(env.getYomiInitialRow('ゔ'),'other','getYomiInitialRow: ゔ（ヴ由来）→ other');
+  assertEq(env.getYomiInitialRow('ゕ'),'other','getYomiInitialRow: ゕ（ヵ由来）→ other');
+  assertEq(env.getYomiInitialRow('ゖ'),'other','getYomiInitialRow: ゖ（ヶ由来）→ other');
+  assertEq(env.getYomiInitialRow('ｻﾄｳ'),'other','getYomiInitialRow: 半角カナ → other（A-2 非対応）');
+  assertEq(env.getYomiInitialRow('123'),'other','getYomiInitialRow: 数字 → other');
+  assertEq(env.getYomiInitialRow('Smith'),'other','getYomiInitialRow: アルファベット → other');
+  assertEq(env.getYomiInitialRow('!?'),'other','getYomiInitialRow: 記号 → other');
+  assertEq(env.getYomiInitialRow('ーらん'),'other','getYomiInitialRow: 先頭長音符 → other');
 }
 
 // 結果出力

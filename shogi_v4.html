@@ -399,6 +399,42 @@ function normalizePersonName(name){
   return name.replace(/　/g,' ').replace(/\s+/g,' ').replace(/^\s+|\s+$/g,'');
 }
 
+// 仕様書 v6 §3.4: ふりがな正規化（A-2 ふりがな3点セット用）
+// - カタカナ → ひらがな統一（[ァ-ヶ] = U+30A1〜U+30F6 を 0x60 減算）
+// - 前後空白除去 + 途中の半角・全角空白も削除（ふりがな用途のため）
+// - 長音符（ー）/ 小書き文字は保持
+// - 半角カナ（U+FF66-FF9F）は A-2 非対応（変換せず → getYomiInitialRow で other 扱い）
+// - undefined / null / 非文字列でも安全（ChatGPT D 反映）
+function normalizeYomi(yomi){
+  if(typeof yomi!=='string')return '';
+  return yomi
+    .replace(/^\s+|\s+$/g,'')
+    .replace(/[ァ-ヶ]/g,function(m){return String.fromCharCode(m.charCodeAt(0)-0x60);})
+    .replace(/[\s　]/g,'');
+}
+
+// 仕様書 v6 §3.5: 50音タブ用の行判定
+// 入力は normalizeYomi 済み前提（ひらがな正規化済み）
+// 12分類: a / ka / sa / ta / na / ha / ma / ya / ra / wa / other
+// - 濁音・半濁音は同行（が→か行、ぱ→は行）
+// - 小書き文字も同行（ぁ→あ行、ょ→や行、っ→た行）
+// - ゔ（ヴ由来）/ ゕ（ヵ由来）/ ゖ（ヶ由来）/ 半角カナ / 数字 / 記号 / 先頭長音符はすべて other
+function getYomiInitialRow(yomi){
+  if(!yomi)return 'other';
+  var first=yomi.charAt(0);
+  if('あいうえおぁぃぅぇぉ'.indexOf(first)>=0)return 'a';
+  if('かきくけこがぎぐげご'.indexOf(first)>=0)return 'ka';
+  if('さしすせそざじずぜぞ'.indexOf(first)>=0)return 'sa';
+  if('たちつてとだぢづでどっ'.indexOf(first)>=0)return 'ta';
+  if('なにぬねの'.indexOf(first)>=0)return 'na';
+  if('はひふへほばびぶべぼぱぴぷぺぽ'.indexOf(first)>=0)return 'ha';
+  if('まみむめも'.indexOf(first)>=0)return 'ma';
+  if('やゆよゃゅょ'.indexOf(first)>=0)return 'ya';
+  if('らりるれろ'.indexOf(first)>=0)return 'ra';
+  if('わをん'.indexOf(first)>=0)return 'wa';
+  return 'other';
+}
+
 function normalizeBranchMaster(raw){
   // 仕様書 3.5: 破損データを与えられても落ちない／既存運営を止めない
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return createEmptyBranchMaster();
