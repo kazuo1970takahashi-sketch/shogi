@@ -571,6 +571,35 @@ const env = loadEnv(targetPath);
   assert(!createdInvalid,'MF#4: crypto 不在では createMemberFromParticipant も throw（不正 m_ ID 非保存）');
 }
 
+// ============================================================
+// Codex Minor: isValidYmd の実在検証強化（仕様書 v5 §3.5）
+// ============================================================
+{
+  // 形式上は valid だが実在しない日付
+  assert(env.isValidYmd('2026-99-99')===false,'isValidYmd: 2026-99-99 → false（実在しない月日）');
+  assert(env.isValidYmd('2026-02-30')===false,'isValidYmd: 2026-02-30 → false（2月30日は実在しない）');
+  assert(env.isValidYmd('2026-13-01')===false,'isValidYmd: 2026-13-01 → false（13月は実在しない）');
+  assert(env.isValidYmd('2026-04-31')===false,'isValidYmd: 2026-04-31 → false（4月31日は実在しない）');
+
+  // うるう年判定
+  assert(env.isValidYmd('2026-02-29')===false,'isValidYmd: 2026-02-29 → false（2026 はうるう年でない）');
+  assert(env.isValidYmd('2024-02-29')===true,'isValidYmd: 2024-02-29 → true（2024 はうるう年）');
+  assert(env.isValidYmd('2000-02-29')===true,'isValidYmd: 2000-02-29 → true（400年ルールでうるう年）');
+  assert(env.isValidYmd('1900-02-29')===false,'isValidYmd: 1900-02-29 → false（100年ルールでうるう年でない）');
+
+  // 正常系
+  assert(env.isValidYmd('2026-04-15')===true,'isValidYmd: 2026-04-15 → true（正常）');
+  assert(env.isValidYmd('2026-01-01')===true,'isValidYmd: 2026-01-01 → true（正常）');
+  assert(env.isValidYmd('2026-12-31')===true,'isValidYmd: 2026-12-31 → true（正常）');
+
+  // 形式不正・型不正
+  assert(env.isValidYmd('2026/04/15')===false,'isValidYmd: スラッシュ区切り → false');
+  assert(env.isValidYmd('not a date')===false,'isValidYmd: 文字列でも形式違反 → false');
+  assert(env.isValidYmd(null)===false,'isValidYmd: null → false');
+  assert(env.isValidYmd(undefined)===false,'isValidYmd: undefined → false');
+  assert(env.isValidYmd(20260415)===false,'isValidYmd: 数値 → false');
+}
+
 // 結果出力
 if (fail===0) {
   console.log('  支部マスタ機能テスト: PASS '+pass+'件 / FAIL 0件');

@@ -357,7 +357,15 @@ function createEmptyBranchMaster(){
   return {schema_version:BRANCH_MASTER_SCHEMA_VERSION,updated_at:new Date().toISOString(),members:[]};
 }
 
-function isValidYmd(s){return typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s);}
+function isValidYmd(s){
+  // 仕様書 v5 §3.5 / Codex Minor: 形式チェックに加え Date オブジェクトで実在検証
+  if(typeof s!=='string')return false;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;
+  var d=new Date(s+'T00:00:00Z');
+  if(isNaN(d.getTime()))return false;
+  // toISOString が同じ日付を返すか（例: '2026-02-30' は '2026-03-02' に補正される）
+  return d.toISOString().slice(0,10)===s;
+}
 
 function todayYmd(){
   var d=new Date();
