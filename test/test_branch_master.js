@@ -82,6 +82,8 @@ function loadEnv(path, opts) {
        getYomiInitialRow:getYomiInitialRow,
        matchesPastParticipantQuery:matchesPastParticipantQuery,
        buildPastParticipantsPanelHtml:buildPastParticipantsPanelHtml,
+       buildYomiInputModalHtml:buildYomiInputModalHtml,
+       applyYomiInputsToMaster:applyYomiInputsToMaster,
        isValidYmd:isValidYmd,
        todayYmd:todayYmd,
        normalizeBranchMaster:normalizeBranchMaster,
@@ -834,6 +836,87 @@ const env = loadEnv(targetPath);
   // タブ未指定時のデフォルト = all
   var htmlDefault=env.buildPastParticipantsPanelHtml(master,'');
   assert(htmlDefault.indexOf('class="pp-yomi-tab active" data-row="all"')>=0,'F6: yomiRow 未指定はデフォルト all');
+}
+
+// ============================================================
+// Phase A-2 §3.1 / §4.2: F4 ふりがな入力ダイアログ
+// ============================================================
+
+{
+  function mkM(id,name,yomi){
+    return {id:id,name:name,yomi:yomi||'',last_class:null,last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:1,tournament_ids:[],deleted:false,deleted_at:null,note:''};
+  }
+
+  // buildYomiInputModalHtml の構造
+  var members=[mkM('m_a','山田太郎',''),mkM('m_b','佐藤次郎','')];
+  var dlgHtml=env.buildYomiInputModalHtml(members);
+
+  // 各 member の入力欄
+  assert(dlgHtml.indexOf('山田太郎')>=0,'F4: ダイアログに山田太郎が表示');
+  assert(dlgHtml.indexOf('佐藤次郎')>=0,'F4: ダイアログに佐藤次郎が表示');
+  assert(dlgHtml.indexOf('data-mid="m_a"')>=0,'F4: data-mid 属性が member id を保持');
+  assert(dlgHtml.indexOf('data-mid="m_b"')>=0,'F4: data-mid 属性が member id を保持');
+  assert(dlgHtml.indexOf('inputmode="kana"')>=0,'F4: inputmode=kana でスマホかな入力');
+
+  // ボタン
+  assert(dlgHtml.indexOf('id="yomi-cancel"')>=0,'F4: キャンセルボタン存在');
+  assert(dlgHtml.indexOf('id="yomi-add"')>=0,'F4: 追加ボタン存在');
+  assert(dlgHtml.indexOf('追加する')>=0,'F4: 追加ボタンの文言');
+  assert(dlgHtml.indexOf('キャンセル')>=0,'F4: キャンセルボタンの文言');
+
+  // ChatGPT M1 反映: 説明強化
+  assert(dlgHtml.indexOf('50音タブ・ふりがな検索で探しやすくなります')>=0,'F4 M1: ダイアログ説明強化文言');
+  assert(dlgHtml.indexOf('空欄のままでも追加できます')>=0,'F4 M1: 空欄追加が可能であることを明示');
+  assert(dlgHtml.indexOf('キャンセルすると、選択した参加者は追加されません')>=0,'F4 M1: キャンセル補足文');
+
+  // applyYomiInputsToMaster
+  // 全員入力済み
+  {
+    var master={schema_version:1,updated_at:'2026-04-01',members:[mkM('m_a','山田太郎',''),mkM('m_b','佐藤次郎',''),mkM('m_c','田中三郎','たなかさぶろう')]};
+    var emptyMs=master.members.slice(0,2);
+    var inputs={'m_a':'やまだたろう','m_b':'サトウジロウ'};
+    var r=env.applyYomiInputsToMaster(master,emptyMs,inputs);
+    assert(r.allEmpty===false,'F4: 全員入力 → allEmpty=false');
+    assertEq(r.updatedCount,2,'F4: 全員入力 → 2名更新');
+    assertEq(master.members[0].yomi,'やまだたろう','F4: m_a の yomi が保存（normalize 後）');
+    assertEq(master.members[1].yomi,'さとうじろう','F4: m_b の yomi が保存（カタカナ→ひらがな）');
+    assertEq(master.members[2].yomi,'たなかさぶろう','F4: 既存 yomi の m_c は変更されない');
+  }
+  // 全員空欄
+  {
+    var master2={schema_version:1,updated_at:'2026-04-01',members:[mkM('m_a','山田太郎',''),mkM('m_b','佐藤次郎','')]};
+    var emptyMs2=master2.members.slice();
+    var inputs2={'m_a':'','m_b':'   '};
+    var r2=env.applyYomiInputsToMaster(master2,emptyMs2,inputs2);
+    assert(r2.allEmpty===true,'F4: 全員空欄 → allEmpty=true');
+    assertEq(r2.updatedCount,0,'F4: 全員空欄 → 0名更新');
+    assertEq(master2.members[0].yomi,'','F4: 空欄なら yomi 空のまま');
+  }
+  // 部分入力
+  {
+    var master3={schema_version:1,updated_at:'2026-04-01',members:[mkM('m_a','A',''),mkM('m_b','B',''),mkM('m_c','C','')]};
+    var emptyMs3=master3.members.slice();
+    var inputs3={'m_a':'えー','m_b':'','m_c':'しー'};
+    var r3=env.applyYomiInputsToMaster(master3,emptyMs3,inputs3);
+    assert(r3.allEmpty===false,'F4: 部分入力 → allEmpty=false');
+    assertEq(r3.updatedCount,2,'F4: 部分入力 → 入力された2名のみ更新');
+    assertEq(master3.members[0].yomi,'えー','F4: 入力ありの m_a は保存');
+    assertEq(master3.members[1].yomi,'','F4: 空欄の m_b は変更なし');
+    assertEq(master3.members[2].yomi,'しー','F4: 入力ありの m_c は保存');
+  }
+  // 不正入力（master/inputs なし等）
+  {
+    var r4=env.applyYomiInputsToMaster(null,[mkM('m_a','A','')],{m_a:'えー'});
+    assert(r4.allEmpty===true,'F4: master null → allEmpty=true');
+    assertEq(r4.updatedCount,0,'F4: master null → 0名更新');
+
+    var master5={schema_version:1,updated_at:'2026-04-01',members:[mkM('m_a','A','')]};
+    var r5=env.applyYomiInputsToMaster(master5,[mkM('m_a','A','')],null);
+    assertEq(r5.updatedCount,0,'F4: inputs null → 0名更新');
+  }
+
+  // ChatGPT M1 反映: yomi 空が0名のときダイアログの代わりに直接追加されること（条件分岐の基本確認）
+  // 実フロー（DOM 含む）は addSelectedPastParticipants だが、テストでは applyYomiInputsToMaster の境界を確認
 }
 
 // 結果出力
