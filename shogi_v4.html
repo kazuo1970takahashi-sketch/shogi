@@ -944,11 +944,14 @@ function showTab(t){
   document.getElementById('pane-reg').style.display=t==='reg'?'block':'none';
   document.getElementById('pane-tournament').style.display=t==='tournament'?'block':'none';
   document.getElementById('pane-result').style.display=t==='result'?'block':'none';
+  var pm=document.getElementById('pane-master');if(pm)pm.style.display=t==='master'?'block':'none';
   document.getElementById('tab-reg').className='tab'+(t==='reg'?' active':'');
   document.getElementById('tab-tournament').className='tab'+(t==='tournament'?' active':'');
   document.getElementById('tab-result').className='tab'+(t==='result'?' active':'');
+  var tm=document.getElementById('tab-master');if(tm)tm.className='tab'+(t==='master'?' active':'');
   if(t==='result')renderResults();
   if(t==='tournament'){renderTournament('A');renderTournament('B');}
+  if(t==='master')renderMasterTab();
 }
 
 function showMsg(text,type){
@@ -2214,6 +2217,8 @@ function bindTabEvents(){
   document.getElementById('tab-reg').addEventListener('click',function(){showTab('reg');});
   document.getElementById('tab-tournament').addEventListener('click',function(){showTab('tournament');});
   document.getElementById('tab-result').addEventListener('click',function(){showTab('result');});
+  var tm=document.getElementById('tab-master');
+  if(tm)tm.addEventListener('click',function(){showTab('master');});
 }
 
 function populateReportFields(){
