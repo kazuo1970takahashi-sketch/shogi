@@ -89,7 +89,10 @@ function loadEnv(path, opts) {
        deriveTournamentMetaForMigration:deriveTournamentMetaForMigration,
        mergeTournamentParticipantsIntoMaster:mergeTournamentParticipantsIntoMaster,
        normalizeState:normalizeState,
-       _localStorage:localStorage
+       syncBranchMasterOnSave:syncBranchMasterOnSave,
+       _localStorage:localStorage,
+       _setState:function(s){state=s;},
+       _getState:function(){return state;}
      };`
   );
   return fn(ctx.document, ctx.window, ctx.localStorage, ctx.crypto, ()=>{}, ()=>true, ()=>'', function(){}, function(){}, {createObjectURL:()=>'',revokeObjectURL:()=>{}}, console, Promise);
@@ -486,6 +489,58 @@ const env = loadEnv(targetPath);
   assert(!!sato,'MF#2: 別名 participant は新規 member として追加される');
   assert(sato.tournament_ids.indexOf('t_2026_04_15')>=0,'MF#2: 別名 participant の tournament_ids に新 ID 追加');
   assert(state.players.A[1].member_id===sato.id,'MF#2: 別名 participant の同期は継続（member_id 付与）');
+}
+
+// ============================================================
+// Codex MF #3: 破損マスタの saveData 経由保護（仕様書 v5 §3.5）
+// ============================================================
+{
+  // loadBranchMaster は破損 raw に対し _loaded_with_corruption フラグを返す
+  env._localStorage.setItem('shogi_branch_master','{ broken json no good');
+  const origWarn1=console.warn;
+  console.warn=function(){};
+  const m1 = env.loadBranchMaster();
+  console.warn=origWarn1;
+  assert(m1._loaded_with_corruption===true,'MF#3: 破損 raw 読込で _loaded_with_corruption フラグが立つ');
+
+  // saveBranchMaster は永続化時に _loaded_with_corruption を含めない
+  const m2 = env.createEmptyBranchMaster();
+  m2.members.push({id:'m_x',name:'A',yomi:'',last_class:'A',last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:0,tournament_ids:[],deleted:false,deleted_at:null,note:''});
+  m2._loaded_with_corruption=true;  // 仮にフラグが付いていても
+  env.saveBranchMaster(m2);
+  const persisted = JSON.parse(env._localStorage.getItem('shogi_branch_master'));
+  assert(typeof persisted._loaded_with_corruption==='undefined','MF#3: saveBranchMaster は _loaded_with_corruption を永続化対象に含めない');
+
+  // クリーンアップ
+  env._localStorage.removeItem('shogi_branch_master');
+}
+
+// syncBranchMasterOnSave: 破損マスタを上書きしない / save() は継続
+{
+  const env3 = loadEnv(targetPath);
+  // 破損 raw を localStorage にセット
+  env3._localStorage.setItem('shogi_branch_master','{ corrupted master raw');
+  const before = env3._localStorage.getItem('shogi_branch_master');
+  // state を最低限セット（players は空）
+  env3._setState({players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'2026年4月15日',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}});
+  // shogi_v4 キーは事前に空にしておく
+  env3._localStorage.removeItem('shogi_v4');
+
+  const origWarn=console.warn;
+  console.warn=function(){};
+  env3.syncBranchMasterOnSave();
+  console.warn=origWarn;
+
+  const after = env3._localStorage.getItem('shogi_branch_master');
+  assert(before===after,'MF#3: syncBranchMasterOnSave 経由でも破損 raw を上書きしない');
+
+  // save() は呼ばれる（大会JSON保存は継続）→ shogi_v4 キーが書かれている
+  const stateRaw = env3._localStorage.getItem('shogi_v4');
+  assert(typeof stateRaw==='string'&&stateRaw.length>0,'MF#3: 破損マスタ検出時も save() は呼ばれる（大会JSON 保存継続）');
+
+  // クリーンアップ
+  env3._localStorage.removeItem('shogi_branch_master');
+  env3._localStorage.removeItem('shogi_v4');
 }
 
 // 結果出力

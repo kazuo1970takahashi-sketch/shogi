@@ -445,16 +445,25 @@ function loadBranchMaster(){
   try{
     return normalizeBranchMaster(JSON.parse(raw));
   }catch(e){
-    // 破損時は空マスタを返すが、既存 localStorage は触らない（自動上書き禁止）
+    // 仕様書 v5 §3.5 / Codex MF #3: 破損 raw を読んだ場合、空マスタに破損フラグを付与。
+    // 既存 localStorage は自動上書きしない（呼び出し側が saveBranchMaster をスキップする）。
     if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタの読込に失敗。空マスタで継続。既存 localStorage は保持。',e);
-    return createEmptyBranchMaster();
+    var empty=createEmptyBranchMaster();
+    empty._loaded_with_corruption=true;
+    return empty;
   }
 }
 
 function saveBranchMaster(master){
   try{
-    master.updated_at=new Date().toISOString();
-    localStorage.setItem(BRANCH_MASTER_KEY,JSON.stringify(master));
+    // 仕様書 v5 §3.5: _loaded_with_corruption は永続化対象外（clone から除外）
+    var clone={
+      schema_version:master.schema_version,
+      updated_at:new Date().toISOString(),
+      members:master.members
+    };
+    master.updated_at=clone.updated_at;
+    localStorage.setItem(BRANCH_MASTER_KEY,JSON.stringify(clone));
   }catch(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタの保存に失敗。',e);
   }
@@ -1823,6 +1832,14 @@ function getTournamentDateFromReport(r){
 function syncBranchMasterOnSave(){
   try{
     var master=loadBranchMaster();
+    // 仕様書 v5 §3.5 / Codex MF #3: 破損由来の空マスタは保存しない。
+    // 既存 localStorage を保持し、ユーザの再マイグレ・手動修復を待つ。
+    if(master&&master._loaded_with_corruption){
+      if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタが破損しているため自動同期をスキップ（大会JSON保存は継続）');
+      if(typeof showMsg==='function')showMsg('支部マスタが破損しているため自動同期をスキップしました（大会JSON保存は継続）','warn');
+      save();
+      return;
+    }
     var date=getTournamentDateFromReport(state.report);
     // 仕様書 v5 §3.3 / Codex MF #1: 大会日を ensureTournamentId に明示的に渡す
     ensureTournamentId(state,master,date);
