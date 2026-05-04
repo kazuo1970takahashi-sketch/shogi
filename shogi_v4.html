@@ -271,13 +271,16 @@ function normalizeState(raw){
   ['A','B'].forEach(function(cls){
     var players=(s.players&&Array.isArray(s.players[cls]))?s.players[cls]:[];
     base.players[cls]=players.map(function(p,idx){
-      return {
+      var pp={
         id:p&&p.id?p.id:('restored_'+cls+'_'+idx+'_'+Date.now()),
         name:p&&p.name?String(p.name):'',
         cls:cls,
         member:p&&p.member==='other'?'other':'member',
         grade:p&&p.grade==='chu'?'chu':'ippan'
       };
+      // 支部マスタとの紐付け（F2）。既存JSON（member_id 不在）は従来通り。
+      if(p&&typeof p.member_id==='string'&&p.member_id)pp.member_id=p.member_id;
+      return pp;
     }).filter(function(p){return p.name;});
 
     // 実在 player id のみ許可。p1/p2 が未登録なら除去、winner が p1/p2 と一致しないなら null 化
@@ -303,6 +306,8 @@ function normalizeState(raw){
       if(typeof s.report[k]==='string')base.report[k]=s.report[k];
     });
   }
+  // 支部マスタ連携用の tournament_id を保持（F2）
+  if(typeof s.tournament_id==='string'&&s.tournament_id)base.tournament_id=s.tournament_id;
   return base;
 }
 
@@ -1463,8 +1468,33 @@ function renderResults(){
   });
 }
 
+// 大会の report.date（"YYYY年MM月DD日"）を YYYY-MM-DD に変換。失敗時は今日。
+function getTournamentDateFromReport(r){
+  if(r&&typeof r.date==='string'){
+    var m=r.date.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
+    if(m)return m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2);
+  }
+  return todayYmd();
+}
+
+// マスタ同期は saveData() 時のみ。save()/resetAll()/編集時に呼ばない（仕様書 3.4.1、§3.1.3）
+function syncBranchMasterOnSave(){
+  try{
+    var master=loadBranchMaster();
+    var date=getTournamentDateFromReport(state.report);
+    ensureTournamentId(state,master);
+    updateBranchMasterFromTournament(state,master,{tournament_id:state.tournament_id,tournament_date:date});
+    saveBranchMaster(master);
+    save();
+  }catch(e){
+    if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタ同期に失敗（既存大会運営は継続）',e);
+  }
+}
+
 // クリップボード優先、非対応(http等)はファイルダウンロードにフォールバック
 function saveData(){
+  // F2: 大会JSONバックアップ保存時に支部マスタへ同期（A-1 ではこのタイミングのみ）
+  syncBranchMasterOnSave();
   var json=JSON.stringify(state,null,2);
   if(navigator.clipboard&&navigator.clipboard.writeText&&window.isSecureContext){
     navigator.clipboard.writeText(json).then(function(){
@@ -1781,9 +1811,10 @@ function downloadReport(){
 }
 
 function resetAll(){
-  if(!confirm('全データをリセットしますか？'))return;
+  if(!confirm('現在の大会データをリセットします（支部マスタは保持されます）'))return;
   state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}};
   try{
+    // 仕様書 3.4.1 / §3.1.5: shogi_branch_master は絶対に消さない
     localStorage.removeItem(STORAGE_KEY);
     for(var i=0;i<LEGACY_STORAGE_KEYS.length;i++)localStorage.removeItem(LEGACY_STORAGE_KEYS[i]);
   }catch(e){}
