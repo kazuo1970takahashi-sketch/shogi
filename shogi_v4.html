@@ -683,21 +683,76 @@ function matchesPastParticipantQuery(member,query){
   return false;
 }
 
-function buildPastParticipantsPanelHtml(master,filter){
+// 仕様書 v6 §3.3 / §4.1: 50音タブ定義（パターン α、12タブ）
+var PP_YOMI_TAB_DEFS=[
+  {key:'all',label:'全'},
+  {key:'a',label:'あ'},
+  {key:'ka',label:'か'},
+  {key:'sa',label:'さ'},
+  {key:'ta',label:'た'},
+  {key:'na',label:'な'},
+  {key:'ha',label:'は'},
+  {key:'ma',label:'ま'},
+  {key:'ya',label:'や'},
+  {key:'ra',label:'ら'},
+  {key:'wa',label:'わ'},
+  {key:'other',label:'他'}
+];
+
+// 過去参加者パネルの選択中 50音タブ（モジュールスコープ。再描画間で保持）
+var ppYomiRow='all';
+
+function buildPastParticipantsPanelHtml(master,filter,yomiRow){
   var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
   var query=filter||'';
+  var row=yomiRow||'all';
   var filtered=[];
   for(var i=0;i<members.length;i++){
-    if(matchesPastParticipantQuery(members[i],query))filtered.push(members[i]);
+    var mm=members[i];
+    if(!matchesPastParticipantQuery(mm,query))continue;
+    if(row!=='all'){
+      // パターン あ: 「他」 = yomi 空 + getYomiInitialRow が other の人
+      var memberRow=getYomiInitialRow(normalizeYomi(mm.yomi));
+      if(memberRow!==row)continue;
+    }
+    filtered.push(mm);
   }
-  filtered.sort(function(a,b){
-    var la=a.last_attended||'',lb=b.last_attended||'';
-    if(la!==lb)return la<lb?1:-1;
-    return (a.name||'')<(b.name||'')?-1:1;
-  });
+  // ソート: 全タブは既存通り（最終参加日降順、同日は氏名昇順）
+  // 各行タブは normalizeYomi(yomi) 昇順、同 yomi なら氏名昇順
+  // 「他」タブは yomi 空が先頭、後方に other の人（氏名昇順）
+  if(row==='all'){
+    filtered.sort(function(a,b){
+      var la=a.last_attended||'',lb=b.last_attended||'';
+      if(la!==lb)return la<lb?1:-1;
+      return (a.name||'')<(b.name||'')?-1:1;
+    });
+  }else if(row==='other'){
+    filtered.sort(function(a,b){
+      var aEmpty=!normalizeYomi(a.yomi);
+      var bEmpty=!normalizeYomi(b.yomi);
+      if(aEmpty!==bEmpty)return aEmpty?-1:1;
+      return (a.name||'')<(b.name||'')?-1:1;
+    });
+  }else{
+    filtered.sort(function(a,b){
+      var ay=normalizeYomi(a.yomi),by=normalizeYomi(b.yomi);
+      if(ay!==by)return ay<by?-1:1;
+      return (a.name||'')<(b.name||'')?-1:1;
+    });
+  }
   var html='<div class="flex" style="margin-bottom:8px">';
   html+='<input type="text" id="pp-search" placeholder="氏名で検索（漢字・ふりがな）" value="'+escapeHtml(filter||'')+'" style="flex:1;min-width:0">';
   html+='</div>';
+  // 50音タブ（仕様書 v6 §3.3, §4.1）
+  html+='<div id="pp-yomi-tabs" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;overflow-x:auto">';
+  for(var ti=0;ti<PP_YOMI_TAB_DEFS.length;ti++){
+    var td=PP_YOMI_TAB_DEFS[ti];
+    var active=(td.key===row);
+    html+='<button type="button" class="pp-yomi-tab'+(active?' active':'')+'" data-row="'+escapeHtml(td.key)+'" style="min-height:36px;min-width:36px;padding:6px 10px;border:1px solid '+(active?'#1976d2':'#ccc')+';background:'+(active?'#e3f2fd':'#fff')+';color:'+(active?'#0d47a1':'#333')+';border-radius:6px;font-size:13px;cursor:pointer">'+escapeHtml(td.label)+'</button>';
+  }
+  html+='</div>';
+  // ChatGPT M3 反映: 「他」タブの意味補足（常時表示）
+  html+='<div class="yomi-tabs-note" style="font-size:11px;color:#888;margin-bottom:8px">他: ふりがな未登録・その他</div>';
   if(members.length===0){
     html+='<div style="color:#888;font-size:13px;padding:8px 0">支部マスタが空です。「マスタ」タブから過去大会を統合できます。</div>';
     return html;
@@ -732,6 +787,17 @@ function bindPastParticipantsPanelEvents(){
     input.addEventListener('compositionstart',function(){composing=true;});
     input.addEventListener('compositionend',function(){composing=false;renderPastParticipantsPanel(input.value);});
     input.addEventListener('input',function(){if(!composing)renderPastParticipantsPanel(input.value);});
+  }
+  // 50音タブ（仕様書 v6 §3.3）。タブクリック時に ppYomiRow を更新して再描画。
+  var tabs=document.querySelectorAll('.pp-yomi-tab');
+  for(var ti=0;ti<tabs.length;ti++){
+    tabs[ti].addEventListener('click',function(e){
+      var t=e.currentTarget||e.target;
+      var rowKey=t&&t.getAttribute?t.getAttribute('data-row'):null;
+      ppYomiRow=rowKey||'all';
+      var inp=document.getElementById('pp-search');
+      renderPastParticipantsPanel(inp?inp.value:'');
+    });
   }
   var checks=document.querySelectorAll('.pp-check');
   function updateCount(){
@@ -792,7 +858,7 @@ function renderPastParticipantsPanel(filter){
   if(summary)summary.textContent='登録 '+members.length+'名';
   var panel=document.getElementById('ppPanel');
   if(!panel)return;
-  panel.innerHTML=buildPastParticipantsPanelHtml(master,filter||'');
+  panel.innerHTML=buildPastParticipantsPanelHtml(master,filter||'',ppYomiRow);
   bindPastParticipantsPanelEvents();
 }
 

@@ -740,6 +740,102 @@ const env = loadEnv(targetPath);
   assert(htmlKana.indexOf('山田 太郎')<0,'F5b: カタカナ「サトウ」検索で山田太郎は表示されない');
 }
 
+// ============================================================
+// Phase A-2 §3.3 / §4.1: F6 50音タブ
+// ============================================================
+
+{
+  function mkMember(id,name,yomi){
+    return {id:id,name:name,yomi:yomi,last_class:null,last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:1,tournament_ids:[],deleted:false,deleted_at:null,note:''};
+  }
+  // 各行を満たす member を用意
+  var mAi=mkMember('m_a','青木','あおき');
+  var mKa=mkMember('m_k','加藤','かとう');
+  var mSa=mkMember('m_s','佐藤','さとう');
+  var mTa=mkMember('m_t','田中','たなか');
+  var mNa=mkMember('m_n','中村','なかむら');
+  var mHa=mkMember('m_h','橋本','はしもと');
+  var mMa=mkMember('m_m','松本','まつもと');
+  var mYa=mkMember('m_y','山田','やまだ');
+  var mRa=mkMember('m_r','林','りん');
+  var mWa=mkMember('m_w','渡辺','わたなべ');
+  var mGa=mkMember('m_g','後藤','ごとう'); // 濁音 → ka 行
+  var mPa=mkMember('m_p','坂東','ばんどう'); // 濁音 → ha 行
+  var mEmpty=mkMember('m_e','匿名一郎',''); // yomi 空 → 他
+  var mForeign=mkMember('m_f','Smith','smith'); // ローマ字 yomi → 他
+  var mNum=mkMember('m_d','123','123'); // 数字 yomi → 他
+
+  var master={schema_version:1,updated_at:'2026-04-01',members:[mAi,mKa,mSa,mTa,mNa,mHa,mMa,mYa,mRa,mWa,mGa,mPa,mEmpty,mForeign,mNum]};
+
+  // 「全」タブで全 member 表示
+  var htmlAll=env.buildPastParticipantsPanelHtml(master,'','all');
+  for(var im=0;im<master.members.length;im++){
+    assert(htmlAll.indexOf(master.members[im].name)>=0,'F6: 「全」タブで '+master.members[im].name+' が表示');
+  }
+
+  // 「あ」タブで a 行のみ表示
+  var htmlA=env.buildPastParticipantsPanelHtml(master,'','a');
+  assert(htmlA.indexOf('青木')>=0,'F6: 「あ」タブで青木が表示');
+  assert(htmlA.indexOf('加藤')<0,'F6: 「あ」タブで加藤は非表示');
+  assert(htmlA.indexOf('Smith')<0,'F6: 「あ」タブで Smith は非表示');
+
+  // 「か」タブで濁音「ご」も含む
+  var htmlKa=env.buildPastParticipantsPanelHtml(master,'','ka');
+  assert(htmlKa.indexOf('加藤')>=0,'F6: 「か」タブで加藤が表示');
+  assert(htmlKa.indexOf('後藤')>=0,'F6: 「か」タブで後藤（濁音「ご」）が表示');
+  assert(htmlKa.indexOf('佐藤')<0,'F6: 「か」タブで佐藤は非表示');
+
+  // 「は」タブで半濁音/濁音も含む
+  var htmlHa=env.buildPastParticipantsPanelHtml(master,'','ha');
+  assert(htmlHa.indexOf('橋本')>=0,'F6: 「は」タブで橋本が表示');
+  assert(htmlHa.indexOf('坂東')>=0,'F6: 「は」タブで坂東（濁音「ば」）が表示');
+
+  // 「他」タブで yomi 空 + ローマ字 + 数字
+  var htmlOther=env.buildPastParticipantsPanelHtml(master,'','other');
+  assert(htmlOther.indexOf('匿名一郎')>=0,'F6: 「他」タブで yomi 空 member が表示');
+  assert(htmlOther.indexOf('Smith')>=0,'F6: 「他」タブでローマ字 yomi member が表示');
+  assert(htmlOther.indexOf('123')>=0,'F6: 「他」タブで数字 yomi member が表示');
+  assert(htmlOther.indexOf('青木')<0,'F6: 「他」タブで青木は非表示');
+
+  // yomi 空が「他」タブで先頭に来る
+  var idxEmpty=htmlOther.indexOf('匿名一郎');
+  var idxSmith=htmlOther.indexOf('Smith');
+  assert(idxEmpty>=0&&idxSmith>=0&&idxEmpty<idxSmith,'F6: 「他」タブで yomi 空が先頭、後方に other');
+
+  // タブ + 検索の AND 条件
+  var htmlSaAnd=env.buildPastParticipantsPanelHtml(master,'いとう','sa');
+  assert(htmlSaAnd.indexOf('佐藤')<0,'F6: タブ「さ」+ 検索「いとう」→ 佐藤は非表示（AND 条件）');
+
+  var htmlSaSatou=env.buildPastParticipantsPanelHtml(master,'さとう','sa');
+  assert(htmlSaSatou.indexOf('佐藤')>=0,'F6: タブ「さ」+ 検索「さとう」→ 佐藤が表示');
+  assert(htmlSaSatou.indexOf('青木')<0,'F6: タブ「さ」+ 検索「さとう」→ 青木は非表示');
+
+  // 件数保存則: 全タブ件数 = 各行 + 他 の合計
+  var rows=['a','ka','sa','ta','na','ha','ma','ya','ra','wa','other'];
+  var totalRowCount=0;
+  for(var ri=0;ri<rows.length;ri++){
+    var rowMembers=master.members.filter(function(m){return env.getYomiInitialRow(env.normalizeYomi(m.yomi))===rows[ri];});
+    totalRowCount+=rowMembers.length;
+  }
+  assertEq(totalRowCount,master.members.length,'F6: 件数保存則（各行 + 他 = 全 member 数）');
+
+  // 50音タブ HTML 構造
+  assert(htmlAll.indexOf('class="pp-yomi-tab')>=0,'F6: 50音タブ要素が描画されている');
+  assert(htmlAll.indexOf('data-row="all"')>=0,'F6: 「全」タブが描画');
+  assert(htmlAll.indexOf('data-row="other"')>=0,'F6: 「他」タブが描画');
+  assert(htmlAll.indexOf('他: ふりがな未登録・その他')>=0,'F6 M3: 「他」タブの補足文が表示');
+
+  // active クラスの付与（選択中タブ）
+  assert(htmlAll.indexOf('class="pp-yomi-tab active"')>=0&&htmlAll.indexOf('data-row="all"')>=0,'F6: 「全」選択時に active クラス付与');
+  var htmlSaTab=env.buildPastParticipantsPanelHtml(master,'','sa');
+  // 「さ」が active であることを構造的に確認
+  assert(htmlSaTab.indexOf('class="pp-yomi-tab active" data-row="sa"')>=0,'F6: 「さ」選択時に「さ」タブが active');
+
+  // タブ未指定時のデフォルト = all
+  var htmlDefault=env.buildPastParticipantsPanelHtml(master,'');
+  assert(htmlDefault.indexOf('class="pp-yomi-tab active" data-row="all"')>=0,'F6: yomiRow 未指定はデフォルト all');
+}
+
 // 結果出力
 if (fail===0) {
   console.log('  支部マスタ機能テスト: PASS '+pass+'件 / FAIL 0件');
