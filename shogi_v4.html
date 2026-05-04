@@ -96,6 +96,13 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     <button type="button" class="tab" id="tab-result">最終結果</button>
   </div>
   <div id="pane-reg">
+    <div class="section" id="past-participants-section" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <h2 style="border:none;padding:0;margin:0;font-size:15px">過去参加者から選ぶ <span id="pp-summary" style="color:#888;font-weight:400;font-size:12px"></span></h2>
+        <button type="button" class="btn-sm" id="ppToggleBtn">▼ 開く</button>
+      </div>
+      <div id="ppPanel" style="display:none"></div>
+    </div>
     <div class="section">
       <h2>参加者を登録する</h2>
       <div class="flex">
@@ -593,6 +600,135 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
     if(affected.hasOwnProperty(k))recalcMemberAttendance(affected[k]);
   }
   return master;
+}
+
+// ============================================================
+// PAST PARTICIPANTS PANEL (F3, F5a): 過去参加者からのワンクリック呼び出し
+// ============================================================
+
+function buildPastParticipantsPanelHtml(master,filter){
+  var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
+  var query=normalizePersonName(filter||'');
+  var filtered=[];
+  for(var i=0;i<members.length;i++){
+    var nm=normalizePersonName(members[i].name||'');
+    if(!query||nm.indexOf(query)>=0)filtered.push(members[i]);
+  }
+  filtered.sort(function(a,b){
+    var la=a.last_attended||'',lb=b.last_attended||'';
+    if(la!==lb)return la<lb?1:-1;
+    return (a.name||'')<(b.name||'')?-1:1;
+  });
+  var html='<div class="flex" style="margin-bottom:8px">';
+  html+='<input type="text" id="pp-search" placeholder="氏名で検索（漢字部分一致）" value="'+escapeHtml(filter||'')+'" style="flex:1;min-width:0">';
+  html+='</div>';
+  if(members.length===0){
+    html+='<div style="color:#888;font-size:13px;padding:8px 0">支部マスタが空です。「マスタ」タブから過去大会を統合できます。</div>';
+    return html;
+  }
+  if(filtered.length===0){
+    html+='<div style="color:#888;font-size:13px;padding:8px 0">該当する参加者がいません。</div>';
+    return html;
+  }
+  html+='<div style="max-height:280px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;padding:6px;margin-bottom:8px">';
+  for(var j=0;j<filtered.length;j++){
+    var fm=filtered[j];
+    var lc=fm.last_class==='A'?'Aクラス':(fm.last_class==='B'?'Bクラス':'-');
+    html+='<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:pointer">';
+    html+='<input type="checkbox" class="pp-check" data-mid="'+escapeHtml(fm.id)+'">';
+    html+='<span style="flex:1;font-size:14px">'+escapeHtml(fm.name)+'</span>';
+    html+='<span style="font-size:12px;color:#666">'+escapeHtml(lc)+'</span>';
+    html+='<span style="font-size:11px;color:#888;min-width:5em;text-align:right">'+escapeHtml(fm.last_attended||'')+'</span>';
+    html+='</label>';
+  }
+  html+='</div>';
+  html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+  html+='<button type="button" class="btn-primary" id="pp-add">選択した <span id="pp-count">0</span> 名を追加</button>';
+  html+='<span style="font-size:12px;color:#888">最終クラスをデフォルトに登録</span>';
+  html+='</div>';
+  return html;
+}
+
+function bindPastParticipantsPanelEvents(){
+  var input=document.getElementById('pp-search');
+  if(input){
+    var composing=false;
+    input.addEventListener('compositionstart',function(){composing=true;});
+    input.addEventListener('compositionend',function(){composing=false;renderPastParticipantsPanel(input.value);});
+    input.addEventListener('input',function(){if(!composing)renderPastParticipantsPanel(input.value);});
+  }
+  var checks=document.querySelectorAll('.pp-check');
+  function updateCount(){
+    var n=0;
+    for(var i=0;i<checks.length;i++)if(checks[i].checked)n++;
+    var c=document.getElementById('pp-count');
+    if(c)c.textContent=n;
+  }
+  for(var i=0;i<checks.length;i++)checks[i].addEventListener('change',updateCount);
+  updateCount();
+  var addBtn=document.getElementById('pp-add');
+  if(addBtn)addBtn.addEventListener('click',addSelectedPastParticipants);
+}
+
+function addSelectedPastParticipants(){
+  var master=loadBranchMaster();
+  var checks=document.querySelectorAll('.pp-check');
+  var picked=[];
+  for(var i=0;i<checks.length;i++){
+    if(!checks[i].checked)continue;
+    var mid=checks[i].getAttribute('data-mid');
+    for(var j=0;j<master.members.length;j++){
+      if(master.members[j].id===mid){picked.push(master.members[j]);break;}
+    }
+  }
+  if(picked.length===0){alert('追加する参加者を選択してください');return;}
+  var existingNames={};
+  var existingMids={};
+  var allCurrent=state.players.A.concat(state.players.B);
+  for(var k=0;k<allCurrent.length;k++){
+    if(allCurrent[k].name)existingNames[allCurrent[k].name]=true;
+    if(allCurrent[k].member_id)existingMids[allCurrent[k].member_id]=true;
+  }
+  var added=0,skipped=0;
+  for(var p=0;p<picked.length;p++){
+    var m=picked[p];
+    if(existingMids[m.id]||existingNames[m.name]){skipped++;continue;}
+    var cls=(m.last_class==='A'||m.last_class==='B')?m.last_class:'A';
+    var pid='p'+Date.now()+Math.floor(Math.random()*1000)+'_'+p;
+    state.players[cls].push({id:pid,name:m.name,cls:cls,member:'member',grade:'ippan',member_id:m.id});
+    existingMids[m.id]=true;
+    existingNames[m.name]=true;
+    added++;
+  }
+  renderRegList();save();
+  renderPastParticipantsPanel('');
+  showMsg(added+'名を追加しました'+(skipped>0?'（同名・同 member_id 重複 '+skipped+'名はスキップ）':''),'ok');
+}
+
+function renderPastParticipantsPanel(filter){
+  var section=document.getElementById('past-participants-section');
+  if(!section)return;
+  var master=loadBranchMaster();
+  var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
+  if(members.length===0){section.style.display='none';return;}
+  section.style.display='block';
+  var summary=document.getElementById('pp-summary');
+  if(summary)summary.textContent='登録 '+members.length+'名';
+  var panel=document.getElementById('ppPanel');
+  if(!panel)return;
+  panel.innerHTML=buildPastParticipantsPanelHtml(master,filter||'');
+  bindPastParticipantsPanelEvents();
+}
+
+function bindPastParticipantsToggle(){
+  var btn=document.getElementById('ppToggleBtn');
+  var panel=document.getElementById('ppPanel');
+  if(!btn||!panel)return;
+  btn.addEventListener('click',function(){
+    var open=panel.style.display!=='none';
+    if(open){panel.style.display='none';btn.textContent='▼ 開く';}
+    else{panel.style.display='block';btn.textContent='▲ 閉じる';}
+  });
 }
 
 // ============================================================
@@ -1538,6 +1674,7 @@ function applyLoadedJson(rawText){
   save();
   populateReportFields();
   renderRegList();
+  renderPastParticipantsPanel();
   if(state.started){
     if(isTournamentDone()){
       showTab('result');
@@ -1913,6 +2050,8 @@ function initApp(){
   load();
   populateReportFields();
   renderRegList();
+  renderPastParticipantsPanel();
+  bindPastParticipantsToggle();
   if(state.started){
     if(isTournamentDone()){
       showTab('result');
