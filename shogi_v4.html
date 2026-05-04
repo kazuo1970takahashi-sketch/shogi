@@ -464,6 +464,133 @@ function findMemberCandidates(participant,master){
 }
 
 // ============================================================
+// BRANCH MASTER SYNC (F2): 大会JSONバックアップ保存時のマスタ同期
+//   呼び出しは saveData() からのみ。save()/resetAll()/編集時には呼ばない。
+// ============================================================
+
+function ensureTournamentId(state,master){
+  if(state&&typeof state.tournament_id==='string'&&state.tournament_id)return state.tournament_id;
+  var base='t_'+todayYmd().replace(/-/g,'_');
+  var id=base;
+  if(master&&Array.isArray(master.members)){
+    var existing={};
+    for(var i=0;i<master.members.length;i++){
+      var arr=master.members[i].tournament_ids||[];
+      for(var j=0;j<arr.length;j++)existing[arr[j]]=true;
+    }
+    var n=2;
+    while(existing[id]){id=base+'_'+n;n++;}
+  }
+  if(state)state.tournament_id=id;
+  return id;
+}
+
+function attachMemberIdToPlayer(player,member){
+  if(!player||!member)return;
+  player.member_id=member.id;
+}
+
+function addTournamentIdOnce(member,tournamentId){
+  if(!member||!tournamentId)return false;
+  if(!Array.isArray(member.tournament_ids))member.tournament_ids=[];
+  if(member.tournament_ids.indexOf(tournamentId)>=0)return false;
+  member.tournament_ids.push(tournamentId);
+  return true;
+}
+
+function recalcMemberAttendance(member){
+  if(!member)return 0;
+  if(!Array.isArray(member.tournament_ids))member.tournament_ids=[];
+  member.attendance_count=member.tournament_ids.length;
+  return member.attendance_count;
+}
+
+function createMemberFromParticipant(p,master,date){
+  return {
+    id:generateMemberId(master),
+    name:normalizePersonName(p.name||''),
+    yomi:'',
+    last_class:(p.cls==='A'||p.cls==='B')?p.cls:null,
+    last_attended:date,
+    first_attended:date,
+    attendance_count:0,
+    tournament_ids:[],
+    deleted:false,
+    deleted_at:null,
+    note:''
+  };
+}
+
+function updateBranchMasterFromTournament(state,master,tournamentMeta){
+  if(!state||!master||!Array.isArray(master.members))return master;
+  if(!tournamentMeta||!tournamentMeta.tournament_id)return master;
+  var tid=tournamentMeta.tournament_id;
+  var date=isValidYmd(tournamentMeta.tournament_date)?tournamentMeta.tournament_date:todayYmd();
+
+  var affected={};
+  var classes=['A','B'];
+  for(var ci=0;ci<classes.length;ci++){
+    var cls=classes[ci];
+    var players=(state.players&&Array.isArray(state.players[cls]))?state.players[cls]:[];
+    for(var pi=0;pi<players.length;pi++){
+      var p=players[pi];
+      if(!p||!p.name)continue;
+      var member=null;
+      if(typeof p.member_id==='string'&&p.member_id){
+        for(var mi=0;mi<master.members.length;mi++){
+          if(master.members[mi].id===p.member_id){member=master.members[mi];break;}
+        }
+      }
+      if(!member){
+        var cands=findMemberCandidates({name:p.name},master);
+        if(cands.length===1){
+          member=cands[0];
+          attachMemberIdToPlayer(p,member);
+        }else if(cands.length>1){
+          // 同名候補が複数 → 自動統合しない（仕様書 3.4.4）。確認ダイアログで判断。
+          var pn=String(p.name||'');
+          var msg='「'+pn+'」と同名の登録が'+cands.length+'件あります。\n\nOK＝新規参加者として登録\nキャンセル＝最初の候補に紐付け';
+          var goNew=(typeof confirm==='function')?confirm(msg):true;
+          if(goNew){
+            try{
+              member=createMemberFromParticipant(p,master,date);
+              master.members.push(member);
+              attachMemberIdToPlayer(p,member);
+            }catch(e){
+              if(typeof console!=='undefined'&&console.warn)console.warn('member_id 生成失敗。スキップ',e);
+              continue;
+            }
+          }else{
+            member=cands[0];
+            attachMemberIdToPlayer(p,member);
+          }
+        }else{
+          try{
+            member=createMemberFromParticipant(p,master,date);
+            master.members.push(member);
+            attachMemberIdToPlayer(p,member);
+          }catch(e){
+            if(typeof console!=='undefined'&&console.warn)console.warn('member_id 生成失敗。スキップ',e);
+            continue;
+          }
+        }
+      }
+      addTournamentIdOnce(member,tid);
+      if(isValidYmd(date)){
+        if(!member.last_attended||date>=member.last_attended)member.last_attended=date;
+        if(!member.first_attended||date<member.first_attended)member.first_attended=date;
+      }
+      if(p.cls==='A'||p.cls==='B')member.last_class=p.cls;
+      affected[member.id]=member;
+    }
+  }
+  for(var k in affected){
+    if(affected.hasOwnProperty(k))recalcMemberAttendance(affected[k]);
+  }
+  return master;
+}
+
+// ============================================================
 // UI HELPERS: タブ切替とメッセージ表示
 // ============================================================
 
