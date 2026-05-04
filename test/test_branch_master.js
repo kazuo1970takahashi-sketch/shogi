@@ -447,6 +447,47 @@ const env = loadEnv(targetPath);
   assert(id4===baseToday,'ensureTournamentId: 無効な大会日は todayYmd() フォールバック');
 }
 
+// ============================================================
+// Codex MF #2: 同名複数候補時のマスタ同期スキップ（仕様書 v5 §3.4.2 / §3.4.4）
+// ============================================================
+{
+  const master = env.createEmptyBranchMaster();
+  // 同名 member を2件登録（既に同名異人が居る状態）
+  master.members.push({id:'m_aaa',name:'山田太郎',yomi:'',last_class:'A',last_attended:'2026-03-01',first_attended:'2026-01-01',attendance_count:1,tournament_ids:['t_old1'],deleted:false,deleted_at:null,note:''});
+  master.members.push({id:'m_bbb',name:'山田太郎',yomi:'',last_class:'B',last_attended:'2026-03-01',first_attended:'2026-02-01',attendance_count:1,tournament_ids:['t_old2'],deleted:false,deleted_at:null,note:''});
+  // 同名 participant を含む大会 state、+ 別名の participant も1名
+  const state = {
+    tournament_id:'t_2026_04_15',
+    players:{
+      A:[{id:'p1',name:'山田太郎',cls:'A',member:'member',grade:'ippan'},
+         {id:'p2',name:'佐藤花子',cls:'A',member:'member',grade:'ippan'}],
+      B:[]
+    }
+  };
+  // console.warn を抑止（期待される警告）
+  const origWarn=console.warn;
+  console.warn=function(){};
+  env.updateBranchMasterFromTournament(state,master,{tournament_id:'t_2026_04_15',tournament_date:'2026-04-15'});
+  console.warn=origWarn;
+
+  // 同名 participant の member_id は付与されない
+  assert(typeof state.players.A[0].member_id==='undefined','MF#2: 同名複数候補の participant に member_id を付与しない');
+  // 既存 same-name members の tournament_ids に t_2026_04_15 が混入していない
+  const m_aaa=master.members.filter(x=>x.id==='m_aaa')[0];
+  const m_bbb=master.members.filter(x=>x.id==='m_bbb')[0];
+  assert(m_aaa.tournament_ids.indexOf('t_2026_04_15')===-1,'MF#2: m_aaa.tournament_ids に新 ID は追加されない');
+  assert(m_bbb.tournament_ids.indexOf('t_2026_04_15')===-1,'MF#2: m_bbb.tournament_ids に新 ID は追加されない');
+  // attendance_count も増えない
+  assert(m_aaa.attendance_count===1,'MF#2: 既存 member の attendance_count 不変');
+  assert(m_bbb.attendance_count===1,'MF#2: 既存 member の attendance_count 不変（2件目）');
+
+  // 別名 participant（佐藤花子）は新規作成され、member_id が付与される
+  const sato=master.members.filter(x=>x.name==='佐藤花子')[0];
+  assert(!!sato,'MF#2: 別名 participant は新規 member として追加される');
+  assert(sato.tournament_ids.indexOf('t_2026_04_15')>=0,'MF#2: 別名 participant の tournament_ids に新 ID 追加');
+  assert(state.players.A[1].member_id===sato.id,'MF#2: 別名 participant の同期は継続（member_id 付与）');
+}
+
 // 結果出力
 if (fail===0) {
   console.log('  支部マスタ機能テスト: PASS '+pass+'件 / FAIL 0件');

@@ -545,6 +545,7 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
   var date=isValidYmd(tournamentMeta.tournament_date)?tournamentMeta.tournament_date:todayYmd();
 
   var affected={};
+  var pendingSkippedNames=[];
   var classes=['A','B'];
   for(var ci=0;ci<classes.length;ci++){
     var cls=classes[ci];
@@ -564,23 +565,13 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
           member=cands[0];
           attachMemberIdToPlayer(p,member);
         }else if(cands.length>1){
-          // 同名候補が複数 → 自動統合しない（仕様書 3.4.4）。確認ダイアログで判断。
-          var pn=String(p.name||'');
-          var msg='「'+pn+'」と同名の登録が'+cands.length+'件あります。\n\nOK＝新規参加者として登録\nキャンセル＝最初の候補に紐付け';
-          var goNew=(typeof confirm==='function')?confirm(msg):true;
-          if(goNew){
-            try{
-              member=createMemberFromParticipant(p,master,date);
-              master.members.push(member);
-              attachMemberIdToPlayer(p,member);
-            }catch(e){
-              if(typeof console!=='undefined'&&console.warn)console.warn('member_id 生成失敗。スキップ',e);
-              continue;
-            }
-          }else{
-            member=cands[0];
-            attachMemberIdToPlayer(p,member);
-          }
+          // 仕様書 v5 §3.4.4 / Codex MF #2: 同名複数候補時はマスタ同期をスキップ。
+          // 誤タップ・取り違えで別人を統合する事故を防ぐため、member_id は付与しない。
+          // tournament_ids への追加もしない。後で手動紐付け（A-2）の余地を残す。
+          var skipName=String(p.name||'');
+          if(typeof console!=='undefined'&&console.warn)console.warn('「'+skipName+'」は同名候補が '+cands.length+' 件あるためマスタ同期を保留');
+          pendingSkippedNames.push(skipName);
+          continue;
         }else{
           try{
             member=createMemberFromParticipant(p,master,date);
@@ -603,6 +594,10 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
   }
   for(var k in affected){
     if(affected.hasOwnProperty(k))recalcMemberAttendance(affected[k]);
+  }
+  // 保留通知（複数件あっても1度だけ）
+  if(pendingSkippedNames.length>0&&typeof showMsg==='function'){
+    showMsg('同名候補が複数あるため次の '+pendingSkippedNames.length+' 名のマスタ同期を保留しました：'+pendingSkippedNames.join('、'),'warn');
   }
   return master;
 }
