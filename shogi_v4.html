@@ -94,8 +94,16 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     <button type="button" class="tab active" id="tab-reg">参加者登録</button>
     <button type="button" class="tab" id="tab-tournament">対局管理</button>
     <button type="button" class="tab" id="tab-result">最終結果</button>
+    <button type="button" class="tab" id="tab-master">マスタ</button>
   </div>
   <div id="pane-reg">
+    <div class="section" id="past-participants-section" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <h2 style="border:none;padding:0;margin:0;font-size:15px">過去参加者から選ぶ <span id="pp-summary" style="color:#888;font-weight:400;font-size:12px"></span></h2>
+        <button type="button" class="btn-sm" id="ppToggleBtn">▼ 開く</button>
+      </div>
+      <div id="ppPanel" style="display:none"></div>
+    </div>
     <div class="section">
       <h2>参加者を登録する</h2>
       <div class="flex">
@@ -137,6 +145,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
       <div id="pane-B"></div>
     </div>
   </div>
+  <div id="pane-master" style="display:none"></div>
   <div id="pane-result" style="display:none">
     <div id="result-A"></div>
     <div id="result-B" style="margin-top:16px"></div>
@@ -271,13 +280,16 @@ function normalizeState(raw){
   ['A','B'].forEach(function(cls){
     var players=(s.players&&Array.isArray(s.players[cls]))?s.players[cls]:[];
     base.players[cls]=players.map(function(p,idx){
-      return {
+      var pp={
         id:p&&p.id?p.id:('restored_'+cls+'_'+idx+'_'+Date.now()),
         name:p&&p.name?String(p.name):'',
         cls:cls,
         member:p&&p.member==='other'?'other':'member',
         grade:p&&p.grade==='chu'?'chu':'ippan'
       };
+      // 支部マスタとの紐付け（F2）。既存JSON（member_id 不在）は従来通り。
+      if(p&&typeof p.member_id==='string'&&p.member_id)pp.member_id=p.member_id;
+      return pp;
     }).filter(function(p){return p.name;});
 
     // 実在 player id のみ許可。p1/p2 が未登録なら除去、winner が p1/p2 と一致しないなら null 化
@@ -303,6 +315,8 @@ function normalizeState(raw){
       if(typeof s.report[k]==='string')base.report[k]=s.report[k];
     });
   }
+  // 支部マスタ連携用の tournament_id を保持（F2）
+  if(typeof s.tournament_id==='string'&&s.tournament_id)base.tournament_id=s.tournament_id;
   return base;
 }
 
@@ -330,6 +344,619 @@ function load(){
 }
 
 // ============================================================
+// BRANCH MASTER (支部マスタ) — Phase A-1
+//   localStorage キー: shogi_branch_master（既存 state とは別管理）
+//   破損時も既存大会運営を止めない（normalizeBranchMaster）
+//   resetAll() ではマスタを消さない（仕様書 3.4.1）
+// ============================================================
+
+var BRANCH_MASTER_KEY='shogi_branch_master';
+var BRANCH_MASTER_SCHEMA_VERSION=1;
+
+function createEmptyBranchMaster(){
+  return {schema_version:BRANCH_MASTER_SCHEMA_VERSION,updated_at:new Date().toISOString(),members:[]};
+}
+
+function isValidYmd(s){
+  // 仕様書 v5 §3.5 / Codex Minor: 形式チェックに加え Date オブジェクトで実在検証
+  if(typeof s!=='string')return false;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;
+  var d=new Date(s+'T00:00:00Z');
+  if(isNaN(d.getTime()))return false;
+  // toISOString が同じ日付を返すか（例: '2026-02-30' は '2026-03-02' に補正される）
+  return d.toISOString().slice(0,10)===s;
+}
+
+function todayYmd(){
+  var d=new Date();
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+
+function generateMemberId(master){
+  // 仕様書 v5 §3.3 / Codex MF #4: crypto.randomUUID 不在時は明示 throw。
+  // 旧実装は raw='' で 'm_' だけの不正 ID を保存していた。スマホ運用前提のため
+  // サイレントフォールバックではなくエラーで気付ける設計とする。
+  if(typeof crypto==='undefined'||!crypto.randomUUID){
+    throw new Error('crypto.randomUUID が利用不可な環境です。古い iOS Safari 等の場合、ブラウザを更新してください。');
+  }
+  for(var i=0;i<3;i++){
+    // 必ず replace(/-/g,'') を先に行う（slice 先行だとハイフンが残る危険）
+    var id='m_'+crypto.randomUUID().replace(/-/g,'').slice(0,12);
+    var dup=false;
+    if(master&&Array.isArray(master.members)){
+      for(var j=0;j<master.members.length;j++){
+        if(master.members[j]&&master.members[j].id===id){dup=true;break;}
+      }
+    }
+    if(!dup)return id;
+  }
+  throw new Error('member_id 生成に3回連続で失敗。マスタが異常です。');
+}
+
+function normalizePersonName(name){
+  if(typeof name!=='string')return '';
+  // 仕様書 3.4.4: 全角空白→半角空白、連続空白を単一空白、前後空白除去
+  return name.replace(/　/g,' ').replace(/\s+/g,' ').replace(/^\s+|\s+$/g,'');
+}
+
+function normalizeBranchMaster(raw){
+  // 仕様書 3.5: 破損データを与えられても落ちない／既存運営を止めない
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return createEmptyBranchMaster();
+  var schema_version=Number(raw.schema_version);
+  if(!schema_version||isNaN(schema_version))schema_version=BRANCH_MASTER_SCHEMA_VERSION;
+  if(schema_version!==BRANCH_MASTER_SCHEMA_VERSION)return createEmptyBranchMaster();
+
+  var membersRaw=Array.isArray(raw.members)?raw.members:[];
+  var seenIds={};
+  var members=[];
+  for(var i=0;i<membersRaw.length;i++){
+    var m=membersRaw[i];
+    if(!m||typeof m!=='object')continue;
+    var id=typeof m.id==='string'?m.id:'';
+    var name=typeof m.name==='string'?m.name:'';
+    if(!id||!name||seenIds[id])continue;
+    seenIds[id]=true;
+
+    var yomi=typeof m.yomi==='string'?m.yomi:'';
+    var last_class=(m.last_class==='A'||m.last_class==='B')?m.last_class:null;
+    var last_attended=isValidYmd(m.last_attended)?m.last_attended:'';
+    var first_attended=isValidYmd(m.first_attended)?m.first_attended:'';
+    if(!last_attended&&first_attended)last_attended=first_attended;
+    if(!first_attended&&last_attended)first_attended=last_attended;
+    if(!last_attended&&!first_attended){var t=todayYmd();last_attended=t;first_attended=t;}
+
+    var tidsRaw=Array.isArray(m.tournament_ids)?m.tournament_ids:[];
+    var seenTid={};
+    var tournament_ids=[];
+    for(var ti=0;ti<tidsRaw.length;ti++){
+      var t2=tidsRaw[ti];
+      if(typeof t2==='string'&&t2&&!seenTid[t2]){seenTid[t2]=true;tournament_ids.push(t2);}
+    }
+
+    members.push({
+      id:id,
+      name:name,
+      yomi:yomi,
+      last_class:last_class,
+      last_attended:last_attended,
+      first_attended:first_attended,
+      attendance_count:tournament_ids.length,
+      tournament_ids:tournament_ids,
+      deleted:m.deleted===true,
+      deleted_at:typeof m.deleted_at==='string'?m.deleted_at:null,
+      note:typeof m.note==='string'?m.note:''
+    });
+  }
+  var updated_at=typeof raw.updated_at==='string'?raw.updated_at:new Date().toISOString();
+  return {schema_version:BRANCH_MASTER_SCHEMA_VERSION,updated_at:updated_at,members:members};
+}
+
+function loadBranchMaster(){
+  var raw=null;
+  try{raw=localStorage.getItem(BRANCH_MASTER_KEY);}catch(e){return createEmptyBranchMaster();}
+  if(!raw)return createEmptyBranchMaster();
+  try{
+    return normalizeBranchMaster(JSON.parse(raw));
+  }catch(e){
+    // 仕様書 v5 §3.5 / Codex MF #3: 破損 raw を読んだ場合、空マスタに破損フラグを付与。
+    // 既存 localStorage は自動上書きしない（呼び出し側が saveBranchMaster をスキップする）。
+    if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタの読込に失敗。空マスタで継続。既存 localStorage は保持。',e);
+    var empty=createEmptyBranchMaster();
+    empty._loaded_with_corruption=true;
+    return empty;
+  }
+}
+
+function saveBranchMaster(master){
+  try{
+    // 仕様書 v5 §3.5: _loaded_with_corruption は永続化対象外（clone から除外）
+    var clone={
+      schema_version:master.schema_version,
+      updated_at:new Date().toISOString(),
+      members:master.members
+    };
+    master.updated_at=clone.updated_at;
+    localStorage.setItem(BRANCH_MASTER_KEY,JSON.stringify(clone));
+  }catch(e){
+    if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタの保存に失敗。',e);
+  }
+}
+
+function findMemberCandidates(participant,master){
+  if(!participant||!master||!Array.isArray(master.members))return [];
+  var pname=normalizePersonName(participant.name||'');
+  if(!pname)return [];
+  var pyomi=typeof participant.yomi==='string'?participant.yomi:'';
+  var out=[];
+  for(var i=0;i<master.members.length;i++){
+    var m=master.members[i];
+    if(!m||m.deleted)continue;
+    var nm=normalizePersonName(m.name||'');
+    if(nm===pname){out.push(m);continue;}
+    // 異体字（髙/高 等）は自動統合しない（仕様書 3.4.4 の方針）
+    if(pyomi&&m.yomi&&pyomi===m.yomi)out.push(m);
+  }
+  return out;
+}
+
+// ============================================================
+// BRANCH MASTER SYNC (F2): 大会JSONバックアップ保存時のマスタ同期
+//   呼び出しは saveData() からのみ。save()/resetAll()/編集時には呼ばない。
+// ============================================================
+
+function ensureTournamentId(state,master,tournamentDate){
+  if(state&&typeof state.tournament_id==='string'&&state.tournament_id)return state.tournament_id;
+  // 仕様書 v5 §3.3 / Codex MF #1: tournament_id は「大会日」ベースで生成。
+  // tournamentDate が無効な場合のみ todayYmd() にフォールバック。
+  var date=isValidYmd(tournamentDate)?tournamentDate:todayYmd();
+  var base='t_'+date.replace(/-/g,'_');
+  var id=base;
+  if(master&&Array.isArray(master.members)){
+    var existing={};
+    for(var i=0;i<master.members.length;i++){
+      var arr=master.members[i].tournament_ids||[];
+      for(var j=0;j<arr.length;j++)existing[arr[j]]=true;
+    }
+    var n=2;
+    while(existing[id]){id=base+'_'+n;n++;}
+  }
+  if(state)state.tournament_id=id;
+  return id;
+}
+
+function attachMemberIdToPlayer(player,member){
+  if(!player||!member)return;
+  player.member_id=member.id;
+}
+
+function addTournamentIdOnce(member,tournamentId){
+  if(!member||!tournamentId)return false;
+  if(!Array.isArray(member.tournament_ids))member.tournament_ids=[];
+  if(member.tournament_ids.indexOf(tournamentId)>=0)return false;
+  member.tournament_ids.push(tournamentId);
+  return true;
+}
+
+function recalcMemberAttendance(member){
+  if(!member)return 0;
+  if(!Array.isArray(member.tournament_ids))member.tournament_ids=[];
+  member.attendance_count=member.tournament_ids.length;
+  return member.attendance_count;
+}
+
+function createMemberFromParticipant(p,master,date){
+  return {
+    id:generateMemberId(master),
+    name:normalizePersonName(p.name||''),
+    yomi:'',
+    last_class:(p.cls==='A'||p.cls==='B')?p.cls:null,
+    last_attended:date,
+    first_attended:date,
+    attendance_count:0,
+    tournament_ids:[],
+    deleted:false,
+    deleted_at:null,
+    note:''
+  };
+}
+
+function updateBranchMasterFromTournament(state,master,tournamentMeta){
+  if(!state||!master||!Array.isArray(master.members))return master;
+  if(!tournamentMeta||!tournamentMeta.tournament_id)return master;
+  var tid=tournamentMeta.tournament_id;
+  var date=isValidYmd(tournamentMeta.tournament_date)?tournamentMeta.tournament_date:todayYmd();
+
+  var affected={};
+  var pendingSkippedNames=[];
+  var classes=['A','B'];
+  for(var ci=0;ci<classes.length;ci++){
+    var cls=classes[ci];
+    var players=(state.players&&Array.isArray(state.players[cls]))?state.players[cls]:[];
+    for(var pi=0;pi<players.length;pi++){
+      var p=players[pi];
+      if(!p||!p.name)continue;
+      var member=null;
+      if(typeof p.member_id==='string'&&p.member_id){
+        for(var mi=0;mi<master.members.length;mi++){
+          if(master.members[mi].id===p.member_id){member=master.members[mi];break;}
+        }
+      }
+      if(!member){
+        var cands=findMemberCandidates({name:p.name},master);
+        if(cands.length===1){
+          member=cands[0];
+          attachMemberIdToPlayer(p,member);
+        }else if(cands.length>1){
+          // 仕様書 v5 §3.4.4 / Codex MF #2: 同名複数候補時はマスタ同期をスキップ。
+          // 誤タップ・取り違えで別人を統合する事故を防ぐため、member_id は付与しない。
+          // tournament_ids への追加もしない。後で手動紐付け（A-2）の余地を残す。
+          var skipName=String(p.name||'');
+          if(typeof console!=='undefined'&&console.warn)console.warn('「'+skipName+'」は同名候補が '+cands.length+' 件あるためマスタ同期を保留');
+          pendingSkippedNames.push(skipName);
+          continue;
+        }else{
+          try{
+            member=createMemberFromParticipant(p,master,date);
+            master.members.push(member);
+            attachMemberIdToPlayer(p,member);
+          }catch(e){
+            if(typeof console!=='undefined'&&console.warn)console.warn('member_id 生成失敗。スキップ',e);
+            continue;
+          }
+        }
+      }
+      addTournamentIdOnce(member,tid);
+      if(isValidYmd(date)){
+        if(!member.last_attended||date>=member.last_attended)member.last_attended=date;
+        if(!member.first_attended||date<member.first_attended)member.first_attended=date;
+      }
+      if(p.cls==='A'||p.cls==='B')member.last_class=p.cls;
+      affected[member.id]=member;
+    }
+  }
+  for(var k in affected){
+    if(affected.hasOwnProperty(k))recalcMemberAttendance(affected[k]);
+  }
+  // 保留通知（複数件あっても1度だけ）
+  if(pendingSkippedNames.length>0&&typeof showMsg==='function'){
+    showMsg('同名候補が複数あるため次の '+pendingSkippedNames.length+' 名のマスタ同期を保留しました：'+pendingSkippedNames.join('、'),'warn');
+  }
+  return master;
+}
+
+// ============================================================
+// PAST PARTICIPANTS PANEL (F3, F5a): 過去参加者からのワンクリック呼び出し
+// ============================================================
+
+function buildPastParticipantsPanelHtml(master,filter){
+  var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
+  var query=normalizePersonName(filter||'');
+  var filtered=[];
+  for(var i=0;i<members.length;i++){
+    var nm=normalizePersonName(members[i].name||'');
+    if(!query||nm.indexOf(query)>=0)filtered.push(members[i]);
+  }
+  filtered.sort(function(a,b){
+    var la=a.last_attended||'',lb=b.last_attended||'';
+    if(la!==lb)return la<lb?1:-1;
+    return (a.name||'')<(b.name||'')?-1:1;
+  });
+  var html='<div class="flex" style="margin-bottom:8px">';
+  html+='<input type="text" id="pp-search" placeholder="氏名で検索（漢字部分一致）" value="'+escapeHtml(filter||'')+'" style="flex:1;min-width:0">';
+  html+='</div>';
+  if(members.length===0){
+    html+='<div style="color:#888;font-size:13px;padding:8px 0">支部マスタが空です。「マスタ」タブから過去大会を統合できます。</div>';
+    return html;
+  }
+  if(filtered.length===0){
+    html+='<div style="color:#888;font-size:13px;padding:8px 0">該当する参加者がいません。</div>';
+    return html;
+  }
+  html+='<div style="max-height:280px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;padding:6px;margin-bottom:8px">';
+  for(var j=0;j<filtered.length;j++){
+    var fm=filtered[j];
+    var lc=fm.last_class==='A'?'Aクラス':(fm.last_class==='B'?'Bクラス':'-');
+    html+='<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:pointer">';
+    html+='<input type="checkbox" class="pp-check" data-mid="'+escapeHtml(fm.id)+'">';
+    html+='<span style="flex:1;font-size:14px">'+escapeHtml(fm.name)+'</span>';
+    html+='<span style="font-size:12px;color:#666">'+escapeHtml(lc)+'</span>';
+    html+='<span style="font-size:11px;color:#888;min-width:5em;text-align:right">'+escapeHtml(fm.last_attended||'')+'</span>';
+    html+='</label>';
+  }
+  html+='</div>';
+  html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+  html+='<button type="button" class="btn-primary" id="pp-add">選択した <span id="pp-count">0</span> 名を追加</button>';
+  html+='<span style="font-size:12px;color:#888">最終クラスをデフォルトに登録</span>';
+  html+='</div>';
+  return html;
+}
+
+function bindPastParticipantsPanelEvents(){
+  var input=document.getElementById('pp-search');
+  if(input){
+    var composing=false;
+    input.addEventListener('compositionstart',function(){composing=true;});
+    input.addEventListener('compositionend',function(){composing=false;renderPastParticipantsPanel(input.value);});
+    input.addEventListener('input',function(){if(!composing)renderPastParticipantsPanel(input.value);});
+  }
+  var checks=document.querySelectorAll('.pp-check');
+  function updateCount(){
+    var n=0;
+    for(var i=0;i<checks.length;i++)if(checks[i].checked)n++;
+    var c=document.getElementById('pp-count');
+    if(c)c.textContent=n;
+  }
+  for(var i=0;i<checks.length;i++)checks[i].addEventListener('change',updateCount);
+  updateCount();
+  var addBtn=document.getElementById('pp-add');
+  if(addBtn)addBtn.addEventListener('click',addSelectedPastParticipants);
+}
+
+function addSelectedPastParticipants(){
+  var master=loadBranchMaster();
+  var checks=document.querySelectorAll('.pp-check');
+  var picked=[];
+  for(var i=0;i<checks.length;i++){
+    if(!checks[i].checked)continue;
+    var mid=checks[i].getAttribute('data-mid');
+    for(var j=0;j<master.members.length;j++){
+      if(master.members[j].id===mid){picked.push(master.members[j]);break;}
+    }
+  }
+  if(picked.length===0){alert('追加する参加者を選択してください');return;}
+  var existingNames={};
+  var existingMids={};
+  var allCurrent=state.players.A.concat(state.players.B);
+  for(var k=0;k<allCurrent.length;k++){
+    if(allCurrent[k].name)existingNames[allCurrent[k].name]=true;
+    if(allCurrent[k].member_id)existingMids[allCurrent[k].member_id]=true;
+  }
+  var added=0,skipped=0;
+  for(var p=0;p<picked.length;p++){
+    var m=picked[p];
+    if(existingMids[m.id]||existingNames[m.name]){skipped++;continue;}
+    var cls=(m.last_class==='A'||m.last_class==='B')?m.last_class:'A';
+    var pid='p'+Date.now()+Math.floor(Math.random()*1000)+'_'+p;
+    state.players[cls].push({id:pid,name:m.name,cls:cls,member:'member',grade:'ippan',member_id:m.id});
+    existingMids[m.id]=true;
+    existingNames[m.name]=true;
+    added++;
+  }
+  renderRegList();save();
+  renderPastParticipantsPanel('');
+  showMsg(added+'名を追加しました'+(skipped>0?'（同名・同 member_id 重複 '+skipped+'名はスキップ）':''),'ok');
+}
+
+function renderPastParticipantsPanel(filter){
+  var section=document.getElementById('past-participants-section');
+  if(!section)return;
+  var master=loadBranchMaster();
+  var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
+  if(members.length===0){section.style.display='none';return;}
+  section.style.display='block';
+  var summary=document.getElementById('pp-summary');
+  if(summary)summary.textContent='登録 '+members.length+'名';
+  var panel=document.getElementById('ppPanel');
+  if(!panel)return;
+  panel.innerHTML=buildPastParticipantsPanelHtml(master,filter||'');
+  bindPastParticipantsPanelEvents();
+}
+
+function bindPastParticipantsToggle(){
+  var btn=document.getElementById('ppToggleBtn');
+  var panel=document.getElementById('ppPanel');
+  if(!btn||!panel)return;
+  btn.addEventListener('click',function(){
+    var open=panel.style.display!=='none';
+    if(open){panel.style.display='none';btn.textContent='▼ 開く';}
+    else{panel.style.display='block';btn.textContent='▲ 閉じる';}
+  });
+}
+
+// ============================================================
+// MASTER TAB (F11, F10): 最小マスタタブ + 利用目的表示
+// ============================================================
+
+function buildMasterTabHtml(master){
+  var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
+  members.sort(function(a,b){
+    var la=a.last_attended||'',lb=b.last_attended||'';
+    if(la!==lb)return la<lb?1:-1;
+    return (a.name||'')<(b.name||'')?-1:1;
+  });
+  var html='<div class="section"><h2>沼津支部 参加者マスタ</h2>';
+  html+='<div style="margin-bottom:12px;font-size:14px">登録: <strong>'+members.length+'名</strong></div>';
+  html+='<div style="margin-bottom:16px"><button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button></div>';
+  html+='<hr class="separator">';
+  html+='<h3>簡易一覧</h3>';
+  if(members.length===0){
+    html+='<div style="color:#888;font-size:13px;padding:8px 0">登録された参加者はいません。</div>';
+  }else{
+    html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th></tr></thead><tbody>';
+    for(var i=0;i<members.length;i++){
+      var m=members[i];
+      html+='<tr><td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.name)+'</td>';
+      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.last_attended||'')+'</td>';
+      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+(m.attendance_count|0)+'</td></tr>';
+    }
+    html+='</tbody></table></div>';
+  }
+  html+='<hr class="separator">';
+  html+='<h3>利用目的</h3>';
+  html+='<div style="font-size:13px;color:#444;line-height:1.6">'
+    +'本ツールは沼津支部内の大会運営目的で、過去参加者の氏名・参加履歴をこの端末内に保存します。'
+    +'削除機能は A-2 で提供予定です。A-1 ではマスタ管理画面からの削除操作はできません。'
+    +'</div>';
+  html+='</div>';
+  return html;
+}
+
+function bindMasterTabEvents(){
+  var btn=document.getElementById('masterMigrateBtn');
+  if(btn)btn.addEventListener('click',openMigrationWizard);
+}
+
+function renderMasterTab(){
+  var el=document.getElementById('pane-master');
+  if(!el)return;
+  var master=loadBranchMaster();
+  el.innerHTML=buildMasterTabHtml(master);
+  bindMasterTabEvents();
+}
+
+// ============================================================
+// MIGRATION WIZARD (F9): 過去大会JSONを支部マスタに統合
+// ============================================================
+
+function buildMigrationModalHtml(){
+  return '<div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-width:90vw;max-height:85vh;overflow-y:auto">'
+    +'<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">過去大会の統合</h3>'
+    +'<p style="font-size:13px;color:#555;line-height:1.6;margin-bottom:12px">過去の大会JSONファイルを読み込んで、支部マスタを構築します。複数選択できます。</p>'
+    +'<div style="margin-bottom:12px">'
+    +'<input type="file" id="mig-files" accept=".json" multiple style="font-size:13px;width:100%">'
+    +'</div>'
+    +'<div id="mig-status" style="font-size:13px;color:#555;margin-bottom:12px;min-height:1.5em;line-height:1.6"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end">'
+    +'<button type="button" id="mig-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">閉じる</button>'
+    +'<button type="button" class="btn-primary" id="mig-run">統合を実行</button>'
+    +'</div></div>';
+}
+
+function bindMigrationModalEvents(){
+  var cancelBtn=document.getElementById('mig-cancel');
+  if(cancelBtn)cancelBtn.addEventListener('click',function(){
+    var m=document.getElementById('mig-modal');if(m)m.remove();
+  });
+  var runBtn=document.getElementById('mig-run');
+  if(runBtn)runBtn.addEventListener('click',function(){
+    var input=document.getElementById('mig-files');
+    var files=input&&input.files?input.files:[];
+    if(!files||files.length===0){alert('JSONファイルを選択してください');return;}
+    var statusEl=document.getElementById('mig-status');
+    if(statusEl)statusEl.textContent='読み込み中...';
+    parseTournamentJsonFiles(files).then(function(tournaments){
+      var master=loadBranchMaster();
+      var summary=mergeTournamentParticipantsIntoMaster(tournaments,master);
+      saveBranchMaster(master);
+      if(statusEl){
+        statusEl.textContent=summary.tournaments+'大会を読込：新規追加 '+summary.added+'名 / 既存統合 '+summary.matched+'件 / スキップ '+summary.skipped+'件';
+      }
+      renderMasterTab();
+      renderPastParticipantsPanel();
+    }).catch(function(err){
+      if(statusEl)statusEl.textContent='読み込みに失敗：'+(err&&err.message?err.message:String(err));
+    });
+  });
+}
+
+function openMigrationWizard(){
+  var existing=document.getElementById('mig-modal');
+  if(existing)existing.remove();
+  var modal=document.createElement('div');
+  modal.id='mig-modal';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=buildMigrationModalHtml();
+  document.body.appendChild(modal);
+  bindMigrationModalEvents();
+}
+
+function parseTournamentJsonFiles(files){
+  var arr=Array.prototype.slice.call(files);
+  return Promise.all(arr.map(function(file){
+    return new Promise(function(resolve,reject){
+      var reader=new FileReader();
+      reader.onload=function(ev){
+        try{
+          var raw=JSON.parse(ev.target.result);
+          resolve({raw:raw,filename:file.name||''});
+        }catch(e){
+          reject(new Error((file.name||'JSONファイル')+' のパースに失敗：'+e.message));
+        }
+      };
+      reader.onerror=function(){reject(new Error((file.name||'JSONファイル')+' の読込に失敗'));};
+      reader.readAsText(file);
+    });
+  }));
+}
+
+function deriveTournamentMetaForMigration(raw,filename,master){
+  if(raw&&typeof raw.tournament_id==='string'&&raw.tournament_id){
+    var tdate=isValidYmd(raw.tournament_date)?raw.tournament_date:null;
+    if(!tdate&&raw.report&&typeof raw.report.date==='string'){
+      var rm0=raw.report.date.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
+      if(rm0)tdate=rm0[1]+'-'+('0'+rm0[2]).slice(-2)+'-'+('0'+rm0[3]).slice(-2);
+    }
+    return {tournament_id:raw.tournament_id, tournament_date:tdate||todayYmd()};
+  }
+  var date=null;
+  var fm=filename&&filename.match(/(\d{4})(\d{2})(\d{2})/);
+  if(fm)date=fm[1]+'-'+fm[2]+'-'+fm[3];
+  if(!date&&raw&&raw.report&&typeof raw.report.date==='string'){
+    var rm=raw.report.date.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
+    if(rm)date=rm[1]+'-'+('0'+rm[2]).slice(-2)+'-'+('0'+rm[3]).slice(-2);
+  }
+  if(!date)date=todayYmd();
+  var base='t_'+date.replace(/-/g,'_');
+  var existing={};
+  for(var i=0;i<master.members.length;i++){
+    var arr=master.members[i].tournament_ids||[];
+    for(var j=0;j<arr.length;j++)existing[arr[j]]=true;
+  }
+  var id=base; var n=2;
+  while(existing[id]){id=base+'_'+n;n++;}
+  return {tournament_id:id, tournament_date:date};
+}
+
+function mergeTournamentParticipantsIntoMaster(tournaments,master){
+  var added=0, matched=0, skipped=0;
+  for(var t=0;t<tournaments.length;t++){
+    var entry=tournaments[t];
+    var raw=entry&&entry.raw;
+    if(!raw||typeof raw!=='object'){skipped++;continue;}
+    var tempState=normalizeState(raw);
+    var meta=deriveTournamentMetaForMigration(raw,entry.filename||'',master);
+    var classes=['A','B'];
+    for(var ci=0;ci<classes.length;ci++){
+      var cls=classes[ci];
+      var players=tempState.players[cls]||[];
+      for(var pi=0;pi<players.length;pi++){
+        var p=players[pi];
+        if(!p||!p.name)continue;
+        var member=null;
+        if(typeof p.member_id==='string'&&p.member_id){
+          for(var mi=0;mi<master.members.length;mi++){
+            if(master.members[mi].id===p.member_id){member=master.members[mi];break;}
+          }
+        }
+        if(!member){
+          var cands=findMemberCandidates({name:p.name},master);
+          if(cands.length===1){
+            member=cands[0]; matched++;
+          }else{
+            // 0件 → 新規。複数 → 自動統合しない（仕様書 7.5）→ 新規作成
+            try{
+              member=createMemberFromParticipant(p,master,meta.tournament_date);
+              master.members.push(member); added++;
+            }catch(e){skipped++;continue;}
+          }
+        }else{
+          matched++;
+        }
+        addTournamentIdOnce(member,meta.tournament_id);
+        if(isValidYmd(meta.tournament_date)){
+          if(!member.last_attended||meta.tournament_date>=member.last_attended)member.last_attended=meta.tournament_date;
+          if(!member.first_attended||meta.tournament_date<member.first_attended)member.first_attended=meta.tournament_date;
+        }
+        if(p.cls==='A'||p.cls==='B')member.last_class=p.cls;
+        recalcMemberAttendance(member);
+      }
+    }
+  }
+  return {tournaments:tournaments.length, added:added, matched:matched, skipped:skipped};
+}
+
+// ============================================================
 // UI HELPERS: タブ切替とメッセージ表示
 // ============================================================
 
@@ -337,11 +964,14 @@ function showTab(t){
   document.getElementById('pane-reg').style.display=t==='reg'?'block':'none';
   document.getElementById('pane-tournament').style.display=t==='tournament'?'block':'none';
   document.getElementById('pane-result').style.display=t==='result'?'block':'none';
+  var pm=document.getElementById('pane-master');if(pm)pm.style.display=t==='master'?'block':'none';
   document.getElementById('tab-reg').className='tab'+(t==='reg'?' active':'');
   document.getElementById('tab-tournament').className='tab'+(t==='tournament'?' active':'');
   document.getElementById('tab-result').className='tab'+(t==='result'?' active':'');
+  var tm=document.getElementById('tab-master');if(tm)tm.className='tab'+(t==='master'?' active':'');
   if(t==='result')renderResults();
   if(t==='tournament'){renderTournament('A');renderTournament('B');}
+  if(t==='master')renderMasterTab();
 }
 
 function showMsg(text,type){
@@ -1202,8 +1832,42 @@ function renderResults(){
   });
 }
 
+// 大会の report.date（"YYYY年MM月DD日"）を YYYY-MM-DD に変換。失敗時は今日。
+function getTournamentDateFromReport(r){
+  if(r&&typeof r.date==='string'){
+    var m=r.date.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
+    if(m)return m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2);
+  }
+  return todayYmd();
+}
+
+// マスタ同期は saveData() 時のみ。save()/resetAll()/編集時に呼ばない（仕様書 3.4.1、§3.1.3）
+function syncBranchMasterOnSave(){
+  try{
+    var master=loadBranchMaster();
+    // 仕様書 v5 §3.5 / Codex MF #3: 破損由来の空マスタは保存しない。
+    // 既存 localStorage を保持し、ユーザの再マイグレ・手動修復を待つ。
+    if(master&&master._loaded_with_corruption){
+      if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタが破損しているため自動同期をスキップ（大会JSON保存は継続）');
+      if(typeof showMsg==='function')showMsg('支部マスタが破損しているため自動同期をスキップしました（大会JSON保存は継続）','warn');
+      save();
+      return;
+    }
+    var date=getTournamentDateFromReport(state.report);
+    // 仕様書 v5 §3.3 / Codex MF #1: 大会日を ensureTournamentId に明示的に渡す
+    ensureTournamentId(state,master,date);
+    updateBranchMasterFromTournament(state,master,{tournament_id:state.tournament_id,tournament_date:date});
+    saveBranchMaster(master);
+    save();
+  }catch(e){
+    if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタ同期に失敗（既存大会運営は継続）',e);
+  }
+}
+
 // クリップボード優先、非対応(http等)はファイルダウンロードにフォールバック
 function saveData(){
+  // F2: 大会JSONバックアップ保存時に支部マスタへ同期（A-1 ではこのタイミングのみ）
+  syncBranchMasterOnSave();
   var json=JSON.stringify(state,null,2);
   if(navigator.clipboard&&navigator.clipboard.writeText&&window.isSecureContext){
     navigator.clipboard.writeText(json).then(function(){
@@ -1247,6 +1911,7 @@ function applyLoadedJson(rawText){
   save();
   populateReportFields();
   renderRegList();
+  renderPastParticipantsPanel();
   if(state.started){
     if(isTournamentDone()){
       showTab('result');
@@ -1520,9 +2185,10 @@ function downloadReport(){
 }
 
 function resetAll(){
-  if(!confirm('全データをリセットしますか？'))return;
+  if(!confirm('現在の大会データをリセットします（支部マスタは保持されます）'))return;
   state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}};
   try{
+    // 仕様書 3.4.1 / §3.1.5: shogi_branch_master は絶対に消さない
     localStorage.removeItem(STORAGE_KEY);
     for(var i=0;i<LEGACY_STORAGE_KEYS.length;i++)localStorage.removeItem(LEGACY_STORAGE_KEYS[i]);
   }catch(e){}
@@ -1580,6 +2246,8 @@ function bindTabEvents(){
   document.getElementById('tab-reg').addEventListener('click',function(){showTab('reg');});
   document.getElementById('tab-tournament').addEventListener('click',function(){showTab('tournament');});
   document.getElementById('tab-result').addEventListener('click',function(){showTab('result');});
+  var tm=document.getElementById('tab-master');
+  if(tm)tm.addEventListener('click',function(){showTab('master');});
 }
 
 function populateReportFields(){
@@ -1621,6 +2289,8 @@ function initApp(){
   load();
   populateReportFields();
   renderRegList();
+  renderPastParticipantsPanel();
+  bindPastParticipantsToggle();
   if(state.started){
     if(isTournamentDone()){
       showTab('result');

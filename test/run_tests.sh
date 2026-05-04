@@ -262,6 +262,22 @@ else
 fi
 
 # ============================================
+# 支部マスタ機能テスト（Phase A-1）
+# ============================================
+echo ""
+echo "【支部マスタ機能テスト（Phase A-1）】"
+if [ -f "$SCRIPT_DIR/test_branch_master.js" ]; then
+  if node "$SCRIPT_DIR/test_branch_master.js" "$TARGET" > /tmp/branch_master_out.log 2>&1; then
+    ok "支部マスタ機能テスト 全PASS ($(tail -1 /tmp/branch_master_out.log))"
+  else
+    ng "支部マスタ機能テスト 失敗"
+    cat /tmp/branch_master_out.log
+  fi
+else
+  warn "test_branch_master.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
