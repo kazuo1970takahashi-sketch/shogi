@@ -664,13 +664,31 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
 // PAST PARTICIPANTS PANEL (F3, F5a): 過去参加者からのワンクリック呼び出し
 // ============================================================
 
+// 仕様書 v6 §3.2: 過去参加者検索の判定（漢字一致 OR ふりがな一致）
+// ChatGPT E 反映: name 自体は normalizeYomi せず、yomi 側だけ正規化。
+// boolean を返すため、両方ヒットしても結果リストには1回しか入らない。
+function matchesPastParticipantQuery(member,query){
+  if(!query)return true;
+  var qn=normalizePersonName(query);
+  var name=normalizePersonName(member&&member.name||'');
+  // 漢字部分一致（既存 A-1 動作と互換）
+  if(qn&&name.indexOf(qn)>=0)return true;
+  // ふりがな検索（カタカナ入力もここで吸収）
+  var nq=normalizeYomi(query);
+  if(!nq)return false;
+  // カタカナ入力（「サトウ」→「さとう」）が name に書かれているケースもケア
+  if(name.indexOf(nq)>=0)return true;
+  var ny=normalizeYomi(member&&member.yomi);
+  if(ny&&ny.indexOf(nq)>=0)return true;
+  return false;
+}
+
 function buildPastParticipantsPanelHtml(master,filter){
   var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
-  var query=normalizePersonName(filter||'');
+  var query=filter||'';
   var filtered=[];
   for(var i=0;i<members.length;i++){
-    var nm=normalizePersonName(members[i].name||'');
-    if(!query||nm.indexOf(query)>=0)filtered.push(members[i]);
+    if(matchesPastParticipantQuery(members[i],query))filtered.push(members[i]);
   }
   filtered.sort(function(a,b){
     var la=a.last_attended||'',lb=b.last_attended||'';
@@ -678,7 +696,7 @@ function buildPastParticipantsPanelHtml(master,filter){
     return (a.name||'')<(b.name||'')?-1:1;
   });
   var html='<div class="flex" style="margin-bottom:8px">';
-  html+='<input type="text" id="pp-search" placeholder="氏名で検索（漢字部分一致）" value="'+escapeHtml(filter||'')+'" style="flex:1;min-width:0">';
+  html+='<input type="text" id="pp-search" placeholder="氏名で検索（漢字・ふりがな）" value="'+escapeHtml(filter||'')+'" style="flex:1;min-width:0">';
   html+='</div>';
   if(members.length===0){
     html+='<div style="color:#888;font-size:13px;padding:8px 0">支部マスタが空です。「マスタ」タブから過去大会を統合できます。</div>';

@@ -80,6 +80,8 @@ function loadEnv(path, opts) {
        normalizePersonName:normalizePersonName,
        normalizeYomi:normalizeYomi,
        getYomiInitialRow:getYomiInitialRow,
+       matchesPastParticipantQuery:matchesPastParticipantQuery,
+       buildPastParticipantsPanelHtml:buildPastParticipantsPanelHtml,
        isValidYmd:isValidYmd,
        todayYmd:todayYmd,
        normalizeBranchMaster:normalizeBranchMaster,
@@ -680,6 +682,62 @@ const env = loadEnv(targetPath);
   assertEq(env.getYomiInitialRow('Smith'),'other','getYomiInitialRow: アルファベット → other');
   assertEq(env.getYomiInitialRow('!?'),'other','getYomiInitialRow: 記号 → other');
   assertEq(env.getYomiInitialRow('ーらん'),'other','getYomiInitialRow: 先頭長音符 → other');
+}
+
+// ============================================================
+// Phase A-2 §3.2: F5b ふりがな検索（matchesPastParticipantQuery）
+// ============================================================
+
+{
+  var mYama={id:'m_y',name:'山田 太郎',yomi:'やまだたろう',last_class:null,last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:1,tournament_ids:[],deleted:false,deleted_at:null,note:''};
+  var mSato={id:'m_s',name:'佐藤次郎',yomi:'さとうじろう',last_class:null,last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:1,tournament_ids:[],deleted:false,deleted_at:null,note:''};
+  var mNoYomi={id:'m_n',name:'田中三郎',yomi:'',last_class:null,last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:1,tournament_ids:[],deleted:false,deleted_at:null,note:''};
+  var mForeign={id:'m_f',name:'Smith',yomi:'',last_class:null,last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:1,tournament_ids:[],deleted:false,deleted_at:null,note:''};
+
+  // 空 query → 全件
+  assert(env.matchesPastParticipantQuery(mYama,'')===true,'matchesQuery: 空 query → true');
+  assert(env.matchesPastParticipantQuery(mNoYomi,'')===true,'matchesQuery: 空 query は yomi 空でも true');
+
+  // 漢字一致のみ → ヒット（既存動作維持）
+  assert(env.matchesPastParticipantQuery(mYama,'山田')===true,'matchesQuery: 漢字部分一致でヒット');
+  assert(env.matchesPastParticipantQuery(mYama,'太郎')===true,'matchesQuery: 名側の漢字部分一致でもヒット');
+
+  // ふりがな一致のみ → ヒット
+  assert(env.matchesPastParticipantQuery(mYama,'やまだ')===true,'matchesQuery: ひらがな yomi 部分一致でヒット');
+  assert(env.matchesPastParticipantQuery(mSato,'さとう')===true,'matchesQuery: ひらがな yomi 部分一致でヒット（佐藤）');
+
+  // カタカナ入力（「サトウ」）→「さとう」と同じヒット
+  assert(env.matchesPastParticipantQuery(mSato,'サトウ')===true,'matchesQuery: カタカナ入力でヒット（normalizeYomi 経由）');
+  assert(env.matchesPastParticipantQuery(mYama,'ヤマダ')===true,'matchesQuery: カタカナ入力でヒット（山田）');
+
+  // 両方一致 → boolean なので1回のみヒット（filter で重複しない）
+  assert(env.matchesPastParticipantQuery(mYama,'やまだ')===true,'matchesQuery: 両方一致でも boolean true（重複なし）');
+
+  // どちらも不一致 → ヒットせず
+  assert(env.matchesPastParticipantQuery(mYama,'鈴木')===false,'matchesQuery: 不一致漢字 → false');
+  assert(env.matchesPastParticipantQuery(mYama,'すずき')===false,'matchesQuery: 不一致ふりがな → false');
+
+  // ローマ字（「sa」）→ A-2 では非対応 → 漢字 name に sa が入っていない限り false
+  assert(env.matchesPastParticipantQuery(mSato,'sa')===false,'matchesQuery: ローマ字検索は非対応');
+
+  // yomi 空の member → 漢字でしか引けない
+  assert(env.matchesPastParticipantQuery(mNoYomi,'田中')===true,'matchesQuery: yomi 空でも漢字で引ける');
+  assert(env.matchesPastParticipantQuery(mNoYomi,'たなか')===false,'matchesQuery: yomi 空はふりがなで引けない');
+
+  // 外国名（yomi 空 + 漢字でない name）
+  assert(env.matchesPastParticipantQuery(mForeign,'Smith')===true,'matchesQuery: 外国名は name 一致で引ける');
+  assert(env.matchesPastParticipantQuery(mForeign,'すみす')===false,'matchesQuery: yomi 空の外国名はふりがなで引けない');
+
+  // プレースホルダ確認
+  var master={schema_version:1,updated_at:'2026-04-01',members:[mYama,mSato]};
+  var html=env.buildPastParticipantsPanelHtml(master,'');
+  assert(html.indexOf('placeholder="氏名で検索（漢字・ふりがな）"')>=0,'F5b: 検索ボックスのプレースホルダが「漢字・ふりがな」に更新されている');
+  assert(html.indexOf('placeholder="氏名で検索（漢字部分一致）"')<0,'F5b: 旧プレースホルダ「漢字部分一致」が残っていない');
+
+  // フィルタ統合: パネル HTML でカタカナ入力でも該当 member のみ含む
+  var htmlKana=env.buildPastParticipantsPanelHtml(master,'サトウ');
+  assert(htmlKana.indexOf('佐藤次郎')>=0,'F5b: カタカナ「サトウ」検索で佐藤次郎が表示される');
+  assert(htmlKana.indexOf('山田 太郎')<0,'F5b: カタカナ「サトウ」検索で山田太郎は表示されない');
 }
 
 // 結果出力
