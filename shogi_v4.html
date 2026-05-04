@@ -365,10 +365,15 @@ function todayYmd(){
 }
 
 function generateMemberId(master){
+  // 仕様書 v5 §3.3 / Codex MF #4: crypto.randomUUID 不在時は明示 throw。
+  // 旧実装は raw='' で 'm_' だけの不正 ID を保存していた。スマホ運用前提のため
+  // サイレントフォールバックではなくエラーで気付ける設計とする。
+  if(typeof crypto==='undefined'||!crypto.randomUUID){
+    throw new Error('crypto.randomUUID が利用不可な環境です。古い iOS Safari 等の場合、ブラウザを更新してください。');
+  }
   for(var i=0;i<3;i++){
     // 必ず replace(/-/g,'') を先に行う（slice 先行だとハイフンが残る危険）
-    var raw=(typeof crypto!=='undefined'&&crypto.randomUUID)?crypto.randomUUID():'';
-    var id='m_'+String(raw).replace(/-/g,'').slice(0,12);
+    var id='m_'+crypto.randomUUID().replace(/-/g,'').slice(0,12);
     var dup=false;
     if(master&&Array.isArray(master.members)){
       for(var j=0;j<master.members.length;j++){

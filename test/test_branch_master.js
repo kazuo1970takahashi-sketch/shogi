@@ -54,11 +54,15 @@ function makeContext(opts) {
       return s.slice(0,8)+'-'+s.slice(8,12)+'-'+s.slice(12,16)+'-'+s.slice(16,20)+'-'+s.slice(20,32);
     }
   };
+  let cryptoOut;
+  if (opts && opts.noCrypto) cryptoOut = undefined;
+  else if (opts && opts.crypto) cryptoOut = opts.crypto;
+  else cryptoOut = defaultCrypto;
   return {
     document: docMock,
     window: winMock,
     localStorage: localStorageMock,
-    crypto: (opts && opts.crypto) ? opts.crypto : defaultCrypto
+    crypto: cryptoOut
   };
 }
 
@@ -541,6 +545,30 @@ const env = loadEnv(targetPath);
   // クリーンアップ
   env3._localStorage.removeItem('shogi_branch_master');
   env3._localStorage.removeItem('shogi_v4');
+}
+
+// ============================================================
+// Codex MF #4: crypto.randomUUID 不在時の明示 throw（仕様書 v5 §3.3）
+// ============================================================
+{
+  const envNoCrypto = loadEnv(targetPath, {noCrypto:true});
+  const m = envNoCrypto.createEmptyBranchMaster();
+  let threw=false; let msg='';
+  try { envNoCrypto.generateMemberId(m); } catch(e){ threw=true; msg=String(e&&e.message?e.message:e); }
+  assert(threw,'MF#4: crypto.randomUUID 不在で generateMemberId が throw');
+  assert(msg.indexOf('crypto.randomUUID')>=0,'MF#4: throw メッセージに crypto.randomUUID 言及あり（古環境向け案内）');
+
+  // 不正な 'm_' のみの ID が member.id として保存されていないこと
+  // （generateMemberId が throw するため、createMemberFromParticipant 経由でも作成不可）
+  let createdInvalid=false;
+  try {
+    envNoCrypto.createMemberFromParticipant({name:'X',cls:'A'},m,'2026-04-15');
+    // 例外なしで member が返ったら「m_」だけかチェック
+    createdInvalid=true;
+  } catch(e){
+    // 期待: throw される
+  }
+  assert(!createdInvalid,'MF#4: crypto 不在では createMemberFromParticipant も throw（不正 m_ ID 非保存）');
 }
 
 // 結果出力
