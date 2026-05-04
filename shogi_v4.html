@@ -94,6 +94,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     <button type="button" class="tab active" id="tab-reg">参加者登録</button>
     <button type="button" class="tab" id="tab-tournament">対局管理</button>
     <button type="button" class="tab" id="tab-result">最終結果</button>
+    <button type="button" class="tab" id="tab-master">マスタ</button>
   </div>
   <div id="pane-reg">
     <div class="section" id="past-participants-section" style="display:none">
@@ -144,6 +145,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
       <div id="pane-B"></div>
     </div>
   </div>
+  <div id="pane-master" style="display:none"></div>
   <div id="pane-result" style="display:none">
     <div id="result-A"></div>
     <div id="result-B" style="margin-top:16px"></div>
@@ -729,6 +731,65 @@ function bindPastParticipantsToggle(){
     if(open){panel.style.display='none';btn.textContent='▼ 開く';}
     else{panel.style.display='block';btn.textContent='▲ 閉じる';}
   });
+}
+
+// ============================================================
+// MASTER TAB (F11, F10): 最小マスタタブ + 利用目的表示
+// ============================================================
+
+function buildMasterTabHtml(master){
+  var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
+  members.sort(function(a,b){
+    var la=a.last_attended||'',lb=b.last_attended||'';
+    if(la!==lb)return la<lb?1:-1;
+    return (a.name||'')<(b.name||'')?-1:1;
+  });
+  var html='<div class="section"><h2>沼津支部 参加者マスタ</h2>';
+  html+='<div style="margin-bottom:12px;font-size:14px">登録: <strong>'+members.length+'名</strong></div>';
+  html+='<div style="margin-bottom:16px"><button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button></div>';
+  html+='<hr class="separator">';
+  html+='<h3>簡易一覧</h3>';
+  if(members.length===0){
+    html+='<div style="color:#888;font-size:13px;padding:8px 0">登録された参加者はいません。</div>';
+  }else{
+    html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th></tr></thead><tbody>';
+    for(var i=0;i<members.length;i++){
+      var m=members[i];
+      html+='<tr><td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.name)+'</td>';
+      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.last_attended||'')+'</td>';
+      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+(m.attendance_count|0)+'</td></tr>';
+    }
+    html+='</tbody></table></div>';
+  }
+  html+='<hr class="separator">';
+  html+='<h3>利用目的</h3>';
+  html+='<div style="font-size:13px;color:#444;line-height:1.6">'
+    +'本ツールは沼津支部内の大会運営目的で、過去参加者の氏名・参加履歴をこの端末内に保存します。'
+    +'削除機能は A-2 で提供予定です。A-1 ではマスタ管理画面からの削除操作はできません。'
+    +'</div>';
+  html+='</div>';
+  return html;
+}
+
+function bindMasterTabEvents(){
+  var btn=document.getElementById('masterMigrateBtn');
+  if(btn)btn.addEventListener('click',openMigrationWizard);
+}
+
+function renderMasterTab(){
+  var el=document.getElementById('pane-master');
+  if(!el)return;
+  var master=loadBranchMaster();
+  el.innerHTML=buildMasterTabHtml(master);
+  bindMasterTabEvents();
+}
+
+// マイグレーションウィザード（Stage 6 で実装）。openMigrationWizard はここで stub を定義し、
+// Stage 6 のコミットで本実装に差し替える。関数宣言の上書きで JavaScript ホイスティングの
+// 二重定義を避けるため、ここでは関数式で globalThis に代入する。
+function openMigrationWizard(){
+  alert('マイグレーションウィザード（実装中）');
 }
 
 // ============================================================
