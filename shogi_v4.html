@@ -330,6 +330,140 @@ function load(){
 }
 
 // ============================================================
+// BRANCH MASTER (支部マスタ) — Phase A-1
+//   localStorage キー: shogi_branch_master（既存 state とは別管理）
+//   破損時も既存大会運営を止めない（normalizeBranchMaster）
+//   resetAll() ではマスタを消さない（仕様書 3.4.1）
+// ============================================================
+
+var BRANCH_MASTER_KEY='shogi_branch_master';
+var BRANCH_MASTER_SCHEMA_VERSION=1;
+
+function createEmptyBranchMaster(){
+  return {schema_version:BRANCH_MASTER_SCHEMA_VERSION,updated_at:new Date().toISOString(),members:[]};
+}
+
+function isValidYmd(s){return typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s);}
+
+function todayYmd(){
+  var d=new Date();
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+
+function generateMemberId(master){
+  for(var i=0;i<3;i++){
+    // 必ず replace(/-/g,'') を先に行う（slice 先行だとハイフンが残る危険）
+    var raw=(typeof crypto!=='undefined'&&crypto.randomUUID)?crypto.randomUUID():'';
+    var id='m_'+String(raw).replace(/-/g,'').slice(0,12);
+    var dup=false;
+    if(master&&Array.isArray(master.members)){
+      for(var j=0;j<master.members.length;j++){
+        if(master.members[j]&&master.members[j].id===id){dup=true;break;}
+      }
+    }
+    if(!dup)return id;
+  }
+  throw new Error('member_id 生成に3回連続で失敗。マスタが異常です。');
+}
+
+function normalizePersonName(name){
+  if(typeof name!=='string')return '';
+  // 仕様書 3.4.4: 全角空白→半角空白、連続空白を単一空白、前後空白除去
+  return name.replace(/　/g,' ').replace(/\s+/g,' ').replace(/^\s+|\s+$/g,'');
+}
+
+function normalizeBranchMaster(raw){
+  // 仕様書 3.5: 破損データを与えられても落ちない／既存運営を止めない
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return createEmptyBranchMaster();
+  var schema_version=Number(raw.schema_version);
+  if(!schema_version||isNaN(schema_version))schema_version=BRANCH_MASTER_SCHEMA_VERSION;
+  if(schema_version!==BRANCH_MASTER_SCHEMA_VERSION)return createEmptyBranchMaster();
+
+  var membersRaw=Array.isArray(raw.members)?raw.members:[];
+  var seenIds={};
+  var members=[];
+  for(var i=0;i<membersRaw.length;i++){
+    var m=membersRaw[i];
+    if(!m||typeof m!=='object')continue;
+    var id=typeof m.id==='string'?m.id:'';
+    var name=typeof m.name==='string'?m.name:'';
+    if(!id||!name||seenIds[id])continue;
+    seenIds[id]=true;
+
+    var yomi=typeof m.yomi==='string'?m.yomi:'';
+    var last_class=(m.last_class==='A'||m.last_class==='B')?m.last_class:null;
+    var last_attended=isValidYmd(m.last_attended)?m.last_attended:'';
+    var first_attended=isValidYmd(m.first_attended)?m.first_attended:'';
+    if(!last_attended&&first_attended)last_attended=first_attended;
+    if(!first_attended&&last_attended)first_attended=last_attended;
+    if(!last_attended&&!first_attended){var t=todayYmd();last_attended=t;first_attended=t;}
+
+    var tidsRaw=Array.isArray(m.tournament_ids)?m.tournament_ids:[];
+    var seenTid={};
+    var tournament_ids=[];
+    for(var ti=0;ti<tidsRaw.length;ti++){
+      var t2=tidsRaw[ti];
+      if(typeof t2==='string'&&t2&&!seenTid[t2]){seenTid[t2]=true;tournament_ids.push(t2);}
+    }
+
+    members.push({
+      id:id,
+      name:name,
+      yomi:yomi,
+      last_class:last_class,
+      last_attended:last_attended,
+      first_attended:first_attended,
+      attendance_count:tournament_ids.length,
+      tournament_ids:tournament_ids,
+      deleted:m.deleted===true,
+      deleted_at:typeof m.deleted_at==='string'?m.deleted_at:null,
+      note:typeof m.note==='string'?m.note:''
+    });
+  }
+  var updated_at=typeof raw.updated_at==='string'?raw.updated_at:new Date().toISOString();
+  return {schema_version:BRANCH_MASTER_SCHEMA_VERSION,updated_at:updated_at,members:members};
+}
+
+function loadBranchMaster(){
+  var raw=null;
+  try{raw=localStorage.getItem(BRANCH_MASTER_KEY);}catch(e){return createEmptyBranchMaster();}
+  if(!raw)return createEmptyBranchMaster();
+  try{
+    return normalizeBranchMaster(JSON.parse(raw));
+  }catch(e){
+    // 破損時は空マスタを返すが、既存 localStorage は触らない（自動上書き禁止）
+    if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタの読込に失敗。空マスタで継続。既存 localStorage は保持。',e);
+    return createEmptyBranchMaster();
+  }
+}
+
+function saveBranchMaster(master){
+  try{
+    master.updated_at=new Date().toISOString();
+    localStorage.setItem(BRANCH_MASTER_KEY,JSON.stringify(master));
+  }catch(e){
+    if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタの保存に失敗。',e);
+  }
+}
+
+function findMemberCandidates(participant,master){
+  if(!participant||!master||!Array.isArray(master.members))return [];
+  var pname=normalizePersonName(participant.name||'');
+  if(!pname)return [];
+  var pyomi=typeof participant.yomi==='string'?participant.yomi:'';
+  var out=[];
+  for(var i=0;i<master.members.length;i++){
+    var m=master.members[i];
+    if(!m||m.deleted)continue;
+    var nm=normalizePersonName(m.name||'');
+    if(nm===pname){out.push(m);continue;}
+    // 異体字（髙/高 等）は自動統合しない（仕様書 3.4.4 の方針）
+    if(pyomi&&m.yomi&&pyomi===m.yomi)out.push(m);
+  }
+  return out;
+}
+
+// ============================================================
 // UI HELPERS: タブ切替とメッセージ表示
 // ============================================================
 
