@@ -418,6 +418,35 @@ const env = loadEnv(targetPath);
   assert(summary.added===1,'mergeTournamentParticipantsIntoMaster: 新規追加1名');
 }
 
+// ============================================================
+// Codex MF #1: tournament_id を大会日ベースで生成（仕様書 v5 §3.3）
+// ============================================================
+{
+  const master = env.createEmptyBranchMaster();
+  const state = {players:{A:[],B:[]}};
+  const id = env.ensureTournamentId(state, master, '2026-04-15');
+  assert(id==='t_2026_04_15','ensureTournamentId: 大会日 2026-04-15 → t_2026_04_15');
+  assert(state.tournament_id==='t_2026_04_15','ensureTournamentId: state に大会日ベース ID 書き戻し');
+
+  // 既存 state.tournament_id がある場合は保持される
+  const state2 = {players:{A:[],B:[]}, tournament_id:'t_existing'};
+  const id2 = env.ensureTournamentId(state2, master, '2026-04-15');
+  assert(id2==='t_existing','ensureTournamentId: 既存 tournament_id を保持（大会日が違っても）');
+
+  // 同日重複時の _2 suffix が大会日ベースで付く
+  const master2 = env.createEmptyBranchMaster();
+  master2.members.push({id:'m_001',name:'X',yomi:'',last_class:null,last_attended:'2026-04-15',first_attended:'2026-04-15',attendance_count:1,tournament_ids:['t_2026_04_15'],deleted:false,deleted_at:null,note:''});
+  const state3 = {players:{A:[],B:[]}};
+  const id3 = env.ensureTournamentId(state3, master2, '2026-04-15');
+  assert(id3==='t_2026_04_15_2','ensureTournamentId: 大会日ベースで _2 suffix');
+
+  // 無効な日付はフォールバックで today
+  const state4 = {players:{A:[],B:[]}};
+  const id4 = env.ensureTournamentId(state4, master, 'invalid');
+  const baseToday='t_'+env.todayYmd().replace(/-/g,'_');
+  assert(id4===baseToday,'ensureTournamentId: 無効な大会日は todayYmd() フォールバック');
+}
+
 // 結果出力
 if (fail===0) {
   console.log('  支部マスタ機能テスト: PASS '+pass+'件 / FAIL 0件');

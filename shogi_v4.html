@@ -482,9 +482,12 @@ function findMemberCandidates(participant,master){
 //   呼び出しは saveData() からのみ。save()/resetAll()/編集時には呼ばない。
 // ============================================================
 
-function ensureTournamentId(state,master){
+function ensureTournamentId(state,master,tournamentDate){
   if(state&&typeof state.tournament_id==='string'&&state.tournament_id)return state.tournament_id;
-  var base='t_'+todayYmd().replace(/-/g,'_');
+  // 仕様書 v5 §3.3 / Codex MF #1: tournament_id は「大会日」ベースで生成。
+  // tournamentDate が無効な場合のみ todayYmd() にフォールバック。
+  var date=isValidYmd(tournamentDate)?tournamentDate:todayYmd();
+  var base='t_'+date.replace(/-/g,'_');
   var id=base;
   if(master&&Array.isArray(master.members)){
     var existing={};
@@ -1826,7 +1829,8 @@ function syncBranchMasterOnSave(){
   try{
     var master=loadBranchMaster();
     var date=getTournamentDateFromReport(state.report);
-    ensureTournamentId(state,master);
+    // 仕様書 v5 §3.3 / Codex MF #1: 大会日を ensureTournamentId に明示的に渡す
+    ensureTournamentId(state,master,date);
     updateBranchMasterFromTournament(state,master,{tournament_id:state.tournament_id,tournament_date:date});
     saveBranchMaster(master);
     save();
