@@ -88,6 +88,61 @@ test.describe('A-3 登録画面サジェスト', () => {
     // 一覧 0 件、または非表示
     await expect(page.locator('#suggest-list .suggest-item')).toHaveCount(0);
   });
+
+  test('カタカナ入力（ヤマダ）でひらがな yomi にヒットする（yomi 部分一致）', async ({ page }) => {
+    await page.fill('#inp-name', 'ヤマダ');
+    // 山田太郎（yomi: やまだたろう）にヒット。山本花子（やまもとはなこ）はヒットしない。
+    await expect(page.locator('#suggest-list .suggest-item')).toHaveCount(1);
+    await expect(page.locator('#suggest-list')).toContainText('山田太郎');
+  });
+
+  test('候補選択 → 追加で player.member_id が localStorage の state に保存される', async ({ page }) => {
+    await page.fill('#inp-name', '山田');
+    await page.locator('#suggest-list .suggest-item').first().click();
+    await page.click('#addBtn');
+
+    const state = await page.evaluate(() => {
+      var raw = localStorage.getItem('shogi_v4');
+      return raw ? JSON.parse(raw) : null;
+    });
+    expect(state).not.toBeNull();
+    expect(state.players).toBeDefined();
+    expect(state.players.A.length).toBe(1);
+    expect(state.players.A[0].member_id).toBe('m_aaaaaaaaaaaa');
+    // member / grade もマスタ前回値を保持
+    expect(state.players.A[0].member).toBe('other');
+    expect(state.players.A[0].grade).toBe('chu');
+  });
+
+  test('既登録の member_id は候補リストから除外される（二重追加防止）', async ({ page }) => {
+    // 1回目: 山田太郎 を追加
+    await page.fill('#inp-name', '山田');
+    await page.locator('#suggest-list .suggest-item').first().click();
+    await page.click('#addBtn');
+    await expect(page.locator('#a-list .player-row')).toHaveCount(1);
+
+    // 2回目: 「山」で検索 → 山田太郎 は除外、山本花子 のみ表示
+    await page.fill('#inp-name', '山');
+    await expect(page.locator('#suggest-list .suggest-item')).toHaveCount(1);
+    await expect(page.locator('#suggest-list')).toContainText('山本花子');
+    await expect(page.locator('#suggest-list')).not.toContainText('山田太郎');
+  });
+
+  test('同じ氏名を直接再入力して追加するとエラー（同名拒否）', async ({ page }) => {
+    // 1回目: 山田太郎 を追加（候補から）
+    await page.fill('#inp-name', '山田');
+    await page.locator('#suggest-list .suggest-item').first().click();
+    await page.click('#addBtn');
+    await expect(page.locator('#a-list .player-row')).toHaveCount(1);
+
+    // 2回目: 同じ氏名を直接入力 → 候補に出ないが手で入れて追加
+    await page.fill('#inp-name', '山田太郎');
+    await page.click('#addBtn');
+    // 既存の同名拒否ロジックが発火
+    await expect(page.locator('#reg-msg')).toContainText('同じ名前の参加者がいます');
+    // 行数は増えていない
+    await expect(page.locator('#a-list .player-row')).toHaveCount(1);
+  });
 });
 
 // ============================================================
@@ -145,6 +200,30 @@ test.describe('A-3 マスタタブ', () => {
     await expect(page.locator('#pane-master').getByText('山田太郎')).toHaveCount(0);
     // 他の member は残っている
     await expect(page.locator('#pane-master').getByText('佐藤一郎')).toBeVisible();
+  });
+
+  test('削除は tombstone（物理削除なし、deleted=true + deleted_at 設定）', async ({ page }) => {
+    page.once('dialog', async (dialog) => { await dialog.accept(); });
+    const targetRow = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
+    await targetRow.locator('.master-delete-btn').click();
+    // UI 上は消える
+    await expect(page.locator('#pane-master').getByText('山田太郎')).toHaveCount(0);
+    // localStorage 検証: members 配列に残っており tombstone が立っている
+    const stored = await page.evaluate(() => {
+      var raw = localStorage.getItem('shogi_branch_master');
+      return raw ? JSON.parse(raw) : null;
+    });
+    expect(stored).not.toBeNull();
+    // 元の 4 件すべて残る（物理削除なし）
+    expect(stored.members.length).toBe(4);
+    const target = stored.members.find((m) => m.id === 'm_aaaaaaaaaaaa');
+    expect(target).toBeDefined();
+    expect(target.deleted).toBe(true);
+    // 日付フォーマット YYYY-MM-DD
+    expect(target.deleted_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // 他の生存 member は影響なし
+    const m_b = stored.members.find((m) => m.id === 'm_bbbbbbbbbbbb');
+    expect(m_b.deleted).toBe(false);
   });
 });
 
@@ -264,5 +343,88 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
     await page.locator('#mi-paste-area').fill('{ broken json');
     await page.click('#mi-run');
     await expect(page.locator('#mi-status')).toContainText('解析');
+  });
+
+  test('エクスポート実行後、localStorage の branch master は schema_version:1 と members を保持する', async ({ page }) => {
+    // alert と download を吸収
+    page.on('dialog', async (dialog) => { await dialog.accept(); });
+    const downloadPromise = page.waitForEvent('download');
+    await page.click('#masterExportBtn');
+    const download = await downloadPromise;
+    // ファイル名フォーマット: shogi_branch_master_YYYY-MM-DD.json
+    expect(download.suggestedFilename()).toMatch(/^shogi_branch_master_\d{4}-\d{2}-\d{2}\.json$/);
+    // localStorage の branch master が壊れていない（エクスポートは読み取り専用）
+    const stored = await page.evaluate(() => {
+      var raw = localStorage.getItem('shogi_branch_master');
+      return raw ? JSON.parse(raw) : null;
+    });
+    expect(stored).not.toBeNull();
+    expect(stored.schema_version).toBe(1);
+    expect(Array.isArray(stored.members)).toBe(true);
+    expect(stored.members.length).toBe(4);  // tombstone 含む
+  });
+
+  test('上書きインポート実行で localStorage の branch master が置換される', async ({ page }) => {
+    await page.click('#masterImportBtn');
+    await page.locator('input[name="mi-mode"][value="overwrite"]').check();
+    const newMaster = {
+      schema_version: 1,
+      updated_at: '2026-05-05T13:00:00.000Z',
+      members: [
+        {id:'m_zzzzzzzzzzzz',name:'置換太郎',yomi:'ちかんたろう',first_attended:'2026-05-05',last_attended:'2026-05-05',tournament_ids:['t_new']},
+        {id:'m_yyyyyyyyyyyy',name:'置換次郎',yomi:'ちかんじろう',first_attended:'2026-05-05',last_attended:'2026-05-05',tournament_ids:[]}
+      ]
+    };
+    await page.locator('#mi-paste-area').fill(JSON.stringify(newMaster));
+    // 確認ダイアログを accept
+    page.once('dialog', async (dialog) => { await dialog.accept(); });
+    await page.click('#mi-run');
+    await expect(page.locator('#master-import-modal')).toHaveCount(0);
+
+    // localStorage 検証: 完全置換（元の 4 件 → 新 2 件）
+    const stored = await page.evaluate(() => {
+      var raw = localStorage.getItem('shogi_branch_master');
+      return raw ? JSON.parse(raw) : null;
+    });
+    expect(stored.members.length).toBe(2);
+    const ids = stored.members.map((m) => m.id).sort();
+    expect(ids).toEqual(['m_yyyyyyyyyyyy', 'm_zzzzzzzzzzzz']);
+    // 元のメンバー（山田太郎 m_aaaaaaaaaaaa 等）はもう存在しない
+    expect(stored.members.find((m) => m.id === 'm_aaaaaaaaaaaa')).toBeUndefined();
+  });
+
+  test('マージインポート実行で 新規追加 + 既存 name は既存側維持', async ({ page }) => {
+    await page.click('#masterImportBtn');
+    await page.locator('input[name="mi-mode"][value="merge"]').check();
+    // imported: 既存 m_aaaaaaaaaaaa の name を別名にしたものと、新規 m_eeeeeeeeeeee
+    const importMaster = {
+      schema_version: 1,
+      updated_at: '2026-05-05T13:00:00.000Z',
+      members: [
+        {id:'m_aaaaaaaaaaaa',name:'別の名前',yomi:'べつのなまえ',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t_new']},
+        {id:'m_eeeeeeeeeeee',name:'新規メンバー',yomi:'しんき',first_attended:'2026-05-05',last_attended:'2026-05-05',tournament_ids:['t_e']}
+      ]
+    };
+    await page.locator('#mi-paste-area').fill(JSON.stringify(importMaster));
+    await page.click('#mi-run');
+    await expect(page.locator('#master-import-modal')).toHaveCount(0);
+
+    // localStorage 検証
+    const stored = await page.evaluate(() => {
+      var raw = localStorage.getItem('shogi_branch_master');
+      return raw ? JSON.parse(raw) : null;
+    });
+    // 元の 4 件 + 新規 1 件 = 5 件
+    expect(stored.members.length).toBe(5);
+    // 既存 m_aaaaaaaaaaaa は name 維持（既存側優先）
+    const m_a = stored.members.find((m) => m.id === 'm_aaaaaaaaaaaa');
+    expect(m_a.name).toBe('山田太郎');
+    expect(m_a.yomi).toBe('やまだたろう');
+    // tournament_ids は union（t1, t2, t_new）
+    expect(m_a.tournament_ids).toEqual(expect.arrayContaining(['t1', 't2', 't_new']));
+    // 新規 m_eeeeeeeeeeee は追加されている
+    const m_e = stored.members.find((m) => m.id === 'm_eeeeeeeeeeee');
+    expect(m_e).toBeDefined();
+    expect(m_e.name).toBe('新規メンバー');
   });
 });
