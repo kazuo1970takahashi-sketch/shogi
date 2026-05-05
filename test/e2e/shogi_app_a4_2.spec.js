@@ -277,3 +277,114 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
     expect(count).toBe(0); // 山田で検索 → 山田太郎しかヒットしない → 除外で 0 件
   });
 });
+
+// ============================================================
+// Stage 4: last_class 強調表示と「前回:Xクラス」テキスト併記
+// ============================================================
+test.describe('A-4.2 Stage 4: last_class 強調表示', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupWithMaster(page);
+  });
+
+  // ----- 過去参加者パネル -----
+  test('過去参加者: last_class=A の行に「前回:Aクラス」が出る', async ({ page }) => {
+    await page.click('#ppToggleBtn');
+    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
+    await expect(row.locator('.pp-last-class')).toContainText('前回:Aクラス');
+  });
+
+  test('過去参加者: last_class=B の行に「前回:Bクラス」が出る', async ({ page }) => {
+    await page.click('#ppToggleBtn');
+    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山本花子' });
+    await expect(row.locator('.pp-last-class')).toContainText('前回:Bクラス');
+  });
+
+  test('過去参加者: last_class=null の行に「前回:Xクラス」文言なし、両ボタン通常表示', async ({ page }) => {
+    await page.click('#ppToggleBtn');
+    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '佐藤一郎' });
+    await expect(row.locator('.pp-last-class')).toHaveCount(0);
+    // 両ボタンとも highlight クラスなし
+    await expect(row.locator('.pp-add-btn[data-cls="A"]')).not.toHaveClass(/pp-add-btn-highlight/);
+    await expect(row.locator('.pp-add-btn[data-cls="B"]')).not.toHaveClass(/pp-add-btn-highlight/);
+  });
+
+  test('過去参加者: last_class=A で A ボタンが強調（pp-add-btn-highlight クラス）', async ({ page }) => {
+    await page.click('#ppToggleBtn');
+    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
+    await expect(row.locator('.pp-add-btn[data-cls="A"]')).toHaveClass(/pp-add-btn-highlight/);
+    await expect(row.locator('.pp-add-btn[data-cls="B"]')).not.toHaveClass(/pp-add-btn-highlight/);
+  });
+
+  test('過去参加者: last_class=B で B ボタンが強調', async ({ page }) => {
+    await page.click('#ppToggleBtn');
+    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山本花子' });
+    await expect(row.locator('.pp-add-btn[data-cls="B"]')).toHaveClass(/pp-add-btn-highlight/);
+    await expect(row.locator('.pp-add-btn[data-cls="A"]')).not.toHaveClass(/pp-add-btn-highlight/);
+  });
+
+  // ----- サジェストリスト -----
+  test('サジェスト: last_class=A の候補の A ボタンが強調', async ({ page }) => {
+    await page.fill('#inp-name', '山田');
+    const item = page.locator('#suggest-list .suggest-item').first();
+    await expect(item.locator('.suggest-add-btn[data-cls="A"]')).toHaveClass(/suggest-add-btn-highlight/);
+    await expect(item.locator('.suggest-add-btn[data-cls="B"]')).not.toHaveClass(/suggest-add-btn-highlight/);
+  });
+
+  test('サジェスト: last_class=B の候補の B ボタンが強調', async ({ page }) => {
+    await page.fill('#inp-name', '山本');
+    const item = page.locator('#suggest-list .suggest-item').first();
+    await expect(item.locator('.suggest-add-btn[data-cls="B"]')).toHaveClass(/suggest-add-btn-highlight/);
+    await expect(item.locator('.suggest-add-btn[data-cls="A"]')).not.toHaveClass(/suggest-add-btn-highlight/);
+  });
+
+  test('サジェスト: 候補メタに「前回:Aクラス」「前回:Bクラス」テキストが出る', async ({ page }) => {
+    await page.fill('#inp-name', '山田');
+    const item = page.locator('#suggest-list .suggest-item').first();
+    await expect(item.locator('.si-meta')).toContainText('前回:Aクラス');
+    await page.fill('#inp-name', '山本');
+    const item2 = page.locator('#suggest-list .suggest-item').first();
+    await expect(item2.locator('.si-meta')).toContainText('前回:Bクラス');
+  });
+
+  test('サジェスト: last_class=null の候補は「前回:」文言が出ない、両ボタン通常表示', async ({ page }) => {
+    await page.fill('#inp-name', '佐藤');
+    const item = page.locator('#suggest-list .suggest-item').first();
+    await expect(item.locator('.si-meta')).not.toContainText('前回:');
+    await expect(item.locator('.suggest-add-btn[data-cls="A"]')).not.toHaveClass(/suggest-add-btn-highlight/);
+    await expect(item.locator('.suggest-add-btn[data-cls="B"]')).not.toHaveClass(/suggest-add-btn-highlight/);
+  });
+
+  // ----- last_class 更新タイミング -----
+  test('A/B ボタン押下時に master.last_class が即時変更されない（Should Fix 2）', async ({ page }) => {
+    // 山田太郎 (last_class:'A') を B クラスに追加 → master.last_class はまだ 'A' のまま
+    await page.click('#ppToggleBtn');
+    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
+    await row.locator('.pp-add-btn[data-cls="B"]').click();
+    const master = await page.evaluate(() => {
+      const raw = localStorage.getItem('shogi_branch_master');
+      return raw ? JSON.parse(raw) : null;
+    });
+    const yamada = master.members.find((m) => m.id === 'm_aaaaaaaaaaaa');
+    expect(yamada.last_class).toBe('A'); // ボタン押下では更新されない
+  });
+
+  test('saveData → syncBranchMasterOnSave 後、master.last_class が今回 player.cls に更新される（既存挙動回帰）', async ({ page }) => {
+    // 山田太郎 (last_class:'A') を B クラスに追加 → syncBranchMasterOnSave 経由で 'B' に更新される
+    await page.click('#ppToggleBtn');
+    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
+    await row.locator('.pp-add-btn[data-cls="B"]').click();
+    // syncBranchMasterOnSave を直接呼び出す（クリップボードプロンプト回避）
+    await page.evaluate(() => {
+      // 大会日を設定（updateBranchMasterFromTournament が必要とする）
+      const dateEl = document.getElementById('rep-date');
+      if (dateEl) dateEl.value = '2026-05-05';
+      window.syncBranchMasterOnSave();
+    });
+    const master = await page.evaluate(() => {
+      const raw = localStorage.getItem('shogi_branch_master');
+      return raw ? JSON.parse(raw) : null;
+    });
+    const yamada = master.members.find((m) => m.id === 'm_aaaaaaaaaaaa');
+    expect(yamada.last_class).toBe('B'); // saveData 経由で player.cls の 'B' に更新
+  });
+});

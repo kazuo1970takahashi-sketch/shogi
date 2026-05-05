@@ -1223,11 +1223,20 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   html+='<div style="max-height:280px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;padding:6px;margin-bottom:8px">';
   for(var j=0;j<filtered.length;j++){
     var fm=filtered[j];
-    var lc=fm.last_class==='A'?'Aクラス':(fm.last_class==='B'?'Bクラス':'-');
+    // A-4.2 §3.4.3: 「前回:Xクラス」テキスト併記（last_class が A/B 以外なら非表示）
+    var lastClassText=fm.last_class==='A'?'前回:Aクラス':(fm.last_class==='B'?'前回:Bクラス':'');
     var nameSafe=escapeHtml(fm.name);
     var midSafe=escapeHtml(fm.id);
     var aLabelSafe=escapeHtml(fm.name+'をAクラスで追加');
     var bLabelSafe=escapeHtml(fm.name+'をBクラスで追加');
+    // A-4.2 §3.4.1: last_class のボタンを強調（太字 + 背景色 #FFD580）
+    var aHighlight=fm.last_class==='A';
+    var bHighlight=fm.last_class==='B';
+    var btnBaseStyle='min-width:44px;min-height:44px;margin-left:8px;border:1px solid #1976d2;border-radius:6px;font-size:14px;cursor:pointer;flex-shrink:0';
+    var aStyle=btnBaseStyle+';font-weight:'+(aHighlight?'bold':'normal')+';background:'+(aHighlight?'#FFD580':'#fff')+';color:'+(aHighlight?'#7a3e00':'#1976d2');
+    var bStyle=btnBaseStyle+';font-weight:'+(bHighlight?'bold':'normal')+';background:'+(bHighlight?'#FFD580':'#fff')+';color:'+(bHighlight?'#7a3e00':'#1976d2');
+    var aClass='pp-add-btn'+(aHighlight?' pp-add-btn-highlight':'');
+    var bClass='pp-add-btn'+(bHighlight?' pp-add-btn-highlight':'');
     // A-4.2 §3.1.2: 行本体タップは無効化（cursor:default、hover 効果なし）
     // data-mid は行に1つだけ（既存テストの `#ppPanel [data-mid]` 件数カウント互換）
     html+='<div class="pp-row" data-mid="'+midSafe+'" style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:default">';
@@ -1236,11 +1245,13 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
     html+='<span style="flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere">'+nameSafe;
     if(fm.yomi){html+=' <span style="color:#888;font-size:12px">'+escapeHtml(normalizeYomi(fm.yomi))+'</span>';}
     html+='</span>';
-    html+='<span style="font-size:12px;color:#666">'+escapeHtml(lc)+'</span>';
+    if(lastClassText){
+      html+='<span class="pp-last-class" style="font-size:12px;color:#666;font-weight:500">'+escapeHtml(lastClassText)+'</span>';
+    }
     html+='<span style="font-size:11px;color:#888;min-width:5em;text-align:right">'+escapeHtml(fm.last_attended||'')+'</span>';
     // A-4.2 §3.1.4: A/B ボタン（min 44x44、aria-label / title 付与、Nice to Have 1 反映）
-    html+='<button type="button" class="pp-add-btn" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="min-width:44px;min-height:44px;margin-left:8px;border:1px solid #1976d2;background:#fff;color:#1976d2;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer">A</button>';
-    html+='<button type="button" class="pp-add-btn" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="min-width:44px;min-height:44px;margin-left:8px;border:1px solid #1976d2;background:#fff;color:#1976d2;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer">B</button>';
+    html+='<button type="button" class="'+aClass+'" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="'+aStyle+'">A</button>';
+    html+='<button type="button" class="'+bClass+'" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="'+bStyle+'">B</button>';
     html+='</div>';
   }
   html+='</div>';
@@ -2316,7 +2327,8 @@ function renderSuggestList(suggestions){
       meta.className='si-meta';
       var parts=[];
       if(m.yomi)parts.push(m.yomi);
-      if(m.last_class==='A'||m.last_class==='B')parts.push('前回 '+m.last_class+'クラス');
+      // A-4.2 §3.4.3: 「前回:Xクラス」テキスト併記
+      if(m.last_class==='A'||m.last_class==='B')parts.push('前回:'+m.last_class+'クラス');
       if(m.last_attended)parts.push('最終参加 '+m.last_attended);
       meta.textContent=parts.join(' / ');
       info.appendChild(meta);
@@ -2332,17 +2344,19 @@ function renderSuggestList(suggestions){
         onSuggestTap(m);
       });
       // A-4.2 §3.2.3: A/B ボタン（行本体タップとは独立、stopPropagation で二重発火回避）
+      // A-4.2 §3.4.1: last_class のボタンを強調（太字 + 背景色 #FFD580）
       var classes=['A','B'];
       for(var ci=0;ci<classes.length;ci++){
         (function(cls){
+          var highlight=(m.last_class===cls);
           var btn=document.createElement('button');
           btn.type='button';
-          btn.className='suggest-add-btn';
+          btn.className='suggest-add-btn'+(highlight?' suggest-add-btn-highlight':'');
           btn.setAttribute('data-cls',cls);
           btn.setAttribute('aria-label',m.name+'を'+cls+'クラスで追加');
           btn.setAttribute('title',cls+'クラスで追加');
           btn.textContent=cls;
-          btn.style.cssText='min-width:44px;min-height:44px;flex-shrink:0;border:1px solid #1976d2;background:#fff;color:#1976d2;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer;margin-left:4px';
+          btn.style.cssText='min-width:44px;min-height:44px;flex-shrink:0;border:1px solid #1976d2;background:'+(highlight?'#FFD580':'#fff')+';color:'+(highlight?'#7a3e00':'#1976d2')+';border-radius:6px;font-size:14px;font-weight:'+(highlight?'bold':'normal')+';cursor:pointer;margin-left:4px';
           // mousedown / touchstart で行ハンドラより先に処理して伝播停止（行本体タップは A-4 既存挙動として維持）
           btn.addEventListener('mousedown',function(e){
             if(e.preventDefault)e.preventDefault();
