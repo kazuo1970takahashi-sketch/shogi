@@ -62,6 +62,12 @@ th{background:#e8f0f8;color:#1F3864;font-weight:500;padding:7px 6px;text-align:c
 td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align:middle}
 .history-tag{display:inline-block;background:#eee;border-radius:4px;padding:2px 6px;font-size:11px;color:#666;margin:2px}
 .final-done{background:#eaf3de;border:1px solid #97c459;border-radius:8px;padding:12px;color:#27500A;font-weight:500;margin-bottom:12px}
+.suggest-list{margin-top:6px;border:1px solid #ccc;border-radius:8px;background:#fff;max-height:280px;overflow-y:auto;box-shadow:0 2px 6px rgba(0,0,0,0.06)}
+.suggest-item{padding:10px 12px;border-bottom:1px solid #eee;cursor:pointer;-webkit-tap-highlight-color:rgba(0,0,0,0.1)}
+.suggest-item:last-child{border-bottom:none}
+.suggest-item:active{background:#eaf3fb}
+.suggest-item .si-name{font-weight:500;font-size:15px;color:#1F3864}
+.suggest-item .si-meta{color:#666;font-size:12px;margin-top:2px}
 @media(max-width:480px){
   input[type=text]{font-size:16px}
   .winner-btn{padding:10px 8px;font-size:14px}
@@ -107,13 +113,14 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     <div class="section">
       <h2>参加者を登録する</h2>
       <div class="flex">
-        <input type="text" id="inp-name" placeholder="氏名を入力" style="width:150px">
+        <input type="text" id="inp-name" placeholder="氏名を入力" style="width:150px" autocomplete="off">
         <select id="inp-class">
           <option value="A">Aクラス</option>
           <option value="B">Bクラス</option>
         </select>
         <button type="button" class="btn-primary" id="addBtn">追加</button>
       </div>
+      <div id="suggest-list" class="suggest-list" style="display:none"></div>
       <div id="reg-msg"></div>
       <div class="grid2" style="margin-top:12px">
         <div>
@@ -471,6 +478,9 @@ function normalizeBranchMaster(raw){
       if(typeof t2==='string'&&t2&&!seenTid[t2]){seenTid[t2]=true;tournament_ids.push(t2);}
     }
 
+    var memberStatus=(m.member==='other')?'other':'member';
+    var gradeStatus=(m.grade==='chu')?'chu':'ippan';
+
     members.push({
       id:id,
       name:name,
@@ -482,7 +492,9 @@ function normalizeBranchMaster(raw){
       tournament_ids:tournament_ids,
       deleted:m.deleted===true,
       deleted_at:typeof m.deleted_at==='string'?m.deleted_at:null,
-      note:typeof m.note==='string'?m.note:''
+      note:typeof m.note==='string'?m.note:'',
+      member:memberStatus,
+      grade:gradeStatus
     });
   }
   var updated_at=typeof raw.updated_at==='string'?raw.updated_at:new Date().toISOString();
@@ -533,6 +545,49 @@ function findMemberCandidates(participant,master){
     if(nm===pname){out.push(m);continue;}
     // 異体字（髙/高 等）は自動統合しない（仕様書 3.4.4 の方針）
     if(pyomi&&m.yomi&&pyomi===m.yomi)out.push(m);
+  }
+  return out;
+}
+
+// ============================================================
+// SUGGEST (A-3 §1-1): 登録画面サジェスト
+//   query は inp-name の生入力。最大5件。deleted=true・既登録 member_id は除外。
+// ============================================================
+var SUGGEST_MAX=5;
+
+function findMasterSuggestions(query,master,excludedMemberIds){
+  if(!master||!Array.isArray(master.members))return [];
+  if(typeof query!=='string')return [];
+  var trimmed=query.replace(/^\s+|\s+$/g,'');
+  if(!trimmed)return [];
+  var qn=normalizePersonName(query);
+  var qy=normalizeYomi(query);
+  if(!qn&&!qy)return [];
+  var excluded={};
+  if(Array.isArray(excludedMemberIds)){
+    for(var ei=0;ei<excludedMemberIds.length;ei++){
+      var eid=excludedMemberIds[ei];
+      if(typeof eid==='string'&&eid)excluded[eid]=true;
+    }
+  }
+  var out=[];
+  for(var i=0;i<master.members.length;i++){
+    var m=master.members[i];
+    if(!m||m.deleted===true)continue;
+    if(excluded[m.id])continue;
+    var hit=false;
+    if(qn){
+      var mn=normalizePersonName(m.name||'');
+      if(mn&&mn.indexOf(qn)>=0)hit=true;
+    }
+    if(!hit&&qy){
+      var my=normalizeYomi(m.yomi||'');
+      if(my&&my.indexOf(qy)>=0)hit=true;
+    }
+    if(hit){
+      out.push(m);
+      if(out.length>=SUGGEST_MAX)break;
+    }
   }
   return out;
 }
@@ -594,7 +649,9 @@ function createMemberFromParticipant(p,master,date){
     tournament_ids:[],
     deleted:false,
     deleted_at:null,
-    note:''
+    note:'',
+    member:(p&&p.member==='other')?'other':'member',
+    grade:(p&&p.grade==='chu')?'chu':'ippan'
   };
 }
 
@@ -658,6 +715,9 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
         if(!member.first_attended||date<member.first_attended)member.first_attended=date;
       }
       if(p.cls==='A'||p.cls==='B')member.last_class=p.cls;
+      // A-3: 支部員区分・中学生以下区分の前回値を記録（次回サジェスト引き継ぎ用）
+      if(p.member==='member'||p.member==='other')member.member=p.member;
+      if(p.grade==='ippan'||p.grade==='chu')member.grade=p.grade;
       affected[member.id]=member;
     }
   }
@@ -1382,16 +1442,156 @@ function updateField(id,cls,field,value){
   renderRegList();save();
 }
 
+// A-3 サジェスト状態（候補タップで保持される選択 member の参照）
+var _suggestState={selectedMemberId:null,selectedNormalizedName:null};
+
+function getCurrentlyRegisteredMemberIds(){
+  var ids=[];
+  if(!state||!state.players)return ids;
+  var classes=['A','B'];
+  for(var ci=0;ci<classes.length;ci++){
+    var arr=state.players[classes[ci]]||[];
+    for(var pi=0;pi<arr.length;pi++){
+      var p=arr[pi];
+      if(p&&typeof p.member_id==='string'&&p.member_id)ids.push(p.member_id);
+    }
+  }
+  return ids;
+}
+
+function renderSuggestList(suggestions){
+  var list=document.getElementById('suggest-list');
+  if(!list)return;
+  list.innerHTML='';
+  if(!suggestions||suggestions.length===0){
+    list.style.display='none';
+    return;
+  }
+  for(var i=0;i<suggestions.length;i++){
+    (function(m){
+      var item=document.createElement('div');
+      item.className='suggest-item';
+      var nm=document.createElement('div');
+      nm.className='si-name';
+      nm.textContent=m.name;
+      item.appendChild(nm);
+      var meta=document.createElement('div');
+      meta.className='si-meta';
+      var parts=[];
+      if(m.yomi)parts.push(m.yomi);
+      if(m.last_class==='A'||m.last_class==='B')parts.push('前回 '+m.last_class+'クラス');
+      if(m.last_attended)parts.push('最終参加 '+m.last_attended);
+      meta.textContent=parts.join(' / ');
+      item.appendChild(meta);
+      // mousedown は input の blur より先に発火するため、blur-close で取りこぼさない
+      item.addEventListener('mousedown',function(e){
+        e.preventDefault();
+        onSuggestTap(m);
+      });
+      // タッチ環境用フォールバック
+      item.addEventListener('touchstart',function(e){
+        e.preventDefault();
+        onSuggestTap(m);
+      });
+      list.appendChild(item);
+    })(suggestions[i]);
+  }
+  list.style.display='block';
+}
+
+function closeSuggestList(){
+  var list=document.getElementById('suggest-list');
+  if(!list)return;
+  list.style.display='none';
+  list.innerHTML='';
+}
+
+function onSuggestTap(member){
+  if(!member)return;
+  var inpName=document.getElementById('inp-name');
+  var inpClass=document.getElementById('inp-class');
+  if(inpName)inpName.value=member.name||'';
+  if(inpClass&&(member.last_class==='A'||member.last_class==='B'))inpClass.value=member.last_class;
+  _suggestState.selectedMemberId=member.id;
+  _suggestState.selectedNormalizedName=normalizePersonName(member.name||'');
+  closeSuggestList();
+}
+
+function updateSuggestList(){
+  var inpName=document.getElementById('inp-name');
+  if(!inpName)return;
+  var raw=inpName.value;
+  // 候補選択後に氏名を変更したら member_id 解除（normalize 後の比較）
+  if(_suggestState.selectedMemberId){
+    var curNorm=normalizePersonName(raw);
+    if(curNorm!==_suggestState.selectedNormalizedName){
+      _suggestState.selectedMemberId=null;
+      _suggestState.selectedNormalizedName=null;
+    }
+  }
+  var trimmed=raw.replace(/^\s+|\s+$/g,'');
+  if(trimmed.length<1){
+    closeSuggestList();
+    return;
+  }
+  var master=loadBranchMaster();
+  var excluded=getCurrentlyRegisteredMemberIds();
+  var sugg=findMasterSuggestions(trimmed,master,excluded);
+  renderSuggestList(sugg);
+}
+
 function addPlayer(){
-  var name=document.getElementById('inp-name').value.trim();
+  // iPhone Safari: ペースト後のボタン無反応回避（A-2.6 ガイドライン）
+  var inpName=document.getElementById('inp-name');
+  if(inpName)inpName.blur();
+  closeSuggestList();
+
+  var name=inpName.value.trim();
   var cls=document.getElementById('inp-class').value;
   if(!name){showMsg('名前を入力してください','err');return;}
   var all=state.players.A.concat(state.players.B);
   for(var i=0;i<all.length;i++){if(all[i].name===name){showMsg('同じ名前の参加者がいます','err');return;}}
+
+  // サジェスト選択中かつ氏名が選択時の正規化名と一致 → マスタから member_id / member / grade を引き継ぐ
+  var memberValue='member';
+  var gradeValue='ippan';
+  var memberIdValue=null;
+  if(_suggestState.selectedMemberId){
+    var curNorm=normalizePersonName(name);
+    if(curNorm===_suggestState.selectedNormalizedName){
+      var master=loadBranchMaster();
+      var sel=null;
+      if(master&&Array.isArray(master.members)){
+        for(var mi=0;mi<master.members.length;mi++){
+          if(master.members[mi].id===_suggestState.selectedMemberId){sel=master.members[mi];break;}
+        }
+      }
+      if(sel&&sel.deleted!==true){
+        // 当日同 member_id 二重追加防止
+        var dupRegistered=false;
+        var existingIds=getCurrentlyRegisteredMemberIds();
+        for(var ei=0;ei<existingIds.length;ei++){
+          if(existingIds[ei]===sel.id){dupRegistered=true;break;}
+        }
+        if(dupRegistered){
+          showMsg(name+'（'+cls+'クラス）はすでに登録されています','err');
+          return;
+        }
+        memberIdValue=sel.id;
+        if(sel.member==='other')memberValue='other';
+        if(sel.grade==='chu')gradeValue='chu';
+      }
+    }
+  }
+
   var id='p'+Date.now()+Math.floor(Math.random()*1000);
-  state.players[cls].push({id:id,name:name,cls:cls,member:'member',grade:'ippan'});
-  document.getElementById('inp-name').value='';
-  document.getElementById('inp-name').focus();
+  var newPlayer={id:id,name:name,cls:cls,member:memberValue,grade:gradeValue};
+  if(memberIdValue)newPlayer.member_id=memberIdValue;
+  state.players[cls].push(newPlayer);
+  inpName.value='';
+  _suggestState.selectedMemberId=null;
+  _suggestState.selectedNormalizedName=null;
+  inpName.focus();
   showMsg(name+'（'+cls+'クラス）を登録しました','ok');
   renderRegList();save();
 }
@@ -2516,8 +2716,12 @@ function bindRegistrationEvents(){
   var inpName=document.getElementById('inp-name');
   var composing=false;
   inpName.addEventListener('compositionstart',function(){composing=true;});
-  inpName.addEventListener('compositionend',function(){composing=false;});
+  inpName.addEventListener('compositionend',function(){composing=false;updateSuggestList();});
   inpName.addEventListener('keypress',function(e){if(e.key==='Enter'&&!composing)addPlayer();});
+  // A-3 サジェスト: 入力中・focus 時に候補更新、blur で閉じる（mousedown より遅延）
+  inpName.addEventListener('input',function(){if(!composing)updateSuggestList();});
+  inpName.addEventListener('focus',function(){if(!composing)updateSuggestList();});
+  inpName.addEventListener('blur',function(){setTimeout(closeSuggestList,150);});
 }
 
 function bindTabEvents(){

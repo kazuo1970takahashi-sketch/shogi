@@ -93,6 +93,7 @@ function loadEnv(path, opts) {
        loadBranchMaster:loadBranchMaster,
        saveBranchMaster:saveBranchMaster,
        findMemberCandidates:findMemberCandidates,
+       findMasterSuggestions:findMasterSuggestions,
        ensureTournamentId:ensureTournamentId,
        attachMemberIdToPlayer:attachMemberIdToPlayer,
        addTournamentIdOnce:addTournamentIdOnce,
@@ -1085,6 +1086,161 @@ const env = loadEnv(targetPath);
     assert(r1.tournaments.length===0,'A2.5-pti-20: undefined tournaments=0');
     const r2 = env.parseTournamentTextInput(null);
     assert(r2.tournaments.length===0,'A2.5-pti-21: null tournaments=0');
+  }
+}
+
+// ============================================================
+// A-3 Stage 1: 登録画面サジェスト
+// ============================================================
+{
+  // master schema 拡張: member / grade
+  {
+    const m = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[
+        {id:'m_aaaaaaaaaaaa',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1'],member:'other',grade:'chu'},
+        {id:'m_bbbbbbbbbbbb',name:'鈴木一郎',yomi:'すずきいちろう',first_attended:'2026-02-01',last_attended:'2026-03-01',tournament_ids:['t2']}
+      ]
+    });
+    assertEq(m.members[0].member,'other','A3-S1-norm-01: member=other を保持');
+    assertEq(m.members[0].grade,'chu','A3-S1-norm-02: grade=chu を保持');
+    assertEq(m.members[1].member,'member','A3-S1-norm-03: 既存マスタは member=member にデフォルト');
+    assertEq(m.members[1].grade,'ippan','A3-S1-norm-04: 既存マスタは grade=ippan にデフォルト');
+  }
+
+  // 不正値はデフォルトに落ちる
+  {
+    const m = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_cccccccccccc',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],member:'foo',grade:'bar'}]
+    });
+    assertEq(m.members[0].member,'member','A3-S1-norm-05: member 不正値 → member');
+    assertEq(m.members[0].grade,'ippan','A3-S1-norm-06: grade 不正値 → ippan');
+  }
+
+  // createMemberFromParticipant: player の member / grade を引き継ぐ
+  {
+    const master = env.createEmptyBranchMaster();
+    const p = {name:'佐藤花子',cls:'A',member:'other',grade:'chu'};
+    const m = env.createMemberFromParticipant(p,master,'2026-05-05');
+    assertEq(m.member,'other','A3-S1-create-01: player.member=other を反映');
+    assertEq(m.grade,'chu','A3-S1-create-02: player.grade=chu を反映');
+    const p2 = {name:'田中次郎',cls:'B'};
+    const m2 = env.createMemberFromParticipant(p2,master,'2026-05-05');
+    assertEq(m2.member,'member','A3-S1-create-03: 未指定はデフォルト member');
+    assertEq(m2.grade,'ippan','A3-S1-create-04: 未指定はデフォルト ippan');
+  }
+
+  // findMasterSuggestions: 漢字部分一致
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[
+        {id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1']},
+        {id:'m_222222222222',name:'山本一郎',yomi:'やまもといちろう',first_attended:'2026-02-01',last_attended:'2026-03-01',tournament_ids:['t2']},
+        {id:'m_333333333333',name:'佐藤花子',yomi:'さとうはなこ',first_attended:'2026-03-01',last_attended:'2026-05-01',tournament_ids:['t3']}
+      ]
+    });
+    const r = env.findMasterSuggestions('山',master,[]);
+    assert(r.length===2,'A3-S1-sugg-01: 「山」で部分一致 2件');
+    assertEq(r[0].id,'m_111111111111','A3-S1-sugg-02: 1件目');
+    assertEq(r[1].id,'m_222222222222','A3-S1-sugg-03: 2件目');
+  }
+
+  // findMasterSuggestions: ふりがな部分一致（カタカナ入力でひらがな yomi にヒット）
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[
+        {id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1']}
+      ]
+    });
+    const r = env.findMasterSuggestions('ヤマダ',master,[]);
+    assert(r.length===1,'A3-S1-sugg-04: カタカナ「ヤマダ」で yomi ヒット');
+  }
+
+  // findMasterSuggestions: deleted=true 除外
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[
+        {id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1'],deleted:true,deleted_at:'2026-04-10'},
+        {id:'m_222222222222',name:'山本一郎',yomi:'やまもといちろう',first_attended:'2026-02-01',last_attended:'2026-03-01',tournament_ids:['t2']}
+      ]
+    });
+    const r = env.findMasterSuggestions('山',master,[]);
+    assert(r.length===1,'A3-S1-sugg-05: deleted=true は候補に出さない');
+    assertEq(r[0].id,'m_222222222222','A3-S1-sugg-06: 残るのは生存 member');
+  }
+
+  // findMasterSuggestions: excludedMemberIds で除外
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[
+        {id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1']},
+        {id:'m_222222222222',name:'山本一郎',yomi:'やまもといちろう',first_attended:'2026-02-01',last_attended:'2026-03-01',tournament_ids:['t2']}
+      ]
+    });
+    const r = env.findMasterSuggestions('山',master,['m_111111111111']);
+    assert(r.length===1,'A3-S1-sugg-07: 当日登録済み member_id を除外');
+    assertEq(r[0].id,'m_222222222222','A3-S1-sugg-08: 残るのは未登録');
+  }
+
+  // findMasterSuggestions: 最大5件
+  {
+    const arr=[];
+    for(let i=0;i<10;i++){
+      arr.push({id:'m_'+('aaaaaaaaaaaa'+i).slice(-12),name:'山田'+i,yomi:'やまだ',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t'+i]});
+    }
+    const master = env.normalizeBranchMaster({schema_version:1,members:arr});
+    const r = env.findMasterSuggestions('山',master,[]);
+    assert(r.length===5,'A3-S1-sugg-09: 最大5件で打ち切り');
+  }
+
+  // findMasterSuggestions: 空クエリ・空白のみは空配列
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1']}]
+    });
+    assert(env.findMasterSuggestions('',master,[]).length===0,'A3-S1-sugg-10: 空クエリ → []');
+    assert(env.findMasterSuggestions('   ',master,[]).length===0,'A3-S1-sugg-11: 空白のみ → []');
+    assert(env.findMasterSuggestions(null,master,[]).length===0,'A3-S1-sugg-12: null → []');
+  }
+
+  // updateBranchMasterFromTournament: player の member / grade を master に記録
+  {
+    const master = env.createEmptyBranchMaster();
+    const state = {
+      tournament_id:'t_2026_05_05',
+      players:{
+        A:[{id:'p1',name:'山田太郎',cls:'A',member:'other',grade:'chu'}],
+        B:[]
+      }
+    };
+    env.updateBranchMasterFromTournament(state,master,{tournament_id:'t_2026_05_05',tournament_date:'2026-05-05'});
+    assert(master.members.length===1,'A3-S1-upd-01: 新規 member 1件作成');
+    assertEq(master.members[0].member,'other','A3-S1-upd-02: master に member=other 記録');
+    assertEq(master.members[0].grade,'chu','A3-S1-upd-03: master に grade=chu 記録');
+  }
+
+  // updateBranchMasterFromTournament: 既存 member の member / grade を上書き更新
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'山田太郎',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t_old'],member:'member',grade:'ippan'}]
+    });
+    const state = {
+      tournament_id:'t_2026_05_05',
+      players:{
+        A:[{id:'p1',name:'山田太郎',cls:'A',member_id:'m_111111111111',member:'other',grade:'chu'}],
+        B:[]
+      }
+    };
+    env.updateBranchMasterFromTournament(state,master,{tournament_id:'t_2026_05_05',tournament_date:'2026-05-05'});
+    assertEq(master.members[0].member,'other','A3-S1-upd-04: 既存 member の member を新値で上書き');
+    assertEq(master.members[0].grade,'chu','A3-S1-upd-05: 既存 member の grade を新値で上書き');
   }
 }
 
