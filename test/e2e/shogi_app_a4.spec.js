@@ -518,6 +518,63 @@ test.describe('A-4 Stage 5: 過去参加者パネルのクイックフィルタ'
 });
 
 // ============================================================
+// Stage 6: スマホレイアウト揺れ 1px 許容 e2e（Should Fix 5 / 回帰防止）
+//   - 揺れ自体の原因修正は A-4.1 で実施（iPhone Safari 実機計測必要）
+//   - 本テストは Chromium で「横スクロールが発生していない」ことの回帰防止
+// ============================================================
+async function expectNoOverflow(page, label) {
+  const m = await page.evaluate(() => ({
+    docW: document.documentElement.scrollWidth,
+    bodyW: document.body.scrollWidth,
+    innerW: window.innerWidth,
+  }));
+  expect(m.docW - m.innerW, `[${label}] documentElement.scrollWidth (${m.docW}) - innerWidth (${m.innerW})`).toBeLessThanOrEqual(1);
+  expect(m.bodyW - m.innerW, `[${label}] body.scrollWidth (${m.bodyW}) - innerWidth (${m.innerW})`).toBeLessThanOrEqual(1);
+}
+
+for (const width of [375, 430]) {
+  test.describe('A-4 Stage 6: 横スクロール検出 ' + width + 'px', () => {
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await setupWithMaster(page, MASTER_WITH_DELETED);
+    });
+
+    test('参加者登録タブで横スクロールしない', async ({ page }) => {
+      await page.click('#tab-reg');
+      await expectNoOverflow(page, 'reg @' + width);
+    });
+
+    test('対局管理タブで横スクロールしない', async ({ page }) => {
+      await page.click('#tab-tournament');
+      await expectNoOverflow(page, 'tournament @' + width);
+    });
+
+    test('最終結果タブで横スクロールしない', async ({ page }) => {
+      await page.click('#tab-result');
+      await expectNoOverflow(page, 'result @' + width);
+    });
+
+    test('マスタタブで横スクロールしない', async ({ page }) => {
+      await page.click('#tab-master');
+      await expectNoOverflow(page, 'master @' + width);
+    });
+
+    test('マスタタブ 削除済み表示ONで横スクロールしない', async ({ page }) => {
+      await page.click('#tab-master');
+      await page.click('#masterShowDeletedBtn');
+      await expectNoOverflow(page, 'master+showDeleted @' + width);
+    });
+
+    test('マスタ編集モーダル表示時に横スクロールしない', async ({ page }) => {
+      await page.click('#tab-master');
+      await page.locator('.master-edit-btn').first().click();
+      await expect(page.locator('#master-edit-modal')).toBeVisible();
+      await expectNoOverflow(page, 'master+editModal @' + width);
+    });
+  });
+}
+
+// ============================================================
 // Stage 2 単体: _pendingNewYomi の同名衝突回避（player.id キー方式 / Should Fix 1）
 // ============================================================
 test.describe('A-4 Stage 2 unit: _pendingNewYomi 同名衝突回避', () => {
