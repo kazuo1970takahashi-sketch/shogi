@@ -98,6 +98,9 @@ function loadEnv(path, opts) {
        applyMasterMemberDelete:applyMasterMemberDelete,
        serializeBranchMasterForExport:serializeBranchMasterForExport,
        buildMasterExportFilename:buildMasterExportFilename,
+       detectImportFormat:detectImportFormat,
+       applyOverwriteImport:applyOverwriteImport,
+       safeParseImportText:safeParseImportText,
        ensureTournamentId:ensureTournamentId,
        attachMemberIdToPlayer:attachMemberIdToPlayer,
        addTournamentIdOnce:addTournamentIdOnce,
@@ -1592,6 +1595,143 @@ const env = loadEnv(targetPath);
     const today = env.todayYmd();
     assertEq(env.buildMasterExportFilename('invalid-date'),'shogi_branch_master_'+today+'.json','A3-S4-exp-33: 不正日付は today');
     assertEq(env.buildMasterExportFilename(undefined),'shogi_branch_master_'+today+'.json','A3-S4-exp-34: undefined は today');
+  }
+}
+
+// ============================================================
+// A-3 Stage 5: F8-b 上書きインポート
+// ============================================================
+{
+  // detectImportFormat: branch master 形式
+  {
+    const r = env.detectImportFormat({schema_version:1,members:[]});
+    assertEq(r,'branch_master','A3-S5-fmt-01: members 配列あり → branch_master');
+  }
+  {
+    const r = env.detectImportFormat({members:[{id:'m_x',name:'X'}]});
+    assertEq(r,'branch_master','A3-S5-fmt-02: schema_version なくても members あれば branch_master');
+  }
+
+  // detectImportFormat: tournament 形式
+  {
+    const r = env.detectImportFormat({schema_version:4,tournament_id:'t1',players:{A:[],B:[]}});
+    assertEq(r,'tournament','A3-S5-fmt-03: players オブジェクト → tournament');
+  }
+  {
+    const r = env.detectImportFormat({players:{A:[],B:[]},members:[]});
+    assertEq(r,'tournament','A3-S5-fmt-04: players 優先（両方ある場合）');
+  }
+
+  // detectImportFormat: unknown
+  {
+    assertEq(env.detectImportFormat(null),'unknown','A3-S5-fmt-05: null → unknown');
+    assertEq(env.detectImportFormat(undefined),'unknown','A3-S5-fmt-06: undefined → unknown');
+    assertEq(env.detectImportFormat('foo'),'unknown','A3-S5-fmt-07: 文字列 → unknown');
+    assertEq(env.detectImportFormat([]),'unknown','A3-S5-fmt-08: 配列 → unknown');
+    assertEq(env.detectImportFormat({}),'unknown','A3-S5-fmt-09: 空オブジェクト → unknown');
+    assertEq(env.detectImportFormat({members:'not-array'}),'unknown','A3-S5-fmt-10: members 非配列 → unknown');
+    assertEq(env.detectImportFormat({players:[]}),'unknown','A3-S5-fmt-11: players 配列（オブジェクトでない）→ unknown');
+  }
+
+  // applyOverwriteImport: 通常成功
+  {
+    const r = env.applyOverwriteImport({
+      schema_version:1,
+      updated_at:'2026-05-05T12:00:00.000Z',
+      members:[{id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1']}]
+    });
+    assert(r.success===true,'A3-S5-ovw-01: 上書き成功');
+    assertEq(r.newMaster.members.length,1,'A3-S5-ovw-02: members 件数');
+    assertEq(r.newMaster.members[0].name,'山田太郎','A3-S5-ovw-03: name 反映');
+  }
+
+  // applyOverwriteImport: tombstone を保持して書き込む
+  {
+    const r = env.applyOverwriteImport({
+      schema_version:1,
+      members:[
+        {id:'m_111111111111',name:'A',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]},
+        {id:'m_222222222222',name:'B',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'}
+      ]
+    });
+    assert(r.success===true,'A3-S5-ovw-04: tombstone 含み成功');
+    assertEq(r.newMaster.members.length,2,'A3-S5-ovw-05: tombstone も件数に含む');
+    assertEq(r.newMaster.members[1].deleted,true,'A3-S5-ovw-06: deleted=true 保持');
+    assertEq(r.newMaster.members[1].deleted_at,'2026-04-10','A3-S5-ovw-07: deleted_at 保持');
+  }
+
+  // applyOverwriteImport: 大会データ形式はエラー（マイグレ機能を案内）
+  {
+    const r = env.applyOverwriteImport({
+      schema_version:4,
+      tournament_id:'t1',
+      players:{A:[{id:'p1',name:'X'}],B:[]}
+    });
+    assert(r.success===false,'A3-S5-ovw-08: 大会データは失敗');
+    assertEq(r.error,'tournament_format','A3-S5-ovw-09: error=tournament_format');
+  }
+
+  // applyOverwriteImport: 不正形式エラー
+  {
+    const r1 = env.applyOverwriteImport(null);
+    assertEq(r1.error,'invalid_format','A3-S5-ovw-10: null は invalid_format');
+    const r2 = env.applyOverwriteImport({foo:'bar'});
+    assertEq(r2.error,'invalid_format','A3-S5-ovw-11: 無関係オブジェクトは invalid_format');
+    const r3 = env.applyOverwriteImport([1,2,3]);
+    assertEq(r3.error,'invalid_format','A3-S5-ovw-12: 配列は invalid_format');
+  }
+
+  // applyOverwriteImport: 空マスタも成功（members:[]）
+  {
+    const r = env.applyOverwriteImport({schema_version:1,members:[]});
+    assert(r.success===true,'A3-S5-ovw-13: 空マスタも成功');
+    assertEq(r.newMaster.members.length,0,'A3-S5-ovw-14: members 0件');
+  }
+
+  // applyOverwriteImport: schema_version が違うと normalizeBranchMaster が空マスタにする
+  {
+    const r = env.applyOverwriteImport({
+      schema_version:99,
+      members:[{id:'m_111111111111',name:'X',yomi:''}]
+    });
+    assert(r.success===true,'A3-S5-ovw-15: フォーマットは認識されるが…');
+    assertEq(r.newMaster.members.length,0,'A3-S5-ovw-16: schema_version 不一致で normalize が空マスタを返す');
+  }
+
+  // applyOverwriteImport: input を mutate しない
+  {
+    const input = {
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:''}]
+    };
+    const inputCopy = JSON.parse(JSON.stringify(input));
+    env.applyOverwriteImport(input);
+    assertEq(JSON.stringify(input),JSON.stringify(inputCopy),'A3-S5-ovw-17: 入力を mutate しない');
+  }
+
+  // safeParseImportText: 正常 JSON
+  {
+    const r = env.safeParseImportText('{"a":1}');
+    assertEq(r.a,1,'A3-S5-prs-01: 正常 JSON パース');
+  }
+
+  // safeParseImportText: BOM 除去
+  {
+    const r = env.safeParseImportText('﻿{"a":1}');
+    assertEq(r.a,1,'A3-S5-prs-02: BOM 付き JSON もパース');
+  }
+
+  // safeParseImportText: 空文字・null・空白のみ
+  {
+    assertEq(env.safeParseImportText(''),null,'A3-S5-prs-03: 空文字 → null');
+    assertEq(env.safeParseImportText(null),null,'A3-S5-prs-04: null → null');
+    assertEq(env.safeParseImportText('   \n\t  '),null,'A3-S5-prs-05: 空白のみ → null');
+  }
+
+  // safeParseImportText: 不正 JSON
+  {
+    assertEq(env.safeParseImportText('{ broken'),null,'A3-S5-prs-06: 不正 JSON → null');
+    assertEq(env.safeParseImportText('not json'),null,'A3-S5-prs-07: 非 JSON → null');
   }
 }
 
