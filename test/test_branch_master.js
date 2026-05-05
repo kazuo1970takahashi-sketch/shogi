@@ -104,11 +104,13 @@ function loadEnv(path, opts) {
        applyMergeImport:applyMergeImport,
        safeParseImportText:safeParseImportText,
        applyQuickFilter:applyQuickFilter,
+       isNoYomiMember:isNoYomiMember,
        computeLatestAttendedDate:computeLatestAttendedDate,
        computeDateBefore:computeDateBefore,
        QUICK_FILTER_RECENT_LAST:QUICK_FILTER_RECENT_LAST,
        QUICK_FILTER_WITHIN_3MO:QUICK_FILTER_WITHIN_3MO,
        QUICK_FILTER_REGULAR:QUICK_FILTER_REGULAR,
+       QUICK_FILTER_NO_YOMI:QUICK_FILTER_NO_YOMI,
        ensureTournamentId:ensureTournamentId,
        attachMemberIdToPlayer:attachMemberIdToPlayer,
        addTournamentIdOnce:addTournamentIdOnce,
@@ -2283,6 +2285,57 @@ const env = loadEnv(targetPath);
   {
     assertEq(env.applyQuickFilter(null,env.QUICK_FILTER_REGULAR,'2026-05-05').length,0,'A3-S7-qf-26: null は []');
     assertEq(env.applyQuickFilter(undefined,null,'2026-05-05').length,0,'A3-S7-qf-27: undefined は []');
+  }
+}
+
+// ============================================================
+// A-4 Stage 5: ふりがな未入力可視化（isNoYomiMember + QUICK_FILTER_NO_YOMI）
+// ============================================================
+{
+  // isNoYomiMember 単独テスト（Should Fix 4: 共通判定関数）
+  {
+    assert(env.isNoYomiMember(null)===true,'A4-S5-noyomi-01: null は未入力扱い');
+    assert(env.isNoYomiMember(undefined)===true,'A4-S5-noyomi-02: undefined は未入力扱い');
+    assert(env.isNoYomiMember({yomi:''})===true,'A4-S5-noyomi-03: 空文字は未入力');
+    assert(env.isNoYomiMember({yomi:'   '})===true,'A4-S5-noyomi-04: 半角空白のみは未入力');
+    assert(env.isNoYomiMember({yomi:'　　'})===true,'A4-S5-noyomi-05: 全角空白のみは未入力');
+    assert(env.isNoYomiMember({})===true,'A4-S5-noyomi-06: yomi プロパティなしは未入力');
+    assert(env.isNoYomiMember({yomi:'やまだ'})===false,'A4-S5-noyomi-07: ひらがな入りは入力済み');
+    // normalizeYomi は カタカナ → ひらがな変換を行う → カタカナも入力済み扱い
+    assert(env.isNoYomiMember({yomi:'ヤマダ'})===false,'A4-S5-noyomi-08: カタカナは normalize 後に入力済み扱い');
+  }
+
+  // applyQuickFilter QUICK_FILTER_NO_YOMI
+  {
+    const ms=[
+      {id:'a',name:'A',yomi:'やまだ',last_attended:'2026-01-01',attendance_count:1},
+      {id:'b',name:'B',yomi:'',last_attended:'2026-02-01',attendance_count:1},
+      {id:'c',name:'C',yomi:'   ',last_attended:'2026-03-01',attendance_count:1},
+      {id:'d',name:'D',yomi:'さとう',last_attended:'2026-04-01',attendance_count:1},
+      {id:'e',name:'E',last_attended:'2026-05-01',attendance_count:1}
+    ];
+    const r = env.applyQuickFilter(ms,env.QUICK_FILTER_NO_YOMI,'2026-05-05');
+    assertEq(r.length,3,'A4-S5-qf-noyomi-01: yomi 未入力は 3件 (B, C, E)');
+    const ids = r.map(function(m){return m.id;}).sort();
+    assertEq(ids.join(','),'b,c,e','A4-S5-qf-noyomi-02: B/C/E が含まれる');
+  }
+
+  // QUICK_FILTER_NO_YOMI: 全員 yomi あり → 0件
+  {
+    const ms=[
+      {id:'a',name:'A',yomi:'やまだ'},
+      {id:'b',name:'B',yomi:'さとう'}
+    ];
+    const r = env.applyQuickFilter(ms,env.QUICK_FILTER_NO_YOMI,'2026-05-05');
+    assertEq(r.length,0,'A4-S5-qf-noyomi-03: 全員入力済み → 0件');
+  }
+
+  // QUICK_FILTER_NO_YOMI: 入力 mutate 防止
+  {
+    const ms=[{id:'x',yomi:''}];
+    const before = JSON.stringify(ms);
+    env.applyQuickFilter(ms,env.QUICK_FILTER_NO_YOMI,'2026-05-05');
+    assertEq(JSON.stringify(ms),before,'A4-S5-qf-noyomi-04: 入力配列 mutate しない');
   }
 }
 

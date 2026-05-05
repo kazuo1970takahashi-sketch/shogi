@@ -416,6 +416,108 @@ test.describe('A-4 Stage 4: 復元ボタン', () => {
 });
 
 // ============================================================
+// Stage 5: ふりがな未入力可視化（サマリー / バッジ / クイックフィルタ）
+// ============================================================
+
+// 未入力者を含むマスタ（生存3名のうち2名 yomi 未入力）
+const MASTER_WITH_NO_YOMI = {
+  schema_version: 1,
+  updated_at: '2026-05-05T12:00:00.000Z',
+  members: [
+    {id:'m_aaaaaaaaaaaa',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1','t2'],attendance_count:2,member:'other',grade:'chu',last_class:'A',deleted:false,deleted_at:null,note:''},
+    {id:'m_bbbbbbbbbbbb',name:'山本花子',yomi:'',first_attended:'2026-02-01',last_attended:'2026-03-01',tournament_ids:['t3'],attendance_count:1,member:'member',grade:'ippan',last_class:'B',deleted:false,deleted_at:null,note:''},
+    {id:'m_cccccccccccc',name:'佐藤一郎',yomi:'   ',first_attended:'2026-01-01',last_attended:'2026-04-15',tournament_ids:['t1','t2','t3','t4','t5'],attendance_count:5,member:'member',grade:'ippan',last_class:'A',deleted:false,deleted_at:null,note:''}
+  ]
+};
+
+test.describe('A-4 Stage 5: マスタタブ ふりがな未入力サマリー・バッジ', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupWithMaster(page, MASTER_WITH_NO_YOMI);
+    await page.click('#tab-master');
+  });
+
+  test('サマリーに「うちふりがな未入力: N名」が表示される', async ({ page }) => {
+    await expect(page.locator('#master-no-yomi-summary')).toContainText('（うちふりがな未入力:');
+    await expect(page.locator('#master-no-yomi-summary')).toContainText('2名');
+  });
+
+  test('サマリー数と一覧バッジ数が一致する', async ({ page }) => {
+    const summaryText = await page.locator('#master-no-yomi-summary').innerText();
+    // "（うちふりがな未入力: 2名）"
+    const match = summaryText.match(/(\d+)名/);
+    expect(match).not.toBeNull();
+    const summaryCount = Number(match[1]);
+    const badgeCount = await page.locator('.master-no-yomi-badge').count();
+    expect(badgeCount).toBe(summaryCount);
+    expect(summaryCount).toBe(2);
+  });
+
+  test('未入力 member の行に ⚠️ 未入力 バッジが表示される', async ({ page }) => {
+    const row = page.locator('#pane-master tbody tr').filter({ hasText: '山本花子' });
+    await expect(row.locator('.master-no-yomi-badge')).toBeVisible();
+    await expect(row.locator('.master-no-yomi-badge')).toContainText('未入力');
+  });
+
+  test('入力済み member の行にはバッジが出ない', async ({ page }) => {
+    const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
+    await expect(row.locator('.master-no-yomi-badge')).toHaveCount(0);
+  });
+});
+
+test.describe('A-4 Stage 5: 過去参加者パネルのクイックフィルタ', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupWithMaster(page, MASTER_WITH_NO_YOMI);
+    // 過去参加者パネルを開く
+    const panelToggle = page.locator('#ppToggleBtn');
+    if (await panelToggle.isVisible()) await panelToggle.click();
+  });
+
+  test('「ふりがな未入力」フィルタボタンが表示される', async ({ page }) => {
+    const btn = page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]');
+    await expect(btn).toBeVisible();
+    await expect(btn).toContainText('ふりがな未入力');
+  });
+
+  test('フィルタ ON で結果数 = サマリー数（マスタタブとの一致）', async ({ page }) => {
+    await page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]').click();
+    // ppPanel に表示される member 行数（生存3名中の未入力2名）
+    const items = page.locator('#ppPanel [data-mid]');
+    const count = await items.count();
+    expect(count).toBe(2);
+    // 山本花子 / 佐藤一郎 が含まれ、山田太郎は含まれない
+    await expect(page.locator('#ppPanel')).toContainText('山本花子');
+    await expect(page.locator('#ppPanel')).toContainText('佐藤一郎');
+    await expect(page.locator('#ppPanel')).not.toContainText('山田太郎');
+  });
+
+  test('排他選択：別フィルタを押すと「ふりがな未入力」は外れる', async ({ page }) => {
+    await page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]').click();
+    await expect(page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).toHaveClass(/active/);
+    await page.locator('.pp-quick-filter-btn[data-qfkey="regular"]').click();
+    await expect(page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).not.toHaveClass(/active/);
+    await expect(page.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).toHaveClass(/active/);
+  });
+
+  test('検索との AND 条件：「ふりがな未入力」+ 検索「山本」→ 山本花子のみ', async ({ page }) => {
+    await page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]').click();
+    await page.fill('#pp-search', '山本');
+    const items = page.locator('#ppPanel [data-mid]');
+    const count = await items.count();
+    expect(count).toBe(1);
+    await expect(page.locator('#ppPanel')).toContainText('山本花子');
+  });
+
+  test('50音タブとの AND 条件：「ふりがな未入力」+ 「他」タブ → 未入力 + 他カテゴリ', async ({ page }) => {
+    // 「他」タブは yomi 空 + getYomiInitialRow が other の人 → 未入力2名は両方とも該当する
+    await page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]').click();
+    await page.locator('.pp-yomi-tab[data-row="other"]').click();
+    const items = page.locator('#ppPanel [data-mid]');
+    const count = await items.count();
+    expect(count).toBe(2);
+  });
+});
+
+// ============================================================
 // Stage 2 単体: _pendingNewYomi の同名衝突回避（player.id キー方式 / Should Fix 1）
 // ============================================================
 test.describe('A-4 Stage 2 unit: _pendingNewYomi 同名衝突回避', () => {

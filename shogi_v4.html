@@ -563,8 +563,16 @@ function findMemberCandidates(participant,master){
 var QUICK_FILTER_RECENT_LAST='recent_last';   // 前回参加（最終大会日と一致）
 var QUICK_FILTER_WITHIN_3MO='within_3mo';     // 3ヶ月以内（90日以内）
 var QUICK_FILTER_REGULAR='regular';           // 常連（attendance_count >= 5）
+var QUICK_FILTER_NO_YOMI='no_yomi';           // A-4 §3.5.4: ふりがな未入力
 var QUICK_FILTER_REGULAR_MIN=5;
 var QUICK_FILTER_WITHIN_DAYS=90;
+
+// A-4 §3.5.1 (Should Fix 4): ふりがな未入力判定の共通関数。
+// サマリー・バッジ・フィルタ・テストすべてでこの関数を使う。
+function isNoYomiMember(member){
+  if(!member)return true;
+  return !normalizeYomi(member.yomi||'');
+}
 
 // 全 member の last_attended の最大日（空文字 = データなし）
 function computeLatestAttendedDate(members){
@@ -612,6 +620,10 @@ function applyQuickFilter(members,filterKey,todayStr){
   }
   if(filterKey===QUICK_FILTER_REGULAR){
     return members.filter(function(m){return m&&(Number(m.attendance_count)||0)>=QUICK_FILTER_REGULAR_MIN;});
+  }
+  // A-4 §3.5.4: ふりがな未入力フィルタ
+  if(filterKey===QUICK_FILTER_NO_YOMI){
+    return members.filter(isNoYomiMember);
   }
   return members.slice();
 }
@@ -1087,7 +1099,7 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
   var query=filter||'';
   var row=yomiRow||'all';
-  var qf=(quickFilter===QUICK_FILTER_RECENT_LAST||quickFilter===QUICK_FILTER_WITHIN_3MO||quickFilter===QUICK_FILTER_REGULAR)?quickFilter:null;
+  var qf=(quickFilter===QUICK_FILTER_RECENT_LAST||quickFilter===QUICK_FILTER_WITHIN_3MO||quickFilter===QUICK_FILTER_REGULAR||quickFilter===QUICK_FILTER_NO_YOMI)?quickFilter:null;
   // クイックフィルタを先に適用（最終大会日基準を全 member に対して計算するため、検索・50音タブ前）
   var qfApplied=applyQuickFilter(members,qf,todayYmd());
   var filtered=[];
@@ -1140,7 +1152,8 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   var qfDefs=[
     {key:QUICK_FILTER_RECENT_LAST,label:'前回参加'},
     {key:QUICK_FILTER_WITHIN_3MO,label:'3ヶ月以内'},
-    {key:QUICK_FILTER_REGULAR,label:'常連 (5回以上)'}
+    {key:QUICK_FILTER_REGULAR,label:'常連 (5回以上)'},
+    {key:QUICK_FILTER_NO_YOMI,label:'ふりがな未入力'}
   ];
   for(var qi=0;qi<qfDefs.length;qi++){
     var qd=qfDefs[qi];
@@ -1403,7 +1416,14 @@ function buildMasterTabHtml(master){
     return (a.name||'')<(b.name||'')?-1:1;
   });
   var html='<div class="section"><h2>沼津支部 参加者マスタ</h2>';
-  html+='<div style="margin-bottom:12px;font-size:14px">登録: <strong>'+liveMembers.length+'名</strong></div>';
+  // A-4 §3.5.2: 登録数 + ふりがな未入力数のサマリー
+  var noYomiCount=0;
+  for(var ny=0;ny<liveMembers.length;ny++){if(isNoYomiMember(liveMembers[ny]))noYomiCount++;}
+  var summaryHtml='登録: <strong>'+liveMembers.length+'名</strong>';
+  if(liveMembers.length>0){
+    summaryHtml+='<span id="master-no-yomi-summary" style="color:#888;margin-left:8px">（うちふりがな未入力: <strong>'+noYomiCount+'名</strong>）</span>';
+  }
+  html+='<div style="margin-bottom:12px;font-size:14px">'+summaryHtml+'</div>';
   html+='<div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:8px">';
   html+='<button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button>';
   html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
@@ -1427,7 +1447,14 @@ function buildMasterTabHtml(master){
       // A-4 §3.4.2: 削除済み行はグレー背景＋取り消し線
       var rowStyle=isDel?' style="background:#f5f5f5;color:#888;text-decoration:line-through" class="master-row-deleted"':'';
       html+='<tr'+rowStyle+'><td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.name)+'</td>';
-      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee;color:#666">'+escapeHtml(m.yomi||'')+'</td>';
+      // A-4 §3.5.3: ふりがな未入力なら ⚠️ 未入力 バッジ（薄黄色背景）
+      var yomiCellHtml;
+      if(isNoYomiMember(m)){
+        yomiCellHtml='<span class="master-no-yomi-badge" style="display:inline-block;background:#fff8c4;color:#7a5d00;border:1px solid #f0e082;border-radius:10px;padding:1px 8px;font-size:11px;text-decoration:none">⚠️ 未入力</span>';
+      }else{
+        yomiCellHtml=escapeHtml(m.yomi||'');
+      }
+      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee;color:#666">'+yomiCellHtml+'</td>';
       html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee" class="master-cell-grade">'
         +'<div>'+escapeHtml(memberLabel)+'</div>'
         +(gradeLabel?'<div style="color:#666;font-size:12px">'+escapeHtml(gradeLabel)+'</div>':'')
