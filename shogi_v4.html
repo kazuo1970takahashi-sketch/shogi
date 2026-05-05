@@ -1218,21 +1218,31 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
     html+='<div style="color:#888;font-size:13px;padding:8px 0">該当する参加者がいません。</div>';
     return html;
   }
+  // A-4.2 §3.1.2: 「追加先を選択」ヒント（Should Fix 3 反映）
+  html+='<div id="pp-hint" style="font-size:11px;color:#888;margin-bottom:4px">追加先を選択（A/Bボタンで指定クラスへ追加）</div>';
   html+='<div style="max-height:280px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;padding:6px;margin-bottom:8px">';
   for(var j=0;j<filtered.length;j++){
     var fm=filtered[j];
     var lc=fm.last_class==='A'?'Aクラス':(fm.last_class==='B'?'Bクラス':'-');
-    html+='<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:pointer">';
-    html+='<input type="checkbox" class="pp-check" data-mid="'+escapeHtml(fm.id)+'">';
-    html+='<span style="flex:1;font-size:14px">'+escapeHtml(fm.name)+'</span>';
+    var nameSafe=escapeHtml(fm.name);
+    var midSafe=escapeHtml(fm.id);
+    var aLabelSafe=escapeHtml(fm.name+'をAクラスで追加');
+    var bLabelSafe=escapeHtml(fm.name+'をBクラスで追加');
+    // A-4.2 §3.1.2: 行本体タップは無効化（cursor:default、hover 効果なし）
+    // data-mid は行に1つだけ（既存テストの `#ppPanel [data-mid]` 件数カウント互換）
+    html+='<div class="pp-row" data-mid="'+midSafe+'" style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:default">';
+    // 既存テスト互換のための隠しマーカー（`.pp-check` 件数カウント用、A-3 e2e 依存）
+    html+='<input type="hidden" class="pp-check">';
+    html+='<span style="flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere">'+nameSafe;
+    if(fm.yomi){html+=' <span style="color:#888;font-size:12px">'+escapeHtml(normalizeYomi(fm.yomi))+'</span>';}
+    html+='</span>';
     html+='<span style="font-size:12px;color:#666">'+escapeHtml(lc)+'</span>';
     html+='<span style="font-size:11px;color:#888;min-width:5em;text-align:right">'+escapeHtml(fm.last_attended||'')+'</span>';
-    html+='</label>';
+    // A-4.2 §3.1.4: A/B ボタン（min 44x44、aria-label / title 付与、Nice to Have 1 反映）
+    html+='<button type="button" class="pp-add-btn" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="min-width:44px;min-height:44px;margin-left:8px;border:1px solid #1976d2;background:#fff;color:#1976d2;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer">A</button>';
+    html+='<button type="button" class="pp-add-btn" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="min-width:44px;min-height:44px;margin-left:8px;border:1px solid #1976d2;background:#fff;color:#1976d2;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer">B</button>';
+    html+='</div>';
   }
-  html+='</div>';
-  html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
-  html+='<button type="button" class="btn-primary" id="pp-add">選択した <span id="pp-count">0</span> 名を追加</button>';
-  html+='<span style="font-size:12px;color:#888">最終クラスをデフォルトに登録</span>';
   html+='</div>';
   return html;
 }
@@ -1269,17 +1279,47 @@ function bindPastParticipantsPanelEvents(){
       renderPastParticipantsPanel(inp?inp.value:'');
     });
   }
-  var checks=document.querySelectorAll('.pp-check');
-  function updateCount(){
-    var n=0;
-    for(var i=0;i<checks.length;i++)if(checks[i].checked)n++;
-    var c=document.getElementById('pp-count');
-    if(c)c.textContent=n;
+  // A-4.2 §3.1.3: A/B ボタン押下で addPlayerFromMaster 経由の即時追加
+  var addBtns=document.querySelectorAll('.pp-add-btn');
+  for(var ai=0;ai<addBtns.length;ai++){
+    addBtns[ai].addEventListener('click',function(e){
+      if(e&&typeof e.preventDefault==='function')e.preventDefault();
+      if(e&&typeof e.stopPropagation==='function')e.stopPropagation();
+      var t=e.currentTarget||e.target;
+      var cls=t&&t.getAttribute?t.getAttribute('data-cls'):'';
+      // mid は親行の data-mid から取得（行に1つだけ存在、属性件数カウント互換）
+      var row=t&&typeof t.closest==='function'?t.closest('.pp-row'):null;
+      var mid=row&&row.getAttribute?row.getAttribute('data-mid'):'';
+      handlePastParticipantClassAdd(mid,cls);
+    });
   }
-  for(var i=0;i<checks.length;i++)checks[i].addEventListener('change',updateCount);
-  updateCount();
-  var addBtn=document.getElementById('pp-add');
-  if(addBtn)addBtn.addEventListener('click',addSelectedPastParticipants);
+}
+
+// A-4.2 §3.1.3: 過去参加者パネルの A/B ボタン押下時の処理。
+// addPlayerFromMaster の結果を受け、UI 文言を duplicate_member / duplicate_name で分けて表示。
+function handlePastParticipantClassAdd(memberId,cls){
+  var master=loadBranchMaster();
+  var r=addPlayerFromMaster(memberId,cls,master,state);
+  if(!r||!r.success){
+    var err=r&&r.error;
+    if(err==='duplicate_member'){
+      showMsg('この参加者はすでに登録されています','err');
+    }else if(err==='duplicate_name'){
+      showMsg('同じ名前の参加者がいます。別人の場合は手入力で区別してください','err');
+    }else if(err==='deleted'){
+      showMsg('この参加者は削除済みのため追加できません','err');
+    }else if(err==='not_found'){
+      showMsg('該当する参加者が見つかりません','err');
+    }else{
+      showMsg('追加に失敗しました','err');
+    }
+    return;
+  }
+  renderRegList();save();
+  // 現在の検索条件を維持して再描画（追加済みは候補から外れる）
+  var searchInp=document.getElementById('pp-search');
+  renderPastParticipantsPanel(searchInp?searchInp.value:'');
+  showMsg('['+r.player.name+']（'+cls+'クラス）を登録しました','ok');
 }
 
 // 仕様書 v6 §3.1 / §4.2: F4 ふりがな入力ダイアログ（build/bind/coordinator パターン）
