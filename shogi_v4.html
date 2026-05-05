@@ -550,6 +550,38 @@ function findMemberCandidates(participant,master){
 }
 
 // ============================================================
+// MASTER EDIT (A-3 §1-2 / F7-a): name + yomi のみ編集
+//   参加履歴・支部員区分・削除フラグ等は触らない。
+//   戻り値: {success, error?, duplicateCount?}
+// ============================================================
+function applyMasterMemberEdit(memberId,newName,newYomi,master){
+  if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
+  if(typeof memberId!=='string'||!memberId)return {success:false,error:'invalid_id'};
+  var target=null;
+  for(var i=0;i<master.members.length;i++){
+    if(master.members[i].id===memberId){target=master.members[i];break;}
+  }
+  if(!target)return {success:false,error:'not_found'};
+  if(target.deleted===true)return {success:false,error:'deleted'};
+
+  var nm=normalizePersonName(typeof newName==='string'?newName:'');
+  var yo=normalizeYomi(typeof newYomi==='string'?newYomi:'');
+  if(!nm)return {success:false,error:'empty_name'};
+
+  target.name=nm;
+  target.yomi=yo;
+
+  // 同名重複検知（自分以外・deleted 以外、normalize 後一致）
+  var dupCount=0;
+  for(var j=0;j<master.members.length;j++){
+    var other=master.members[j];
+    if(!other||other.id===memberId||other.deleted===true)continue;
+    if(normalizePersonName(other.name||'')===nm)dupCount++;
+  }
+  return {success:true,duplicateCount:dupCount};
+}
+
+// ============================================================
 // SUGGEST (A-3 §1-1): 登録画面サジェスト
 //   query は inp-name の生入力。最大5件。deleted=true・既登録 member_id は除外。
 // ============================================================
@@ -1067,12 +1099,16 @@ function buildMasterTabHtml(master){
     html+='<div style="color:#888;font-size:13px;padding:8px 0">登録された参加者はいません。</div>';
   }else{
     html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
-    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th></tr></thead><tbody>';
+    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">ふりがな</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th><th style="padding:6px 8px">操作</th></tr></thead><tbody>';
     for(var i=0;i<members.length;i++){
       var m=members[i];
       html+='<tr><td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.name)+'</td>';
+      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee;color:#666">'+escapeHtml(m.yomi||'')+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.last_attended||'')+'</td>';
-      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+(m.attendance_count|0)+'</td></tr>';
+      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+(m.attendance_count|0)+'</td>';
+      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">';
+      html+='<button type="button" class="btn-sm master-edit-btn" data-mid="'+escapeHtml(m.id||'')+'">編集</button>';
+      html+='</td></tr>';
     }
     html+='</tbody></table></div>';
   }
@@ -1086,9 +1122,98 @@ function buildMasterTabHtml(master){
   return html;
 }
 
+function buildMasterEditModalHtml(member){
+  var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto">';
+  html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">マスタ編集</h3>';
+  html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-bottom:12px">編集できるのは氏名・ふりがなのみです。参加履歴は変更されません。</p>';
+  html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">氏名</label>';
+  html+='<input type="text" id="me-name" value="'+escapeHtml(member.name||'')+'" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
+  html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">ふりがな</label>';
+  html+='<input type="text" inputmode="kana" id="me-yomi" value="'+escapeHtml(member.yomi||'')+'" placeholder="やまだたろう" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:8px">';
+  html+='<div id="me-status" style="font-size:13px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
+  html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
+  html+='<button type="button" id="me-cancel" class="btn-sm" style="background:#fff">キャンセル</button>';
+  html+='<button type="button" class="btn-primary" id="me-save" data-mid="'+escapeHtml(member.id||'')+'">保存</button>';
+  html+='</div></div>';
+  return html;
+}
+
+function openMasterEditModal(memberId){
+  var master=loadBranchMaster();
+  var target=null;
+  if(master&&Array.isArray(master.members)){
+    for(var i=0;i<master.members.length;i++){
+      if(master.members[i].id===memberId){target=master.members[i];break;}
+    }
+  }
+  if(!target||target.deleted===true){
+    if(typeof showMsg==='function')showMsg('対象の member が見つかりません','err');
+    return;
+  }
+  var existing=document.getElementById('master-edit-modal');
+  if(existing)existing.remove();
+  var modal=document.createElement('div');
+  modal.id='master-edit-modal';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=buildMasterEditModalHtml(target);
+  document.body.appendChild(modal);
+  bindMasterEditModalEvents();
+}
+
+function bindMasterEditModalEvents(){
+  var cancelBtn=document.getElementById('me-cancel');
+  if(cancelBtn)cancelBtn.addEventListener('click',function(){
+    var m=document.getElementById('master-edit-modal');if(m)m.remove();
+  });
+  var saveBtn=document.getElementById('me-save');
+  if(saveBtn)saveBtn.addEventListener('click',function(){
+    // iPhone Safari blur 競合回避
+    var nameInput=document.getElementById('me-name');
+    var yomiInput=document.getElementById('me-yomi');
+    if(nameInput)nameInput.blur();
+    if(yomiInput)yomiInput.blur();
+    var memberId=this.getAttribute('data-mid');
+    var newName=nameInput?nameInput.value:'';
+    var newYomi=yomiInput?yomiInput.value:'';
+    var statusEl=document.getElementById('me-status');
+    if(!newName||!newName.trim()){
+      if(statusEl)statusEl.textContent='氏名を入力してください';
+      return;
+    }
+    var master=loadBranchMaster();
+    var result=applyMasterMemberEdit(memberId,newName,newYomi,master);
+    if(!result.success){
+      if(statusEl){
+        if(result.error==='empty_name')statusEl.textContent='氏名を入力してください';
+        else if(result.error==='not_found')statusEl.textContent='対象の member が見つかりません';
+        else if(result.error==='deleted')statusEl.textContent='削除済み member は編集できません';
+        else statusEl.textContent='保存に失敗しました';
+      }
+      return;
+    }
+    saveBranchMaster(master);
+    var modalEl=document.getElementById('master-edit-modal');if(modalEl)modalEl.remove();
+    var msg='マスタを更新しました';
+    if(result.duplicateCount>0){
+      msg+='（同名 '+result.duplicateCount+'件あり：自動統合しません）';
+    }
+    if(typeof showMsg==='function')showMsg(msg,result.duplicateCount>0?'warn':'ok');
+    renderMasterTab();
+  });
+}
+
 function bindMasterTabEvents(){
   var btn=document.getElementById('masterMigrateBtn');
   if(btn)btn.addEventListener('click',openMigrationWizard);
+  var editBtns=document.querySelectorAll('.master-edit-btn');
+  if(editBtns&&editBtns.length){
+    for(var i=0;i<editBtns.length;i++){
+      editBtns[i].addEventListener('click',function(){
+        var mid=this.getAttribute('data-mid');
+        if(mid)openMasterEditModal(mid);
+      });
+    }
+  }
 }
 
 function renderMasterTab(){

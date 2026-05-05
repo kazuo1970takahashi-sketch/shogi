@@ -94,6 +94,7 @@ function loadEnv(path, opts) {
        saveBranchMaster:saveBranchMaster,
        findMemberCandidates:findMemberCandidates,
        findMasterSuggestions:findMasterSuggestions,
+       applyMasterMemberEdit:applyMasterMemberEdit,
        ensureTournamentId:ensureTournamentId,
        attachMemberIdToPlayer:attachMemberIdToPlayer,
        addTournamentIdOnce:addTournamentIdOnce,
@@ -1241,6 +1242,119 @@ const env = loadEnv(targetPath);
     env.updateBranchMasterFromTournament(state,master,{tournament_id:'t_2026_05_05',tournament_date:'2026-05-05'});
     assertEq(master.members[0].member,'other','A3-S1-upd-04: 既存 member の member を新値で上書き');
     assertEq(master.members[0].grade,'chu','A3-S1-upd-05: 既存 member の grade を新値で上書き');
+  }
+}
+
+// ============================================================
+// A-3 Stage 2: F7 編集（name + yomi のみ）
+// ============================================================
+{
+  // 通常編集: name + yomi 更新
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1'],attendance_count:1}]
+    });
+    const r = env.applyMasterMemberEdit('m_111111111111','山田 太郎','やまだ たろう',master);
+    assert(r.success===true,'A3-S2-edit-01: 編集成功');
+    assertEq(master.members[0].name,'山田 太郎','A3-S2-edit-02: name 正規化（連続空白等の整理）');
+    assertEq(master.members[0].yomi,'やまだたろう','A3-S2-edit-03: yomi 正規化（空白除去）');
+    assertEq(master.members[0].attendance_count,1,'A3-S2-edit-04: 参加履歴は不変');
+    assertEq(master.members[0].tournament_ids[0],'t1','A3-S2-edit-05: tournament_ids 不変');
+    assertEq(r.duplicateCount,0,'A3-S2-edit-06: 同名なし → 0');
+  }
+
+  // 全角空白の正規化
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'A',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}]
+    });
+    env.applyMasterMemberEdit('m_111111111111','　佐藤　花子　','サトウ ハナコ',master);
+    assertEq(master.members[0].name,'佐藤 花子','A3-S2-edit-07: 全角→半角空白 + 前後空白除去');
+    assertEq(master.members[0].yomi,'さとうはなこ','A3-S2-edit-08: yomi カタカナ→ひらがな + 空白除去');
+  }
+
+  // 空 name エラー
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}]
+    });
+    const r = env.applyMasterMemberEdit('m_111111111111','   ','',master);
+    assert(r.success===false,'A3-S2-edit-09: 空 name は失敗');
+    assertEq(r.error,'empty_name','A3-S2-edit-10: error=empty_name');
+    assertEq(master.members[0].name,'X','A3-S2-edit-11: 失敗時はマスタ不変');
+  }
+
+  // 存在しない id エラー
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}]
+    });
+    const r = env.applyMasterMemberEdit('m_does_not_exist','Y','',master);
+    assert(r.success===false,'A3-S2-edit-12: 不存在 id は失敗');
+    assertEq(r.error,'not_found','A3-S2-edit-13: error=not_found');
+  }
+
+  // deleted=true は編集禁止
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'}]
+    });
+    const r = env.applyMasterMemberEdit('m_111111111111','Y','',master);
+    assert(r.success===false,'A3-S2-edit-14: deleted=true は編集不可');
+    assertEq(r.error,'deleted','A3-S2-edit-15: error=deleted');
+  }
+
+  // 同名重複検知（warning のみ・自動統合しない）
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[
+        {id:'m_111111111111',name:'山田太郎',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]},
+        {id:'m_222222222222',name:'佐藤花子',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}
+      ]
+    });
+    const r = env.applyMasterMemberEdit('m_222222222222','山田太郎','',master);
+    assert(r.success===true,'A3-S2-edit-16: 同名でも編集自体は成功');
+    assertEq(r.duplicateCount,1,'A3-S2-edit-17: duplicateCount=1（warning 用）');
+    assertEq(master.members.length,2,'A3-S2-edit-18: 自動統合せず members 件数維持');
+    assertEq(master.members[1].name,'山田太郎','A3-S2-edit-19: 編集対象の name は更新');
+    assertEq(master.members[1].id,'m_222222222222','A3-S2-edit-20: id 不変');
+  }
+
+  // 同名検知は deleted を除外
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[
+        {id:'m_111111111111',name:'山田太郎',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'},
+        {id:'m_222222222222',name:'佐藤花子',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}
+      ]
+    });
+    const r = env.applyMasterMemberEdit('m_222222222222','山田太郎','',master);
+    assertEq(r.duplicateCount,0,'A3-S2-edit-21: deleted=true は同名重複に含めない');
+  }
+
+  // 編集が他のフィールドに影響しない
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1','t2'],attendance_count:2,member:'other',grade:'chu',last_class:'B',note:'memo'}]
+    });
+    env.applyMasterMemberEdit('m_111111111111','Y','よみ',master);
+    const m=master.members[0];
+    assertEq(m.first_attended,'2026-01-01','A3-S2-edit-22: first_attended 不変');
+    assertEq(m.last_attended,'2026-04-01','A3-S2-edit-23: last_attended 不変');
+    assertEq(m.attendance_count,2,'A3-S2-edit-24: attendance_count 不変');
+    assertEq(m.member,'other','A3-S2-edit-25: member 不変');
+    assertEq(m.grade,'chu','A3-S2-edit-26: grade 不変');
+    assertEq(m.last_class,'B','A3-S2-edit-27: last_class 不変');
+    assertEq(m.note,'memo','A3-S2-edit-28: note 不変');
+    assertEq(m.tournament_ids.length,2,'A3-S2-edit-29: tournament_ids 不変');
   }
 }
 
