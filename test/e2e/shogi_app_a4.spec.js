@@ -313,6 +313,109 @@ test.describe('A-4 Stage 3: マスタ編集モーダル', () => {
 });
 
 // ============================================================
+// Stage 4: 削除済み member 復元 UI
+// ============================================================
+
+const MASTER_WITH_DELETED = {
+  schema_version: 1,
+  updated_at: '2026-05-05T12:00:00.000Z',
+  members: [
+    {id:'m_aaaaaaaaaaaa',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1','t2'],attendance_count:2,member:'other',grade:'chu',last_class:'A',deleted:false,deleted_at:null,note:''},
+    {id:'m_bbbbbbbbbbbb',name:'山本花子',yomi:'やまもとはなこ',first_attended:'2026-02-01',last_attended:'2026-03-01',tournament_ids:['t3'],attendance_count:1,member:'member',grade:'ippan',last_class:'B',deleted:false,deleted_at:null,note:''},
+    {id:'m_dddddddddddd',name:'削除タロウ',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t1'],attendance_count:1,deleted:true,deleted_at:'2026-04-10',member:'member',grade:'ippan',last_class:'A',note:''}
+  ]
+};
+
+test.describe('A-4 Stage 4: 削除済み表示トグル', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupWithMaster(page, MASTER_WITH_DELETED);
+    await page.click('#tab-master');
+  });
+
+  test('トグルOFF（既定）: 削除済み member は表示されない', async ({ page }) => {
+    await expect(page.locator('#pane-master').getByText('削除タロウ')).toHaveCount(0);
+    // 登録数は生存のみ（2名）
+    await expect(page.locator('#pane-master')).toContainText('登録: 2名');
+    // 復元ボタンも出ない
+    await expect(page.locator('.master-restore-btn')).toHaveCount(0);
+  });
+
+  test('トグルON: 削除済み member が薄背景・取り消し線で表示され、削除日時と復元ボタンが出る', async ({ page }) => {
+    await page.click('#masterShowDeletedBtn');
+    const row = page.locator('#pane-master tbody tr').filter({ hasText: '削除タロウ' });
+    await expect(row).toBeVisible();
+    await expect(row).toHaveClass(/master-row-deleted/);
+    await expect(row).toContainText('削除日：2026-04-10');
+    await expect(row.locator('.master-restore-btn')).toBeVisible();
+    // 編集・削除ボタンは出ない
+    await expect(row.locator('.master-edit-btn')).toHaveCount(0);
+    await expect(row.locator('.master-delete-btn')).toHaveCount(0);
+  });
+
+  test('トグル文言が状態で切り替わる', async ({ page }) => {
+    await expect(page.locator('#masterShowDeletedBtn')).toContainText('削除済みを表示');
+    await page.click('#masterShowDeletedBtn');
+    await expect(page.locator('#masterShowDeletedBtn')).toContainText('削除済みを隠す');
+  });
+});
+
+test.describe('A-4 Stage 4: 復元ボタン', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupWithMaster(page, MASTER_WITH_DELETED);
+    await page.click('#tab-master');
+    await page.click('#masterShowDeletedBtn');
+  });
+
+  test('復元 confirm cancel では復元されない', async ({ page }) => {
+    page.once('dialog', d => d.dismiss());
+    await page.locator('.master-restore-btn').click();
+    const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
+    expect(master.members.find(m => m.id === 'm_dddddddddddd').deleted).toBe(true);
+  });
+
+  test('復元 confirm accept で localStorage が deleted=false / deleted_at=null', async ({ page }) => {
+    page.once('dialog', d => d.accept());
+    await page.locator('.master-restore-btn').click();
+    const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
+    const target = master.members.find(m => m.id === 'm_dddddddddddd');
+    expect(target.deleted).toBe(false);
+    expect(target.deleted_at).toBe(null);
+    // 復元後、通常マスタ一覧（トグルOFF状態にしない場合でも生存リストに含まれる）
+    await expect(page.locator('#pane-master')).toContainText('登録: 3名');
+  });
+
+  test('復元後、登録画面サジェスト候補に再表示される', async ({ page }) => {
+    page.once('dialog', d => d.accept());
+    await page.locator('.master-restore-btn').click();
+    // 登録タブへ
+    await page.click('#tab-reg');
+    await page.fill('#inp-name', '削除');
+    // 候補リストに「削除タロウ」が出る
+    await expect(page.locator('#suggest-list')).toContainText('削除タロウ');
+  });
+
+  test('復元後、過去参加者パネルに再表示される', async ({ page }) => {
+    page.once('dialog', d => d.accept());
+    await page.locator('.master-restore-btn').click();
+    await page.click('#tab-reg');
+    // 過去参加者パネルを開く
+    const panelToggle = page.locator('#ppToggleBtn');
+    if (await panelToggle.isVisible()) await panelToggle.click();
+    await expect(page.locator('#ppPanel')).toContainText('削除タロウ');
+  });
+
+  test('復元後、yomi 未入力なら未入力マスタの一員として残る（Stage 5 の検証下準備）', async ({ page }) => {
+    // 削除タロウの yomi は空
+    page.once('dialog', d => d.accept());
+    await page.locator('.master-restore-btn').click();
+    const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
+    const target = master.members.find(m => m.id === 'm_dddddddddddd');
+    expect(target.deleted).toBe(false);
+    expect(target.yomi).toBe('');
+  });
+});
+
+// ============================================================
 // Stage 2 単体: _pendingNewYomi の同名衝突回避（player.id キー方式 / Should Fix 1）
 // ============================================================
 test.describe('A-4 Stage 2 unit: _pendingNewYomi 同名衝突回避', () => {

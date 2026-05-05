@@ -96,6 +96,7 @@ function loadEnv(path, opts) {
        findMasterSuggestions:findMasterSuggestions,
        applyMasterMemberEdit:applyMasterMemberEdit,
        applyMasterMemberDelete:applyMasterMemberDelete,
+       applyMasterMemberRestore:applyMasterMemberRestore,
        serializeBranchMasterForExport:serializeBranchMasterForExport,
        buildMasterExportFilename:buildMasterExportFilename,
        detectImportFormat:detectImportFormat,
@@ -1576,6 +1577,92 @@ const env = loadEnv(targetPath);
     assertEq(master.members[0].deleted,false,'A3-S3-del-24: 他 member は影響なし(A)');
     assertEq(master.members[1].deleted,true,'A3-S3-del-25: 対象 member のみ削除(B)');
     assertEq(master.members[2].deleted,false,'A3-S3-del-26: 他 member は影響なし(C)');
+  }
+}
+
+// ============================================================
+// A-4 Stage 4: applyMasterMemberRestore（削除済み member の復元）
+//   §3.4.3: 戻り値 {success, error?}、エラー: invalid_master / invalid_id / not_found / not_deleted
+//   禁止: 物理削除しない、member_id を変更しない
+// ============================================================
+{
+  // 通常復元: deleted=true → false、deleted_at=null
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'}]
+    });
+    const r = env.applyMasterMemberRestore('m_111111111111',master);
+    assert(r.success===true,'A4-S4-restore-01: 復元成功');
+    assertEq(master.members[0].deleted,false,'A4-S4-restore-02: deleted が false');
+    assertEq(master.members[0].deleted_at,null,'A4-S4-restore-03: deleted_at が null');
+    assertEq(master.members[0].id,'m_111111111111','A4-S4-restore-04: member_id 不変');
+  }
+
+  // 不存在 id → not_found
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}]
+    });
+    const r = env.applyMasterMemberRestore('m_does_not_exist',master);
+    assert(r.success===false,'A4-S4-restore-05: 不存在 id で失敗');
+    assertEq(r.error,'not_found','A4-S4-restore-06: error=not_found');
+  }
+
+  // deleted=false → not_deleted
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}]
+    });
+    const r = env.applyMasterMemberRestore('m_111111111111',master);
+    assert(r.success===false,'A4-S4-restore-07: 未削除で失敗');
+    assertEq(r.error,'not_deleted','A4-S4-restore-08: error=not_deleted');
+    assertEq(master.members[0].deleted,false,'A4-S4-restore-09: 未削除のままマスタ不変');
+  }
+
+  // invalid_master / invalid_id
+  {
+    const r1 = env.applyMasterMemberRestore('m_111111111111',null);
+    assert(r1.success===false&&r1.error==='invalid_master','A4-S4-restore-10: master null で invalid_master');
+    const r2 = env.applyMasterMemberRestore('',{members:[]});
+    assert(r2.success===false&&r2.error==='invalid_id','A4-S4-restore-11: 空 id で invalid_id');
+    const r3 = env.applyMasterMemberRestore(null,{members:[]});
+    assert(r3.success===false&&r3.error==='invalid_id','A4-S4-restore-12: null id で invalid_id');
+  }
+
+  // 復元しても他 member には影響なし
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[
+        {id:'m_111111111111',name:'A',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]},
+        {id:'m_222222222222',name:'B',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'},
+        {id:'m_333333333333',name:'C',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'}
+      ]
+    });
+    env.applyMasterMemberRestore('m_222222222222',master);
+    assertEq(master.members[0].deleted,false,'A4-S4-restore-13: 他 member 影響なし(A)');
+    assertEq(master.members[1].deleted,false,'A4-S4-restore-14: 対象のみ復元(B)');
+    assertEq(master.members[2].deleted,true,'A4-S4-restore-15: 他 deleted member は維持(C)');
+  }
+
+  // 復元後の参加履歴・属性は不変（attendance_count / tournament_ids / member / grade 等）
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'よみ',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1','t2'],attendance_count:2,member:'other',grade:'chu',last_class:'B',deleted:true,deleted_at:'2026-04-10',note:'memo'}]
+    });
+    env.applyMasterMemberRestore('m_111111111111',master);
+    const m=master.members[0];
+    assertEq(m.attendance_count,2,'A4-S4-restore-16: attendance_count 不変');
+    assertEq(m.tournament_ids.length,2,'A4-S4-restore-17: tournament_ids 不変');
+    assertEq(m.member,'other','A4-S4-restore-18: member 不変');
+    assertEq(m.grade,'chu','A4-S4-restore-19: grade 不変');
+    assertEq(m.last_class,'B','A4-S4-restore-20: last_class 不変');
+    assertEq(m.note,'memo','A4-S4-restore-21: note 不変');
+    assertEq(m.yomi,'よみ','A4-S4-restore-22: yomi 不変');
   }
 }
 

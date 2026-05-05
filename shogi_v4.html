@@ -366,6 +366,9 @@ var BRANCH_MASTER_SCHEMA_VERSION=1;
 // 仕様書 v6 §3.7 / Codex Minor #2: 同一セッション内で crypto 不在通知を1度だけ出すためのフラグ
 var _phaseA2State={cryptoNotificationShown:false};
 
+// A-4 §3.4.1: マスタタブの「削除済みを表示」トグル状態（タブ切替で保持）
+var _masterShowDeleted=false;
+
 function createEmptyBranchMaster(){
   return {schema_version:BRANCH_MASTER_SCHEMA_VERSION,updated_at:new Date().toISOString(),members:[]};
 }
@@ -769,6 +772,27 @@ function applyMasterMemberDelete(memberId,master,dateYmd){
   var dateStr=isValidYmd(dateYmd)?dateYmd:todayYmd();
   target.deleted=true;
   target.deleted_at=dateStr;
+  return {success:true};
+}
+
+// ============================================================
+// MASTER RESTORE (A-4 §3.4.3 / F7-e): tombstone から復元
+//   物理削除しない。member_id は変更しない。
+//   戻り値: {success, error?}
+//   エラー: invalid_master / invalid_id / not_found / not_deleted
+// ============================================================
+function applyMasterMemberRestore(memberId,master){
+  if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
+  if(typeof memberId!=='string'||!memberId)return {success:false,error:'invalid_id'};
+  var target=null;
+  for(var i=0;i<master.members.length;i++){
+    if(master.members[i].id===memberId){target=master.members[i];break;}
+  }
+  if(!target)return {success:false,error:'not_found'};
+  if(target.deleted!==true)return {success:false,error:'not_deleted'};
+
+  target.deleted=false;
+  target.deleted_at=null;
   return {success:true};
 }
 
@@ -1367,18 +1391,25 @@ function bindPastParticipantsToggle(){
 // ============================================================
 
 function buildMasterTabHtml(master){
-  var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
+  // A-4 §3.4: 削除済み表示モードに応じて行を切り替え
+  var allMembers=(master&&Array.isArray(master.members))?master.members:[];
+  var liveMembers=allMembers.filter(function(m){return !m.deleted;});
+  var members=_masterShowDeleted?allMembers.slice():liveMembers;
   members.sort(function(a,b){
+    // 削除済みは末尾にまとめる
+    if((!!a.deleted)!==(!!b.deleted))return a.deleted?1:-1;
     var la=a.last_attended||'',lb=b.last_attended||'';
     if(la!==lb)return la<lb?1:-1;
     return (a.name||'')<(b.name||'')?-1:1;
   });
   var html='<div class="section"><h2>沼津支部 参加者マスタ</h2>';
-  html+='<div style="margin-bottom:12px;font-size:14px">登録: <strong>'+members.length+'名</strong></div>';
+  html+='<div style="margin-bottom:12px;font-size:14px">登録: <strong>'+liveMembers.length+'名</strong></div>';
   html+='<div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:8px">';
   html+='<button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button>';
   html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
   html+='<button type="button" id="masterImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📂 マスタをインポート</button>';
+  // A-4 §3.4.1: 削除済み表示トグル
+  html+='<button type="button" id="masterShowDeletedBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864" data-on="'+(_masterShowDeleted?'1':'0')+'">'+(_masterShowDeleted?'🗑️ 削除済みを隠す':'🗑️ 削除済みを表示')+'</button>';
   html+='</div>';
   html+='<hr class="separator">';
   html+='<h3>簡易一覧</h3>';
@@ -1392,7 +1423,10 @@ function buildMasterTabHtml(master){
       // A-4 §3.2.1: 区分列（2段表示） — 上段:支部員/他、下段:中学のみ表示
       var memberLabel=(m.member==='other')?'他':'支部員';
       var gradeLabel=(m.grade==='chu')?'中学':'';
-      html+='<tr><td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.name)+'</td>';
+      var isDel=(m.deleted===true);
+      // A-4 §3.4.2: 削除済み行はグレー背景＋取り消し線
+      var rowStyle=isDel?' style="background:#f5f5f5;color:#888;text-decoration:line-through" class="master-row-deleted"':'';
+      html+='<tr'+rowStyle+'><td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.name)+'</td>';
       html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee;color:#666">'+escapeHtml(m.yomi||'')+'</td>';
       html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee" class="master-cell-grade">'
         +'<div>'+escapeHtml(memberLabel)+'</div>'
@@ -1401,8 +1435,14 @@ function buildMasterTabHtml(master){
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.last_attended||'')+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+(m.attendance_count|0)+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap">';
-      html+='<button type="button" class="btn-sm master-edit-btn" data-mid="'+escapeHtml(m.id||'')+'">編集</button> ';
-      html+='<button type="button" class="btn-sm master-delete-btn" data-mid="'+escapeHtml(m.id||'')+'" data-name="'+escapeHtml(m.name||'')+'" style="border-color:#c33;color:#c33">削除</button>';
+      if(isDel){
+        // A-4 §3.2.3 (Nice to Have 3): 削除日時表示 + 復元ボタン
+        if(m.deleted_at)html+='<div style="font-size:11px;color:#888;text-decoration:none;margin-bottom:4px">削除日：'+escapeHtml(m.deleted_at)+'</div>';
+        html+='<button type="button" class="btn-sm master-restore-btn" data-mid="'+escapeHtml(m.id||'')+'" data-name="'+escapeHtml(m.name||'')+'" style="border-color:#1F3864;color:#1F3864;text-decoration:none">復元</button>';
+      }else{
+        html+='<button type="button" class="btn-sm master-edit-btn" data-mid="'+escapeHtml(m.id||'')+'">編集</button> ';
+        html+='<button type="button" class="btn-sm master-delete-btn" data-mid="'+escapeHtml(m.id||'')+'" data-name="'+escapeHtml(m.name||'')+'" style="border-color:#c33;color:#c33">削除</button>';
+      }
       html+='</td></tr>';
     }
     html+='</tbody></table></div>';
@@ -1718,6 +1758,39 @@ function bindMasterTabEvents(){
         saveBranchMaster(master);
         if(typeof showMsg==='function')showMsg('「'+memberName+'」を削除しました','ok');
         renderMasterTab();
+      });
+    }
+  }
+  // A-4 §3.4.1: 削除済み表示トグル
+  var toggleBtn=document.getElementById('masterShowDeletedBtn');
+  if(toggleBtn)toggleBtn.addEventListener('click',function(){
+    _masterShowDeleted=!_masterShowDeleted;
+    renderMasterTab();
+  });
+  // A-4 §3.4.3: 復元ボタン
+  var restoreBtns=document.querySelectorAll('.master-restore-btn');
+  if(restoreBtns&&restoreBtns.length){
+    for(var ri=0;ri<restoreBtns.length;ri++){
+      restoreBtns[ri].addEventListener('click',function(){
+        var mid=this.getAttribute('data-mid');
+        var memberName=this.getAttribute('data-name')||'';
+        if(!mid)return;
+        if(!confirm('「'+memberName+'」を復元します。\n通常マスタ一覧・過去参加者・サジェスト候補に再表示されます。\n\n続けますか？'))return;
+        var master=loadBranchMaster();
+        var result=applyMasterMemberRestore(mid,master);
+        if(!result.success){
+          if(typeof showMsg==='function'){
+            if(result.error==='not_found')showMsg('対象の member が見つかりません','err');
+            else if(result.error==='not_deleted')showMsg('削除されていません','warn');
+            else showMsg('復元に失敗しました','err');
+          }
+          return;
+        }
+        saveBranchMaster(master);
+        if(typeof showMsg==='function')showMsg('「'+memberName+'」を復元しました','ok');
+        renderMasterTab();
+        // A-4 §3.4.3: 復元後の再反映 — 過去参加者パネルも更新
+        if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
       });
     }
   }
