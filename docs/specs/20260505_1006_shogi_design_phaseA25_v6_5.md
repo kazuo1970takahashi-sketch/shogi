@@ -274,27 +274,27 @@ function buildMigrationModalHtml(opts) {
   opts = opts || {};
   var html = '';
   html += '<div style="background:#fff;border-radius:8px;padding:24px;max-width:600px;width:100%;max-height:85vh;overflow-y:auto">';
-  
+
   // 警告バナー（破損時のみ）
   if (opts.corrupted) {
     html += '<div class="mig-corrupt-warning">⚠️ 既存の支部マスタが破損していました。このマイグレーションで再構築されます。（既存マスタは破棄されます）</div>';
   }
-  
+
   html += '<h3 style="margin-top:0">過去大会データを支部マスタに統合</h3>';
   html += '<p>過去の大会データをマスタに取り込みます。</p>';
   html += '<p style="font-size:13px;color:#444">「大会データをコピー」したテキストを貼り付けてください：</p>';
-  
+
   // ★ 変更：input type="file" → textarea
   html += '<textarea id="mig-paste-area" rows="8" style="width:100%;font-size:12px;font-family:monospace;border:1px solid #ccc;padding:8px;box-sizing:border-box" placeholder="ここに大会データを貼り付けてください"></textarea>';
   html += '<p style="font-size:12px;color:#666;margin-top:8px">複数大会の場合は、空行で区切って連続貼り付け可</p>';
-  
+
   html += '<div id="mig-status" style="margin:12px 0;font-size:13px"></div>';
-  
+
   html += '<div style="text-align:right;margin-top:16px">';
   html += '<button type="button" id="mig-cancel" class="btn-sm" style="margin-right:8px">閉じる</button>';
   html += '<button type="button" id="mig-run" class="btn-primary">統合を実行</button>';
   html += '</div>';
-  
+
   html += '</div>';
   return html;
 }
@@ -308,42 +308,42 @@ function buildMigrationModalHtml(opts) {
 function bindMigrationModalEvents() {
   var cancelBtn = document.getElementById('mig-cancel');
   if (cancelBtn) cancelBtn.addEventListener('click', closeMigrationWizard);
-  
+
   var runBtn = document.getElementById('mig-run');
   if (runBtn) runBtn.addEventListener('click', function() {
     var textarea = document.getElementById('mig-paste-area');
     var text = textarea ? textarea.value : '';
-    
+
     if (!text.trim()) {
       alert('大会データを貼り付けてください');
       return;
     }
-    
+
     var statusEl = document.getElementById('mig-status');
     if (statusEl) statusEl.textContent = '読み込み中...';
-    
+
     try {
       var parsed = parseTournamentTextInput(text);  // ★ 新規関数
       var tournaments = parsed.tournaments;
-      
+
       if (tournaments.length === 0) {
         if (statusEl) statusEl.textContent = '読み込みに失敗：' + (parsed.errors[0] || 'データ形式が正しくありません');
         return;
       }
-      
+
       var master = loadBranchMaster();
       var summary = mergeTournamentParticipantsIntoMaster(tournaments, master);
       saveBranchMaster(master);
-      
+
       var msg = summary.tournaments + '大会を読込：新規追加' + summary.added + '名 / 既存統合' + summary.matched + '件 / スキップ' + summary.skipped + '件';
       if (parsed.errors.length > 0) {
         msg += '（' + parsed.errors.length + '件パース失敗）';
       }
       if (statusEl) statusEl.textContent = msg;
-      
+
       renderMasterTab();
       renderPastParticipantsPanel();
-      
+
     } catch (err) {
       if (statusEl) statusEl.textContent = '読み込みに失敗：' + (err && err.message ? err.message : String(err));
     }
