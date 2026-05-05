@@ -60,6 +60,11 @@ th.cell-amt{text-align:right}
       <span class="badge badge-blue">対戦成績・報告書を印刷/PDF保存</span>
       <span class="badge badge-blue">データ保存・復元</span>
       <span class="badge badge-blue">名前の一括編集</span>
+      <span class="badge badge-green">支部マスタ管理</span>
+      <span class="badge badge-green">過去参加者をワンクリック呼び出し</span>
+      <span class="badge badge-green">漢字・ふりがな検索</span>
+      <span class="badge badge-green">50音タブ</span>
+      <span class="badge badge-green">過去大会JSONを統合</span>
     </div>
   </div>
 
@@ -70,12 +75,13 @@ th.cell-amt{text-align:right}
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-body">
-        <div class="step-title">受付【役割分担で効率化】</div>
-        <p>負荷を分散するため、以下の役割分担で進める。</p>
+        <div class="step-title">受付【支部マスタで時間短縮】</div>
+        <p>常連の参加者は支部マスタから呼び出すことで、入力時間を大幅に短縮できる。役割分担は以下。</p>
         <ul>
           <li><strong>受付係</strong>：対局カード記入依頼・集金を担当</li>
-          <li><strong>登録係</strong>：記入されたカードの苗字のみ素早くアプリに登録→1回戦ペアリング自動生成→対局カードに手合いを記入</li>
+          <li><strong>登録係</strong>：「過去参加者から選ぶ」パネルでマスタから呼び出し（漢字・ふりがな検索 / 50音タブで絞り込み可）。新規参加者のみ手入力。1回戦ペアリング自動生成→対局カードに手合いを記入。</li>
         </ul>
+        <div class="note">初めて使う日は支部マスタが空。「マスタ」タブの「📥 過去大会を支部マスタに統合」から過去JSONを取り込むことで、過去参加者を一括登録できる。</div>
         <div class="note">奇数になった場合は運営者が参加して偶数にしてから「登録完了・対局開始」を押す</div>
       </div>
     </div>
@@ -89,6 +95,7 @@ th.cell-amt{text-align:right}
           <li>「名前を一括編集」ボタンでフルネームに修正</li>
           <li>各行のドロップダウンで支部員区分・種別を入力→会費が自動計算される</li>
           <li>集金額とアプリの計算結果を突き合わせ</li>
+          <li><strong>新規参加者にはふりがな入力ダイアログが出るので、入力しておくと次回以降の検索が楽になる</strong></li>
         </ul>
       </div>
     </div>
@@ -178,7 +185,9 @@ th.cell-amt{text-align:right}
     <h2>注意事項</h2>
     <ul>
       <li>データはお使いの端末のブラウザ内に自動保存されます。他の端末とは共有できません。</li>
+      <li><strong>支部マスタ（過去参加者の氏名・参加履歴）も同じ端末内に保存されます。「マスタ」タブで確認・統合できます。</strong></li>
       <li>「保存」ボタンでJSONファイルとしてバックアップできます。誤ってブラウザを閉じた場合は「読み込み」ボタンで復元できます。</li>
+      <li><strong>JSONバックアップ保存時に支部マスタも自動更新されるため、毎月の保存習慣を続けるだけで参加履歴が蓄積されます。</strong></li>
       <li>大会中はブラウザを閉じないでください。データが消える場合があります。</li>
       <li>氏名以外の個人情報は扱っていないため、セキュリティ上の心配はありません。</li>
       <li>大会結果はHP掲載のため、当日夜までメールにて沼津支部事務局へ送付してください。</li>
