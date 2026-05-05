@@ -102,6 +102,12 @@ function loadEnv(path, opts) {
        applyOverwriteImport:applyOverwriteImport,
        applyMergeImport:applyMergeImport,
        safeParseImportText:safeParseImportText,
+       applyQuickFilter:applyQuickFilter,
+       computeLatestAttendedDate:computeLatestAttendedDate,
+       computeDateBefore:computeDateBefore,
+       QUICK_FILTER_RECENT_LAST:QUICK_FILTER_RECENT_LAST,
+       QUICK_FILTER_WITHIN_3MO:QUICK_FILTER_WITHIN_3MO,
+       QUICK_FILTER_REGULAR:QUICK_FILTER_REGULAR,
        ensureTournamentId:ensureTournamentId,
        attachMemberIdToPlayer:attachMemberIdToPlayer,
        addTournamentIdOnce:addTournamentIdOnce,
@@ -1971,6 +1977,131 @@ const env = loadEnv(targetPath);
     for(let i=0;i<r.newMaster.members.length;i++){if(r.newMaster.members[i].id==='m_222222222222'){mB=r.newMaster.members[i];break;}}
     assertEq(mB.name,'B','A3-S6-mrg-40: 統合された member の name は既存維持');
     assertEq(mB.last_attended,'2026-04-01','A3-S6-mrg-41: 統合された member の last_attended は新しい方');
+  }
+}
+
+// ============================================================
+// A-3 Stage 7: クイックフィルタ（前回参加・3ヶ月以内・常連）
+// ============================================================
+{
+  const sample = [
+    {id:'m_aaaaaaaaaaaa',name:'A',yomi:'',first_attended:'2026-01-01',last_attended:'2026-05-05',tournament_ids:['t1','t2','t3','t4','t5','t6'],attendance_count:6},
+    {id:'m_bbbbbbbbbbbb',name:'B',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1','t2'],attendance_count:2},
+    {id:'m_cccccccccccc',name:'C',yomi:'',first_attended:'2025-01-01',last_attended:'2026-01-15',tournament_ids:['t1'],attendance_count:1},
+    {id:'m_dddddddddddd',name:'D',yomi:'',first_attended:'2024-01-01',last_attended:'2024-06-01',tournament_ids:['t1','t2','t3','t4','t5'],attendance_count:5},
+    {id:'m_eeeeeeeeeeee',name:'E',yomi:'',first_attended:'2026-04-15',last_attended:'2026-05-05',tournament_ids:['t1'],attendance_count:1}
+  ];
+
+  // computeLatestAttendedDate
+  {
+    assertEq(env.computeLatestAttendedDate(sample),'2026-05-05','A3-S7-qf-01: 最大日 2026-05-05');
+    assertEq(env.computeLatestAttendedDate([]),'','A3-S7-qf-02: 空配列 → 空文字');
+    assertEq(env.computeLatestAttendedDate([{last_attended:''}]),'','A3-S7-qf-03: 空 last_attended → 空');
+  }
+
+  // computeDateBefore
+  {
+    assertEq(env.computeDateBefore('2026-05-05',90),'2026-02-04','A3-S7-qf-04: 90日前計算（2026-02-04）');
+    assertEq(env.computeDateBefore('2026-05-05',0),'2026-05-05','A3-S7-qf-05: 0日前は同日');
+    assertEq(env.computeDateBefore('invalid',90),'','A3-S7-qf-06: 不正日付は空');
+  }
+
+  // applyQuickFilter: 未指定（null）は全件
+  {
+    const r = env.applyQuickFilter(sample,null,'2026-05-05');
+    assertEq(r.length,sample.length,'A3-S7-qf-07: null は全件');
+  }
+
+  // applyQuickFilter: 前回参加（最終大会日と一致するもののみ）
+  {
+    const r = env.applyQuickFilter(sample,env.QUICK_FILTER_RECENT_LAST,'2026-05-05');
+    assertEq(r.length,2,'A3-S7-qf-08: 前回参加は 2件 (A, E)');
+    const ids = r.map(function(m){return m.id;}).sort();
+    assertEq(ids[0],'m_aaaaaaaaaaaa','A3-S7-qf-09: A 含む');
+    assertEq(ids[1],'m_eeeeeeeeeeee','A3-S7-qf-10: E 含む');
+  }
+
+  // applyQuickFilter: 前回参加（全員空 last_attended は空）
+  {
+    const r = env.applyQuickFilter([{id:'x',last_attended:''}],env.QUICK_FILTER_RECENT_LAST,'2026-05-05');
+    assertEq(r.length,0,'A3-S7-qf-11: 全員空 → 0件');
+  }
+
+  // applyQuickFilter: 3ヶ月以内（90日以内）
+  {
+    // today=2026-05-05、threshold=2026-02-04
+    // A=2026-05-05, B=2026-04-01, C=2026-01-15, D=2024-06-01, E=2026-05-05
+    // C は閾値 2026-02-04 より前 → 除外、D も除外
+    // A, B, E が含まれる
+    const r = env.applyQuickFilter(sample,env.QUICK_FILTER_WITHIN_3MO,'2026-05-05');
+    assertEq(r.length,3,'A3-S7-qf-12: 3ヶ月以内は 3件 (A, B, E)');
+    const ids = r.map(function(m){return m.id;}).sort();
+    assertEq(ids[0],'m_aaaaaaaaaaaa','A3-S7-qf-13: A 含む');
+    assertEq(ids[1],'m_bbbbbbbbbbbb','A3-S7-qf-14: B 含む');
+    assertEq(ids[2],'m_eeeeeeeeeeee','A3-S7-qf-15: E 含む');
+  }
+
+  // applyQuickFilter: 3ヶ月以内（境界日: 閾値ちょうどは含む）
+  {
+    const ms=[{id:'x',last_attended:'2026-02-04',attendance_count:1}];
+    const r = env.applyQuickFilter(ms,env.QUICK_FILTER_WITHIN_3MO,'2026-05-05');
+    assertEq(r.length,1,'A3-S7-qf-16: 閾値ちょうど（2026-02-04）は含む');
+  }
+
+  // applyQuickFilter: 3ヶ月以内（閾値より前は除外）
+  {
+    const ms=[{id:'x',last_attended:'2026-02-03',attendance_count:1}];
+    const r = env.applyQuickFilter(ms,env.QUICK_FILTER_WITHIN_3MO,'2026-05-05');
+    assertEq(r.length,0,'A3-S7-qf-17: 閾値より前（2026-02-03）は除外');
+  }
+
+  // applyQuickFilter: 3ヶ月以内（未来日付は除外）
+  {
+    const ms=[{id:'x',last_attended:'2099-01-01',attendance_count:1}];
+    const r = env.applyQuickFilter(ms,env.QUICK_FILTER_WITHIN_3MO,'2026-05-05');
+    assertEq(r.length,0,'A3-S7-qf-18: 未来日付は除外（不正データ防御）');
+  }
+
+  // applyQuickFilter: 3ヶ月以内（today 不正なら空）
+  {
+    const r = env.applyQuickFilter(sample,env.QUICK_FILTER_WITHIN_3MO,'invalid');
+    assertEq(r.length,0,'A3-S7-qf-19: today 不正 → 空');
+  }
+
+  // applyQuickFilter: 常連（attendance_count >= 5）
+  {
+    const r = env.applyQuickFilter(sample,env.QUICK_FILTER_REGULAR,'2026-05-05');
+    assertEq(r.length,2,'A3-S7-qf-20: 常連は 2件 (A:6回, D:5回)');
+    const ids = r.map(function(m){return m.id;}).sort();
+    assertEq(ids[0],'m_aaaaaaaaaaaa','A3-S7-qf-21: A 含む（6回）');
+    assertEq(ids[1],'m_dddddddddddd','A3-S7-qf-22: D 含む（ちょうど5回）');
+  }
+
+  // applyQuickFilter: 常連（境界 attendance_count=4 は含まない）
+  {
+    const ms=[{id:'x',last_attended:'2026-01-01',attendance_count:4}];
+    const r = env.applyQuickFilter(ms,env.QUICK_FILTER_REGULAR,'2026-05-05');
+    assertEq(r.length,0,'A3-S7-qf-23: 4回は常連に含まない');
+  }
+
+  // applyQuickFilter: 不明な filterKey は全件返す
+  {
+    const r = env.applyQuickFilter(sample,'unknown_key','2026-05-05');
+    assertEq(r.length,sample.length,'A3-S7-qf-24: 不明 key は全件');
+  }
+
+  // applyQuickFilter: 入力 mutate 防止
+  {
+    const ms=[{id:'x',last_attended:'2026-05-05',attendance_count:6}];
+    const before = JSON.stringify(ms);
+    env.applyQuickFilter(ms,env.QUICK_FILTER_REGULAR,'2026-05-05');
+    assertEq(JSON.stringify(ms),before,'A3-S7-qf-25: 入力配列 mutate しない');
+  }
+
+  // applyQuickFilter: 配列以外は []
+  {
+    assertEq(env.applyQuickFilter(null,env.QUICK_FILTER_REGULAR,'2026-05-05').length,0,'A3-S7-qf-26: null は []');
+    assertEq(env.applyQuickFilter(undefined,null,'2026-05-05').length,0,'A3-S7-qf-27: undefined は []');
   }
 }
 

@@ -550,6 +550,66 @@ function findMemberCandidates(participant,master){
 }
 
 // ============================================================
+// QUICK FILTER (A-3 §1-2 / クイックフィルタ): 過去参加者パネル用
+//   3種・排他選択（再タップで解除）。検索・50音タブと AND。
+// ============================================================
+var QUICK_FILTER_RECENT_LAST='recent_last';   // 前回参加（最終大会日と一致）
+var QUICK_FILTER_WITHIN_3MO='within_3mo';     // 3ヶ月以内（90日以内）
+var QUICK_FILTER_REGULAR='regular';           // 常連（attendance_count >= 5）
+var QUICK_FILTER_REGULAR_MIN=5;
+var QUICK_FILTER_WITHIN_DAYS=90;
+
+// 全 member の last_attended の最大日（空文字 = データなし）
+function computeLatestAttendedDate(members){
+  if(!Array.isArray(members))return '';
+  var max='';
+  for(var i=0;i<members.length;i++){
+    var m=members[i];
+    if(!m)continue;
+    if(typeof m.last_attended==='string'&&m.last_attended>max)max=m.last_attended;
+  }
+  return max;
+}
+
+// today から days 日前の YMD（純粋関数）
+function computeDateBefore(todayStr,days){
+  if(!isValidYmd(todayStr))return '';
+  var parts=todayStr.split('-');
+  var d=new Date(Number(parts[0]),Number(parts[1])-1,Number(parts[2]));
+  d.setDate(d.getDate()-days);
+  var y=d.getFullYear();
+  var m=('0'+(d.getMonth()+1)).slice(-2);
+  var dd=('0'+d.getDate()).slice(-2);
+  return y+'-'+m+'-'+dd;
+}
+
+// クイックフィルタ適用（純粋関数）
+//   filterKey: null/未指定 → 全件、それ以外は QUICK_FILTER_* のいずれか
+//   members は呼び出し側で deleted 除外済みを想定（既存の buildPastParticipantsPanelHtml と同じ）
+function applyQuickFilter(members,filterKey,todayStr){
+  if(!Array.isArray(members))return [];
+  if(!filterKey)return members.slice();
+  if(filterKey===QUICK_FILTER_RECENT_LAST){
+    var latest=computeLatestAttendedDate(members);
+    if(!latest)return [];
+    return members.filter(function(m){return m&&m.last_attended===latest;});
+  }
+  if(filterKey===QUICK_FILTER_WITHIN_3MO){
+    if(!isValidYmd(todayStr))return [];
+    var threshold=computeDateBefore(todayStr,QUICK_FILTER_WITHIN_DAYS);
+    if(!threshold)return [];
+    return members.filter(function(m){
+      if(!m||typeof m.last_attended!=='string'||!m.last_attended)return false;
+      return m.last_attended>=threshold&&m.last_attended<=todayStr;
+    });
+  }
+  if(filterKey===QUICK_FILTER_REGULAR){
+    return members.filter(function(m){return m&&(Number(m.attendance_count)||0)>=QUICK_FILTER_REGULAR_MIN;});
+  }
+  return members.slice();
+}
+
+// ============================================================
 // MASTER IMPORT (A-3 §1-3 / F8-b): フォーマット検出 + 上書きインポート
 //   F8 は branch master 形式のみを扱う（大会データは別経路＝マイグレ機能）。
 // ============================================================
@@ -953,14 +1013,18 @@ var PP_YOMI_TAB_DEFS=[
 
 // 過去参加者パネルの選択中 50音タブ（モジュールスコープ。再描画間で保持）
 var ppYomiRow='all';
+var ppQuickFilter=null;  // null | QUICK_FILTER_* のいずれか
 
-function buildPastParticipantsPanelHtml(master,filter,yomiRow){
+function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
   var query=filter||'';
   var row=yomiRow||'all';
+  var qf=(quickFilter===QUICK_FILTER_RECENT_LAST||quickFilter===QUICK_FILTER_WITHIN_3MO||quickFilter===QUICK_FILTER_REGULAR)?quickFilter:null;
+  // クイックフィルタを先に適用（最終大会日基準を全 member に対して計算するため、検索・50音タブ前）
+  var qfApplied=applyQuickFilter(members,qf,todayYmd());
   var filtered=[];
-  for(var i=0;i<members.length;i++){
-    var mm=members[i];
+  for(var i=0;i<qfApplied.length;i++){
+    var mm=qfApplied[i];
     if(!matchesPastParticipantQuery(mm,query))continue;
     if(row!=='all'){
       // パターン あ: 「他」 = yomi 空 + getYomiInitialRow が other の人
@@ -1001,6 +1065,19 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow){
     var td=PP_YOMI_TAB_DEFS[ti];
     var active=(td.key===row);
     html+='<button type="button" class="pp-yomi-tab'+(active?' active':'')+'" data-row="'+escapeHtml(td.key)+'" style="min-height:36px;min-width:36px;padding:6px 10px;border:1px solid '+(active?'#1976d2':'#ccc')+';background:'+(active?'#e3f2fd':'#fff')+';color:'+(active?'#0d47a1':'#333')+';border-radius:6px;font-size:13px;cursor:pointer">'+escapeHtml(td.label)+'</button>';
+  }
+  html+='</div>';
+  // クイックフィルタ（A-3 §1-2）。排他選択・再タップで解除。
+  html+='<div id="pp-quick-filters" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">';
+  var qfDefs=[
+    {key:QUICK_FILTER_RECENT_LAST,label:'前回参加'},
+    {key:QUICK_FILTER_WITHIN_3MO,label:'3ヶ月以内'},
+    {key:QUICK_FILTER_REGULAR,label:'常連 (5回以上)'}
+  ];
+  for(var qi=0;qi<qfDefs.length;qi++){
+    var qd=qfDefs[qi];
+    var qActive=(qd.key===qf);
+    html+='<button type="button" class="pp-quick-filter-btn'+(qActive?' active':'')+'" data-qfkey="'+escapeHtml(qd.key)+'" style="min-height:34px;padding:6px 12px;border:1px solid '+(qActive?'#1976d2':'#ccc')+';background:'+(qActive?'#e3f2fd':'#fff')+';color:'+(qActive?'#0d47a1':'#333')+';border-radius:6px;font-size:13px;cursor:pointer">'+escapeHtml(qd.label)+'</button>';
   }
   html+='</div>';
   // ChatGPT M3 反映: 「他」タブの意味補足（常時表示）
@@ -1047,6 +1124,19 @@ function bindPastParticipantsPanelEvents(){
       var t=e.currentTarget||e.target;
       var rowKey=t&&t.getAttribute?t.getAttribute('data-row'):null;
       ppYomiRow=rowKey||'all';
+      var inp=document.getElementById('pp-search');
+      renderPastParticipantsPanel(inp?inp.value:'');
+    });
+  }
+  // クイックフィルタ（A-3 §1-2）。排他選択・再タップで解除。
+  var qfBtns=document.querySelectorAll('.pp-quick-filter-btn');
+  for(var qbi=0;qbi<qfBtns.length;qbi++){
+    qfBtns[qbi].addEventListener('click',function(e){
+      var t=e.currentTarget||e.target;
+      var key=t&&t.getAttribute?t.getAttribute('data-qfkey'):null;
+      if(!key)return;
+      // 同じキーをタップ → 解除（null）。違うキー → 切り替え。
+      ppQuickFilter=(ppQuickFilter===key)?null:key;
       var inp=document.getElementById('pp-search');
       renderPastParticipantsPanel(inp?inp.value:'');
     });
@@ -1213,7 +1303,7 @@ function renderPastParticipantsPanel(filter){
   if(summary)summary.textContent='登録 '+members.length+'名';
   var panel=document.getElementById('ppPanel');
   if(!panel)return;
-  panel.innerHTML=buildPastParticipantsPanelHtml(master,filter||'',ppYomiRow);
+  panel.innerHTML=buildPastParticipantsPanelHtml(master,filter||'',ppYomiRow,ppQuickFilter);
   bindPastParticipantsPanelEvents();
 }
 
