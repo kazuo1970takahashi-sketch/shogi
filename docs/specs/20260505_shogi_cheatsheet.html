@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>沼津支部 月例将棋大会 運営チートシート</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
+
+  :root {
+    --navy: #1a2744;
+    --gold: #b8860b;
+    --light-gold: #f5e6c0;
+    --bg: #faf8f3;
+    --text: #1a1a1a;
+    --muted: #666;
+    --border: #ddd;
+    --green: #2d6a4f;
+    --red: #c0392b;
+    --blue: #1565c0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Noto Sans JP', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .page {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 24px 20px;
+  }
+
+  /* ヘッダー */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 3px solid var(--navy);
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+  }
+  .header-title { font-size: 18px; font-weight: 700; color: var(--navy); }
+  .header-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .header-url {
+    font-size: 10px;
+    background: var(--navy);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  /* グリッドレイアウト */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+
+  /* カード */
+  .card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .card-header {
+    background: var(--navy);
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .card-header .step-num {
+    background: var(--gold);
+    color: var(--navy);
+    font-size: 10px;
+    font-weight: 700;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .card-body { padding: 10px; }
+
+  /* ステップリスト */
+  .steps { list-style: none; }
+  .steps li {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 12px;
+    align-items: flex-start;
+  }
+  .steps li:last-child { border-bottom: none; }
+  .steps li::before {
+    content: '▶';
+    color: var(--gold);
+    font-size: 9px;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  /* ハイライト */
+  .highlight {
+    background: var(--light-gold);
+    border-left: 3px solid var(--gold);
+    padding: 6px 10px;
+    border-radius: 0 4px 4px 0;
+    font-size: 11px;
+    margin: 6px 0;
+  }
+
+  /* バッジ */
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 3px;
+    vertical-align: middle;
+  }
+  .badge-new { background: #e3f2fd; color: #1565c0; }
+  .badge-key { background: #fff3e0; color: #e65100; }
+  .badge-warn { background: #fce4ec; color: #c62828; }
+
+  /* 集金表 */
+  .fee-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .fee-table th, .fee-table td {
+    border: 1px solid var(--border);
+    padding: 4px 8px;
+    text-align: center;
+  }
+  .fee-table th { background: var(--navy); color: white; font-weight: 500; }
+  .fee-table .free { color: var(--green); font-weight: 700; }
+  .fee-table .amount { font-weight: 700; }
+
+  /* ポイントボックス */
+  .point-box {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .point-box-header {
+    background: #f5f5f5;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--navy);
+    border-bottom: 1px solid var(--border);
+  }
+  .point-box-body { padding: 8px 10px; }
+
+  /* ヒント */
+  .tip {
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 11px;
+    color: #1b5e20;
+    margin-top: 6px;
+  }
+  .tip::before { content: '💡 '; }
+
+  .warn {
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 11px;
+    color: #e65100;
+    margin-top: 6px;
+  }
+  .warn::before { content: '⚠️ '; }
+
+  /* フッター */
+  .footer {
+    border-top: 1px solid var(--border);
+    margin-top: 16px;
+    padding-top: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  /* 印刷対応 */
+  @media print {
+    body { background: white; font-size: 11px; }
+    .page { padding: 10mm; max-width: 100%; }
+    .card { break-inside: avoid; }
+    .grid2, .grid3 { break-inside: avoid; }
+    @page { margin: 10mm; size: A4; }
+  }
+
+  /* スマホ対応 */
+  @media (max-width: 600px) {
+    body { font-size: 14px; }
+    .grid2, .grid3 { grid-template-columns: 1fr; }
+    .header { flex-direction: column; gap: 8px; align-items: flex-start; }
+    .header-url { font-size: 12px; }
+    .card-header { font-size: 14px; }
+    .steps li { font-size: 14px; }
+    .fee-table th, .fee-table td { padding: 6px; font-size: 12px; }
+  }
+
+  .span2 { grid-column: span 2; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ヘッダー -->
+  <div class="header">
+    <div>
+      <div class="header-title">🏯 沼津支部 月例将棋大会 運営チートシート</div>
+      <div class="header-sub">スイス式トーナメント管理アプリ 操作手順書 v1.0（2026-05-05）</div>
+    </div>
+    <div class="header-url">kazuo1970takahashi-sketch.github.io/shogi/</div>
+  </div>
+
+  <!-- 集金一覧 -->
+  <div class="point-box" style="margin-bottom:12px">
+    <div class="point-box-header">💰 集金額一覧</div>
+    <div class="point-box-body">
+      <table class="fee-table">
+        <tr>
+          <th>区分</th>
+          <th>支部員</th>
+          <th>支部員以外</th>
+        </tr>
+        <tr>
+          <td>一般</td>
+          <td class="amount">500円</td>
+          <td class="amount">1,000円</td>
+        </tr>
+        <tr>
+          <td>中学生以下</td>
+          <td class="free">無料</td>
+          <td class="amount">500円</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- メインフロー 3列 -->
+  <div class="grid3">
+
+    <!-- STEP 1: 受付 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="step-num">1</div>
+        受付・参加者登録
+      </div>
+      <div class="card-body">
+        <ul class="steps">
+          <li>参加者に対局カードを記入してもらう<br>（氏名・クラス・支部員・一般/中学）</li>
+          <li>集金する</li>
+          <li>アプリの「参加者を登録する」タブを開く</li>
+          <li>氏名を入力 → <span class="badge badge-new">NEW</span> 過去参加者なら候補が出るのでタップ</li>
+          <li>クラス（A/B）を選択して「追加」</li>
+          <li>追加後の行で支部員・中学生区分を確認・変更</li>
+        </ul>
+        <div class="tip">過去参加者はサジェストをタップするだけで氏名・クラス・区分が自動入力されます</div>
+        <div class="warn">奇数になったら運営者が参加して偶数に調整する</div>
+      </div>
+    </div>
+
+    <!-- STEP 2: 対局管理 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="step-num">2</div>
+        対局管理（全4局）
+      </div>
+      <div class="card-body">
+        <ul class="steps">
+          <li>全員登録後「登録完了・対局開始」を押す</li>
+          <li>1回戦ペアリングが自動表示される</li>
+          <li>対局カードに対戦相手を記入する</li>
+          <li>対局終了 → 勝者のボタンをタップ</li>
+          <li>「確定して次へ」で次回戦ペアリングを生成</li>
+          <li>2〜4局目も同じ手順で繰り返す</li>
+        </ul>
+        <div class="highlight">
+          <strong>ペアリングルール</strong><br>
+          2局目以降：同じ勝ち数の人同士<br>
+          再戦は自動で回避されます
+        </div>
+        <div class="tip">入力ミスは「修正」ボタンで変更できます</div>
+      </div>
+    </div>
+
+    <!-- STEP 3: 表彰・終了 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="step-num">3</div>
+        最終結果・表彰
+      </div>
+      <div class="card-body">
+        <ul class="steps">
+          <li>4局終了後「最終結果」タブを開く</li>
+          <li>A・B各クラスの順位が自動表示される</li>
+          <li>順位確定基準：勝数 → SOS → SODOS</li>
+          <li>この画面を見ながら表彰式を行う</li>
+          <li>「大会データをコピー」ボタンを押す</li>
+          <li>コピーしたデータは次回大会前にマスタタブで取り込む</li>
+        </ul>
+        <div class="tip">コピー後は次回まで保管。紙への転記はアプリ画面を見ながら後で行えます</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- マスタ機能（新機能） -->
+  <div class="grid2">
+    <div class="card">
+      <div class="card-header">
+        <div class="step-num">★</div>
+        マスタ機能（次回大会前に実施）<span class="badge badge-new" style="margin-left:4px">NEW</span>
+      </div>
+      <div class="card-body">
+        <ul class="steps">
+          <li>「マスタ」タブを開く</li>
+          <li>「過去大会を支部マスタに統合」をタップ</li>
+          <li>前回大会のデータを貼り付けて「統合」</li>
+          <li>次回から参加者がサジェストで呼び出せる</li>
+        </ul>
+        <div class="tip">マスタには氏名・ふりがな・クラス・支部員区分・参加回数が蓄積されます</div>
+        <div style="margin-top:8px;font-size:11px;color:var(--muted)">
+          <strong>マスタタブでできること</strong><br>
+          ✅ 氏名・ふりがな編集<br>
+          ✅ 参加者の削除（一覧から非表示）<br>
+          ✅ バックアップのエクスポート・インポート<br>
+          ✅ 前回参加・常連などで絞り込み
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="step-num">!</div>
+        よくある操作・困ったとき
+      </div>
+      <div class="card-body">
+        <ul class="steps">
+          <li><strong>結果を間違えた</strong><br>対局行の「修正」ボタンで変更できます</li>
+          <li><strong>参加者を削除したい</strong><br>登録リストの削除ボタン（対局開始前のみ）</li>
+          <li><strong>クラスを変更したい</strong><br>一度削除して再登録する</li>
+          <li><strong>データが消えた</strong><br>ページを閉じるとリセットされます。必ず「大会データをコピー」を押してください</li>
+          <li><strong>印刷したい</strong><br>ブラウザの印刷機能を使用（A4対応）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- タイムライン -->
+  <div class="point-box">
+    <div class="point-box-header">🕐 当日タイムライン（参考）</div>
+    <div class="point-box-body" style="display:flex;gap:8px;flex-wrap:wrap;font-size:11px">
+      <div style="flex:1;min-width:140px">
+        <strong>受付時</strong>
+        <ul class="steps" style="margin-top:4px">
+          <li>カード記入・集金（受付係）</li>
+          <li>アプリに苗字だけ入力して手合い開始（登録係）</li>
+        </ul>
+      </div>
+      <div style="flex:1;min-width:140px">
+        <strong>1局目対局中</strong>
+        <ul class="steps" style="margin-top:4px">
+          <li>フルネーム・支部員区分・中学区分を入力</li>
+          <li>集金額とアプリの計算を突き合わせ</li>
+        </ul>
+      </div>
+      <div style="flex:1;min-width:140px">
+        <strong>4局目終了後</strong>
+        <ul class="steps" style="margin-top:4px">
+          <li>最終結果タブで即座に順位確認</li>
+          <li>表彰式→「大会データをコピー」</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- フッター -->
+  <div class="footer">
+    <div>沼津支部 月例将棋大会運営アプリ｜データは端末内にのみ保存されます</div>
+    <div>問合せ：高橋</div>
+  </div>
+
+</div>
+</body>
+</html>
