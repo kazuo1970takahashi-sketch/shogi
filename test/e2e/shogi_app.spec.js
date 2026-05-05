@@ -57,10 +57,10 @@ test.describe('shogi_v4.html - タブ動作', () => {
   });
 });
 
-test.describe('shogi_v4.html - JSONバックアップ', () => {
+test.describe('shogi_v4.html - 大会データのコピー（バックアップ）', () => {
   test('保存ボタンが存在する', async ({ page }) => {
     await expect(page.locator('#saveBtn')).toBeVisible();
-    await expect(page.locator('#saveBtn')).toHaveText(/JSON|バックアップ|保存/);
+    await expect(page.locator('#saveBtn')).toHaveText(/大会データ|コピー|保存/);
   });
 
   test('読み込みボタンを押すとモーダルが開く (ファイル選択 + 貼り付けtextarea)', async ({ page }) => {

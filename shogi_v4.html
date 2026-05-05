@@ -83,7 +83,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
 <div class="header">
   <div><h1>沼津支部 月例将棋大会 運営ツール</h1></div>
   <div style="display:flex;gap:8px;align-items:center">
-    <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">JSONバックアップ保存</button>
+    <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">大会データをコピー</button>
     <button type="button" class="btn-sm no-print" id="loadBtn" style="background:#185FA5;color:#fff;border-color:#185FA5">読み込み</button>
     <input type="file" id="loadFile" accept=".json" style="display:none">
     <button type="button" class="btn-danger btn-sm no-print" id="resetBtn">リセット</button>
@@ -324,7 +324,7 @@ function normalizeState(raw){
 // STORAGE: localStorageへの保存と復元(旧版キーからの移行込み)
 // ============================================================
 
-function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}catch(e){notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります。JSONバックアップを保存してください。');}}
+function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}catch(e){notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります。大会データをコピー（バックアップ）してください。');}}
 function load(){
   // 現行キー → 旧キーの順に試行。各 key は parse 失敗時に次の key にフォールバック。
   var keys=[STORAGE_KEY].concat(LEGACY_STORAGE_KEYS);
@@ -538,7 +538,7 @@ function findMemberCandidates(participant,master){
 }
 
 // ============================================================
-// BRANCH MASTER SYNC (F2): 大会JSONバックアップ保存時のマスタ同期
+// BRANCH MASTER SYNC (F2): 大会データコピー時のマスタ同期
 //   呼び出しは saveData() からのみ。save()/resetAll()/編集時には呼ばない。
 // ============================================================
 
@@ -1040,25 +1040,28 @@ function renderMasterTab(){
 }
 
 // ============================================================
-// MIGRATION WIZARD (F9): 過去大会JSONを支部マスタに統合
+// MIGRATION WIZARD (F9): 過去大会データを支部マスタに統合
 // ============================================================
 
 // 仕様書 v6 §3.6 / Codex Minor #1: 破損マスタ状態でマイグレ起動時に警告を表示。
 // opts.corrupted=true のとき、モーダル冒頭に警告バナーを描画。
 function buildMigrationModalHtml(opts){
   var corrupted=!!(opts&&opts.corrupted);
-  var html='<div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-width:90vw;max-height:85vh;overflow-y:auto">';
+  var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:600px;width:100%;max-height:85vh;overflow-y:auto">';
   if(corrupted){
     html+='<div class="mig-corrupt-warning" style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#92400e;line-height:1.5">⚠️ 既存の支部マスタが破損していました。このマイグレーションで再構築されます（既存マスタは破棄されます）。</div>';
   }
-  html+='<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">過去大会の統合</h3>';
-  html+='<p style="font-size:13px;color:#555;line-height:1.6;margin-bottom:12px">過去の大会JSONファイルを読み込んで、支部マスタを構築します。複数選択できます。</p>';
-  html+='<div style="margin-bottom:12px">';
-  html+='<input type="file" id="mig-files" accept=".json" multiple style="font-size:13px;width:100%">';
-  html+='</div>';
+  html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">過去大会の統合（支部マスタへ）</h3>';
+  // M5: 「読み込み」との違いを明記
+  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">過去大会の参加者を支部マスタに取り込みます。<strong>大会そのものを復元する機能ではありません。</strong></p>';
+  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">「大会データをコピー」したテキストを貼り付けてください：</p>';
+  html+='<textarea id="mig-paste-area" rows="8" style="width:100%;font-size:12px;font-family:monospace;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box" placeholder="ここに大会データを貼り付けてください"></textarea>';
+  html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-top:8px;margin-bottom:0">複数大会をまとめて取り込む場合は、1大会分を貼り付けたあとに空行を1行入れて、次の大会データを貼り付けてください。</p>';
+  // M3: 既存ファイル保有者向けの代替案内
+  html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-top:4px;margin-bottom:12px">ファイルとして保存してある場合は、ファイルを開いて中身をコピーし、ここに貼り付けてください。</p>';
   html+='<div id="mig-status" style="font-size:13px;color:#555;margin-bottom:12px;min-height:1.5em;line-height:1.6"></div>';
   html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
-  html+='<button type="button" id="mig-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">閉じる</button>';
+  html+='<button type="button" id="mig-cancel" class="btn-sm" style="background:#fff">閉じる</button>';
   html+='<button type="button" class="btn-primary" id="mig-run">統合を実行</button>';
   html+='</div></div>';
   return html;
@@ -1071,23 +1074,34 @@ function bindMigrationModalEvents(){
   });
   var runBtn=document.getElementById('mig-run');
   if(runBtn)runBtn.addEventListener('click',function(){
-    var input=document.getElementById('mig-files');
-    var files=input&&input.files?input.files:[];
-    if(!files||files.length===0){alert('JSONファイルを選択してください');return;}
+    var textarea=document.getElementById('mig-paste-area');
+    var text=textarea?textarea.value:'';
+    if(!text||!text.trim()){alert('大会データを貼り付けてください');return;}
     var statusEl=document.getElementById('mig-status');
     if(statusEl)statusEl.textContent='読み込み中...';
-    parseTournamentJsonFiles(files).then(function(tournaments){
+    var parsed=parseTournamentTextInput(text);
+    var tournaments=parsed.tournaments;
+    var errors=parsed.errors;
+    if(tournaments.length===0){
+      if(statusEl){
+        statusEl.textContent=errors.length===0
+          ?'大会データが見つかりませんでした'
+          :'貼り付けたデータの形式が正しくありません（'+errors.length+'件パース失敗）';
+      }
+      return;
+    }
+    try{
       var master=loadBranchMaster();
       var summary=mergeTournamentParticipantsIntoMaster(tournaments,master);
       saveBranchMaster(master);
-      if(statusEl){
-        statusEl.textContent=summary.tournaments+'大会を読込：新規追加 '+summary.added+'名 / 既存統合 '+summary.matched+'件 / スキップ '+summary.skipped+'件';
-      }
+      var msg=summary.tournaments+'大会を読込：新規追加 '+summary.added+'名 / 既存統合 '+summary.matched+'件 / スキップ '+summary.skipped+'件';
+      if(errors.length>0)msg+='（'+errors.length+'件は形式エラーで失敗）';
+      if(statusEl)statusEl.textContent=msg;
       renderMasterTab();
       renderPastParticipantsPanel();
-    }).catch(function(err){
-      if(statusEl)statusEl.textContent='読み込みに失敗：'+(err&&err.message?err.message:String(err));
-    });
+    }catch(err){
+      if(statusEl)statusEl.textContent='統合に失敗：'+(err&&err.message?err.message:String(err));
+    }
   });
 }
 
@@ -1105,23 +1119,42 @@ function openMigrationWizard(){
   bindMigrationModalEvents();
 }
 
-function parseTournamentJsonFiles(files){
-  var arr=Array.prototype.slice.call(files);
-  return Promise.all(arr.map(function(file){
-    return new Promise(function(resolve,reject){
-      var reader=new FileReader();
-      reader.onload=function(ev){
-        try{
-          var raw=JSON.parse(ev.target.result);
-          resolve({raw:raw,filename:file.name||''});
-        }catch(e){
-          reject(new Error((file.name||'JSONファイル')+' のパースに失敗：'+e.message));
-        }
-      };
-      reader.onerror=function(){reject(new Error((file.name||'JSONファイル')+' の読込に失敗'));};
-      reader.readAsText(file);
-    });
-  }));
+// UTILITY: テキスト入力から複数の大会データをパース
+//   - 空行で大会を区切る
+//   - 改行コード CRLF/LF/CR を正規化
+//   - BOM を除去
+//   - 各ブロックを JSON.parse → 呼び出し側で normalizeState 等を適用
+//   - 原則 throw しない（想定外の内部例外のみ throw）
+//
+// 戻り値: { tournaments: [{raw, source}, ...], errors: [string, ...] }
+//   - 空文字 / 空白のみ: { tournaments: [], errors: [] }
+//   - 全件パース失敗:    { tournaments: [], errors: [...] }
+//   - 一部成功:          { tournaments: [成功分], errors: [失敗分] }
+function parseTournamentTextInput(text){
+  if(!text||typeof text!=='string'){
+    return {tournaments:[],errors:[]};
+  }
+  if(text.charCodeAt(0)===0xFEFF){
+    text=text.slice(1);
+  }
+  text=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  if(!text.trim()){
+    return {tournaments:[],errors:[]};
+  }
+  var blocks=text.split(/\n\s*\n+/);
+  var tournaments=[];
+  var errors=[];
+  blocks.forEach(function(block,idx){
+    var trimmed=block.trim();
+    if(!trimmed)return;
+    try{
+      var raw=JSON.parse(trimmed);
+      tournaments.push({raw:raw,source:'block '+(idx+1)});
+    }catch(e){
+      errors.push('block '+(idx+1)+': パースに失敗 - '+e.message);
+    }
+  });
+  return {tournaments:tournaments,errors:errors};
 }
 
 function deriveTournamentMetaForMigration(raw,filename,master){
@@ -2092,8 +2125,8 @@ function syncBranchMasterOnSave(){
     // 仕様書 v5 §3.5 / Codex MF #3: 破損由来の空マスタは保存しない。
     // 既存 localStorage を保持し、ユーザの再マイグレ・手動修復を待つ。
     if(master&&master._loaded_with_corruption){
-      if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタが破損しているため自動同期をスキップ（大会JSON保存は継続）');
-      if(typeof showMsg==='function')showMsg('支部マスタが破損しているため自動同期をスキップしました（大会JSON保存は継続）','warn');
+      if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタが破損しているため自動同期をスキップ（大会データのコピーは継続）');
+      if(typeof showMsg==='function')showMsg('支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）','warn');
       save();
       return;
     }
@@ -2110,12 +2143,12 @@ function syncBranchMasterOnSave(){
 
 // クリップボード優先、非対応(http等)はファイルダウンロードにフォールバック
 function saveData(){
-  // F2: 大会JSONバックアップ保存時に支部マスタへ同期（A-1 ではこのタイミングのみ）
+  // F2: 大会データコピー時に支部マスタへ同期（A-1 ではこのタイミングのみ）
   syncBranchMasterOnSave();
   var json=JSON.stringify(state,null,2);
   if(navigator.clipboard&&navigator.clipboard.writeText&&window.isSecureContext){
     navigator.clipboard.writeText(json).then(function(){
-      alert('JSONをクリップボードにコピーしました。\n\nメモ帳やEvernoteに貼り付けて保管してください。');
+      alert('大会データをコピーしました。\n\nメモ帳やEvernoteに貼り付けて保管してください。\n\n次回大会前に「マスタ」タブの統合機能で取り込めます。');
     }).catch(function(){
       saveDataAsFile(json);
     });
@@ -2142,13 +2175,13 @@ function saveDataAsFile(json){
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    alert(filename+'に保存しました');
+    alert(filename+' に保存しました（端末のダウンロードフォルダ）');
   }catch(e){
     alert('保存に失敗しました');
   }
 }
 
-// 読み込み済みの生JSON文字列をstate反映してUIを更新（ファイル/貼り付け共通）
+// 読み込み済みのデータを state 反映して UI を更新（ファイル/貼り付け共通）
 function applyLoadedJson(rawText){
   var loaded=JSON.parse(rawText);
   state=normalizeState(loaded);
@@ -2189,14 +2222,14 @@ function loadFromPaste(){
   var ta=document.getElementById('load-paste-area');
   if(!ta)return;
   var text=ta.value.trim();
-  if(!text){alert('JSONを貼り付けてください');return;}
+  if(!text){alert('大会データを貼り付けてください');return;}
   if(!confirm('現在のデータを上書きして読み込みますか？'))return;
   try{
     applyLoadedJson(text);
     var lm=document.getElementById('load-modal');if(lm)lm.remove();
     alert('データを読み込みました');
   }catch(err){
-    alert('読み込みに失敗しました。正しいJSONか確認してください');
+    alert('読み込みに失敗しました。正しい大会データか確認してください');
   }
 }
 
@@ -2210,8 +2243,8 @@ function openLoadModal(){
     +'<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">データを読み込み</h3>'
     +'<button id="load-pick-file" class="btn-primary" style="width:100%;padding:12px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-size:14px;cursor:pointer">ファイルから読み込み</button>'
     +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:12px">─ または ─</div>'
-    +'<label style="font-size:12px;color:#666;display:block;margin-bottom:4px">JSONを貼り付け</label>'
-    +'<textarea id="load-paste-area" placeholder="ここにJSONを貼り付けてください" style="width:100%;height:120px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:monospace;resize:vertical"></textarea>'
+    +'<label style="font-size:12px;color:#666;display:block;margin-bottom:4px">大会データを貼り付け</label>'
+    +'<textarea id="load-paste-area" placeholder="ここに大会データを貼り付けてください" style="width:100%;height:120px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:monospace;resize:vertical"></textarea>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
     +'<button id="load-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
     +'<button id="load-from-paste" disabled style="padding:8px 16px;border-radius:8px;border:none;background:#ccc;color:#fff;font-size:14px;cursor:not-allowed">貼り付けから読み込む</button>'
