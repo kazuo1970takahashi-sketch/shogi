@@ -1900,7 +1900,7 @@ const env = loadEnv(targetPath);
     assertEq(r.newMaster.members[0].deleted_at,'2026-04-10','A3-S6-mrg-28: deleted_at は既存維持');
   }
 
-  // tombstone: 既存 deleted=false + imported deleted=true → 既存維持（deleted=false のまま）
+  // tombstone 安全側（OR）: 既存 deleted=false + imported deleted=true → deleted=true（安全側）
   {
     const current = env.normalizeBranchMaster({
       schema_version:1,
@@ -1910,7 +1910,8 @@ const env = loadEnv(targetPath);
       {id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'}
     ]};
     const r = env.applyMergeImport(imported,current);
-    assertEq(r.newMaster.members[0].deleted,false,'A3-S6-mrg-29: 既存 deleted=false は維持（imported からの削除を引き継がない）');
+    assertEq(r.newMaster.members[0].deleted,true,'A3-S6-mrg-29: 既存 deleted=false + imported deleted=true → 結果は deleted=true（安全側）');
+    assertEq(r.newMaster.members[0].deleted_at,'2026-04-10','A3-S6-mrg-29b: deleted_at はインポート側を採用');
   }
 
   // 新規 import が tombstone（既存にない id）→ そのまま追加

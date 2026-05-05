@@ -699,7 +699,17 @@ function applyMergeImport(parsed,currentMaster){
     );
     ex.attendance_count=ac;
 
-    // name / yomi / member / grade / last_class / note / deleted / deleted_at は既存維持（変更しない）
+    // tombstone は安全側ルール（OR）: 既存 OR インポートのどちらかが deleted=true なら true 維持。
+    // ・既存 deleted=true → そのまま維持（変更なし、deleted_at も既存維持）
+    // ・既存 deleted=false + imported deleted=true → deleted=true、deleted_at はインポート側採用
+    //   （existing 側に元々 deleted_at は無いため）
+    // 一度削除と判定された member を OR ルールで保護する（誤復元防止）。
+    if(ex.deleted!==true&&imp.deleted===true){
+      ex.deleted=true;
+      ex.deleted_at=(typeof imp.deleted_at==='string'&&imp.deleted_at)?imp.deleted_at:todayYmd();
+    }
+
+    // name / yomi / member / grade / last_class / note は既存維持（変更しない）
     merged++;
   }
 
@@ -1442,7 +1452,6 @@ function runMasterImport(){
   var mode=null;
   for(var i=0;i<modeRadios.length;i++){if(modeRadios[i].checked){mode=modeRadios[i].value;break;}}
   if(!mode){setStatus('インポート方式を選択してください');return;}
-  if(mode==='merge'){setStatus('マージは Stage 6 で実装予定です');return;}
 
   var fileInput=document.getElementById('mi-file');
   var pasteArea=document.getElementById('mi-paste-area');
