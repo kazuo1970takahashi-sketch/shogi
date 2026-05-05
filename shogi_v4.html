@@ -550,6 +550,27 @@ function findMemberCandidates(participant,master){
 }
 
 // ============================================================
+// MASTER DELETE (A-3 §1-2 / F7-b): tombstone（deleted:true + deleted_at）
+//   物理削除はしない。復元 UI は A-4 以降。
+//   戻り値: {success, error?}
+// ============================================================
+function applyMasterMemberDelete(memberId,master,dateYmd){
+  if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
+  if(typeof memberId!=='string'||!memberId)return {success:false,error:'invalid_id'};
+  var target=null;
+  for(var i=0;i<master.members.length;i++){
+    if(master.members[i].id===memberId){target=master.members[i];break;}
+  }
+  if(!target)return {success:false,error:'not_found'};
+  if(target.deleted===true)return {success:false,error:'already_deleted'};
+
+  var dateStr=isValidYmd(dateYmd)?dateYmd:todayYmd();
+  target.deleted=true;
+  target.deleted_at=dateStr;
+  return {success:true};
+}
+
+// ============================================================
 // MASTER EDIT (A-3 §1-2 / F7-a): name + yomi のみ編集
 //   参加履歴・支部員区分・削除フラグ等は触らない。
 //   戻り値: {success, error?, duplicateCount?}
@@ -1106,8 +1127,9 @@ function buildMasterTabHtml(master){
       html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee;color:#666">'+escapeHtml(m.yomi||'')+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.last_attended||'')+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+(m.attendance_count|0)+'</td>';
-      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">';
-      html+='<button type="button" class="btn-sm master-edit-btn" data-mid="'+escapeHtml(m.id||'')+'">編集</button>';
+      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap">';
+      html+='<button type="button" class="btn-sm master-edit-btn" data-mid="'+escapeHtml(m.id||'')+'">編集</button> ';
+      html+='<button type="button" class="btn-sm master-delete-btn" data-mid="'+escapeHtml(m.id||'')+'" data-name="'+escapeHtml(m.name||'')+'" style="border-color:#c33;color:#c33">削除</button>';
       html+='</td></tr>';
     }
     html+='</tbody></table></div>';
@@ -1116,7 +1138,7 @@ function buildMasterTabHtml(master){
   html+='<h3>利用目的</h3>';
   html+='<div style="font-size:13px;color:#444;line-height:1.6">'
     +'本ツールは沼津支部内の大会運営目的で、過去参加者の氏名・参加履歴をこの端末内に保存します。'
-    +'削除機能は今後提供予定です。現バージョンではマスタ管理画面からの削除操作はできません。'
+    +'削除した参加者は一覧・サジェスト・過去参加者から非表示になりますが、参加履歴データは端末内に残ります（誤削除時はバックアップからの上書きインポートで復元できる予定）。'
     +'</div>';
   html+='</div>';
   return html;
@@ -1211,6 +1233,30 @@ function bindMasterTabEvents(){
       editBtns[i].addEventListener('click',function(){
         var mid=this.getAttribute('data-mid');
         if(mid)openMasterEditModal(mid);
+      });
+    }
+  }
+  var delBtns=document.querySelectorAll('.master-delete-btn');
+  if(delBtns&&delBtns.length){
+    for(var di=0;di<delBtns.length;di++){
+      delBtns[di].addEventListener('click',function(){
+        var mid=this.getAttribute('data-mid');
+        var memberName=this.getAttribute('data-name')||'';
+        if(!mid)return;
+        if(!confirm('「'+memberName+'」を支部マスタから削除します。\n削除後はサジェスト候補・過去参加者から非表示になります（参加履歴データは保持）。\n\n続けますか？'))return;
+        var master=loadBranchMaster();
+        var result=applyMasterMemberDelete(mid,master,todayYmd());
+        if(!result.success){
+          if(typeof showMsg==='function'){
+            if(result.error==='not_found')showMsg('対象の member が見つかりません','err');
+            else if(result.error==='already_deleted')showMsg('すでに削除済みです','warn');
+            else showMsg('削除に失敗しました','err');
+          }
+          return;
+        }
+        saveBranchMaster(master);
+        if(typeof showMsg==='function')showMsg('「'+memberName+'」を削除しました','ok');
+        renderMasterTab();
       });
     }
   }

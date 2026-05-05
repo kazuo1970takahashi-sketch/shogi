@@ -95,6 +95,7 @@ function loadEnv(path, opts) {
        findMemberCandidates:findMemberCandidates,
        findMasterSuggestions:findMasterSuggestions,
        applyMasterMemberEdit:applyMasterMemberEdit,
+       applyMasterMemberDelete:applyMasterMemberDelete,
        ensureTournamentId:ensureTournamentId,
        attachMemberIdToPlayer:attachMemberIdToPlayer,
        addTournamentIdOnce:addTournamentIdOnce,
@@ -1355,6 +1356,121 @@ const env = loadEnv(targetPath);
     assertEq(m.last_class,'B','A3-S2-edit-27: last_class 不変');
     assertEq(m.note,'memo','A3-S2-edit-28: note 不変');
     assertEq(m.tournament_ids.length,2,'A3-S2-edit-29: tournament_ids 不変');
+  }
+}
+
+// ============================================================
+// A-3 Stage 3: F7 削除（tombstone）
+// ============================================================
+{
+  // 通常削除: deleted=true + deleted_at セット
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1'],attendance_count:1}]
+    });
+    const r = env.applyMasterMemberDelete('m_111111111111',master,'2026-05-05');
+    assert(r.success===true,'A3-S3-del-01: 削除成功');
+    assertEq(master.members[0].deleted,true,'A3-S3-del-02: deleted=true');
+    assertEq(master.members[0].deleted_at,'2026-05-05','A3-S3-del-03: deleted_at セット');
+    // 物理削除しない
+    assertEq(master.members.length,1,'A3-S3-del-04: members 件数不変（物理削除しない）');
+    assertEq(master.members[0].id,'m_111111111111','A3-S3-del-05: id 不変');
+  }
+
+  // 削除しても他フィールドは保持（復元時のため）
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1','t2'],attendance_count:2,member:'other',grade:'chu',last_class:'B',note:'memo'}]
+    });
+    env.applyMasterMemberDelete('m_111111111111',master,'2026-05-05');
+    const m=master.members[0];
+    assertEq(m.name,'山田太郎','A3-S3-del-06: name 保持');
+    assertEq(m.yomi,'やまだたろう','A3-S3-del-07: yomi 保持');
+    assertEq(m.first_attended,'2026-01-01','A3-S3-del-08: first_attended 保持');
+    assertEq(m.last_attended,'2026-04-01','A3-S3-del-09: last_attended 保持');
+    assertEq(m.attendance_count,2,'A3-S3-del-10: attendance_count 保持');
+    assertEq(m.tournament_ids.length,2,'A3-S3-del-11: tournament_ids 保持');
+    assertEq(m.member,'other','A3-S3-del-12: member 保持');
+    assertEq(m.grade,'chu','A3-S3-del-13: grade 保持');
+  }
+
+  // 不正な dateYmd は todayYmd() にフォールバック
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}]
+    });
+    env.applyMasterMemberDelete('m_111111111111',master,'invalid-date');
+    const today = env.todayYmd();
+    assertEq(master.members[0].deleted_at,today,'A3-S3-del-14: 不正日付は今日にフォールバック');
+  }
+
+  // 存在しない id エラー
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}]
+    });
+    const r = env.applyMasterMemberDelete('m_does_not_exist',master,'2026-05-05');
+    assert(r.success===false,'A3-S3-del-15: 不存在 id は失敗');
+    assertEq(r.error,'not_found','A3-S3-del-16: error=not_found');
+    assertEq(master.members[0].deleted,false,'A3-S3-del-17: 失敗時は他 member 不変');
+  }
+
+  // 既に削除済みの member への再削除はエラー
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'}]
+    });
+    const r = env.applyMasterMemberDelete('m_111111111111',master,'2026-05-05');
+    assert(r.success===false,'A3-S3-del-18: 削除済みは再削除不可');
+    assertEq(r.error,'already_deleted','A3-S3-del-19: error=already_deleted');
+    assertEq(master.members[0].deleted_at,'2026-04-10','A3-S3-del-20: deleted_at は元のまま');
+  }
+
+  // 削除後の member は findMasterSuggestions から除外
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[
+        {id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1']},
+        {id:'m_222222222222',name:'山本一郎',yomi:'やまもといちろう',first_attended:'2026-02-01',last_attended:'2026-03-01',tournament_ids:['t2']}
+      ]
+    });
+    env.applyMasterMemberDelete('m_111111111111',master,'2026-05-05');
+    const r = env.findMasterSuggestions('山',master,[]);
+    assert(r.length===1,'A3-S3-del-21: 削除後はサジェスト候補から除外');
+    assertEq(r[0].id,'m_222222222222','A3-S3-del-22: 残るのは生存 member');
+  }
+
+  // 削除後の member は findMemberCandidates（マイグレ統合）からも除外
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'山田太郎',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1']}]
+    });
+    env.applyMasterMemberDelete('m_111111111111',master,'2026-05-05');
+    const cands=env.findMemberCandidates({name:'山田太郎'},master);
+    assertEq(cands.length,0,'A3-S3-del-23: 削除後は findMemberCandidates 0件');
+  }
+
+  // 複数 member のうち 1 件だけ削除
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[
+        {id:'m_111111111111',name:'A',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]},
+        {id:'m_222222222222',name:'B',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]},
+        {id:'m_333333333333',name:'C',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}
+      ]
+    });
+    env.applyMasterMemberDelete('m_222222222222',master,'2026-05-05');
+    assertEq(master.members[0].deleted,false,'A3-S3-del-24: 他 member は影響なし(A)');
+    assertEq(master.members[1].deleted,true,'A3-S3-del-25: 対象 member のみ削除(B)');
+    assertEq(master.members[2].deleted,false,'A3-S3-del-26: 他 member は影響なし(C)');
   }
 }
 
