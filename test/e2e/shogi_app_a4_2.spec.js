@@ -388,3 +388,106 @@ test.describe('A-4.2 Stage 4: last_class 強調表示', () => {
     expect(yamada.last_class).toBe('B'); // saveData 経由で player.cls の 'B' に更新
   });
 });
+
+// ============================================================
+// Stage 5: mobile-430 横スクロール / 長い氏名の押下確認
+// ============================================================
+async function expectNoOverflow(page, label) {
+  const m = await page.evaluate(() => ({
+    docW: document.documentElement.scrollWidth,
+    bodyW: document.body.scrollWidth,
+    innerW: window.innerWidth,
+  }));
+  expect(m.docW - m.innerW, `[${label}] documentElement.scrollWidth (${m.docW}) - innerWidth (${m.innerW})`).toBeLessThanOrEqual(1);
+  expect(m.bodyW - m.innerW, `[${label}] body.scrollWidth (${m.bodyW}) - innerWidth (${m.innerW})`).toBeLessThanOrEqual(1);
+}
+
+const LONG_NAME_MASTER = {
+  schema_version: 1,
+  updated_at: '2026-05-05T12:00:00.000Z',
+  members: [
+    {id:'m_long01',name:'長谷川一郎太郎兵衛',yomi:'はせがわいちろうたろうべえ',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1'],attendance_count:1,member:'member',grade:'ippan',last_class:'A',deleted:false,deleted_at:null,note:''},
+    {id:'m_long02',name:'勅使河原超長名前太郎',yomi:'てしがわらちょうながなまえたろう',first_attended:'2026-01-01',last_attended:'2026-03-01',tournament_ids:['t2'],attendance_count:1,member:'member',grade:'ippan',last_class:'B',deleted:false,deleted_at:null,note:''}
+  ]
+};
+
+for (const width of [375, 430]) {
+  test.describe('A-4.2 Stage 5: 横スクロール検出 ' + width + 'px', () => {
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await setupWithMaster(page);
+    });
+
+    test('過去参加者パネル展開時に横スクロールしない（1px 許容）', async ({ page }) => {
+      await page.click('#ppToggleBtn');
+      await expect(page.locator('#ppPanel')).toBeVisible();
+      await expectNoOverflow(page, 'pp-panel @' + width);
+    });
+
+    test('サジェストリスト表示時に横スクロールしない（1px 許容）', async ({ page }) => {
+      await page.fill('#inp-name', '山');
+      await expect(page.locator('#suggest-list .suggest-item')).toHaveCount(2);
+      await expectNoOverflow(page, 'suggest @' + width);
+    });
+
+    test('過去参加者パネル A/B ボタンが見切れず押せる（min 44x44 + viewport 内）', async ({ page }) => {
+      await page.click('#ppToggleBtn');
+      const aBtn = page.locator('#ppPanel .pp-add-btn[data-cls="A"]').first();
+      const bBtn = page.locator('#ppPanel .pp-add-btn[data-cls="B"]').first();
+      const aBox = await aBtn.boundingBox();
+      const bBox = await bBtn.boundingBox();
+      expect(aBox).not.toBeNull();
+      expect(bBox).not.toBeNull();
+      expect(aBox.width).toBeGreaterThanOrEqual(44);
+      expect(aBox.height).toBeGreaterThanOrEqual(44);
+      expect(bBox.width).toBeGreaterThanOrEqual(44);
+      expect(bBox.height).toBeGreaterThanOrEqual(44);
+      // 各ボタンが viewport 内に収まる（横方向）
+      expect(aBox.x + aBox.width).toBeLessThanOrEqual(width + 1);
+      expect(bBox.x + bBox.width).toBeLessThanOrEqual(width + 1);
+    });
+
+    test('サジェスト A/B ボタンが見切れず押せる', async ({ page }) => {
+      await page.fill('#inp-name', '山');
+      const aBtn = page.locator('#suggest-list .suggest-add-btn[data-cls="A"]').first();
+      const bBtn = page.locator('#suggest-list .suggest-add-btn[data-cls="B"]').first();
+      const aBox = await aBtn.boundingBox();
+      const bBox = await bBtn.boundingBox();
+      expect(aBox.width).toBeGreaterThanOrEqual(44);
+      expect(bBox.width).toBeGreaterThanOrEqual(44);
+      expect(aBox.x + aBox.width).toBeLessThanOrEqual(width + 1);
+      expect(bBox.x + bBox.width).toBeLessThanOrEqual(width + 1);
+    });
+  });
+
+  test.describe('A-4.2 Stage 5: 長い氏名 ' + width + 'px', () => {
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await setupWithMaster(page, LONG_NAME_MASTER);
+    });
+
+    test('長い氏名（10文字以上）でも過去参加者パネルの A/B ボタンが押せる', async ({ page }) => {
+      await page.click('#ppToggleBtn');
+      const row = page.locator('#ppPanel .pp-row').filter({ hasText: '長谷川一郎太郎兵衛' });
+      const aBtn = row.locator('.pp-add-btn[data-cls="A"]');
+      const aBox = await aBtn.boundingBox();
+      expect(aBox).not.toBeNull();
+      expect(aBox.width).toBeGreaterThanOrEqual(44);
+      expect(aBox.height).toBeGreaterThanOrEqual(44);
+      expect(aBox.x + aBox.width).toBeLessThanOrEqual(width + 1);
+      // クリックして実際に追加できる
+      await aBtn.click();
+      await expect(page.locator('#a-list .player-row')).toHaveCount(1);
+    });
+
+    test('長い氏名でサジェスト A/B ボタンが押せる + 横スクロールしない', async ({ page }) => {
+      await page.fill('#inp-name', '長谷川');
+      const item = page.locator('#suggest-list .suggest-item').first();
+      const aBtn = item.locator('.suggest-add-btn[data-cls="A"]');
+      const aBox = await aBtn.boundingBox();
+      expect(aBox.width).toBeGreaterThanOrEqual(44);
+      expect(aBox.x + aBox.width).toBeLessThanOrEqual(width + 1);
+      await expectNoOverflow(page, 'suggest-long @' + width);
+    });
+  });
+}
