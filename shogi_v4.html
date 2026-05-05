@@ -930,6 +930,53 @@ function attachMemberIdToPlayer(player,member){
   player.member_id=member.id;
 }
 
+// A-4.2 §3.3: マスタの member を指定クラスで state.players に追加する純粋関数。
+// master 側のフィールド（yomi / last_class / attendance_count / last_attended / tournament_ids）は
+// 一切変更しない（saveData → syncBranchMasterOnSave 側の責務）。
+function addPlayerFromMaster(memberId,cls,master,state){
+  if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
+  if(!state||!state.players||!Array.isArray(state.players.A)||!Array.isArray(state.players.B))return {success:false,error:'invalid_state'};
+  if(typeof memberId!=='string'||memberId==='')return {success:false,error:'invalid_id'};
+  if(cls!=='A'&&cls!=='B')return {success:false,error:'invalid_class'};
+  var member=null;
+  for(var mi=0;mi<master.members.length;mi++){
+    if(master.members[mi]&&master.members[mi].id===memberId){member=master.members[mi];break;}
+  }
+  if(!member)return {success:false,error:'not_found'};
+  if(member.deleted===true)return {success:false,error:'deleted'};
+  // 重複チェック：member_id 一致を最優先（duplicate_member）。なければ normalizePersonName 同名（duplicate_name）。
+  var memberNameNorm=normalizePersonName(member.name||'');
+  var all=state.players.A.concat(state.players.B);
+  for(var pi=0;pi<all.length;pi++){
+    var p=all[pi];
+    if(!p)continue;
+    if(typeof p.member_id==='string'&&p.member_id===memberId){
+      return {success:false,error:'duplicate_member'};
+    }
+  }
+  for(var pj=0;pj<all.length;pj++){
+    var q=all[pj];
+    if(!q)continue;
+    if(memberNameNorm&&normalizePersonName(q.name||'')===memberNameNorm){
+      // member_id 不一致 or なしの同名は安全側で duplicate_name（同名別人を自動許容しない）
+      if(typeof q.member_id!=='string'||q.member_id!==memberId){
+        return {success:false,error:'duplicate_name'};
+      }
+    }
+  }
+  var id='p'+Date.now()+Math.floor(Math.random()*1000);
+  var player={
+    id:id,
+    name:memberNameNorm||String(member.name||''),
+    cls:cls,
+    member:(member.member==='other')?'other':'member',
+    grade:(member.grade==='chu')?'chu':'ippan',
+    member_id:member.id
+  };
+  state.players[cls].push(player);
+  return {success:true,player:player};
+}
+
 function addTournamentIdOnce(member,tournamentId){
   if(!member||!tournamentId)return false;
   if(!Array.isArray(member.tournament_ids))member.tournament_ids=[];
