@@ -113,6 +113,7 @@ function loadEnv(path, opts) {
        QUICK_FILTER_NO_YOMI:QUICK_FILTER_NO_YOMI,
        ensureTournamentId:ensureTournamentId,
        attachMemberIdToPlayer:attachMemberIdToPlayer,
+       addPlayerFromMaster:addPlayerFromMaster,
        addTournamentIdOnce:addTournamentIdOnce,
        recalcMemberAttendance:recalcMemberAttendance,
        createMemberFromParticipant:createMemberFromParticipant,
@@ -2336,6 +2337,192 @@ const env = loadEnv(targetPath);
     const before = JSON.stringify(ms);
     env.applyQuickFilter(ms,env.QUICK_FILTER_NO_YOMI,'2026-05-05');
     assertEq(JSON.stringify(ms),before,'A4-S5-qf-noyomi-04: 入力配列 mutate しない');
+  }
+}
+
+// ============================================================
+// A-4.2 Stage 1: addPlayerFromMaster 純粋関数（17件）
+// ============================================================
+{
+  function makeMaster(membersExtra){
+    var m = env.createEmptyBranchMaster();
+    var base=[
+      {id:'m_001',name:'山田 太郎',yomi:'やまだたろう',last_class:'A',last_attended:'2026-04-01',first_attended:'2025-01-01',attendance_count:3,tournament_ids:['t1','t2','t3'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan'},
+      {id:'m_002',name:'佐藤 一郎',yomi:'さとういちろう',last_class:'B',last_attended:'2026-03-01',first_attended:'2025-06-01',attendance_count:2,tournament_ids:['t1','t2'],deleted:false,deleted_at:null,note:'',member:'other',grade:'chu'},
+      {id:'m_003',name:'削除 済夫',yomi:'さくじょすみお',last_class:null,last_attended:'2025-12-01',first_attended:'2025-12-01',attendance_count:1,tournament_ids:['t1'],deleted:true,deleted_at:'2026-04-15',note:'',member:'member',grade:'ippan'},
+      {id:'m_004',name:'未設定 名人',last_class:null,attendance_count:0,tournament_ids:[],deleted:false,deleted_at:null,note:''}
+    ];
+    m.members=base.concat(membersExtra||[]);
+    return m;
+  }
+  function makeState(){return {players:{A:[],B:[]}};}
+
+  // A4-2-S1-add-01: A クラスに正常追加
+  {
+    var master=makeMaster();
+    var state=makeState();
+    var r=env.addPlayerFromMaster('m_001','A',master,state);
+    assert(r.success===true,'A4-2-S1-add-01: success=true');
+    assert(state.players.A.length===1,'A4-2-S1-add-01: A クラスに 1 件追加');
+    assertEq(state.players.A[0].cls,'A','A4-2-S1-add-01: cls=A');
+    assertEq(state.players.A[0].name,'山田 太郎','A4-2-S1-add-01: name 反映');
+  }
+
+  // A4-2-S1-add-02: B クラスに正常追加
+  {
+    var master=makeMaster();
+    var state=makeState();
+    var r=env.addPlayerFromMaster('m_002','B',master,state);
+    assert(r.success===true,'A4-2-S1-add-02: success=true');
+    assertEq(state.players.B.length,1,'A4-2-S1-add-02: B に 1 件追加');
+    assertEq(state.players.B[0].cls,'B','A4-2-S1-add-02: cls=B');
+  }
+
+  // A4-2-S1-add-03: last_class='A' の member を B に追加 → success
+  {
+    var master=makeMaster();
+    var state=makeState();
+    var r=env.addPlayerFromMaster('m_001','B',master,state);
+    assert(r.success===true,'A4-2-S1-add-03: last_class=A の人を B 追加で success');
+    assertEq(state.players.B[0].cls,'B','A4-2-S1-add-03: 実際に B に入る');
+  }
+
+  // A4-2-S1-add-04: invalid_class（'C'）→ error='invalid_class'
+  {
+    var master=makeMaster();
+    var state=makeState();
+    var r=env.addPlayerFromMaster('m_001','C',master,state);
+    assert(r.success===false,'A4-2-S1-add-04: invalid_class で success=false');
+    assertEq(r.error,'invalid_class','A4-2-S1-add-04: error=invalid_class');
+  }
+
+  // A4-2-S1-add-05: invalid_master（null）→ error='invalid_master'
+  {
+    var state=makeState();
+    var r=env.addPlayerFromMaster('m_001','A',null,state);
+    assertEq(r.error,'invalid_master','A4-2-S1-add-05: master=null で invalid_master');
+    var r2=env.addPlayerFromMaster('m_001','A',{members:'not array'},state);
+    assertEq(r2.error,'invalid_master','A4-2-S1-add-05: members 非配列で invalid_master');
+  }
+
+  // A4-2-S1-add-06: invalid_state（null）→ error='invalid_state'
+  {
+    var master=makeMaster();
+    var r=env.addPlayerFromMaster('m_001','A',master,null);
+    assertEq(r.error,'invalid_state','A4-2-S1-add-06: state=null で invalid_state');
+    var r2=env.addPlayerFromMaster('m_001','A',master,{players:{A:'x',B:[]}});
+    assertEq(r2.error,'invalid_state','A4-2-S1-add-06: players.A 非配列で invalid_state');
+  }
+
+  // A4-2-S1-add-07: not_found → error='not_found'
+  {
+    var master=makeMaster();
+    var state=makeState();
+    var r=env.addPlayerFromMaster('m_999','A',master,state);
+    assertEq(r.error,'not_found','A4-2-S1-add-07: 該当 member なしで not_found');
+  }
+
+  // A4-2-S1-add-08: deleted member → error='deleted'
+  {
+    var master=makeMaster();
+    var state=makeState();
+    var r=env.addPlayerFromMaster('m_003','A',master,state);
+    assertEq(r.error,'deleted','A4-2-S1-add-08: 削除済み member で deleted');
+  }
+
+  // A4-2-S1-add-09: duplicate_member（同一 member_id を別クラスへ追加 → 拒否）
+  {
+    var master=makeMaster();
+    var state=makeState();
+    env.addPlayerFromMaster('m_001','A',master,state);
+    var r=env.addPlayerFromMaster('m_001','B',master,state);
+    assert(r.success===false,'A4-2-S1-add-09: 二重追加で success=false');
+    assertEq(r.error,'duplicate_member','A4-2-S1-add-09: error=duplicate_member（member_id 優先）');
+    assertEq(state.players.B.length,0,'A4-2-S1-add-09: B には追加されない');
+  }
+
+  // A4-2-S1-add-10: member.member='other', grade='chu' → player にコピー
+  {
+    var master=makeMaster();
+    var state=makeState();
+    var r=env.addPlayerFromMaster('m_002','A',master,state);
+    assert(r.success===true,'A4-2-S1-add-10: success=true');
+    assertEq(state.players.A[0].member,'other','A4-2-S1-add-10: member=other 反映');
+    assertEq(state.players.A[0].grade,'chu','A4-2-S1-add-10: grade=chu 反映');
+  }
+
+  // A4-2-S1-add-11: member.member 不在 → player.member='member'（既定）
+  {
+    var master=makeMaster();
+    var state=makeState();
+    var r=env.addPlayerFromMaster('m_004','A',master,state);
+    assert(r.success===true,'A4-2-S1-add-11: success=true');
+    assertEq(state.players.A[0].member,'member','A4-2-S1-add-11: 既定 member=member');
+    assertEq(state.players.A[0].grade,'ippan','A4-2-S1-add-11: 既定 grade=ippan');
+  }
+
+  // A4-2-S1-add-12: player.member_id=member.id でリンク
+  {
+    var master=makeMaster();
+    var state=makeState();
+    env.addPlayerFromMaster('m_001','A',master,state);
+    assertEq(state.players.A[0].member_id,'m_001','A4-2-S1-add-12: player.member_id=member.id');
+  }
+
+  // A4-2-S1-add-13: duplicate_name_normalized（既存 player に member_id なし、同名）
+  {
+    var master=makeMaster();
+    var state=makeState();
+    state.players.A.push({id:'p_old',name:'山田　太郎',cls:'A',member:'member',grade:'ippan'}); // 全角空白
+    var r=env.addPlayerFromMaster('m_001','B',master,state);
+    assert(r.success===false,'A4-2-S1-add-13: success=false');
+    assertEq(r.error,'duplicate_name','A4-2-S1-add-13: normalize 後同名で duplicate_name');
+  }
+
+  // A4-2-S1-add-14: same_name_different_member_id → 安全側で duplicate_name
+  {
+    var master=makeMaster();
+    var state=makeState();
+    // 別 member_id を持つ player（同名）
+    state.players.A.push({id:'p_other',name:'山田 太郎',cls:'A',member:'member',grade:'ippan',member_id:'m_999'});
+    var r=env.addPlayerFromMaster('m_001','B',master,state);
+    assert(r.success===false,'A4-2-S1-add-14: 別 member_id でも同名で拒否');
+    assertEq(r.error,'duplicate_name','A4-2-S1-add-14: 安全側 duplicate_name');
+  }
+
+  // A4-2-S1-add-15: last_class が変更されない（master 不変）
+  {
+    var master=makeMaster();
+    var state=makeState();
+    var before=master.members[0].last_class; // 'A'
+    var r=env.addPlayerFromMaster('m_001','B',master,state);
+    assert(r.success===true,'A4-2-S1-add-15: success=true');
+    assertEq(master.members[0].last_class,before,'A4-2-S1-add-15: master.last_class が変わらない');
+  }
+
+  // A4-2-S1-add-16: attendance_count / last_attended / tournament_ids が変更されない（master 不変）
+  {
+    var master=makeMaster();
+    var state=makeState();
+    var beforeAtt=master.members[0].attendance_count;
+    var beforeLast=master.members[0].last_attended;
+    var beforeTids=master.members[0].tournament_ids.slice();
+    var beforeYomi=master.members[0].yomi;
+    var r=env.addPlayerFromMaster('m_001','A',master,state);
+    assert(r.success===true,'A4-2-S1-add-16: success=true');
+    assertEq(master.members[0].attendance_count,beforeAtt,'A4-2-S1-add-16: attendance_count 不変');
+    assertEq(master.members[0].last_attended,beforeLast,'A4-2-S1-add-16: last_attended 不変');
+    assertEq(master.members[0].tournament_ids,beforeTids,'A4-2-S1-add-16: tournament_ids 不変');
+    assertEq(master.members[0].yomi,beforeYomi,'A4-2-S1-add-16: yomi 不変');
+  }
+
+  // A4-2-S1-add-17: invalid_id（空文字 / null）→ error='invalid_id'
+  {
+    var master=makeMaster();
+    var state=makeState();
+    assertEq(env.addPlayerFromMaster('','A',master,state).error,'invalid_id','A4-2-S1-add-17: 空文字で invalid_id');
+    assertEq(env.addPlayerFromMaster(null,'A',master,state).error,'invalid_id','A4-2-S1-add-17: null で invalid_id');
+    assertEq(env.addPlayerFromMaster(undefined,'A',master,state).error,'invalid_id','A4-2-S1-add-17: undefined で invalid_id');
   }
 }
 
