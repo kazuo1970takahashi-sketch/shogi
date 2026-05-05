@@ -100,6 +100,7 @@ function loadEnv(path, opts) {
        buildMasterExportFilename:buildMasterExportFilename,
        detectImportFormat:detectImportFormat,
        applyOverwriteImport:applyOverwriteImport,
+       applyMergeImport:applyMergeImport,
        safeParseImportText:safeParseImportText,
        ensureTournamentId:ensureTournamentId,
        attachMemberIdToPlayer:attachMemberIdToPlayer,
@@ -1732,6 +1733,244 @@ const env = loadEnv(targetPath);
   {
     assertEq(env.safeParseImportText('{ broken'),null,'A3-S5-prs-06: 不正 JSON → null');
     assertEq(env.safeParseImportText('not json'),null,'A3-S5-prs-07: 非 JSON → null');
+  }
+}
+
+// ============================================================
+// A-3 Stage 6: F8-b マージインポート（既存側優先）
+// ============================================================
+{
+  // tournament 形式・不正形式エラー
+  {
+    const r1 = env.applyMergeImport({players:{A:[],B:[]}},env.createEmptyBranchMaster());
+    assertEq(r1.error,'tournament_format','A3-S6-mrg-01: 大会データは tournament_format');
+    const r2 = env.applyMergeImport(null,env.createEmptyBranchMaster());
+    assertEq(r2.error,'invalid_format','A3-S6-mrg-02: null は invalid_format');
+  }
+
+  // 既存空 + 新規追加
+  {
+    const current = env.createEmptyBranchMaster();
+    const imported = {schema_version:1,members:[
+      {id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1']}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    assert(r.success===true,'A3-S6-mrg-03: 空マスタに新規追加 成功');
+    assertEq(r.newMaster.members.length,1,'A3-S6-mrg-04: 1件追加');
+    assertEq(r.summary.added,1,'A3-S6-mrg-05: summary.added=1');
+    assertEq(r.summary.merged,0,'A3-S6-mrg-06: summary.merged=0');
+    assertEq(r.summary.total,1,'A3-S6-mrg-07: summary.total=1');
+  }
+
+  // 既存非空 + 入力空 → 変化なし
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'A',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t1']}]
+    });
+    const r = env.applyMergeImport({schema_version:1,members:[]},current);
+    assertEq(r.summary.added,0,'A3-S6-mrg-08: 入力空 added=0');
+    assertEq(r.summary.merged,0,'A3-S6-mrg-09: 入力空 merged=0');
+    assertEq(r.newMaster.members.length,1,'A3-S6-mrg-10: 既存件数維持');
+    assertEq(r.newMaster.members[0].name,'A','A3-S6-mrg-11: 既存名前維持');
+  }
+
+  // id 一致 → 統合（name / yomi は既存維持）
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-02-01',last_attended:'2026-03-01',tournament_ids:['t_old'],attendance_count:1,member:'member',grade:'ippan',last_class:'A',note:'memo_existing'}]
+    });
+    const imported = {schema_version:1,members:[
+      {id:'m_111111111111',name:'別の名前',yomi:'べつのなまえ',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t_new'],attendance_count:5,member:'other',grade:'chu',last_class:'B',note:'memo_imported'}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    assertEq(r.summary.added,0,'A3-S6-mrg-12: id 一致は added 0');
+    assertEq(r.summary.merged,1,'A3-S6-mrg-13: merged 1');
+    const m = r.newMaster.members[0];
+    assertEq(m.name,'山田太郎','A3-S6-mrg-14: name は既存維持');
+    assertEq(m.yomi,'やまだたろう','A3-S6-mrg-15: yomi は既存維持');
+    assertEq(m.member,'member','A3-S6-mrg-16: member は既存維持');
+    assertEq(m.grade,'ippan','A3-S6-mrg-17: grade は既存維持');
+    assertEq(m.last_class,'A','A3-S6-mrg-18: last_class は既存維持');
+    assertEq(m.note,'memo_existing','A3-S6-mrg-19: note は既存維持');
+  }
+
+  // tournament_ids: union 重複除去
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t1','t2','t3']}]
+    });
+    const imported = {schema_version:1,members:[
+      {id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t2','t3','t4','t5']}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    const ids = r.newMaster.members[0].tournament_ids;
+    assertEq(ids.length,5,'A3-S6-mrg-20: tournament_ids union 5件');
+    assert(ids.indexOf('t1')>=0&&ids.indexOf('t2')>=0&&ids.indexOf('t3')>=0&&ids.indexOf('t4')>=0&&ids.indexOf('t5')>=0,'A3-S6-mrg-21: union 全要素含む');
+  }
+
+  // last_attended: 新しい日付を採用
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-03-01',tournament_ids:[]}]
+    });
+    const imported = {schema_version:1,members:[
+      {id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-15',tournament_ids:[]}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    assertEq(r.newMaster.members[0].last_attended,'2026-04-15','A3-S6-mrg-22: last_attended は新しい方');
+  }
+
+  // last_attended: 既存の方が新しければ既存維持
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-05-01',tournament_ids:[]}]
+    });
+    const imported = {schema_version:1,members:[
+      {id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-03-01',tournament_ids:[]}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    assertEq(r.newMaster.members[0].last_attended,'2026-05-01','A3-S6-mrg-23: 既存の方が新しければ既存維持');
+  }
+
+  // first_attended: 古い日付を採用
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-03-01',last_attended:'2026-04-01',tournament_ids:[]}]
+    });
+    const imported = {schema_version:1,members:[
+      {id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-15',last_attended:'2026-04-01',tournament_ids:[]}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    assertEq(r.newMaster.members[0].first_attended,'2026-01-15','A3-S6-mrg-24: first_attended は古い方');
+  }
+
+  // attendance_count: max(existing, imported, unionTournamentIds.length)
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t1','t2'],attendance_count:2}]
+    });
+    const imported = {schema_version:1,members:[
+      {id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t3','t4','t5','t6'],attendance_count:4}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    // unionIds.length = 6, existing=2, imported=4 → max=6
+    assertEq(r.newMaster.members[0].attendance_count,6,'A3-S6-mrg-25: attendance_count = max(2,4,6) = 6');
+  }
+
+  // attendance_count: 既存の attendance_count が突出して大きい場合（union より大）
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t1'],attendance_count:99}]
+    });
+    const imported = {schema_version:1,members:[
+      {id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t1','t2'],attendance_count:1}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    // 注: normalizeBranchMaster は attendance_count を tournament_ids.length に強制する
+    //      よって current.members[0].attendance_count は 1 になる（normalize 後）
+    //      union後は 2件 → max(1,1,2) = 2
+    assertEq(r.newMaster.members[0].attendance_count,2,'A3-S6-mrg-26: normalize 後の値で max を取る');
+  }
+
+  // tombstone: 既存 deleted=true は imported deleted=false でも復元しない
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'}]
+    });
+    const imported = {schema_version:1,members:[
+      {id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    assertEq(r.newMaster.members[0].deleted,true,'A3-S6-mrg-27: deleted=true は自動復元しない（既存維持）');
+    assertEq(r.newMaster.members[0].deleted_at,'2026-04-10','A3-S6-mrg-28: deleted_at は既存維持');
+  }
+
+  // tombstone: 既存 deleted=false + imported deleted=true → 既存維持（deleted=false のまま）
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}]
+    });
+    const imported = {schema_version:1,members:[
+      {id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    assertEq(r.newMaster.members[0].deleted,false,'A3-S6-mrg-29: 既存 deleted=false は維持（imported からの削除を引き継がない）');
+  }
+
+  // 新規 import が tombstone（既存にない id）→ そのまま追加
+  {
+    const current = env.createEmptyBranchMaster();
+    const imported = {schema_version:1,members:[
+      {id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    assertEq(r.newMaster.members.length,1,'A3-S6-mrg-30: 新規 tombstone 追加');
+    assertEq(r.newMaster.members[0].deleted,true,'A3-S6-mrg-31: 新規 tombstone の deleted=true 保持');
+  }
+
+  // name+yomi 一致だけでは自動統合しない（id 違いは別人）
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t1']}]
+    });
+    const imported = {schema_version:1,members:[
+      {id:'m_222222222222',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t2']}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    assertEq(r.summary.added,1,'A3-S6-mrg-32: name+yomi 一致でも id 違いは別人 added=1');
+    assertEq(r.summary.merged,0,'A3-S6-mrg-33: 自動統合しない merged=0');
+    assertEq(r.newMaster.members.length,2,'A3-S6-mrg-34: 2件存在（同名異人）');
+  }
+
+  // 入力 mutate 防止
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t1']}]
+    });
+    const imported = {schema_version:1,members:[
+      {id:'m_111111111111',name:'Y',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t2']}
+    ]};
+    const importedJson = JSON.stringify(imported);
+    const currentMembers0 = JSON.parse(JSON.stringify(current.members[0]));
+    env.applyMergeImport(imported,current);
+    assertEq(JSON.stringify(imported),importedJson,'A3-S6-mrg-35: 入力 parsed を mutate しない');
+    assertEq(JSON.stringify(current.members[0]),JSON.stringify(currentMembers0),'A3-S6-mrg-36: currentMaster を mutate しない');
+  }
+
+  // 混合: 既存 + 新規 + 統合
+  {
+    const current = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[
+        {id:'m_111111111111',name:'A',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:['t1']},
+        {id:'m_222222222222',name:'B',yomi:'',first_attended:'2026-02-01',last_attended:'2026-02-01',tournament_ids:['t2']}
+      ]
+    });
+    const imported = {schema_version:1,members:[
+      {id:'m_222222222222',name:'B-imp',yomi:'',first_attended:'2026-02-01',last_attended:'2026-04-01',tournament_ids:['t3']},
+      {id:'m_333333333333',name:'C',yomi:'',first_attended:'2026-03-01',last_attended:'2026-03-01',tournament_ids:['t4']}
+    ]};
+    const r = env.applyMergeImport(imported,current);
+    assertEq(r.summary.added,1,'A3-S6-mrg-37: 新規 1件 (m_333..)');
+    assertEq(r.summary.merged,1,'A3-S6-mrg-38: 統合 1件 (m_222..)');
+    assertEq(r.summary.total,3,'A3-S6-mrg-39: 合計 3件');
+    // m_222 の name は既存維持
+    let mB=null;
+    for(let i=0;i<r.newMaster.members.length;i++){if(r.newMaster.members[i].id==='m_222222222222'){mB=r.newMaster.members[i];break;}}
+    assertEq(mB.name,'B','A3-S6-mrg-40: 統合された member の name は既存維持');
+    assertEq(mB.last_attended,'2026-04-01','A3-S6-mrg-41: 統合された member の last_attended は新しい方');
   }
 }
 

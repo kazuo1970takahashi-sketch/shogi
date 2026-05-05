@@ -576,6 +576,76 @@ function applyOverwriteImport(parsed){
   return {success:true,newMaster:normalized};
 }
 
+// マージインポート: member.id を基準に統合、既存側優先（純粋関数、mutate しない）
+//   戻り値: {success, error?, newMaster?, summary?}
+//   ルール（v7.3 §1-3 / 実装依頼書 F8 マージ）:
+//     - id 一致 → 統合（name/yomi/member/grade/last_class/note は既存維持）
+//     - tournament_ids は union
+//     - last_attended は新しい日付
+//     - first_attended は古い日付
+//     - attendance_count = max(existing, imported, unionTournamentIds.length)
+//     - deleted=true は deleted=false に自動復元しない（既存の deleted 状態を維持）
+//     - id 不一致は別人扱い（name+yomi 一致では自動統合しない）
+function applyMergeImport(parsed,currentMaster){
+  var fmt=detectImportFormat(parsed);
+  if(fmt==='tournament')return {success:false,error:'tournament_format'};
+  if(fmt==='unknown')return {success:false,error:'invalid_format'};
+
+  // normalize で deep copy + 堅牢化（mutate 防止）
+  var imported=normalizeBranchMaster(parsed);
+  var working=normalizeBranchMaster(currentMaster||createEmptyBranchMaster());
+
+  var existingById={};
+  for(var i=0;i<working.members.length;i++){
+    existingById[working.members[i].id]=working.members[i];
+  }
+
+  var added=0,merged=0;
+  for(var j=0;j<imported.members.length;j++){
+    var imp=imported.members[j];
+    var ex=existingById[imp.id];
+    if(!ex){
+      // 既存に id なし → 新規として追加（tombstone 状態は保持）
+      working.members.push(imp);
+      added++;
+      continue;
+    }
+    // id 一致 → 統合（既存側優先 + 集計ルール）
+    var seen={};
+    var unionIds=[];
+    var arrA=Array.isArray(ex.tournament_ids)?ex.tournament_ids:[];
+    var arrB=Array.isArray(imp.tournament_ids)?imp.tournament_ids:[];
+    for(var ai=0;ai<arrA.length;ai++){
+      var ta=arrA[ai];
+      if(typeof ta==='string'&&ta&&!seen[ta]){seen[ta]=true;unionIds.push(ta);}
+    }
+    for(var bi=0;bi<arrB.length;bi++){
+      var tb=arrB[bi];
+      if(typeof tb==='string'&&tb&&!seen[tb]){seen[tb]=true;unionIds.push(tb);}
+    }
+    ex.tournament_ids=unionIds;
+
+    if(isValidYmd(imp.last_attended)){
+      if(!ex.last_attended||imp.last_attended>ex.last_attended)ex.last_attended=imp.last_attended;
+    }
+    if(isValidYmd(imp.first_attended)){
+      if(!ex.first_attended||imp.first_attended<ex.first_attended)ex.first_attended=imp.first_attended;
+    }
+
+    var ac=Math.max(
+      Number(ex.attendance_count)||0,
+      Number(imp.attendance_count)||0,
+      unionIds.length
+    );
+    ex.attendance_count=ac;
+
+    // name / yomi / member / grade / last_class / note / deleted / deleted_at は既存維持（変更しない）
+    merged++;
+  }
+
+  return {success:true,newMaster:working,summary:{added:added,merged:merged,total:working.members.length}};
+}
+
 // テキスト → parsed JSON（JSON.parse のラッパ、失敗時は null）
 function safeParseImportText(text){
   if(typeof text!=='string')return null;
@@ -1235,7 +1305,7 @@ function buildMasterImportModalHtml(){
 
   html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">インポート方式</legend>';
   html+='<label style="display:block;font-size:14px;margin-bottom:4px"><input type="radio" name="mi-mode" value="overwrite" style="margin-right:6px"> このデータで上書き（既存マスタを破棄）</label>';
-  html+='<label style="display:block;font-size:14px"><input type="radio" name="mi-mode" value="merge" style="margin-right:6px" disabled> 既存マスタに追加（マージ）<span style="color:#888;font-size:12px">※ Stage 6 で実装予定</span></label>';
+  html+='<label style="display:block;font-size:14px"><input type="radio" name="mi-mode" value="merge" style="margin-right:6px"> 既存マスタに追加（マージ）<span style="color:#666;font-size:12px">※ id 一致のみ統合・既存側優先</span></label>';
   html+='</fieldset>';
 
   html+='<div id="mi-status" style="font-size:13px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
@@ -1328,6 +1398,23 @@ function processMasterImportText(text,mode,setStatus){
     var modalEl=document.getElementById('master-import-modal');if(modalEl)modalEl.remove();
     if(typeof showMsg==='function')showMsg('マスタを上書きインポートしました（'+result.newMaster.members.length+'名）','ok');
     renderMasterTab();
+    return;
+  }
+
+  if(mode==='merge'){
+    var current=loadBranchMaster();
+    var mr=applyMergeImport(parsed,current);
+    if(!mr.success){
+      if(mr.error==='tournament_format')setStatus('これは過去大会データの形式です。「マスタ」タブの「📥 過去大会を支部マスタに統合」をご利用ください');
+      else if(mr.error==='invalid_format')setStatus('マスタの形式として認識できませんでした（schema_version / members を確認してください）');
+      else setStatus('インポートに失敗しました');
+      return;
+    }
+    saveBranchMaster(mr.newMaster);
+    var modalEl2=document.getElementById('master-import-modal');if(modalEl2)modalEl2.remove();
+    if(typeof showMsg==='function')showMsg('マスタにマージしました（新規追加 '+mr.summary.added+'名 / 既存統合 '+mr.summary.merged+'名 / 合計 '+mr.summary.total+'名）','ok');
+    renderMasterTab();
+    return;
   }
 }
 
