@@ -1047,18 +1047,21 @@ function renderMasterTab(){
 // opts.corrupted=true のとき、モーダル冒頭に警告バナーを描画。
 function buildMigrationModalHtml(opts){
   var corrupted=!!(opts&&opts.corrupted);
-  var html='<div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-width:90vw;max-height:85vh;overflow-y:auto">';
+  var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:600px;width:100%;max-height:85vh;overflow-y:auto">';
   if(corrupted){
     html+='<div class="mig-corrupt-warning" style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#92400e;line-height:1.5">⚠️ 既存の支部マスタが破損していました。このマイグレーションで再構築されます（既存マスタは破棄されます）。</div>';
   }
-  html+='<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">過去大会の統合</h3>';
-  html+='<p style="font-size:13px;color:#555;line-height:1.6;margin-bottom:12px">過去の大会JSONファイルを読み込んで、支部マスタを構築します。複数選択できます。</p>';
-  html+='<div style="margin-bottom:12px">';
-  html+='<input type="file" id="mig-files" accept=".json" multiple style="font-size:13px;width:100%">';
-  html+='</div>';
+  html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">過去大会の統合（支部マスタへ）</h3>';
+  // M5: 「読み込み」との違いを明記
+  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">過去大会の参加者を支部マスタに取り込みます。<strong>大会そのものを復元する機能ではありません。</strong></p>';
+  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">「大会データをコピー」したテキストを貼り付けてください：</p>';
+  html+='<textarea id="mig-paste-area" rows="8" style="width:100%;font-size:12px;font-family:monospace;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box" placeholder="ここに大会データを貼り付けてください"></textarea>';
+  html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-top:8px;margin-bottom:0">複数大会をまとめて取り込む場合は、1大会分を貼り付けたあとに空行を1行入れて、次の大会データを貼り付けてください。</p>';
+  // M3: 既存ファイル保有者向けの代替案内
+  html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-top:4px;margin-bottom:12px">ファイルとして保存してある場合は、ファイルを開いて中身をコピーし、ここに貼り付けてください。</p>';
   html+='<div id="mig-status" style="font-size:13px;color:#555;margin-bottom:12px;min-height:1.5em;line-height:1.6"></div>';
   html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
-  html+='<button type="button" id="mig-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">閉じる</button>';
+  html+='<button type="button" id="mig-cancel" class="btn-sm" style="background:#fff">閉じる</button>';
   html+='<button type="button" class="btn-primary" id="mig-run">統合を実行</button>';
   html+='</div></div>';
   return html;
@@ -1071,23 +1074,34 @@ function bindMigrationModalEvents(){
   });
   var runBtn=document.getElementById('mig-run');
   if(runBtn)runBtn.addEventListener('click',function(){
-    var input=document.getElementById('mig-files');
-    var files=input&&input.files?input.files:[];
-    if(!files||files.length===0){alert('JSONファイルを選択してください');return;}
+    var textarea=document.getElementById('mig-paste-area');
+    var text=textarea?textarea.value:'';
+    if(!text||!text.trim()){alert('大会データを貼り付けてください');return;}
     var statusEl=document.getElementById('mig-status');
     if(statusEl)statusEl.textContent='読み込み中...';
-    parseTournamentJsonFiles(files).then(function(tournaments){
+    var parsed=parseTournamentTextInput(text);
+    var tournaments=parsed.tournaments;
+    var errors=parsed.errors;
+    if(tournaments.length===0){
+      if(statusEl){
+        statusEl.textContent=errors.length===0
+          ?'大会データが見つかりませんでした'
+          :'貼り付けたデータの形式が正しくありません（'+errors.length+'件パース失敗）';
+      }
+      return;
+    }
+    try{
       var master=loadBranchMaster();
       var summary=mergeTournamentParticipantsIntoMaster(tournaments,master);
       saveBranchMaster(master);
-      if(statusEl){
-        statusEl.textContent=summary.tournaments+'大会を読込：新規追加 '+summary.added+'名 / 既存統合 '+summary.matched+'件 / スキップ '+summary.skipped+'件';
-      }
+      var msg=summary.tournaments+'大会を読込：新規追加 '+summary.added+'名 / 既存統合 '+summary.matched+'件 / スキップ '+summary.skipped+'件';
+      if(errors.length>0)msg+='（'+errors.length+'件は形式エラーで失敗）';
+      if(statusEl)statusEl.textContent=msg;
       renderMasterTab();
       renderPastParticipantsPanel();
-    }).catch(function(err){
-      if(statusEl)statusEl.textContent='読み込みに失敗：'+(err&&err.message?err.message:String(err));
-    });
+    }catch(err){
+      if(statusEl)statusEl.textContent='統合に失敗：'+(err&&err.message?err.message:String(err));
+    }
   });
 }
 
