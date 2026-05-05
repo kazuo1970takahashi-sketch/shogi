@@ -85,6 +85,7 @@ function loadEnv(path, opts) {
        buildYomiInputModalHtml:buildYomiInputModalHtml,
        applyYomiInputsToMaster:applyYomiInputsToMaster,
        buildMigrationModalHtml:buildMigrationModalHtml,
+       parseTournamentTextInput:parseTournamentTextInput,
        _phaseA2State:_phaseA2State,
        isValidYmd:isValidYmd,
        todayYmd:todayYmd,
@@ -975,6 +976,116 @@ const env = loadEnv(targetPath);
   });
   envOk.syncBranchMasterOnSave();
   assert(envOk._phaseA2State.cryptoNotificationShown===false,'Minor #2: crypto 正常環境では通知フラグ false のまま');
+}
+
+// =====================================================
+// parseTournamentTextInput tests (A-2.5, ChatGPT M1/M2)
+// =====================================================
+{
+  // 単一大会
+  {
+    const single = JSON.stringify({schema_version:1,type:'shogi_tournament',ymd:'2026-04-15',a_class:{participants:[],results:[]},b_class:{participants:[],results:[]}});
+    const r = env.parseTournamentTextInput(single);
+    assert(r.tournaments.length===1,'A2.5-pti-1: 単一大会 tournaments=1');
+    assert(r.errors.length===0,'A2.5-pti-2: 単一大会 errors=0');
+  }
+
+  // 複数大会（空行区切り）
+  {
+    const t1 = JSON.stringify({schema_version:1,ymd:'2026-04-15'});
+    const t2 = JSON.stringify({schema_version:1,ymd:'2026-05-15'});
+    const t3 = JSON.stringify({schema_version:1,ymd:'2026-06-15'});
+    const multi = t1+'\n\n'+t2+'\n\n'+t3;
+    const r = env.parseTournamentTextInput(multi);
+    assert(r.tournaments.length===3,'A2.5-pti-3: 3大会 tournaments=3');
+    assert(r.errors.length===0,'A2.5-pti-4: 3大会 errors=0');
+  }
+
+  // 連続空行も1つの区切り扱い
+  {
+    const t1 = JSON.stringify({schema_version:1,ymd:'2026-04-15'});
+    const t2 = JSON.stringify({schema_version:1,ymd:'2026-05-15'});
+    const multi = t1+'\n\n\n\n'+t2;
+    const r = env.parseTournamentTextInput(multi);
+    assert(r.tournaments.length===2,'A2.5-pti-5: 連続空行も区切り扱い');
+  }
+
+  // 末尾空行
+  {
+    const t = JSON.stringify({schema_version:1});
+    const r = env.parseTournamentTextInput(t+'\n\n\n');
+    assert(r.tournaments.length===1,'A2.5-pti-6: 末尾空行を許容');
+    assert(r.errors.length===0,'A2.5-pti-7: 末尾空行 errors=0');
+  }
+
+  // 先頭空行
+  {
+    const t = JSON.stringify({schema_version:1});
+    const r = env.parseTournamentTextInput('\n\n'+t);
+    assert(r.tournaments.length===1,'A2.5-pti-8: 先頭空行を許容');
+  }
+
+  // CRLF 改行
+  {
+    const t1 = JSON.stringify({schema_version:1,ymd:'2026-04-15'});
+    const t2 = JSON.stringify({schema_version:1,ymd:'2026-05-15'});
+    const r = env.parseTournamentTextInput(t1+'\r\n\r\n'+t2);
+    assert(r.tournaments.length===2,'A2.5-pti-9: CRLF 改行を許容');
+  }
+
+  // CR のみ改行
+  {
+    const t1 = JSON.stringify({schema_version:1,ymd:'2026-04-15'});
+    const t2 = JSON.stringify({schema_version:1,ymd:'2026-05-15'});
+    const r = env.parseTournamentTextInput(t1+'\r\r'+t2);
+    assert(r.tournaments.length===2,'A2.5-pti-10: CR 改行を許容');
+  }
+
+  // BOM 付き
+  {
+    const t = JSON.stringify({schema_version:1});
+    const r = env.parseTournamentTextInput('﻿'+t);
+    assert(r.tournaments.length===1,'A2.5-pti-11: BOM 付きを許容');
+  }
+
+  // 空文字
+  {
+    const r = env.parseTournamentTextInput('');
+    assert(r.tournaments.length===0,'A2.5-pti-12: 空文字 tournaments=0');
+    assert(r.errors.length===0,'A2.5-pti-13: 空文字 errors=0');
+  }
+
+  // 空白のみ
+  {
+    const r = env.parseTournamentTextInput('   \n\n  \t  \n  ');
+    assert(r.tournaments.length===0,'A2.5-pti-14: 空白のみ tournaments=0');
+    assert(r.errors.length===0,'A2.5-pti-15: 空白のみ errors=0');
+  }
+
+  // 全件パース失敗
+  {
+    const bad = '{ broken json'+'\n\n'+'{ also broken';
+    const r = env.parseTournamentTextInput(bad);
+    assert(r.tournaments.length===0,'A2.5-pti-16: 全件失敗 tournaments=0');
+    assert(r.errors.length===2,'A2.5-pti-17: 全件失敗 errors=2');
+  }
+
+  // 一部成功
+  {
+    const t = JSON.stringify({schema_version:1});
+    const mixed = t+'\n\n'+'{ broken'+'\n\n'+t;
+    const r = env.parseTournamentTextInput(mixed);
+    assert(r.tournaments.length===2,'A2.5-pti-18: 一部成功 tournaments=2');
+    assert(r.errors.length===1,'A2.5-pti-19: 一部成功 errors=1');
+  }
+
+  // undefined / null 入力
+  {
+    const r1 = env.parseTournamentTextInput(undefined);
+    assert(r1.tournaments.length===0,'A2.5-pti-20: undefined tournaments=0');
+    const r2 = env.parseTournamentTextInput(null);
+    assert(r2.tournaments.length===0,'A2.5-pti-21: null tournaments=0');
+  }
 }
 
 // 結果出力

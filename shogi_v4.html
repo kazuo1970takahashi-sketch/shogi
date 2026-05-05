@@ -1105,6 +1105,44 @@ function openMigrationWizard(){
   bindMigrationModalEvents();
 }
 
+// UTILITY: テキスト入力から複数の大会データをパース
+//   - 空行で大会を区切る
+//   - 改行コード CRLF/LF/CR を正規化
+//   - BOM を除去
+//   - 各ブロックを JSON.parse → 呼び出し側で normalizeState 等を適用
+//   - 原則 throw しない（想定外の内部例外のみ throw）
+//
+// 戻り値: { tournaments: [{raw, source}, ...], errors: [string, ...] }
+//   - 空文字 / 空白のみ: { tournaments: [], errors: [] }
+//   - 全件パース失敗:    { tournaments: [], errors: [...] }
+//   - 一部成功:          { tournaments: [成功分], errors: [失敗分] }
+function parseTournamentTextInput(text){
+  if(!text||typeof text!=='string'){
+    return {tournaments:[],errors:[]};
+  }
+  if(text.charCodeAt(0)===0xFEFF){
+    text=text.slice(1);
+  }
+  text=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  if(!text.trim()){
+    return {tournaments:[],errors:[]};
+  }
+  var blocks=text.split(/\n\s*\n+/);
+  var tournaments=[];
+  var errors=[];
+  blocks.forEach(function(block,idx){
+    var trimmed=block.trim();
+    if(!trimmed)return;
+    try{
+      var raw=JSON.parse(trimmed);
+      tournaments.push({raw:raw,source:'block '+(idx+1)});
+    }catch(e){
+      errors.push('block '+(idx+1)+': パースに失敗 - '+e.message);
+    }
+  });
+  return {tournaments:tournaments,errors:errors};
+}
+
 function parseTournamentJsonFiles(files){
   var arr=Array.prototype.slice.call(files);
   return Promise.all(arr.map(function(file){
