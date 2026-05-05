@@ -2300,10 +2300,18 @@ function renderSuggestList(suggestions){
     (function(m){
       var item=document.createElement('div');
       item.className='suggest-item';
+      // 行の内容と A/B ボタンを横並びに（行本体タップは A-4 既存挙動を維持、§3.2.2 Must Fix 1）
+      item.style.display='flex';
+      item.style.alignItems='center';
+      item.style.gap='8px';
+      var info=document.createElement('div');
+      info.className='si-info';
+      info.style.flex='1';
+      info.style.minWidth='0';
       var nm=document.createElement('div');
       nm.className='si-name';
       nm.textContent=m.name;
-      item.appendChild(nm);
+      info.appendChild(nm);
       var meta=document.createElement('div');
       meta.className='si-meta';
       var parts=[];
@@ -2311,7 +2319,8 @@ function renderSuggestList(suggestions){
       if(m.last_class==='A'||m.last_class==='B')parts.push('前回 '+m.last_class+'クラス');
       if(m.last_attended)parts.push('最終参加 '+m.last_attended);
       meta.textContent=parts.join(' / ');
-      item.appendChild(meta);
+      info.appendChild(meta);
+      item.appendChild(info);
       // mousedown は input の blur より先に発火するため、blur-close で取りこぼさない
       item.addEventListener('mousedown',function(e){
         e.preventDefault();
@@ -2322,10 +2331,80 @@ function renderSuggestList(suggestions){
         e.preventDefault();
         onSuggestTap(m);
       });
+      // A-4.2 §3.2.3: A/B ボタン（行本体タップとは独立、stopPropagation で二重発火回避）
+      var classes=['A','B'];
+      for(var ci=0;ci<classes.length;ci++){
+        (function(cls){
+          var btn=document.createElement('button');
+          btn.type='button';
+          btn.className='suggest-add-btn';
+          btn.setAttribute('data-cls',cls);
+          btn.setAttribute('aria-label',m.name+'を'+cls+'クラスで追加');
+          btn.setAttribute('title',cls+'クラスで追加');
+          btn.textContent=cls;
+          btn.style.cssText='min-width:44px;min-height:44px;flex-shrink:0;border:1px solid #1976d2;background:#fff;color:#1976d2;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer;margin-left:4px';
+          // mousedown / touchstart で行ハンドラより先に処理して伝播停止（行本体タップは A-4 既存挙動として維持）
+          btn.addEventListener('mousedown',function(e){
+            if(e.preventDefault)e.preventDefault();
+            if(e.stopPropagation)e.stopPropagation();
+            handleSuggestClassAdd(m.id,cls);
+          });
+          btn.addEventListener('touchstart',function(e){
+            if(e.preventDefault)e.preventDefault();
+            if(e.stopPropagation)e.stopPropagation();
+            handleSuggestClassAdd(m.id,cls);
+          });
+          // click は念のため伝播を止める（実機環境差吸収）
+          btn.addEventListener('click',function(e){
+            if(e.preventDefault)e.preventDefault();
+            if(e.stopPropagation)e.stopPropagation();
+          });
+          item.appendChild(btn);
+        })(classes[ci]);
+      }
       list.appendChild(item);
     })(suggestions[i]);
   }
   list.style.display='block';
+}
+
+// A-4.2 §3.2.3: サジェスト A/B ボタン押下時の処理。
+// addPlayerFromMaster 経由で直接追加し、氏名欄・ふりがな欄をクリア + サジェストリストを閉じる。
+// _pendingNewYomi / master.yomi は触らない（Should Fix 6）。
+function handleSuggestClassAdd(memberId,cls){
+  var master=loadBranchMaster();
+  var r=addPlayerFromMaster(memberId,cls,master,state);
+  if(!r||!r.success){
+    var err=r&&r.error;
+    if(err==='duplicate_member'){
+      showMsg('この参加者はすでに登録されています','err');
+    }else if(err==='duplicate_name'){
+      showMsg('同じ名前の参加者がいます。別人の場合は手入力で区別してください','err');
+    }else if(err==='deleted'){
+      showMsg('この参加者は削除済みのため追加できません','err');
+    }else if(err==='not_found'){
+      showMsg('該当する参加者が見つかりません','err');
+    }else{
+      showMsg('追加に失敗しました','err');
+    }
+    return;
+  }
+  // 氏名欄・ふりがな欄をクリア + IME バッファ初期化（§3.2.3 step 2/4）
+  var inpName=document.getElementById('inp-name');
+  var inpYomi=document.getElementById('inp-yomi');
+  if(inpName)inpName.value='';
+  if(inpYomi)inpYomi.value='';
+  _suggestState.selectedMemberId=null;
+  _suggestState.selectedNormalizedName=null;
+  _yomiManuallyEdited=false;
+  _yomiAutoBuffer='';
+  closeSuggestList();
+  renderRegList();save();
+  if(typeof renderPastParticipantsPanel==='function'){
+    var ppSearch=document.getElementById('pp-search');
+    renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
+  }
+  showMsg('['+r.player.name+']（'+cls+'クラス）を登録しました','ok');
 }
 
 function closeSuggestList(){
