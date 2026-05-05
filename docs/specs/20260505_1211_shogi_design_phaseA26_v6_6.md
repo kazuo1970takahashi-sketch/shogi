@@ -46,7 +46,7 @@
 **現状のコード**（v6.5 §4.1 で実装）：
 ```javascript
 // マイグレモーダル
-'<textarea id="mig-paste-area" rows="8" 
+'<textarea id="mig-paste-area" rows="8"
   style="width:100%;font-size:12px;font-family:monospace;..." ...>'
 ```
 
@@ -58,7 +58,7 @@ A-2 以前から存在する `load-paste-area` も同じ実装パターン：
 
 ```javascript
 // 読み込みモーダル（既存、A-2 以前から）
-'<textarea id="load-paste-area" placeholder="..." 
+'<textarea id="load-paste-area" placeholder="..."
   style="width:100%;height:120px;padding:8px;border:1px solid #ccc;
   border-radius:8px;font-size:13px;..."></textarea>'
 ```
@@ -126,15 +126,15 @@ runBtn.addEventListener('click', function() {
 
 ```javascript
 // 修正前（L1058 付近）
-html += '<textarea id="mig-paste-area" rows="8" 
+html += '<textarea id="mig-paste-area" rows="8"
   style="width:100%;font-size:12px;font-family:monospace;
-  border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box" 
+  border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box"
   placeholder="ここに大会データを貼り付けてください"></textarea>';
 
 // 修正後
-html += '<textarea id="mig-paste-area" rows="8" 
+html += '<textarea id="mig-paste-area" rows="8"
   style="width:100%;font-size:16px;font-family:monospace;
-  border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box" 
+  border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box"
   placeholder="ここに大会データを貼り付けてください"></textarea>';
 ```
 
@@ -144,12 +144,12 @@ html += '<textarea id="mig-paste-area" rows="8"
 
 ```javascript
 // 修正前
-'<textarea id="load-paste-area" placeholder="ここに大会データを貼り付けてください" 
+'<textarea id="load-paste-area" placeholder="ここに大会データを貼り付けてください"
   style="width:100%;height:120px;padding:8px;border:1px solid #ccc;
   border-radius:8px;font-size:13px;font-family:monospace;resize:vertical"></textarea>'
 
 // 修正後
-'<textarea id="load-paste-area" placeholder="ここに大会データを貼り付けてください" 
+'<textarea id="load-paste-area" placeholder="ここに大会データを貼り付けてください"
   style="width:100%;height:120px;padding:8px;border:1px solid #ccc;
   border-radius:8px;font-size:16px;font-family:monospace;resize:vertical"></textarea>'
 ```
