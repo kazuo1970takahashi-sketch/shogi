@@ -3342,8 +3342,31 @@ function bindRegistrationEvents(){
   // 参加者名入力欄: IME対応 + Enterで追加
   var inpName=document.getElementById('inp-name');
   var composing=false;
-  inpName.addEventListener('compositionstart',function(){composing=true;});
-  inpName.addEventListener('compositionend',function(){composing=false;updateSuggestList();});
+  inpName.addEventListener('compositionstart',function(){
+    composing=true;
+    // A-4 §3.1.2: IME 開始時に自動取得バッファをリセット
+    _yomiAutoBuffer='';
+  });
+  inpName.addEventListener('compositionupdate',function(e){
+    // A-4 §3.1.2: ひらがな（U+3040-U+309F）のみで構成されていればバッファ更新。
+    // 漢字変換中の data はスキップ（最後のひらがな状態が確定時の追記値となる）。
+    var data=(e&&typeof e.data==='string')?e.data:'';
+    if(/^[぀-ゟ]*$/.test(data))_yomiAutoBuffer=data;
+  });
+  inpName.addEventListener('compositionend',function(){
+    composing=false;
+    // A-4 §3.1.2: 手動編集されていない場合のみ、バッファを yomi 欄末尾に追記。
+    // サジェスト由来の値も上書きせず追記するのが原則だが、サジェスト選択直後は
+    // _yomiAutoBuffer は空（onSuggestTap で reset 済み）なので追記は発生しない。
+    if(!_yomiManuallyEdited && _yomiAutoBuffer){
+      var inpYomi=document.getElementById('inp-yomi');
+      if(inpYomi){
+        inpYomi.value=(inpYomi.value||'')+_yomiAutoBuffer;
+      }
+    }
+    _yomiAutoBuffer='';
+    updateSuggestList();
+  });
   inpName.addEventListener('keypress',function(e){if(e.key==='Enter'&&!composing)addPlayer();});
   // A-3 サジェスト: 入力中・focus 時に候補更新、blur で閉じる（mousedown より遅延）
   inpName.addEventListener('input',function(){
