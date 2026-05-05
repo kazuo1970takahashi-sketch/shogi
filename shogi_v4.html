@@ -120,6 +120,10 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
         </select>
         <button type="button" class="btn-primary" id="addBtn">追加</button>
       </div>
+      <div style="margin-top:6px">
+        <input type="text" id="inp-yomi" placeholder="ふりがな" style="width:200px;font-size:16px" autocomplete="off">
+        <span style="font-size:11px;color:#888;margin-left:6px">自動入力されない場合は手入力してください</span>
+      </div>
       <div id="suggest-list" class="suggest-list" style="display:none"></div>
       <div id="reg-msg"></div>
       <div class="grid2" style="margin-top:12px">
@@ -911,6 +915,8 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
   if(!tournamentMeta||!tournamentMeta.tournament_id)return master;
   var tid=tournamentMeta.tournament_id;
   var date=isValidYmd(tournamentMeta.tournament_date)?tournamentMeta.tournament_date:todayYmd();
+  // A-4 §3.1.5: tournamentMeta.yomiMap[player.id] = yomi（オプショナル、Should Fix 1: id キー）
+  var yomiMap=(tournamentMeta&&tournamentMeta.yomiMap&&typeof tournamentMeta.yomiMap==='object')?tournamentMeta.yomiMap:null;
 
   var affected={};
   var pendingSkippedNames=[];
@@ -943,6 +949,11 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
         }else{
           try{
             member=createMemberFromParticipant(p,master,date);
+            // A-4 §3.1.5: 新規 member に yomi を初期反映（_pendingNewYomi 由来）
+            if(yomiMap&&typeof yomiMap[p.id]==='string'){
+              var yNew=normalizeYomi(yomiMap[p.id]);
+              if(yNew)member.yomi=yNew;
+            }
             master.members.push(member);
             attachMemberIdToPlayer(p,member);
           }catch(e){
@@ -969,6 +980,12 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
       // A-3: 支部員区分・中学生以下区分の前回値を記録（次回サジェスト引き継ぎ用）
       if(p.member==='member'||p.member==='other')member.member=p.member;
       if(p.grade==='ippan'||p.grade==='chu')member.grade=p.grade;
+      // A-4 §3.1.5 + Should Fix 2: 既存 member の yomi は **空のときのみ** yomiMap から補完。
+      //   既存値があれば触らない（誤上書き防止）。
+      if(yomiMap&&typeof yomiMap[p.id]==='string'&&!normalizeYomi(member.yomi||'')){
+        var yFill=normalizeYomi(yomiMap[p.id]);
+        if(yFill)member.yomi=yFill;
+      }
       affected[member.id]=member;
     }
   }
@@ -1999,6 +2016,16 @@ function updateField(id,cls,field,value){
 // A-3 サジェスト状態（候補タップで保持される選択 member の参照）
 var _suggestState={selectedMemberId:null,selectedNormalizedName:null};
 
+// A-4 §3.1.4 + Should Fix 1: 新規参加者向け yomi の一時保持
+//   キーは player.id（同名衝突回避のため）。saveData 時にマスタへ反映後クリア。
+//   player オブジェクトに yomi を追加しない方針を維持するため、DOM 値をここに退避。
+var _pendingNewYomi={};
+
+// A-4 §3.1.2: 登録画面 ふりがな欄の状態（Stage 2 で IME 自動取得時に使う）
+//   Stage 1 では値の保持のみ。compositionupdate/end は Stage 2 で実装。
+var _yomiAutoBuffer='';
+var _yomiManuallyEdited=false;
+
 function getCurrentlyRegisteredMemberIds(){
   var ids=[];
   if(!state||!state.players)return ids;
@@ -2064,8 +2091,14 @@ function onSuggestTap(member){
   if(!member)return;
   var inpName=document.getElementById('inp-name');
   var inpClass=document.getElementById('inp-class');
+  var inpYomi=document.getElementById('inp-yomi');
   if(inpName)inpName.value=member.name||'';
   if(inpClass&&(member.last_class==='A'||member.last_class==='B'))inpClass.value=member.last_class;
+  // A-4 §3.1.3: サジェスト由来は yomi 欄にもマスタ値を反映。
+  // _yomiManuallyEdited は false のまま（手動編集扱いにしない）。
+  if(inpYomi)inpYomi.value=member.yomi||'';
+  _yomiManuallyEdited=false;
+  _yomiAutoBuffer='';
   _suggestState.selectedMemberId=member.id;
   _suggestState.selectedNormalizedName=normalizePersonName(member.name||'');
   closeSuggestList();
@@ -2097,11 +2130,15 @@ function updateSuggestList(){
 function addPlayer(){
   // iPhone Safari: ペースト後のボタン無反応回避（A-2.6 ガイドライン）
   var inpName=document.getElementById('inp-name');
+  var inpYomi=document.getElementById('inp-yomi');
   if(inpName)inpName.blur();
+  if(inpYomi)inpYomi.blur();
   closeSuggestList();
 
   var name=inpName.value.trim();
   var cls=document.getElementById('inp-class').value;
+  // A-4 §3.1.4: ふりがな欄の値は DOM のみで保持。player.yomi には保存しない。
+  var yomiRaw=inpYomi?inpYomi.value:'';
   if(!name){showMsg('名前を入力してください','err');return;}
   var all=state.players.A.concat(state.players.B);
   for(var i=0;i<all.length;i++){if(all[i].name===name){showMsg('同じ名前の参加者がいます','err');return;}}
@@ -2110,6 +2147,7 @@ function addPlayer(){
   var memberValue='member';
   var gradeValue='ippan';
   var memberIdValue=null;
+  var suggestSelected=null;
   if(_suggestState.selectedMemberId){
     var curNorm=normalizePersonName(name);
     if(curNorm===_suggestState.selectedNormalizedName){
@@ -2134,6 +2172,7 @@ function addPlayer(){
         memberIdValue=sel.id;
         if(sel.member==='other')memberValue='other';
         if(sel.grade==='chu')gradeValue='chu';
+        suggestSelected=sel;
       }
     }
   }
@@ -2142,9 +2181,36 @@ function addPlayer(){
   var newPlayer={id:id,name:name,cls:cls,member:memberValue,grade:gradeValue};
   if(memberIdValue)newPlayer.member_id=memberIdValue;
   state.players[cls].push(newPlayer);
+
+  // A-4 §3.1.4 + Should Fix 2: yomi のマスタ反映条件
+  //   サジェスト由来：既存マスタ yomi が **空** の場合のみ補完（誤上書き防止）。
+  //   新規参加者：_pendingNewYomi[player.id] に退避し、saveData 時に updateBranchMasterFromTournament 経由で反映。
+  var yomiForMaster=normalizeYomi(yomiRaw||'');
+  if(suggestSelected){
+    if(yomiForMaster && !normalizeYomi(suggestSelected.yomi||'')){
+      try{
+        var masterToSave=loadBranchMaster();
+        if(masterToSave&&Array.isArray(masterToSave.members)){
+          for(var mj=0;mj<masterToSave.members.length;mj++){
+            if(masterToSave.members[mj].id===suggestSelected.id){
+              masterToSave.members[mj].yomi=yomiForMaster;
+              saveBranchMaster(masterToSave);
+              break;
+            }
+          }
+        }
+      }catch(e){}
+    }
+  }else if(yomiForMaster){
+    _pendingNewYomi[id]=yomiForMaster;
+  }
+
   inpName.value='';
+  if(inpYomi)inpYomi.value='';
   _suggestState.selectedMemberId=null;
   _suggestState.selectedNormalizedName=null;
+  _yomiManuallyEdited=false;
+  _yomiAutoBuffer='';
   inpName.focus();
   showMsg(name+'（'+cls+'クラス）を登録しました','ok');
   renderRegList();save();
@@ -2177,6 +2243,8 @@ function removePlayer(id,cls){
   if(!confirm(msg))return;
   var arr=state.players[cls];
   state.players[cls]=arr.filter(function(p){return p.id!==id;});
+  // A-4 §3.1.4: 当該 player の _pendingNewYomi も破棄
+  if(_pendingNewYomi&&Object.prototype.hasOwnProperty.call(_pendingNewYomi,id))delete _pendingNewYomi[id];
   renderRegList();save();
 }
 
@@ -2888,8 +2956,11 @@ function syncBranchMasterOnSave(){
     var date=getTournamentDateFromReport(state.report);
     // 仕様書 v5 §3.3 / Codex MF #1: 大会日を ensureTournamentId に明示的に渡す
     ensureTournamentId(state,master,date);
-    updateBranchMasterFromTournament(state,master,{tournament_id:state.tournament_id,tournament_date:date});
+    // A-4 §3.1.5: 登録画面ふりがな欄から退避した値（_pendingNewYomi）をマスタへ反映
+    updateBranchMasterFromTournament(state,master,{tournament_id:state.tournament_id,tournament_date:date,yomiMap:_pendingNewYomi});
     saveBranchMaster(master);
+    // 反映済みのため一時マップをクリア
+    _pendingNewYomi={};
     save();
   }catch(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタ同期に失敗（既存大会運営は継続）',e);
@@ -3218,7 +3289,7 @@ function downloadReport(){
 
 function resetAll(){
   if(!confirm('現在の大会データをリセットします（支部マスタは保持されます）'))return;
-  state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}};
+  state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}};_pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
   try{
     // 仕様書 3.4.1 / §3.1.5: shogi_branch_master は絶対に消さない
     localStorage.removeItem(STORAGE_KEY);
@@ -3242,6 +3313,8 @@ function resetAll(){
   var repSei=document.getElementById('rep-sei');if(repSei)repSei.value='';
   var repFuku=document.getElementById('rep-fuku');if(repFuku)repFuku.value='';
   var repNote=document.getElementById('rep-note');if(repNote)repNote.value='';
+  var inpYomiR=document.getElementById('inp-yomi');if(inpYomiR)inpYomiR.value='';
+  var inpNameR=document.getElementById('inp-name');if(inpNameR)inpNameR.value='';
   showTab('reg');
   showMsg('リセットしました','ok');
 }
@@ -3273,9 +3346,26 @@ function bindRegistrationEvents(){
   inpName.addEventListener('compositionend',function(){composing=false;updateSuggestList();});
   inpName.addEventListener('keypress',function(e){if(e.key==='Enter'&&!composing)addPlayer();});
   // A-3 サジェスト: 入力中・focus 時に候補更新、blur で閉じる（mousedown より遅延）
-  inpName.addEventListener('input',function(){if(!composing)updateSuggestList();});
+  inpName.addEventListener('input',function(){
+    if(!composing)updateSuggestList();
+    // A-4 §3.1.2: 氏名欄を空にしたら手動編集フラグもリセット
+    if(!inpName.value)_yomiManuallyEdited=false;
+  });
   inpName.addEventListener('focus',function(){if(!composing)updateSuggestList();});
   inpName.addEventListener('blur',function(){setTimeout(closeSuggestList,150);});
+
+  // A-4 §3.1.2: ふりがな欄の手動編集を追跡。Stage 1 では追跡のみ。
+  var inpYomi=document.getElementById('inp-yomi');
+  if(inpYomi){
+    var yomiComposing=false;
+    inpYomi.addEventListener('compositionstart',function(){yomiComposing=true;});
+    inpYomi.addEventListener('compositionend',function(){yomiComposing=false;});
+    inpYomi.addEventListener('input',function(){
+      // ユーザーが yomi 欄を直接編集 → 手動編集フラグ ON
+      _yomiManuallyEdited=true;
+    });
+    inpYomi.addEventListener('keypress',function(e){if(e.key==='Enter'&&!yomiComposing)addPlayer();});
+  }
 }
 
 function bindTabEvents(){
