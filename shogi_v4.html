@@ -120,6 +120,10 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
         </select>
         <button type="button" class="btn-primary" id="addBtn">追加</button>
       </div>
+      <div style="margin-top:6px">
+        <input type="text" id="inp-yomi" placeholder="ふりがな" style="width:200px;font-size:16px" autocomplete="off">
+        <span style="font-size:11px;color:#888;margin-left:6px">自動入力されない場合は手入力してください</span>
+      </div>
       <div id="suggest-list" class="suggest-list" style="display:none"></div>
       <div id="reg-msg"></div>
       <div class="grid2" style="margin-top:12px">
@@ -362,6 +366,9 @@ var BRANCH_MASTER_SCHEMA_VERSION=1;
 // 仕様書 v6 §3.7 / Codex Minor #2: 同一セッション内で crypto 不在通知を1度だけ出すためのフラグ
 var _phaseA2State={cryptoNotificationShown:false};
 
+// A-4 §3.4.1: マスタタブの「削除済みを表示」トグル状態（タブ切替で保持）
+var _masterShowDeleted=false;
+
 function createEmptyBranchMaster(){
   return {schema_version:BRANCH_MASTER_SCHEMA_VERSION,updated_at:new Date().toISOString(),members:[]};
 }
@@ -556,8 +563,16 @@ function findMemberCandidates(participant,master){
 var QUICK_FILTER_RECENT_LAST='recent_last';   // 前回参加（最終大会日と一致）
 var QUICK_FILTER_WITHIN_3MO='within_3mo';     // 3ヶ月以内（90日以内）
 var QUICK_FILTER_REGULAR='regular';           // 常連（attendance_count >= 5）
+var QUICK_FILTER_NO_YOMI='no_yomi';           // A-4 §3.5.4: ふりがな未入力
 var QUICK_FILTER_REGULAR_MIN=5;
 var QUICK_FILTER_WITHIN_DAYS=90;
+
+// A-4 §3.5.1 (Should Fix 4): ふりがな未入力判定の共通関数。
+// サマリー・バッジ・フィルタ・テストすべてでこの関数を使う。
+function isNoYomiMember(member){
+  if(!member)return true;
+  return !normalizeYomi(member.yomi||'');
+}
 
 // 全 member の last_attended の最大日（空文字 = データなし）
 function computeLatestAttendedDate(members){
@@ -605,6 +620,10 @@ function applyQuickFilter(members,filterKey,todayStr){
   }
   if(filterKey===QUICK_FILTER_REGULAR){
     return members.filter(function(m){return m&&(Number(m.attendance_count)||0)>=QUICK_FILTER_REGULAR_MIN;});
+  }
+  // A-4 §3.5.4: ふりがな未入力フィルタ
+  if(filterKey===QUICK_FILTER_NO_YOMI){
+    return members.filter(isNoYomiMember);
   }
   return members.slice();
 }
@@ -769,11 +788,37 @@ function applyMasterMemberDelete(memberId,master,dateYmd){
 }
 
 // ============================================================
-// MASTER EDIT (A-3 §1-2 / F7-a): name + yomi のみ編集
-//   参加履歴・支部員区分・削除フラグ等は触らない。
+// MASTER RESTORE (A-4 §3.4.3 / F7-e): tombstone から復元
+//   物理削除しない。member_id は変更しない。
+//   戻り値: {success, error?}
+//   エラー: invalid_master / invalid_id / not_found / not_deleted
+// ============================================================
+function applyMasterMemberRestore(memberId,master){
+  if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
+  if(typeof memberId!=='string'||!memberId)return {success:false,error:'invalid_id'};
+  var target=null;
+  for(var i=0;i<master.members.length;i++){
+    if(master.members[i].id===memberId){target=master.members[i];break;}
+  }
+  if(!target)return {success:false,error:'not_found'};
+  if(target.deleted!==true)return {success:false,error:'not_deleted'};
+
+  target.deleted=false;
+  target.deleted_at=null;
+  return {success:true};
+}
+
+// ============================================================
+// MASTER EDIT (A-3 §1-2 / F7-a): name + yomi (+ A-4 options) を編集
+//   参加履歴・削除フラグは触らない。
+//   A-4 §3.3.2 (Must Fix 2): シグネチャ一本化
+//     applyMasterMemberEdit(memberId, newName, newYomi, master, options)
+//     - options 省略時: member/grade は変更しない（既存挙動維持・A3-S2-edit-01〜29 互換）
+//     - options.member: 'member' | 'other' のみ許容（不正値で invalid_member_value）
+//     - options.grade : 'ippan'  | 'chu'   のみ許容（不正値で invalid_grade_value）
 //   戻り値: {success, error?, duplicateCount?}
 // ============================================================
-function applyMasterMemberEdit(memberId,newName,newYomi,master){
+function applyMasterMemberEdit(memberId,newName,newYomi,master,options){
   if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
   if(typeof memberId!=='string'||!memberId)return {success:false,error:'invalid_id'};
   var target=null;
@@ -787,8 +832,20 @@ function applyMasterMemberEdit(memberId,newName,newYomi,master){
   var yo=normalizeYomi(typeof newYomi==='string'?newYomi:'');
   if(!nm)return {success:false,error:'empty_name'};
 
+  // A-4 §3.3.2: options バリデーション（変更前にチェックして失敗時は target を触らない）
+  var hasMemberOpt=(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'member'));
+  var hasGradeOpt =(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'grade'));
+  if(hasMemberOpt&&options.member!=='member'&&options.member!=='other'){
+    return {success:false,error:'invalid_member_value'};
+  }
+  if(hasGradeOpt&&options.grade!=='ippan'&&options.grade!=='chu'){
+    return {success:false,error:'invalid_grade_value'};
+  }
+
   target.name=nm;
   target.yomi=yo;
+  if(hasMemberOpt)target.member=options.member;
+  if(hasGradeOpt)target.grade=options.grade;
 
   // 同名重複検知（自分以外・deleted 以外、normalize 後一致）
   var dupCount=0;
@@ -911,6 +968,8 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
   if(!tournamentMeta||!tournamentMeta.tournament_id)return master;
   var tid=tournamentMeta.tournament_id;
   var date=isValidYmd(tournamentMeta.tournament_date)?tournamentMeta.tournament_date:todayYmd();
+  // A-4 §3.1.5: tournamentMeta.yomiMap[player.id] = yomi（オプショナル、Should Fix 1: id キー）
+  var yomiMap=(tournamentMeta&&tournamentMeta.yomiMap&&typeof tournamentMeta.yomiMap==='object')?tournamentMeta.yomiMap:null;
 
   var affected={};
   var pendingSkippedNames=[];
@@ -943,6 +1002,11 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
         }else{
           try{
             member=createMemberFromParticipant(p,master,date);
+            // A-4 §3.1.5: 新規 member に yomi を初期反映（_pendingNewYomi 由来）
+            if(yomiMap&&typeof yomiMap[p.id]==='string'){
+              var yNew=normalizeYomi(yomiMap[p.id]);
+              if(yNew)member.yomi=yNew;
+            }
             master.members.push(member);
             attachMemberIdToPlayer(p,member);
           }catch(e){
@@ -969,6 +1033,12 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
       // A-3: 支部員区分・中学生以下区分の前回値を記録（次回サジェスト引き継ぎ用）
       if(p.member==='member'||p.member==='other')member.member=p.member;
       if(p.grade==='ippan'||p.grade==='chu')member.grade=p.grade;
+      // A-4 §3.1.5 + Should Fix 2: 既存 member の yomi は **空のときのみ** yomiMap から補完。
+      //   既存値があれば触らない（誤上書き防止）。
+      if(yomiMap&&typeof yomiMap[p.id]==='string'&&!normalizeYomi(member.yomi||'')){
+        var yFill=normalizeYomi(yomiMap[p.id]);
+        if(yFill)member.yomi=yFill;
+      }
       affected[member.id]=member;
     }
   }
@@ -1029,7 +1099,7 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
   var query=filter||'';
   var row=yomiRow||'all';
-  var qf=(quickFilter===QUICK_FILTER_RECENT_LAST||quickFilter===QUICK_FILTER_WITHIN_3MO||quickFilter===QUICK_FILTER_REGULAR)?quickFilter:null;
+  var qf=(quickFilter===QUICK_FILTER_RECENT_LAST||quickFilter===QUICK_FILTER_WITHIN_3MO||quickFilter===QUICK_FILTER_REGULAR||quickFilter===QUICK_FILTER_NO_YOMI)?quickFilter:null;
   // クイックフィルタを先に適用（最終大会日基準を全 member に対して計算するため、検索・50音タブ前）
   var qfApplied=applyQuickFilter(members,qf,todayYmd());
   var filtered=[];
@@ -1082,7 +1152,8 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   var qfDefs=[
     {key:QUICK_FILTER_RECENT_LAST,label:'前回参加'},
     {key:QUICK_FILTER_WITHIN_3MO,label:'3ヶ月以内'},
-    {key:QUICK_FILTER_REGULAR,label:'常連 (5回以上)'}
+    {key:QUICK_FILTER_REGULAR,label:'常連 (5回以上)'},
+    {key:QUICK_FILTER_NO_YOMI,label:'ふりがな未入力'}
   ];
   for(var qi=0;qi<qfDefs.length;qi++){
     var qd=qfDefs[qi];
@@ -1333,18 +1404,32 @@ function bindPastParticipantsToggle(){
 // ============================================================
 
 function buildMasterTabHtml(master){
-  var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
+  // A-4 §3.4: 削除済み表示モードに応じて行を切り替え
+  var allMembers=(master&&Array.isArray(master.members))?master.members:[];
+  var liveMembers=allMembers.filter(function(m){return !m.deleted;});
+  var members=_masterShowDeleted?allMembers.slice():liveMembers;
   members.sort(function(a,b){
+    // 削除済みは末尾にまとめる
+    if((!!a.deleted)!==(!!b.deleted))return a.deleted?1:-1;
     var la=a.last_attended||'',lb=b.last_attended||'';
     if(la!==lb)return la<lb?1:-1;
     return (a.name||'')<(b.name||'')?-1:1;
   });
   var html='<div class="section"><h2>沼津支部 参加者マスタ</h2>';
-  html+='<div style="margin-bottom:12px;font-size:14px">登録: <strong>'+members.length+'名</strong></div>';
+  // A-4 §3.5.2: 登録数 + ふりがな未入力数のサマリー
+  var noYomiCount=0;
+  for(var ny=0;ny<liveMembers.length;ny++){if(isNoYomiMember(liveMembers[ny]))noYomiCount++;}
+  var summaryHtml='登録: <strong>'+liveMembers.length+'名</strong>';
+  if(liveMembers.length>0){
+    summaryHtml+='<span id="master-no-yomi-summary" style="color:#888;margin-left:8px">（うちふりがな未入力: <strong>'+noYomiCount+'名</strong>）</span>';
+  }
+  html+='<div style="margin-bottom:12px;font-size:14px">'+summaryHtml+'</div>';
   html+='<div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:8px">';
   html+='<button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button>';
   html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
   html+='<button type="button" id="masterImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📂 マスタをインポート</button>';
+  // A-4 §3.4.1: 削除済み表示トグル
+  html+='<button type="button" id="masterShowDeletedBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864" data-on="'+(_masterShowDeleted?'1':'0')+'">'+(_masterShowDeleted?'🗑️ 削除済みを隠す':'🗑️ 削除済みを表示')+'</button>';
   html+='</div>';
   html+='<hr class="separator">';
   html+='<h3>簡易一覧</h3>';
@@ -1352,16 +1437,39 @@ function buildMasterTabHtml(master){
     html+='<div style="color:#888;font-size:13px;padding:8px 0">登録された参加者はいません。</div>';
   }else{
     html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
-    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">ふりがな</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th><th style="padding:6px 8px">操作</th></tr></thead><tbody>';
+    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">ふりがな</th><th style="text-align:left;padding:6px 8px">区分</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th><th style="padding:6px 8px">操作</th></tr></thead><tbody>';
     for(var i=0;i<members.length;i++){
       var m=members[i];
-      html+='<tr><td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.name)+'</td>';
-      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee;color:#666">'+escapeHtml(m.yomi||'')+'</td>';
+      // A-4 §3.2.1: 区分列（2段表示） — 上段:支部員/他、下段:中学のみ表示
+      var memberLabel=(m.member==='other')?'他':'支部員';
+      var gradeLabel=(m.grade==='chu')?'中学':'';
+      var isDel=(m.deleted===true);
+      // A-4 §3.4.2: 削除済み行はグレー背景＋取り消し線
+      var rowStyle=isDel?' style="background:#f5f5f5;color:#888;text-decoration:line-through" class="master-row-deleted"':'';
+      html+='<tr'+rowStyle+'><td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.name)+'</td>';
+      // A-4 §3.5.3: ふりがな未入力なら ⚠️ 未入力 バッジ（薄黄色背景）
+      var yomiCellHtml;
+      if(isNoYomiMember(m)){
+        yomiCellHtml='<span class="master-no-yomi-badge" style="display:inline-block;background:#fff8c4;color:#7a5d00;border:1px solid #f0e082;border-radius:10px;padding:1px 8px;font-size:11px;text-decoration:none">⚠️ 未入力</span>';
+      }else{
+        yomiCellHtml=escapeHtml(m.yomi||'');
+      }
+      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee;color:#666">'+yomiCellHtml+'</td>';
+      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee" class="master-cell-grade">'
+        +'<div>'+escapeHtml(memberLabel)+'</div>'
+        +(gradeLabel?'<div style="color:#666;font-size:12px">'+escapeHtml(gradeLabel)+'</div>':'')
+        +'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.last_attended||'')+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+(m.attendance_count|0)+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap">';
-      html+='<button type="button" class="btn-sm master-edit-btn" data-mid="'+escapeHtml(m.id||'')+'">編集</button> ';
-      html+='<button type="button" class="btn-sm master-delete-btn" data-mid="'+escapeHtml(m.id||'')+'" data-name="'+escapeHtml(m.name||'')+'" style="border-color:#c33;color:#c33">削除</button>';
+      if(isDel){
+        // A-4 §3.2.3 (Nice to Have 3): 削除日時表示 + 復元ボタン
+        if(m.deleted_at)html+='<div style="font-size:11px;color:#888;text-decoration:none;margin-bottom:4px">削除日：'+escapeHtml(m.deleted_at)+'</div>';
+        html+='<button type="button" class="btn-sm master-restore-btn" data-mid="'+escapeHtml(m.id||'')+'" data-name="'+escapeHtml(m.name||'')+'" style="border-color:#1F3864;color:#1F3864;text-decoration:none">復元</button>';
+      }else{
+        html+='<button type="button" class="btn-sm master-edit-btn" data-mid="'+escapeHtml(m.id||'')+'">編集</button> ';
+        html+='<button type="button" class="btn-sm master-delete-btn" data-mid="'+escapeHtml(m.id||'')+'" data-name="'+escapeHtml(m.name||'')+'" style="border-color:#c33;color:#c33">削除</button>';
+      }
       html+='</td></tr>';
     }
     html+='</tbody></table></div>';
@@ -1377,13 +1485,38 @@ function buildMasterTabHtml(master){
 }
 
 function buildMasterEditModalHtml(member){
+  // A-4 §3.3.1: 支部員区分・中学生以下区分 + 履歴情報（読み取り専用）
+  var memberCur=(member&&member.member==='other')?'other':'member';
+  var gradeCur=(member&&member.grade==='chu')?'chu':'ippan';
+  var firstAt=(member&&member.first_attended)?member.first_attended:'未記録';
+  var lastAt=(member&&member.last_attended)?member.last_attended:'未記録';
+  var count=(member&&typeof member.attendance_count==='number')?member.attendance_count:0;
+
   var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto">';
   html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">マスタ編集</h3>';
-  html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-bottom:12px">編集できるのは氏名・ふりがなのみです。参加履歴は変更されません。</p>';
+  html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-bottom:12px">氏名・ふりがな・区分が編集できます。参加履歴は変更されません。</p>';
   html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">氏名</label>';
   html+='<input type="text" id="me-name" value="'+escapeHtml(member.name||'')+'" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
   html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">ふりがな</label>';
-  html+='<input type="text" inputmode="kana" id="me-yomi" value="'+escapeHtml(member.yomi||'')+'" placeholder="やまだたろう" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:8px">';
+  html+='<input type="text" inputmode="kana" id="me-yomi" value="'+escapeHtml(member.yomi||'')+'" placeholder="やまだたろう" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
+
+  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">支部員区分</legend>';
+  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-member" value="member"'+(memberCur==='member'?' checked':'')+' style="margin-right:6px">支部員</label>';
+  html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-member" value="other"'+(memberCur==='other'?' checked':'')+' style="margin-right:6px">他</label>';
+  html+='</fieldset>';
+
+  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">中学生以下</legend>';
+  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-grade" value="ippan"'+(gradeCur==='ippan'?' checked':'')+' style="margin-right:6px">一般</label>';
+  html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-grade" value="chu"'+(gradeCur==='chu'?' checked':'')+' style="margin-right:6px">中学</label>';
+  html+='</fieldset>';
+
+  html+='<div id="me-history" style="margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:12px;color:#444;line-height:1.6">';
+  html+='<div style="font-size:11px;color:#888;margin-bottom:4px">履歴情報（読み取り専用）</div>';
+  html+='<div>初回参加：'+escapeHtml(firstAt)+'</div>';
+  html+='<div>最終参加：'+escapeHtml(lastAt)+'</div>';
+  html+='<div>参加回数：'+(count|0)+'回</div>';
+  html+='</div>';
+
   html+='<div id="me-status" style="font-size:13px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
   html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
   html+='<button type="button" id="me-cancel" class="btn-sm" style="background:#fff">キャンセル</button>';
@@ -1559,13 +1692,25 @@ function bindMasterEditModalEvents(){
       if(statusEl)statusEl.textContent='氏名を入力してください';
       return;
     }
+    // A-4 §3.3.2: ラジオから member/grade を読み取り options で渡す
+    var memberRadios=document.getElementsByName('me-member');
+    var gradeRadios=document.getElementsByName('me-grade');
+    var memberPick=null,gradePick=null;
+    for(var ri=0;ri<memberRadios.length;ri++){if(memberRadios[ri].checked){memberPick=memberRadios[ri].value;break;}}
+    for(var rj=0;rj<gradeRadios.length;rj++){if(gradeRadios[rj].checked){gradePick=gradeRadios[rj].value;break;}}
+    var options={};
+    if(memberPick==='member'||memberPick==='other')options.member=memberPick;
+    if(gradePick==='ippan'||gradePick==='chu')options.grade=gradePick;
+
     var master=loadBranchMaster();
-    var result=applyMasterMemberEdit(memberId,newName,newYomi,master);
+    var result=applyMasterMemberEdit(memberId,newName,newYomi,master,options);
     if(!result.success){
       if(statusEl){
         if(result.error==='empty_name')statusEl.textContent='氏名を入力してください';
         else if(result.error==='not_found')statusEl.textContent='対象の member が見つかりません';
         else if(result.error==='deleted')statusEl.textContent='削除済み member は編集できません';
+        else if(result.error==='invalid_member_value')statusEl.textContent='支部員区分の値が不正です';
+        else if(result.error==='invalid_grade_value')statusEl.textContent='中学生以下区分の値が不正です';
         else statusEl.textContent='保存に失敗しました';
       }
       return;
@@ -1640,6 +1785,39 @@ function bindMasterTabEvents(){
         saveBranchMaster(master);
         if(typeof showMsg==='function')showMsg('「'+memberName+'」を削除しました','ok');
         renderMasterTab();
+      });
+    }
+  }
+  // A-4 §3.4.1: 削除済み表示トグル
+  var toggleBtn=document.getElementById('masterShowDeletedBtn');
+  if(toggleBtn)toggleBtn.addEventListener('click',function(){
+    _masterShowDeleted=!_masterShowDeleted;
+    renderMasterTab();
+  });
+  // A-4 §3.4.3: 復元ボタン
+  var restoreBtns=document.querySelectorAll('.master-restore-btn');
+  if(restoreBtns&&restoreBtns.length){
+    for(var ri=0;ri<restoreBtns.length;ri++){
+      restoreBtns[ri].addEventListener('click',function(){
+        var mid=this.getAttribute('data-mid');
+        var memberName=this.getAttribute('data-name')||'';
+        if(!mid)return;
+        if(!confirm('「'+memberName+'」を復元します。\n通常マスタ一覧・過去参加者・サジェスト候補に再表示されます。\n\n続けますか？'))return;
+        var master=loadBranchMaster();
+        var result=applyMasterMemberRestore(mid,master);
+        if(!result.success){
+          if(typeof showMsg==='function'){
+            if(result.error==='not_found')showMsg('対象の member が見つかりません','err');
+            else if(result.error==='not_deleted')showMsg('削除されていません','warn');
+            else showMsg('復元に失敗しました','err');
+          }
+          return;
+        }
+        saveBranchMaster(master);
+        if(typeof showMsg==='function')showMsg('「'+memberName+'」を復元しました','ok');
+        renderMasterTab();
+        // A-4 §3.4.3: 復元後の再反映 — 過去参加者パネルも更新
+        if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
       });
     }
   }
@@ -1999,6 +2177,16 @@ function updateField(id,cls,field,value){
 // A-3 サジェスト状態（候補タップで保持される選択 member の参照）
 var _suggestState={selectedMemberId:null,selectedNormalizedName:null};
 
+// A-4 §3.1.4 + Should Fix 1: 新規参加者向け yomi の一時保持
+//   キーは player.id（同名衝突回避のため）。saveData 時にマスタへ反映後クリア。
+//   player オブジェクトに yomi を追加しない方針を維持するため、DOM 値をここに退避。
+var _pendingNewYomi={};
+
+// A-4 §3.1.2: 登録画面 ふりがな欄の状態（Stage 2 で IME 自動取得時に使う）
+//   Stage 1 では値の保持のみ。compositionupdate/end は Stage 2 で実装。
+var _yomiAutoBuffer='';
+var _yomiManuallyEdited=false;
+
 function getCurrentlyRegisteredMemberIds(){
   var ids=[];
   if(!state||!state.players)return ids;
@@ -2064,8 +2252,14 @@ function onSuggestTap(member){
   if(!member)return;
   var inpName=document.getElementById('inp-name');
   var inpClass=document.getElementById('inp-class');
+  var inpYomi=document.getElementById('inp-yomi');
   if(inpName)inpName.value=member.name||'';
   if(inpClass&&(member.last_class==='A'||member.last_class==='B'))inpClass.value=member.last_class;
+  // A-4 §3.1.3: サジェスト由来は yomi 欄にもマスタ値を反映。
+  // _yomiManuallyEdited は false のまま（手動編集扱いにしない）。
+  if(inpYomi)inpYomi.value=member.yomi||'';
+  _yomiManuallyEdited=false;
+  _yomiAutoBuffer='';
   _suggestState.selectedMemberId=member.id;
   _suggestState.selectedNormalizedName=normalizePersonName(member.name||'');
   closeSuggestList();
@@ -2097,11 +2291,15 @@ function updateSuggestList(){
 function addPlayer(){
   // iPhone Safari: ペースト後のボタン無反応回避（A-2.6 ガイドライン）
   var inpName=document.getElementById('inp-name');
+  var inpYomi=document.getElementById('inp-yomi');
   if(inpName)inpName.blur();
+  if(inpYomi)inpYomi.blur();
   closeSuggestList();
 
   var name=inpName.value.trim();
   var cls=document.getElementById('inp-class').value;
+  // A-4 §3.1.4: ふりがな欄の値は DOM のみで保持。player.yomi には保存しない。
+  var yomiRaw=inpYomi?inpYomi.value:'';
   if(!name){showMsg('名前を入力してください','err');return;}
   var all=state.players.A.concat(state.players.B);
   for(var i=0;i<all.length;i++){if(all[i].name===name){showMsg('同じ名前の参加者がいます','err');return;}}
@@ -2110,6 +2308,7 @@ function addPlayer(){
   var memberValue='member';
   var gradeValue='ippan';
   var memberIdValue=null;
+  var suggestSelected=null;
   if(_suggestState.selectedMemberId){
     var curNorm=normalizePersonName(name);
     if(curNorm===_suggestState.selectedNormalizedName){
@@ -2134,6 +2333,7 @@ function addPlayer(){
         memberIdValue=sel.id;
         if(sel.member==='other')memberValue='other';
         if(sel.grade==='chu')gradeValue='chu';
+        suggestSelected=sel;
       }
     }
   }
@@ -2142,9 +2342,36 @@ function addPlayer(){
   var newPlayer={id:id,name:name,cls:cls,member:memberValue,grade:gradeValue};
   if(memberIdValue)newPlayer.member_id=memberIdValue;
   state.players[cls].push(newPlayer);
+
+  // A-4 §3.1.4 + Should Fix 2: yomi のマスタ反映条件
+  //   サジェスト由来：既存マスタ yomi が **空** の場合のみ補完（誤上書き防止）。
+  //   新規参加者：_pendingNewYomi[player.id] に退避し、saveData 時に updateBranchMasterFromTournament 経由で反映。
+  var yomiForMaster=normalizeYomi(yomiRaw||'');
+  if(suggestSelected){
+    if(yomiForMaster && !normalizeYomi(suggestSelected.yomi||'')){
+      try{
+        var masterToSave=loadBranchMaster();
+        if(masterToSave&&Array.isArray(masterToSave.members)){
+          for(var mj=0;mj<masterToSave.members.length;mj++){
+            if(masterToSave.members[mj].id===suggestSelected.id){
+              masterToSave.members[mj].yomi=yomiForMaster;
+              saveBranchMaster(masterToSave);
+              break;
+            }
+          }
+        }
+      }catch(e){}
+    }
+  }else if(yomiForMaster){
+    _pendingNewYomi[id]=yomiForMaster;
+  }
+
   inpName.value='';
+  if(inpYomi)inpYomi.value='';
   _suggestState.selectedMemberId=null;
   _suggestState.selectedNormalizedName=null;
+  _yomiManuallyEdited=false;
+  _yomiAutoBuffer='';
   inpName.focus();
   showMsg(name+'（'+cls+'クラス）を登録しました','ok');
   renderRegList();save();
@@ -2177,6 +2404,8 @@ function removePlayer(id,cls){
   if(!confirm(msg))return;
   var arr=state.players[cls];
   state.players[cls]=arr.filter(function(p){return p.id!==id;});
+  // A-4 §3.1.4: 当該 player の _pendingNewYomi も破棄
+  if(_pendingNewYomi&&Object.prototype.hasOwnProperty.call(_pendingNewYomi,id))delete _pendingNewYomi[id];
   renderRegList();save();
 }
 
@@ -2888,8 +3117,11 @@ function syncBranchMasterOnSave(){
     var date=getTournamentDateFromReport(state.report);
     // 仕様書 v5 §3.3 / Codex MF #1: 大会日を ensureTournamentId に明示的に渡す
     ensureTournamentId(state,master,date);
-    updateBranchMasterFromTournament(state,master,{tournament_id:state.tournament_id,tournament_date:date});
+    // A-4 §3.1.5: 登録画面ふりがな欄から退避した値（_pendingNewYomi）をマスタへ反映
+    updateBranchMasterFromTournament(state,master,{tournament_id:state.tournament_id,tournament_date:date,yomiMap:_pendingNewYomi});
     saveBranchMaster(master);
+    // 反映済みのため一時マップをクリア
+    _pendingNewYomi={};
     save();
   }catch(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタ同期に失敗（既存大会運営は継続）',e);
@@ -3218,7 +3450,7 @@ function downloadReport(){
 
 function resetAll(){
   if(!confirm('現在の大会データをリセットします（支部マスタは保持されます）'))return;
-  state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}};
+  state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}};_pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
   try{
     // 仕様書 3.4.1 / §3.1.5: shogi_branch_master は絶対に消さない
     localStorage.removeItem(STORAGE_KEY);
@@ -3242,6 +3474,8 @@ function resetAll(){
   var repSei=document.getElementById('rep-sei');if(repSei)repSei.value='';
   var repFuku=document.getElementById('rep-fuku');if(repFuku)repFuku.value='';
   var repNote=document.getElementById('rep-note');if(repNote)repNote.value='';
+  var inpYomiR=document.getElementById('inp-yomi');if(inpYomiR)inpYomiR.value='';
+  var inpNameR=document.getElementById('inp-name');if(inpNameR)inpNameR.value='';
   showTab('reg');
   showMsg('リセットしました','ok');
 }
@@ -3269,13 +3503,53 @@ function bindRegistrationEvents(){
   // 参加者名入力欄: IME対応 + Enterで追加
   var inpName=document.getElementById('inp-name');
   var composing=false;
-  inpName.addEventListener('compositionstart',function(){composing=true;});
-  inpName.addEventListener('compositionend',function(){composing=false;updateSuggestList();});
+  inpName.addEventListener('compositionstart',function(){
+    composing=true;
+    // A-4 §3.1.2: IME 開始時に自動取得バッファをリセット
+    _yomiAutoBuffer='';
+  });
+  inpName.addEventListener('compositionupdate',function(e){
+    // A-4 §3.1.2: ひらがな（U+3040-U+309F）のみで構成されていればバッファ更新。
+    // 漢字変換中の data はスキップ（最後のひらがな状態が確定時の追記値となる）。
+    var data=(e&&typeof e.data==='string')?e.data:'';
+    if(/^[぀-ゟ]*$/.test(data))_yomiAutoBuffer=data;
+  });
+  inpName.addEventListener('compositionend',function(){
+    composing=false;
+    // A-4 §3.1.2: 手動編集されていない場合のみ、バッファを yomi 欄末尾に追記。
+    // サジェスト由来の値も上書きせず追記するのが原則だが、サジェスト選択直後は
+    // _yomiAutoBuffer は空（onSuggestTap で reset 済み）なので追記は発生しない。
+    if(!_yomiManuallyEdited && _yomiAutoBuffer){
+      var inpYomi=document.getElementById('inp-yomi');
+      if(inpYomi){
+        inpYomi.value=(inpYomi.value||'')+_yomiAutoBuffer;
+      }
+    }
+    _yomiAutoBuffer='';
+    updateSuggestList();
+  });
   inpName.addEventListener('keypress',function(e){if(e.key==='Enter'&&!composing)addPlayer();});
   // A-3 サジェスト: 入力中・focus 時に候補更新、blur で閉じる（mousedown より遅延）
-  inpName.addEventListener('input',function(){if(!composing)updateSuggestList();});
+  inpName.addEventListener('input',function(){
+    if(!composing)updateSuggestList();
+    // A-4 §3.1.2: 氏名欄を空にしたら手動編集フラグもリセット
+    if(!inpName.value)_yomiManuallyEdited=false;
+  });
   inpName.addEventListener('focus',function(){if(!composing)updateSuggestList();});
   inpName.addEventListener('blur',function(){setTimeout(closeSuggestList,150);});
+
+  // A-4 §3.1.2: ふりがな欄の手動編集を追跡。Stage 1 では追跡のみ。
+  var inpYomi=document.getElementById('inp-yomi');
+  if(inpYomi){
+    var yomiComposing=false;
+    inpYomi.addEventListener('compositionstart',function(){yomiComposing=true;});
+    inpYomi.addEventListener('compositionend',function(){yomiComposing=false;});
+    inpYomi.addEventListener('input',function(){
+      // ユーザーが yomi 欄を直接編集 → 手動編集フラグ ON
+      _yomiManuallyEdited=true;
+    });
+    inpYomi.addEventListener('keypress',function(e){if(e.key==='Enter'&&!yomiComposing)addPlayer();});
+  }
 }
 
 function bindTabEvents(){
