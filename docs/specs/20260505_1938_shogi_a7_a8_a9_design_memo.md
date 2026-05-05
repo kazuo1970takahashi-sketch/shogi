@@ -81,7 +81,7 @@ shogi_branch_master:
       kanji_1: { member_id, name },      // 担当幹事1（マスタリンク or 自由入力）
       kanji_2: { member_id, name },      // 担当幹事2
       place, start_time, end_time, note,
-      
+
       participants: [
         {
           member_id, name, city, cls,
@@ -90,7 +90,7 @@ shogi_branch_master:
           exclude_from_ranking          // ※参考者なら true
         }
       ],
-      
+
       rankings: {
         A: [
           { rank: 1, member_id, name, city, wins, losses },
@@ -99,14 +99,14 @@ shogi_branch_master:
         ],
         B: [ … ]
       },
-      
+
       // 内訳サマリ（participants から自動計算）
       breakdown: {
         A: { total: 18, member: 12, other: 6, ippan: 17, chu: 1 },
         B: { total: 4, member: 2, other: 2, ippan: 3, chu: 1 },
         overall: { total: 22, member: 14, other: 8, ippan: 20, chu: 2 }
       },
-      
+
       // 集金・収支（手入力）
       finance: {
         income: {
@@ -286,10 +286,10 @@ A-7 着手時点で以下が既存実装されているはず：
 function migrateBranchMasterV1ToV2(masterV1) {
   // 1. バックアップ退避
   localStorage.setItem('shogi_branch_master_v1_backup', JSON.stringify(masterV1));
-  
+
   // 2. members に city='' を一括付与
   const members = masterV1.members.map(m => ({ ...m, city: m.city || '' }));
-  
+
   // 3. tournament_archive を空配列で初期化
   return {
     schema_version: 2,
