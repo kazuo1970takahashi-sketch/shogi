@@ -1157,25 +1157,6 @@ function parseTournamentTextInput(text){
   return {tournaments:tournaments,errors:errors};
 }
 
-function parseTournamentJsonFiles(files){
-  var arr=Array.prototype.slice.call(files);
-  return Promise.all(arr.map(function(file){
-    return new Promise(function(resolve,reject){
-      var reader=new FileReader();
-      reader.onload=function(ev){
-        try{
-          var raw=JSON.parse(ev.target.result);
-          resolve({raw:raw,filename:file.name||''});
-        }catch(e){
-          reject(new Error((file.name||'JSONファイル')+' のパースに失敗：'+e.message));
-        }
-      };
-      reader.onerror=function(){reject(new Error((file.name||'JSONファイル')+' の読込に失敗'));};
-      reader.readAsText(file);
-    });
-  }));
-}
-
 function deriveTournamentMetaForMigration(raw,filename,master){
   if(raw&&typeof raw.tournament_id==='string'&&raw.tournament_id){
     var tdate=isValidYmd(raw.tournament_date)?raw.tournament_date:null;
