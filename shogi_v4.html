@@ -1055,7 +1055,7 @@ function buildMigrationModalHtml(opts){
   // M5: 「読み込み」との違いを明記
   html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">過去大会の参加者を支部マスタに取り込みます。<strong>大会そのものを復元する機能ではありません。</strong></p>';
   html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">「大会データをコピー」したテキストを貼り付けてください：</p>';
-  html+='<textarea id="mig-paste-area" rows="8" style="width:100%;font-size:12px;font-family:monospace;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box" placeholder="ここに大会データを貼り付けてください"></textarea>';
+  html+='<textarea id="mig-paste-area" rows="8" style="width:100%;font-size:16px;font-family:monospace;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box" placeholder="ここに大会データを貼り付けてください"></textarea>';
   html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-top:8px;margin-bottom:0">複数大会をまとめて取り込む場合は、1大会分を貼り付けたあとに空行を1行入れて、次の大会データを貼り付けてください。</p>';
   // M3: 既存ファイル保有者向けの代替案内
   html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-top:4px;margin-bottom:12px">ファイルとして保存してある場合は、ファイルを開いて中身をコピーし、ここに貼り付けてください。</p>';
@@ -1075,6 +1075,7 @@ function bindMigrationModalEvents(){
   var runBtn=document.getElementById('mig-run');
   if(runBtn)runBtn.addEventListener('click',function(){
     var textarea=document.getElementById('mig-paste-area');
+    if(textarea)textarea.blur();
     var text=textarea?textarea.value:'';
     if(!text||!text.trim()){alert('大会データを貼り付けてください');return;}
     var statusEl=document.getElementById('mig-status');
@@ -2244,7 +2245,7 @@ function openLoadModal(){
     +'<button id="load-pick-file" class="btn-primary" style="width:100%;padding:12px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-size:14px;cursor:pointer">ファイルから読み込み</button>'
     +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:12px">─ または ─</div>'
     +'<label style="font-size:12px;color:#666;display:block;margin-bottom:4px">大会データを貼り付け</label>'
-    +'<textarea id="load-paste-area" placeholder="ここに大会データを貼り付けてください" style="width:100%;height:120px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:monospace;resize:vertical"></textarea>'
+    +'<textarea id="load-paste-area" placeholder="ここに大会データを貼り付けてください" style="width:100%;height:120px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:16px;font-family:monospace;resize:vertical"></textarea>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
     +'<button id="load-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
     +'<button id="load-from-paste" disabled style="padding:8px 16px;border-radius:8px;border:none;background:#ccc;color:#fff;font-size:14px;cursor:not-allowed">貼り付けから読み込む</button>'
