@@ -96,6 +96,8 @@ function loadEnv(path, opts) {
        findMasterSuggestions:findMasterSuggestions,
        applyMasterMemberEdit:applyMasterMemberEdit,
        applyMasterMemberDelete:applyMasterMemberDelete,
+       serializeBranchMasterForExport:serializeBranchMasterForExport,
+       buildMasterExportFilename:buildMasterExportFilename,
        ensureTournamentId:ensureTournamentId,
        attachMemberIdToPlayer:attachMemberIdToPlayer,
        addTournamentIdOnce:addTournamentIdOnce,
@@ -1471,6 +1473,125 @@ const env = loadEnv(targetPath);
     assertEq(master.members[0].deleted,false,'A3-S3-del-24: 他 member は影響なし(A)');
     assertEq(master.members[1].deleted,true,'A3-S3-del-25: 対象 member のみ削除(B)');
     assertEq(master.members[2].deleted,false,'A3-S3-del-26: 他 member は影響なし(C)');
+  }
+}
+
+// ============================================================
+// A-3 Stage 4: F8-a エクスポート
+// ============================================================
+{
+  // 通常エクスポート: schema_version / updated_at / members を含む JSON 文字列
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      updated_at:'2026-05-05T12:00:00.000Z',
+      members:[{id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1']}]
+    });
+    const json = env.serializeBranchMasterForExport(master);
+    assert(typeof json==='string','A3-S4-exp-01: 文字列を返す');
+    const parsed = JSON.parse(json);
+    assertEq(parsed.schema_version,1,'A3-S4-exp-02: schema_version 含む');
+    assertEq(parsed.updated_at,'2026-05-05T12:00:00.000Z','A3-S4-exp-03: updated_at 含む');
+    assert(Array.isArray(parsed.members),'A3-S4-exp-04: members は配列');
+    assertEq(parsed.members.length,1,'A3-S4-exp-05: members 件数');
+    assertEq(parsed.members[0].id,'m_111111111111','A3-S4-exp-06: member id 保持');
+    assertEq(parsed.members[0].name,'山田太郎','A3-S4-exp-07: name 保持');
+    assertEq(parsed.members[0].yomi,'やまだたろう','A3-S4-exp-08: yomi 保持');
+  }
+
+  // tombstone を含めて書き出す
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      updated_at:'2026-05-05T12:00:00.000Z',
+      members:[
+        {id:'m_111111111111',name:'A',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]},
+        {id:'m_222222222222',name:'B',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'}
+      ]
+    });
+    const parsed = JSON.parse(env.serializeBranchMasterForExport(master));
+    assertEq(parsed.members.length,2,'A3-S4-exp-09: tombstone も含めて2件');
+    assertEq(parsed.members[1].deleted,true,'A3-S4-exp-10: tombstone deleted=true 出力');
+    assertEq(parsed.members[1].deleted_at,'2026-04-10','A3-S4-exp-11: tombstone deleted_at 出力');
+  }
+
+  // member / grade / last_class / note などすべて保持
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      updated_at:'2026-05-05T12:00:00.000Z',
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1','t2'],attendance_count:2,member:'other',grade:'chu',last_class:'B',note:'memo'}]
+    });
+    const parsed = JSON.parse(env.serializeBranchMasterForExport(master));
+    const m = parsed.members[0];
+    assertEq(m.member,'other','A3-S4-exp-12: member 保持');
+    assertEq(m.grade,'chu','A3-S4-exp-13: grade 保持');
+    assertEq(m.last_class,'B','A3-S4-exp-14: last_class 保持');
+    assertEq(m.note,'memo','A3-S4-exp-15: note 保持');
+    assertEq(m.attendance_count,2,'A3-S4-exp-16: attendance_count 保持');
+    assert(Array.isArray(m.tournament_ids)&&m.tournament_ids.length===2,'A3-S4-exp-17: tournament_ids 保持');
+    assertEq(m.first_attended,'2026-01-01','A3-S4-exp-18: first_attended 保持');
+    assertEq(m.last_attended,'2026-04-01','A3-S4-exp-19: last_attended 保持');
+  }
+
+  // 空マスタもエクスポート可能
+  {
+    const master = env.createEmptyBranchMaster();
+    const json = env.serializeBranchMasterForExport(master);
+    const parsed = JSON.parse(json);
+    assertEq(parsed.members.length,0,'A3-S4-exp-20: 空マスタは members:[]');
+    assertEq(parsed.schema_version,1,'A3-S4-exp-21: 空でも schema_version 出力');
+  }
+
+  // null / undefined / 不正な master は null を返す（呼び出し側でエラー処理）
+  {
+    assertEq(env.serializeBranchMasterForExport(null),null,'A3-S4-exp-22: null → null');
+    assertEq(env.serializeBranchMasterForExport(undefined),null,'A3-S4-exp-23: undefined → null');
+    assertEq(env.serializeBranchMasterForExport('foo'),null,'A3-S4-exp-24: 文字列 → null');
+  }
+
+  // _loaded_with_corruption は出力に含まれない（内部フラグ）
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      updated_at:'2026-05-05T12:00:00.000Z',
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[]}]
+    });
+    master._loaded_with_corruption = true;
+    const parsed = JSON.parse(env.serializeBranchMasterForExport(master));
+    assertEq(parsed._loaded_with_corruption,undefined,'A3-S4-exp-25: 内部フラグは出力しない');
+  }
+
+  // ロードトリップ: export → JSON.parse → normalizeBranchMaster で完全復元
+  {
+    const orig = env.normalizeBranchMaster({
+      schema_version:1,
+      updated_at:'2026-05-05T12:00:00.000Z',
+      members:[
+        {id:'m_111111111111',name:'山田太郎',yomi:'やまだたろう',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1','t2'],attendance_count:2,member:'other',grade:'chu',last_class:'B',note:'memo'},
+        {id:'m_222222222222',name:'B',yomi:'',first_attended:'2026-01-01',last_attended:'2026-01-01',tournament_ids:[],deleted:true,deleted_at:'2026-04-10'}
+      ]
+    });
+    const json = env.serializeBranchMasterForExport(orig);
+    const restored = env.normalizeBranchMaster(JSON.parse(json));
+    assertEq(restored.members.length,orig.members.length,'A3-S4-exp-26: roundtrip members 件数');
+    assertEq(restored.members[0].name,orig.members[0].name,'A3-S4-exp-27: roundtrip name');
+    assertEq(restored.members[0].member,orig.members[0].member,'A3-S4-exp-28: roundtrip member');
+    assertEq(restored.members[0].grade,orig.members[0].grade,'A3-S4-exp-29: roundtrip grade');
+    assertEq(restored.members[1].deleted,true,'A3-S4-exp-30: roundtrip tombstone');
+    assertEq(restored.members[1].deleted_at,'2026-04-10','A3-S4-exp-31: roundtrip deleted_at');
+  }
+
+  // ファイル名フォーマット: shogi_branch_master_YYYY-MM-DD.json
+  {
+    assertEq(env.buildMasterExportFilename('2026-05-05'),'shogi_branch_master_2026-05-05.json','A3-S4-exp-32: ファイル名フォーマット');
+  }
+
+  // 不正日付は today にフォールバック
+  {
+    const today = env.todayYmd();
+    assertEq(env.buildMasterExportFilename('invalid-date'),'shogi_branch_master_'+today+'.json','A3-S4-exp-33: 不正日付は today');
+    assertEq(env.buildMasterExportFilename(undefined),'shogi_branch_master_'+today+'.json','A3-S4-exp-34: undefined は today');
   }
 }
 

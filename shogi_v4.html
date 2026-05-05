@@ -550,6 +550,27 @@ function findMemberCandidates(participant,master){
 }
 
 // ============================================================
+// MASTER EXPORT (A-3 §1-3 / F8-a): branch master 全体を JSON 文字列に
+//   schema_version / updated_at / members（tombstone 含む）を保持。
+//   _loaded_with_corruption 等の内部フラグは出力しない。
+//   純粋関数（mutate しない）。
+// ============================================================
+function serializeBranchMasterForExport(master){
+  if(!master||typeof master!=='object')return null;
+  var clone={
+    schema_version:typeof master.schema_version==='number'?master.schema_version:BRANCH_MASTER_SCHEMA_VERSION,
+    updated_at:typeof master.updated_at==='string'?master.updated_at:new Date().toISOString(),
+    members:Array.isArray(master.members)?master.members:[]
+  };
+  return JSON.stringify(clone,null,2);
+}
+
+function buildMasterExportFilename(dateYmd){
+  var ymd=isValidYmd(dateYmd)?dateYmd:todayYmd();
+  return 'shogi_branch_master_'+ymd+'.json';
+}
+
+// ============================================================
 // MASTER DELETE (A-3 §1-2 / F7-b): tombstone（deleted:true + deleted_at）
 //   物理削除はしない。復元 UI は A-4 以降。
 //   戻り値: {success, error?}
@@ -1113,7 +1134,10 @@ function buildMasterTabHtml(master){
   });
   var html='<div class="section"><h2>沼津支部 参加者マスタ</h2>';
   html+='<div style="margin-bottom:12px;font-size:14px">登録: <strong>'+members.length+'名</strong></div>';
-  html+='<div style="margin-bottom:16px"><button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button></div>';
+  html+='<div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:8px">';
+  html+='<button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button>';
+  html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
+  html+='</div>';
   html+='<hr class="separator">';
   html+='<h3>簡易一覧</h3>';
   if(members.length===0){
@@ -1227,6 +1251,30 @@ function bindMasterEditModalEvents(){
 function bindMasterTabEvents(){
   var btn=document.getElementById('masterMigrateBtn');
   if(btn)btn.addEventListener('click',openMigrationWizard);
+  var exportBtn=document.getElementById('masterExportBtn');
+  if(exportBtn)exportBtn.addEventListener('click',function(){
+    var master=loadBranchMaster();
+    var json=serializeBranchMasterForExport(master);
+    if(!json){
+      if(typeof showMsg==='function')showMsg('マスタの書き出しに失敗しました','err');
+      return;
+    }
+    var filename=buildMasterExportFilename(todayYmd());
+    try{
+      var blob=new Blob([json],{type:'application/json'});
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');
+      a.href=url;
+      a.download=filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      alert(filename+' に保存しました（端末のダウンロードフォルダ）。\n\n端末移行や誤削除に備えて、安全な場所に保管してください。');
+    }catch(e){
+      if(typeof showMsg==='function')showMsg('マスタの書き出しに失敗しました','err');
+    }
+  });
   var editBtns=document.querySelectorAll('.master-edit-btn');
   if(editBtns&&editBtns.length){
     for(var i=0;i<editBtns.length;i++){
