@@ -773,11 +773,16 @@ function applyMasterMemberDelete(memberId,master,dateYmd){
 }
 
 // ============================================================
-// MASTER EDIT (A-3 §1-2 / F7-a): name + yomi のみ編集
-//   参加履歴・支部員区分・削除フラグ等は触らない。
+// MASTER EDIT (A-3 §1-2 / F7-a): name + yomi (+ A-4 options) を編集
+//   参加履歴・削除フラグは触らない。
+//   A-4 §3.3.2 (Must Fix 2): シグネチャ一本化
+//     applyMasterMemberEdit(memberId, newName, newYomi, master, options)
+//     - options 省略時: member/grade は変更しない（既存挙動維持・A3-S2-edit-01〜29 互換）
+//     - options.member: 'member' | 'other' のみ許容（不正値で invalid_member_value）
+//     - options.grade : 'ippan'  | 'chu'   のみ許容（不正値で invalid_grade_value）
 //   戻り値: {success, error?, duplicateCount?}
 // ============================================================
-function applyMasterMemberEdit(memberId,newName,newYomi,master){
+function applyMasterMemberEdit(memberId,newName,newYomi,master,options){
   if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
   if(typeof memberId!=='string'||!memberId)return {success:false,error:'invalid_id'};
   var target=null;
@@ -791,8 +796,20 @@ function applyMasterMemberEdit(memberId,newName,newYomi,master){
   var yo=normalizeYomi(typeof newYomi==='string'?newYomi:'');
   if(!nm)return {success:false,error:'empty_name'};
 
+  // A-4 §3.3.2: options バリデーション（変更前にチェックして失敗時は target を触らない）
+  var hasMemberOpt=(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'member'));
+  var hasGradeOpt =(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'grade'));
+  if(hasMemberOpt&&options.member!=='member'&&options.member!=='other'){
+    return {success:false,error:'invalid_member_value'};
+  }
+  if(hasGradeOpt&&options.grade!=='ippan'&&options.grade!=='chu'){
+    return {success:false,error:'invalid_grade_value'};
+  }
+
   target.name=nm;
   target.yomi=yo;
+  if(hasMemberOpt)target.member=options.member;
+  if(hasGradeOpt)target.grade=options.grade;
 
   // 同名重複検知（自分以外・deleted 以外、normalize 後一致）
   var dupCount=0;
@@ -1369,11 +1386,18 @@ function buildMasterTabHtml(master){
     html+='<div style="color:#888;font-size:13px;padding:8px 0">登録された参加者はいません。</div>';
   }else{
     html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
-    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">ふりがな</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th><th style="padding:6px 8px">操作</th></tr></thead><tbody>';
+    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">ふりがな</th><th style="text-align:left;padding:6px 8px">区分</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th><th style="padding:6px 8px">操作</th></tr></thead><tbody>';
     for(var i=0;i<members.length;i++){
       var m=members[i];
+      // A-4 §3.2.1: 区分列（2段表示） — 上段:支部員/他、下段:中学のみ表示
+      var memberLabel=(m.member==='other')?'他':'支部員';
+      var gradeLabel=(m.grade==='chu')?'中学':'';
       html+='<tr><td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.name)+'</td>';
       html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee;color:#666">'+escapeHtml(m.yomi||'')+'</td>';
+      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee" class="master-cell-grade">'
+        +'<div>'+escapeHtml(memberLabel)+'</div>'
+        +(gradeLabel?'<div style="color:#666;font-size:12px">'+escapeHtml(gradeLabel)+'</div>':'')
+        +'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.last_attended||'')+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+(m.attendance_count|0)+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap">';
@@ -1394,13 +1418,38 @@ function buildMasterTabHtml(master){
 }
 
 function buildMasterEditModalHtml(member){
+  // A-4 §3.3.1: 支部員区分・中学生以下区分 + 履歴情報（読み取り専用）
+  var memberCur=(member&&member.member==='other')?'other':'member';
+  var gradeCur=(member&&member.grade==='chu')?'chu':'ippan';
+  var firstAt=(member&&member.first_attended)?member.first_attended:'未記録';
+  var lastAt=(member&&member.last_attended)?member.last_attended:'未記録';
+  var count=(member&&typeof member.attendance_count==='number')?member.attendance_count:0;
+
   var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto">';
   html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">マスタ編集</h3>';
-  html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-bottom:12px">編集できるのは氏名・ふりがなのみです。参加履歴は変更されません。</p>';
+  html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-bottom:12px">氏名・ふりがな・区分が編集できます。参加履歴は変更されません。</p>';
   html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">氏名</label>';
   html+='<input type="text" id="me-name" value="'+escapeHtml(member.name||'')+'" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
   html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">ふりがな</label>';
-  html+='<input type="text" inputmode="kana" id="me-yomi" value="'+escapeHtml(member.yomi||'')+'" placeholder="やまだたろう" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:8px">';
+  html+='<input type="text" inputmode="kana" id="me-yomi" value="'+escapeHtml(member.yomi||'')+'" placeholder="やまだたろう" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
+
+  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">支部員区分</legend>';
+  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-member" value="member"'+(memberCur==='member'?' checked':'')+' style="margin-right:6px">支部員</label>';
+  html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-member" value="other"'+(memberCur==='other'?' checked':'')+' style="margin-right:6px">他</label>';
+  html+='</fieldset>';
+
+  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">中学生以下</legend>';
+  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-grade" value="ippan"'+(gradeCur==='ippan'?' checked':'')+' style="margin-right:6px">一般</label>';
+  html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-grade" value="chu"'+(gradeCur==='chu'?' checked':'')+' style="margin-right:6px">中学</label>';
+  html+='</fieldset>';
+
+  html+='<div id="me-history" style="margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:12px;color:#444;line-height:1.6">';
+  html+='<div style="font-size:11px;color:#888;margin-bottom:4px">履歴情報（読み取り専用）</div>';
+  html+='<div>初回参加：'+escapeHtml(firstAt)+'</div>';
+  html+='<div>最終参加：'+escapeHtml(lastAt)+'</div>';
+  html+='<div>参加回数：'+(count|0)+'回</div>';
+  html+='</div>';
+
   html+='<div id="me-status" style="font-size:13px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
   html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
   html+='<button type="button" id="me-cancel" class="btn-sm" style="background:#fff">キャンセル</button>';
@@ -1576,13 +1625,25 @@ function bindMasterEditModalEvents(){
       if(statusEl)statusEl.textContent='氏名を入力してください';
       return;
     }
+    // A-4 §3.3.2: ラジオから member/grade を読み取り options で渡す
+    var memberRadios=document.getElementsByName('me-member');
+    var gradeRadios=document.getElementsByName('me-grade');
+    var memberPick=null,gradePick=null;
+    for(var ri=0;ri<memberRadios.length;ri++){if(memberRadios[ri].checked){memberPick=memberRadios[ri].value;break;}}
+    for(var rj=0;rj<gradeRadios.length;rj++){if(gradeRadios[rj].checked){gradePick=gradeRadios[rj].value;break;}}
+    var options={};
+    if(memberPick==='member'||memberPick==='other')options.member=memberPick;
+    if(gradePick==='ippan'||gradePick==='chu')options.grade=gradePick;
+
     var master=loadBranchMaster();
-    var result=applyMasterMemberEdit(memberId,newName,newYomi,master);
+    var result=applyMasterMemberEdit(memberId,newName,newYomi,master,options);
     if(!result.success){
       if(statusEl){
         if(result.error==='empty_name')statusEl.textContent='氏名を入力してください';
         else if(result.error==='not_found')statusEl.textContent='対象の member が見つかりません';
         else if(result.error==='deleted')statusEl.textContent='削除済み member は編集できません';
+        else if(result.error==='invalid_member_value')statusEl.textContent='支部員区分の値が不正です';
+        else if(result.error==='invalid_grade_value')statusEl.textContent='中学生以下区分の値が不正です';
         else statusEl.textContent='保存に失敗しました';
       }
       return;

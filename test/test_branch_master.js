@@ -1372,6 +1372,99 @@ const env = loadEnv(targetPath);
 }
 
 // ============================================================
+// A-4 Stage 3: applyMasterMemberEdit options 拡張（Must Fix 2 シグネチャ厳守）
+//   採用シグネチャ: applyMasterMemberEdit(memberId, newName, newYomi, master, options)
+//   options 省略時は member/grade を変更しない（A3-S2-edit-25/26 で既に検証済み）
+// ============================================================
+{
+  // options.member 単独更新
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1'],attendance_count:1,member:'member',grade:'ippan'}]
+    });
+    const r = env.applyMasterMemberEdit('m_111111111111','X','',master,{member:'other'});
+    assert(r.success===true,'A4-S3-edit-01: options.member 単独で成功');
+    assertEq(master.members[0].member,'other','A4-S3-edit-02: member が other に更新');
+    assertEq(master.members[0].grade,'ippan','A4-S3-edit-03: grade は不変');
+  }
+
+  // options.grade 単独更新
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1'],attendance_count:1,member:'member',grade:'ippan'}]
+    });
+    const r = env.applyMasterMemberEdit('m_111111111111','X','',master,{grade:'chu'});
+    assert(r.success===true,'A4-S3-edit-04: options.grade 単独で成功');
+    assertEq(master.members[0].grade,'chu','A4-S3-edit-05: grade が chu に更新');
+    assertEq(master.members[0].member,'member','A4-S3-edit-06: member は不変');
+  }
+
+  // options.member と options.grade の両方を同時更新
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:['t1'],attendance_count:1,member:'member',grade:'ippan'}]
+    });
+    const r = env.applyMasterMemberEdit('m_111111111111','Y','よみ',master,{member:'other',grade:'chu'});
+    assert(r.success===true,'A4-S3-edit-07: 両方更新で成功');
+    assertEq(master.members[0].name,'Y','A4-S3-edit-08: name 更新');
+    assertEq(master.members[0].yomi,'よみ','A4-S3-edit-09: yomi 更新');
+    assertEq(master.members[0].member,'other','A4-S3-edit-10: member 更新');
+    assertEq(master.members[0].grade,'chu','A4-S3-edit-11: grade 更新');
+  }
+
+  // 不正 member 値 → invalid_member_value（マスタは触らない）
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:[],attendance_count:0,member:'member',grade:'ippan'}]
+    });
+    const r = env.applyMasterMemberEdit('m_111111111111','Y','',master,{member:'foo'});
+    assert(r.success===false,'A4-S3-edit-12: 不正 member 値で失敗');
+    assertEq(r.error,'invalid_member_value','A4-S3-edit-13: error=invalid_member_value');
+    assertEq(master.members[0].name,'X','A4-S3-edit-14: 失敗時はマスタ不変（name）');
+    assertEq(master.members[0].member,'member','A4-S3-edit-15: 失敗時はマスタ不変（member）');
+  }
+
+  // 不正 grade 値 → invalid_grade_value
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:[],attendance_count:0,member:'member',grade:'ippan'}]
+    });
+    const r = env.applyMasterMemberEdit('m_111111111111','Y','',master,{grade:'kou'});
+    assert(r.success===false,'A4-S3-edit-16: 不正 grade 値で失敗');
+    assertEq(r.error,'invalid_grade_value','A4-S3-edit-17: error=invalid_grade_value');
+    assertEq(master.members[0].grade,'ippan','A4-S3-edit-18: 失敗時はマスタ不変（grade）');
+  }
+
+  // options 空オブジェクト = options 省略と同じ（既存挙動維持）
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:[],attendance_count:0,member:'other',grade:'chu'}]
+    });
+    const r = env.applyMasterMemberEdit('m_111111111111','Y','',master,{});
+    assert(r.success===true,'A4-S3-edit-19: options 空オブジェクトで成功');
+    assertEq(master.members[0].member,'other','A4-S3-edit-20: 空 options では member 不変');
+    assertEq(master.members[0].grade,'chu','A4-S3-edit-21: 空 options では grade 不変');
+  }
+
+  // options.member='member' でも値は同じ → 動作するが内容変化なし
+  {
+    const master = env.normalizeBranchMaster({
+      schema_version:1,
+      members:[{id:'m_111111111111',name:'X',yomi:'',first_attended:'2026-01-01',last_attended:'2026-04-01',tournament_ids:[],attendance_count:0,member:'member',grade:'ippan'}]
+    });
+    const r = env.applyMasterMemberEdit('m_111111111111','X','',master,{member:'member',grade:'ippan'});
+    assert(r.success===true,'A4-S3-edit-22: 同値の指定でも成功');
+    assertEq(master.members[0].member,'member','A4-S3-edit-23: 同値再指定で値変化なし');
+  }
+}
+
+// ============================================================
 // A-3 Stage 3: F7 削除（tombstone）
 // ============================================================
 {

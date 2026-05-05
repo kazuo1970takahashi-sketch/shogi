@@ -228,6 +228,91 @@ test.describe('A-4 Stage 2: IME 自動取得', () => {
 });
 
 // ============================================================
+// Stage 3: マスタ一覧 + 編集モーダル member/grade 表示・編集
+// ============================================================
+test.describe('A-4 Stage 3: マスタ一覧 区分列', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupWithMaster(page);
+    await page.click('#tab-master');
+  });
+
+  test('一覧テーブルに「区分」列ヘッダが表示される', async ({ page }) => {
+    await expect(page.locator('#pane-master').getByRole('columnheader', { name: '区分' })).toBeVisible();
+  });
+
+  test('支部員区分・中学生以下区分が一覧に2段表示される', async ({ page }) => {
+    // 山田太郎: member='other', grade='chu' → "他" + "中学"
+    const row1 = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
+    const cell1 = row1.locator('td.master-cell-grade');
+    await expect(cell1).toContainText('他');
+    await expect(cell1).toContainText('中学');
+    // 佐藤一郎: member='member', grade='ippan' → "支部員" のみ（中学行は出ない）
+    const row2 = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
+    const cell2 = row2.locator('td.master-cell-grade');
+    await expect(cell2).toContainText('支部員');
+    await expect(cell2).not.toContainText('中学');
+  });
+});
+
+test.describe('A-4 Stage 3: マスタ編集モーダル', () => {
+  test.beforeEach(async ({ page }) => {
+    await setupWithMaster(page);
+    await page.click('#tab-master');
+  });
+
+  test('編集モーダルに支部員区分・中学生以下のラジオが現在値で表示される', async ({ page }) => {
+    const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
+    await row.locator('.master-edit-btn').click();
+    await expect(page.locator('#master-edit-modal')).toBeVisible();
+    // 山田太郎: member='other', grade='chu'
+    await expect(page.locator('input[name="me-member"][value="other"]')).toBeChecked();
+    await expect(page.locator('input[name="me-grade"][value="chu"]')).toBeChecked();
+  });
+
+  test('履歴情報（初回・最終・回数）が読み取り専用で表示される', async ({ page }) => {
+    const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
+    await row.locator('.master-edit-btn').click();
+    const hist = page.locator('#me-history');
+    await expect(hist).toBeVisible();
+    await expect(hist).toContainText('初回参加：2026-01-01');
+    await expect(hist).toContainText('最終参加：2026-04-01');
+    await expect(hist).toContainText('参加回数：2回');
+  });
+
+  test('支部員区分を変更して保存 → localStorage に反映される', async ({ page }) => {
+    const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
+    await row.locator('.master-edit-btn').click();
+    // member: member → other に切り替え
+    await page.check('input[name="me-member"][value="other"]');
+    await page.click('#me-save');
+    await expect(page.locator('#master-edit-modal')).toHaveCount(0);
+    const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
+    expect(master.members.find(m => m.id === 'm_cccccccccccc').member).toBe('other');
+    // grade は触っていない → 不変
+    expect(master.members.find(m => m.id === 'm_cccccccccccc').grade).toBe('ippan');
+  });
+
+  test('中学生以下区分を変更して保存 → localStorage に反映される', async ({ page }) => {
+    const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
+    await row.locator('.master-edit-btn').click();
+    await page.check('input[name="me-grade"][value="chu"]');
+    await page.click('#me-save');
+    const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
+    expect(master.members.find(m => m.id === 'm_cccccccccccc').grade).toBe('chu');
+  });
+
+  test('一覧表示が更新される（編集後 renderMasterTab で再描画）', async ({ page }) => {
+    const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
+    await row.locator('.master-edit-btn').click();
+    await page.check('input[name="me-grade"][value="chu"]');
+    await page.click('#me-save');
+    // 再描画後の佐藤一郎の行に「中学」が表示される
+    const row2 = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
+    await expect(row2.locator('td.master-cell-grade')).toContainText('中学');
+  });
+});
+
+// ============================================================
 // Stage 2 単体: _pendingNewYomi の同名衝突回避（player.id キー方式 / Should Fix 1）
 // ============================================================
 test.describe('A-4 Stage 2 unit: _pendingNewYomi 同名衝突回避', () => {
