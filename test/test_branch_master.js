@@ -78,6 +78,14 @@ function loadEnv(path, opts) {
        createEmptyBranchMaster:createEmptyBranchMaster,
        generateMemberId:generateMemberId,
        normalizePersonName:normalizePersonName,
+       normalizeYomi:normalizeYomi,
+       getYomiInitialRow:getYomiInitialRow,
+       matchesPastParticipantQuery:matchesPastParticipantQuery,
+       buildPastParticipantsPanelHtml:buildPastParticipantsPanelHtml,
+       buildYomiInputModalHtml:buildYomiInputModalHtml,
+       applyYomiInputsToMaster:applyYomiInputsToMaster,
+       buildMigrationModalHtml:buildMigrationModalHtml,
+       _phaseA2State:_phaseA2State,
        isValidYmd:isValidYmd,
        todayYmd:todayYmd,
        normalizeBranchMaster:normalizeBranchMaster,
@@ -598,6 +606,375 @@ const env = loadEnv(targetPath);
   assert(env.isValidYmd(null)===false,'isValidYmd: null → false');
   assert(env.isValidYmd(undefined)===false,'isValidYmd: undefined → false');
   assert(env.isValidYmd(20260415)===false,'isValidYmd: 数値 → false');
+}
+
+// ============================================================
+// Phase A-2 §3.4 / §3.5: normalizeYomi / getYomiInitialRow
+// ============================================================
+
+// normalizeYomi
+{
+  // カタカナ → ひらがな変換
+  assertEq(env.normalizeYomi('ヤマダ'),'やまだ','normalizeYomi: 全角カタカナ → ひらがな');
+  assertEq(env.normalizeYomi('サトウタロウ'),'さとうたろう','normalizeYomi: 複数文字カタカナ → ひらがな');
+
+  // 前後空白除去
+  assertEq(env.normalizeYomi('  たろう  '),'たろう','normalizeYomi: 前後半角空白除去');
+  assertEq(env.normalizeYomi('　たろう　'),'たろう','normalizeYomi: 前後全角空白除去');
+
+  // 全角・半角空白の削除（途中含めて削除）
+  assertEq(env.normalizeYomi('やまだ たろう'),'やまだたろう','normalizeYomi: 途中半角空白削除');
+  assertEq(env.normalizeYomi('やまだ　たろう'),'やまだたろう','normalizeYomi: 途中全角空白削除');
+
+  // 長音符（ー）保持
+  assertEq(env.normalizeYomi('らーめん'),'らーめん','normalizeYomi: 長音符保持');
+  assertEq(env.normalizeYomi('ラーメン'),'らーめん','normalizeYomi: カタカナ＋長音符 → ひらがな＋長音符');
+
+  // 小書き文字保持
+  assertEq(env.normalizeYomi('しゃーろっく'),'しゃーろっく','normalizeYomi: 小書き文字保持（ゃ・っ）');
+
+  // 空文字・null・undefined・非文字列 → 空文字
+  assertEq(env.normalizeYomi(''),'','normalizeYomi: 空文字は空文字');
+  assertEq(env.normalizeYomi(null),'','normalizeYomi: null は空文字');
+  assertEq(env.normalizeYomi(undefined),'','normalizeYomi: undefined は空文字');
+  assertEq(env.normalizeYomi(123),'','normalizeYomi: 数値は空文字');
+  assertEq(env.normalizeYomi({}),'','normalizeYomi: オブジェクトは空文字');
+
+  // ヴ → ゔ、ヵ → ゕ、ヶ → ゖ
+  assertEq(env.normalizeYomi('ヴァイオリン'),'ゔぁいおりん','normalizeYomi: ヴ → ゔ');
+  assertEq(env.normalizeYomi('ヵヶ'),'ゕゖ','normalizeYomi: ヵ → ゕ、ヶ → ゖ');
+
+  // 半角カナはそのまま（A-2 非対応明記、ChatGPT M2 反映）
+  assertEq(env.normalizeYomi('ｻﾄｳ'),'ｻﾄｳ','normalizeYomi: 半角カナは変換しない（A-2 非対応）');
+}
+
+// getYomiInitialRow
+{
+  // 各行の判定（清音）
+  assertEq(env.getYomiInitialRow('あい'),'a','getYomiInitialRow: あ → a 行');
+  assertEq(env.getYomiInitialRow('かき'),'ka','getYomiInitialRow: か → ka 行');
+  assertEq(env.getYomiInitialRow('さし'),'sa','getYomiInitialRow: さ → sa 行');
+  assertEq(env.getYomiInitialRow('たち'),'ta','getYomiInitialRow: た → ta 行');
+  assertEq(env.getYomiInitialRow('なに'),'na','getYomiInitialRow: な → na 行');
+  assertEq(env.getYomiInitialRow('はひ'),'ha','getYomiInitialRow: は → ha 行');
+  assertEq(env.getYomiInitialRow('まみ'),'ma','getYomiInitialRow: ま → ma 行');
+  assertEq(env.getYomiInitialRow('やゆ'),'ya','getYomiInitialRow: や → ya 行');
+  assertEq(env.getYomiInitialRow('らり'),'ra','getYomiInitialRow: ら → ra 行');
+  assertEq(env.getYomiInitialRow('わを'),'wa','getYomiInitialRow: わ → wa 行');
+
+  // 濁音・半濁音は同行
+  assertEq(env.getYomiInitialRow('がっこう'),'ka','getYomiInitialRow: が → ka 行（濁音）');
+  assertEq(env.getYomiInitialRow('ざるそば'),'sa','getYomiInitialRow: ざ → sa 行（濁音）');
+  assertEq(env.getYomiInitialRow('だるま'),'ta','getYomiInitialRow: だ → ta 行（濁音）');
+  assertEq(env.getYomiInitialRow('ばんごう'),'ha','getYomiInitialRow: ば → ha 行（濁音）');
+  assertEq(env.getYomiInitialRow('ぱんだ'),'ha','getYomiInitialRow: ぱ → ha 行（半濁音）');
+
+  // 小書き文字も同行
+  assertEq(env.getYomiInitialRow('ぁ'),'a','getYomiInitialRow: ぁ → a 行（小書き）');
+  assertEq(env.getYomiInitialRow('ょ'),'ya','getYomiInitialRow: ょ → ya 行（小書き）');
+  assertEq(env.getYomiInitialRow('っ'),'ta','getYomiInitialRow: っ → ta 行（小書き）');
+
+  // 「他」判定
+  assertEq(env.getYomiInitialRow(''),'other','getYomiInitialRow: 空文字 → other');
+  assertEq(env.getYomiInitialRow(null),'other','getYomiInitialRow: null → other');
+  assertEq(env.getYomiInitialRow(undefined),'other','getYomiInitialRow: undefined → other');
+  assertEq(env.getYomiInitialRow('ゔ'),'other','getYomiInitialRow: ゔ（ヴ由来）→ other');
+  assertEq(env.getYomiInitialRow('ゕ'),'other','getYomiInitialRow: ゕ（ヵ由来）→ other');
+  assertEq(env.getYomiInitialRow('ゖ'),'other','getYomiInitialRow: ゖ（ヶ由来）→ other');
+  assertEq(env.getYomiInitialRow('ｻﾄｳ'),'other','getYomiInitialRow: 半角カナ → other（A-2 非対応）');
+  assertEq(env.getYomiInitialRow('123'),'other','getYomiInitialRow: 数字 → other');
+  assertEq(env.getYomiInitialRow('Smith'),'other','getYomiInitialRow: アルファベット → other');
+  assertEq(env.getYomiInitialRow('!?'),'other','getYomiInitialRow: 記号 → other');
+  assertEq(env.getYomiInitialRow('ーらん'),'other','getYomiInitialRow: 先頭長音符 → other');
+}
+
+// ============================================================
+// Phase A-2 §3.2: F5b ふりがな検索（matchesPastParticipantQuery）
+// ============================================================
+
+{
+  var mYama={id:'m_y',name:'山田 太郎',yomi:'やまだたろう',last_class:null,last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:1,tournament_ids:[],deleted:false,deleted_at:null,note:''};
+  var mSato={id:'m_s',name:'佐藤次郎',yomi:'さとうじろう',last_class:null,last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:1,tournament_ids:[],deleted:false,deleted_at:null,note:''};
+  var mNoYomi={id:'m_n',name:'田中三郎',yomi:'',last_class:null,last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:1,tournament_ids:[],deleted:false,deleted_at:null,note:''};
+  var mForeign={id:'m_f',name:'Smith',yomi:'',last_class:null,last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:1,tournament_ids:[],deleted:false,deleted_at:null,note:''};
+
+  // 空 query → 全件
+  assert(env.matchesPastParticipantQuery(mYama,'')===true,'matchesQuery: 空 query → true');
+  assert(env.matchesPastParticipantQuery(mNoYomi,'')===true,'matchesQuery: 空 query は yomi 空でも true');
+
+  // 漢字一致のみ → ヒット（既存動作維持）
+  assert(env.matchesPastParticipantQuery(mYama,'山田')===true,'matchesQuery: 漢字部分一致でヒット');
+  assert(env.matchesPastParticipantQuery(mYama,'太郎')===true,'matchesQuery: 名側の漢字部分一致でもヒット');
+
+  // ふりがな一致のみ → ヒット
+  assert(env.matchesPastParticipantQuery(mYama,'やまだ')===true,'matchesQuery: ひらがな yomi 部分一致でヒット');
+  assert(env.matchesPastParticipantQuery(mSato,'さとう')===true,'matchesQuery: ひらがな yomi 部分一致でヒット（佐藤）');
+
+  // カタカナ入力（「サトウ」）→「さとう」と同じヒット
+  assert(env.matchesPastParticipantQuery(mSato,'サトウ')===true,'matchesQuery: カタカナ入力でヒット（normalizeYomi 経由）');
+  assert(env.matchesPastParticipantQuery(mYama,'ヤマダ')===true,'matchesQuery: カタカナ入力でヒット（山田）');
+
+  // 両方一致 → boolean なので1回のみヒット（filter で重複しない）
+  assert(env.matchesPastParticipantQuery(mYama,'やまだ')===true,'matchesQuery: 両方一致でも boolean true（重複なし）');
+
+  // どちらも不一致 → ヒットせず
+  assert(env.matchesPastParticipantQuery(mYama,'鈴木')===false,'matchesQuery: 不一致漢字 → false');
+  assert(env.matchesPastParticipantQuery(mYama,'すずき')===false,'matchesQuery: 不一致ふりがな → false');
+
+  // ローマ字（「sa」）→ A-2 では非対応 → 漢字 name に sa が入っていない限り false
+  assert(env.matchesPastParticipantQuery(mSato,'sa')===false,'matchesQuery: ローマ字検索は非対応');
+
+  // yomi 空の member → 漢字でしか引けない
+  assert(env.matchesPastParticipantQuery(mNoYomi,'田中')===true,'matchesQuery: yomi 空でも漢字で引ける');
+  assert(env.matchesPastParticipantQuery(mNoYomi,'たなか')===false,'matchesQuery: yomi 空はふりがなで引けない');
+
+  // 外国名（yomi 空 + 漢字でない name）
+  assert(env.matchesPastParticipantQuery(mForeign,'Smith')===true,'matchesQuery: 外国名は name 一致で引ける');
+  assert(env.matchesPastParticipantQuery(mForeign,'すみす')===false,'matchesQuery: yomi 空の外国名はふりがなで引けない');
+
+  // プレースホルダ確認
+  var master={schema_version:1,updated_at:'2026-04-01',members:[mYama,mSato]};
+  var html=env.buildPastParticipantsPanelHtml(master,'');
+  assert(html.indexOf('placeholder="氏名で検索（漢字・ふりがな）"')>=0,'F5b: 検索ボックスのプレースホルダが「漢字・ふりがな」に更新されている');
+  assert(html.indexOf('placeholder="氏名で検索（漢字部分一致）"')<0,'F5b: 旧プレースホルダ「漢字部分一致」が残っていない');
+
+  // フィルタ統合: パネル HTML でカタカナ入力でも該当 member のみ含む
+  var htmlKana=env.buildPastParticipantsPanelHtml(master,'サトウ');
+  assert(htmlKana.indexOf('佐藤次郎')>=0,'F5b: カタカナ「サトウ」検索で佐藤次郎が表示される');
+  assert(htmlKana.indexOf('山田 太郎')<0,'F5b: カタカナ「サトウ」検索で山田太郎は表示されない');
+}
+
+// ============================================================
+// Phase A-2 §3.3 / §4.1: F6 50音タブ
+// ============================================================
+
+{
+  function mkMember(id,name,yomi){
+    return {id:id,name:name,yomi:yomi,last_class:null,last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:1,tournament_ids:[],deleted:false,deleted_at:null,note:''};
+  }
+  // 各行を満たす member を用意
+  var mAi=mkMember('m_a','青木','あおき');
+  var mKa=mkMember('m_k','加藤','かとう');
+  var mSa=mkMember('m_s','佐藤','さとう');
+  var mTa=mkMember('m_t','田中','たなか');
+  var mNa=mkMember('m_n','中村','なかむら');
+  var mHa=mkMember('m_h','橋本','はしもと');
+  var mMa=mkMember('m_m','松本','まつもと');
+  var mYa=mkMember('m_y','山田','やまだ');
+  var mRa=mkMember('m_r','林','りん');
+  var mWa=mkMember('m_w','渡辺','わたなべ');
+  var mGa=mkMember('m_g','後藤','ごとう'); // 濁音 → ka 行
+  var mPa=mkMember('m_p','坂東','ばんどう'); // 濁音 → ha 行
+  var mEmpty=mkMember('m_e','匿名一郎',''); // yomi 空 → 他
+  var mForeign=mkMember('m_f','Smith','smith'); // ローマ字 yomi → 他
+  var mNum=mkMember('m_d','123','123'); // 数字 yomi → 他
+
+  var master={schema_version:1,updated_at:'2026-04-01',members:[mAi,mKa,mSa,mTa,mNa,mHa,mMa,mYa,mRa,mWa,mGa,mPa,mEmpty,mForeign,mNum]};
+
+  // 「全」タブで全 member 表示
+  var htmlAll=env.buildPastParticipantsPanelHtml(master,'','all');
+  for(var im=0;im<master.members.length;im++){
+    assert(htmlAll.indexOf(master.members[im].name)>=0,'F6: 「全」タブで '+master.members[im].name+' が表示');
+  }
+
+  // 「あ」タブで a 行のみ表示
+  var htmlA=env.buildPastParticipantsPanelHtml(master,'','a');
+  assert(htmlA.indexOf('青木')>=0,'F6: 「あ」タブで青木が表示');
+  assert(htmlA.indexOf('加藤')<0,'F6: 「あ」タブで加藤は非表示');
+  assert(htmlA.indexOf('Smith')<0,'F6: 「あ」タブで Smith は非表示');
+
+  // 「か」タブで濁音「ご」も含む
+  var htmlKa=env.buildPastParticipantsPanelHtml(master,'','ka');
+  assert(htmlKa.indexOf('加藤')>=0,'F6: 「か」タブで加藤が表示');
+  assert(htmlKa.indexOf('後藤')>=0,'F6: 「か」タブで後藤（濁音「ご」）が表示');
+  assert(htmlKa.indexOf('佐藤')<0,'F6: 「か」タブで佐藤は非表示');
+
+  // 「は」タブで半濁音/濁音も含む
+  var htmlHa=env.buildPastParticipantsPanelHtml(master,'','ha');
+  assert(htmlHa.indexOf('橋本')>=0,'F6: 「は」タブで橋本が表示');
+  assert(htmlHa.indexOf('坂東')>=0,'F6: 「は」タブで坂東（濁音「ば」）が表示');
+
+  // 「他」タブで yomi 空 + ローマ字 + 数字
+  var htmlOther=env.buildPastParticipantsPanelHtml(master,'','other');
+  assert(htmlOther.indexOf('匿名一郎')>=0,'F6: 「他」タブで yomi 空 member が表示');
+  assert(htmlOther.indexOf('Smith')>=0,'F6: 「他」タブでローマ字 yomi member が表示');
+  assert(htmlOther.indexOf('123')>=0,'F6: 「他」タブで数字 yomi member が表示');
+  assert(htmlOther.indexOf('青木')<0,'F6: 「他」タブで青木は非表示');
+
+  // yomi 空が「他」タブで先頭に来る
+  var idxEmpty=htmlOther.indexOf('匿名一郎');
+  var idxSmith=htmlOther.indexOf('Smith');
+  assert(idxEmpty>=0&&idxSmith>=0&&idxEmpty<idxSmith,'F6: 「他」タブで yomi 空が先頭、後方に other');
+
+  // タブ + 検索の AND 条件
+  var htmlSaAnd=env.buildPastParticipantsPanelHtml(master,'いとう','sa');
+  assert(htmlSaAnd.indexOf('佐藤')<0,'F6: タブ「さ」+ 検索「いとう」→ 佐藤は非表示（AND 条件）');
+
+  var htmlSaSatou=env.buildPastParticipantsPanelHtml(master,'さとう','sa');
+  assert(htmlSaSatou.indexOf('佐藤')>=0,'F6: タブ「さ」+ 検索「さとう」→ 佐藤が表示');
+  assert(htmlSaSatou.indexOf('青木')<0,'F6: タブ「さ」+ 検索「さとう」→ 青木は非表示');
+
+  // 件数保存則: 全タブ件数 = 各行 + 他 の合計
+  var rows=['a','ka','sa','ta','na','ha','ma','ya','ra','wa','other'];
+  var totalRowCount=0;
+  for(var ri=0;ri<rows.length;ri++){
+    var rowMembers=master.members.filter(function(m){return env.getYomiInitialRow(env.normalizeYomi(m.yomi))===rows[ri];});
+    totalRowCount+=rowMembers.length;
+  }
+  assertEq(totalRowCount,master.members.length,'F6: 件数保存則（各行 + 他 = 全 member 数）');
+
+  // 50音タブ HTML 構造
+  assert(htmlAll.indexOf('class="pp-yomi-tab')>=0,'F6: 50音タブ要素が描画されている');
+  assert(htmlAll.indexOf('data-row="all"')>=0,'F6: 「全」タブが描画');
+  assert(htmlAll.indexOf('data-row="other"')>=0,'F6: 「他」タブが描画');
+  assert(htmlAll.indexOf('他: ふりがな未登録・その他')>=0,'F6 M3: 「他」タブの補足文が表示');
+
+  // active クラスの付与（選択中タブ）
+  assert(htmlAll.indexOf('class="pp-yomi-tab active"')>=0&&htmlAll.indexOf('data-row="all"')>=0,'F6: 「全」選択時に active クラス付与');
+  var htmlSaTab=env.buildPastParticipantsPanelHtml(master,'','sa');
+  // 「さ」が active であることを構造的に確認
+  assert(htmlSaTab.indexOf('class="pp-yomi-tab active" data-row="sa"')>=0,'F6: 「さ」選択時に「さ」タブが active');
+
+  // タブ未指定時のデフォルト = all
+  var htmlDefault=env.buildPastParticipantsPanelHtml(master,'');
+  assert(htmlDefault.indexOf('class="pp-yomi-tab active" data-row="all"')>=0,'F6: yomiRow 未指定はデフォルト all');
+}
+
+// ============================================================
+// Phase A-2 §3.1 / §4.2: F4 ふりがな入力ダイアログ
+// ============================================================
+
+{
+  function mkM(id,name,yomi){
+    return {id:id,name:name,yomi:yomi||'',last_class:null,last_attended:'2026-04-01',first_attended:'2026-04-01',attendance_count:1,tournament_ids:[],deleted:false,deleted_at:null,note:''};
+  }
+
+  // buildYomiInputModalHtml の構造
+  var members=[mkM('m_a','山田太郎',''),mkM('m_b','佐藤次郎','')];
+  var dlgHtml=env.buildYomiInputModalHtml(members);
+
+  // 各 member の入力欄
+  assert(dlgHtml.indexOf('山田太郎')>=0,'F4: ダイアログに山田太郎が表示');
+  assert(dlgHtml.indexOf('佐藤次郎')>=0,'F4: ダイアログに佐藤次郎が表示');
+  assert(dlgHtml.indexOf('data-mid="m_a"')>=0,'F4: data-mid 属性が member id を保持');
+  assert(dlgHtml.indexOf('data-mid="m_b"')>=0,'F4: data-mid 属性が member id を保持');
+  assert(dlgHtml.indexOf('inputmode="kana"')>=0,'F4: inputmode=kana でスマホかな入力');
+
+  // ボタン
+  assert(dlgHtml.indexOf('id="yomi-cancel"')>=0,'F4: キャンセルボタン存在');
+  assert(dlgHtml.indexOf('id="yomi-add"')>=0,'F4: 追加ボタン存在');
+  assert(dlgHtml.indexOf('追加する')>=0,'F4: 追加ボタンの文言');
+  assert(dlgHtml.indexOf('キャンセル')>=0,'F4: キャンセルボタンの文言');
+
+  // ChatGPT M1 反映: 説明強化
+  assert(dlgHtml.indexOf('50音タブ・ふりがな検索で探しやすくなります')>=0,'F4 M1: ダイアログ説明強化文言');
+  assert(dlgHtml.indexOf('空欄のままでも追加できます')>=0,'F4 M1: 空欄追加が可能であることを明示');
+  assert(dlgHtml.indexOf('キャンセルすると、選択した参加者は追加されません')>=0,'F4 M1: キャンセル補足文');
+
+  // applyYomiInputsToMaster
+  // 全員入力済み
+  {
+    var master={schema_version:1,updated_at:'2026-04-01',members:[mkM('m_a','山田太郎',''),mkM('m_b','佐藤次郎',''),mkM('m_c','田中三郎','たなかさぶろう')]};
+    var emptyMs=master.members.slice(0,2);
+    var inputs={'m_a':'やまだたろう','m_b':'サトウジロウ'};
+    var r=env.applyYomiInputsToMaster(master,emptyMs,inputs);
+    assert(r.allEmpty===false,'F4: 全員入力 → allEmpty=false');
+    assertEq(r.updatedCount,2,'F4: 全員入力 → 2名更新');
+    assertEq(master.members[0].yomi,'やまだたろう','F4: m_a の yomi が保存（normalize 後）');
+    assertEq(master.members[1].yomi,'さとうじろう','F4: m_b の yomi が保存（カタカナ→ひらがな）');
+    assertEq(master.members[2].yomi,'たなかさぶろう','F4: 既存 yomi の m_c は変更されない');
+  }
+  // 全員空欄
+  {
+    var master2={schema_version:1,updated_at:'2026-04-01',members:[mkM('m_a','山田太郎',''),mkM('m_b','佐藤次郎','')]};
+    var emptyMs2=master2.members.slice();
+    var inputs2={'m_a':'','m_b':'   '};
+    var r2=env.applyYomiInputsToMaster(master2,emptyMs2,inputs2);
+    assert(r2.allEmpty===true,'F4: 全員空欄 → allEmpty=true');
+    assertEq(r2.updatedCount,0,'F4: 全員空欄 → 0名更新');
+    assertEq(master2.members[0].yomi,'','F4: 空欄なら yomi 空のまま');
+  }
+  // 部分入力
+  {
+    var master3={schema_version:1,updated_at:'2026-04-01',members:[mkM('m_a','A',''),mkM('m_b','B',''),mkM('m_c','C','')]};
+    var emptyMs3=master3.members.slice();
+    var inputs3={'m_a':'えー','m_b':'','m_c':'しー'};
+    var r3=env.applyYomiInputsToMaster(master3,emptyMs3,inputs3);
+    assert(r3.allEmpty===false,'F4: 部分入力 → allEmpty=false');
+    assertEq(r3.updatedCount,2,'F4: 部分入力 → 入力された2名のみ更新');
+    assertEq(master3.members[0].yomi,'えー','F4: 入力ありの m_a は保存');
+    assertEq(master3.members[1].yomi,'','F4: 空欄の m_b は変更なし');
+    assertEq(master3.members[2].yomi,'しー','F4: 入力ありの m_c は保存');
+  }
+  // 不正入力（master/inputs なし等）
+  {
+    var r4=env.applyYomiInputsToMaster(null,[mkM('m_a','A','')],{m_a:'えー'});
+    assert(r4.allEmpty===true,'F4: master null → allEmpty=true');
+    assertEq(r4.updatedCount,0,'F4: master null → 0名更新');
+
+    var master5={schema_version:1,updated_at:'2026-04-01',members:[mkM('m_a','A','')]};
+    var r5=env.applyYomiInputsToMaster(master5,[mkM('m_a','A','')],null);
+    assertEq(r5.updatedCount,0,'F4: inputs null → 0名更新');
+  }
+
+  // ChatGPT M1 反映: yomi 空が0名のときダイアログの代わりに直接追加されること（条件分岐の基本確認）
+  // 実フロー（DOM 含む）は addSelectedPastParticipants だが、テストでは applyYomiInputsToMaster の境界を確認
+}
+
+// ============================================================
+// Phase A-2 §3.6 / §3.7: Codex Minor #1 / #2
+// ============================================================
+
+// Minor #1: 破損マスタ警告
+{
+  var htmlNormal=env.buildMigrationModalHtml();
+  assert(htmlNormal.indexOf('既存の支部マスタが破損していました')<0,'Minor #1: 通常マスタでマイグレ起動 → 警告なし');
+  assert(htmlNormal.indexOf('過去大会の統合')>=0,'Minor #1: 通常マスタで本来のヘッダーは表示');
+
+  var htmlOptsFalse=env.buildMigrationModalHtml({corrupted:false});
+  assert(htmlOptsFalse.indexOf('既存の支部マスタが破損していました')<0,'Minor #1: corrupted:false でも警告なし');
+
+  var htmlCorrupted=env.buildMigrationModalHtml({corrupted:true});
+  assert(htmlCorrupted.indexOf('既存の支部マスタが破損していました')>=0,'Minor #1: 破損マスタ → 警告バナー表示');
+  assert(htmlCorrupted.indexOf('再構築されます')>=0,'Minor #1: 警告に再構築の説明を含む');
+  assert(htmlCorrupted.indexOf('mig-corrupt-warning')>=0,'Minor #1: 警告バナーに識別 class が付く');
+  // 警告は本来のヘッダーより前に出る（順序確認）
+  var idxWarn=htmlCorrupted.indexOf('既存の支部マスタが破損していました');
+  var idxHead=htmlCorrupted.indexOf('過去大会の統合');
+  assert(idxWarn>=0&&idxHead>=0&&idxWarn<idxHead,'Minor #1: 警告がヘッダーより前に出る');
+}
+
+// Minor #2: crypto 不在通知（noCrypto 環境で env をロード）
+{
+  const envNc = loadEnv(targetPath, {noCrypto:true});
+  // 初期状態
+  assert(envNc._phaseA2State.cryptoNotificationShown===false,'Minor #2: 初期状態で通知フラグ false');
+
+  // state を最小構成でセット（参加者1名）
+  envNc._setState({
+    tournament_id:'',
+    players:{A:[{id:'p1',name:'山田太郎',cls:'A',member:'member',grade:'ippan'}],B:[]},
+    report:{}
+  });
+
+  // 1度目の syncBranchMasterOnSave → crypto throw を内部 catch、通知フラグ true
+  envNc.syncBranchMasterOnSave();
+  assert(envNc._phaseA2State.cryptoNotificationShown===true,'Minor #2: 1回目の crypto エラーで通知フラグが true になる');
+
+  // 2度目の呼び出し → フラグは true のまま（過剰繰返し防止）
+  envNc.syncBranchMasterOnSave();
+  assert(envNc._phaseA2State.cryptoNotificationShown===true,'Minor #2: 2回目以降も true 維持（過剰繰返し防止）');
+
+  // crypto 利用可能な環境では通知フラグは初期 false のまま
+  const envOk = loadEnv(targetPath);
+  assert(envOk._phaseA2State.cryptoNotificationShown===false,'Minor #2: crypto 正常環境で初期状態 false');
+  envOk._setState({
+    tournament_id:'',
+    players:{A:[{id:'p1',name:'山田太郎',cls:'A',member:'member',grade:'ippan'}],B:[]},
+    report:{}
+  });
+  envOk.syncBranchMasterOnSave();
+  assert(envOk._phaseA2State.cryptoNotificationShown===false,'Minor #2: crypto 正常環境では通知フラグ false のまま');
 }
 
 // 結果出力
