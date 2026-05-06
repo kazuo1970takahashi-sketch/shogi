@@ -42,7 +42,7 @@ OUT 分の根拠:
 
 **L138–L143「追加成功で showMsg『[氏名](Xクラス)を登録しました』」**:
 
-現状は `showMsg` テキストのみ確認しており、primary assertion が不在(Stage 1 §4.2 の「showMsg のみ」分類)。`participantAdded('B')` factory を併用し、`state.players.B` に対象が増加することを primary assertion として追加する。
+現状は `showMsg` テキストのみ確認しており、primary assertion が不在(Stage 1 §4.2 の「showMsg のみ」分類)。当該 it は `data-cls="A"` ボタン押下のため、`classSelectedFromPast('A')` factory を併用し、`state.players.A` に対象が増加することを primary assertion として追加する(Stage 2 describe の他 it と factory 統一)。
 
 その他 21 it は factory 直接ラップで対応可能。
 
