@@ -213,7 +213,14 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
     await page.fill('#inp-name', '山田');
     const item = page.locator('#suggest-list .suggest-item').first();
     // info 領域（ボタン以外）をタップ
-    await item.locator('.si-info').click();
+    // .si-info は親 .suggest-item の addEventListener('mousedown') 経由でフォーム反映される
+    // (inline onclick 不在のため Unchecked 版で expectClickable 段階 3 を skip)
+    // primary semantic: 行本体タップで player は追加されない (フォーム反映のみ)
+    await clickAndExpectChangeUnchecked(item.locator('.si-info'), async (before, after, ctx) => {
+      ctx.primary('no player added (form-only update)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      expect(after.state.players.B.length).toBe(before.state.players.B.length);
+    });
     await expect(page.locator('#inp-name')).toHaveValue('山田太郎');
     await expect(page.locator('#suggest-list')).toBeHidden();
     // この時点で player は追加されない（フォーム反映のみ）
@@ -224,7 +231,10 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
   test('A ボタン押下で行本体タップが二重発火しない（フォーム反映されず直接追加のみ）', async ({ page }) => {
     await page.fill('#inp-name', '山田');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.suggest-add-btn[data-cls="A"]').click();
+    await clickAndExpectChange(
+      item.locator('.suggest-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromSuggest('A', 'm_aaaaaaaaaaaa')
+    );
     // 直接追加された
     await expect(page.locator('#a-list .player-row')).toHaveCount(1);
     // 氏名欄はクリアされる（A-4 のフォーム反映が二重発火していない証拠）
@@ -236,7 +246,10 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
   test('B ボタン押下で行本体タップが二重発火しない', async ({ page }) => {
     await page.fill('#inp-name', '山田');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.suggest-add-btn[data-cls="B"]').click();
+    await clickAndExpectChange(
+      item.locator('.suggest-add-btn[data-cls="B"]'),
+      shogiAssertions.classSelectedFromSuggest('B', 'm_aaaaaaaaaaaa')
+    );
     await expect(page.locator('#b-list .player-row')).toHaveCount(1);
     await expect(page.locator('#a-list .player-row')).toHaveCount(0);
     await expect(page.locator('#inp-name')).toHaveValue('');
@@ -247,7 +260,10 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
     await page.fill('#inp-name', '山田');
     await page.fill('#inp-yomi', 'てすと');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.suggest-add-btn[data-cls="A"]').click();
+    await clickAndExpectChange(
+      item.locator('.suggest-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromSuggest('A', 'm_aaaaaaaaaaaa')
+    );
     await expect(page.locator('#a-list .player-row')).toHaveCount(1);
     await expect(page.locator('#inp-name')).toHaveValue('');
     await expect(page.locator('#inp-yomi')).toHaveValue('');
@@ -258,7 +274,10 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
     await page.fill('#inp-name', '山田');
     await page.fill('#inp-yomi', 'べつのよみ');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.suggest-add-btn[data-cls="A"]').click();
+    await clickAndExpectChange(
+      item.locator('.suggest-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromSuggest('A', 'm_aaaaaaaaaaaa')
+    );
     const pendingKeys = await page.evaluate(() => Object.keys(window._pendingNewYomi || {}));
     expect(pendingKeys.length).toBe(0);
   });
@@ -272,7 +291,10 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
     await page.fill('#inp-name', '山田');
     await page.fill('#inp-yomi', 'まったくちがうよみ');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.suggest-add-btn[data-cls="A"]').click();
+    await clickAndExpectChange(
+      item.locator('.suggest-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromSuggest('A', 'm_aaaaaaaaaaaa')
+    );
     const after = await page.evaluate(() => {
       const raw = localStorage.getItem('shogi_branch_master');
       return raw ? JSON.parse(raw) : null;
@@ -285,11 +307,17 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
     // 佐藤一郎は yomi='さとういちろう' で空ではない → 「追加」ボタン経由で master.yomi は更新されない
     await page.fill('#inp-name', '佐藤');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.si-info').click();
+    // .si-info タップでフォーム反映 (player は追加されない)
+    await clickAndExpectChangeUnchecked(item.locator('.si-info'), async (before, after, ctx) => {
+      ctx.primary('no player added (form-only update)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      expect(after.state.players.B.length).toBe(before.state.players.B.length);
+    });
     await expect(page.locator('#inp-name')).toHaveValue('佐藤一郎');
     // ふりがな欄を変える
     await page.fill('#inp-yomi', 'まったくちがうよみ');
-    await page.click('#addBtn');
+    // 「追加」ボタンで participant を追加 (#inp-class default = 'A')
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     const master = await page.evaluate(() => {
       const raw = localStorage.getItem('shogi_branch_master');
       return raw ? JSON.parse(raw) : null;
@@ -302,7 +330,10 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
   test('追加済み player の member_id は次回サジェスト候補から除外される（getCurrentlyRegisteredMemberIds 経由）', async ({ page }) => {
     await page.fill('#inp-name', '山田');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.suggest-add-btn[data-cls="A"]').click();
+    await clickAndExpectChange(
+      item.locator('.suggest-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromSuggest('A', 'm_aaaaaaaaaaaa')
+    );
     // 再度同じ文字列で検索
     await page.fill('#inp-name', '山田');
     // 山田太郎は除外され、'山' でヒットする他の候補（山本花子）が見える
