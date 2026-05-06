@@ -54,6 +54,7 @@ OUT 分の根拠:
 - **raw click ゼロ / force:true ゼロ**(grep 検証可能)
 - **変更前後の it 数同一**(22 件)、既存 describe / it 名は原則変更しない(grep 互換性のため)
 - factory 不足が判明した場合は `test/helpers/` への追加のみ可。production 側修正は不可。
+- Stage 2b では `clickAndExpectChangeUnchecked` を 1 つ `test/helpers/` に追加する(クリック前到達性検証が逆効果な non-handler / addEventListener-only 要素のクリック検証用、`expectClickable` 段階 3 の handler 検出のみ skip)。
 
 ---
 
