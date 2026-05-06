@@ -1,6 +1,9 @@
 // @ts-check
 // Phase A-4.2 e2e: 過去参加者パネル / サジェストの A/B クラスボタン
 const { test, expect } = require('@playwright/test');
+const { clickAndExpectChange } = require('../helpers/clickAndExpectChange');
+const { clickAndExpectChangeUnchecked } = require('../helpers/clickAndExpectChangeUnchecked');
+const { shogiAssertions } = require('../helpers/shogi_assertions');
 
 const SAMPLE_MASTER = {
   schema_version: 1,
@@ -69,7 +72,12 @@ test.describe('A-4.2 Stage 2: 過去参加者パネル A/B ボタン', () => {
   test('行本体タップで何も起こらない（フォーム反映しない・追加しない）', async ({ page }) => {
     const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
     // ボタン以外の領域（氏名 span）をクリック
-    await row.locator('span').first().click();
+    // span は handler 不在の負動作確認のため Unchecked 版で expectClickable 段階 3 を skip
+    await clickAndExpectChangeUnchecked(row.locator('span').first(), async (before, after, ctx) => {
+      ctx.primary('no addition (form-only behavior verified by UI assertions below)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      expect(after.state.players.B.length).toBe(before.state.players.B.length);
+    });
     // 追加されない
     await expect(page.locator('#a-list .player-row')).toHaveCount(0);
     await expect(page.locator('#b-list .player-row')).toHaveCount(0);
@@ -85,7 +93,10 @@ test.describe('A-4.2 Stage 2: 過去参加者パネル A/B ボタン', () => {
 
   test('A ボタン → state.players.A に追加', async ({ page }) => {
     const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
-    await row.locator('.pp-add-btn[data-cls="A"]').click();
+    await clickAndExpectChange(
+      row.locator('.pp-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromPast('A')
+    );
     await expect(page.locator('#a-list .player-row')).toHaveCount(1);
     await expect(page.locator('#a-list .player-row .player-name')).toHaveText('山田太郎');
     await expect(page.locator('#b-list .player-row')).toHaveCount(0);
@@ -93,7 +104,10 @@ test.describe('A-4.2 Stage 2: 過去参加者パネル A/B ボタン', () => {
 
   test('B ボタン → state.players.B に追加', async ({ page }) => {
     const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
-    await row.locator('.pp-add-btn[data-cls="B"]').click();
+    await clickAndExpectChange(
+      row.locator('.pp-add-btn[data-cls="B"]'),
+      shogiAssertions.classSelectedFromPast('B')
+    );
     await expect(page.locator('#b-list .player-row')).toHaveCount(1);
     await expect(page.locator('#b-list .player-row .player-name')).toHaveText('山田太郎');
     await expect(page.locator('#a-list .player-row')).toHaveCount(0);
@@ -102,7 +116,10 @@ test.describe('A-4.2 Stage 2: 過去参加者パネル A/B ボタン', () => {
   test('last_class と異なるクラスへの追加が成功する（last_class=A の人を B に追加）', async ({ page }) => {
     // 山田太郎 (last_class:'A') を B クラスに追加
     const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
-    await row.locator('.pp-add-btn[data-cls="B"]').click();
+    await clickAndExpectChange(
+      row.locator('.pp-add-btn[data-cls="B"]'),
+      shogiAssertions.classSelectedFromPast('B')
+    );
     await expect(page.locator('#b-list .player-row')).toHaveCount(1);
     // state.players.B に member_id 付きで入る
     const state = await page.evaluate(() => {
@@ -115,12 +132,22 @@ test.describe('A-4.2 Stage 2: 過去参加者パネル A/B ボタン', () => {
 
   test('既追加 player を別クラスのボタンで再度追加 → duplicate_member、UI 文言「この参加者はすでに登録されています」', async ({ page }) => {
     const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
-    await row.locator('.pp-add-btn[data-cls="A"]').click();
+    await clickAndExpectChange(
+      row.locator('.pp-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromPast('A')
+    );
     // 再描画後も同じ member_id の人は表示されている（getCurrentlyRegisteredMemberIds 経由ではなく master 全件表示のため）
     // → 別クラスのボタンを押す
     const row2 = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
     if (await row2.count() > 0) {
-      await row2.locator('.pp-add-btn[data-cls="B"]').click();
+      await clickAndExpectChange(
+        row2.locator('.pp-add-btn[data-cls="B"]'),
+        async (before, after, ctx) => {
+          ctx.primary('duplicate add does not change state.players');
+          expect(after.state.players.A.length).toBe(before.state.players.A.length);
+          expect(after.state.players.B.length).toBe(before.state.players.B.length);
+        }
+      );
       await expect(page.locator('#reg-msg')).toContainText('この参加者はすでに登録されています');
     } else {
       // 行が消えていれば成功（重複追加できない）。本ケースではメッセージ確認は不要。
@@ -137,7 +164,11 @@ test.describe('A-4.2 Stage 2: 過去参加者パネル A/B ボタン', () => {
 
   test('追加成功で showMsg「[氏名]（Xクラス）を登録しました」', async ({ page }) => {
     const row = page.locator('#ppPanel .pp-row').filter({ hasText: '佐藤一郎' });
-    await row.locator('.pp-add-btn[data-cls="A"]').click();
+    // §2 完全書き直し対象: showMsg のみだった test に primary assertion (state.players 増加 + cls 一致) を追加
+    await clickAndExpectChange(
+      row.locator('.pp-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromPast('A')
+    );
     await expect(page.locator('#reg-msg')).toContainText('佐藤一郎');
     await expect(page.locator('#reg-msg')).toContainText('Aクラス');
     await expect(page.locator('#reg-msg')).toContainText('登録しました');
@@ -146,7 +177,10 @@ test.describe('A-4.2 Stage 2: 過去参加者パネル A/B ボタン', () => {
   test('addPlayerFromMaster 経由で master.last_class が変更されない', async ({ page }) => {
     // 山田太郎 (last_class:'A') を B クラスに追加
     const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
-    await row.locator('.pp-add-btn[data-cls="B"]').click();
+    await clickAndExpectChange(
+      row.locator('.pp-add-btn[data-cls="B"]'),
+      shogiAssertions.classSelectedFromPast('B')
+    );
     const master = await page.evaluate(() => {
       const raw = localStorage.getItem('shogi_branch_master');
       return raw ? JSON.parse(raw) : null;
@@ -179,7 +213,14 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
     await page.fill('#inp-name', '山田');
     const item = page.locator('#suggest-list .suggest-item').first();
     // info 領域（ボタン以外）をタップ
-    await item.locator('.si-info').click();
+    // .si-info は親 .suggest-item の addEventListener('mousedown') 経由でフォーム反映される
+    // (inline onclick 不在のため Unchecked 版で expectClickable 段階 3 を skip)
+    // primary semantic: 行本体タップで player は追加されない (フォーム反映のみ)
+    await clickAndExpectChangeUnchecked(item.locator('.si-info'), async (before, after, ctx) => {
+      ctx.primary('no player added (form-only update)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      expect(after.state.players.B.length).toBe(before.state.players.B.length);
+    });
     await expect(page.locator('#inp-name')).toHaveValue('山田太郎');
     await expect(page.locator('#suggest-list')).toBeHidden();
     // この時点で player は追加されない（フォーム反映のみ）
@@ -190,7 +231,10 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
   test('A ボタン押下で行本体タップが二重発火しない（フォーム反映されず直接追加のみ）', async ({ page }) => {
     await page.fill('#inp-name', '山田');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.suggest-add-btn[data-cls="A"]').click();
+    await clickAndExpectChange(
+      item.locator('.suggest-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromSuggest('A', 'm_aaaaaaaaaaaa')
+    );
     // 直接追加された
     await expect(page.locator('#a-list .player-row')).toHaveCount(1);
     // 氏名欄はクリアされる（A-4 のフォーム反映が二重発火していない証拠）
@@ -202,7 +246,10 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
   test('B ボタン押下で行本体タップが二重発火しない', async ({ page }) => {
     await page.fill('#inp-name', '山田');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.suggest-add-btn[data-cls="B"]').click();
+    await clickAndExpectChange(
+      item.locator('.suggest-add-btn[data-cls="B"]'),
+      shogiAssertions.classSelectedFromSuggest('B', 'm_aaaaaaaaaaaa')
+    );
     await expect(page.locator('#b-list .player-row')).toHaveCount(1);
     await expect(page.locator('#a-list .player-row')).toHaveCount(0);
     await expect(page.locator('#inp-name')).toHaveValue('');
@@ -213,7 +260,10 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
     await page.fill('#inp-name', '山田');
     await page.fill('#inp-yomi', 'てすと');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.suggest-add-btn[data-cls="A"]').click();
+    await clickAndExpectChange(
+      item.locator('.suggest-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromSuggest('A', 'm_aaaaaaaaaaaa')
+    );
     await expect(page.locator('#a-list .player-row')).toHaveCount(1);
     await expect(page.locator('#inp-name')).toHaveValue('');
     await expect(page.locator('#inp-yomi')).toHaveValue('');
@@ -224,7 +274,10 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
     await page.fill('#inp-name', '山田');
     await page.fill('#inp-yomi', 'べつのよみ');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.suggest-add-btn[data-cls="A"]').click();
+    await clickAndExpectChange(
+      item.locator('.suggest-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromSuggest('A', 'm_aaaaaaaaaaaa')
+    );
     const pendingKeys = await page.evaluate(() => Object.keys(window._pendingNewYomi || {}));
     expect(pendingKeys.length).toBe(0);
   });
@@ -238,7 +291,10 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
     await page.fill('#inp-name', '山田');
     await page.fill('#inp-yomi', 'まったくちがうよみ');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.suggest-add-btn[data-cls="A"]').click();
+    await clickAndExpectChange(
+      item.locator('.suggest-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromSuggest('A', 'm_aaaaaaaaaaaa')
+    );
     const after = await page.evaluate(() => {
       const raw = localStorage.getItem('shogi_branch_master');
       return raw ? JSON.parse(raw) : null;
@@ -251,11 +307,17 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
     // 佐藤一郎は yomi='さとういちろう' で空ではない → 「追加」ボタン経由で master.yomi は更新されない
     await page.fill('#inp-name', '佐藤');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.si-info').click();
+    // .si-info タップでフォーム反映 (player は追加されない)
+    await clickAndExpectChangeUnchecked(item.locator('.si-info'), async (before, after, ctx) => {
+      ctx.primary('no player added (form-only update)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      expect(after.state.players.B.length).toBe(before.state.players.B.length);
+    });
     await expect(page.locator('#inp-name')).toHaveValue('佐藤一郎');
     // ふりがな欄を変える
     await page.fill('#inp-yomi', 'まったくちがうよみ');
-    await page.click('#addBtn');
+    // 「追加」ボタンで participant を追加 (#inp-class default = 'A')
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     const master = await page.evaluate(() => {
       const raw = localStorage.getItem('shogi_branch_master');
       return raw ? JSON.parse(raw) : null;
@@ -268,7 +330,10 @@ test.describe('A-4.2 Stage 3: サジェストリスト A/B ボタン', () => {
   test('追加済み player の member_id は次回サジェスト候補から除外される（getCurrentlyRegisteredMemberIds 経由）', async ({ page }) => {
     await page.fill('#inp-name', '山田');
     const item = page.locator('#suggest-list .suggest-item').first();
-    await item.locator('.suggest-add-btn[data-cls="A"]').click();
+    await clickAndExpectChange(
+      item.locator('.suggest-add-btn[data-cls="A"]'),
+      shogiAssertions.classSelectedFromSuggest('A', 'm_aaaaaaaaaaaa')
+    );
     // 再度同じ文字列で検索
     await page.fill('#inp-name', '山田');
     // 山田太郎は除外され、'山' でヒットする他の候補（山本花子）が見える
