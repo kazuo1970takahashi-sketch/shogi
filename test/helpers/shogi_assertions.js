@@ -221,6 +221,27 @@ const shogiAssertions = {
     },
   }),
 
+  // #24 マスタ復元(Stage 2c PR-3 新設、L0 §1.5 P0 候補 — masterMemberDeleted の対称実装)
+  // production(shogi_v4.html L800-808): restore 関数は target.deleted=false, target.deleted_at=null
+  // primary: deleted フラグが false に変わる + deleted_at が null になる(再削除可能状態)
+  masterMemberRestored: (targetId) => ({
+    assertion: async (before, after, page) => {
+      const beforeMember = before.master.members.find((m) => m.id === targetId);
+      expect(beforeMember).toBeDefined();
+      expect(beforeMember.deleted, 'restore 前は deleted=true が前提').toBe(true);
+      const afterMember = after.master.members.find((m) => m.id === targetId);
+      expect(afterMember).toBeDefined();
+      expect(afterMember.deleted).toBe(false);
+      expect(afterMember.deleted_at).toBeNull();
+    },
+    meta: {
+      primaryAssertions: 2,
+      primaryTypes: ['state-master'],
+      operation: 'masterMemberRestored',
+      description: `マスタ member ${targetId} の復元(deleted:false + deleted_at:null)`,
+    },
+  }),
+
   // #17 マスタインポート(SF#4: length 増加 / 既存不変 / tombstone OR / schema_version 維持)
   // §3.4 末尾: overwrite モード時の confirm + #mi-file の setInputFiles はテスト側責任(Stage 2b で factory 化)
   masterImported: (options = {}) => ({

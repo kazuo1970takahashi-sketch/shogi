@@ -1,6 +1,6 @@
 // @ts-check
 // §5.1 shogi_assertions.test.js: 全 factory の meta 検証
-// Stage 2c で tabSwitched(#23) 追加 → 計 20 factory
+// Stage 2c で tabSwitched(#23) + masterMemberRestored(#24) 追加 → 計 21 factory
 
 const { test, expect } = require('@playwright/test');
 const { shogiAssertions } = require('./shogi_assertions');
@@ -24,6 +24,7 @@ function build(name) {
     masterMemberAdded: [],
     masterMemberEdited: ['m_xxxx'],
     masterMemberDeleted: ['m_xxxx'],
+    masterMemberRestored: ['m_xxxx'],
     masterImported: [{}],
     tournamentDataCopied: [],
     stateLoaded: [1, 0],
@@ -49,6 +50,7 @@ const FACTORY_NAMES = [
   'masterMemberAdded',
   'masterMemberEdited',
   'masterMemberDeleted',
+  'masterMemberRestored',
   'masterImported',
   'tournamentDataCopied',
   'stateLoaded',
@@ -59,7 +61,7 @@ const FACTORY_NAMES = [
 ];
 
 test.describe('shogi_assertions: 全 factory の meta 検証', () => {
-  test('§3.4 表で定義された 19 factory + Stage 2c 追加 1(tabSwitched)= 20 factory 名がすべて export されている', () => {
+  test('§3.4 表で定義された 19 factory + Stage 2c 追加 2(tabSwitched / masterMemberRestored)= 21 factory 名がすべて export されている', () => {
     for (const name of FACTORY_NAMES) {
       expect(typeof shogiAssertions[name], `${name} が factory 関数として export されていない`).toBe('function');
     }
