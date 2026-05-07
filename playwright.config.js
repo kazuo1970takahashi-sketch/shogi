@@ -22,6 +22,10 @@ module.exports = defineConfig({
     },
     {
       name: 'mobile-375',
+      // visual_regression.spec.js は chromium-desktop project のみで実行(viewport を
+      // test 内で setViewportSize 上書きするため deviceScaleFactor / hasTouch / userAgent
+      // による微小な描画差異を排除、Stage 6 仕様書 §3.2)
+      testIgnore: /visual_regression\.spec\.js/,
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 375, height: 800 },
