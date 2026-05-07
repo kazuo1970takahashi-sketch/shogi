@@ -121,53 +121,9 @@ test.describe('A-4.3 §2.2: 確認ダイアログ 3 ケース分岐', () => {
 });
 
 // ============================================================
-// §2.1: 現クラス強調表示
+// §2.1 現クラス強調表示テストは A-4.4 で撤廃(色強調 → セクション分離に移行)
+// 対応する新規アサーションは shogi_app_a4_4.spec.js の §2.1 セクション分離テストで担保
 // ============================================================
-test.describe('A-4.3 §2.1: 現クラス強調表示', () => {
-  test.beforeEach(async ({ page }) => {
-    await setupWithMaster(page);
-    await page.click('#ppToggleBtn');
-    await expect(page.locator('#ppPanel')).toBeVisible();
-  });
-
-  test('A 登録済 → A ボタンに pp-add-btn-active クラス + テキストにチェック印', async ({ page }) => {
-    page.once('dialog', async (dialog) => { await dialog.accept(); });
-    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
-    await row.locator('.pp-add-btn[data-cls="A"]').click();
-    // 再描画後の同じ行
-    const row2 = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
-    await expect(row2.locator('.pp-add-btn[data-cls="A"]')).toHaveClass(/pp-add-btn-active/);
-    await expect(row2.locator('.pp-add-btn[data-cls="A"]')).toHaveText(/✓/);
-    // B ボタンには active クラスなし
-    await expect(row2.locator('.pp-add-btn[data-cls="B"]')).not.toHaveClass(/pp-add-btn-active/);
-  });
-
-  test('B 登録済 → B ボタンに pp-add-btn-active クラス', async ({ page }) => {
-    page.once('dialog', async (dialog) => { await dialog.accept(); });
-    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山本花子' });
-    await row.locator('.pp-add-btn[data-cls="B"]').click();
-    const row2 = page.locator('#ppPanel .pp-row').filter({ hasText: '山本花子' });
-    await expect(row2.locator('.pp-add-btn[data-cls="B"]')).toHaveClass(/pp-add-btn-active/);
-    await expect(row2.locator('.pp-add-btn[data-cls="B"]')).toHaveText(/✓/);
-    await expect(row2.locator('.pp-add-btn[data-cls="A"]')).not.toHaveClass(/pp-add-btn-active/);
-  });
-
-  test('未登録 → 両ボタンとも pp-add-btn-active クラスなし', async ({ page }) => {
-    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '佐藤一郎' });
-    await expect(row.locator('.pp-add-btn[data-cls="A"]')).not.toHaveClass(/pp-add-btn-active/);
-    await expect(row.locator('.pp-add-btn[data-cls="B"]')).not.toHaveClass(/pp-add-btn-active/);
-  });
-
-  test('現クラスが立つ時は前回クラスハイライトを抑制 (現クラス優先)', async ({ page }) => {
-    // 山田太郎 (last_class:A) を B に登録 → A ボタンは highlight されない、B ボタンは active
-    page.once('dialog', async (dialog) => { await dialog.accept(); });
-    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
-    await row.locator('.pp-add-btn[data-cls="B"]').click();
-    const row2 = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
-    await expect(row2.locator('.pp-add-btn[data-cls="A"]')).not.toHaveClass(/pp-add-btn-highlight/);
-    await expect(row2.locator('.pp-add-btn[data-cls="B"]')).toHaveClass(/pp-add-btn-active/);
-  });
-});
 
 // ============================================================
 // §2.4: マスタ一覧 last_class カラム
@@ -208,7 +164,7 @@ test.describe('A-4.3 §2.5: F7 編集モーダル last_class', () => {
     await page.click('#tab-master');
   });
 
-  test('編集モーダルに「前回クラス」fieldset (A / B / 未設定) が表示される', async ({ page }) => {
+  test('編集モーダルに「前回クラス」fieldset (A / B 2 択) が表示される', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
     await row.locator('.master-edit-btn').click();
     await expect(page.locator('#master-edit-modal')).toBeVisible();
@@ -217,22 +173,25 @@ test.describe('A-4.3 §2.5: F7 編集モーダル last_class', () => {
     await expect(page.locator('input[name="me-last-class"][value="B"]')).not.toBeChecked();
   });
 
-  // Devil's Advocate 指摘 5-a 反証: 「未設定」radio が DOM に存在することを直接ダンプで確認
-  test('me-last-class radio は 3 つ(value="" / "A" / "B")が DOM に存在する', async ({ page }) => {
+  // A-4.4: 「未設定」radio 撤廃。me-last-class radio は 2 つ(A / B)が DOM に存在
+  test('me-last-class radio は 2 つ(value="A" / "B")が DOM に存在する', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
     await row.locator('.master-edit-btn').click();
     await expect(page.locator('#master-edit-modal')).toBeVisible();
     const radios = page.locator('input[name="me-last-class"]');
-    await expect(radios).toHaveCount(3);
+    await expect(radios).toHaveCount(2);
     const values = await radios.evaluateAll((els) => els.map((e) => e.value));
-    expect(values.sort()).toEqual(['', 'A', 'B']);
-    await expect(page.locator('input[name="me-last-class"][value=""]')).toBeAttached();
+    expect(values.sort()).toEqual(['A', 'B']);
+    // value="" radio は撤廃済み
+    await expect(page.locator('input[name="me-last-class"][value=""]')).toHaveCount(0);
   });
 
-  test('last_class=null の member は「未設定」が初期選択', async ({ page }) => {
+  // A-4.4: last_class=null の member は A/B どちらも未 checked で開く
+  test('last_class=null の member は A/B どちらも未 checked', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
     await row.locator('.master-edit-btn').click();
-    await expect(page.locator('input[name="me-last-class"][value=""]')).toBeChecked();
+    await expect(page.locator('input[name="me-last-class"][value="A"]')).not.toBeChecked();
+    await expect(page.locator('input[name="me-last-class"][value="B"]')).not.toBeChecked();
   });
 
   test('last_class を A → B に変更して保存 → master.last_class が更新される', async ({ page }) => {
@@ -245,14 +204,14 @@ test.describe('A-4.3 §2.5: F7 編集モーダル last_class', () => {
     expect(master.members.find((m) => m.id === 'm_aaaaaaaaaaaa').last_class).toBe('B');
   });
 
-  test('last_class を 未設定 に変更して保存 → master.last_class が null になる', async ({ page }) => {
-    const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
+  // A-4.4: last_class=null の member を A/B どちらも選ばずに保存 → 既存 null を維持
+  test('last_class=null の member を A/B 未選択のまま保存 → null 維持', async ({ page }) => {
+    const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
     await row.locator('.master-edit-btn').click();
-    await page.locator('input[name="me-last-class"][value=""]').check();
     await page.locator('#me-save').click();
     await expect(page.locator('#master-edit-modal')).toHaveCount(0);
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
-    expect(master.members.find((m) => m.id === 'm_aaaaaaaaaaaa').last_class).toBeNull();
+    expect(master.members.find((m) => m.id === 'm_cccccccccccc').last_class).toBeNull();
   });
 });
 
