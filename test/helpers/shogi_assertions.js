@@ -356,6 +356,23 @@ const shogiAssertions = {
     },
   }),
 
+  // #23 タブ切替(Stage 2c 新設、L0 §1.5 P1 操作 — `tournamentStarted` の汎用版)
+  // production: showTab(t) が pane-{t} display + tab-{t} className を切替、state.activeTab は持たない
+  // primary: getStateSnapshot.activeTab(`.tab.active` の id)が targetTab に一致
+  // 副次: before.activeTab !== targetTab で実切替を確認(idempotent クリックは検出される)
+  tabSwitched: (targetTab) => ({
+    assertion: async (before, after, page) => {
+      expect(before.activeTab).not.toBe(targetTab);
+      expect(after.activeTab).toBe(targetTab);
+    },
+    meta: {
+      primaryAssertions: 1,
+      primaryTypes: ['tab'],
+      operation: 'tabSwitched',
+      description: `タブ ${targetTab} に切替`,
+    },
+  }),
+
   // #22 報告書ダウンロード(SF#1 統一、3 モード対応)
   reportDownloaded: (mode = 'window-print') => ({
     assertion: async (before, after, page) => {

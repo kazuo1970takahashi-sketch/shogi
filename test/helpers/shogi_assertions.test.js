@@ -1,5 +1,6 @@
 // @ts-check
-// §5.1 shogi_assertions.test.js: 全 22 factory の meta 検証
+// §5.1 shogi_assertions.test.js: 全 factory の meta 検証
+// Stage 2c で tabSwitched(#23) 追加 → 計 20 factory
 
 const { test, expect } = require('@playwright/test');
 const { shogiAssertions } = require('./shogi_assertions');
@@ -29,6 +30,7 @@ function build(name) {
     stateLoadedFromFile: [1, 0],
     stateReset: [],
     reportDownloaded: ['window-print'],
+    tabSwitched: ['tab-reg'],
   };
   return factory(...(argsByName[name] || []));
 }
@@ -53,10 +55,11 @@ const FACTORY_NAMES = [
   'stateLoadedFromFile',
   'stateReset',
   'reportDownloaded',
+  'tabSwitched',
 ];
 
 test.describe('shogi_assertions: 全 factory の meta 検証', () => {
-  test('§3.4 表で定義された 19 factory 名がすべて export されている', () => {
+  test('§3.4 表で定義された 19 factory + Stage 2c 追加 1(tabSwitched)= 20 factory 名がすべて export されている', () => {
     for (const name of FACTORY_NAMES) {
       expect(typeof shogiAssertions[name], `${name} が factory 関数として export されていない`).toBe('function');
     }
