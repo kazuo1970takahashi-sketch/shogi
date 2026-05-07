@@ -436,7 +436,12 @@ test.describe('A-4 Stage 4: 削除済み表示トグル', () => {
   });
 
   test('トグルON: 削除済み member が薄背景・取り消し線で表示され、削除日時と復元ボタンが出る', async ({ page }) => {
-    await page.click('#masterShowDeletedBtn');
+    // 削除済み表示トグルは L0 §1.5 P1: state を持たない UI 状態変化のため raw callback
+    await clickAndExpectChange(page.locator('#masterShowDeletedBtn'), async (before, after, ctx, p) => {
+      ctx.primary('show-deleted toggled ON: deleted row + restore button appear');
+      await expect(p.locator('#pane-master tbody tr').filter({ hasText: '削除タロウ' })).toBeVisible();
+      await expect(p.locator('.master-restore-btn')).toBeVisible();
+    });
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '削除タロウ' });
     await expect(row).toBeVisible();
     await expect(row).toHaveClass(/master-row-deleted/);
@@ -449,8 +454,10 @@ test.describe('A-4 Stage 4: 削除済み表示トグル', () => {
 
   test('トグル文言が状態で切り替わる', async ({ page }) => {
     await expect(page.locator('#masterShowDeletedBtn')).toContainText('削除済みを表示');
-    await page.click('#masterShowDeletedBtn');
-    await expect(page.locator('#masterShowDeletedBtn')).toContainText('削除済みを隠す');
+    await clickAndExpectChange(page.locator('#masterShowDeletedBtn'), async (before, after, ctx, p) => {
+      ctx.primary('show-deleted toggled ON: button text changes 表示 → 隠す');
+      await expect(p.locator('#masterShowDeletedBtn')).toContainText('削除済みを隠す');
+    });
   });
 });
 
@@ -463,14 +470,22 @@ test.describe('A-4 Stage 4: 復元ボタン', () => {
 
   test('復元 confirm cancel では復元されない', async ({ page }) => {
     page.once('dialog', d => d.dismiss());
-    await page.locator('.master-restore-btn').click();
+    // dismiss なので master 不変、primary は deleted=true 維持
+    await clickAndExpectChange(page.locator('.master-restore-btn'), async (before, after, ctx) => {
+      ctx.primary('restore cancelled: deleted=true unchanged');
+      const target = after.master.members.find(m => m.id === 'm_dddddddddddd');
+      expect(target.deleted).toBe(true);
+    });
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     expect(master.members.find(m => m.id === 'm_dddddddddddd').deleted).toBe(true);
   });
 
   test('復元 confirm accept で localStorage が deleted=false / deleted_at=null', async ({ page }) => {
     page.once('dialog', d => d.accept());
-    await page.locator('.master-restore-btn').click();
+    await clickAndExpectChange(
+      page.locator('.master-restore-btn'),
+      shogiAssertions.masterMemberRestored('m_dddddddddddd')
+    );
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     const target = master.members.find(m => m.id === 'm_dddddddddddd');
     expect(target.deleted).toBe(false);
@@ -481,9 +496,12 @@ test.describe('A-4 Stage 4: 復元ボタン', () => {
 
   test('復元後、登録画面サジェスト候補に再表示される', async ({ page }) => {
     page.once('dialog', d => d.accept());
-    await page.locator('.master-restore-btn').click();
-    // 登録タブへ
-    await page.click('#tab-reg');
+    await clickAndExpectChange(
+      page.locator('.master-restore-btn'),
+      shogiAssertions.masterMemberRestored('m_dddddddddddd')
+    );
+    // 登録タブへ切替
+    await clickAndExpectChange(page.locator('#tab-reg'), shogiAssertions.tabSwitched('tab-reg'));
     await page.fill('#inp-name', '削除');
     // 候補リストに「削除タロウ」が出る
     await expect(page.locator('#suggest-list')).toContainText('削除タロウ');
@@ -491,18 +509,29 @@ test.describe('A-4 Stage 4: 復元ボタン', () => {
 
   test('復元後、過去参加者パネルに再表示される', async ({ page }) => {
     page.once('dialog', d => d.accept());
-    await page.locator('.master-restore-btn').click();
-    await page.click('#tab-reg');
-    // 過去参加者パネルを開く
+    await clickAndExpectChange(
+      page.locator('.master-restore-btn'),
+      shogiAssertions.masterMemberRestored('m_dddddddddddd')
+    );
+    await clickAndExpectChange(page.locator('#tab-reg'), shogiAssertions.tabSwitched('tab-reg'));
+    // 過去参加者パネルを開く(L0 §1.5 P1: パネル開閉、state 不在のため raw callback)
     const panelToggle = page.locator('#ppToggleBtn');
-    if (await panelToggle.isVisible()) await panelToggle.click();
+    if (await panelToggle.isVisible()) {
+      await clickAndExpectChange(panelToggle, async (before, after, ctx, p) => {
+        ctx.primary('past participants panel opened');
+        await expect(p.locator('#ppPanel')).toBeVisible();
+      });
+    }
     await expect(page.locator('#ppPanel')).toContainText('削除タロウ');
   });
 
   test('復元後、yomi 未入力なら未入力マスタの一員として残る（Stage 5 の検証下準備）', async ({ page }) => {
     // 削除タロウの yomi は空
     page.once('dialog', d => d.accept());
-    await page.locator('.master-restore-btn').click();
+    await clickAndExpectChange(
+      page.locator('.master-restore-btn'),
+      shogiAssertions.masterMemberRestored('m_dddddddddddd')
+    );
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     const target = master.members.find(m => m.id === 'm_dddddddddddd');
     expect(target.deleted).toBe(false);
