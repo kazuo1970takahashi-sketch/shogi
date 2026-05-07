@@ -1635,7 +1635,7 @@ function buildMasterTabHtml(master){
     html+='<div style="color:#888;font-size:13px;padding:8px 0">登録された参加者はいません。</div>';
   }else{
     html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
-    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">ふりがな</th><th style="text-align:left;padding:6px 8px">区分</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th><th style="padding:6px 8px">操作</th></tr></thead><tbody>';
+    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">ふりがな</th><th style="text-align:left;padding:6px 8px">区分</th><th style="padding:6px 8px">前回クラス</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th><th style="padding:6px 8px">操作</th></tr></thead><tbody>';
     for(var i=0;i<members.length;i++){
       var m=members[i];
       // A-4 §3.2.1: 区分列（2段表示） — 上段:支部員/他、下段:中学のみ表示
@@ -1657,6 +1657,9 @@ function buildMasterTabHtml(master){
         +'<div>'+escapeHtml(memberLabel)+'</div>'
         +(gradeLabel?'<div style="color:#666;font-size:12px">'+escapeHtml(gradeLabel)+'</div>':'')
         +'</td>';
+      // A-4.3 §2.4: 前回クラス（A / B / -）
+      var lastClsLabel=(m.last_class==='A'||m.last_class==='B')?m.last_class:'-';
+      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center" class="master-cell-last-class">'+escapeHtml(lastClsLabel)+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.last_attended||'')+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+(m.attendance_count|0)+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap">';
