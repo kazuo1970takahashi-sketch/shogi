@@ -2482,11 +2482,65 @@ function renderSuggestList(suggestions){
   list.style.display='block';
 }
 
-// A-4.2 §3.2.3: サジェスト A/B ボタン押下時の処理。
-// addPlayerFromMaster 経由で直接追加し、氏名欄・ふりがな欄をクリア + サジェストリストを閉じる。
-// _pendingNewYomi / master.yomi は触らない（Should Fix 6）。
+// A-4.3 §2.3: サジェスト A/B ボタン押下時の処理。
+// 過去参加者パネルと同じ 3 ケース分岐（メンタルモデル一貫性）。サジェストは既登録者除外があるため通常はケース 1 のみだが、念のため 3 ケース全対応。
+// _pendingNewYomi / master.yomi は触らない（A-4.2 Should Fix 6）。
 function handleSuggestClassAdd(memberId,cls){
   var master=loadBranchMaster();
+  var member=null;
+  if(master&&Array.isArray(master.members)){
+    for(var mi=0;mi<master.members.length;mi++){
+      if(master.members[mi]&&master.members[mi].id===memberId){member=master.members[mi];break;}
+    }
+  }
+  if(!member){showMsg('該当する参加者が見つかりません','err');return;}
+  if(member.deleted===true){showMsg('この参加者は削除済みのため追加できません','err');return;}
+  var memberName=member.name||'';
+  var existingCls=null;
+  var existClasses=['A','B'];
+  for(var eci=0;eci<existClasses.length;eci++){
+    var eArr=state.players[existClasses[eci]]||[];
+    for(var epi=0;epi<eArr.length;epi++){
+      if(eArr[epi]&&eArr[epi].member_id===memberId){existingCls=existClasses[eci];break;}
+    }
+    if(existingCls)break;
+  }
+  // 共通：成功後の登録画面後処理（氏名/ふりがな欄クリア + サジェスト閉じ + 再描画）
+  function postSuccess(msgText){
+    var inpName=document.getElementById('inp-name');
+    var inpYomi=document.getElementById('inp-yomi');
+    if(inpName)inpName.value='';
+    if(inpYomi)inpYomi.value='';
+    _suggestState.selectedMemberId=null;
+    _suggestState.selectedNormalizedName=null;
+    _yomiManuallyEdited=false;
+    _yomiAutoBuffer='';
+    closeSuggestList();
+    renderRegList();save();
+    if(typeof renderPastParticipantsPanel==='function'){
+      var ppSearch=document.getElementById('pp-search');
+      renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
+    }
+    showMsg(msgText,'ok');
+  }
+  // ケース 3: 同クラス登録済（alert OK のみ）
+  if(existingCls===cls){
+    alert(memberName+'さんは既に '+cls+'クラス に登録されています。');
+    return;
+  }
+  // ケース 2: 別クラス登録済（変更 confirm）
+  if(existingCls&&existingCls!==cls){
+    var ok2=confirm(memberName+'さんは現在 '+existingCls+'クラス に登録されています。\n'+cls+'クラス に変更しますか?');
+    if(!ok2)return;
+    var r2=changePlayerClass(memberId,cls,master,state);
+    if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');return;}
+    saveBranchMaster(master);
+    postSuccess('['+memberName+'] を '+cls+'クラス に変更しました');
+    return;
+  }
+  // ケース 1: 未登録（追加 confirm）
+  var ok1=confirm(memberName+'さんを '+cls+'クラス に追加しますか?');
+  if(!ok1)return;
   var r=addPlayerFromMaster(memberId,cls,master,state);
   if(!r||!r.success){
     var err=r&&r.error;
@@ -2503,22 +2557,7 @@ function handleSuggestClassAdd(memberId,cls){
     }
     return;
   }
-  // 氏名欄・ふりがな欄をクリア + IME バッファ初期化（§3.2.3 step 2/4）
-  var inpName=document.getElementById('inp-name');
-  var inpYomi=document.getElementById('inp-yomi');
-  if(inpName)inpName.value='';
-  if(inpYomi)inpYomi.value='';
-  _suggestState.selectedMemberId=null;
-  _suggestState.selectedNormalizedName=null;
-  _yomiManuallyEdited=false;
-  _yomiAutoBuffer='';
-  closeSuggestList();
-  renderRegList();save();
-  if(typeof renderPastParticipantsPanel==='function'){
-    var ppSearch=document.getElementById('pp-search');
-    renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
-  }
-  showMsg('['+r.player.name+']（'+cls+'クラス）を登録しました','ok');
+  postSuccess('['+r.player.name+']（'+cls+'クラス）を登録しました');
 }
 
 function closeSuggestList(){
