@@ -2,6 +2,9 @@
 // Phase A-4 e2e: 登録画面ふりがな入力欄 / IME 自動取得 / マスタ member/grade /
 //                 削除済み復元 / 未入力可視化 / レイアウト揺れ
 const { test, expect } = require('@playwright/test');
+const { clickAndExpectChange } = require('../helpers/clickAndExpectChange');
+const { clickAndExpectChangeUnchecked } = require('../helpers/clickAndExpectChangeUnchecked');
+const { shogiAssertions } = require('../helpers/shogi_assertions');
 
 const SAMPLE_MASTER = {
   schema_version: 1,
@@ -60,7 +63,15 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
 
   test('サジェスト選択時：マスタの yomi がふりがな欄に反映される', async ({ page }) => {
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
+    // .suggest-item は addEventListener('mousedown') 経由 → Unchecked、子の .si-info を click
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
     await expect(page.locator('#inp-name')).toHaveValue('山田太郎');
     await expect(page.locator('#inp-yomi')).toHaveValue('やまだたろう');
   });
@@ -68,21 +79,36 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
   test('サジェスト由来：マスタ yomi が空のときのみ手入力した値で補完（既存値は上書きしない）', async ({ page }) => {
     // 山本花子（マスタ yomi が空）に手入力で補完
     await page.fill('#inp-name', '山本');
-    await page.locator('#suggest-list .suggest-item').first().click();
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
     await expect(page.locator('#inp-name')).toHaveValue('山本花子');
     await expect(page.locator('#inp-yomi')).toHaveValue('');
     await page.fill('#inp-yomi', 'やまもとはなこ');
-    await page.click('#addBtn');
+    // 山本花子 last_class='B' → サジェスト選択で #inp-class が B に自動設定 → B クラスに追加
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('B'));
 
     let master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     expect(master.members.find(m => m.id === 'm_bbbbbbbbbbbb').yomi).toBe('やまもとはなこ');
 
     // 山田太郎（マスタ yomi 既存）に違う yomi を手入力 → 上書きしないこと
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
     await expect(page.locator('#inp-yomi')).toHaveValue('やまだたろう');
     await page.fill('#inp-yomi', 'まちがいよみ');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
 
     master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     // 既存値「やまだたろう」のまま
@@ -92,7 +118,7 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
   test('addPlayer 成功後：氏名欄とふりがな欄が両方クリアされる', async ({ page }) => {
     await page.fill('#inp-name', '新人タロウ');
     await page.fill('#inp-yomi', 'しんじんたろう');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     await expect(page.locator('#inp-name')).toHaveValue('');
     await expect(page.locator('#inp-yomi')).toHaveValue('');
   });
@@ -118,7 +144,7 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
   test('player オブジェクトに yomi フィールドが追加されていない', async ({ page }) => {
     await page.fill('#inp-name', '田中次郎');
     await page.fill('#inp-yomi', 'たなかじろう');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     const state = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_v4')));
     expect(state.players.A[0].yomi).toBeUndefined();
   });
