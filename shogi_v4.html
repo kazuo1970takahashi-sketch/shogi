@@ -1258,7 +1258,7 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   // A-4.2 §3.1.2: 「追加先を選択」ヒント（Should Fix 3 反映）
   html+='<div id="pp-hint" style="font-size:11px;color:#888;margin-bottom:4px">追加先を選択（A/Bボタンで指定クラスへ追加）</div>';
   html+='<div style="max-height:280px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;padding:6px;margin-bottom:8px">';
-  // A-4.3 §2.1: 現クラス強調用に member_id → 現在登録中クラスのマップを作成
+  // A-4.3 §2.1 / A-4.5 §2.1: state.players ベースで現在登録中クラスを判定し、3 セクション(A 済 / B 済 / 未エントリー)に分割
   var currentRegMap={};
   if(state&&state.players){
     var regClasses=['A','B'];
@@ -1270,54 +1270,53 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
       }
     }
   }
-  for(var j=0;j<filtered.length;j++){
-    var fm=filtered[j];
-    // A-4.2 §3.4.3: 「前回:Xクラス」テキスト併記（last_class が A/B 以外なら非表示）
+  var aEnrolledFiltered=[];
+  var bEnrolledFiltered=[];
+  var notEnrolledFiltered=[];
+  for(var fi=0;fi<filtered.length;fi++){
+    var cur=currentRegMap[filtered[fi].id];
+    if(cur==='A')aEnrolledFiltered.push(filtered[fi]);
+    else if(cur==='B')bEnrolledFiltered.push(filtered[fi]);
+    else notEnrolledFiltered.push(filtered[fi]);
+  }
+  // A-4.5 §2.2: 行描画 helper(行内要素は A-4.3 と同じ。色強調は撤廃。「現在:Xクラス」テキストは追加しない)
+  function renderPpRow(fm){
     var lastClassText=fm.last_class==='A'?'前回:Aクラス':(fm.last_class==='B'?'前回:Bクラス':'');
     var nameSafe=escapeHtml(fm.name);
     var midSafe=escapeHtml(fm.id);
     var aLabelSafe=escapeHtml(fm.name+'をAクラスで追加');
     var bLabelSafe=escapeHtml(fm.name+'をBクラスで追加');
-    // A-4.3 §2.1: 現クラス強調（青/琥珀 + チェック印）。現クラスが立つときは前回クラスハイライトを上書きする
-    var currentCls=currentRegMap[fm.id]||null;
-    var aActive=(currentCls==='A');
-    var bActive=(currentCls==='B');
-    // A-4.2 §3.4.1: 前回参加クラスのボタンを強調（黄色 #FFD580）。現クラスが立つときは抑制
-    var aHighlight=fm.last_class==='A'&&!currentCls;
-    var bHighlight=fm.last_class==='B'&&!currentCls;
-    var btnBaseStyle='min-width:44px;min-height:44px;margin-left:8px;border:1px solid #1976d2;border-radius:6px;font-size:14px;cursor:pointer;flex-shrink:0';
-    var aStyle=btnBaseStyle
-      +';font-weight:'+((aActive||aHighlight)?'bold':'normal')
-      +';background:'+(aActive?'#bbdefb':(aHighlight?'#FFD580':'#fff'))
-      +';color:'+(aActive?'#0d47a1':(aHighlight?'#7a3e00':'#1976d2'))
-      +';border-color:'+(aActive?'#0d47a1':'#1976d2');
-    var bStyle=btnBaseStyle
-      +';font-weight:'+((bActive||bHighlight)?'bold':'normal')
-      +';background:'+(bActive?'#ffe0b2':(bHighlight?'#FFD580':'#fff'))
-      +';color:'+(bActive?'#5d4037':(bHighlight?'#7a3e00':'#1976d2'))
-      +';border-color:'+(bActive?'#e65100':'#1976d2');
-    var aClass='pp-add-btn'+(aActive?' pp-add-btn-active':'')+(aHighlight?' pp-add-btn-highlight':'');
-    var bClass='pp-add-btn'+(bActive?' pp-add-btn-active':'')+(bHighlight?' pp-add-btn-highlight':'');
-    var aText=aActive?'A ✓':'A';
-    var bText=bActive?'B ✓':'B';
-    // A-4.2 §3.1.2: 行本体タップは無効化（cursor:default、hover 効果なし）
-    // data-mid は行に1つだけ（既存テストの `#ppPanel [data-mid]` 件数カウント互換）
-    html+='<div class="pp-row" data-mid="'+midSafe+'" style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:default">';
-    // 既存テスト互換のための隠しマーカー（`.pp-check` 件数カウント用、A-3 e2e 依存）
-    html+='<input type="hidden" class="pp-check">';
-    html+='<span style="flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere">'+nameSafe;
-    if(fm.yomi){html+=' <span style="color:#888;font-size:12px">'+escapeHtml(normalizeYomi(fm.yomi))+'</span>';}
-    html+='</span>';
+    var btnStyle='min-width:44px;min-height:44px;margin-left:8px;border:1px solid #1976d2;border-radius:6px;font-size:14px;cursor:pointer;flex-shrink:0;background:#fff;color:#1976d2';
+    var rowHtml='<div class="pp-row" data-mid="'+midSafe+'" style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:default">';
+    // 既存テスト互換のための隠しマーカー(`.pp-check` 件数カウント用、A-3 e2e 依存)
+    rowHtml+='<input type="hidden" class="pp-check">';
+    rowHtml+='<span style="flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere">'+nameSafe;
+    if(fm.yomi){rowHtml+=' <span style="color:#888;font-size:12px">'+escapeHtml(normalizeYomi(fm.yomi))+'</span>';}
+    rowHtml+='</span>';
     if(lastClassText){
-      html+='<span class="pp-last-class" style="font-size:12px;color:#666;font-weight:500">'+escapeHtml(lastClassText)+'</span>';
+      rowHtml+='<span class="pp-last-class" style="font-size:12px;color:#666;font-weight:500">'+escapeHtml(lastClassText)+'</span>';
     }
-    html+='<span style="font-size:11px;color:#888;min-width:5em;text-align:right">'+escapeHtml(fm.last_attended||'')+'</span>';
-    // A-4.2 §3.1.4: A/B ボタン（min 44x44、aria-label / title 付与、Nice to Have 1 反映）
-    // A-4.3 §2.1: 現クラスは textContent に ✓ を併記
-    html+='<button type="button" class="'+aClass+'" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="'+aStyle+'">'+aText+'</button>';
-    html+='<button type="button" class="'+bClass+'" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="'+bStyle+'">'+bText+'</button>';
-    html+='</div>';
+    rowHtml+='<span style="font-size:11px;color:#888;min-width:5em;text-align:right">'+escapeHtml(fm.last_attended||'')+'</span>';
+    rowHtml+='<button type="button" class="pp-add-btn" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="'+btnStyle+'">A</button>';
+    rowHtml+='<button type="button" class="pp-add-btn" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="'+btnStyle+'">B</button>';
+    rowHtml+='</div>';
+    return rowHtml;
   }
+  // A-4.5 §3.1: セクション描画 helper(各セクション、ヘッダ + 行群 or 「該当なし」)
+  function renderSection(headerLabel,list,cssClass){
+    var secHtml='<div class="pp-section '+cssClass+'" style="margin-bottom:8px">';
+    secHtml+='<div class="pp-section-header" style="font-size:13px;font-weight:600;color:#1F3864;padding:4px 0;border-bottom:1px solid #d0d7e2;margin-bottom:4px">'+headerLabel+' ('+list.length+'名)</div>';
+    if(list.length===0){
+      secHtml+='<div class="pp-empty" style="color:#888;font-size:12px;padding:6px 4px">該当なし</div>';
+    }else{
+      for(var si=0;si<list.length;si++)secHtml+=renderPpRow(list[si]);
+    }
+    secHtml+='</div>';
+    return secHtml;
+  }
+  html+=renderSection('Aクラスエントリー済',aEnrolledFiltered,'pp-section-a-enrolled');
+  html+=renderSection('Bクラスエントリー済',bEnrolledFiltered,'pp-section-b-enrolled');
+  html+=renderSection('未エントリー',notEnrolledFiltered,'pp-section-not-enrolled');
   html+='</div>';
   return html;
 }
