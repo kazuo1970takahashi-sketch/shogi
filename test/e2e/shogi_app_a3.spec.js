@@ -1,6 +1,9 @@
 // @ts-check
 // Phase A-3 e2e: 登録画面サジェスト / F7 マスタ編集・削除 / F8 import-export / クイックフィルタ
 const { test, expect } = require('@playwright/test');
+const { clickAndExpectChange } = require('../helpers/clickAndExpectChange');
+const { clickAndExpectChangeUnchecked } = require('../helpers/clickAndExpectChangeUnchecked');
+const { shogiAssertions } = require('../helpers/shogi_assertions');
 
 const SAMPLE_MASTER = {
   schema_version: 1,
@@ -42,7 +45,15 @@ test.describe('A-3 登録画面サジェスト', () => {
     await page.fill('#inp-name', '山田');
     const item = page.locator('#suggest-list .suggest-item').first();
     await expect(item).toBeVisible();
-    await item.click();
+    // .suggest-item は addEventListener('mousedown') / inline onclick 不在 → Unchecked。
+    // .suggest-item の角は親 #suggest-list の border-radius 領域に重なって hit-test が
+    // 親要素にヒットするため、Stage 2b と同じく子の .si-info を click target とする
+    // (親 .suggest-item の addEventListener('mousedown') がバブリングで発火する)
+    await clickAndExpectChangeUnchecked(item.locator('.si-info'), async (before, after, ctx) => {
+      ctx.primary('no player added (form-only update)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      expect(after.state.players.B.length).toBe(before.state.players.B.length);
+    });
     await expect(page.locator('#inp-name')).toHaveValue('山田太郎');
     // 山田太郎は last_class:'A'
     await expect(page.locator('#inp-class')).toHaveValue('A');
@@ -53,8 +64,18 @@ test.describe('A-3 登録画面サジェスト', () => {
   test('候補選択 → 追加で参加者行に支部員区分・中学生区分がマスタ前回値で入る', async ({ page }) => {
     // 山田太郎 (member:'other', grade:'chu', last_class:'A') を選択して追加
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
-    await page.click('#addBtn');
+    // .suggest-item の角は親 #suggest-list の border-radius 領域に重なって hit-test が
+     // 親要素にヒットするため、Stage 2b と同じく子の .si-info を click target とする
+     // (親 .suggest-item の addEventListener('mousedown') がバブリングで発火する)
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     // A クラスに参加者行が1行追加される
     const rows = page.locator('#a-list .player-row');
     await expect(rows).toHaveCount(1);
@@ -69,11 +90,21 @@ test.describe('A-3 登録画面サジェスト', () => {
   test('候補選択後に氏名を変更すると member_id 引き継ぎが解除される', async ({ page }) => {
     // 候補選択
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
+    // .suggest-item の角は親 #suggest-list の border-radius 領域に重なって hit-test が
+     // 親要素にヒットするため、Stage 2b と同じく子の .si-info を click target とする
+     // (親 .suggest-item の addEventListener('mousedown') がバブリングで発火する)
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
     await expect(page.locator('#inp-name')).toHaveValue('山田太郎');
     // 氏名を別文字列に変更（normalizePersonName 後一致しない）
     await page.fill('#inp-name', '別の名前');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     // 解除されているので、追加された行はデフォルト値（member, ippan）
     const row = page.locator('#a-list .player-row').first();
     await expect(row.locator('.player-name')).toHaveText('別の名前');
@@ -98,8 +129,18 @@ test.describe('A-3 登録画面サジェスト', () => {
 
   test('候補選択 → 追加で player.member_id が localStorage の state に保存される', async ({ page }) => {
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
-    await page.click('#addBtn');
+    // .suggest-item の角は親 #suggest-list の border-radius 領域に重なって hit-test が
+     // 親要素にヒットするため、Stage 2b と同じく子の .si-info を click target とする
+     // (親 .suggest-item の addEventListener('mousedown') がバブリングで発火する)
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
 
     const state = await page.evaluate(() => {
       var raw = localStorage.getItem('shogi_v4');
@@ -117,8 +158,18 @@ test.describe('A-3 登録画面サジェスト', () => {
   test('既登録の member_id は候補リストから除外される（二重追加防止）', async ({ page }) => {
     // 1回目: 山田太郎 を追加
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
-    await page.click('#addBtn');
+    // .suggest-item の角は親 #suggest-list の border-radius 領域に重なって hit-test が
+     // 親要素にヒットするため、Stage 2b と同じく子の .si-info を click target とする
+     // (親 .suggest-item の addEventListener('mousedown') がバブリングで発火する)
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     await expect(page.locator('#a-list .player-row')).toHaveCount(1);
 
     // 2回目: 「山」で検索 → 山田太郎 は除外、山本花子 のみ表示
@@ -131,15 +182,28 @@ test.describe('A-3 登録画面サジェスト', () => {
   test('同じ氏名を直接再入力して追加するとエラー（同名拒否）', async ({ page }) => {
     // 1回目: 山田太郎 を追加（候補から）
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
-    await page.click('#addBtn');
+    // .suggest-item の角は親 #suggest-list の border-radius 領域に重なって hit-test が
+     // 親要素にヒットするため、Stage 2b と同じく子の .si-info を click target とする
+     // (親 .suggest-item の addEventListener('mousedown') がバブリングで発火する)
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     await expect(page.locator('#a-list .player-row')).toHaveCount(1);
 
     // 2回目: 同じ氏名を直接入力 → 候補に出ないが手で入れて追加
     await page.fill('#inp-name', '山田太郎');
-    await page.click('#addBtn');
-    // 既存の同名拒否ロジックが発火
-    await expect(page.locator('#reg-msg')).toContainText('同じ名前の参加者がいます');
+    // 同名拒否で player は増えない(raw callback で primary)
+    await clickAndExpectChange(page.locator('#addBtn'), async (before, after, ctx, p) => {
+      ctx.primary('duplicate name rejected (no addition)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      await expect(p.locator('#reg-msg')).toContainText('同じ名前の参加者がいます');
+    });
     // 行数は増えていない
     await expect(page.locator('#a-list .player-row')).toHaveCount(1);
   });
@@ -171,17 +235,22 @@ test.describe('A-3 マスタタブ', () => {
   });
 
   test('編集ボタン → モーダルで name + yomi を変更して保存できる', async ({ page }) => {
-    // 山田太郎の行の編集ボタン
+    // 山田太郎の行の編集ボタン → 編集モーダルが開く(state 不変、L0 §1.5 P1)
     const targetRow = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    await targetRow.locator('.master-edit-btn').click();
-    await expect(page.locator('#master-edit-modal')).toBeVisible();
+    await clickAndExpectChange(targetRow.locator('.master-edit-btn'), async (before, after, ctx, p) => {
+      ctx.primary('master edit modal opened');
+      await expect(p.locator('#master-edit-modal')).toBeVisible();
+    });
     // 既存値が入っていることを確認
     await expect(page.locator('#me-name')).toHaveValue('山田太郎');
     await expect(page.locator('#me-yomi')).toHaveValue('やまだたろう');
     // 編集して保存
     await page.fill('#me-name', '山田 改名');
     await page.fill('#me-yomi', 'やまだ かいめい');
-    await page.click('#me-save');
+    await clickAndExpectChange(
+      page.locator('#me-save'),
+      shogiAssertions.masterMemberEdited('m_aaaaaaaaaaaa')
+    );
     // モーダルが閉じる
     await expect(page.locator('#master-edit-modal')).toHaveCount(0);
     // 一覧に反映（normalize 後: 全角空白→半角、yomi の空白除去）
@@ -195,7 +264,10 @@ test.describe('A-3 マスタタブ', () => {
       await dialog.accept();
     });
     const targetRow = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    await targetRow.locator('.master-delete-btn').click();
+    await clickAndExpectChange(
+      targetRow.locator('.master-delete-btn'),
+      shogiAssertions.masterMemberDeleted('m_aaaaaaaaaaaa')
+    );
     // 削除後、一覧に「山田太郎」が表示されない（tombstone なので非表示）
     await expect(page.locator('#pane-master').getByText('山田太郎')).toHaveCount(0);
     // 他の member は残っている
@@ -205,7 +277,10 @@ test.describe('A-3 マスタタブ', () => {
   test('削除は tombstone（物理削除なし、deleted=true + deleted_at 設定）', async ({ page }) => {
     page.once('dialog', async (dialog) => { await dialog.accept(); });
     const targetRow = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    await targetRow.locator('.master-delete-btn').click();
+    await clickAndExpectChange(
+      targetRow.locator('.master-delete-btn'),
+      shogiAssertions.masterMemberDeleted('m_aaaaaaaaaaaa')
+    );
     // UI 上は消える
     await expect(page.locator('#pane-master').getByText('山田太郎')).toHaveCount(0);
     // localStorage 検証: members 配列に残っており tombstone が立っている
@@ -242,7 +317,15 @@ test.describe('A-3 クイックフィルタ（過去参加者パネル）', () =
     // 初期: 3名（山田太郎・山本花子・佐藤一郎）
     await expect(page.locator('#ppPanel .pp-check')).toHaveCount(3);
     // 「前回参加」 = last_attended が最大日 (2026-04-15) と一致 → 佐藤一郎のみ
-    await page.locator('.pp-quick-filter-btn[data-qfkey="recent_last"]').click();
+    // クイックフィルタは L0 §1.5 P1: state を持たない UI 状態変化のため raw callback で
+    // primary は「.pp-check 件数が絞り込まれる」(3 → 1)
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="recent_last"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter applied: row count narrowed');
+        await expect(p.locator('#ppPanel .pp-check')).toHaveCount(1);
+      }
+    );
     const checks = page.locator('#ppPanel .pp-check');
     await expect(checks).toHaveCount(1);
     await expect(page.locator('#ppPanel').getByText('佐藤一郎')).toBeVisible();
@@ -250,18 +333,43 @@ test.describe('A-3 クイックフィルタ（過去参加者パネル）', () =
 
   test('同じフィルタを再タップすると解除される（全件に戻る）', async ({ page }) => {
     // 「常連」 = attendance_count >= 5 → 佐藤一郎のみ
-    await page.locator('.pp-quick-filter-btn[data-qfkey="regular"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="regular"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter applied: row count narrowed to 1');
+        await expect(p.locator('#ppPanel .pp-check')).toHaveCount(1);
+      }
+    );
     await expect(page.locator('#ppPanel .pp-check')).toHaveCount(1);
     // 再タップで解除
-    await page.locator('.pp-quick-filter-btn[data-qfkey="regular"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="regular"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter cleared: all rows back');
+        await expect(p.locator('#ppPanel .pp-check')).toHaveCount(3);
+      }
+    );
     await expect(page.locator('#ppPanel .pp-check')).toHaveCount(3);
   });
 
   test('別のフィルタに切り替えると排他選択になる', async ({ page }) => {
-    await page.locator('.pp-quick-filter-btn[data-qfkey="regular"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="regular"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter "regular" applied (active class set)');
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).toHaveClass(/active/);
+      }
+    );
     await expect(page.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).toHaveClass(/active/);
     // 切り替え：前回参加へ
-    await page.locator('.pp-quick-filter-btn[data-qfkey="recent_last"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="recent_last"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter switched: recent_last active, regular inactive');
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="recent_last"]')).toHaveClass(/active/);
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).not.toHaveClass(/active/);
+      }
+    );
     // active は前回参加のみ
     await expect(page.locator('.pp-quick-filter-btn[data-qfkey="recent_last"]')).toHaveClass(/active/);
     await expect(page.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).not.toHaveClass(/active/);
@@ -285,8 +393,10 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
   });
 
   test('「マスタをインポート」ボタンクリックでモーダルが開く（ファイル選択 + 貼り付け両対応）', async ({ page }) => {
-    await page.click('#masterImportBtn');
-    await expect(page.locator('#master-import-modal')).toBeVisible();
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     await expect(page.locator('#mi-file')).toBeVisible();
     await expect(page.locator('#mi-paste-area')).toBeVisible();
     // textarea font-size が 16px 以上（iPhone Safari 自動ズーム回避）
@@ -295,7 +405,10 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
   });
 
   test('インポートモーダルに「上書き」「マージ」のラジオが存在する（マージは有効）', async ({ page }) => {
-    await page.click('#masterImportBtn');
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     const overwriteRadio = page.locator('input[name="mi-mode"][value="overwrite"]');
     const mergeRadio = page.locator('input[name="mi-mode"][value="merge"]');
     await expect(overwriteRadio).toBeVisible();
@@ -305,7 +418,10 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
   });
 
   test('上書き選択 + 実行 → 確認ダイアログが出る', async ({ page }) => {
-    await page.click('#masterImportBtn');
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     await page.locator('input[name="mi-mode"][value="overwrite"]').check();
     const validJson = JSON.stringify({
       schema_version: 1,
@@ -317,13 +433,20 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
       dialogText = dialog.message();
       await dialog.dismiss();
     });
-    await page.click('#mi-run');
-    // 確認ダイアログのメッセージに「元に戻せません」が含まれる
-    await expect.poll(() => dialogText, { timeout: 3000 }).toContain('元に戻せません');
+    // dismiss なので master 不変、primary は dialog 文言確認
+    await clickAndExpectChange(page.locator('#mi-run'), async (before, after, ctx) => {
+      ctx.primary('overwrite confirmation dialog appeared with warning text');
+      await expect.poll(() => dialogText, { timeout: 3000 }).toContain('元に戻せません');
+      // dismiss なので master は変更されない
+      expect(after.master.members.length).toBe(before.master.members.length);
+    });
   });
 
   test('大会データ形式 JSON を貼り付けると過去大会統合機能への案内エラーが出る', async ({ page }) => {
-    await page.click('#masterImportBtn');
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     await page.locator('input[name="mi-mode"][value="overwrite"]').check();
     const tournamentJson = JSON.stringify({
       schema_version: 4,
@@ -331,29 +454,49 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
       players: { A: [{id:'p1',name:'X'}], B: [] }
     });
     await page.locator('#mi-paste-area').fill(tournamentJson);
-    await page.click('#mi-run');
-    // 大会データを誤って入れた場合は明確に「過去大会データ」と「過去大会を支部マスタに統合」へ誘導される
-    await expect(page.locator('#mi-status')).toContainText('過去大会データ');
-    await expect(page.locator('#mi-status')).toContainText('支部マスタに統合');
+    // エラーケース: master 不変、primary は #mi-status の案内文言
+    await clickAndExpectChange(page.locator('#mi-run'), async (before, after, ctx, p) => {
+      ctx.primary('error: tournament data rejected with guidance to merge feature');
+      await expect(p.locator('#mi-status')).toContainText('過去大会データ');
+      await expect(p.locator('#mi-status')).toContainText('支部マスタに統合');
+      expect(after.master.members.length).toBe(before.master.members.length);
+    });
   });
 
   test('不正な JSON を貼り付けると解析エラーが出る', async ({ page }) => {
-    await page.click('#masterImportBtn');
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     await page.locator('input[name="mi-mode"][value="overwrite"]').check();
     await page.locator('#mi-paste-area').fill('{ broken json');
-    await page.click('#mi-run');
-    await expect(page.locator('#mi-status')).toContainText('解析');
+    // エラーケース: master 不変、primary は #mi-status のエラー文言
+    await clickAndExpectChange(page.locator('#mi-run'), async (before, after, ctx, p) => {
+      ctx.primary('error: parse error shown, master unchanged');
+      await expect(p.locator('#mi-status')).toContainText('解析');
+      expect(after.master.members.length).toBe(before.master.members.length);
+    });
   });
 
   test('エクスポート実行後、localStorage の branch master は schema_version:1 と members を保持する', async ({ page }) => {
     // alert と download を吸収
     page.on('dialog', async (dialog) => { await dialog.accept(); });
-    const downloadPromise = page.waitForEvent('download');
-    await page.click('#masterExportBtn');
-    const download = await downloadPromise;
-    // ファイル名フォーマット: shogi_branch_master_YYYY-MM-DD.json
-    expect(download.suggestedFilename()).toMatch(/^shogi_branch_master_\d{4}-\d{2}-\d{2}\.json$/);
-    // localStorage の branch master が壊れていない（エクスポートは読み取り専用）
+    // 仕様書 §4 の masterExport は production 実装が clipboard ではなく Blob+anchor download
+    // のため、download primary + master 不変 の raw callback で対応(末尾 commit で
+    // 仕様書 §4 を「download primary」に修正同梱)
+    let downloadPromise;
+    await clickAndExpectChange(
+      page.locator('#masterExportBtn'),
+      async (before, after, ctx) => {
+        ctx.primary('download triggered with master json filename, master unchanged');
+        const download = await downloadPromise;
+        expect(download.suggestedFilename()).toMatch(/^shogi_branch_master_\d{4}-\d{2}-\d{2}\.json$/);
+        // localStorage の branch master が壊れていない(エクスポートは read-only)
+        expect(after.localStorage.shogi_branch_master).toBe(before.localStorage.shogi_branch_master);
+      },
+      { beforeClick: () => { downloadPromise = page.waitForEvent('download'); } }
+    );
+    // 補助: localStorage の中身検証(従来テストの assertion を温存)
     const stored = await page.evaluate(() => {
       var raw = localStorage.getItem('shogi_branch_master');
       return raw ? JSON.parse(raw) : null;
@@ -365,7 +508,10 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
   });
 
   test('上書きインポート実行で localStorage の branch master が置換される', async ({ page }) => {
-    await page.click('#masterImportBtn');
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     await page.locator('input[name="mi-mode"][value="overwrite"]').check();
     const newMaster = {
       schema_version: 1,
@@ -378,8 +524,12 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
     await page.locator('#mi-paste-area').fill(JSON.stringify(newMaster));
     // 確認ダイアログを accept
     page.once('dialog', async (dialog) => { await dialog.accept(); });
-    await page.click('#mi-run');
-    await expect(page.locator('#master-import-modal')).toHaveCount(0);
+    // 上書き: 4 → 2(expectedNewCount: -2、existingMemberIds=[] 既存非保持、tombstone なし)
+    await clickAndExpectChange(
+      page.locator('#mi-run'),
+      shogiAssertions.masterImported({ expectedNewCount: -2 }),
+      { afterClick: async (p) => { await expect(p.locator('#master-import-modal')).toHaveCount(0); } }
+    );
 
     // localStorage 検証: 完全置換（元の 4 件 → 新 2 件）
     const stored = await page.evaluate(() => {
@@ -394,7 +544,10 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
   });
 
   test('マージインポート実行で 新規追加 + 既存 name は既存側維持', async ({ page }) => {
-    await page.click('#masterImportBtn');
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     await page.locator('input[name="mi-mode"][value="merge"]').check();
     // imported: 既存 m_aaaaaaaaaaaa の name を別名にしたものと、新規 m_eeeeeeeeeeee
     const importMaster = {
@@ -406,8 +559,15 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
       ]
     };
     await page.locator('#mi-paste-area').fill(JSON.stringify(importMaster));
-    await page.click('#mi-run');
-    await expect(page.locator('#master-import-modal')).toHaveCount(0);
+    // マージ: 4 → 5(expectedNewCount: 1、既存 m_aaaaaaaaaaaa の name/yomi は既存側維持)
+    await clickAndExpectChange(
+      page.locator('#mi-run'),
+      shogiAssertions.masterImported({
+        expectedNewCount: 1,
+        existingMemberIds: ['m_aaaaaaaaaaaa'],
+      }),
+      { afterClick: async (p) => { await expect(p.locator('#master-import-modal')).toHaveCount(0); } }
+    );
 
     // localStorage 検証
     const stored = await page.evaluate(() => {
