@@ -843,8 +843,7 @@ function applyMasterMemberEdit(memberId,newName,newYomi,master,options){
   if(hasGradeOpt&&options.grade!=='ippan'&&options.grade!=='chu'){
     return {success:false,error:'invalid_grade_value'};
   }
-  // A-4.4 §3.4: null 受理を撤廃。A / B のみ受理(undefined は「変更しない」を意味)
-  if(hasLastClassOpt&&options.last_class!=='A'&&options.last_class!=='B'){
+  if(hasLastClassOpt&&options.last_class!=='A'&&options.last_class!=='B'&&options.last_class!==null){
     return {success:false,error:'invalid_last_class_value'};
   }
 
@@ -1259,7 +1258,7 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   // A-4.2 §3.1.2: 「追加先を選択」ヒント（Should Fix 3 反映）
   html+='<div id="pp-hint" style="font-size:11px;color:#888;margin-bottom:4px">追加先を選択（A/Bボタンで指定クラスへ追加）</div>';
   html+='<div style="max-height:280px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;padding:6px;margin-bottom:8px">';
-  // A-4.3 §2.1 / A-4.4 §2.1: state.players ベースで現在登録中クラスを判定し、エントリー済 / 未エントリーに分割
+  // A-4.3 §2.1: 現クラス強調用に member_id → 現在登録中クラスのマップを作成
   var currentRegMap={};
   if(state&&state.players){
     var regClasses=['A','B'];
@@ -1271,58 +1270,54 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
       }
     }
   }
-  var enrolledFiltered=[];
-  var notEnrolledFiltered=[];
-  for(var fi=0;fi<filtered.length;fi++){
-    if(currentRegMap[filtered[fi].id])enrolledFiltered.push(filtered[fi]);
-    else notEnrolledFiltered.push(filtered[fi]);
-  }
-  // A-4.4 §2.2: 行描画 helper(エントリー済 / 未エントリーで分岐、ボタン色強調なし)
-  function renderPpRow(fm){
+  for(var j=0;j<filtered.length;j++){
+    var fm=filtered[j];
+    // A-4.2 §3.4.3: 「前回:Xクラス」テキスト併記（last_class が A/B 以外なら非表示）
     var lastClassText=fm.last_class==='A'?'前回:Aクラス':(fm.last_class==='B'?'前回:Bクラス':'');
     var nameSafe=escapeHtml(fm.name);
     var midSafe=escapeHtml(fm.id);
     var aLabelSafe=escapeHtml(fm.name+'をAクラスで追加');
     var bLabelSafe=escapeHtml(fm.name+'をBクラスで追加');
+    // A-4.3 §2.1: 現クラス強調（青/琥珀 + チェック印）。現クラスが立つときは前回クラスハイライトを上書きする
     var currentCls=currentRegMap[fm.id]||null;
-    var btnStyle='min-width:44px;min-height:44px;margin-left:8px;border:1px solid #1976d2;border-radius:6px;font-size:14px;cursor:pointer;flex-shrink:0;background:#fff;color:#1976d2';
-    var rowHtml='<div class="pp-row" data-mid="'+midSafe+'" style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:default">';
+    var aActive=(currentCls==='A');
+    var bActive=(currentCls==='B');
+    // A-4.2 §3.4.1: 前回参加クラスのボタンを強調（黄色 #FFD580）。現クラスが立つときは抑制
+    var aHighlight=fm.last_class==='A'&&!currentCls;
+    var bHighlight=fm.last_class==='B'&&!currentCls;
+    var btnBaseStyle='min-width:44px;min-height:44px;margin-left:8px;border:1px solid #1976d2;border-radius:6px;font-size:14px;cursor:pointer;flex-shrink:0';
+    var aStyle=btnBaseStyle
+      +';font-weight:'+((aActive||aHighlight)?'bold':'normal')
+      +';background:'+(aActive?'#bbdefb':(aHighlight?'#FFD580':'#fff'))
+      +';color:'+(aActive?'#0d47a1':(aHighlight?'#7a3e00':'#1976d2'))
+      +';border-color:'+(aActive?'#0d47a1':'#1976d2');
+    var bStyle=btnBaseStyle
+      +';font-weight:'+((bActive||bHighlight)?'bold':'normal')
+      +';background:'+(bActive?'#ffe0b2':(bHighlight?'#FFD580':'#fff'))
+      +';color:'+(bActive?'#5d4037':(bHighlight?'#7a3e00':'#1976d2'))
+      +';border-color:'+(bActive?'#e65100':'#1976d2');
+    var aClass='pp-add-btn'+(aActive?' pp-add-btn-active':'')+(aHighlight?' pp-add-btn-highlight':'');
+    var bClass='pp-add-btn'+(bActive?' pp-add-btn-active':'')+(bHighlight?' pp-add-btn-highlight':'');
+    var aText=aActive?'A ✓':'A';
+    var bText=bActive?'B ✓':'B';
+    // A-4.2 §3.1.2: 行本体タップは無効化（cursor:default、hover 効果なし）
+    // data-mid は行に1つだけ（既存テストの `#ppPanel [data-mid]` 件数カウント互換）
+    html+='<div class="pp-row" data-mid="'+midSafe+'" style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:default">';
     // 既存テスト互換のための隠しマーカー（`.pp-check` 件数カウント用、A-3 e2e 依存）
-    rowHtml+='<input type="hidden" class="pp-check">';
-    rowHtml+='<span style="flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere">'+nameSafe;
-    if(fm.yomi){rowHtml+=' <span style="color:#888;font-size:12px">'+escapeHtml(normalizeYomi(fm.yomi))+'</span>';}
-    rowHtml+='</span>';
-    // A-4.4 §2.2: エントリー済セクションでは「現在:Xクラス」テキストを表示
-    if(currentCls){
-      rowHtml+='<span class="pp-current-class" style="font-size:12px;color:#0d47a1;font-weight:600">現在:'+currentCls+'クラス</span>';
-    }
+    html+='<input type="hidden" class="pp-check">';
+    html+='<span style="flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere">'+nameSafe;
+    if(fm.yomi){html+=' <span style="color:#888;font-size:12px">'+escapeHtml(normalizeYomi(fm.yomi))+'</span>';}
+    html+='</span>';
     if(lastClassText){
-      rowHtml+='<span class="pp-last-class" style="font-size:12px;color:#666;font-weight:500">'+escapeHtml(lastClassText)+'</span>';
+      html+='<span class="pp-last-class" style="font-size:12px;color:#666;font-weight:500">'+escapeHtml(lastClassText)+'</span>';
     }
-    rowHtml+='<span style="font-size:11px;color:#888;min-width:5em;text-align:right">'+escapeHtml(fm.last_attended||'')+'</span>';
-    rowHtml+='<button type="button" class="pp-add-btn" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="'+btnStyle+'">A</button>';
-    rowHtml+='<button type="button" class="pp-add-btn" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="'+btnStyle+'">B</button>';
-    rowHtml+='</div>';
-    return rowHtml;
+    html+='<span style="font-size:11px;color:#888;min-width:5em;text-align:right">'+escapeHtml(fm.last_attended||'')+'</span>';
+    // A-4.2 §3.1.4: A/B ボタン（min 44x44、aria-label / title 付与、Nice to Have 1 反映）
+    // A-4.3 §2.1: 現クラスは textContent に ✓ を併記
+    html+='<button type="button" class="'+aClass+'" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="'+aStyle+'">'+aText+'</button>';
+    html+='<button type="button" class="'+bClass+'" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="'+bStyle+'">'+bText+'</button>';
+    html+='</div>';
   }
-  // A-4.4 §2.1: エントリー済セクション
-  html+='<div class="pp-section pp-section-enrolled" style="margin-bottom:8px">';
-  html+='<div class="pp-section-header" style="font-size:13px;font-weight:600;color:#1F3864;padding:4px 0;border-bottom:1px solid #d0d7e2;margin-bottom:4px">エントリー済 ('+enrolledFiltered.length+'名)</div>';
-  if(enrolledFiltered.length===0){
-    html+='<div class="pp-empty" style="color:#888;font-size:12px;padding:6px 4px">該当なし</div>';
-  }else{
-    for(var ei=0;ei<enrolledFiltered.length;ei++)html+=renderPpRow(enrolledFiltered[ei]);
-  }
-  html+='</div>';
-  // A-4.4 §2.1: 未エントリーセクション
-  html+='<div class="pp-section pp-section-not-enrolled">';
-  html+='<div class="pp-section-header" style="font-size:13px;font-weight:600;color:#1F3864;padding:4px 0;border-bottom:1px solid #d0d7e2;margin-bottom:4px">未エントリー ('+notEnrolledFiltered.length+'名)</div>';
-  if(notEnrolledFiltered.length===0){
-    html+='<div class="pp-empty" style="color:#888;font-size:12px;padding:6px 4px">該当なし</div>';
-  }else{
-    for(var ni=0;ni<notEnrolledFiltered.length;ni++)html+=renderPpRow(notEnrolledFiltered[ni]);
-  }
-  html+='</div>';
   html+='</div>';
   return html;
 }
@@ -1724,8 +1719,9 @@ function buildMasterEditModalHtml(member){
   html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-grade" value="chu"'+(gradeCur==='chu'?' checked':'')+' style="margin-right:6px">中学</label>';
   html+='</fieldset>';
 
-  // A-4.4 §2.5: 前回クラス（A / B 2 択。null は未 checked で表現）
+  // A-4.3 §2.5: 前回クラス（A / B / 未設定）
   html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">前回クラス</legend>';
+  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-last-class" value=""'+(lastClassCur===''?' checked':'')+' style="margin-right:6px">未設定</label>';
   html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-last-class" value="A"'+(lastClassCur==='A'?' checked':'')+' style="margin-right:6px">A</label>';
   html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-last-class" value="B"'+(lastClassCur==='B'?' checked':'')+' style="margin-right:6px">B</label>';
   html+='</fieldset>';
@@ -1924,8 +1920,7 @@ function bindMasterEditModalEvents(){
     var options={};
     if(memberPick==='member'||memberPick==='other')options.member=memberPick;
     if(gradePick==='ippan'||gradePick==='chu')options.grade=gradePick;
-    // A-4.4 §2.5: 「未設定」radio 廃止。A/B どちらも未 check の場合は last_class を変更しない(undefined)
-    if(lastClassPicked&&(lastClassPick==='A'||lastClassPick==='B'))options.last_class=lastClassPick;
+    if(lastClassPicked)options.last_class=(lastClassPick==='A'||lastClassPick==='B')?lastClassPick:null;
 
     var master=loadBranchMaster();
     var result=applyMasterMemberEdit(memberId,newName,newYomi,master,options);
@@ -1948,11 +1943,6 @@ function bindMasterEditModalEvents(){
     }
     if(typeof showMsg==='function')showMsg(msg,result.duplicateCount>0?'warn':'ok');
     renderMasterTab();
-    // A-4.4 §2.6 (bug fix #7): F7 保存後に過去参加者パネルを再描画(リロード不要で「前回:Xクラス」表示が即更新)
-    if(typeof renderPastParticipantsPanel==='function'){
-      var ppSearch=document.getElementById('pp-search');
-      renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
-    }
   });
 }
 
