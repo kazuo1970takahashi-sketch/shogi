@@ -977,6 +977,37 @@ function addPlayerFromMaster(memberId,cls,master,state){
   return {success:true,player:player};
 }
 
+// A-4.3 §3.1: 既登録 player のクラスを変更する純粋関数。
+// state.players[oldCls] から削除し、state.players[newCls] に同 id で再追加。
+// マスタの last_class も即時更新する（addPlayerFromMaster とは責務が分かれる）。
+function changePlayerClass(memberId,newCls,master,state){
+  if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
+  if(!state||!state.players||!Array.isArray(state.players.A)||!Array.isArray(state.players.B))return {success:false,error:'invalid_state'};
+  if(typeof memberId!=='string'||memberId==='')return {success:false,error:'invalid_id'};
+  if(newCls!=='A'&&newCls!=='B')return {success:false,error:'invalid_class'};
+  var target=null,oldCls=null,oldIdx=-1;
+  var classes=['A','B'];
+  for(var ci=0;ci<classes.length;ci++){
+    var arr=state.players[classes[ci]];
+    for(var pi=0;pi<arr.length;pi++){
+      if(arr[pi]&&arr[pi].member_id===memberId){target=arr[pi];oldCls=classes[ci];oldIdx=pi;break;}
+    }
+    if(target)break;
+  }
+  if(!target)return {success:false,error:'not_found'};
+  if(oldCls===newCls)return {success:false,error:'same_class'};
+  state.players[oldCls].splice(oldIdx,1);
+  target.cls=newCls;
+  state.players[newCls].push(target);
+  for(var mi=0;mi<master.members.length;mi++){
+    if(master.members[mi]&&master.members[mi].id===memberId){
+      master.members[mi].last_class=newCls;
+      break;
+    }
+  }
+  return {success:true,player:target,oldCls:oldCls,newCls:newCls};
+}
+
 function addTournamentIdOnce(member,tournamentId){
   if(!member||!tournamentId)return false;
   if(!Array.isArray(member.tournament_ids))member.tournament_ids=[];
