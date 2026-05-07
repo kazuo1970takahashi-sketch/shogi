@@ -78,13 +78,15 @@ test.describe('A-4.5 §2.1: 過去参加者パネル 3 セクション分離', (
     await expect(page.locator('#ppPanel .pp-section-a-enrolled .pp-row').filter({ hasText: '山田太郎' })).toHaveCount(0);
   });
 
-  test('ボタン色強調撤廃: pp-add-btn-active / pp-add-btn-highlight クラスは存在しない、テキストは「A」「B」のみ', async ({ page }) => {
-    page.once('dialog', async (dialog) => { await dialog.accept(); });
-    await page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' }).locator('.pp-add-btn[data-cls="A"]').click();
-    await expect(page.locator('.pp-add-btn-active')).toHaveCount(0);
+  // A-4.6: ボタン色強調撤廃テストは廃止。
+  // 現クラス active 強調は復活(pp-add-btn-active クラス + 背景色 + ✓ + bold) → shogi_app_a4_6.spec.js で検証。
+  // 前回参加クラス強調(pp-add-btn-highlight)は撤廃のまま維持。
+  test('A-4.6: pp-add-btn-highlight は撤廃のまま維持(前回参加クラスのボタン強調なし)', async ({ page }) => {
+    // 山田太郎(last_class:A、未エントリー)の A ボタンには highlight クラスは付かない
+    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
+    await expect(row.locator('.pp-add-btn[data-cls="A"]')).not.toHaveClass(/pp-add-btn-highlight/);
+    await expect(row.locator('.pp-add-btn[data-cls="B"]')).not.toHaveClass(/pp-add-btn-highlight/);
     await expect(page.locator('.pp-add-btn-highlight')).toHaveCount(0);
-    const aText = await page.locator('#ppPanel .pp-section-a-enrolled .pp-row').filter({ hasText: '山田太郎' }).locator('.pp-add-btn[data-cls="A"]').textContent();
-    expect(aText.trim()).toBe('A');
   });
 
   test('行内要素は A-4.3 と同じ(氏名 + 前回:Xクラス + 日付 + A/B ボタン)、「現在:Xクラス」テキストは存在しない', async ({ page }) => {
