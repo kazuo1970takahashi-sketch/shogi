@@ -843,7 +843,8 @@ function applyMasterMemberEdit(memberId,newName,newYomi,master,options){
   if(hasGradeOpt&&options.grade!=='ippan'&&options.grade!=='chu'){
     return {success:false,error:'invalid_grade_value'};
   }
-  if(hasLastClassOpt&&options.last_class!=='A'&&options.last_class!=='B'&&options.last_class!==null){
+  // A-4.5 §3.4: null 受理を撤廃。A / B のみ受理(undefined は「変更しない」を意味)
+  if(hasLastClassOpt&&options.last_class!=='A'&&options.last_class!=='B'){
     return {success:false,error:'invalid_last_class_value'};
   }
 
@@ -1718,9 +1719,8 @@ function buildMasterEditModalHtml(member){
   html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-grade" value="chu"'+(gradeCur==='chu'?' checked':'')+' style="margin-right:6px">中学</label>';
   html+='</fieldset>';
 
-  // A-4.3 §2.5: 前回クラス（A / B / 未設定）
+  // A-4.5 §2.6: 前回クラス（A / B 2 択。null は未 checked で表現）
   html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">前回クラス</legend>';
-  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-last-class" value=""'+(lastClassCur===''?' checked':'')+' style="margin-right:6px">未設定</label>';
   html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-last-class" value="A"'+(lastClassCur==='A'?' checked':'')+' style="margin-right:6px">A</label>';
   html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-last-class" value="B"'+(lastClassCur==='B'?' checked':'')+' style="margin-right:6px">B</label>';
   html+='</fieldset>';
@@ -1919,7 +1919,8 @@ function bindMasterEditModalEvents(){
     var options={};
     if(memberPick==='member'||memberPick==='other')options.member=memberPick;
     if(gradePick==='ippan'||gradePick==='chu')options.grade=gradePick;
-    if(lastClassPicked)options.last_class=(lastClassPick==='A'||lastClassPick==='B')?lastClassPick:null;
+    // A-4.5 §2.6: 「未設定」radio 廃止。A/B どちらも未 check なら last_class を変更しない(undefined)
+    if(lastClassPicked&&(lastClassPick==='A'||lastClassPick==='B'))options.last_class=lastClassPick;
 
     var master=loadBranchMaster();
     var result=applyMasterMemberEdit(memberId,newName,newYomi,master,options);
@@ -1942,6 +1943,11 @@ function bindMasterEditModalEvents(){
     }
     if(typeof showMsg==='function')showMsg(msg,result.duplicateCount>0?'warn':'ok');
     renderMasterTab();
+    // A-4.5 §2.7 (bug fix #7): F7 保存後に過去参加者パネルを再描画(リロード不要で「前回:Xクラス」表示が即更新)
+    if(typeof renderPastParticipantsPanel==='function'){
+      var ppSearch=document.getElementById('pp-search');
+      renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
+    }
   });
 }
 
