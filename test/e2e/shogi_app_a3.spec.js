@@ -218,11 +218,13 @@ test.describe('A-3 マスタタブ', () => {
     await page.click('#tab-master');
   });
 
-  test('マスタ一覧テーブル（ふりがな列・編集・削除ボタン）が表示される', async ({ page }) => {
+  // master-list 列構成変更(2026-05-08): ふりがな列を撤廃 → ヘッダ存在 assert を「氏名」「支部員区分」に変更
+  test('マスタ一覧テーブル（5 列構成・編集・削除ボタン）が表示される', async ({ page }) => {
     const masterPane = page.locator('#pane-master');
     await expect(masterPane).toBeVisible();
-    // ふりがな列ヘッダ
-    await expect(masterPane.getByRole('columnheader', { name: 'ふりがな' })).toBeVisible();
+    // 5 列ヘッダ(ふりがな列は撤廃)
+    await expect(masterPane.getByRole('columnheader', { name: '氏名' })).toBeVisible();
+    await expect(masterPane.getByRole('columnheader', { name: '支部員区分' })).toBeVisible();
     // 編集・削除ボタンが存在
     await expect(masterPane.locator('.master-edit-btn').first()).toBeVisible();
     await expect(masterPane.locator('.master-delete-btn').first()).toBeVisible();
@@ -253,9 +255,11 @@ test.describe('A-3 マスタタブ', () => {
     );
     // モーダルが閉じる
     await expect(page.locator('#master-edit-modal')).toHaveCount(0);
-    // 一覧に反映（normalize 後: 全角空白→半角、yomi の空白除去）
+    // 一覧の氏名に反映（master-list 列構成変更でふりがな列撤廃、氏名のみ確認）
     await expect(page.locator('#pane-master').getByText('山田 改名')).toBeVisible();
-    await expect(page.locator('#pane-master').getByText('やまだかいめい')).toBeVisible();
+    // ふりがな(やまだかいめい)は localStorage で確認(F7 編集モーダル内では確認可、一覧には非表示)
+    const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
+    expect(master.members.find((m) => m.id === 'm_aaaaaaaaaaaa').yomi).toBe('やまだかいめい');
   });
 
   test('削除ボタン → confirm 後に一覧から消える', async ({ page }) => {

@@ -126,34 +126,10 @@ test.describe('A-4.3 §2.2: 確認ダイアログ 3 ケース分岐', () => {
 // ============================================================
 
 // ============================================================
-// §2.4: マスタ一覧 last_class カラム
+// §2.4 マスタ一覧 last_class カラムは master-list 列構成変更(2026-05-08)で撤廃。
+// last_class は F7 編集モーダル内でのみ表示・編集可(§2.5 で担保)。
+// 一覧の列構成検証は shogi_master_list.spec.js に移管。
 // ============================================================
-test.describe('A-4.3 §2.4: マスタ一覧 last_class カラム', () => {
-  test.beforeEach(async ({ page }) => {
-    await setupWithMaster(page);
-    await page.click('#tab-master');
-    await expect(page.locator('#pane-master')).toBeVisible();
-  });
-
-  test('テーブルヘッダに「前回クラス」が含まれる', async ({ page }) => {
-    await expect(page.locator('#pane-master thead')).toContainText('前回クラス');
-  });
-
-  test('last_class=A → セルに A 表示', async ({ page }) => {
-    const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    await expect(row.locator('.master-cell-last-class')).toHaveText('A');
-  });
-
-  test('last_class=B → セルに B 表示', async ({ page }) => {
-    const row = page.locator('#pane-master tbody tr').filter({ hasText: '山本花子' });
-    await expect(row.locator('.master-cell-last-class')).toHaveText('B');
-  });
-
-  test('last_class=null → セルに - 表示', async ({ page }) => {
-    const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
-    await expect(row.locator('.master-cell-last-class')).toHaveText('-');
-  });
-});
 
 // ============================================================
 // §2.5: F7 編集モーダル last_class 編集

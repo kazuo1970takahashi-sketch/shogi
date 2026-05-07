@@ -74,3 +74,16 @@ test('Visual mobile-375: F7 編集モーダル(A/B 2 択)', async ({ page }) => 
   await expect(page.locator('#master-edit-modal')).toBeVisible();
   await expect(page).toHaveScreenshot('mobile-master-edit-modal-375.png', OPT);
 });
+
+// ============================================================
+// マスタ一覧 5 列構成(2026-05-08 列構成変更後)mobile-375 snapshot
+// 仕様書 §3.3 通り、iPhone 375px で氏名縦書き化なしを視覚的に保証
+// ============================================================
+test('Visual mobile-375: マスタ一覧 5 列構成(iPhone 375px 縦書き化なし)', async ({ page }) => {
+  await setup(page, { master: SAMPLE_MASTER });
+  await page.click('#tab-master');
+  await expect(page.locator('#pane-master')).toBeVisible();
+  // 5 列構成が描画されていることをサニティチェック
+  await expect(page.locator('#pane-master thead th')).toHaveCount(5);
+  await expect(page).toHaveScreenshot('mobile-master-list-5cols-375.png', OPT);
+});

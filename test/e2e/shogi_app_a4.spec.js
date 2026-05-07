@@ -299,21 +299,21 @@ test.describe('A-4 Stage 3: マスタ一覧 区分列', () => {
     await page.click('#tab-master');
   });
 
-  test('一覧テーブルに「区分」列ヘッダが表示される', async ({ page }) => {
-    await expect(page.locator('#pane-master').getByRole('columnheader', { name: '区分' })).toBeVisible();
+  // master-list 列構成変更(2026-05-08): 「区分」列が「支部員区分」「中学生以下区分」の 2 列に分離
+  test('一覧テーブルに「支部員区分」「中学生以下区分」列ヘッダが表示される', async ({ page }) => {
+    await expect(page.locator('#pane-master').getByRole('columnheader', { name: '支部員区分' })).toBeVisible();
+    await expect(page.locator('#pane-master').getByRole('columnheader', { name: '中学生以下区分' })).toBeVisible();
   });
 
-  test('支部員区分・中学生以下区分が一覧に2段表示される', async ({ page }) => {
+  test('支部員区分(member)・中学生以下区分(grade)が一覧に別セルで表示される', async ({ page }) => {
     // 山田太郎: member='other', grade='chu' → "他" + "中学"
     const row1 = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    const cell1 = row1.locator('td.master-cell-grade');
-    await expect(cell1).toContainText('他');
-    await expect(cell1).toContainText('中学');
-    // 佐藤一郎: member='member', grade='ippan' → "支部員" のみ（中学行は出ない）
+    await expect(row1.locator('td.master-cell-member')).toHaveText('他');
+    await expect(row1.locator('td.master-cell-grade')).toHaveText('中学');
+    // 佐藤一郎: member='member', grade='ippan' → "支部員" + "一般"(列構成変更で「一般」が常時表示に)
     const row2 = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
-    const cell2 = row2.locator('td.master-cell-grade');
-    await expect(cell2).toContainText('支部員');
-    await expect(cell2).not.toContainText('中学');
+    await expect(row2.locator('td.master-cell-member')).toHaveText('支部員');
+    await expect(row2.locator('td.master-cell-grade')).toHaveText('一般');
   });
 });
 
@@ -401,9 +401,9 @@ test.describe('A-4 Stage 3: マスタ編集モーダル', () => {
       const afterMember = after.master.members.find(m => m.id === 'm_cccccccccccc');
       expect(afterMember.grade).toBe('chu');
     });
-    // 再描画後の佐藤一郎の行に「中学」が表示される
+    // 再描画後の佐藤一郎の行に「中学」が表示される(grade セル単独で表示、列構成変更後は中学/一般が常時)
     const row2 = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
-    await expect(row2.locator('td.master-cell-grade')).toContainText('中学');
+    await expect(row2.locator('td.master-cell-grade')).toHaveText('中学');
   });
 });
 
@@ -565,26 +565,18 @@ test.describe('A-4 Stage 5: マスタタブ ふりがな未入力サマリー・
     await expect(page.locator('#master-no-yomi-summary')).toContainText('2名');
   });
 
-  test('サマリー数と一覧バッジ数が一致する', async ({ page }) => {
-    const summaryText = await page.locator('#master-no-yomi-summary').innerText();
-    // "（うちふりがな未入力: 2名）"
-    const match = summaryText.match(/(\d+)名/);
-    expect(match).not.toBeNull();
-    const summaryCount = Number(match[1]);
-    const badgeCount = await page.locator('.master-no-yomi-badge').count();
-    expect(badgeCount).toBe(summaryCount);
-    expect(summaryCount).toBe(2);
-  });
-
-  test('未入力 member の行に ⚠️ 未入力 バッジが表示される', async ({ page }) => {
-    const row = page.locator('#pane-master tbody tr').filter({ hasText: '山本花子' });
-    await expect(row.locator('.master-no-yomi-badge')).toBeVisible();
-    await expect(row.locator('.master-no-yomi-badge')).toContainText('未入力');
-  });
-
-  test('入力済み member の行にはバッジが出ない', async ({ page }) => {
-    const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    await expect(row.locator('.master-no-yomi-badge')).toHaveCount(0);
+  // master-list 列構成変更(2026-05-08): ふりがな列を削除したため `.master-no-yomi-badge` は撤廃。
+  // サマリー(`#master-no-yomi-summary`)は維持され「うちふりがな未入力: N名」を引き続き表示。
+  // 元テスト:
+  //   - サマリー数と一覧バッジ数が一致する → ふりがな列撤廃で行内バッジが廃止、サマリーのみ維持
+  //   - 未入力 member の行に ⚠️ 未入力 バッジ → 行内バッジは廃止
+  //   - 入力済み member の行にはバッジが出ない → 全行でバッジ自体が出ないため自明
+  // ふりがな未入力の識別は F7 編集モーダル内 + サマリーで担保。
+  test('サマリーは維持: 一覧から行内バッジは撤廃され、`master-no-yomi-summary` のみで件数表示', async ({ page }) => {
+    // サマリーは引き続き表示
+    await expect(page.locator('#master-no-yomi-summary')).toContainText('2名');
+    // 一覧の行内バッジは撤廃済(全行で 0 件)
+    await expect(page.locator('.master-no-yomi-badge')).toHaveCount(0);
   });
 });
 
