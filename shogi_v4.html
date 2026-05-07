@@ -1669,43 +1669,39 @@ function buildMasterTabHtml(master){
     html+='<div style="color:#888;font-size:13px;padding:8px 0">登録された参加者はいません。</div>';
   }else{
     html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
-    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">ふりがな</th><th style="text-align:left;padding:6px 8px">区分</th><th style="padding:6px 8px">前回クラス</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th><th style="padding:6px 8px">操作</th></tr></thead><tbody>';
+    // master-list 列構成変更(2026-05-08): 7 列(氏名/ふりがな/区分/前回クラス/最終参加/回数/操作)→
+    // 5 列(氏名/支部員区分/中学生以下区分/編集/削除)。iPhone 375px 縦書き化解消が目的。
+    // 削除した「ふりがな」「前回クラス」「最終参加」「回数」は F7 編集モーダル内で確認・編集可。
+    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">支部員区分</th><th style="text-align:left;padding:6px 8px">中学生以下区分</th><th style="padding:6px 8px">編集</th><th style="padding:6px 8px">削除</th></tr></thead><tbody>';
     for(var i=0;i<members.length;i++){
       var m=members[i];
-      // A-4 §3.2.1: 区分列（2段表示） — 上段:支部員/他、下段:中学のみ表示
       var memberLabel=(m.member==='other')?'他':'支部員';
-      var gradeLabel=(m.grade==='chu')?'中学':'';
+      var gradeLabel=(m.grade==='chu')?'中学':'一般';
       var isDel=(m.deleted===true);
       // A-4 §3.4.2: 削除済み行はグレー背景＋取り消し線
       var rowStyle=isDel?' style="background:#f5f5f5;color:#888;text-decoration:line-through" class="master-row-deleted"':'';
       html+='<tr'+rowStyle+'><td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.name)+'</td>';
-      // A-4 §3.5.3: ふりがな未入力なら ⚠️ 未入力 バッジ（薄黄色背景）
-      var yomiCellHtml;
-      if(isNoYomiMember(m)){
-        yomiCellHtml='<span class="master-no-yomi-badge" style="display:inline-block;background:#fff8c4;color:#7a5d00;border:1px solid #f0e082;border-radius:10px;padding:1px 8px;font-size:11px;text-decoration:none">⚠️ 未入力</span>';
-      }else{
-        yomiCellHtml=escapeHtml(m.yomi||'');
-      }
-      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee;color:#666">'+yomiCellHtml+'</td>';
-      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee" class="master-cell-grade">'
-        +'<div>'+escapeHtml(memberLabel)+'</div>'
-        +(gradeLabel?'<div style="color:#666;font-size:12px">'+escapeHtml(gradeLabel)+'</div>':'')
-        +'</td>';
-      // A-4.3 §2.4: 前回クラス（A / B / -）
-      var lastClsLabel=(m.last_class==='A'||m.last_class==='B')?m.last_class:'-';
-      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center" class="master-cell-last-class">'+escapeHtml(lastClsLabel)+'</td>';
-      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.last_attended||'')+'</td>';
-      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+(m.attendance_count|0)+'</td>';
-      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap">';
+      // 支部員区分(member: 支部員 / 他)
+      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee" class="master-cell-member">'+escapeHtml(memberLabel)+'</td>';
+      // 中学生以下区分(grade: 中学 / 一般)
+      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee" class="master-cell-grade">'+escapeHtml(gradeLabel)+'</td>';
       if(isDel){
-        // A-4 §3.2.3 (Nice to Have 3): 削除日時表示 + 復元ボタン
-        if(m.deleted_at)html+='<div style="font-size:11px;color:#888;text-decoration:none;margin-bottom:4px">削除日：'+escapeHtml(m.deleted_at)+'</div>';
+        // 削除済み行: 編集列に「復元」、削除列に削除日(A-4 §3.2.3 削除日表示 + 復元ボタンを 2 列に分割)
+        html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap" class="master-cell-edit">';
         html+='<button type="button" class="btn-sm master-restore-btn" data-mid="'+escapeHtml(m.id||'')+'" data-name="'+escapeHtml(m.name||'')+'" style="border-color:#1F3864;color:#1F3864;text-decoration:none">復元</button>';
+        html+='</td>';
+        html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap" class="master-cell-delete">';
+        if(m.deleted_at)html+='<span style="font-size:11px;color:#888;text-decoration:none">削除日：'+escapeHtml(m.deleted_at)+'</span>';
+        html+='</td>';
       }else{
-        html+='<button type="button" class="btn-sm master-edit-btn" data-mid="'+escapeHtml(m.id||'')+'">編集</button> ';
+        html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap" class="master-cell-edit">';
+        html+='<button type="button" class="btn-sm master-edit-btn" data-mid="'+escapeHtml(m.id||'')+'">編集</button>';
+        html+='</td>';
+        html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap" class="master-cell-delete">';
         html+='<button type="button" class="btn-sm master-delete-btn" data-mid="'+escapeHtml(m.id||'')+'" data-name="'+escapeHtml(m.name||'')+'" style="border-color:#c33;color:#c33">削除</button>';
+        html+='</td>';
       }
-      html+='</td></tr>';
+      html+='</tr>';
     }
     html+='</tbody></table></div>';
   }
