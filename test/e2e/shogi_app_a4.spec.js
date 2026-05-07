@@ -603,7 +603,14 @@ test.describe('A-4 Stage 5: 過去参加者パネルのクイックフィルタ'
   });
 
   test('フィルタ ON で結果数 = サマリー数（マスタタブとの一致）', async ({ page }) => {
-    await page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]').click();
+    // クイックフィルタは L0 §1.5 P1: state を持たない UI 状態変化のため raw callback
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter "no_yomi" applied: rows narrowed to no-yomi members');
+        await expect(p.locator('#ppPanel [data-mid]')).toHaveCount(2);
+      }
+    );
     // ppPanel に表示される member 行数（生存3名中の未入力2名）
     const items = page.locator('#ppPanel [data-mid]');
     const count = await items.count();
@@ -615,15 +622,33 @@ test.describe('A-4 Stage 5: 過去参加者パネルのクイックフィルタ'
   });
 
   test('排他選択：別フィルタを押すと「ふりがな未入力」は外れる', async ({ page }) => {
-    await page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]').click();
-    await expect(page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).toHaveClass(/active/);
-    await page.locator('.pp-quick-filter-btn[data-qfkey="regular"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter "no_yomi" active class set');
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).toHaveClass(/active/);
+      }
+    );
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="regular"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter switched: regular active, no_yomi inactive');
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).toHaveClass(/active/);
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).not.toHaveClass(/active/);
+      }
+    );
     await expect(page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).not.toHaveClass(/active/);
     await expect(page.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).toHaveClass(/active/);
   });
 
   test('検索との AND 条件：「ふりがな未入力」+ 検索「山本」→ 山本花子のみ', async ({ page }) => {
-    await page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter "no_yomi" applied');
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).toHaveClass(/active/);
+      }
+    );
     await page.fill('#pp-search', '山本');
     const items = page.locator('#ppPanel [data-mid]');
     const count = await items.count();
@@ -633,8 +658,21 @@ test.describe('A-4 Stage 5: 過去参加者パネルのクイックフィルタ'
 
   test('50音タブとの AND 条件：「ふりがな未入力」+ 「他」タブ → 未入力 + 他カテゴリ', async ({ page }) => {
     // 「他」タブは yomi 空 + getYomiInitialRow が other の人 → 未入力2名は両方とも該当する
-    await page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]').click();
-    await page.locator('.pp-yomi-tab[data-row="other"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter "no_yomi" applied');
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).toHaveClass(/active/);
+      }
+    );
+    // 50音タブ(.pp-yomi-tab)も L0 §1.5 P1: UI 絞り込み状態変化、raw callback
+    await clickAndExpectChange(
+      page.locator('.pp-yomi-tab[data-row="other"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('yomi-tab "other" applied: rows filtered by initial row');
+        await expect(p.locator('#ppPanel [data-mid]')).toHaveCount(2);
+      }
+    );
     const items = page.locator('#ppPanel [data-mid]');
     const count = await items.count();
     expect(count).toBe(2);
@@ -664,34 +702,40 @@ for (const width of [375, 430]) {
     });
 
     test('参加者登録タブで横スクロールしない', async ({ page }) => {
-      await page.click('#tab-reg');
+      await clickAndExpectChange(page.locator('#tab-reg'), shogiAssertions.tabSwitched('tab-reg'));
       await expectNoOverflow(page, 'reg @' + width);
     });
 
     test('対局管理タブで横スクロールしない', async ({ page }) => {
-      await page.click('#tab-tournament');
+      await clickAndExpectChange(page.locator('#tab-tournament'), shogiAssertions.tabSwitched('tab-tournament'));
       await expectNoOverflow(page, 'tournament @' + width);
     });
 
     test('最終結果タブで横スクロールしない', async ({ page }) => {
-      await page.click('#tab-result');
+      await clickAndExpectChange(page.locator('#tab-result'), shogiAssertions.tabSwitched('tab-result'));
       await expectNoOverflow(page, 'result @' + width);
     });
 
     test('マスタタブで横スクロールしない', async ({ page }) => {
-      await page.click('#tab-master');
+      await clickAndExpectChange(page.locator('#tab-master'), shogiAssertions.tabSwitched('tab-master'));
       await expectNoOverflow(page, 'master @' + width);
     });
 
     test('マスタタブ 削除済み表示ONで横スクロールしない', async ({ page }) => {
-      await page.click('#tab-master');
-      await page.click('#masterShowDeletedBtn');
+      await clickAndExpectChange(page.locator('#tab-master'), shogiAssertions.tabSwitched('tab-master'));
+      await clickAndExpectChange(page.locator('#masterShowDeletedBtn'), async (before, after, ctx, p) => {
+        ctx.primary('show-deleted toggled ON');
+        await expect(p.locator('#masterShowDeletedBtn')).toContainText('削除済みを隠す');
+      });
       await expectNoOverflow(page, 'master+showDeleted @' + width);
     });
 
     test('マスタ編集モーダル表示時に横スクロールしない', async ({ page }) => {
-      await page.click('#tab-master');
-      await page.locator('.master-edit-btn').first().click();
+      await clickAndExpectChange(page.locator('#tab-master'), shogiAssertions.tabSwitched('tab-master'));
+      await clickAndExpectChange(page.locator('.master-edit-btn').first(), async (before, after, ctx, p) => {
+        ctx.primary('master edit modal opened');
+        await expect(p.locator('#master-edit-modal')).toBeVisible();
+      });
       await expect(page.locator('#master-edit-modal')).toBeVisible();
       await expectNoOverflow(page, 'master+editModal @' + width);
     });
@@ -710,11 +754,11 @@ test.describe('A-4 Stage 2 unit: _pendingNewYomi 同名衝突回避', () => {
     // 1人目: 田中タロウ / たなかたろう
     await page.fill('#inp-name', '田中タロウ');
     await page.fill('#inp-yomi', 'たなかたろう');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     // addPlayer 内の同名拒否は exact 一致なので、わずかに変えて 2 人目
     await page.fill('#inp-name', '田中　タロウ'); // 全角スペース
     await page.fill('#inp-yomi', 'たなかたろう（兄）');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
 
     const peek = await page.evaluate(() => {
       const ids = Object.keys(_pendingNewYomi);
