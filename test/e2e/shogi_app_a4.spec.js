@@ -2,6 +2,9 @@
 // Phase A-4 e2e: 登録画面ふりがな入力欄 / IME 自動取得 / マスタ member/grade /
 //                 削除済み復元 / 未入力可視化 / レイアウト揺れ
 const { test, expect } = require('@playwright/test');
+const { clickAndExpectChange } = require('../helpers/clickAndExpectChange');
+const { clickAndExpectChangeUnchecked } = require('../helpers/clickAndExpectChangeUnchecked');
+const { shogiAssertions } = require('../helpers/shogi_assertions');
 
 const SAMPLE_MASTER = {
   schema_version: 1,
@@ -37,17 +40,30 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
     await expect(yomi).toHaveAttribute('placeholder', 'ふりがな');
   });
 
-  test('新規参加者：手動入力したふりがなが saveData 後にマスタへ反映される', async ({ page }) => {
+  test('新規参加者：手動入力したふりがなが saveData 後にマスタへ反映される', async ({ context, page }) => {
+    // §5 標準手順 完全書き直し: 旧 evaluate(syncBranchMasterOnSave) 直接呼出を
+    // #saveBtn UI クリック経由に置換(production: saveData() 内で
+    // syncBranchMasterOnSave 自動発火 + clipboard.writeText + alert)
+    // Step 1: clipboard 権限付与
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.fill('#inp-name', '田中次郎');
     await page.fill('#inp-yomi', 'たなかじろう');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     // 大会日が必要（saveData → syncBranchMasterOnSave の前提、result タブを開かず DOM 値を直接設定）
     await page.evaluate(() => {
       var el = document.getElementById('rep-date');
       if (el) { el.value = '2026年5月5日'; el.dispatchEvent(new Event('input', {bubbles:true})); }
     });
-    await page.evaluate(() => { try { syncBranchMasterOnSave(); } catch(e) {} });
-
+    // Step 2: UI 経由フロー化(saveData → syncBranchMasterOnSave → clipboard + alert)
+    page.on('dialog', d => d.accept());
+    // Step 3: primary は「saveData 後 master.members に 田中次郎 が yomi='たなかじろう' で追加される」
+    await clickAndExpectChange(page.locator('#saveBtn'), async (before, after, ctx) => {
+      ctx.primary('saveData → syncBranchMasterOnSave: 田中次郎 added to master with yomi');
+      const found = after.master.members.find(m => m.name === '田中次郎');
+      expect(found).toBeDefined();
+      expect(found.yomi).toBe('たなかじろう');
+    });
+    // Step 4: 副次効果検証(localStorage.shogi_branch_master 直接読み)
     const master = await page.evaluate(() => {
       var raw = localStorage.getItem('shogi_branch_master');
       return raw ? JSON.parse(raw) : null;
@@ -60,7 +76,15 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
 
   test('サジェスト選択時：マスタの yomi がふりがな欄に反映される', async ({ page }) => {
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
+    // .suggest-item は addEventListener('mousedown') 経由 → Unchecked、子の .si-info を click
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
     await expect(page.locator('#inp-name')).toHaveValue('山田太郎');
     await expect(page.locator('#inp-yomi')).toHaveValue('やまだたろう');
   });
@@ -68,21 +92,36 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
   test('サジェスト由来：マスタ yomi が空のときのみ手入力した値で補完（既存値は上書きしない）', async ({ page }) => {
     // 山本花子（マスタ yomi が空）に手入力で補完
     await page.fill('#inp-name', '山本');
-    await page.locator('#suggest-list .suggest-item').first().click();
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
     await expect(page.locator('#inp-name')).toHaveValue('山本花子');
     await expect(page.locator('#inp-yomi')).toHaveValue('');
     await page.fill('#inp-yomi', 'やまもとはなこ');
-    await page.click('#addBtn');
+    // 山本花子 last_class='B' → サジェスト選択で #inp-class が B に自動設定 → B クラスに追加
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('B'));
 
     let master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     expect(master.members.find(m => m.id === 'm_bbbbbbbbbbbb').yomi).toBe('やまもとはなこ');
 
     // 山田太郎（マスタ yomi 既存）に違う yomi を手入力 → 上書きしないこと
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
     await expect(page.locator('#inp-yomi')).toHaveValue('やまだたろう');
     await page.fill('#inp-yomi', 'まちがいよみ');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
 
     master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     // 既存値「やまだたろう」のまま
@@ -92,33 +131,49 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
   test('addPlayer 成功後：氏名欄とふりがな欄が両方クリアされる', async ({ page }) => {
     await page.fill('#inp-name', '新人タロウ');
     await page.fill('#inp-yomi', 'しんじんたろう');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     await expect(page.locator('#inp-name')).toHaveValue('');
     await expect(page.locator('#inp-yomi')).toHaveValue('');
   });
 
-  test('removePlayer：_pendingNewYomi がクリアされ、再保存時にマスタに残らない', async ({ page }) => {
+  test('removePlayer：_pendingNewYomi がクリアされ、再保存時にマスタに残らない', async ({ context, page }) => {
+    // §5 標準手順 完全書き直し: 旧 evaluate(syncBranchMasterOnSave) 直接呼出を
+    // #saveBtn UI クリック経由に置換
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     page.on('dialog', d => d.accept());
     await page.fill('#inp-name', '一時タロウ');
     await page.fill('#inp-yomi', 'いちじたろう');
-    await page.click('#addBtn');
-    // 削除
-    await page.locator('.player-row').filter({ hasText: '一時タロウ' }).locator('button', { hasText: '削除' }).click();
-    // syncBranchMasterOnSave を呼ぶ（rep-date は result タブの隠れた DOM のため evaluate で値を入れる）
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
+    // 削除(.player-row 内の削除ボタン、L0 P0 catalog 未登録のため raw callback で対応)
+    // TODO: L0 §1.5 見直し時に playerRemoved factory 化検討(仕様書 §4 申し送り)
+    await clickAndExpectChange(
+      page.locator('.player-row').filter({ hasText: '一時タロウ' }).locator('button', { hasText: '削除' }),
+      async (before, after, ctx) => {
+        ctx.primary('player removed from class A: state.players.A length -1');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length - 1);
+      }
+    );
+    // 大会日設定(syncBranchMasterOnSave の前提、result タブの隠れた DOM のため evaluate)
     await page.evaluate(() => {
       var el = document.getElementById('rep-date');
       if (el) { el.value = '2026年5月5日'; el.dispatchEvent(new Event('input', {bubbles:true})); }
-      try { syncBranchMasterOnSave(); } catch(e) {}
     });
+    // UI 経由保存(saveData → syncBranchMasterOnSave 自動発火)
+    // primary: 削除済の '一時タロウ' は master に作られていない
+    await clickAndExpectChange(page.locator('#saveBtn'), async (before, after, ctx) => {
+      ctx.primary('saveData → syncBranchMasterOnSave: removed player not in master');
+      const trace = after.master.members.filter(m => m.name === '一時タロウ');
+      expect(trace.length).toBe(0);
+    });
+    // 副次: localStorage 直接読み
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
-    // 一時タロウはマスタに作られていない（既存3名のみ）
     expect(master.members.filter(m => m.name === '一時タロウ').length).toBe(0);
   });
 
   test('player オブジェクトに yomi フィールドが追加されていない', async ({ page }) => {
     await page.fill('#inp-name', '田中次郎');
     await page.fill('#inp-yomi', 'たなかじろう');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     const state = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_v4')));
     expect(state.players.A[0].yomi).toBeUndefined();
   });
@@ -194,10 +249,18 @@ test.describe('A-4 Stage 2: IME 自動取得', () => {
   test('サジェスト選択後にふりがな欄を手動修正 → 修正後 yomi がマスタに反映される', async ({ page }) => {
     // 山本花子（マスタ yomi 空）を選択
     await page.fill('#inp-name', '山本');
-    await page.locator('#suggest-list .suggest-item').first().click();
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
     // ふりがな欄を手動編集（_yomiManuallyEdited=true になる）
     await page.fill('#inp-yomi', 'やまもとはなこ');
-    await page.click('#addBtn');
+    // 山本花子 last_class='B' → B クラスに追加
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('B'));
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     expect(master.members.find(m => m.id === 'm_bbbbbbbbbbbb').yomi).toBe('やまもとはなこ');
   });
@@ -205,7 +268,7 @@ test.describe('A-4 Stage 2: IME 自動取得', () => {
   test('addPlayer 成功後、_yomiManuallyEdited / _yomiAutoBuffer がリセットされる', async ({ page }) => {
     await page.fill('#inp-name', 'タロウ');
     await page.fill('#inp-yomi', 'たろう');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     const flags = await page.evaluate(() => ({
       manual: typeof _yomiManuallyEdited !== 'undefined' ? _yomiManuallyEdited : null,
       buffer: typeof _yomiAutoBuffer !== 'undefined' ? _yomiAutoBuffer : null
@@ -262,8 +325,10 @@ test.describe('A-4 Stage 3: マスタ編集モーダル', () => {
 
   test('編集モーダルに支部員区分・中学生以下のラジオが現在値で表示される', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    await row.locator('.master-edit-btn').click();
-    await expect(page.locator('#master-edit-modal')).toBeVisible();
+    await clickAndExpectChange(row.locator('.master-edit-btn'), async (before, after, ctx, p) => {
+      ctx.primary('master edit modal opened');
+      await expect(p.locator('#master-edit-modal')).toBeVisible();
+    });
     // 山田太郎: member='other', grade='chu'
     await expect(page.locator('input[name="me-member"][value="other"]')).toBeChecked();
     await expect(page.locator('input[name="me-grade"][value="chu"]')).toBeChecked();
@@ -271,7 +336,10 @@ test.describe('A-4 Stage 3: マスタ編集モーダル', () => {
 
   test('履歴情報（初回・最終・回数）が読み取り専用で表示される', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    await row.locator('.master-edit-btn').click();
+    await clickAndExpectChange(row.locator('.master-edit-btn'), async (before, after, ctx, p) => {
+      ctx.primary('master edit modal opened');
+      await expect(p.locator('#master-edit-modal')).toBeVisible();
+    });
     const hist = page.locator('#me-history');
     await expect(hist).toBeVisible();
     await expect(hist).toContainText('初回参加：2026-01-01');
@@ -281,10 +349,21 @@ test.describe('A-4 Stage 3: マスタ編集モーダル', () => {
 
   test('支部員区分を変更して保存 → localStorage に反映される', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
-    await row.locator('.master-edit-btn').click();
+    await clickAndExpectChange(row.locator('.master-edit-btn'), async (before, after, ctx, p) => {
+      ctx.primary('master edit modal opened');
+      await expect(p.locator('#master-edit-modal')).toBeVisible();
+    });
     // member: member → other に切り替え
     await page.check('input[name="me-member"][value="other"]');
-    await page.click('#me-save');
+    // member 変更は masterMemberEdited factory(name/yomi 専用)では検出不可のため
+    // raw callback で master.members[id].member の変化を primary 検証
+    await clickAndExpectChange(page.locator('#me-save'), async (before, after, ctx) => {
+      ctx.primary('master member field "member" changed: member → other');
+      const beforeMember = before.master.members.find(m => m.id === 'm_cccccccccccc');
+      const afterMember = after.master.members.find(m => m.id === 'm_cccccccccccc');
+      expect(beforeMember.member).toBe('member');
+      expect(afterMember.member).toBe('other');
+    });
     await expect(page.locator('#master-edit-modal')).toHaveCount(0);
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     expect(master.members.find(m => m.id === 'm_cccccccccccc').member).toBe('other');
@@ -294,18 +373,34 @@ test.describe('A-4 Stage 3: マスタ編集モーダル', () => {
 
   test('中学生以下区分を変更して保存 → localStorage に反映される', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
-    await row.locator('.master-edit-btn').click();
+    await clickAndExpectChange(row.locator('.master-edit-btn'), async (before, after, ctx, p) => {
+      ctx.primary('master edit modal opened');
+      await expect(p.locator('#master-edit-modal')).toBeVisible();
+    });
     await page.check('input[name="me-grade"][value="chu"]');
-    await page.click('#me-save');
+    // grade 変更は raw callback で primary 検証(masterMemberEdited は name/yomi 専用)
+    await clickAndExpectChange(page.locator('#me-save'), async (before, after, ctx) => {
+      ctx.primary('master member field "grade" changed: ippan → chu');
+      const afterMember = after.master.members.find(m => m.id === 'm_cccccccccccc');
+      expect(afterMember.grade).toBe('chu');
+    });
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     expect(master.members.find(m => m.id === 'm_cccccccccccc').grade).toBe('chu');
   });
 
   test('一覧表示が更新される（編集後 renderMasterTab で再描画）', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
-    await row.locator('.master-edit-btn').click();
+    await clickAndExpectChange(row.locator('.master-edit-btn'), async (before, after, ctx, p) => {
+      ctx.primary('master edit modal opened');
+      await expect(p.locator('#master-edit-modal')).toBeVisible();
+    });
     await page.check('input[name="me-grade"][value="chu"]');
-    await page.click('#me-save');
+    // grade 変更は raw callback で primary 検証
+    await clickAndExpectChange(page.locator('#me-save'), async (before, after, ctx) => {
+      ctx.primary('master member field "grade" changed: ippan → chu (re-render)');
+      const afterMember = after.master.members.find(m => m.id === 'm_cccccccccccc');
+      expect(afterMember.grade).toBe('chu');
+    });
     // 再描画後の佐藤一郎の行に「中学」が表示される
     const row2 = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
     await expect(row2.locator('td.master-cell-grade')).toContainText('中学');
@@ -341,7 +436,12 @@ test.describe('A-4 Stage 4: 削除済み表示トグル', () => {
   });
 
   test('トグルON: 削除済み member が薄背景・取り消し線で表示され、削除日時と復元ボタンが出る', async ({ page }) => {
-    await page.click('#masterShowDeletedBtn');
+    // 削除済み表示トグルは L0 §1.5 P1: state を持たない UI 状態変化のため raw callback
+    await clickAndExpectChange(page.locator('#masterShowDeletedBtn'), async (before, after, ctx, p) => {
+      ctx.primary('show-deleted toggled ON: deleted row + restore button appear');
+      await expect(p.locator('#pane-master tbody tr').filter({ hasText: '削除タロウ' })).toBeVisible();
+      await expect(p.locator('.master-restore-btn')).toBeVisible();
+    });
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '削除タロウ' });
     await expect(row).toBeVisible();
     await expect(row).toHaveClass(/master-row-deleted/);
@@ -354,8 +454,10 @@ test.describe('A-4 Stage 4: 削除済み表示トグル', () => {
 
   test('トグル文言が状態で切り替わる', async ({ page }) => {
     await expect(page.locator('#masterShowDeletedBtn')).toContainText('削除済みを表示');
-    await page.click('#masterShowDeletedBtn');
-    await expect(page.locator('#masterShowDeletedBtn')).toContainText('削除済みを隠す');
+    await clickAndExpectChange(page.locator('#masterShowDeletedBtn'), async (before, after, ctx, p) => {
+      ctx.primary('show-deleted toggled ON: button text changes 表示 → 隠す');
+      await expect(p.locator('#masterShowDeletedBtn')).toContainText('削除済みを隠す');
+    });
   });
 });
 
@@ -368,14 +470,22 @@ test.describe('A-4 Stage 4: 復元ボタン', () => {
 
   test('復元 confirm cancel では復元されない', async ({ page }) => {
     page.once('dialog', d => d.dismiss());
-    await page.locator('.master-restore-btn').click();
+    // dismiss なので master 不変、primary は deleted=true 維持
+    await clickAndExpectChange(page.locator('.master-restore-btn'), async (before, after, ctx) => {
+      ctx.primary('restore cancelled: deleted=true unchanged');
+      const target = after.master.members.find(m => m.id === 'm_dddddddddddd');
+      expect(target.deleted).toBe(true);
+    });
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     expect(master.members.find(m => m.id === 'm_dddddddddddd').deleted).toBe(true);
   });
 
   test('復元 confirm accept で localStorage が deleted=false / deleted_at=null', async ({ page }) => {
     page.once('dialog', d => d.accept());
-    await page.locator('.master-restore-btn').click();
+    await clickAndExpectChange(
+      page.locator('.master-restore-btn'),
+      shogiAssertions.masterMemberRestored('m_dddddddddddd')
+    );
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     const target = master.members.find(m => m.id === 'm_dddddddddddd');
     expect(target.deleted).toBe(false);
@@ -386,9 +496,12 @@ test.describe('A-4 Stage 4: 復元ボタン', () => {
 
   test('復元後、登録画面サジェスト候補に再表示される', async ({ page }) => {
     page.once('dialog', d => d.accept());
-    await page.locator('.master-restore-btn').click();
-    // 登録タブへ
-    await page.click('#tab-reg');
+    await clickAndExpectChange(
+      page.locator('.master-restore-btn'),
+      shogiAssertions.masterMemberRestored('m_dddddddddddd')
+    );
+    // 登録タブへ切替
+    await clickAndExpectChange(page.locator('#tab-reg'), shogiAssertions.tabSwitched('tab-reg'));
     await page.fill('#inp-name', '削除');
     // 候補リストに「削除タロウ」が出る
     await expect(page.locator('#suggest-list')).toContainText('削除タロウ');
@@ -396,18 +509,29 @@ test.describe('A-4 Stage 4: 復元ボタン', () => {
 
   test('復元後、過去参加者パネルに再表示される', async ({ page }) => {
     page.once('dialog', d => d.accept());
-    await page.locator('.master-restore-btn').click();
-    await page.click('#tab-reg');
-    // 過去参加者パネルを開く
+    await clickAndExpectChange(
+      page.locator('.master-restore-btn'),
+      shogiAssertions.masterMemberRestored('m_dddddddddddd')
+    );
+    await clickAndExpectChange(page.locator('#tab-reg'), shogiAssertions.tabSwitched('tab-reg'));
+    // 過去参加者パネルを開く(L0 §1.5 P1: パネル開閉、state 不在のため raw callback)
     const panelToggle = page.locator('#ppToggleBtn');
-    if (await panelToggle.isVisible()) await panelToggle.click();
+    if (await panelToggle.isVisible()) {
+      await clickAndExpectChange(panelToggle, async (before, after, ctx, p) => {
+        ctx.primary('past participants panel opened');
+        await expect(p.locator('#ppPanel')).toBeVisible();
+      });
+    }
     await expect(page.locator('#ppPanel')).toContainText('削除タロウ');
   });
 
   test('復元後、yomi 未入力なら未入力マスタの一員として残る（Stage 5 の検証下準備）', async ({ page }) => {
     // 削除タロウの yomi は空
     page.once('dialog', d => d.accept());
-    await page.locator('.master-restore-btn').click();
+    await clickAndExpectChange(
+      page.locator('.master-restore-btn'),
+      shogiAssertions.masterMemberRestored('m_dddddddddddd')
+    );
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     const target = master.members.find(m => m.id === 'm_dddddddddddd');
     expect(target.deleted).toBe(false);
@@ -479,7 +603,14 @@ test.describe('A-4 Stage 5: 過去参加者パネルのクイックフィルタ'
   });
 
   test('フィルタ ON で結果数 = サマリー数（マスタタブとの一致）', async ({ page }) => {
-    await page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]').click();
+    // クイックフィルタは L0 §1.5 P1: state を持たない UI 状態変化のため raw callback
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter "no_yomi" applied: rows narrowed to no-yomi members');
+        await expect(p.locator('#ppPanel [data-mid]')).toHaveCount(2);
+      }
+    );
     // ppPanel に表示される member 行数（生存3名中の未入力2名）
     const items = page.locator('#ppPanel [data-mid]');
     const count = await items.count();
@@ -491,15 +622,33 @@ test.describe('A-4 Stage 5: 過去参加者パネルのクイックフィルタ'
   });
 
   test('排他選択：別フィルタを押すと「ふりがな未入力」は外れる', async ({ page }) => {
-    await page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]').click();
-    await expect(page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).toHaveClass(/active/);
-    await page.locator('.pp-quick-filter-btn[data-qfkey="regular"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter "no_yomi" active class set');
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).toHaveClass(/active/);
+      }
+    );
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="regular"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter switched: regular active, no_yomi inactive');
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).toHaveClass(/active/);
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).not.toHaveClass(/active/);
+      }
+    );
     await expect(page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).not.toHaveClass(/active/);
     await expect(page.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).toHaveClass(/active/);
   });
 
   test('検索との AND 条件：「ふりがな未入力」+ 検索「山本」→ 山本花子のみ', async ({ page }) => {
-    await page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter "no_yomi" applied');
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).toHaveClass(/active/);
+      }
+    );
     await page.fill('#pp-search', '山本');
     const items = page.locator('#ppPanel [data-mid]');
     const count = await items.count();
@@ -509,8 +658,21 @@ test.describe('A-4 Stage 5: 過去参加者パネルのクイックフィルタ'
 
   test('50音タブとの AND 条件：「ふりがな未入力」+ 「他」タブ → 未入力 + 他カテゴリ', async ({ page }) => {
     // 「他」タブは yomi 空 + getYomiInitialRow が other の人 → 未入力2名は両方とも該当する
-    await page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]').click();
-    await page.locator('.pp-yomi-tab[data-row="other"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter "no_yomi" applied');
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="no_yomi"]')).toHaveClass(/active/);
+      }
+    );
+    // 50音タブ(.pp-yomi-tab)も L0 §1.5 P1: UI 絞り込み状態変化、raw callback
+    await clickAndExpectChange(
+      page.locator('.pp-yomi-tab[data-row="other"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('yomi-tab "other" applied: rows filtered by initial row');
+        await expect(p.locator('#ppPanel [data-mid]')).toHaveCount(2);
+      }
+    );
     const items = page.locator('#ppPanel [data-mid]');
     const count = await items.count();
     expect(count).toBe(2);
@@ -540,34 +702,40 @@ for (const width of [375, 430]) {
     });
 
     test('参加者登録タブで横スクロールしない', async ({ page }) => {
-      await page.click('#tab-reg');
+      await clickAndExpectChange(page.locator('#tab-reg'), shogiAssertions.tabSwitched('tab-reg'));
       await expectNoOverflow(page, 'reg @' + width);
     });
 
     test('対局管理タブで横スクロールしない', async ({ page }) => {
-      await page.click('#tab-tournament');
+      await clickAndExpectChange(page.locator('#tab-tournament'), shogiAssertions.tabSwitched('tab-tournament'));
       await expectNoOverflow(page, 'tournament @' + width);
     });
 
     test('最終結果タブで横スクロールしない', async ({ page }) => {
-      await page.click('#tab-result');
+      await clickAndExpectChange(page.locator('#tab-result'), shogiAssertions.tabSwitched('tab-result'));
       await expectNoOverflow(page, 'result @' + width);
     });
 
     test('マスタタブで横スクロールしない', async ({ page }) => {
-      await page.click('#tab-master');
+      await clickAndExpectChange(page.locator('#tab-master'), shogiAssertions.tabSwitched('tab-master'));
       await expectNoOverflow(page, 'master @' + width);
     });
 
     test('マスタタブ 削除済み表示ONで横スクロールしない', async ({ page }) => {
-      await page.click('#tab-master');
-      await page.click('#masterShowDeletedBtn');
+      await clickAndExpectChange(page.locator('#tab-master'), shogiAssertions.tabSwitched('tab-master'));
+      await clickAndExpectChange(page.locator('#masterShowDeletedBtn'), async (before, after, ctx, p) => {
+        ctx.primary('show-deleted toggled ON');
+        await expect(p.locator('#masterShowDeletedBtn')).toContainText('削除済みを隠す');
+      });
       await expectNoOverflow(page, 'master+showDeleted @' + width);
     });
 
     test('マスタ編集モーダル表示時に横スクロールしない', async ({ page }) => {
-      await page.click('#tab-master');
-      await page.locator('.master-edit-btn').first().click();
+      await clickAndExpectChange(page.locator('#tab-master'), shogiAssertions.tabSwitched('tab-master'));
+      await clickAndExpectChange(page.locator('.master-edit-btn').first(), async (before, after, ctx, p) => {
+        ctx.primary('master edit modal opened');
+        await expect(p.locator('#master-edit-modal')).toBeVisible();
+      });
       await expect(page.locator('#master-edit-modal')).toBeVisible();
       await expectNoOverflow(page, 'master+editModal @' + width);
     });
@@ -586,11 +754,11 @@ test.describe('A-4 Stage 2 unit: _pendingNewYomi 同名衝突回避', () => {
     // 1人目: 田中タロウ / たなかたろう
     await page.fill('#inp-name', '田中タロウ');
     await page.fill('#inp-yomi', 'たなかたろう');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     // addPlayer 内の同名拒否は exact 一致なので、わずかに変えて 2 人目
     await page.fill('#inp-name', '田中　タロウ'); // 全角スペース
     await page.fill('#inp-yomi', 'たなかたろう（兄）');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
 
     const peek = await page.evaluate(() => {
       const ids = Object.keys(_pendingNewYomi);
