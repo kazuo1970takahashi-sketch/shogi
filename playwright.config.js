@@ -18,13 +18,18 @@ module.exports = defineConfig({
   projects: [
     {
       name: 'chromium-desktop',
+      // A-4.5 §3.7: visual_regression_mobile.spec.js は mobile-375 project でのみ撮影
+      // (chromium-desktop では撮影しないことで snapshot ファイル名衝突回避)
+      testIgnore: /visual_regression_mobile\.spec\.js/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
     },
     {
       name: 'mobile-375',
-      // visual_regression.spec.js は chromium-desktop project のみで実行(viewport を
-      // test 内で setViewportSize 上書きするため deviceScaleFactor / hasTouch / userAgent
-      // による微小な描画差異を排除、Stage 6 仕様書 §3.2)
+      // visual_regression.spec.js(従来 baseline)は chromium-desktop project のみで実行
+      // (viewport を test 内で setViewportSize 上書きするため deviceScaleFactor / hasTouch /
+      // userAgent による微小な描画差異を排除、Stage 6 仕様書 §3.2)。
+      // 一方、A-4.5 で追加した visual_regression_mobile.spec.js は **本 project でのみ撮影**
+      // することで iOS Safari 特有の rendering を再現(A-4.4 失敗の再発防止)。
       testIgnore: /visual_regression\.spec\.js/,
       use: {
         ...devices['Desktop Chrome'],

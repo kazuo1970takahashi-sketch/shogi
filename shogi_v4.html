@@ -1280,7 +1280,8 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
     else if(cur==='B')bEnrolledFiltered.push(filtered[fi]);
     else notEnrolledFiltered.push(filtered[fi]);
   }
-  // A-4.5 §2.2: 行描画 helper(行内要素は A-4.3 と同じ。色強調は撤廃。「現在:Xクラス」テキストは追加しない)
+  // A-4.5 §2.2 + §4 #6: 行描画 helper(行内要素は A-4.3 と同じ要素。色強調撤廃。
+  // iPhone 375px 縦書き化対策で 2 段レイアウト: 1 段目=氏名 + A/B ボタン、2 段目=ふりがな + 前回:Xクラス + 日付)
   function renderPpRow(fm){
     var lastClassText=fm.last_class==='A'?'前回:Aクラス':(fm.last_class==='B'?'前回:Bクラス':'');
     var nameSafe=escapeHtml(fm.name);
@@ -1288,18 +1289,25 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
     var aLabelSafe=escapeHtml(fm.name+'をAクラスで追加');
     var bLabelSafe=escapeHtml(fm.name+'をBクラスで追加');
     var btnStyle='min-width:44px;min-height:44px;margin-left:8px;border:1px solid #1976d2;border-radius:6px;font-size:14px;cursor:pointer;flex-shrink:0;background:#fff;color:#1976d2';
-    var rowHtml='<div class="pp-row" data-mid="'+midSafe+'" style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:default">';
+    // pp-row は 2 段の縦並び。1 段目に氏名(伸縮)+ A/B ボタン、2 段目にメタ情報(ふりがな + 前回 + 日付)
+    var rowHtml='<div class="pp-row" data-mid="'+midSafe+'" style="display:flex;flex-direction:column;gap:2px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:default">';
     // 既存テスト互換のための隠しマーカー(`.pp-check` 件数カウント用、A-3 e2e 依存)
     rowHtml+='<input type="hidden" class="pp-check">';
-    rowHtml+='<span style="flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere">'+nameSafe;
-    if(fm.yomi){rowHtml+=' <span style="color:#888;font-size:12px">'+escapeHtml(normalizeYomi(fm.yomi))+'</span>';}
-    rowHtml+='</span>';
-    if(lastClassText){
-      rowHtml+='<span class="pp-last-class" style="font-size:12px;color:#666;font-weight:500">'+escapeHtml(lastClassText)+'</span>';
-    }
-    rowHtml+='<span style="font-size:11px;color:#888;min-width:5em;text-align:right">'+escapeHtml(fm.last_attended||'')+'</span>';
+    // 1 段目: 氏名 + A/B ボタン(氏名は flex:1 で残り全幅、375px でも >= 230px 確保)
+    rowHtml+='<div class="pp-row-main" style="display:flex;align-items:center;gap:8px">';
+    rowHtml+='<span class="pp-name" style="flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere;font-weight:500">'+nameSafe+'</span>';
     rowHtml+='<button type="button" class="pp-add-btn" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="'+btnStyle+'">A</button>';
     rowHtml+='<button type="button" class="pp-add-btn" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="'+btnStyle+'">B</button>';
+    rowHtml+='</div>';
+    // 2 段目: メタ情報(ふりがな + 前回:Xクラス + 日付)。値が無ければ要素自体を出さない
+    var hasMeta=(!!fm.yomi)||(!!lastClassText)||(!!fm.last_attended);
+    if(hasMeta){
+      rowHtml+='<div class="pp-row-meta" style="display:flex;align-items:center;gap:8px;font-size:12px;color:#666;padding-left:2px;flex-wrap:wrap">';
+      if(fm.yomi){rowHtml+='<span class="pp-yomi" style="color:#888">'+escapeHtml(normalizeYomi(fm.yomi))+'</span>';}
+      if(lastClassText){rowHtml+='<span class="pp-last-class" style="font-weight:500">'+escapeHtml(lastClassText)+'</span>';}
+      if(fm.last_attended){rowHtml+='<span style="color:#888;margin-left:auto">'+escapeHtml(fm.last_attended)+'</span>';}
+      rowHtml+='</div>';
+    }
     rowHtml+='</div>';
     return rowHtml;
   }
