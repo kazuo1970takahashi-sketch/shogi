@@ -1948,6 +1948,11 @@ function bindMasterEditModalEvents(){
     }
     if(typeof showMsg==='function')showMsg(msg,result.duplicateCount>0?'warn':'ok');
     renderMasterTab();
+    // A-4.4 §2.6 (bug fix #7): F7 保存後に過去参加者パネルを再描画(リロード不要で「前回:Xクラス」表示が即更新)
+    if(typeof renderPastParticipantsPanel==='function'){
+      var ppSearch=document.getElementById('pp-search');
+      renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
+    }
   });
 }
 
