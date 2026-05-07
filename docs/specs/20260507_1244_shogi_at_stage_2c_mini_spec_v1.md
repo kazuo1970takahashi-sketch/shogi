@@ -108,7 +108,7 @@ Stage 3(テストデータ生成器) / Stage 4(A-4.2 回帰テスト + Mutation 
 | モーダル開閉(`#loadBtn` / `#load-cancel` / `#masterImportBtn` 等) | 全 spec 多数 | `ctx.primary('modal opened/closed')` + `expect(modal).toBeVisible()/toBeHidden()` |
 | クイックフィルタ(`.pp-quick-filter-btn`) | a3 / a4 | `ctx.primary('filter applied')` + フィルタ後 `.pp-row` 件数変化 |
 | 削除済み表示トグル(`#masterShowDeletedBtn`) | a4 | `ctx.primary('show-deleted toggled')` + 表示行数変化 |
-| マスタエクスポート(`#masterExportBtn`) | a3 | `ctx.primary('master copied to clipboard')` + clipboard 内容検証 |
+| マスタエクスポート(`#masterExportBtn`) | a3 | `ctx.primary('download triggered, master unchanged')` + `page.waitForEvent('download')` の suggestedFilename 検証 + master 不変確認 (production は Blob + anchor download + alert、clipboard ではない) |
 | ふりがなタブ(`.pp-yomi-tab`) | a4 | `ctx.primary('yomi tab switched')` + フィルタ結果変化 |
 | **playerRemoved**(`.player-row` 内削除ボタン、shogi_app_a4 L106 のみ) | a4(1 件) | `ctx.primary('player removed from class')` + `state.players[cls].length` -1。**コメント `// TODO: L0 §1.5 見直し時に factory 化検討` を併記** |
 
