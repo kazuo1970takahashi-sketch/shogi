@@ -1,6 +1,7 @@
 // @ts-check
 // Phase A-4.6 e2e: エントリー済の現クラスボタンに色強調を復活
 const { test, expect } = require('@playwright/test');
+const { expectNoHorizontalOverflow, expectLeftOf } = require('../helpers/layout-assertions');
 
 const SAMPLE_MASTER = {
   schema_version: 1,
@@ -128,5 +129,31 @@ test.describe('A-4.6 §2.1: エントリー済ボタン色強調', () => {
       await expect(r.locator('.pp-add-btn[data-cls="A"]')).toHaveClass(/pp-add-btn-active/);
       await expect(r.locator('.pp-add-btn[data-cls="B"]')).not.toHaveClass(/pp-add-btn-active/);
     }
+  });
+
+  // L-3: エントリー済セクションの行が viewport 内に収まる(水平 overflow なし)
+  // beforeEach で setupWithMaster + ppToggleBtn click が完了済みなので、エントリー操作のみ追加
+  test('375px: エントリー済セクションの行が viewport 内に収まる', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    page.once('dialog', async (dialog) => { await dialog.accept(); });
+    await page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' }).locator('.pp-add-btn[data-cls="A"]').click();
+    const enrolledRow = page.locator('#ppPanel .pp-section-a-enrolled .pp-row').filter({ hasText: '山田太郎' });
+    await expect(enrolledRow).toBeVisible();
+    // 行内 1 段目(pp-row-main)が水平 overflow しないこと
+    await expectNoHorizontalOverflow(enrolledRow.locator('.pp-row-main'), { label: 'A 済 row main @375px' });
+    // page 全体も水平 overflow しないこと
+    await expectNoHorizontalOverflow(page, { label: 'page @375px (A 済 enrolled)' });
+  });
+
+  // L-4: エントリー済セクションの 1 段目で氏名 span が A/B ボタンより左にある
+  test('エントリー済 1 段目: 氏名 span が A ボタンより左、A ボタンが B ボタンより左', async ({ page }) => {
+    page.once('dialog', async (dialog) => { await dialog.accept(); });
+    await page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' }).locator('.pp-add-btn[data-cls="A"]').click();
+    const enrolledRow = page.locator('#ppPanel .pp-section-a-enrolled .pp-row').filter({ hasText: '山田太郎' });
+    const nameSpan = enrolledRow.locator('.pp-name');
+    const aBtn = enrolledRow.locator('.pp-add-btn[data-cls="A"]');
+    const bBtn = enrolledRow.locator('.pp-add-btn[data-cls="B"]');
+    await expectLeftOf(nameSpan, aBtn, { label: 'pp-name vs A button' });
+    await expectLeftOf(aBtn, bBtn, { label: 'A button vs B button' });
   });
 });
