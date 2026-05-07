@@ -40,17 +40,30 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
     await expect(yomi).toHaveAttribute('placeholder', 'ふりがな');
   });
 
-  test('新規参加者：手動入力したふりがなが saveData 後にマスタへ反映される', async ({ page }) => {
+  test('新規参加者：手動入力したふりがなが saveData 後にマスタへ反映される', async ({ context, page }) => {
+    // §5 標準手順 完全書き直し: 旧 evaluate(syncBranchMasterOnSave) 直接呼出を
+    // #saveBtn UI クリック経由に置換(production: saveData() 内で
+    // syncBranchMasterOnSave 自動発火 + clipboard.writeText + alert)
+    // Step 1: clipboard 権限付与
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.fill('#inp-name', '田中次郎');
     await page.fill('#inp-yomi', 'たなかじろう');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     // 大会日が必要（saveData → syncBranchMasterOnSave の前提、result タブを開かず DOM 値を直接設定）
     await page.evaluate(() => {
       var el = document.getElementById('rep-date');
       if (el) { el.value = '2026年5月5日'; el.dispatchEvent(new Event('input', {bubbles:true})); }
     });
-    await page.evaluate(() => { try { syncBranchMasterOnSave(); } catch(e) {} });
-
+    // Step 2: UI 経由フロー化(saveData → syncBranchMasterOnSave → clipboard + alert)
+    page.on('dialog', d => d.accept());
+    // Step 3: primary は「saveData 後 master.members に 田中次郎 が yomi='たなかじろう' で追加される」
+    await clickAndExpectChange(page.locator('#saveBtn'), async (before, after, ctx) => {
+      ctx.primary('saveData → syncBranchMasterOnSave: 田中次郎 added to master with yomi');
+      const found = after.master.members.find(m => m.name === '田中次郎');
+      expect(found).toBeDefined();
+      expect(found.yomi).toBe('たなかじろう');
+    });
+    // Step 4: 副次効果検証(localStorage.shogi_branch_master 直接読み)
     const master = await page.evaluate(() => {
       var raw = localStorage.getItem('shogi_branch_master');
       return raw ? JSON.parse(raw) : null;
@@ -123,21 +136,37 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
     await expect(page.locator('#inp-yomi')).toHaveValue('');
   });
 
-  test('removePlayer：_pendingNewYomi がクリアされ、再保存時にマスタに残らない', async ({ page }) => {
+  test('removePlayer：_pendingNewYomi がクリアされ、再保存時にマスタに残らない', async ({ context, page }) => {
+    // §5 標準手順 完全書き直し: 旧 evaluate(syncBranchMasterOnSave) 直接呼出を
+    // #saveBtn UI クリック経由に置換
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     page.on('dialog', d => d.accept());
     await page.fill('#inp-name', '一時タロウ');
     await page.fill('#inp-yomi', 'いちじたろう');
-    await page.click('#addBtn');
-    // 削除
-    await page.locator('.player-row').filter({ hasText: '一時タロウ' }).locator('button', { hasText: '削除' }).click();
-    // syncBranchMasterOnSave を呼ぶ（rep-date は result タブの隠れた DOM のため evaluate で値を入れる）
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
+    // 削除(.player-row 内の削除ボタン、L0 P0 catalog 未登録のため raw callback で対応)
+    // TODO: L0 §1.5 見直し時に playerRemoved factory 化検討(仕様書 §4 申し送り)
+    await clickAndExpectChange(
+      page.locator('.player-row').filter({ hasText: '一時タロウ' }).locator('button', { hasText: '削除' }),
+      async (before, after, ctx) => {
+        ctx.primary('player removed from class A: state.players.A length -1');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length - 1);
+      }
+    );
+    // 大会日設定(syncBranchMasterOnSave の前提、result タブの隠れた DOM のため evaluate)
     await page.evaluate(() => {
       var el = document.getElementById('rep-date');
       if (el) { el.value = '2026年5月5日'; el.dispatchEvent(new Event('input', {bubbles:true})); }
-      try { syncBranchMasterOnSave(); } catch(e) {}
     });
+    // UI 経由保存(saveData → syncBranchMasterOnSave 自動発火)
+    // primary: 削除済の '一時タロウ' は master に作られていない
+    await clickAndExpectChange(page.locator('#saveBtn'), async (before, after, ctx) => {
+      ctx.primary('saveData → syncBranchMasterOnSave: removed player not in master');
+      const trace = after.master.members.filter(m => m.name === '一時タロウ');
+      expect(trace.length).toBe(0);
+    });
+    // 副次: localStorage 直接読み
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
-    // 一時タロウはマスタに作られていない（既存3名のみ）
     expect(master.members.filter(m => m.name === '一時タロウ').length).toBe(0);
   });
 
