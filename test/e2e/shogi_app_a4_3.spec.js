@@ -217,6 +217,18 @@ test.describe('A-4.3 §2.5: F7 編集モーダル last_class', () => {
     await expect(page.locator('input[name="me-last-class"][value="B"]')).not.toBeChecked();
   });
 
+  // Devil's Advocate 指摘 5-a 反証: 「未設定」radio が DOM に存在することを直接ダンプで確認
+  test('me-last-class radio は 3 つ(value="" / "A" / "B")が DOM に存在する', async ({ page }) => {
+    const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
+    await row.locator('.master-edit-btn').click();
+    await expect(page.locator('#master-edit-modal')).toBeVisible();
+    const radios = page.locator('input[name="me-last-class"]');
+    await expect(radios).toHaveCount(3);
+    const values = await radios.evaluateAll((els) => els.map((e) => e.value));
+    expect(values.sort()).toEqual(['', 'A', 'B']);
+    await expect(page.locator('input[name="me-last-class"][value=""]')).toBeAttached();
+  });
+
   test('last_class=null の member は「未設定」が初期選択', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
     await row.locator('.master-edit-btn').click();
