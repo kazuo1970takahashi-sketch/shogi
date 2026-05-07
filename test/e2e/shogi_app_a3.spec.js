@@ -1,6 +1,9 @@
 // @ts-check
 // Phase A-3 e2e: 登録画面サジェスト / F7 マスタ編集・削除 / F8 import-export / クイックフィルタ
 const { test, expect } = require('@playwright/test');
+const { clickAndExpectChange } = require('../helpers/clickAndExpectChange');
+const { clickAndExpectChangeUnchecked } = require('../helpers/clickAndExpectChangeUnchecked');
+const { shogiAssertions } = require('../helpers/shogi_assertions');
 
 const SAMPLE_MASTER = {
   schema_version: 1,
@@ -42,7 +45,15 @@ test.describe('A-3 登録画面サジェスト', () => {
     await page.fill('#inp-name', '山田');
     const item = page.locator('#suggest-list .suggest-item').first();
     await expect(item).toBeVisible();
-    await item.click();
+    // .suggest-item は addEventListener('mousedown') / inline onclick 不在 → Unchecked。
+    // .suggest-item の角は親 #suggest-list の border-radius 領域に重なって hit-test が
+    // 親要素にヒットするため、Stage 2b と同じく子の .si-info を click target とする
+    // (親 .suggest-item の addEventListener('mousedown') がバブリングで発火する)
+    await clickAndExpectChangeUnchecked(item.locator('.si-info'), async (before, after, ctx) => {
+      ctx.primary('no player added (form-only update)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      expect(after.state.players.B.length).toBe(before.state.players.B.length);
+    });
     await expect(page.locator('#inp-name')).toHaveValue('山田太郎');
     // 山田太郎は last_class:'A'
     await expect(page.locator('#inp-class')).toHaveValue('A');
@@ -53,8 +64,18 @@ test.describe('A-3 登録画面サジェスト', () => {
   test('候補選択 → 追加で参加者行に支部員区分・中学生区分がマスタ前回値で入る', async ({ page }) => {
     // 山田太郎 (member:'other', grade:'chu', last_class:'A') を選択して追加
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
-    await page.click('#addBtn');
+    // .suggest-item の角は親 #suggest-list の border-radius 領域に重なって hit-test が
+     // 親要素にヒットするため、Stage 2b と同じく子の .si-info を click target とする
+     // (親 .suggest-item の addEventListener('mousedown') がバブリングで発火する)
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     // A クラスに参加者行が1行追加される
     const rows = page.locator('#a-list .player-row');
     await expect(rows).toHaveCount(1);
@@ -69,11 +90,21 @@ test.describe('A-3 登録画面サジェスト', () => {
   test('候補選択後に氏名を変更すると member_id 引き継ぎが解除される', async ({ page }) => {
     // 候補選択
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
+    // .suggest-item の角は親 #suggest-list の border-radius 領域に重なって hit-test が
+     // 親要素にヒットするため、Stage 2b と同じく子の .si-info を click target とする
+     // (親 .suggest-item の addEventListener('mousedown') がバブリングで発火する)
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
     await expect(page.locator('#inp-name')).toHaveValue('山田太郎');
     // 氏名を別文字列に変更（normalizePersonName 後一致しない）
     await page.fill('#inp-name', '別の名前');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     // 解除されているので、追加された行はデフォルト値（member, ippan）
     const row = page.locator('#a-list .player-row').first();
     await expect(row.locator('.player-name')).toHaveText('別の名前');
@@ -98,8 +129,18 @@ test.describe('A-3 登録画面サジェスト', () => {
 
   test('候補選択 → 追加で player.member_id が localStorage の state に保存される', async ({ page }) => {
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
-    await page.click('#addBtn');
+    // .suggest-item の角は親 #suggest-list の border-radius 領域に重なって hit-test が
+     // 親要素にヒットするため、Stage 2b と同じく子の .si-info を click target とする
+     // (親 .suggest-item の addEventListener('mousedown') がバブリングで発火する)
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
 
     const state = await page.evaluate(() => {
       var raw = localStorage.getItem('shogi_v4');
@@ -117,8 +158,18 @@ test.describe('A-3 登録画面サジェスト', () => {
   test('既登録の member_id は候補リストから除外される（二重追加防止）', async ({ page }) => {
     // 1回目: 山田太郎 を追加
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
-    await page.click('#addBtn');
+    // .suggest-item の角は親 #suggest-list の border-radius 領域に重なって hit-test が
+     // 親要素にヒットするため、Stage 2b と同じく子の .si-info を click target とする
+     // (親 .suggest-item の addEventListener('mousedown') がバブリングで発火する)
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     await expect(page.locator('#a-list .player-row')).toHaveCount(1);
 
     // 2回目: 「山」で検索 → 山田太郎 は除外、山本花子 のみ表示
@@ -131,15 +182,28 @@ test.describe('A-3 登録画面サジェスト', () => {
   test('同じ氏名を直接再入力して追加するとエラー（同名拒否）', async ({ page }) => {
     // 1回目: 山田太郎 を追加（候補から）
     await page.fill('#inp-name', '山田');
-    await page.locator('#suggest-list .suggest-item').first().click();
-    await page.click('#addBtn');
+    // .suggest-item の角は親 #suggest-list の border-radius 領域に重なって hit-test が
+     // 親要素にヒットするため、Stage 2b と同じく子の .si-info を click target とする
+     // (親 .suggest-item の addEventListener('mousedown') がバブリングで発火する)
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     await expect(page.locator('#a-list .player-row')).toHaveCount(1);
 
     // 2回目: 同じ氏名を直接入力 → 候補に出ないが手で入れて追加
     await page.fill('#inp-name', '山田太郎');
-    await page.click('#addBtn');
-    // 既存の同名拒否ロジックが発火
-    await expect(page.locator('#reg-msg')).toContainText('同じ名前の参加者がいます');
+    // 同名拒否で player は増えない(raw callback で primary)
+    await clickAndExpectChange(page.locator('#addBtn'), async (before, after, ctx, p) => {
+      ctx.primary('duplicate name rejected (no addition)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      await expect(p.locator('#reg-msg')).toContainText('同じ名前の参加者がいます');
+    });
     // 行数は増えていない
     await expect(page.locator('#a-list .player-row')).toHaveCount(1);
   });
