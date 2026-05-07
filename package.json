@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "test": "bash test/run_tests.sh shogi_v4.html",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:visual": "playwright test test/e2e/visual_regression.spec.js",
+    "test:visual:update": "playwright test test/e2e/visual_regression.spec.js --update-snapshots"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
