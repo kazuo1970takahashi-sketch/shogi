@@ -393,8 +393,10 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
   });
 
   test('「マスタをインポート」ボタンクリックでモーダルが開く（ファイル選択 + 貼り付け両対応）', async ({ page }) => {
-    await page.click('#masterImportBtn');
-    await expect(page.locator('#master-import-modal')).toBeVisible();
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     await expect(page.locator('#mi-file')).toBeVisible();
     await expect(page.locator('#mi-paste-area')).toBeVisible();
     // textarea font-size が 16px 以上（iPhone Safari 自動ズーム回避）
@@ -403,7 +405,10 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
   });
 
   test('インポートモーダルに「上書き」「マージ」のラジオが存在する（マージは有効）', async ({ page }) => {
-    await page.click('#masterImportBtn');
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     const overwriteRadio = page.locator('input[name="mi-mode"][value="overwrite"]');
     const mergeRadio = page.locator('input[name="mi-mode"][value="merge"]');
     await expect(overwriteRadio).toBeVisible();
@@ -413,7 +418,10 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
   });
 
   test('上書き選択 + 実行 → 確認ダイアログが出る', async ({ page }) => {
-    await page.click('#masterImportBtn');
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     await page.locator('input[name="mi-mode"][value="overwrite"]').check();
     const validJson = JSON.stringify({
       schema_version: 1,
@@ -425,13 +433,20 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
       dialogText = dialog.message();
       await dialog.dismiss();
     });
-    await page.click('#mi-run');
-    // 確認ダイアログのメッセージに「元に戻せません」が含まれる
-    await expect.poll(() => dialogText, { timeout: 3000 }).toContain('元に戻せません');
+    // dismiss なので master 不変、primary は dialog 文言確認
+    await clickAndExpectChange(page.locator('#mi-run'), async (before, after, ctx) => {
+      ctx.primary('overwrite confirmation dialog appeared with warning text');
+      await expect.poll(() => dialogText, { timeout: 3000 }).toContain('元に戻せません');
+      // dismiss なので master は変更されない
+      expect(after.master.members.length).toBe(before.master.members.length);
+    });
   });
 
   test('大会データ形式 JSON を貼り付けると過去大会統合機能への案内エラーが出る', async ({ page }) => {
-    await page.click('#masterImportBtn');
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     await page.locator('input[name="mi-mode"][value="overwrite"]').check();
     const tournamentJson = JSON.stringify({
       schema_version: 4,
@@ -439,29 +454,49 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
       players: { A: [{id:'p1',name:'X'}], B: [] }
     });
     await page.locator('#mi-paste-area').fill(tournamentJson);
-    await page.click('#mi-run');
-    // 大会データを誤って入れた場合は明確に「過去大会データ」と「過去大会を支部マスタに統合」へ誘導される
-    await expect(page.locator('#mi-status')).toContainText('過去大会データ');
-    await expect(page.locator('#mi-status')).toContainText('支部マスタに統合');
+    // エラーケース: master 不変、primary は #mi-status の案内文言
+    await clickAndExpectChange(page.locator('#mi-run'), async (before, after, ctx, p) => {
+      ctx.primary('error: tournament data rejected with guidance to merge feature');
+      await expect(p.locator('#mi-status')).toContainText('過去大会データ');
+      await expect(p.locator('#mi-status')).toContainText('支部マスタに統合');
+      expect(after.master.members.length).toBe(before.master.members.length);
+    });
   });
 
   test('不正な JSON を貼り付けると解析エラーが出る', async ({ page }) => {
-    await page.click('#masterImportBtn');
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     await page.locator('input[name="mi-mode"][value="overwrite"]').check();
     await page.locator('#mi-paste-area').fill('{ broken json');
-    await page.click('#mi-run');
-    await expect(page.locator('#mi-status')).toContainText('解析');
+    // エラーケース: master 不変、primary は #mi-status のエラー文言
+    await clickAndExpectChange(page.locator('#mi-run'), async (before, after, ctx, p) => {
+      ctx.primary('error: parse error shown, master unchanged');
+      await expect(p.locator('#mi-status')).toContainText('解析');
+      expect(after.master.members.length).toBe(before.master.members.length);
+    });
   });
 
   test('エクスポート実行後、localStorage の branch master は schema_version:1 と members を保持する', async ({ page }) => {
     // alert と download を吸収
     page.on('dialog', async (dialog) => { await dialog.accept(); });
-    const downloadPromise = page.waitForEvent('download');
-    await page.click('#masterExportBtn');
-    const download = await downloadPromise;
-    // ファイル名フォーマット: shogi_branch_master_YYYY-MM-DD.json
-    expect(download.suggestedFilename()).toMatch(/^shogi_branch_master_\d{4}-\d{2}-\d{2}\.json$/);
-    // localStorage の branch master が壊れていない（エクスポートは読み取り専用）
+    // 仕様書 §4 の masterExport は production 実装が clipboard ではなく Blob+anchor download
+    // のため、download primary + master 不変 の raw callback で対応(末尾 commit で
+    // 仕様書 §4 を「download primary」に修正同梱)
+    let downloadPromise;
+    await clickAndExpectChange(
+      page.locator('#masterExportBtn'),
+      async (before, after, ctx) => {
+        ctx.primary('download triggered with master json filename, master unchanged');
+        const download = await downloadPromise;
+        expect(download.suggestedFilename()).toMatch(/^shogi_branch_master_\d{4}-\d{2}-\d{2}\.json$/);
+        // localStorage の branch master が壊れていない(エクスポートは read-only)
+        expect(after.localStorage.shogi_branch_master).toBe(before.localStorage.shogi_branch_master);
+      },
+      { beforeClick: () => { downloadPromise = page.waitForEvent('download'); } }
+    );
+    // 補助: localStorage の中身検証(従来テストの assertion を温存)
     const stored = await page.evaluate(() => {
       var raw = localStorage.getItem('shogi_branch_master');
       return raw ? JSON.parse(raw) : null;
@@ -473,7 +508,10 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
   });
 
   test('上書きインポート実行で localStorage の branch master が置換される', async ({ page }) => {
-    await page.click('#masterImportBtn');
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     await page.locator('input[name="mi-mode"][value="overwrite"]').check();
     const newMaster = {
       schema_version: 1,
@@ -486,8 +524,12 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
     await page.locator('#mi-paste-area').fill(JSON.stringify(newMaster));
     // 確認ダイアログを accept
     page.once('dialog', async (dialog) => { await dialog.accept(); });
-    await page.click('#mi-run');
-    await expect(page.locator('#master-import-modal')).toHaveCount(0);
+    // 上書き: 4 → 2(expectedNewCount: -2、existingMemberIds=[] 既存非保持、tombstone なし)
+    await clickAndExpectChange(
+      page.locator('#mi-run'),
+      shogiAssertions.masterImported({ expectedNewCount: -2 }),
+      { afterClick: async (p) => { await expect(p.locator('#master-import-modal')).toHaveCount(0); } }
+    );
 
     // localStorage 検証: 完全置換（元の 4 件 → 新 2 件）
     const stored = await page.evaluate(() => {
@@ -502,7 +544,10 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
   });
 
   test('マージインポート実行で 新規追加 + 既存 name は既存側維持', async ({ page }) => {
-    await page.click('#masterImportBtn');
+    await clickAndExpectChange(page.locator('#masterImportBtn'), async (before, after, ctx, p) => {
+      ctx.primary('master import modal opened');
+      await expect(p.locator('#master-import-modal')).toBeVisible();
+    });
     await page.locator('input[name="mi-mode"][value="merge"]').check();
     // imported: 既存 m_aaaaaaaaaaaa の name を別名にしたものと、新規 m_eeeeeeeeeeee
     const importMaster = {
@@ -514,8 +559,15 @@ test.describe('A-3 F8 エクスポート/インポート', () => {
       ]
     };
     await page.locator('#mi-paste-area').fill(JSON.stringify(importMaster));
-    await page.click('#mi-run');
-    await expect(page.locator('#master-import-modal')).toHaveCount(0);
+    // マージ: 4 → 5(expectedNewCount: 1、既存 m_aaaaaaaaaaaa の name/yomi は既存側維持)
+    await clickAndExpectChange(
+      page.locator('#mi-run'),
+      shogiAssertions.masterImported({
+        expectedNewCount: 1,
+        existingMemberIds: ['m_aaaaaaaaaaaa'],
+      }),
+      { afterClick: async (p) => { await expect(p.locator('#master-import-modal')).toHaveCount(0); } }
+    );
 
     // localStorage 検証
     const stored = await page.evaluate(() => {
