@@ -317,7 +317,15 @@ test.describe('A-3 クイックフィルタ（過去参加者パネル）', () =
     // 初期: 3名（山田太郎・山本花子・佐藤一郎）
     await expect(page.locator('#ppPanel .pp-check')).toHaveCount(3);
     // 「前回参加」 = last_attended が最大日 (2026-04-15) と一致 → 佐藤一郎のみ
-    await page.locator('.pp-quick-filter-btn[data-qfkey="recent_last"]').click();
+    // クイックフィルタは L0 §1.5 P1: state を持たない UI 状態変化のため raw callback で
+    // primary は「.pp-check 件数が絞り込まれる」(3 → 1)
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="recent_last"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter applied: row count narrowed');
+        await expect(p.locator('#ppPanel .pp-check')).toHaveCount(1);
+      }
+    );
     const checks = page.locator('#ppPanel .pp-check');
     await expect(checks).toHaveCount(1);
     await expect(page.locator('#ppPanel').getByText('佐藤一郎')).toBeVisible();
@@ -325,18 +333,43 @@ test.describe('A-3 クイックフィルタ（過去参加者パネル）', () =
 
   test('同じフィルタを再タップすると解除される（全件に戻る）', async ({ page }) => {
     // 「常連」 = attendance_count >= 5 → 佐藤一郎のみ
-    await page.locator('.pp-quick-filter-btn[data-qfkey="regular"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="regular"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter applied: row count narrowed to 1');
+        await expect(p.locator('#ppPanel .pp-check')).toHaveCount(1);
+      }
+    );
     await expect(page.locator('#ppPanel .pp-check')).toHaveCount(1);
     // 再タップで解除
-    await page.locator('.pp-quick-filter-btn[data-qfkey="regular"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="regular"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter cleared: all rows back');
+        await expect(p.locator('#ppPanel .pp-check')).toHaveCount(3);
+      }
+    );
     await expect(page.locator('#ppPanel .pp-check')).toHaveCount(3);
   });
 
   test('別のフィルタに切り替えると排他選択になる', async ({ page }) => {
-    await page.locator('.pp-quick-filter-btn[data-qfkey="regular"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="regular"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter "regular" applied (active class set)');
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).toHaveClass(/active/);
+      }
+    );
     await expect(page.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).toHaveClass(/active/);
     // 切り替え：前回参加へ
-    await page.locator('.pp-quick-filter-btn[data-qfkey="recent_last"]').click();
+    await clickAndExpectChange(
+      page.locator('.pp-quick-filter-btn[data-qfkey="recent_last"]'),
+      async (before, after, ctx, p) => {
+        ctx.primary('quick filter switched: recent_last active, regular inactive');
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="recent_last"]')).toHaveClass(/active/);
+        await expect(p.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).not.toHaveClass(/active/);
+      }
+    );
     // active は前回参加のみ
     await expect(page.locator('.pp-quick-filter-btn[data-qfkey="recent_last"]')).toHaveClass(/active/);
     await expect(page.locator('.pp-quick-filter-btn[data-qfkey="regular"]')).not.toHaveClass(/active/);
