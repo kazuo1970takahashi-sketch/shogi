@@ -1,6 +1,7 @@
 // @ts-check
 // Phase A-4.5 e2e: 過去参加者パネル 3 セクション分離 + F7 簡素化 + bug fix #7
 const { test, expect } = require('@playwright/test');
+const { expectNoHorizontalOverflow, expectHeightInRange } = require('../helpers/layout-assertions');
 
 const SAMPLE_MASTER = {
   schema_version: 1,
@@ -121,15 +122,14 @@ test.describe('A-4.5 §4 #6: iPhone 375px 行レイアウト', () => {
 
   // A-4.4 失敗(縦書き化)の再発検出: 各文字が縦に並ぶ場合 1 文字 ≒ 14-21px × N 文字で 60〜200px+ になる。
   // 横書き 1〜3 行折り返しなら 60px 未満(line-height ≒ 14-21px × 行数)。閾値 60px で縦書き化を検出。
+  // L-4: expectHeightInRange に置き換え(可読性向上、ロジックは同等)
   test('375px: 通常氏名(3〜4 文字)で氏名 span が縦書き化しない(<60px)', async ({ page }) => {
     await setupWithMaster(page, SAMPLE_MASTER);
     await page.click('#ppToggleBtn');
     await expect(page.locator('#ppPanel')).toBeVisible();
     const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' }).first();
     const nameSpan = row.locator('span').first(); // 氏名 + ふりがな包含 span(flex:1)
-    const box = await nameSpan.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box.height).toBeLessThan(60);
+    await expectHeightInRange(nameSpan, { maxHeight: 60, label: '通常氏名 nameSpan @375px' });
   });
 
   test('375px: 長氏名(10 文字以上)で氏名 span が縦書き化しない(<100px)', async ({ page }) => {
@@ -138,11 +138,9 @@ test.describe('A-4.5 §4 #6: iPhone 375px 行レイアウト', () => {
     await expect(page.locator('#ppPanel')).toBeVisible();
     const row = page.locator('#ppPanel .pp-row').filter({ hasText: '長谷川一郎太郎兵衛' }).first();
     const nameSpan = row.locator('span').first();
-    const box = await nameSpan.boundingBox();
-    expect(box).not.toBeNull();
     // 長氏名 + ふりがな(計 25 文字以上)が横書き 3〜4 行折り返しなら 60〜85px。
     // 縦書き化していたら 17px × 9 文字 + α = 150px+ になる。100px 未満で縦書き化を検出。
-    expect(box.height).toBeLessThan(100);
+    await expectHeightInRange(nameSpan, { maxHeight: 100, label: '長氏名 nameSpan @375px' });
   });
 
   test('375px: 長氏名行の A/B ボタンが 44x44 タップターゲットを満たす', async ({ page }) => {
@@ -155,6 +153,31 @@ test.describe('A-4.5 §4 #6: iPhone 375px 行レイアウト', () => {
     expect(aBox.height).toBeGreaterThanOrEqual(44);
     // viewport 内に収まる
     expect(aBox.x + aBox.width).toBeLessThanOrEqual(376);
+  });
+
+  // L-3: 過去参加者パネル(通常氏名)が viewport 内に収まる(水平 overflow なし)
+  test('375px: 過去参加者パネルが viewport 内に収まる(通常氏名)', async ({ page }) => {
+    await setupWithMaster(page, SAMPLE_MASTER);
+    await page.click('#ppToggleBtn');
+    await expect(page.locator('#ppPanel')).toBeVisible();
+    await expectNoHorizontalOverflow(page, { label: 'pp-panel 通常 @375px' });
+  });
+
+  // L-3: 過去参加者パネル(長氏名)が viewport 内に収まる
+  test('375px: 過去参加者パネルが viewport 内に収まる(長氏名)', async ({ page }) => {
+    await setupWithMaster(page, LONG_NAME_MASTER);
+    await page.click('#ppToggleBtn');
+    await expect(page.locator('#ppPanel')).toBeVisible();
+    await expectNoHorizontalOverflow(page, { label: 'pp-panel 長氏名 @375px' });
+  });
+
+  // L-3: F7 編集モーダルが viewport 内に収まる
+  test('375px: F7 編集モーダルが viewport 内に収まる', async ({ page }) => {
+    await setupWithMaster(page, SAMPLE_MASTER);
+    await page.click('#tab-master');
+    await page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' }).locator('.master-edit-btn').click();
+    await expect(page.locator('#master-edit-modal')).toBeVisible();
+    await expectNoHorizontalOverflow(page, { label: 'F7 edit modal @375px' });
   });
 });
 
