@@ -249,10 +249,18 @@ test.describe('A-4 Stage 2: IME 自動取得', () => {
   test('サジェスト選択後にふりがな欄を手動修正 → 修正後 yomi がマスタに反映される', async ({ page }) => {
     // 山本花子（マスタ yomi 空）を選択
     await page.fill('#inp-name', '山本');
-    await page.locator('#suggest-list .suggest-item').first().click();
+    await clickAndExpectChangeUnchecked(
+      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
+      async (before, after, ctx) => {
+        ctx.primary('no player added (form-only update)');
+        expect(after.state.players.A.length).toBe(before.state.players.A.length);
+        expect(after.state.players.B.length).toBe(before.state.players.B.length);
+      }
+    );
     // ふりがな欄を手動編集（_yomiManuallyEdited=true になる）
     await page.fill('#inp-yomi', 'やまもとはなこ');
-    await page.click('#addBtn');
+    // 山本花子 last_class='B' → B クラスに追加
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('B'));
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     expect(master.members.find(m => m.id === 'm_bbbbbbbbbbbb').yomi).toBe('やまもとはなこ');
   });
@@ -260,7 +268,7 @@ test.describe('A-4 Stage 2: IME 自動取得', () => {
   test('addPlayer 成功後、_yomiManuallyEdited / _yomiAutoBuffer がリセットされる', async ({ page }) => {
     await page.fill('#inp-name', 'タロウ');
     await page.fill('#inp-yomi', 'たろう');
-    await page.click('#addBtn');
+    await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
     const flags = await page.evaluate(() => ({
       manual: typeof _yomiManuallyEdited !== 'undefined' ? _yomiManuallyEdited : null,
       buffer: typeof _yomiAutoBuffer !== 'undefined' ? _yomiAutoBuffer : null
@@ -317,8 +325,10 @@ test.describe('A-4 Stage 3: マスタ編集モーダル', () => {
 
   test('編集モーダルに支部員区分・中学生以下のラジオが現在値で表示される', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    await row.locator('.master-edit-btn').click();
-    await expect(page.locator('#master-edit-modal')).toBeVisible();
+    await clickAndExpectChange(row.locator('.master-edit-btn'), async (before, after, ctx, p) => {
+      ctx.primary('master edit modal opened');
+      await expect(p.locator('#master-edit-modal')).toBeVisible();
+    });
     // 山田太郎: member='other', grade='chu'
     await expect(page.locator('input[name="me-member"][value="other"]')).toBeChecked();
     await expect(page.locator('input[name="me-grade"][value="chu"]')).toBeChecked();
@@ -326,7 +336,10 @@ test.describe('A-4 Stage 3: マスタ編集モーダル', () => {
 
   test('履歴情報（初回・最終・回数）が読み取り専用で表示される', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    await row.locator('.master-edit-btn').click();
+    await clickAndExpectChange(row.locator('.master-edit-btn'), async (before, after, ctx, p) => {
+      ctx.primary('master edit modal opened');
+      await expect(p.locator('#master-edit-modal')).toBeVisible();
+    });
     const hist = page.locator('#me-history');
     await expect(hist).toBeVisible();
     await expect(hist).toContainText('初回参加：2026-01-01');
@@ -336,10 +349,21 @@ test.describe('A-4 Stage 3: マスタ編集モーダル', () => {
 
   test('支部員区分を変更して保存 → localStorage に反映される', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
-    await row.locator('.master-edit-btn').click();
+    await clickAndExpectChange(row.locator('.master-edit-btn'), async (before, after, ctx, p) => {
+      ctx.primary('master edit modal opened');
+      await expect(p.locator('#master-edit-modal')).toBeVisible();
+    });
     // member: member → other に切り替え
     await page.check('input[name="me-member"][value="other"]');
-    await page.click('#me-save');
+    // member 変更は masterMemberEdited factory(name/yomi 専用)では検出不可のため
+    // raw callback で master.members[id].member の変化を primary 検証
+    await clickAndExpectChange(page.locator('#me-save'), async (before, after, ctx) => {
+      ctx.primary('master member field "member" changed: member → other');
+      const beforeMember = before.master.members.find(m => m.id === 'm_cccccccccccc');
+      const afterMember = after.master.members.find(m => m.id === 'm_cccccccccccc');
+      expect(beforeMember.member).toBe('member');
+      expect(afterMember.member).toBe('other');
+    });
     await expect(page.locator('#master-edit-modal')).toHaveCount(0);
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     expect(master.members.find(m => m.id === 'm_cccccccccccc').member).toBe('other');
@@ -349,18 +373,34 @@ test.describe('A-4 Stage 3: マスタ編集モーダル', () => {
 
   test('中学生以下区分を変更して保存 → localStorage に反映される', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
-    await row.locator('.master-edit-btn').click();
+    await clickAndExpectChange(row.locator('.master-edit-btn'), async (before, after, ctx, p) => {
+      ctx.primary('master edit modal opened');
+      await expect(p.locator('#master-edit-modal')).toBeVisible();
+    });
     await page.check('input[name="me-grade"][value="chu"]');
-    await page.click('#me-save');
+    // grade 変更は raw callback で primary 検証(masterMemberEdited は name/yomi 専用)
+    await clickAndExpectChange(page.locator('#me-save'), async (before, after, ctx) => {
+      ctx.primary('master member field "grade" changed: ippan → chu');
+      const afterMember = after.master.members.find(m => m.id === 'm_cccccccccccc');
+      expect(afterMember.grade).toBe('chu');
+    });
     const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
     expect(master.members.find(m => m.id === 'm_cccccccccccc').grade).toBe('chu');
   });
 
   test('一覧表示が更新される（編集後 renderMasterTab で再描画）', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
-    await row.locator('.master-edit-btn').click();
+    await clickAndExpectChange(row.locator('.master-edit-btn'), async (before, after, ctx, p) => {
+      ctx.primary('master edit modal opened');
+      await expect(p.locator('#master-edit-modal')).toBeVisible();
+    });
     await page.check('input[name="me-grade"][value="chu"]');
-    await page.click('#me-save');
+    // grade 変更は raw callback で primary 検証
+    await clickAndExpectChange(page.locator('#me-save'), async (before, after, ctx) => {
+      ctx.primary('master member field "grade" changed: ippan → chu (re-render)');
+      const afterMember = after.master.members.find(m => m.id === 'm_cccccccccccc');
+      expect(afterMember.grade).toBe('chu');
+    });
     // 再描画後の佐藤一郎の行に「中学」が表示される
     const row2 = page.locator('#pane-master tbody tr').filter({ hasText: '佐藤一郎' });
     await expect(row2.locator('td.master-cell-grade')).toContainText('中学');
