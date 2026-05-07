@@ -833,19 +833,25 @@ function applyMasterMemberEdit(memberId,newName,newYomi,master,options){
   if(!nm)return {success:false,error:'empty_name'};
 
   // A-4 §3.3.2: options バリデーション（変更前にチェックして失敗時は target を触らない）
+  // A-4.3 §2.5: last_class（A/B/null）も追加
   var hasMemberOpt=(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'member'));
   var hasGradeOpt =(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'grade'));
+  var hasLastClassOpt=(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'last_class'));
   if(hasMemberOpt&&options.member!=='member'&&options.member!=='other'){
     return {success:false,error:'invalid_member_value'};
   }
   if(hasGradeOpt&&options.grade!=='ippan'&&options.grade!=='chu'){
     return {success:false,error:'invalid_grade_value'};
   }
+  if(hasLastClassOpt&&options.last_class!=='A'&&options.last_class!=='B'&&options.last_class!==null){
+    return {success:false,error:'invalid_last_class_value'};
+  }
 
   target.name=nm;
   target.yomi=yo;
   if(hasMemberOpt)target.member=options.member;
   if(hasGradeOpt)target.grade=options.grade;
+  if(hasLastClassOpt)target.last_class=options.last_class;
 
   // 同名重複検知（自分以外・deleted 以外、normalize 後一致）
   var dupCount=0;
@@ -1689,6 +1695,8 @@ function buildMasterEditModalHtml(member){
   // A-4 §3.3.1: 支部員区分・中学生以下区分 + 履歴情報（読み取り専用）
   var memberCur=(member&&member.member==='other')?'other':'member';
   var gradeCur=(member&&member.grade==='chu')?'chu':'ippan';
+  // A-4.3 §2.5: 前回クラス（A / B / null=未設定）
+  var lastClassCur=(member&&(member.last_class==='A'||member.last_class==='B'))?member.last_class:'';
   var firstAt=(member&&member.first_attended)?member.first_attended:'未記録';
   var lastAt=(member&&member.last_attended)?member.last_attended:'未記録';
   var count=(member&&typeof member.attendance_count==='number')?member.attendance_count:0;
@@ -1709,6 +1717,13 @@ function buildMasterEditModalHtml(member){
   html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">中学生以下</legend>';
   html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-grade" value="ippan"'+(gradeCur==='ippan'?' checked':'')+' style="margin-right:6px">一般</label>';
   html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-grade" value="chu"'+(gradeCur==='chu'?' checked':'')+' style="margin-right:6px">中学</label>';
+  html+='</fieldset>';
+
+  // A-4.3 §2.5: 前回クラス（A / B / 未設定）
+  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">前回クラス</legend>';
+  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-last-class" value=""'+(lastClassCur===''?' checked':'')+' style="margin-right:6px">未設定</label>';
+  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-last-class" value="A"'+(lastClassCur==='A'?' checked':'')+' style="margin-right:6px">A</label>';
+  html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-last-class" value="B"'+(lastClassCur==='B'?' checked':'')+' style="margin-right:6px">B</label>';
   html+='</fieldset>';
 
   html+='<div id="me-history" style="margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:12px;color:#444;line-height:1.6">';
@@ -1894,14 +1909,18 @@ function bindMasterEditModalEvents(){
       return;
     }
     // A-4 §3.3.2: ラジオから member/grade を読み取り options で渡す
+    // A-4.3 §2.5: last_class も同様に options で渡す
     var memberRadios=document.getElementsByName('me-member');
     var gradeRadios=document.getElementsByName('me-grade');
-    var memberPick=null,gradePick=null;
+    var lastClassRadios=document.getElementsByName('me-last-class');
+    var memberPick=null,gradePick=null,lastClassPick=null,lastClassPicked=false;
     for(var ri=0;ri<memberRadios.length;ri++){if(memberRadios[ri].checked){memberPick=memberRadios[ri].value;break;}}
     for(var rj=0;rj<gradeRadios.length;rj++){if(gradeRadios[rj].checked){gradePick=gradeRadios[rj].value;break;}}
+    for(var rk=0;rk<lastClassRadios.length;rk++){if(lastClassRadios[rk].checked){lastClassPick=lastClassRadios[rk].value;lastClassPicked=true;break;}}
     var options={};
     if(memberPick==='member'||memberPick==='other')options.member=memberPick;
     if(gradePick==='ippan'||gradePick==='chu')options.grade=gradePick;
+    if(lastClassPicked)options.last_class=(lastClassPick==='A'||lastClassPick==='B')?lastClassPick:null;
 
     var master=loadBranchMaster();
     var result=applyMasterMemberEdit(memberId,newName,newYomi,master,options);
