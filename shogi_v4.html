@@ -833,19 +833,25 @@ function applyMasterMemberEdit(memberId,newName,newYomi,master,options){
   if(!nm)return {success:false,error:'empty_name'};
 
   // A-4 §3.3.2: options バリデーション（変更前にチェックして失敗時は target を触らない）
+  // A-4.3 §2.5: last_class（A/B/null）も追加
   var hasMemberOpt=(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'member'));
   var hasGradeOpt =(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'grade'));
+  var hasLastClassOpt=(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'last_class'));
   if(hasMemberOpt&&options.member!=='member'&&options.member!=='other'){
     return {success:false,error:'invalid_member_value'};
   }
   if(hasGradeOpt&&options.grade!=='ippan'&&options.grade!=='chu'){
     return {success:false,error:'invalid_grade_value'};
   }
+  if(hasLastClassOpt&&options.last_class!=='A'&&options.last_class!=='B'&&options.last_class!==null){
+    return {success:false,error:'invalid_last_class_value'};
+  }
 
   target.name=nm;
   target.yomi=yo;
   if(hasMemberOpt)target.member=options.member;
   if(hasGradeOpt)target.grade=options.grade;
+  if(hasLastClassOpt)target.last_class=options.last_class;
 
   // 同名重複検知（自分以外・deleted 以外、normalize 後一致）
   var dupCount=0;
@@ -975,6 +981,37 @@ function addPlayerFromMaster(memberId,cls,master,state){
   };
   state.players[cls].push(player);
   return {success:true,player:player};
+}
+
+// A-4.3 §3.1: 既登録 player のクラスを変更する純粋関数。
+// state.players[oldCls] から削除し、state.players[newCls] に同 id で再追加。
+// マスタの last_class も即時更新する（addPlayerFromMaster とは責務が分かれる）。
+function changePlayerClass(memberId,newCls,master,state){
+  if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
+  if(!state||!state.players||!Array.isArray(state.players.A)||!Array.isArray(state.players.B))return {success:false,error:'invalid_state'};
+  if(typeof memberId!=='string'||memberId==='')return {success:false,error:'invalid_id'};
+  if(newCls!=='A'&&newCls!=='B')return {success:false,error:'invalid_class'};
+  var target=null,oldCls=null,oldIdx=-1;
+  var classes=['A','B'];
+  for(var ci=0;ci<classes.length;ci++){
+    var arr=state.players[classes[ci]];
+    for(var pi=0;pi<arr.length;pi++){
+      if(arr[pi]&&arr[pi].member_id===memberId){target=arr[pi];oldCls=classes[ci];oldIdx=pi;break;}
+    }
+    if(target)break;
+  }
+  if(!target)return {success:false,error:'not_found'};
+  if(oldCls===newCls)return {success:false,error:'same_class'};
+  state.players[oldCls].splice(oldIdx,1);
+  target.cls=newCls;
+  state.players[newCls].push(target);
+  for(var mi=0;mi<master.members.length;mi++){
+    if(master.members[mi]&&master.members[mi].id===memberId){
+      master.members[mi].last_class=newCls;
+      break;
+    }
+  }
+  return {success:true,player:target,oldCls:oldCls,newCls:newCls};
 }
 
 function addTournamentIdOnce(member,tournamentId){
@@ -1221,6 +1258,18 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   // A-4.2 §3.1.2: 「追加先を選択」ヒント（Should Fix 3 反映）
   html+='<div id="pp-hint" style="font-size:11px;color:#888;margin-bottom:4px">追加先を選択（A/Bボタンで指定クラスへ追加）</div>';
   html+='<div style="max-height:280px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;padding:6px;margin-bottom:8px">';
+  // A-4.3 §2.1: 現クラス強調用に member_id → 現在登録中クラスのマップを作成
+  var currentRegMap={};
+  if(state&&state.players){
+    var regClasses=['A','B'];
+    for(var rci=0;rci<regClasses.length;rci++){
+      var rArr=state.players[regClasses[rci]]||[];
+      for(var rpi=0;rpi<rArr.length;rpi++){
+        var rp=rArr[rpi];
+        if(rp&&typeof rp.member_id==='string'&&rp.member_id)currentRegMap[rp.member_id]=regClasses[rci];
+      }
+    }
+  }
   for(var j=0;j<filtered.length;j++){
     var fm=filtered[j];
     // A-4.2 §3.4.3: 「前回:Xクラス」テキスト併記（last_class が A/B 以外なら非表示）
@@ -1229,14 +1278,28 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
     var midSafe=escapeHtml(fm.id);
     var aLabelSafe=escapeHtml(fm.name+'をAクラスで追加');
     var bLabelSafe=escapeHtml(fm.name+'をBクラスで追加');
-    // A-4.2 §3.4.1: last_class のボタンを強調（太字 + 背景色 #FFD580）
-    var aHighlight=fm.last_class==='A';
-    var bHighlight=fm.last_class==='B';
+    // A-4.3 §2.1: 現クラス強調（青/琥珀 + チェック印）。現クラスが立つときは前回クラスハイライトを上書きする
+    var currentCls=currentRegMap[fm.id]||null;
+    var aActive=(currentCls==='A');
+    var bActive=(currentCls==='B');
+    // A-4.2 §3.4.1: 前回参加クラスのボタンを強調（黄色 #FFD580）。現クラスが立つときは抑制
+    var aHighlight=fm.last_class==='A'&&!currentCls;
+    var bHighlight=fm.last_class==='B'&&!currentCls;
     var btnBaseStyle='min-width:44px;min-height:44px;margin-left:8px;border:1px solid #1976d2;border-radius:6px;font-size:14px;cursor:pointer;flex-shrink:0';
-    var aStyle=btnBaseStyle+';font-weight:'+(aHighlight?'bold':'normal')+';background:'+(aHighlight?'#FFD580':'#fff')+';color:'+(aHighlight?'#7a3e00':'#1976d2');
-    var bStyle=btnBaseStyle+';font-weight:'+(bHighlight?'bold':'normal')+';background:'+(bHighlight?'#FFD580':'#fff')+';color:'+(bHighlight?'#7a3e00':'#1976d2');
-    var aClass='pp-add-btn'+(aHighlight?' pp-add-btn-highlight':'');
-    var bClass='pp-add-btn'+(bHighlight?' pp-add-btn-highlight':'');
+    var aStyle=btnBaseStyle
+      +';font-weight:'+((aActive||aHighlight)?'bold':'normal')
+      +';background:'+(aActive?'#bbdefb':(aHighlight?'#FFD580':'#fff'))
+      +';color:'+(aActive?'#0d47a1':(aHighlight?'#7a3e00':'#1976d2'))
+      +';border-color:'+(aActive?'#0d47a1':'#1976d2');
+    var bStyle=btnBaseStyle
+      +';font-weight:'+((bActive||bHighlight)?'bold':'normal')
+      +';background:'+(bActive?'#ffe0b2':(bHighlight?'#FFD580':'#fff'))
+      +';color:'+(bActive?'#5d4037':(bHighlight?'#7a3e00':'#1976d2'))
+      +';border-color:'+(bActive?'#e65100':'#1976d2');
+    var aClass='pp-add-btn'+(aActive?' pp-add-btn-active':'')+(aHighlight?' pp-add-btn-highlight':'');
+    var bClass='pp-add-btn'+(bActive?' pp-add-btn-active':'')+(bHighlight?' pp-add-btn-highlight':'');
+    var aText=aActive?'A ✓':'A';
+    var bText=bActive?'B ✓':'B';
     // A-4.2 §3.1.2: 行本体タップは無効化（cursor:default、hover 効果なし）
     // data-mid は行に1つだけ（既存テストの `#ppPanel [data-mid]` 件数カウント互換）
     html+='<div class="pp-row" data-mid="'+midSafe+'" style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:default">';
@@ -1250,8 +1313,9 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
     }
     html+='<span style="font-size:11px;color:#888;min-width:5em;text-align:right">'+escapeHtml(fm.last_attended||'')+'</span>';
     // A-4.2 §3.1.4: A/B ボタン（min 44x44、aria-label / title 付与、Nice to Have 1 反映）
-    html+='<button type="button" class="'+aClass+'" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="'+aStyle+'">A</button>';
-    html+='<button type="button" class="'+bClass+'" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="'+bStyle+'">B</button>';
+    // A-4.3 §2.1: 現クラスは textContent に ✓ を併記
+    html+='<button type="button" class="'+aClass+'" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="'+aStyle+'">'+aText+'</button>';
+    html+='<button type="button" class="'+bClass+'" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="'+bStyle+'">'+bText+'</button>';
     html+='</div>';
   }
   html+='</div>';
@@ -1306,14 +1370,56 @@ function bindPastParticipantsPanelEvents(){
   }
 }
 
-// A-4.2 §3.1.3: 過去参加者パネルの A/B ボタン押下時の処理。
-// addPlayerFromMaster の結果を受け、UI 文言を duplicate_member / duplicate_name で分けて表示。
+// A-4.3 §2.2: 過去参加者パネルの A/B ボタン押下時の処理。
+// 3 ケース分岐：未登録（追加 confirm）/ 別クラス登録済（変更 confirm）/ 同クラス登録済（alert OK のみ）。
 function handlePastParticipantClassAdd(memberId,cls){
   var master=loadBranchMaster();
+  // マスタから member を取得（氏名表示用）
+  var member=null;
+  if(master&&Array.isArray(master.members)){
+    for(var mi=0;mi<master.members.length;mi++){
+      if(master.members[mi]&&master.members[mi].id===memberId){member=master.members[mi];break;}
+    }
+  }
+  if(!member){showMsg('該当する参加者が見つかりません','err');return;}
+  if(member.deleted===true){showMsg('この参加者は削除済みのため追加できません','err');return;}
+  var memberName=member.name||'';
+  // 現在の登録クラスを取得
+  var existingCls=null;
+  var existClasses=['A','B'];
+  for(var eci=0;eci<existClasses.length;eci++){
+    var eArr=state.players[existClasses[eci]]||[];
+    for(var epi=0;epi<eArr.length;epi++){
+      if(eArr[epi]&&eArr[epi].member_id===memberId){existingCls=existClasses[eci];break;}
+    }
+    if(existingCls)break;
+  }
+  // ケース 3: 同クラス登録済（alert OK のみ、削除提案なし）
+  if(existingCls===cls){
+    alert(memberName+'さんは既に '+cls+'クラス に登録されています。');
+    return;
+  }
+  // ケース 2: 別クラス登録済（変更 confirm）
+  if(existingCls&&existingCls!==cls){
+    var ok2=confirm(memberName+'さんは現在 '+existingCls+'クラス に登録されています。\n'+cls+'クラス に変更しますか?');
+    if(!ok2)return;
+    var r2=changePlayerClass(memberId,cls,master,state);
+    if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');return;}
+    saveBranchMaster(master);
+    renderRegList();save();
+    var searchInp2=document.getElementById('pp-search');
+    renderPastParticipantsPanel(searchInp2?searchInp2.value:'');
+    showMsg('['+memberName+'] を '+cls+'クラス に変更しました','ok');
+    return;
+  }
+  // ケース 1: 未登録（追加 confirm）
+  var ok1=confirm(memberName+'さんを '+cls+'クラス に追加しますか?');
+  if(!ok1)return;
   var r=addPlayerFromMaster(memberId,cls,master,state);
   if(!r||!r.success){
     var err=r&&r.error;
     if(err==='duplicate_member'){
+      // ガード：cls 一致なら通常はケース 3 で処理済、ここは想定外
       showMsg('この参加者はすでに登録されています','err');
     }else if(err==='duplicate_name'){
       showMsg('同じ名前の参加者がいます。別人の場合は手入力で区別してください','err');
@@ -1535,7 +1641,7 @@ function buildMasterTabHtml(master){
     html+='<div style="color:#888;font-size:13px;padding:8px 0">登録された参加者はいません。</div>';
   }else{
     html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
-    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">ふりがな</th><th style="text-align:left;padding:6px 8px">区分</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th><th style="padding:6px 8px">操作</th></tr></thead><tbody>';
+    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">ふりがな</th><th style="text-align:left;padding:6px 8px">区分</th><th style="padding:6px 8px">前回クラス</th><th style="padding:6px 8px">最終参加</th><th style="padding:6px 8px">回数</th><th style="padding:6px 8px">操作</th></tr></thead><tbody>';
     for(var i=0;i<members.length;i++){
       var m=members[i];
       // A-4 §3.2.1: 区分列（2段表示） — 上段:支部員/他、下段:中学のみ表示
@@ -1557,6 +1663,9 @@ function buildMasterTabHtml(master){
         +'<div>'+escapeHtml(memberLabel)+'</div>'
         +(gradeLabel?'<div style="color:#666;font-size:12px">'+escapeHtml(gradeLabel)+'</div>':'')
         +'</td>';
+      // A-4.3 §2.4: 前回クラス（A / B / -）
+      var lastClsLabel=(m.last_class==='A'||m.last_class==='B')?m.last_class:'-';
+      html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center" class="master-cell-last-class">'+escapeHtml(lastClsLabel)+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.last_attended||'')+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee">'+(m.attendance_count|0)+'</td>';
       html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap">';
@@ -1586,6 +1695,8 @@ function buildMasterEditModalHtml(member){
   // A-4 §3.3.1: 支部員区分・中学生以下区分 + 履歴情報（読み取り専用）
   var memberCur=(member&&member.member==='other')?'other':'member';
   var gradeCur=(member&&member.grade==='chu')?'chu':'ippan';
+  // A-4.3 §2.5: 前回クラス（A / B / null=未設定）
+  var lastClassCur=(member&&(member.last_class==='A'||member.last_class==='B'))?member.last_class:'';
   var firstAt=(member&&member.first_attended)?member.first_attended:'未記録';
   var lastAt=(member&&member.last_attended)?member.last_attended:'未記録';
   var count=(member&&typeof member.attendance_count==='number')?member.attendance_count:0;
@@ -1606,6 +1717,13 @@ function buildMasterEditModalHtml(member){
   html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">中学生以下</legend>';
   html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-grade" value="ippan"'+(gradeCur==='ippan'?' checked':'')+' style="margin-right:6px">一般</label>';
   html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-grade" value="chu"'+(gradeCur==='chu'?' checked':'')+' style="margin-right:6px">中学</label>';
+  html+='</fieldset>';
+
+  // A-4.3 §2.5: 前回クラス（A / B / 未設定）
+  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">前回クラス</legend>';
+  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-last-class" value=""'+(lastClassCur===''?' checked':'')+' style="margin-right:6px">未設定</label>';
+  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-last-class" value="A"'+(lastClassCur==='A'?' checked':'')+' style="margin-right:6px">A</label>';
+  html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-last-class" value="B"'+(lastClassCur==='B'?' checked':'')+' style="margin-right:6px">B</label>';
   html+='</fieldset>';
 
   html+='<div id="me-history" style="margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:12px;color:#444;line-height:1.6">';
@@ -1791,14 +1909,18 @@ function bindMasterEditModalEvents(){
       return;
     }
     // A-4 §3.3.2: ラジオから member/grade を読み取り options で渡す
+    // A-4.3 §2.5: last_class も同様に options で渡す
     var memberRadios=document.getElementsByName('me-member');
     var gradeRadios=document.getElementsByName('me-grade');
-    var memberPick=null,gradePick=null;
+    var lastClassRadios=document.getElementsByName('me-last-class');
+    var memberPick=null,gradePick=null,lastClassPick=null,lastClassPicked=false;
     for(var ri=0;ri<memberRadios.length;ri++){if(memberRadios[ri].checked){memberPick=memberRadios[ri].value;break;}}
     for(var rj=0;rj<gradeRadios.length;rj++){if(gradeRadios[rj].checked){gradePick=gradeRadios[rj].value;break;}}
+    for(var rk=0;rk<lastClassRadios.length;rk++){if(lastClassRadios[rk].checked){lastClassPick=lastClassRadios[rk].value;lastClassPicked=true;break;}}
     var options={};
     if(memberPick==='member'||memberPick==='other')options.member=memberPick;
     if(gradePick==='ippan'||gradePick==='chu')options.grade=gradePick;
+    if(lastClassPicked)options.last_class=(lastClassPick==='A'||lastClassPick==='B')?lastClassPick:null;
 
     var master=loadBranchMaster();
     var result=applyMasterMemberEdit(memberId,newName,newYomi,master,options);
@@ -2382,11 +2504,65 @@ function renderSuggestList(suggestions){
   list.style.display='block';
 }
 
-// A-4.2 §3.2.3: サジェスト A/B ボタン押下時の処理。
-// addPlayerFromMaster 経由で直接追加し、氏名欄・ふりがな欄をクリア + サジェストリストを閉じる。
-// _pendingNewYomi / master.yomi は触らない（Should Fix 6）。
+// A-4.3 §2.3: サジェスト A/B ボタン押下時の処理。
+// 過去参加者パネルと同じ 3 ケース分岐（メンタルモデル一貫性）。サジェストは既登録者除外があるため通常はケース 1 のみだが、念のため 3 ケース全対応。
+// _pendingNewYomi / master.yomi は触らない（A-4.2 Should Fix 6）。
 function handleSuggestClassAdd(memberId,cls){
   var master=loadBranchMaster();
+  var member=null;
+  if(master&&Array.isArray(master.members)){
+    for(var mi=0;mi<master.members.length;mi++){
+      if(master.members[mi]&&master.members[mi].id===memberId){member=master.members[mi];break;}
+    }
+  }
+  if(!member){showMsg('該当する参加者が見つかりません','err');return;}
+  if(member.deleted===true){showMsg('この参加者は削除済みのため追加できません','err');return;}
+  var memberName=member.name||'';
+  var existingCls=null;
+  var existClasses=['A','B'];
+  for(var eci=0;eci<existClasses.length;eci++){
+    var eArr=state.players[existClasses[eci]]||[];
+    for(var epi=0;epi<eArr.length;epi++){
+      if(eArr[epi]&&eArr[epi].member_id===memberId){existingCls=existClasses[eci];break;}
+    }
+    if(existingCls)break;
+  }
+  // 共通：成功後の登録画面後処理（氏名/ふりがな欄クリア + サジェスト閉じ + 再描画）
+  function postSuccess(msgText){
+    var inpName=document.getElementById('inp-name');
+    var inpYomi=document.getElementById('inp-yomi');
+    if(inpName)inpName.value='';
+    if(inpYomi)inpYomi.value='';
+    _suggestState.selectedMemberId=null;
+    _suggestState.selectedNormalizedName=null;
+    _yomiManuallyEdited=false;
+    _yomiAutoBuffer='';
+    closeSuggestList();
+    renderRegList();save();
+    if(typeof renderPastParticipantsPanel==='function'){
+      var ppSearch=document.getElementById('pp-search');
+      renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
+    }
+    showMsg(msgText,'ok');
+  }
+  // ケース 3: 同クラス登録済（alert OK のみ）
+  if(existingCls===cls){
+    alert(memberName+'さんは既に '+cls+'クラス に登録されています。');
+    return;
+  }
+  // ケース 2: 別クラス登録済（変更 confirm）
+  if(existingCls&&existingCls!==cls){
+    var ok2=confirm(memberName+'さんは現在 '+existingCls+'クラス に登録されています。\n'+cls+'クラス に変更しますか?');
+    if(!ok2)return;
+    var r2=changePlayerClass(memberId,cls,master,state);
+    if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');return;}
+    saveBranchMaster(master);
+    postSuccess('['+memberName+'] を '+cls+'クラス に変更しました');
+    return;
+  }
+  // ケース 1: 未登録（追加 confirm）
+  var ok1=confirm(memberName+'さんを '+cls+'クラス に追加しますか?');
+  if(!ok1)return;
   var r=addPlayerFromMaster(memberId,cls,master,state);
   if(!r||!r.success){
     var err=r&&r.error;
@@ -2403,22 +2579,7 @@ function handleSuggestClassAdd(memberId,cls){
     }
     return;
   }
-  // 氏名欄・ふりがな欄をクリア + IME バッファ初期化（§3.2.3 step 2/4）
-  var inpName=document.getElementById('inp-name');
-  var inpYomi=document.getElementById('inp-yomi');
-  if(inpName)inpName.value='';
-  if(inpYomi)inpYomi.value='';
-  _suggestState.selectedMemberId=null;
-  _suggestState.selectedNormalizedName=null;
-  _yomiManuallyEdited=false;
-  _yomiAutoBuffer='';
-  closeSuggestList();
-  renderRegList();save();
-  if(typeof renderPastParticipantsPanel==='function'){
-    var ppSearch=document.getElementById('pp-search');
-    renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
-  }
-  showMsg('['+r.player.name+']（'+cls+'クラス）を登録しました','ok');
+  postSuccess('['+r.player.name+']（'+cls+'クラス）を登録しました');
 }
 
 function closeSuggestList(){

@@ -130,30 +130,29 @@ test.describe('A-4.2 Stage 2: 過去参加者パネル A/B ボタン', () => {
     expect(state.players.B[0].cls).toBe('B');
   });
 
-  test('既追加 player を別クラスのボタンで再度追加 → duplicate_member、UI 文言「この参加者はすでに登録されています」', async ({ page }) => {
+  // A-4.3: 旧仕様(別クラスのボタンを再度押すと duplicate_member)から、
+  // 「ケース 2: 別クラス変更 confirm」へ仕様が変わったため expectation を反転
+  test('A-4.3 ケース 2: 別クラスのボタンを押す → confirm OK で changePlayerClass 経由でクラス変更', async ({ page }) => {
     const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
     await clickAndExpectChange(
       row.locator('.pp-add-btn[data-cls="A"]'),
       shogiAssertions.classSelectedFromPast('A')
     );
-    // 再描画後も同じ member_id の人は表示されている（getCurrentlyRegisteredMemberIds 経由ではなく master 全件表示のため）
-    // → 別クラスのボタンを押す
+    // 別クラスのボタンを押す → confirm dialog (OK) → A から B に移動
     const row2 = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
-    if (await row2.count() > 0) {
-      await clickAndExpectChange(
-        row2.locator('.pp-add-btn[data-cls="B"]'),
-        async (before, after, ctx) => {
-          ctx.primary('duplicate add does not change state.players');
-          expect(after.state.players.A.length).toBe(before.state.players.A.length);
-          expect(after.state.players.B.length).toBe(before.state.players.B.length);
-        }
-      );
-      await expect(page.locator('#reg-msg')).toContainText('この参加者はすでに登録されています');
-    } else {
-      // 行が消えていれば成功（重複追加できない）。本ケースではメッセージ確認は不要。
-    }
-    await expect(page.locator('#a-list .player-row')).toHaveCount(1);
-    await expect(page.locator('#b-list .player-row')).toHaveCount(0);
+    page.once('dialog', async (dialog) => { await dialog.accept(); });
+    await row2.locator('.pp-add-btn[data-cls="B"]').click();
+    await expect(page.locator('#a-list .player-row')).toHaveCount(0);
+    await expect(page.locator('#b-list .player-row')).toHaveCount(1);
+    await expect(page.locator('#reg-msg')).toContainText('Bクラス');
+    await expect(page.locator('#reg-msg')).toContainText('変更しました');
+    // master.last_class も即更新される
+    const master = await page.evaluate(() => {
+      const raw = localStorage.getItem('shogi_branch_master');
+      return raw ? JSON.parse(raw) : null;
+    });
+    const yamada = master.members.find((m) => m.id === 'm_aaaaaaaaaaaa');
+    expect(yamada.last_class).toBe('B');
   });
 
   test('削除済み member の行は表示されない', async ({ page }) => {
@@ -420,10 +419,11 @@ test.describe('A-4.2 Stage 4: last_class 強調表示', () => {
   });
 
   // ----- last_class 更新タイミング -----
-  test('A/B ボタン押下時に master.last_class が即時変更されない（Should Fix 2）', async ({ page }) => {
-    // 山田太郎 (last_class:'A') を B クラスに追加 → master.last_class はまだ 'A' のまま
+  test('未登録者を addPlayerFromMaster 経由で追加した直後は master.last_class が即時変更されない（A-4.3 でも維持）', async ({ page }) => {
+    // 山田太郎 (last_class:'A') を未登録状態から B クラスに追加 → ケース 1 (addPlayerFromMaster) → master.last_class はまだ 'A' のまま
     await page.click('#ppToggleBtn');
     const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
+    page.once('dialog', async (dialog) => { await dialog.accept(); });
     await row.locator('.pp-add-btn[data-cls="B"]').click();
     const master = await page.evaluate(() => {
       const raw = localStorage.getItem('shogi_branch_master');
@@ -437,6 +437,7 @@ test.describe('A-4.2 Stage 4: last_class 強調表示', () => {
     // 山田太郎 (last_class:'A') を B クラスに追加 → syncBranchMasterOnSave 経由で 'B' に更新される
     await page.click('#ppToggleBtn');
     const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
+    page.once('dialog', async (dialog) => { await dialog.accept(); });
     await row.locator('.pp-add-btn[data-cls="B"]').click();
     // syncBranchMasterOnSave を直接呼び出す（クリップボードプロンプト回避）
     await page.evaluate(() => {
@@ -540,7 +541,8 @@ for (const width of [375, 430]) {
       expect(aBox.width).toBeGreaterThanOrEqual(44);
       expect(aBox.height).toBeGreaterThanOrEqual(44);
       expect(aBox.x + aBox.width).toBeLessThanOrEqual(width + 1);
-      // クリックして実際に追加できる
+      // クリックして実際に追加できる(A-4.3: 確認ダイアログを accept)
+      page.once('dialog', async (dialog) => { await dialog.accept(); });
       await aBtn.click();
       await expect(page.locator('#a-list .player-row')).toHaveCount(1);
     });

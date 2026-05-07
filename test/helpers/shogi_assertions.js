@@ -37,7 +37,11 @@ const shogiAssertions = {
   }),
 
   // #2/#3 クラス選択(過去参加者)
+  // A-4.3: ボタン押下時に確認ダイアログ(window.confirm)が出るため beforeClick で accept
   classSelectedFromPast: (cls) => ({
+    beforeClick: async (page) => {
+      page.once('dialog', async (dialog) => { await dialog.accept(); });
+    },
     assertion: async (before, after, page) => {
       expect(after.state.players[cls].length).toBe(before.state.players[cls].length + 1);
       expect(after.state.players[cls].at(-1).cls).toBe(cls);
@@ -51,7 +55,11 @@ const shogiAssertions = {
   }),
 
   // #4/#5 クラス選択(サジェスト)
+  // A-4.3: ボタン押下時に確認ダイアログ(window.confirm)が出るため beforeClick で accept
   classSelectedFromSuggest: (cls, expectedMemberId) => ({
+    beforeClick: async (page) => {
+      page.once('dialog', async (dialog) => { await dialog.accept(); });
+    },
     assertion: async (before, after, page) => {
       expect(after.state.players[cls].length).toBe(before.state.players[cls].length + 1);
       expect(after.state.players[cls].at(-1).cls).toBe(cls);
