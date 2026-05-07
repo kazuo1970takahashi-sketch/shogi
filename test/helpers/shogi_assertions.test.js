@@ -108,4 +108,50 @@ test.describe('shogi_assertions: 全 factory の meta 検証', () => {
     expect(typeof f.beforeClick).toBe('function');
     expect(typeof f.afterClick).toBe('function');
   });
+
+  // ========================================================================
+  // Stage 4 完了基準 #1〜#3 機械的検証(A-4.2 回帰テスト)
+  // ========================================================================
+  // A-4.2 リグレッションは「.pp-add-btn[data-cls=A] click → state.players.A.length は
+  // 増えるが、production の cls 不整合で .at(-1).cls !== 'A' になる」型の偽陽性。
+  // Stage 2b で classSelectedFromPast('A') factory が primary assertion として
+  // 追加され、cls 不一致を構造的に検出するようになった。本 test は factory の
+  // assertion ロジックが期待通り cls 不整合を赤検出することを単体検証する。
+  test.describe('A-4.2 regression: classSelectedFromPast factory が cls 不一致を赤検出', () => {
+    test('正常系(cls 一致): assertion が緑になる', async () => {
+      const factory = shogiAssertions.classSelectedFromPast('A');
+      const before = { state: { players: { A: [], B: [] } } };
+      const after = { state: { players: { A: [{ name: '山田', cls: 'A' }], B: [] } } };
+      // assertion が throw しなければ緑
+      await factory.assertion(before, after, /* page */ null);
+    });
+
+    test('A-4.2 型偽陽性(length 増加だが cls=B): assertion が赤になる', async () => {
+      const factory = shogiAssertions.classSelectedFromPast('A');
+      const before = { state: { players: { A: [], B: [] } } };
+      // length は +1 だが cls が 'B' になっているケース(A-4.2 主因相当)
+      const after = { state: { players: { A: [{ name: '山田', cls: 'B' }], B: [] } } };
+      let caught = null;
+      try {
+        await factory.assertion(before, after, null);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, 'cls 不一致で必ず throw すべき(A-4.2 偽陽性検出)').not.toBeNull();
+    });
+
+    test('A-4.2 型偽陽性(length 不変): assertion が赤になる', async () => {
+      const factory = shogiAssertions.classSelectedFromPast('A');
+      const before = { state: { players: { A: [], B: [] } } };
+      // length が変化しない(クリックで何も追加されない)ケース
+      const after = { state: { players: { A: [], B: [] } } };
+      let caught = null;
+      try {
+        await factory.assertion(before, after, null);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, 'length 不変で必ず throw すべき').not.toBeNull();
+    });
+  });
 });
