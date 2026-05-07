@@ -372,19 +372,12 @@ test.describe('A-4.2 Stage 4: last_class 強調表示', () => {
     await expect(row.locator('.pp-add-btn[data-cls="B"]')).not.toHaveClass(/pp-add-btn-highlight/);
   });
 
-  test('過去参加者: last_class=A で A ボタンが強調（pp-add-btn-highlight クラス）', async ({ page }) => {
-    await page.click('#ppToggleBtn');
-    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山田太郎' });
-    await expect(row.locator('.pp-add-btn[data-cls="A"]')).toHaveClass(/pp-add-btn-highlight/);
-    await expect(row.locator('.pp-add-btn[data-cls="B"]')).not.toHaveClass(/pp-add-btn-highlight/);
-  });
-
-  test('過去参加者: last_class=B で B ボタンが強調', async ({ page }) => {
-    await page.click('#ppToggleBtn');
-    const row = page.locator('#ppPanel .pp-row').filter({ hasText: '山本花子' });
-    await expect(row.locator('.pp-add-btn[data-cls="B"]')).toHaveClass(/pp-add-btn-highlight/);
-    await expect(row.locator('.pp-add-btn[data-cls="A"]')).not.toHaveClass(/pp-add-btn-highlight/);
-  });
+  // A-4.4: 過去参加者パネルのボタン色強調(pp-add-btn-highlight)を撤廃。
+  // 現クラス・前回参加クラスはセクション分離 + 「現在:Xクラス」テキストで表現する方針に移行。
+  // 元テスト:
+  //   - 過去参加者: last_class=A で A ボタンが強調(pp-add-btn-highlight クラス)
+  //   - 過去参加者: last_class=B で B ボタンが強調
+  // → shogi_app_a4_4.spec.js §2.1 へ移行(エントリー済 / 未エントリー セクション分離 + 「現在:Xクラス」テキスト)
 
   // ----- サジェストリスト -----
   test('サジェスト: last_class=A の候補の A ボタンが強調', async ({ page }) => {
