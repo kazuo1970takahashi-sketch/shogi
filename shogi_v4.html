@@ -1280,15 +1280,35 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
     else if(cur==='B')bEnrolledFiltered.push(filtered[fi]);
     else notEnrolledFiltered.push(filtered[fi]);
   }
-  // A-4.5 §2.2 + §4 #6: 行描画 helper(行内要素は A-4.3 と同じ要素。色強調撤廃。
-  // iPhone 375px 縦書き化対策で 2 段レイアウト: 1 段目=氏名 + A/B ボタン、2 段目=ふりがな + 前回:Xクラス + 日付)
+  // A-4.5 §2.2 + §4 #6 / A-4.6 §2.1: 行描画 helper。
+  // 行内要素は A-4.3 と同じ + 2 段レイアウト維持(行構造は A-4.5 と完全同一、A-4.4 失敗の轍を踏まない)。
+  // A-4.6: 現クラス active の **ボタン style のみ** 色強調復活(背景色 + ✓ + bold + pp-add-btn-active クラス)。
+  // 前回参加クラス強調(pp-add-btn-highlight、薄琥珀色)は撤廃のまま維持(二重ハイライト混乱回避)。
   function renderPpRow(fm){
     var lastClassText=fm.last_class==='A'?'前回:Aクラス':(fm.last_class==='B'?'前回:Bクラス':'');
     var nameSafe=escapeHtml(fm.name);
     var midSafe=escapeHtml(fm.id);
     var aLabelSafe=escapeHtml(fm.name+'をAクラスで追加');
     var bLabelSafe=escapeHtml(fm.name+'をBクラスで追加');
-    var btnStyle='min-width:44px;min-height:44px;margin-left:8px;border:1px solid #1976d2;border-radius:6px;font-size:14px;cursor:pointer;flex-shrink:0;background:#fff;color:#1976d2';
+    // A-4.6 §2.1: 現クラス判定 → A/B ボタン個別の style を組み立てる
+    var currentCls=currentRegMap[fm.id]||null;
+    var aActive=(currentCls==='A');
+    var bActive=(currentCls==='B');
+    var btnBaseStyle='min-width:44px;min-height:44px;margin-left:8px;border-radius:6px;font-size:14px;cursor:pointer;flex-shrink:0';
+    var aStyle=btnBaseStyle
+      +';font-weight:'+(aActive?'bold':'normal')
+      +';background:'+(aActive?'#bbdefb':'#fff')
+      +';color:'+(aActive?'#0d47a1':'#1976d2')
+      +';border:1px solid '+(aActive?'#0d47a1':'#1976d2');
+    var bStyle=btnBaseStyle
+      +';font-weight:'+(bActive?'bold':'normal')
+      +';background:'+(bActive?'#ffe0b2':'#fff')
+      +';color:'+(bActive?'#5d4037':'#1976d2')
+      +';border:1px solid '+(bActive?'#e65100':'#1976d2');
+    var aClass='pp-add-btn'+(aActive?' pp-add-btn-active':'');
+    var bClass='pp-add-btn'+(bActive?' pp-add-btn-active':'');
+    var aText=aActive?'A ✓':'A';
+    var bText=bActive?'B ✓':'B';
     // pp-row は 2 段の縦並び。1 段目に氏名(伸縮)+ A/B ボタン、2 段目にメタ情報(ふりがな + 前回 + 日付)
     var rowHtml='<div class="pp-row" data-mid="'+midSafe+'" style="display:flex;flex-direction:column;gap:2px;padding:6px 4px;border-bottom:1px solid #f0f0f0;cursor:default">';
     // 既存テスト互換のための隠しマーカー(`.pp-check` 件数カウント用、A-3 e2e 依存)
@@ -1296,8 +1316,8 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
     // 1 段目: 氏名 + A/B ボタン(氏名は flex:1 で残り全幅、375px でも >= 230px 確保)
     rowHtml+='<div class="pp-row-main" style="display:flex;align-items:center;gap:8px">';
     rowHtml+='<span class="pp-name" style="flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere;font-weight:500">'+nameSafe+'</span>';
-    rowHtml+='<button type="button" class="pp-add-btn" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="'+btnStyle+'">A</button>';
-    rowHtml+='<button type="button" class="pp-add-btn" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="'+btnStyle+'">B</button>';
+    rowHtml+='<button type="button" class="'+aClass+'" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="'+aStyle+'">'+aText+'</button>';
+    rowHtml+='<button type="button" class="'+bClass+'" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="'+bStyle+'">'+bText+'</button>';
     rowHtml+='</div>';
     // 2 段目: メタ情報(ふりがな + 前回:Xクラス + 日付)。値が無ければ要素自体を出さない
     var hasMeta=(!!fm.yomi)||(!!lastClassText)||(!!fm.last_attended);
