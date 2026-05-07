@@ -58,46 +58,44 @@ memory「過剰品質ゲート回避」「PoC 速度優先」を踏まえ、Stry
 
 ---
 
-## 3. Stryker.js 軽量導入
+## 3. 手動 Mutation Testing(Stryker.js 不採用、(C) 案)
 
-### 対象関数(~10 個、実装時に Claude Code が最終確定)
+### 方式変更の根拠(2026-05-07 確定)
 
-| 関数 | 行 | 役割 | A-4.2 関連度 / L0 §7 INV |
+実装着手前の web 検索で **Stryker.js が Playwright を公式サポートしていない**(2024〜2026、Sentry Engineering / GitHub Issue #4557)ことが判明。command-runner workaround は実装負債(extract + route interception + Stryker config の 3 層)が大きく、memory「過剰品質ゲート回避」「PoC 速度優先」「技術選定は利用者最適で随時見直し」と矛盾するため、**手動 Mutation Testing に方式変更**。
+
+### 対象関数(10 個、確定)
+
+| # | 関数 | 行 | 役割 / INV |
 |---|---|---|---|
-| `addPlayerFromMaster` | L936 | 過去参加者 / サジェストから追加 | ★★★(A-4.2 主因経路) |
-| `addPlayer` | L2471 | 通常参加者追加 | INV-PL-1〜7 |
-| `removePlayer` | L2560 | 参加者削除 | INV-PL |
-| `runMasterImport` | L1674 | マスタインポート | INV-MA-1〜3 |
-| `syncBranchMasterOnSave` | L3286 | saveData 経由マスタ同期 | Stage 1 §4.2 重点 |
-| `saveData` | L3312 | 大会データコピー | INV-ST |
-| `loadFromPaste` | L3388 | 貼付読み込み | INV-ST |
-| `resetAll` | L3631 | リセット | INV-ST |
-| `normalizeState` / `sanitizeMatch` | (要 grep) | 複数 INV 維持 | INV 横断 |
-| `calcTotal` / `getFee` | (要 grep) | 料金計算 | INV-FE |
+| 1 | `addPlayerFromMaster` | L936 | A-4.2 主因経路 ★★★ |
+| 2 | `addPlayer` | L2471 | INV-PL-1〜7 |
+| 3 | `removePlayer` | L2560 | INV-PL |
+| 4 | `syncBranchMasterOnSave` | L3286 | Stage 1 §4.2 重点 |
+| 5 | `saveData` | L3312 | INV-ST |
+| 6 | `loadFromPaste` | L3388 | INV-ST |
+| 7 | `resetAll` | L3631 | INV-ST |
+| 8 | `normalizeState` | L286 | INV-PL/PA/RE 横断 |
+| 9 | `applyOverwriteImport` | L649 | INV-MA-1 |
+| 10 | `applyMergeImport` | L668 | INV-MA-3 |
 
-### 前哨作業: shogi_v4.html JS 抽出
+### 実施手順
 
-production HTML 不変のため、Stryker 専用 sidecar `.js` を生成する extract スクリプトを `test/stryker/` 配下に配置:
+各関数 × 2 mutation = 計 20 mutation:
 
-```
-test/stryker/
-  extract_inline_js.js   # shogi_v4.html の <script>L203-L3800 内容を tmp/shogi_v4.extracted.js に書き出す
-  stryker.conf.json      # extracted.js を mutate target、Playwright をテストランナーに設定
-  README.md              # 実行手順(npm run stryker:extract → npm run stryker:run → 結果確認)
-```
+1. `shogi_v4.html` に mutation を手動適用(Edit ツール、1 行〜数行の意味変更)
+2. 該当 mutation を捕捉しそうな e2e(またはユニットテスト)を実行
+3. RED(killed) / GREEN(survived) を `reports/manual_mutations.md` に記録
+4. `git checkout shogi_v4.html` で revert(完全な production 不変を保証)
+5. 次の mutation へ
 
-production HTML(`shogi_v4.html`)は変更せず、`tmp/` 配下は `.gitignore` で除外。
+`tmp/` / `test/stryker/` / `reports/mutation/` ディレクトリは作成しない(Stryker 不採用のため)。
 
 ### Mutation Score 目標と運用
 
-- 目標: **90%**(P0 関数 ~10 個 limited scope、デッドコード相当の survived mutant は完了レポートで per-function 許容理由を明示)
-- 実行: `npm run stryker:run`(ローカル、推定 13〜50 分)
-- 結果: `reports/mutation/mutation.html` を Stage 4 完了レポートに参照、生成物は git ignore
-
-### Stryker 実装上の判断
-
-- Playwright をテストランナーに統合(custom test-runner 設定)
-- coverage 取得は Stryker の `--coverageAnalysis perTest` を試行、Playwright で取得困難なら `all` にフォールバック(実行時間延びる可能性、その場合は対象関数をさらに絞る)
+- 目標: **90%**(18/20)
+- 未達時: 仕様書 §5 制約により production 修正禁止、survived mutation の per-function 許容理由をカテゴリ分類して完了レポートに明示
+- 結果: `reports/manual_mutations.md` + `docs/specs/YYYYMMDD_shogi_at_stage4_completion_report.md` に記録(両者とも commit 対象)
 
 ---
 
@@ -128,8 +126,8 @@ production HTML(`shogi_v4.html`)は変更せず、`tmp/` 配下は `.gitignore` 
 | # | 観点 | 検証方法 |
 |---|---|---|
 | 1 | 完了基準 #1〜#3 機械的検証 | A-4.2 回帰テスト 1 件 pass |
-| 2 | Stryker 軽量導入動作 | `npm run stryker:run` がエラーなく完走、`reports/mutation/mutation.html` 生成 |
-| 3 | Mutation Score 計測完了 | 対象 ~10 関数で Score 出力、目標 90% に対する実測値を完了レポートに記録 |
+| 2 | 手動 Mutation Testing 完走 | 20 mutation すべて apply→test→revert サイクルが完了、`reports/manual_mutations.md` に結果記録 |
+| 3 | Mutation Score 計測完了 | 対象 10 関数で Score 算出(RED 件数 / 20)、目標 90% に対する実測値と survived のカテゴリ分類を完了レポートに記録 |
 | 4 | 既存 446 件緑維持 | `npm test` PASS=50 + `npx playwright test` 全件 pass |
 | 5 | production 不変 | `git diff main shogi_v4.html` 0 行 |
 
@@ -154,19 +152,20 @@ production HTML(`shogi_v4.html`)は変更せず、`tmp/` 配下は `.gitignore` 
 
 ## 9. リスクと予防
 
-- **R1**: Stryker と Playwright の統合で coverage 取得が困難 → `--coverageAnalysis all` にフォールバック、実行時間が伸びるなら対象関数をさらに絞る(完了レポートで対象縮小理由を明示)
-- **R2**: shogi_v4.html JS 抽出スクリプトの維持コスト → README に手順を明記、production HTML が大きく変わったら抽出スクリプトを更新する旨を記録
-- **R3**: Mutation Score 90% 未達 → §5 制約通り production 修正禁止、完了レポートで survived mutant の per-function 許容理由を明示して完了
+- **R1(解消済み)**: Stryker と Playwright の統合で coverage 取得が困難 → 手動方式採用で解消(本仕様書 §3 で確定)
+- **R2(解消済み)**: shogi_v4.html JS 抽出スクリプトの維持コスト → 手動方式で抽出不要、解消
+- **R3**: Mutation Score 90% 未達 → §5 制約通り production 修正禁止、完了レポートで survived mutant の per-function 許容理由を明示して完了(実測 65%、改善方針は Stage 5 以降申し送り)
 
 ---
 
-## 10. 想定工数(参考)
+## 10. 想定工数(参考、手動方式に修正)
 
-- 前哨作業(JS 抽出 + Stryker config + Playwright 統合): 2〜4 時間
-- A-4.2 回帰テスト 1 件追加: 30 分
-- Stryker 実行 + 結果確認: 1〜2 時間(実行時間 13〜50 分 + 結果分析)
+- A-4.2 回帰テスト追加(unit 3 件): 30 分
+- 手動 Mutation Testing 20 件 apply→test→revert: 1〜2 時間(各 mutation 数分、テスト実行 5〜30 秒)
+- `reports/manual_mutations.md` 作成 + survived のカテゴリ分類: 1 時間
 - 完了レポート作成: 30〜60 分
-- 合計: 4〜7 時間(1 セッション完了可)
+- 仕様書 §3/§6/§10 修正(末尾コミット): 15 分
+- 合計: 3〜5 時間(1 セッション完了可、Stryker 不採用で短縮)
 
 ---
 
