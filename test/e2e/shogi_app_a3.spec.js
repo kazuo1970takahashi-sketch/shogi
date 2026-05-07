@@ -235,17 +235,22 @@ test.describe('A-3 マスタタブ', () => {
   });
 
   test('編集ボタン → モーダルで name + yomi を変更して保存できる', async ({ page }) => {
-    // 山田太郎の行の編集ボタン
+    // 山田太郎の行の編集ボタン → 編集モーダルが開く(state 不変、L0 §1.5 P1)
     const targetRow = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    await targetRow.locator('.master-edit-btn').click();
-    await expect(page.locator('#master-edit-modal')).toBeVisible();
+    await clickAndExpectChange(targetRow.locator('.master-edit-btn'), async (before, after, ctx, p) => {
+      ctx.primary('master edit modal opened');
+      await expect(p.locator('#master-edit-modal')).toBeVisible();
+    });
     // 既存値が入っていることを確認
     await expect(page.locator('#me-name')).toHaveValue('山田太郎');
     await expect(page.locator('#me-yomi')).toHaveValue('やまだたろう');
     // 編集して保存
     await page.fill('#me-name', '山田 改名');
     await page.fill('#me-yomi', 'やまだ かいめい');
-    await page.click('#me-save');
+    await clickAndExpectChange(
+      page.locator('#me-save'),
+      shogiAssertions.masterMemberEdited('m_aaaaaaaaaaaa')
+    );
     // モーダルが閉じる
     await expect(page.locator('#master-edit-modal')).toHaveCount(0);
     // 一覧に反映（normalize 後: 全角空白→半角、yomi の空白除去）
@@ -259,7 +264,10 @@ test.describe('A-3 マスタタブ', () => {
       await dialog.accept();
     });
     const targetRow = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    await targetRow.locator('.master-delete-btn').click();
+    await clickAndExpectChange(
+      targetRow.locator('.master-delete-btn'),
+      shogiAssertions.masterMemberDeleted('m_aaaaaaaaaaaa')
+    );
     // 削除後、一覧に「山田太郎」が表示されない（tombstone なので非表示）
     await expect(page.locator('#pane-master').getByText('山田太郎')).toHaveCount(0);
     // 他の member は残っている
@@ -269,7 +277,10 @@ test.describe('A-3 マスタタブ', () => {
   test('削除は tombstone（物理削除なし、deleted=true + deleted_at 設定）', async ({ page }) => {
     page.once('dialog', async (dialog) => { await dialog.accept(); });
     const targetRow = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
-    await targetRow.locator('.master-delete-btn').click();
+    await clickAndExpectChange(
+      targetRow.locator('.master-delete-btn'),
+      shogiAssertions.masterMemberDeleted('m_aaaaaaaaaaaa')
+    );
     // UI 上は消える
     await expect(page.locator('#pane-master').getByText('山田太郎')).toHaveCount(0);
     // localStorage 検証: members 配列に残っており tombstone が立っている
