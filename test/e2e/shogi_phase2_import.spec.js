@@ -444,3 +444,92 @@ test.describe('Phase 2 §6 #6 補強: city UI 経由', () => {
     expect(m.city).toBe('長泉町');
   });
 });
+
+// ============================================================
+// Phase 2 修正(2026-05-08 11:40):過去参加者パネル不在 Must Fix + ヘッダー label リネーム
+// ============================================================
+test.describe('Phase 2 fix: import 完了後の自動タブ切替 + section visible', () => {
+  test('Phase 2 import 完了後、参加者登録タブが自動的に active になる', async ({ page }) => {
+    await setup(page, EMPTY_MASTER);
+    // マスタタブに切り替えて import モーダル経由で実行
+    await page.click('#tab-master');
+    await page.click('#masterPhase2ImportBtn');
+    await expect(page.locator('#phase2-import-modal')).toBeVisible();
+    // ファイル選択(本番 JSON)
+    const fileInput = page.locator('#p2-file');
+    await fileInput.setInputFiles(PHASE2_DATA_PATH);
+    await expect(page.locator('#p2-run')).toBeEnabled();
+    await page.locator('#p2-run').click();
+    await expect(page.locator('#phase2-import-modal')).toHaveCount(0);
+    // 自動的に参加者登録タブが active になる(showTab('reg'))
+    await expect(page.locator('#tab-reg')).toHaveClass(/active/);
+    await expect(page.locator('#pane-reg')).toBeVisible();
+  });
+
+  test('Phase 2 import 完了後、#past-participants-section が visible になる', async ({ page }) => {
+    await setup(page, EMPTY_MASTER);
+    await page.click('#tab-master');
+    await page.click('#masterPhase2ImportBtn');
+    await page.locator('#p2-file').setInputFiles(PHASE2_DATA_PATH);
+    await expect(page.locator('#p2-run')).toBeEnabled();
+    await page.locator('#p2-run').click();
+    // section が visible(設計通り、master 22 名 → display:block)
+    await expect(page.locator('#past-participants-section')).toBeVisible();
+    await expect(page.locator('#ppToggleBtn')).toBeVisible();
+  });
+
+  test('Phase 2 import 完了後、過去参加者パネル展開で 22 名表示(未エントリーセクション)', async ({ page }) => {
+    await setup(page, EMPTY_MASTER);
+    await page.click('#tab-master');
+    await page.click('#masterPhase2ImportBtn');
+    await page.locator('#p2-file').setInputFiles(PHASE2_DATA_PATH);
+    await expect(page.locator('#p2-run')).toBeEnabled();
+    await page.locator('#p2-run').click();
+    // 自動切替後、過去参加者パネルを展開
+    await expect(page.locator('#ppToggleBtn')).toBeVisible();
+    await page.click('#ppToggleBtn');
+    await expect(page.locator('#ppPanel')).toBeVisible();
+    await expect(page.locator('#ppPanel .pp-section-not-enrolled .pp-section-header')).toContainText('未エントリー (22名)');
+    await expect(page.locator('#ppPanel .pp-section-not-enrolled .pp-row')).toHaveCount(22);
+  });
+
+  test('リセット直後はマスタ空のため #past-participants-section が hidden(設計通り)', async ({ page }) => {
+    await setup(page, SINGLE_MEMBER_MASTER);
+    await page.click('#tab-master');
+    await page.click('#masterResetBtn');
+    await page.locator('#mr-backup-checked').check();
+    await page.locator('#mr-confirm-text').fill('リセット');
+    await page.locator('#mr-run').click();
+    await expect(page.locator('#master-reset-modal')).toHaveCount(0);
+    // タブを切替なしでマスタタブのまま、参加者登録タブに切り替えて section 確認
+    await page.click('#tab-reg');
+    await expect(page.locator('#past-participants-section')).toBeHidden();
+  });
+});
+
+test.describe('Phase 2 fix: ヘッダー「大会データをリセット」リネーム', () => {
+  test('ヘッダーボタン textContent が「大会データをリセット」', async ({ page }) => {
+    await setup(page, EMPTY_MASTER);
+    const text = await page.locator('#resetBtn').textContent();
+    expect(text.trim()).toBe('大会データをリセット');
+  });
+
+  test('ヘッダーボタン押下で state リセット(マスタ不変、機能変更なし)', async ({ page }) => {
+    await setup(page, SINGLE_MEMBER_MASTER);
+    // 参加者登録タブで A クラスに 1 名追加(state.players)
+    await page.click('#ppToggleBtn');
+    page.once('dialog', async (dialog) => { await dialog.accept(); });
+    await page.locator('#ppPanel .pp-row').filter({ hasText: '既存太郎' }).locator('.pp-add-btn[data-cls="A"]').click();
+    await expect(page.locator('#a-list .player-row')).toHaveCount(1);
+    // ヘッダーの「大会データをリセット」ボタン押下 → confirm accept
+    page.once('dialog', async (dialog) => { await dialog.accept(); });
+    await page.click('#resetBtn');
+    // state.players が空に
+    await expect(page.locator('#a-list .player-row')).toHaveCount(0);
+    // マスタ不変(既存太郎 1 名のまま、tombstone 化していない)
+    const master = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
+    const live = master.members.filter((m) => !m.deleted);
+    expect(live.length).toBe(1);
+    expect(live[0].name).toBe('既存太郎');
+  });
+});

@@ -92,7 +92,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">大会データをコピー</button>
     <button type="button" class="btn-sm no-print" id="loadBtn" style="background:#185FA5;color:#fff;border-color:#185FA5">読み込み</button>
     <input type="file" id="loadFile" accept=".json" style="display:none">
-    <button type="button" class="btn-danger btn-sm no-print" id="resetBtn">リセット</button>
+    <button type="button" class="btn-danger btn-sm no-print" id="resetBtn">大会データをリセット</button>
   </div>
 </div>
 <div class="container">
@@ -2215,12 +2215,16 @@ function bindPhase2ImportModalEvents(){
     }
     saveBranchMaster(result.newMaster);
     var modalEl=document.getElementById('phase2-import-modal');if(modalEl)modalEl.remove();
-    if(typeof showMsg==='function')showMsg(result.summary.total+'名(A '+result.summary.classA+' / B '+result.summary.classB+')を取り込みました','ok');
+    if(typeof showMsg==='function')showMsg(result.summary.total+'名(A '+result.summary.classA+' / B '+result.summary.classB+')を取り込みました。「過去参加者から選ぶ」を展開してご確認ください','ok');
     renderMasterTab();
     if(typeof renderPastParticipantsPanel==='function'){
       var ppSearch=document.getElementById('pp-search');
       renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
     }
+    // Phase 2 修正 #1: import 完了後に参加者登録タブへ自動切替して過去参加者パネルへ誘導 + section visible を明示再保証(Safari race 対策の safety net)
+    if(typeof showTab==='function')showTab('reg');
+    var ppSec=document.getElementById('past-participants-section');
+    if(ppSec&&result.summary.total>0)ppSec.style.display='block';
   });
 }
 
