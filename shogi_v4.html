@@ -451,6 +451,14 @@ function getYomiInitialRow(yomi){
   return 'other';
 }
 
+// Phase 1 §2.1: 市町村(city)正規化。trim + maxlength 20 + null/undefined→""。
+// 手入力・JSON import・旧データ補完すべてで同一ルールを適用するため一箇所に集約。
+function normalizeCity(value){
+  if(value==null)return '';
+  if(typeof value!=='string')return '';
+  return value.replace(/^\s+|\s+$/g,'').slice(0,20);
+}
+
 function normalizeBranchMaster(raw){
   // 仕様書 3.5: 破損データを与えられても落ちない／既存運営を止めない
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return createEmptyBranchMaster();
@@ -501,7 +509,10 @@ function normalizeBranchMaster(raw){
       deleted_at:typeof m.deleted_at==='string'?m.deleted_at:null,
       note:typeof m.note==='string'?m.note:'',
       member:memberStatus,
-      grade:gradeStatus
+      grade:gradeStatus,
+      // Phase 1 §2 / §4: city フィールド。旧データ(city 不在)は normalizeCity('') で '' 補完。
+      // schema_version は bump せず(migration 関数なし、bump で既存 v=1 全消失するため、§8.1 「無し」相当)。
+      city:normalizeCity(m.city)
     });
   }
   var updated_at=typeof raw.updated_at==='string'?raw.updated_at:new Date().toISOString();
@@ -834,9 +845,11 @@ function applyMasterMemberEdit(memberId,newName,newYomi,master,options){
 
   // A-4 §3.3.2: options バリデーション（変更前にチェックして失敗時は target を触らない）
   // A-4.3 §2.5: last_class（A/B/null）も追加
+  // Phase 1 §2.1: city も options 経由で受け取り、normalizeCity で正規化する(undefined は「変更しない」)
   var hasMemberOpt=(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'member'));
   var hasGradeOpt =(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'grade'));
   var hasLastClassOpt=(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'last_class'));
+  var hasCityOpt =(options&&typeof options==='object'&&Object.prototype.hasOwnProperty.call(options,'city'));
   if(hasMemberOpt&&options.member!=='member'&&options.member!=='other'){
     return {success:false,error:'invalid_member_value'};
   }
@@ -853,6 +866,8 @@ function applyMasterMemberEdit(memberId,newName,newYomi,master,options){
   if(hasMemberOpt)target.member=options.member;
   if(hasGradeOpt)target.grade=options.grade;
   if(hasLastClassOpt)target.last_class=options.last_class;
+  // Phase 1 §2.1: normalizeCity で trim + maxlength 20 + null/undefined→"" を保存時にも保証
+  if(hasCityOpt)target.city=normalizeCity(options.city);
 
   // 同名重複検知（自分以外・deleted 以外、normalize 後一致）
   var dupCount=0;
@@ -1044,7 +1059,9 @@ function createMemberFromParticipant(p,master,date){
     deleted_at:null,
     note:'',
     member:(p&&p.member==='other')?'other':'member',
-    grade:(p&&p.grade==='chu')?'chu':'ippan'
+    grade:(p&&p.grade==='chu')?'chu':'ippan',
+    // Phase 1 §2: 過去大会データから member 生成時、city は空で初期化(participant 側に city は無いため)
+    city:''
   };
 }
 
@@ -1733,6 +1750,10 @@ function buildMasterEditModalHtml(member){
   html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">ふりがな</label>';
   html+='<input type="text" inputmode="kana" id="me-yomi" value="'+escapeHtml(member.yomi||'')+'" placeholder="やまだたろう" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
 
+  // Phase 1 §3: 市町村(任意、maxlength=20、自由入力)。ふりがな直後配置で「個人属性 → 区分 → 履歴」の流れを維持
+  html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">市町村</label>';
+  html+='<input type="text" id="me-city" value="'+escapeHtml(member.city||'')+'" placeholder="例:沼津市" maxlength="20" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
+
   html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">支部員区分</legend>';
   html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-member" value="member"'+(memberCur==='member'?' checked':'')+' style="margin-right:6px">支部員</label>';
   html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-member" value="other"'+(memberCur==='other'?' checked':'')+' style="margin-right:6px">他</label>';
@@ -1921,11 +1942,15 @@ function bindMasterEditModalEvents(){
     // iPhone Safari blur 競合回避
     var nameInput=document.getElementById('me-name');
     var yomiInput=document.getElementById('me-yomi');
+    var cityInput=document.getElementById('me-city');
     if(nameInput)nameInput.blur();
     if(yomiInput)yomiInput.blur();
+    if(cityInput)cityInput.blur();
     var memberId=this.getAttribute('data-mid');
     var newName=nameInput?nameInput.value:'';
     var newYomi=yomiInput?yomiInput.value:'';
+    // Phase 1 §3: city は cityInput が存在しない場合に既存値を変更しないため undefined を保つ
+    var newCity=cityInput?cityInput.value:undefined;
     var statusEl=document.getElementById('me-status');
     if(!newName||!newName.trim()){
       if(statusEl)statusEl.textContent='氏名を入力してください';
@@ -1933,6 +1958,7 @@ function bindMasterEditModalEvents(){
     }
     // A-4 §3.3.2: ラジオから member/grade を読み取り options で渡す
     // A-4.3 §2.5: last_class も同様に options で渡す
+    // Phase 1 §2.1: city も options で渡す(値は applyMasterMemberEdit 側で normalizeCity 適用)
     var memberRadios=document.getElementsByName('me-member');
     var gradeRadios=document.getElementsByName('me-grade');
     var lastClassRadios=document.getElementsByName('me-last-class');
@@ -1945,6 +1971,8 @@ function bindMasterEditModalEvents(){
     if(gradePick==='ippan'||gradePick==='chu')options.grade=gradePick;
     // A-4.5 §2.6: 「未設定」radio 廃止。A/B どちらも未 check なら last_class を変更しない(undefined)
     if(lastClassPicked&&(lastClassPick==='A'||lastClassPick==='B'))options.last_class=lastClassPick;
+    // Phase 1: cityInput が存在する場合のみ options.city を渡す。空文字も明示更新として扱う(=任意項目をクリア可能)
+    if(cityInput)options.city=newCity;
 
     var master=loadBranchMaster();
     var result=applyMasterMemberEdit(memberId,newName,newYomi,master,options);
