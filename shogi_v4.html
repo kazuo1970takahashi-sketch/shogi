@@ -92,7 +92,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">大会データをコピー</button>
     <button type="button" class="btn-sm no-print" id="loadBtn" style="background:#185FA5;color:#fff;border-color:#185FA5">読み込み</button>
     <input type="file" id="loadFile" accept=".json" style="display:none">
-    <button type="button" class="btn-danger btn-sm no-print" id="resetBtn">リセット</button>
+    <button type="button" class="btn-danger btn-sm no-print" id="resetBtn">大会データをリセット</button>
   </div>
 </div>
 <div class="container">
@@ -775,6 +775,160 @@ function serializeBranchMasterForExport(master){
 function buildMasterExportFilename(dateYmd){
   var ymd=isValidYmd(dateYmd)?dateYmd:todayYmd();
   return 'shogi_branch_master_'+ymd+'.json';
+}
+
+// ============================================================
+// Phase 2 §5.1: マスタリセット(純粋関数)
+//   members を空にした新マスタを返す(mutate しない、tombstone も全削除)。
+//   呼び出し側で saveBranchMaster を実行する責務。
+//   戻り値: {success, newMaster}
+// ============================================================
+function applyMasterReset(master){
+  if(!master||typeof master!=='object')return {success:false,error:'invalid_master'};
+  return {
+    success:true,
+    newMaster:{
+      schema_version:typeof master.schema_version==='number'?master.schema_version:BRANCH_MASTER_SCHEMA_VERSION,
+      updated_at:new Date().toISOString(),
+      members:[]
+    }
+  };
+}
+
+// ============================================================
+// Phase 2 §2.1: 22 名取り込みデータ検証(純粋関数)
+//   配列長 22 / A 18・B 4 / 全件 last_played === EXPECTED_DATE / name 非空 / city ≤ 20。
+//   1 件でも fail があれば全件ロールバック(applyPhase2Import 側で実行抑止)。
+//   戻り値: {ok, errors:[{index,field,message}], summary:{total,classA,classB}}
+// ============================================================
+var PHASE2_EXPECTED_DATE='2026-04-12';
+var PHASE2_EXPECTED_TOTAL=22;
+var PHASE2_EXPECTED_A=18;
+var PHASE2_EXPECTED_B=4;
+
+function validatePhase2ImportData(parsed){
+  var errors=[];
+  if(!Array.isArray(parsed)){
+    return {ok:false,errors:[{index:-1,field:'root',message:'配列形式の JSON ではありません'}],summary:null};
+  }
+  if(parsed.length!==PHASE2_EXPECTED_TOTAL){
+    errors.push({index:-1,field:'length',message:'配列長が '+PHASE2_EXPECTED_TOTAL+' 名ではありません(実際: '+parsed.length+' 名)'});
+  }
+  var classA=0,classB=0;
+  for(var i=0;i<parsed.length;i++){
+    var p=parsed[i];
+    if(!p||typeof p!=='object'||Array.isArray(p)){
+      errors.push({index:i,field:'object',message:'要素がオブジェクトではありません'});
+      continue;
+    }
+    if(typeof p.name!=='string'||!p.name.replace(/^\s+|\s+$/g,'')){
+      errors.push({index:i,field:'name',message:'name が空または非文字列です'});
+    }
+    if(p.last_played!==PHASE2_EXPECTED_DATE){
+      errors.push({index:i,field:'last_played',message:'last_played が '+PHASE2_EXPECTED_DATE+' ではありません(実際: '+JSON.stringify(p.last_played)+')'});
+    }
+    if(p.last_class!=='A'&&p.last_class!=='B'){
+      errors.push({index:i,field:'last_class',message:'last_class が "A" または "B" ではありません(実際: '+JSON.stringify(p.last_class)+')'});
+    }else if(p.last_class==='A')classA++;
+    else if(p.last_class==='B')classB++;
+    var cityRaw=(p.city==null)?'':String(p.city);
+    if(cityRaw.length>20){
+      errors.push({index:i,field:'city',message:'city が 20 文字を超えています(実際: '+cityRaw.length+' 文字)'});
+    }
+  }
+  if(classA!==PHASE2_EXPECTED_A||classB!==PHASE2_EXPECTED_B){
+    errors.push({index:-1,field:'class_breakdown',message:'A 級 '+PHASE2_EXPECTED_A+' / B 級 '+PHASE2_EXPECTED_B+' 件ではありません(実際: A '+classA+' / B '+classB+')'});
+  }
+  return {
+    ok:errors.length===0,
+    errors:errors,
+    summary:{total:parsed.length,classA:classA,classB:classB}
+  };
+}
+
+// ============================================================
+// Phase 2 §5.2: 配列形式の 22 名データを members 配列に変換(純粋関数)
+//   各要素に id 自動生成 / last_played → last_attended / first_attended = last_played を割当。
+//   city は Phase 1 normalizeCity 経由で正規化。yomi/member/grade は空文字許容。
+//   呼び出し側で空マスタ前提を保証(applyPhase2Import 側で空マスタ検証 + ロールバック)。
+//   戻り値: {success, error?, members?}
+// ============================================================
+function convertPhase2ParticipantsToMembers(parsed,master){
+  if(!Array.isArray(parsed))return {success:false,error:'invalid_parsed'};
+  if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
+  var working={schema_version:master.schema_version,updated_at:master.updated_at,members:master.members.slice()};
+  var members=[];
+  try{
+    for(var i=0;i<parsed.length;i++){
+      var p=parsed[i];
+      var newId=generateMemberId(working);
+      var memberStatus=(p.member==='other')?'other':'member';
+      var gradeStatus=(p.grade==='chu')?'chu':'ippan';
+      var nameNorm=normalizePersonName(typeof p.name==='string'?p.name:'');
+      var yomiNorm=normalizeYomi(typeof p.yomi==='string'?p.yomi:'');
+      var cityNorm=normalizeCity(p.city);
+      var date=isValidYmd(p.last_played)?p.last_played:todayYmd();
+      var lastClass=(p.last_class==='A'||p.last_class==='B')?p.last_class:null;
+      var newMember={
+        id:newId,
+        name:nameNorm,
+        yomi:yomiNorm,
+        last_class:lastClass,
+        last_attended:date,
+        first_attended:date,
+        attendance_count:0,
+        tournament_ids:[],
+        deleted:false,
+        deleted_at:null,
+        note:'',
+        member:memberStatus,
+        grade:gradeStatus,
+        city:cityNorm
+      };
+      members.push(newMember);
+      working.members.push(newMember);
+    }
+  }catch(e){
+    return {success:false,error:'convert_failed',message:(e&&e.message)?String(e.message):''};
+  }
+  return {success:true,members:members};
+}
+
+// ============================================================
+// Phase 2 §5.2: 22 名取り込み(純粋関数、空マスタ専用)
+//   既存マスタが 1 件以上(deleted=false)あれば拒否、tombstone のみは許容。
+//   §2.1 検証 + 変換 + 全件 or 0 件のロールバックを保証する。
+//   戻り値: {success, error?, errors?, summary?, newMaster?}
+// ============================================================
+function applyPhase2Import(parsed,master){
+  if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
+  // 空マスタ専用ガード(deleted=false の生存件数で判定。tombstone のみのマスタは許容)
+  var liveCount=0;
+  for(var li=0;li<master.members.length;li++){if(!master.members[li].deleted)liveCount++;}
+  if(liveCount>0){
+    return {success:false,error:'master_not_empty',liveCount:liveCount};
+  }
+  // §2.1 検証
+  var validation=validatePhase2ImportData(parsed);
+  if(!validation.ok){
+    return {success:false,error:'validation_failed',errors:validation.errors,summary:validation.summary};
+  }
+  // 変換(全件成功 or 0 件適用)
+  var conv=convertPhase2ParticipantsToMembers(parsed,master);
+  if(!conv.success){
+    return {success:false,error:conv.error||'convert_failed'};
+  }
+  // tombstone は維持して新規 members を追加(空マスタが「生存 0 + tombstone 0」の通常ケースなら結果は新規 22 件のみ)
+  var newMembers=master.members.slice().concat(conv.members);
+  return {
+    success:true,
+    summary:validation.summary,
+    newMaster:{
+      schema_version:master.schema_version,
+      updated_at:new Date().toISOString(),
+      members:newMembers
+    }
+  };
 }
 
 // ============================================================
@@ -1677,6 +1831,10 @@ function buildMasterTabHtml(master){
   html+='<button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button>';
   html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
   html+='<button type="button" id="masterImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📂 マスタをインポート</button>';
+  // Phase 2 §5.2: 22 名取込(5/10 大会用、空マスタ専用)。本番後は使われない予定の専用ボタン
+  html+='<button type="button" id="masterPhase2ImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📥 22 名取込(5/10 大会用)</button>';
+  // Phase 2 §5.1: マスタリセット(B 案: バックアップ済チェック + テキスト確認 + 二段階確認)
+  html+='<button type="button" id="masterResetBtn" style="background:#fff;border:1px solid #c33;color:#c33">📛 マスタをリセット</button>';
   // A-4 §3.4.1: 削除済み表示トグル
   html+='<button type="button" id="masterShowDeletedBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864" data-on="'+(_masterShowDeleted?'1':'0')+'">'+(_masterShowDeleted?'🗑️ 削除済みを隠す':'🗑️ 削除済みを表示')+'</button>';
   html+='</div>';
@@ -1830,6 +1988,243 @@ function bindMasterImportModalEvents(){
     var pasteArea=document.getElementById('mi-paste-area');
     if(pasteArea)pasteArea.blur();
     runMasterImport();
+  });
+}
+
+// ============================================================
+// Phase 2 §5.1: マスタリセットモーダル(B 案: チェック + テキスト二段階確認)
+// ============================================================
+function buildMasterResetModalHtml(master){
+  var liveCount=0,tombCount=0;
+  if(master&&Array.isArray(master.members)){
+    for(var i=0;i<master.members.length;i++){
+      if(master.members[i].deleted===true)tombCount++;
+      else liveCount++;
+    }
+  }
+  var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto">';
+  html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#c33">📛 マスタをリセット</h3>';
+  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:12px">マスタの全 member(削除済み tombstone も含む)を消去します。<strong>この操作は取り消せません</strong>。</p>';
+  html+='<div style="margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:13px;color:#444;line-height:1.6">';
+  html+='<div>現在のマスタ件数:</div>';
+  html+='<div>　• 生存 member: <strong id="mr-live-count">'+liveCount+'</strong> 名</div>';
+  html+='<div>　• 削除済み(tombstone): <strong id="mr-tomb-count">'+tombCount+'</strong> 名</div>';
+  html+='</div>';
+  html+='<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#444;margin-bottom:12px;cursor:pointer">';
+  html+='<input type="checkbox" id="mr-backup-checked" style="margin-top:3px"> ';
+  html+='<span>「📤 マスタをエクスポート」でバックアップ JSON をダウンロード済みです(必須)</span>';
+  html+='</label>';
+  html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">確認のため <strong style="color:#c33">リセット</strong> と入力してください</label>';
+  html+='<input type="text" id="mr-confirm-text" placeholder="リセット" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
+  html+='<div id="mr-status" style="font-size:13px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
+  html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
+  html+='<button type="button" id="mr-cancel" class="btn-sm" style="background:#fff">キャンセル</button>';
+  html+='<button type="button" id="mr-run" disabled style="background:#ccc;color:#fff;border:1px solid #999;border-radius:6px;padding:8px 14px;font-size:14px;cursor:not-allowed">実行</button>';
+  html+='</div></div>';
+  return html;
+}
+
+function openMasterResetModal(){
+  var existing=document.getElementById('master-reset-modal');
+  if(existing)existing.remove();
+  var master=loadBranchMaster();
+  var modal=document.createElement('div');
+  modal.id='master-reset-modal';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=buildMasterResetModalHtml(master);
+  document.body.appendChild(modal);
+  bindMasterResetModalEvents();
+}
+
+function bindMasterResetModalEvents(){
+  var cancelBtn=document.getElementById('mr-cancel');
+  if(cancelBtn)cancelBtn.addEventListener('click',function(){
+    var m=document.getElementById('master-reset-modal');if(m)m.remove();
+  });
+  var checkbox=document.getElementById('mr-backup-checked');
+  var textInput=document.getElementById('mr-confirm-text');
+  var runBtn=document.getElementById('mr-run');
+  function updateRunBtn(){
+    if(!runBtn)return;
+    var ok=(checkbox&&checkbox.checked)&&(textInput&&textInput.value==='リセット');
+    runBtn.disabled=!ok;
+    if(ok){
+      runBtn.style.cssText='background:#c33;color:#fff;border:1px solid #c33;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer;font-weight:600';
+    }else{
+      runBtn.style.cssText='background:#ccc;color:#fff;border:1px solid #999;border-radius:6px;padding:8px 14px;font-size:14px;cursor:not-allowed';
+    }
+  }
+  if(checkbox)checkbox.addEventListener('change',updateRunBtn);
+  if(textInput)textInput.addEventListener('input',updateRunBtn);
+  if(runBtn)runBtn.addEventListener('click',function(){
+    if(runBtn.disabled)return;
+    if(textInput)textInput.blur();
+    var master=loadBranchMaster();
+    var result=applyMasterReset(master);
+    var statusEl=document.getElementById('mr-status');
+    if(!result.success){
+      if(statusEl)statusEl.textContent='リセットに失敗しました';
+      return;
+    }
+    saveBranchMaster(result.newMaster);
+    var modalEl=document.getElementById('master-reset-modal');if(modalEl)modalEl.remove();
+    if(typeof showMsg==='function')showMsg('マスタをリセットしました(全 member 消去)','ok');
+    renderMasterTab();
+    // 過去参加者パネルも再描画(参加者登録タブが非表示でも内部 DOM 更新)
+    if(typeof renderPastParticipantsPanel==='function'){
+      var ppSearch=document.getElementById('pp-search');
+      renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
+    }
+  });
+}
+
+// ============================================================
+// Phase 2 §5.2: 22 名取り込み専用モーダル(空マスタ専用、配列形式 JSON 受領)
+// ============================================================
+function buildPhase2ImportModalHtml(master){
+  var liveCount=0;
+  if(master&&Array.isArray(master.members)){
+    for(var i=0;i<master.members.length;i++){if(!master.members[i].deleted)liveCount++;}
+  }
+  var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:560px;width:100%;max-height:85vh;overflow-y:auto">';
+  html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">📥 22 名取込(5/10 大会用)</h3>';
+  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">2026-04-12 開催分の参加者 22 名(A 級 18 / B 級 4)を取り込みます。<strong>空マスタ専用</strong>です(既存マスタが 1 件以上ある場合は実行不可)。</p>';
+  if(liveCount>0){
+    html+='<div style="margin-bottom:12px;padding:8px 12px;background:#fff8c4;border:1px solid #f0e082;border-radius:6px;font-size:13px;color:#7a5d00">';
+    html+='⚠️ 既存マスタに <strong>'+liveCount+' 名</strong> いるため実行できません。先に「📤 マスタをエクスポート」でバックアップ後、「📛 マスタをリセット」を実施してください。';
+    html+='</div>';
+  }
+  html+='<div style="margin-bottom:12px"><label style="display:block;font-size:13px;color:#444;margin-bottom:4px">JSON ファイル選択</label>';
+  html+='<input type="file" id="p2-file" accept="application/json,.json" style="font-size:14px"></div>';
+  html+='<div id="p2-preview" style="display:none;margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:13px;color:#444;line-height:1.6"></div>';
+  html+='<div id="p2-status" style="font-size:13px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
+  html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
+  html+='<button type="button" id="p2-cancel" class="btn-sm" style="background:#fff">キャンセル</button>';
+  html+='<button type="button" class="btn-primary" id="p2-run" disabled style="opacity:0.5;cursor:not-allowed">実行</button>';
+  html+='</div></div>';
+  return html;
+}
+
+function openPhase2ImportModal(){
+  var existing=document.getElementById('phase2-import-modal');
+  if(existing)existing.remove();
+  var master=loadBranchMaster();
+  var modal=document.createElement('div');
+  modal.id='phase2-import-modal';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=buildPhase2ImportModalHtml(master);
+  document.body.appendChild(modal);
+  bindPhase2ImportModalEvents();
+}
+
+function bindPhase2ImportModalEvents(){
+  var cancelBtn=document.getElementById('p2-cancel');
+  if(cancelBtn)cancelBtn.addEventListener('click',function(){
+    var m=document.getElementById('phase2-import-modal');if(m)m.remove();
+  });
+  var fileInput=document.getElementById('p2-file');
+  var runBtn=document.getElementById('p2-run');
+  var statusEl=document.getElementById('p2-status');
+  var previewEl=document.getElementById('p2-preview');
+  // 検証通過した parsed をクロージャで保持
+  var validatedParsed=null;
+  function setStatus(msg,color){
+    if(statusEl){statusEl.textContent=msg||'';statusEl.style.color=color||'#a00';}
+  }
+  function enableRun(){
+    if(!runBtn)return;
+    runBtn.disabled=false;
+    runBtn.style.cssText='';
+    runBtn.classList.add('btn-primary');
+  }
+  function disableRun(){
+    if(!runBtn)return;
+    runBtn.disabled=true;
+    runBtn.style.cssText='opacity:0.5;cursor:not-allowed';
+  }
+  if(fileInput)fileInput.addEventListener('change',function(){
+    validatedParsed=null;
+    disableRun();
+    if(previewEl){previewEl.style.display='none';previewEl.innerHTML='';}
+    setStatus('','#a00');
+    var file=fileInput.files&&fileInput.files[0];
+    if(!file)return;
+    var reader=new FileReader();
+    reader.onload=function(e){
+      var text=(e&&e.target&&typeof e.target.result==='string')?e.target.result:'';
+      var parsed=safeParseImportText(text);
+      if(parsed===null){setStatus('JSON の解析に失敗しました(フォーマットが不正です)');return;}
+      // 空マスタ事前チェック(モーダル開いた後にマスタが追加された場合の保険)
+      var master=loadBranchMaster();
+      var liveCount=0;
+      for(var i=0;i<master.members.length;i++){if(!master.members[i].deleted)liveCount++;}
+      if(liveCount>0){
+        setStatus('既存マスタに '+liveCount+' 名いるため実行できません。先にリセットしてください');
+        return;
+      }
+      var validation=validatePhase2ImportData(parsed);
+      if(!validation.ok){
+        var msg='検証エラー('+validation.errors.length+' 件):\n';
+        for(var ei=0;ei<Math.min(validation.errors.length,5);ei++){
+          var er=validation.errors[ei];
+          msg+='・['+(er.index>=0?'#'+(er.index+1):'全体')+' '+er.field+'] '+er.message+'\n';
+        }
+        if(validation.errors.length>5)msg+='...他 '+(validation.errors.length-5)+' 件';
+        setStatus(msg);
+        return;
+      }
+      // プレビュー(件数 + A/B 集計 + サンプル 3 件: A 1 / B 1 / city 長め 1)
+      var sampleA=null,sampleB=null,sampleCityLong=null,longest=-1;
+      for(var pi=0;pi<parsed.length;pi++){
+        var p=parsed[pi];
+        if(p.last_class==='A'&&!sampleA)sampleA=p;
+        if(p.last_class==='B'&&!sampleB)sampleB=p;
+        var cityLen=(typeof p.city==='string')?p.city.length:0;
+        if(cityLen>longest){longest=cityLen;sampleCityLong=p;}
+      }
+      var prevHtml='<div style="font-weight:600;color:#1F3864;margin-bottom:4px">検証 OK ✅</div>';
+      prevHtml+='<div>取り込み件数: <strong>'+validation.summary.total+'</strong> 名(A 級 <strong>'+validation.summary.classA+'</strong> / B 級 <strong>'+validation.summary.classB+'</strong>)</div>';
+      prevHtml+='<div style="margin-top:6px;font-size:12px;color:#666">サンプル 3 件:</div>';
+      function fmtSample(s,label){
+        if(!s)return '';
+        return '<div style="margin-left:8px;font-size:12px;color:#444">・'+label+': '+escapeHtml(s.name)+'('+s.last_class+'、city='+escapeHtml(s.city||'')+')</div>';
+      }
+      prevHtml+=fmtSample(sampleA,'A 級');
+      prevHtml+=fmtSample(sampleB,'B 級');
+      prevHtml+=fmtSample(sampleCityLong,'city 長め('+(sampleCityLong?sampleCityLong.city.length:0)+'文字)');
+      if(previewEl){previewEl.style.display='block';previewEl.innerHTML=prevHtml;}
+      validatedParsed=parsed;
+      enableRun();
+    };
+    reader.onerror=function(){setStatus('ファイルの読み込みに失敗しました');};
+    reader.readAsText(file);
+  });
+  if(runBtn)runBtn.addEventListener('click',function(){
+    if(runBtn.disabled||!validatedParsed)return;
+    var master=loadBranchMaster();
+    var result=applyPhase2Import(validatedParsed,master);
+    if(!result.success){
+      if(result.error==='master_not_empty'){
+        setStatus('既存マスタに '+result.liveCount+' 名いるため実行できません。先にリセットしてください');
+      }else if(result.error==='validation_failed'){
+        setStatus('検証エラー(' +(result.errors?result.errors.length:0)+ ' 件)が発生しました。ファイルを確認してください');
+      }else{
+        setStatus('取り込みに失敗しました(error: '+result.error+')');
+      }
+      return;
+    }
+    saveBranchMaster(result.newMaster);
+    var modalEl=document.getElementById('phase2-import-modal');if(modalEl)modalEl.remove();
+    if(typeof showMsg==='function')showMsg(result.summary.total+'名(A '+result.summary.classA+' / B '+result.summary.classB+')を取り込みました。「過去参加者から選ぶ」を展開してご確認ください','ok');
+    renderMasterTab();
+    if(typeof renderPastParticipantsPanel==='function'){
+      var ppSearch=document.getElementById('pp-search');
+      renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
+    }
+    // Phase 2 修正 #1: import 完了後に参加者登録タブへ自動切替して過去参加者パネルへ誘導 + section visible を明示再保証(Safari race 対策の safety net)
+    if(typeof showTab==='function')showTab('reg');
+    var ppSec=document.getElementById('past-participants-section');
+    if(ppSec&&result.summary.total>0)ppSec.style.display='block';
   });
 }
 
@@ -2008,6 +2403,11 @@ function bindMasterTabEvents(){
   if(btn)btn.addEventListener('click',openMigrationWizard);
   var importBtn=document.getElementById('masterImportBtn');
   if(importBtn)importBtn.addEventListener('click',openMasterImportModal);
+  // Phase 2: 専用 import / リセットモーダルを開く
+  var phase2ImportBtn=document.getElementById('masterPhase2ImportBtn');
+  if(phase2ImportBtn)phase2ImportBtn.addEventListener('click',openPhase2ImportModal);
+  var resetBtn=document.getElementById('masterResetBtn');
+  if(resetBtn)resetBtn.addEventListener('click',openMasterResetModal);
   var exportBtn=document.getElementById('masterExportBtn');
   if(exportBtn)exportBtn.addEventListener('click',function(){
     var master=loadBranchMaster();
