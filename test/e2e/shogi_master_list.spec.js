@@ -111,6 +111,8 @@ test.describe('master-list §2.3: F7 編集モーダル回帰なし', () => {
   test('F7 編集モーダルで履歴情報(初回・最終・回数)が引き続き表示される', async ({ page }) => {
     const row = page.locator('#pane-master tbody tr').filter({ hasText: '山田太郎' });
     await row.locator('.master-edit-btn').click();
+    // Phase 3: 履歴情報は折りたたみ式に変更されたためトグルを開いてから assert
+    await page.click('#me-history-toggle');
     const hist = page.locator('#me-history');
     await expect(hist).toBeVisible();
     await expect(hist).toContainText('初回参加：2026-01-01');

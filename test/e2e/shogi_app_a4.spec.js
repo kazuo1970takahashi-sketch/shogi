@@ -340,11 +340,13 @@ test.describe('A-4 Stage 3: マスタ編集モーダル', () => {
       ctx.primary('master edit modal opened');
       await expect(p.locator('#master-edit-modal')).toBeVisible();
     });
+    // Phase 3: 履歴情報は折りたたみ式に変更されたためトグルを開いてから assert
+    await page.click('#me-history-toggle');
     const hist = page.locator('#me-history');
     await expect(hist).toBeVisible();
     await expect(hist).toContainText('初回参加：2026-01-01');
-    await expect(hist).toContainText('最終参加：2026-04-01');
-    await expect(hist).toContainText('参加回数：2回');
+    await expect(hist).toContainText('最終参加:2026-04-01'.replace(':','：'));
+    await expect(hist).toContainText('参加回数:2回'.replace(':','：'));
   });
 
   test('支部員区分を変更して保存 → localStorage に反映される', async ({ page }) => {
