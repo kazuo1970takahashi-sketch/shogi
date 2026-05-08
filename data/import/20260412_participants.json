@@ -1,0 +1,202 @@
+[
+  {
+    "name": "片山凱翔",
+    "city": "御殿場市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "大金悠人",
+    "city": "御殿場市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "芹澤圭祐",
+    "city": "御殿場市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "保田唯乃介",
+    "city": "山中湖村",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "小原高伸",
+    "city": "三島市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "若山正芳",
+    "city": "沼津市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "工藤聰仁",
+    "city": "沼津市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "勝見絢心",
+    "city": "御殿場市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "大庭善弘",
+    "city": "沼津市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "清水昇平",
+    "city": "沼津市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "磯崎隆弘",
+    "city": "裾野市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "大竹智也",
+    "city": "長泉町",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": "",
+    "_note": "高校生のためgrade補完時=一般"
+  },
+  {
+    "name": "大竹一英",
+    "city": "長泉町",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "古谷賢作",
+    "city": "伊豆の国市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "福留憲太郎",
+    "city": "御殿場市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "中川良知",
+    "city": "沼津市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "大場康正",
+    "city": "長泉町",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "山内敏浩",
+    "city": "御殿場市",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "泉井　輝",
+    "city": "御殿場市",
+    "last_class": "B",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "大野暖和",
+    "city": "御殿場市",
+    "last_class": "B",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "大野稜英",
+    "city": "御殿場市",
+    "last_class": "B",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": ""
+  },
+  {
+    "name": "高橋一雄",
+    "city": "御殿場市",
+    "last_class": "B",
+    "last_played": "2026-04-12",
+    "yomi": "",
+    "member": "",
+    "grade": "",
+    "_note": "既存マスタ重複候補・name+last_playedで識別マージ"
+  }
+]
