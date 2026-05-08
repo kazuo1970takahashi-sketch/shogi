@@ -77,7 +77,7 @@ echo ""
 echo "【第2層】重点回帰テスト"
 
 # 2-1. エスケープが innerHTML 流入箇所で適用されているか
-unescaped=$(grep -nE "'\+name\+|'\+newName\+|'\+p\.name\+|'\+players\[.*\]\.name\+|'\+getName\(.*\)\+|'\+candidates\[.*\]\.name\+|'\+n1\+|'\+n2\+|'\+date\+|'\+place\+|'\+start\+|'\+end\+|'\+sei\+|'\+fuku\+|'\+note\+|'\+oppName\+|'\+pn1\+|'\+pn2\+|'\+pw\+|'\+text\+" "$TARGET" | grep -v "escapeHtml" | grep -v "alert(" | wc -l)
+unescaped=$(grep -nE "'\+name\+|'\+newName\+|'\+p\.name\+|'\+players\[.*\]\.name\+|'\+getName\(.*\)\+|'\+candidates\[.*\]\.name\+|'\+n1\+|'\+n2\+|'\+date\+|'\+place\+|'\+start\+|'\+end\+|'\+sei\+|'\+fuku\+|'\+note\+|'\+oppName\+|'\+pn1\+|'\+pn2\+|'\+pw\+|'\+text\+" "$TARGET" | grep -v "escapeHtml" | grep -v "alert(" | grep -v "confirm(" | wc -l)
 [ "$unescaped" -eq 0 ] && ok "未エスケープのユーザー入力: 0件" || ng "未エスケープ箇所: $unescaped 件 (危険)"
 
 # 2-2. showMsg内でescapeHtml使用
@@ -98,9 +98,12 @@ grep -q "登録されていない選手が含まれています" "$TARGET" && ok
 grep -q "が複数の対局に登録されています" "$TARGET" && ok "submitRound: 重複拒否" || ng "重複拒否なし"
 grep -q "次の参加者が対局に登録されていません" "$TARGET" && ok "submitRound: 未割当拒否" || ng "未割当拒否なし"
 
-# 2-6. 対戦相手変更の安全機構
-grep -q "選んだ選手は、すでに別の対局に入っています" "$TARGET" && ok "changePairing: 重複阻止" || ng "重複阻止なし"
-grep -q "この組み合わせは過去に対戦済みです" "$TARGET" && ok "changePairing: 再戦確認" || ng "再戦確認なし"
+# 2-6. 対戦相手変更の安全機構 (Hotfix Phase 4: replace + swap 自動分岐)
+grep -q "結果入力済みのため変更できません" "$TARGET" && ok "changePairing: 入口 winner 阻止" || ng "入口 winner 阻止なし"
+grep -q "相手ペアが結果入力済みのため swap できません" "$TARGET" && ok "changePairing: swap winner 阻止" || ng "swap winner 阻止なし"
+grep -q "swap で再戦が発生します" "$TARGET" && ok "changePairing: swap 再戦阻止" || ng "swap 再戦阻止なし"
+grep -q "この組み合わせは過去に対戦済みです" "$TARGET" && ok "changePairing: replace 再戦確認" || ng "replace 再戦確認なし"
+grep -q "function findPairContainingPlayer" "$TARGET" && ok "changePairing: swap helper findPairContainingPlayer 定義" || ng "findPairContainingPlayer 未定義"
 
 # 2-7. removePlayer の保護
 grep -q "進行中の対局に登録されているため削除できません" "$TARGET" && ok "removePlayer: 進行中ブロック" || ng "進行中ブロックなし"

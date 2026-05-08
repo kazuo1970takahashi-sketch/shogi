@@ -268,6 +268,16 @@ function pairHasRematch(cls,p1,p2){
   return false;
 }
 
+function findPairContainingPlayer(cls,playerId,excludeIdx){
+  for(var i=0;i<state.pairings[cls].length;i++){
+    if(i===excludeIdx)continue;
+    var pair=state.pairings[cls][i];
+    if(!pair)continue;
+    if(pair.p1===playerId||pair.p2===playerId)return i;
+  }
+  return -1;
+}
+
 function getDuplicatePlayersInPairings(cls){
   var used={};
   var dups=[];
@@ -3473,29 +3483,58 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
 
 function bindChangePairingModalEvents(cls, idx){
   document.getElementById('chg-save').addEventListener('click',function(){
-    var p1=document.getElementById('chg-p1').value;
-    var p2=document.getElementById('chg-p2').value;
-    if(p1===p2){alert('同じ選手を先手・後手両方に選べません');return;}
+    var newP1=document.getElementById('chg-p1').value;
+    var newP2=document.getElementById('chg-p2').value;
+    var match=state.pairings[cls][idx];
+    var oldP1=match.p1, oldP2=match.p2;
 
-    var duplicateConflict=false;
-    for(var i=0;i<state.pairings[cls].length;i++){
-      if(i===idx)continue;
-      var pair=state.pairings[cls][i];
-      if(pair.p1===p1||pair.p2===p1||pair.p1===p2||pair.p2===p2){
-        duplicateConflict=true;
-        break;
+    if(newP1===newP2){alert('同じ選手を先手・後手両方に選べません');return;}
+    if(newP1===oldP1 && newP2===oldP2){alert('変更がありません');return;}
+
+    var keepPlayer, X;
+    if(newP1===oldP1 && newP2!==oldP2){ keepPlayer=oldP1; X=newP2; }
+    else if(newP2===oldP2 && newP1!==oldP1){ keepPlayer=oldP2; X=newP1; }
+    else { alert('2 選手同時の変更は対象外です。1 名ずつ変更してください');return; }
+
+    var otherIdx=findPairContainingPlayer(cls, X, idx);
+
+    if(otherIdx===-1){
+      if(pairHasRematch(cls, keepPlayer, X)){
+        if(!confirm('この組み合わせは過去に対戦済みです。再戦として保存しますか？'))return;
+      }
+      state.pairings[cls][idx]={p1:newP1,p2:newP2,winner:null};
+    } else {
+      var otherPair=state.pairings[cls][otherIdx];
+      if(otherPair.winner){
+        alert('相手ペアが結果入力済みのため swap できません');
+        return;
+      }
+      var Y=(otherPair.p1===X)?otherPair.p2:otherPair.p1;
+      var droppedFromTarget=(keepPlayer===oldP1)?oldP2:oldP1;
+
+      if(pairHasRematch(cls, keepPlayer, X) || pairHasRematch(cls, droppedFromTarget, Y)){
+        alert('swap で再戦が発生します。別の選手を選んでください');
+        return;
+      }
+
+      var newOtherP1=(otherPair.p1===X)?droppedFromTarget:otherPair.p1;
+      var newOtherP2=(otherPair.p2===X)?droppedFromTarget:otherPair.p2;
+
+      if(!confirm('swap を実行します。\n  ('+getName(oldP1,cls)+'-'+getName(oldP2,cls)+') → ('+getName(newP1,cls)+'-'+getName(newP2,cls)+')\n  ('+getName(otherPair.p1,cls)+'-'+getName(otherPair.p2,cls)+') → ('+getName(newOtherP1,cls)+'-'+getName(newOtherP2,cls)+')\nよろしいですか?'))return;
+
+      var backup1=state.pairings[cls][idx];
+      var backup2=state.pairings[cls][otherIdx];
+      state.pairings[cls][idx]={p1:newP1,p2:newP2,winner:null};
+      state.pairings[cls][otherIdx]={p1:newOtherP1,p2:newOtherP2,winner:null};
+
+      if(getDuplicatePlayersInPairings(cls).length>0){
+        state.pairings[cls][idx]=backup1;
+        state.pairings[cls][otherIdx]=backup2;
+        alert('内部エラー: swap 後の重複を検出しました。変更を取り消しました');
+        return;
       }
     }
-    if(duplicateConflict){
-      alert('選んだ選手は、すでに別の対局に入っています。重複しない組み合わせにしてください。');
-      return;
-    }
 
-    if(pairHasRematch(cls,p1,p2)){
-      if(!confirm('この組み合わせは過去に対戦済みです。再戦として保存しますか？'))return;
-    }
-
-    state.pairings[cls][idx]={p1:p1,p2:p2,winner:null};
     document.getElementById('chg-modal').remove();
     renderTournament(cls);save();
   });
@@ -3503,6 +3542,10 @@ function bindChangePairingModalEvents(cls, idx){
 
 function changePairing(cls,idx){
   var match=state.pairings[cls][idx];
+  if(match.winner){
+    alert('結果入力済みのため変更できません');
+    return;
+  }
   var candidates=state.players[cls];
   var html=buildChangePairingModalHtml(cls, idx, candidates, match);
   var div=document.createElement('div');
