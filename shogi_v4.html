@@ -1901,8 +1901,9 @@ function buildMasterEditModalHtml(member){
   var count=(member&&typeof member.attendance_count==='number')?member.attendance_count:0;
 
   var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto">';
-  html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">マスタ編集</h3>';
-  html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-bottom:12px">氏名・ふりがな・区分が編集できます。参加履歴は変更されません。</p>';
+  html+='<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">マスタ編集</h3>';
+  // Phase 3 §2.2: 説明文「氏名・ふりがな・区分が編集できます。参加履歴は変更されません。」を撤去
+  // (後続フェーズで前回クラス・city が追加されたため不整合、各 label と placeholder で意図は伝わる)
   html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">氏名</label>';
   html+='<input type="text" id="me-name" value="'+escapeHtml(member.name||'')+'" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
   html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">ふりがな</label>';
@@ -1928,7 +1929,9 @@ function buildMasterEditModalHtml(member){
   html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-last-class" value="B"'+(lastClassCur==='B'?' checked':'')+' style="margin-right:6px">B</label>';
   html+='</fieldset>';
 
-  html+='<div id="me-history" style="margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:12px;color:#444;line-height:1.6">';
+  // Phase 3 §2.1: 履歴情報をアコーディオン式(初期閉じ)に変更。F7 縦長を抑え保存/キャンセルを 375px viewport 内に収める
+  html+='<div style="margin-bottom:8px"><button type="button" id="me-history-toggle" class="btn-sm" style="background:#fff;color:#444;font-size:12px;padding:4px 10px;border:1px solid #ccc;border-radius:6px;cursor:pointer">▼ 履歴情報を開く</button></div>';
+  html+='<div id="me-history" style="display:none;margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:12px;color:#444;line-height:1.6">';
   html+='<div style="font-size:11px;color:#888;margin-bottom:4px">履歴情報（読み取り専用）</div>';
   html+='<div>初回参加：'+escapeHtml(firstAt)+'</div>';
   html+='<div>最終参加：'+escapeHtml(lastAt)+'</div>';
@@ -2332,6 +2335,16 @@ function bindMasterEditModalEvents(){
   if(cancelBtn)cancelBtn.addEventListener('click',function(){
     var m=document.getElementById('master-edit-modal');if(m)m.remove();
   });
+  // Phase 3 §2.1: 履歴情報トグル(▼ 開く / ▲ 閉じる)。既存「過去参加者から選ぶ」と同パターン
+  var historyToggle=document.getElementById('me-history-toggle');
+  var historyDiv=document.getElementById('me-history');
+  if(historyToggle&&historyDiv){
+    historyToggle.addEventListener('click',function(){
+      var open=historyDiv.style.display!=='none';
+      if(open){historyDiv.style.display='none';historyToggle.textContent='▼ 履歴情報を開く';}
+      else{historyDiv.style.display='block';historyToggle.textContent='▲ 履歴情報を閉じる';}
+    });
+  }
   var saveBtn=document.getElementById('me-save');
   if(saveBtn)saveBtn.addEventListener('click',function(){
     // iPhone Safari blur 競合回避
