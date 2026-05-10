@@ -1,0 +1,40 @@
+{
+  "_comment": "SHOGI-TOUR A-4: 2026-05-10 大会 B級 R1 終了時点の state（実データ忠実）。R1 終了時点で 1勝者4名 / 0勝者4名（ともに偶数）であり、同勝数完全マッチング・再戦回避が両立可能な状態。本 fixture は B級 R2 ペアリング品質回帰テストに使用される。",
+  "tournament_id": "t_2026_05_10",
+  "rounds": 4,
+  "started": true,
+  "report": {
+    "date": "2026年5月10日",
+    "place": "労政会館",
+    "start": "13時",
+    "end": "17時",
+    "sei": "岩崎さん",
+    "fuku": "磯崎さん",
+    "note": ""
+  },
+  "players": {
+    "A": [],
+    "B": [
+      {"id": "p177838555266690",   "name": "わたなべたいち",   "cls": "B", "member": "member", "grade": "ippan", "member_id": "m_485707e54af4"},
+      {"id": "p1778385576618780", "name": "さとうひろやす",   "cls": "B", "member": "member", "grade": "ippan", "member_id": "m_ce616eccbac3"},
+      {"id": "p1778385591938598", "name": "佐藤美由紀",       "cls": "B", "member": "member", "grade": "ippan", "member_id": "m_59d7cc9643f2"},
+      {"id": "p1778385616792182", "name": "さとうすみれ",     "cls": "B", "member": "member", "grade": "ippan", "member_id": "m_eb2ddc1ec592"},
+      {"id": "p1778385630447298", "name": "大野稜英",         "cls": "B", "member": "member", "grade": "ippan", "member_id": "m_2942f0cbeaf2"},
+      {"id": "p1778385649405983", "name": "大野暖和",         "cls": "B", "member": "member", "grade": "ippan", "member_id": "m_3bcc24dff925"},
+      {"id": "p1778385878982657", "name": "森ゆかり",         "cls": "B", "member": "member", "grade": "ippan", "member_id": "m_40066cf85d77"},
+      {"id": "p1778385888616586", "name": "鈴木ひなの",       "cls": "B", "member": "member", "grade": "ippan", "member_id": "m_a89ef49e6bd3"}
+    ]
+  },
+  "pairings": {"A": [], "B": []},
+  "results": {
+    "A": [],
+    "B": [
+      [
+        {"p1": "p1778385576618780", "p2": "p1778385888616586", "winner": "p1778385888616586"},
+        {"p1": "p1778385878982657", "p2": "p1778385630447298", "winner": "p1778385878982657"},
+        {"p1": "p1778385649405983", "p2": "p1778385616792182", "winner": "p1778385616792182"},
+        {"p1": "p177838555266690",  "p2": "p1778385591938598", "winner": "p177838555266690"}
+      ]
+    ]
+  }
+}

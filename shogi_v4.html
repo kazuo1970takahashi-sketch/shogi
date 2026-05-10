@@ -232,6 +232,18 @@ function getName(id,cls){
   return '(削除)';
 }
 
+// A-4 §7: entry_no は永続化せず配列 index+1 から都度算出する。
+function entryNoOf(cls,id){
+  var players=state.players[cls];
+  for(var i=0;i<players.length;i++){if(players[i].id===id)return ('00'+(i+1)).slice(-2);}
+  return '--';
+}
+
+// A-4 §2: 「番号｜名前」の表示フォーマット。プレフィックス幅2桁ゼロ埋め。
+function getNameWithNo(id,cls){
+  return entryNoOf(cls,id)+'｜'+getName(id,cls);
+}
+
 function getFee(member,grade){
   if(grade==='chu')return member==='member'?0:500;
   return member==='member'?500:1000;
@@ -321,7 +333,9 @@ function normalizeState(raw){
       var p2=m&&m.p2&&validIds[m.p2]?m.p2:'';
       var winner=m&&m.winner?m.winner:null;
       if(winner!==p1&&winner!==p2)winner=null;
-      return {p1:p1,p2:p2,winner:winner};
+      // A-4 §4: lastModifiedBy が未定義/不正値なら "auto" に補完。"manual" のみ尊重。
+      var lastModifiedBy=(m&&m.lastModifiedBy==='manual')?'manual':'auto';
+      return {p1:p1,p2:p2,winner:winner,lastModifiedBy:lastModifiedBy};
     }
 
     base.pairings[cls]=((s.pairings&&Array.isArray(s.pairings[cls]))?s.pairings[cls]:[])
@@ -2799,8 +2813,9 @@ function makePlayerRow(p,cls,i){
   mainDiv.className='player-row-main';
 
   var num=document.createElement('span');
-  num.style.cssText='color:#888;font-size:12px;min-width:28px';
-  num.textContent=cls+(i+1);
+  // A-4 §2: 番号表示は 2 桁ゼロ埋めに統一（ペアリング・PDF と整合）
+  num.style.cssText='color:#1F3864;font-size:12px;font-weight:bold;min-width:28px';
+  num.textContent=('00'+(i+1)).slice(-2);
   mainDiv.appendChild(num);
 
   var name=document.createElement('span');
@@ -3364,6 +3379,147 @@ function startTournament(){
   showTab('tournament');save();
 }
 
+// ============================================================
+// PAIRING QUALITY (A-4 §1, §2, §5):
+//   evaluatePairingQuality は副作用なしの純粋関数。
+//   入力: pairings(配列), results(回戦の配列), players(配列)
+//   出力: 品質メトリクス + ペア毎ラベル
+//   仕様書 docs/specs/20260510_1904_shogi_a4_specs.md §1, §2, §5 準拠。
+//
+//   avoidableWinDiffPairs の算定は A-4 簡易版:
+//     - 各勝数グループ内で再戦回避マッチングが成立する場合のみ「同勝数で組めた」と判定
+//     - 奇数グループは1名が必ず別群と組むため、最低限の cross-group ペア数を控除
+//   A-5 で本格マッチング（Blossom 等）に置換予定。
+// ============================================================
+function evaluatePairingQuality(pairings, results, players){
+  var safePairings=Array.isArray(pairings)?pairings:[];
+  var safeResults=Array.isArray(results)?results:[];
+  var safePlayers=Array.isArray(players)?players:[];
+
+  // 1. 勝数集計
+  var wins={};
+  for(var i=0;i<safePlayers.length;i++)wins[safePlayers[i].id]=0;
+  for(var r=0;r<safeResults.length;r++){
+    var round=safeResults[r];
+    if(!Array.isArray(round))continue;
+    for(var m=0;m<round.length;m++){
+      var w=round[m]&&round[m].winner;
+      if(w&&typeof wins[w]==='number')wins[w]+=1;
+    }
+  }
+
+  // 2. 過去対戦履歴
+  var history={};
+  for(var i=0;i<safePlayers.length;i++)history[safePlayers[i].id]={};
+  for(var r=0;r<safeResults.length;r++){
+    var round=safeResults[r];
+    if(!Array.isArray(round))continue;
+    for(var m=0;m<round.length;m++){
+      var pm=round[m];
+      if(!pm||!pm.p1||!pm.p2)continue;
+      if(history[pm.p1])history[pm.p1][pm.p2]=true;
+      if(history[pm.p2])history[pm.p2][pm.p1]=true;
+    }
+  }
+
+  // 3. ペアごとの基本指標
+  var pairDetails=[];
+  var totalWinDiff=0, maxWinDiff=0, sameScorePairCount=0, rematchCount=0;
+  var currentMixedCount=0;
+  var pairedIds={};
+  for(var i=0;i<safePairings.length;i++){
+    var pp=safePairings[i];
+    if(!pp||!pp.p1||!pp.p2){
+      pairDetails.push({idx:i,p1:'',p2:'',winDiff:0,isRematch:false,labels:[]});
+      continue;
+    }
+    var w1=wins[pp.p1]||0, w2=wins[pp.p2]||0;
+    var diff=Math.abs(w1-w2);
+    var isRematch=!!(history[pp.p1]&&history[pp.p1][pp.p2]);
+    totalWinDiff+=diff;
+    if(diff>maxWinDiff)maxWinDiff=diff;
+    if(diff===0)sameScorePairCount+=1; else currentMixedCount+=1;
+    if(isRematch)rematchCount+=1;
+    pairedIds[pp.p1]=true; pairedIds[pp.p2]=true;
+    pairDetails.push({idx:i,p1:pp.p1,p2:pp.p2,winDiff:diff,isRematch:isRematch,labels:[]});
+  }
+
+  // 4. avoidableWinDiffPairs 算定
+  //   勝数グループごとに「内部マッチング（再戦回避）が成立するか」を確認し、
+  //   不可避な cross-group ペアの最低数（forced）を見積る。
+  var groups={};
+  for(var pi=0;pi<safePairings.length;pi++){
+    var pp=safePairings[pi];
+    if(!pp||!pp.p1||!pp.p2)continue;
+    var w1=wins[pp.p1]||0, w2=wins[pp.p2]||0;
+    if(!groups.hasOwnProperty(w1))groups[w1]=[];
+    if(!groups.hasOwnProperty(w2))groups[w2]=[];
+    groups[w1].push(pp.p1);
+    groups[w2].push(pp.p2);
+  }
+  // 各グループ内で再戦回避マッチングを試行（バックトラック）
+  function canMatchInternally(ids,hist){
+    if(ids.length===0)return true;
+    if(ids.length%2!==0)return false;
+    var used={};
+    function tryMatch(){
+      var first=-1;
+      for(var i=0;i<ids.length;i++){if(!used[i]){first=i;break;}}
+      if(first===-1)return true;
+      used[first]=true;
+      for(var j=first+1;j<ids.length;j++){
+        if(used[j])continue;
+        if(hist[ids[first]]&&hist[ids[first]][ids[j]])continue;
+        used[j]=true;
+        if(tryMatch())return true;
+        used[j]=false;
+      }
+      used[first]=false;
+      return false;
+    }
+    return tryMatch();
+  }
+  var oddGroupCount=0;
+  var unmatchableEvenGroupCount=0;
+  for(var key in groups){
+    if(!groups.hasOwnProperty(key))continue;
+    var ids=groups[key];
+    if(ids.length%2===1){oddGroupCount+=1;}
+    else if(!canMatchInternally(ids,history)){unmatchableEvenGroupCount+=1;}
+  }
+  // 奇数群が k 個あれば 必ず ceil(k/2) 個の cross-group ペアが発生する
+  // 内部マッチング不可能な偶数群は「全員を別群と組ませる必要がある」最悪ケースを許容
+  var forcedMixed=Math.ceil(oddGroupCount/2)+unmatchableEvenGroupCount;
+  var avoidableWinDiffPairs=Math.max(0,currentMixedCount-forcedMixed);
+
+  // 5. ラベル付与（§2）
+  var warningHit=(rematchCount>0)||(avoidableWinDiffPairs>0)||(maxWinDiff>=2);
+  for(var di=0;di<pairDetails.length;di++){
+    var d=pairDetails[di];
+    var pp=safePairings[di];
+    var labels=[];
+    if(d.p1&&d.p2){
+      labels.push(d.winDiff===0?'同勝数':('勝数差'+d.winDiff));
+      labels.push(d.isRematch?'再戦':'再戦なし');
+      // 個別ペアが警告条件に該当する場合のみ [要確認]
+      var pairWarning=d.isRematch||(d.winDiff>=2)||(avoidableWinDiffPairs>0&&d.winDiff>0);
+      if(pairWarning)labels.push('要確認');
+      if(pp&&pp.lastModifiedBy==='manual')labels.push('手動変更');
+    }
+    d.labels=labels;
+  }
+
+  return {
+    totalWinDiff:totalWinDiff,
+    maxWinDiff:maxWinDiff,
+    sameScorePairCount:sameScorePairCount,
+    rematchCount:rematchCount,
+    avoidableWinDiffPairs:avoidableWinDiffPairs,
+    warningHit:warningHit,
+    pairDetails:pairDetails
+  };
+}
+
 function generatePairing(cls){
   var players=state.players[cls];
   if(players.length<2)return;
@@ -3436,7 +3592,8 @@ function generatePairing(cls){
     for(var ci=0;ci<candidates.length;ci++){
       var j=candidates[ci];
       pairedArr[idx]=true;pairedArr[j]=true;
-      pairs.push({p1:sorted[idx].id,p2:sorted[j].id,winner:null});
+      // A-4 §4: 自動生成ペアには lastModifiedBy: 'auto' を付与
+      pairs.push({p1:sorted[idx].id,p2:sorted[j].id,winner:null,lastModifiedBy:'auto'});
       if(backtrack(idx+1,allowRematch))return true;
       pairs.pop();
       pairedArr[idx]=false;pairedArr[j]=false;
@@ -3462,11 +3619,14 @@ function setWinner(cls,idx,wid){
 function buildChangePairingModalHtml(cls, idx, candidates, match){
   var opts='';
   for(var i=0;i<candidates.length;i++){
-    opts+='<option value="'+candidates[i].id+'"'+(candidates[i].id===match.p1?' selected':'')+'>'+escapeHtml(candidates[i].name)+'</option>';
+    // A-4 §3 MF6-a: プルダウン表示も「番号｜名前」フォーマット
+    var optLabel=('00'+(i+1)).slice(-2)+'｜'+candidates[i].name;
+    opts+='<option value="'+candidates[i].id+'"'+(candidates[i].id===match.p1?' selected':'')+'>'+escapeHtml(optLabel)+'</option>';
   }
   var opts2='';
   for(var i=0;i<candidates.length;i++){
-    opts2+='<option value="'+candidates[i].id+'"'+(candidates[i].id===match.p2?' selected':'')+'>'+escapeHtml(candidates[i].name)+'</option>';
+    var optLabel2=('00'+(i+1)).slice(-2)+'｜'+candidates[i].name;
+    opts2+='<option value="'+candidates[i].id+'"'+(candidates[i].id===match.p2?' selected':'')+'>'+escapeHtml(optLabel2)+'</option>';
   }
   return '<div style="background:rgba(0,0,0,0.5);position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;display:flex;align-items:center;justify-content:center;" id="chg-modal">'
     +'<div style="background:#fff;border-radius:12px;padding:24px;width:320px;">'
@@ -3502,7 +3662,8 @@ function bindChangePairingModalEvents(cls, idx){
       if(pairHasRematch(cls, keepPlayer, X)){
         if(!confirm('この組み合わせは過去に対戦済みです。再戦として保存しますか？'))return;
       }
-      state.pairings[cls][idx]={p1:newP1,p2:newP2,winner:null};
+      // A-4 §4: 手動変更ペアには lastModifiedBy: 'manual' を付与
+      state.pairings[cls][idx]={p1:newP1,p2:newP2,winner:null,lastModifiedBy:'manual'};
     } else {
       var otherPair=state.pairings[cls][otherIdx];
       if(otherPair.winner){
@@ -3524,8 +3685,9 @@ function bindChangePairingModalEvents(cls, idx){
 
       var backup1=state.pairings[cls][idx];
       var backup2=state.pairings[cls][otherIdx];
-      state.pairings[cls][idx]={p1:newP1,p2:newP2,winner:null};
-      state.pairings[cls][otherIdx]={p1:newOtherP1,p2:newOtherP2,winner:null};
+      // A-4 §4: swap で影響を受けた両ペアに lastModifiedBy: 'manual' を付与
+      state.pairings[cls][idx]={p1:newP1,p2:newP2,winner:null,lastModifiedBy:'manual'};
+      state.pairings[cls][otherIdx]={p1:newOtherP1,p2:newOtherP2,winner:null,lastModifiedBy:'manual'};
 
       if(getDuplicatePlayersInPairings(cls).length>0){
         state.pairings[cls][idx]=backup1;
@@ -3604,7 +3766,7 @@ function buildScoreGridHtml(cls, sorted, wins){
   for(var i=0;i<sorted.length;i++){
     var p=sorted[i];var w=wins[p.id]||0;
     var total=0;for(var r=0;r<state.results[cls].length;r++){for(var m=0;m<state.results[cls][r].length;m++){var mm=state.results[cls][r][m];if(mm.p1===p.id||mm.p2===p.id)total++;}}
-    html+='<div class="score-card"><div class="sname">'+escapeHtml(p.name)+'</div><div class="swins">'+w+'</div><div style="font-size:11px;color:#888">'+w+'勝'+(total-w)+'敗</div></div>';
+    html+='<div class="score-card"><div class="sname">'+escapeHtml(getNameWithNo(p.id,cls))+'</div><div class="swins">'+w+'</div><div style="font-size:11px;color:#888">'+w+'勝'+(total-w)+'敗</div></div>';
   }
   html+='</div>';
   return html;
@@ -3615,8 +3777,8 @@ function buildPlayedHistoryHtml(cls, sorted, played){
   for(var i=0;i<sorted.length;i++){
     var p=sorted[i];
     var tags='';
-    for(var j=0;j<played[p.id].length;j++)tags+='<span class="history-tag">'+escapeHtml(getName(played[p.id][j],cls))+'</span>';
-    html+='<div style="margin-bottom:4px"><strong style="font-size:12px">'+escapeHtml(p.name)+'</strong>：'+(tags||'なし')+'</div>';
+    for(var j=0;j<played[p.id].length;j++)tags+='<span class="history-tag">'+escapeHtml(getNameWithNo(played[p.id][j],cls))+'</span>';
+    html+='<div style="margin-bottom:4px"><strong style="font-size:12px">'+escapeHtml(getNameWithNo(p.id,cls))+'</strong>：'+(tags||'なし')+'</div>';
   }
   html+='</div>';
   return html;
@@ -3629,13 +3791,13 @@ function buildPastResultsHtml(cls){
     html+='<div style="margin-bottom:8px"><div style="font-size:12px;font-weight:500;color:#1F3864;margin-bottom:4px">'+(rr+1)+'回戦</div>';
     for(var mm=0;mm<state.results[cls][rr].length;mm++){
       var pm=state.results[cls][rr][mm];
-      var pn1=getName(pm.p1,cls),pn2=getName(pm.p2,cls);
-      var pw=pm.winner?getName(pm.winner,cls):'未入力';
+      var pn1=getNameWithNo(pm.p1,cls),pn2=getNameWithNo(pm.p2,cls);
+      var pw=pm.winner?getNameWithNo(pm.winner,cls):'未入力';
       var pc=pm.winner?'#27500A':'#A32D2D';
       html+='<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:#f8f8f8;border-radius:6px;margin-bottom:3px">'
-        +'<span style="display:inline-block;width:7em;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ escapeHtml(pn1) +'</span>'
+        +'<span style="display:inline-block;width:8em;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ escapeHtml(pn1) +'</span>'
         +'<span style="font-size:13px;color:#888">vs</span>'
-        +'<span style="display:inline-block;width:7em;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ escapeHtml(pn2) +'</span>'
+        +'<span style="display:inline-block;width:8em;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ escapeHtml(pn2) +'</span>'
         +'<span style="font-size:12px;color:'+pc+';font-weight:500;white-space:nowrap;margin-left:4px">'+escapeHtml(pw)+'</span>'
         +'<button id="editpast_'+cls+'_'+rr+'_'+mm+'" style="padding:2px 8px;font-size:11px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;margin-left:auto;flex-shrink:0">修正</button>'
         +'</div>';
@@ -3656,12 +3818,34 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
   if(duplicatePlayers.length>0){
     html+='<div class="alert alert-err">同じ選手が複数の対局に入っています：'+escapeHtml(duplicatePlayers.map(function(pid){return getName(pid,cls);}).join('、'))+'</div>';
   }
+
+  // A-4 §1, §6: ペアリング品質評価 → 警告バナー（表示のみ・ブロックしない）
+  var quality=evaluatePairingQuality(state.pairings[cls],state.results[cls],state.players[cls]);
+  if(quality.warningHit){
+    var warns=[];
+    if(quality.rematchCount>0)warns.push('再戦 '+quality.rematchCount+'件');
+    if(quality.avoidableWinDiffPairs>0)warns.push('同勝数で組めた可能性のある異勝数ペア '+quality.avoidableWinDiffPairs+'件');
+    if(quality.maxWinDiff>=2)warns.push('勝数差 '+quality.maxWinDiff+' のペアあり');
+    html+='<div class="alert alert-warn" style="margin-bottom:12px">⚠ 要確認：'+escapeHtml(warns.join(' / '))+'<div style="font-size:11px;color:#666;margin-top:4px">※ 操作はブロックされません。例外判断は現場運営に委ねます。</div></div>';
+  }
+
   for(var i=0;i<state.pairings[cls].length;i++){
     var m=state.pairings[cls][i];
-    var n1=getName(m.p1,cls),n2=getName(m.p2,cls);
+    var n1=getNameWithNo(m.p1,cls),n2=getNameWithNo(m.p2,cls);
+    var detail=quality.pairDetails[i]||{labels:[]};
+    var labelsHtml='';
+    for(var li=0;li<detail.labels.length;li++){
+      var lab=detail.labels[li];
+      // [要確認] は赤系、[手動変更] は青系、それ以外は灰系
+      var labColor=(lab==='要確認')?'#A32D2D':(lab==='手動変更'?'#2E75B6':'#666');
+      var labBg=(lab==='要確認')?'#FBEAEA':(lab==='手動変更'?'#E7F0FA':'#F0F0F0');
+      labelsHtml+='<span style="display:inline-block;padding:2px 6px;margin-right:4px;font-size:11px;color:'+labColor+';background:'+labBg+';border-radius:4px">['+escapeHtml(lab)+']</span>';
+    }
     html+='<div class="pairing-card" style="position:relative">'
+      // A-4 §3 MF6-a: 卓番号バッジ（配列 index+1 から算出。永続化なし）
+      +'<div style="position:absolute;top:6px;left:6px;padding:2px 8px;border-radius:4px;background:#1F3864;color:#fff;font-size:11px;font-weight:bold">第 '+(i+1)+' 卓</div>'
       +'<button style="position:absolute;top:6px;right:6px;padding:3px 7px;border-radius:5px;border:1px solid #ccc;background:#fff;font-size:11px;color:#888;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
-      +'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:4px">'
+      +'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:28px">'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
       +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+escapeHtml(n1)+'</button>'
       +(m.winner===m.p1?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
@@ -3672,6 +3856,8 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       +(m.winner===m.p2?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
       +'</div>'
       +'</div>'
+      // A-4 §2, §5: 理由ラベル（軽量ラベル方式）
+      +(labelsHtml?'<div style="margin-top:4px">'+labelsHtml+'</div>':'')
       +'</div>';
   }
   html+='<div style="display:flex;gap:8px;margin-top:8px">'
@@ -3863,7 +4049,7 @@ function buildResultsRoundCellMobileHtml(cls, playerId, roundIdx, wins){
   return '<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;overflow:hidden">'
     +'<div style="color:#888;font-size:10px;margin-bottom:2px">'+(roundIdx+1)+'回戦</div>'
     +'<div style="font-weight:bold;color:'+markColor+';font-size:16px;line-height:1">'+markStr+'</div>'
-    +'<div style="color:#555;font-size:10px;margin-top:2px">'+escapeHtml(getName(oppId,cls))+'('+oppWins+')</div>'
+    +'<div style="color:#555;font-size:10px;margin-top:2px">'+escapeHtml(getNameWithNo(oppId,cls))+'('+oppWins+')</div>'
     +'</div>';
 }
 
@@ -3879,7 +4065,7 @@ function buildResultsRoundCellDesktopHtml(cls, playerId, roundIdx, wins){
   var won=match.winner===playerId;
   var markColor=won?'#27500A':'#222';
   var markStr=match.winner===null?'－':(won?'○':'●');
-  return '<td><span style="font-weight:bold;color:'+markColor+'">'+markStr+'</span><br><small style="color:#333">'+escapeHtml(getName(oppId,cls))+'('+oppWins+')</small></td>';
+  return '<td><span style="font-weight:bold;color:'+markColor+'">'+markStr+'</span><br><small style="color:#333">'+escapeHtml(getNameWithNo(oppId,cls))+'('+oppWins+')</small></td>';
 }
 
 // スマホ向け表示全体(カードのリスト)
@@ -3893,7 +4079,7 @@ function buildResultsMobileHtml(cls, finals, wins){
     html+='<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px">';
     html+=badge;
     html+='<div style="display:flex;flex-direction:column;gap:2px">';
-    html+='<span style="font-weight:500;font-size:15px">'+escapeHtml(f.p.name)+'</span>';
+    html+='<span style="font-weight:500;font-size:15px">'+escapeHtml(getNameWithNo(f.p.id,cls))+'</span>';
     html+='<div style="font-size:12px;color:#555">勝<strong>'+f.A+'</strong>　負'+(f.played-f.A)+'　相手:'+f.B+'　勝相手:'+f.C+'</div>';
     html+='</div>';
     html+='</div>';
@@ -3915,7 +4101,7 @@ function buildResultsDesktopHtml(cls, finals, wins){
     var f=finals[idx];var rank=idx+1;
     var rowCls=rank===1?'row-r1':rank===2?'row-r2':rank===3?'row-r3':'';
     var badge=rank===1?'<span class="badge b1">1位</span>':rank===2?'<span class="badge b2">2位</span>':rank===3?'<span class="badge b3">3位</span>':rank+'位';
-    html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+escapeHtml(f.p.name)+'</td>';
+    html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+escapeHtml(getNameWithNo(f.p.id,cls))+'</td>';
     for(var r=0;r<state.rounds;r++){
       html+=buildResultsRoundCellDesktopHtml(cls, f.p.id, r, wins);
     }
@@ -4135,7 +4321,7 @@ function printResults(){
       var bg=rank===1?'#fef8e7':rank===2?'#f5f5f5':rank===3?'#eaf3fb':'#fff';
       html+='<tr style="background:'+bg+'">';
       html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;font-weight:bold">'+rank+'位</td>';
-      html+='<td style="padding:6px 8px;border:1px solid #ccc;font-weight:bold">'+escapeHtml(f.p.name)+'</td>';
+      html+='<td style="padding:6px 8px;border:1px solid #ccc;font-weight:bold">'+escapeHtml(getNameWithNo(f.p.id,cls))+'</td>';
       for(var r=0;r<state.rounds;r++){
         var round=state.results[cls][r];
         if(!round){html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;color:#ccc">-</td>';continue;}
@@ -4143,7 +4329,7 @@ function printResults(){
         for(var m=0;m<round.length;m++){if(round[m].p1===f.p.id||round[m].p2===f.p.id){match=round[m];break;}}
         if(!match){html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;color:#ccc">-</td>';continue;}
         var oppId=match.p1===f.p.id?match.p2:match.p1;
-        var oppName=getName(oppId,cls);
+        var oppName=getNameWithNo(oppId,cls);
         var oppWins=wins[oppId]||0;
         var won=match.winner===f.p.id;
         var color=won?'#27500A':'#222';

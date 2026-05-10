@@ -281,6 +281,54 @@ else
 fi
 
 # ============================================
+# A-4 ペアリング品質評価関数 単体テスト
+# ============================================
+echo ""
+echo "【A-4 品質評価関数 単体テスト】"
+if [ -f "$SCRIPT_DIR/test_quality_eval.js" ]; then
+  if node "$SCRIPT_DIR/test_quality_eval.js" "$TARGET" > /tmp/quality_eval_out.log 2>&1; then
+    ok "A-4 品質評価関数 全PASS ($(tail -2 /tmp/quality_eval_out.log | head -1))"
+  else
+    ng "A-4 品質評価関数 失敗"
+    cat /tmp/quality_eval_out.log
+  fi
+else
+  warn "test_quality_eval.js が見つからない"
+fi
+
+# ============================================
+# A-4 B級R2 ペアリング品質回帰テスト
+# ============================================
+echo ""
+echo "【A-4 B級R2 回帰テスト】"
+if [ -f "$SCRIPT_DIR/test_b_r2_regression.js" ]; then
+  if node "$SCRIPT_DIR/test_b_r2_regression.js" "$TARGET" > /tmp/b_r2_out.log 2>&1; then
+    ok "A-4 B級R2 回帰テスト 全PASS ($(tail -2 /tmp/b_r2_out.log | head -1))"
+  else
+    ng "A-4 B級R2 回帰テスト 失敗"
+    cat /tmp/b_r2_out.log
+  fi
+else
+  warn "test_b_r2_regression.js が見つからない"
+fi
+
+# ============================================
+# A-4 normalizeState lastModifiedBy 補完テスト
+# ============================================
+echo ""
+echo "【A-4 normalizeState lastModifiedBy 補完テスト】"
+if [ -f "$SCRIPT_DIR/test_normalize_state_a4.js" ]; then
+  if node "$SCRIPT_DIR/test_normalize_state_a4.js" "$TARGET" > /tmp/norm_a4_out.log 2>&1; then
+    ok "A-4 normalizeState テスト 全PASS ($(tail -2 /tmp/norm_a4_out.log | head -1))"
+  else
+    ng "A-4 normalizeState テスト 失敗"
+    cat /tmp/norm_a4_out.log
+  fi
+else
+  warn "test_normalize_state_a4.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
