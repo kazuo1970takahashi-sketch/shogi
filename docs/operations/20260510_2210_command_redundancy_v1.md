@@ -49,7 +49,7 @@ ChatGPT 最終判定 → Ready 化 → マージ指示 → Claude Code マージ
 |---|---|
 | ChatGPT の利用制限・応答不能 | Claude.ai が司令塔を代行 |
 | Codex の利用制限・応答不能 | ChatGPT or Claude.ai がコードレビューを代行 |
-| Claude.ai の利用制限 | ChatGPT が設計レビューを兼務 |
+| Claude.ai の利用制限 | ChatGPT が設計レビューを兼務（簡易判断のみ）。複雑な設計判断は Claude.ai 復旧待ち |
 | Claude Code の応答不能 | 当該プロジェクトの Claude Code セッションを再起動。代替なし |
 
 複数同時障害時は **§5 縮退運転**を適用。
@@ -133,7 +133,8 @@ ChatGPT がコードレビュー兼務、Claude.ai が二次確認で補完。
 ## 8. 代行履歴記録義務
 
 ### 8.1 記録媒体
-- 代行が発生したプロジェクトの `docs/operations/` または `docs/specs/` 配下に記録
+- プロジェクト横断的な代行履歴 → `docs/operations/` 配下
+- 特定 phase の代行履歴 → 該当 phase の `docs/specs/<TS>_<phase>_completion.md` 内に記載
 - 完了報告 doc に「Claude.ai 代行」の旨を明記（A-4 完了報告 §3 参照）
 
 ### 8.2 記録項目
@@ -229,7 +230,7 @@ ChatGPT がコードレビュー兼務、Claude.ai が二次確認で補完。
 |---|---|---|---|
 | 1 | 代行履歴の集約ダッシュボード | Low | 各プロジェクトの ops doc を横断集計 |
 | 2 | 代行範囲の機械チェック（PR template） | Mid | PR 説明文に必須項目を強制 |
-| 3 | 縮退発動の自動検知（CI で `gh status` 監視） | Low | 過剰反応のリスク高い |
+| 3 | 縮退発動の自動検知（CI で `gh status` 監視） | Low | 過剰反応のリスク高い。AI 制限は短時間で回復することが多く、自動切替は手戻りを増やす |
 | 4 | 各 AI 復旧通知の Webhook 化 | Low | 手動運用で十分機能している |
 | 5 | 「冪等指示再実行」を Claude Code 個別 memory に固定 | Mid | A-4 で発覚済み、既に memory 保存済み |
 | 6 | プロジェクト横断で本ルールを参照する共通 README | Mid | 各プロジェクト README から本 doc へ link |
