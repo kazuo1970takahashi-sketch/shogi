@@ -3502,7 +3502,7 @@ function evaluatePairingQuality(pairings, results, players){
       labels.push(d.winDiff===0?'同勝数':('勝数差'+d.winDiff));
       labels.push(d.isRematch?'再戦':'再戦なし');
       // 個別ペアが警告条件に該当する場合のみ [要確認]
-      var pairWarning=d.isRematch||(d.winDiff>=2);
+      var pairWarning=d.isRematch||(d.winDiff>=2)||(avoidableWinDiffPairs>0&&d.winDiff>0);
       if(pairWarning)labels.push('要確認');
       if(pp&&pp.lastModifiedBy==='manual')labels.push('手動変更');
     }

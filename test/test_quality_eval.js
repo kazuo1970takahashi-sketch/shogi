@@ -108,6 +108,9 @@ console.log('\n=== C2: B級R2 再現相当（同勝数で組めるのに mixed p
   eq(q.rematchCount, 0, 'rematchCount=0');
   eq(q.avoidableWinDiffPairs, 2, 'avoidableWinDiffPairs=2 (同勝数完全マッチング可能だった)');
   eq(q.warningHit, true, 'warningHit=true');
+  const cautionMixedPairs = q.pairDetails.filter(d => d.winDiff === 1 && d.labels.indexOf('要確認') >= 0);
+  eq(cautionMixedPairs.length, 2, '勝数差1の2ペアに [要確認] ラベル');
+  assert(cautionMixedPairs.every(d => d.labels.indexOf('勝数差1') >= 0), '対象2ペアはいずれも [勝数差1][要確認]');
 }
 
 console.log('\n=== C3: 再戦を含む構成 ===');
