@@ -76,6 +76,9 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
 
   test('サジェスト選択時：マスタの yomi がふりがな欄に反映される', async ({ page }) => {
     await page.fill('#inp-name', '山田');
+    // TEST-001: CI 負荷下で suggest-list の描画完了前に click が始まると flaky 化するため、
+    // 親 .suggest-item の可視を明示的に待ってから子の .si-info を click する。
+    await page.locator('#suggest-list .suggest-item').first().waitFor({ state: 'visible' });
     // .suggest-item は addEventListener('mousedown') 経由 → Unchecked、子の .si-info を click
     await clickAndExpectChangeUnchecked(
       page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
@@ -92,6 +95,9 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
   test('サジェスト由来：マスタ yomi が空のときのみ手入力した値で補完（既存値は上書きしない）', async ({ page }) => {
     // 山本花子（マスタ yomi が空）に手入力で補完
     await page.fill('#inp-name', '山本');
+    // TEST-001: CI 負荷下で suggest-list の描画完了前に click が始まると flaky 化するため、
+    // 親 .suggest-item の可視を明示的に待ってから子の .si-info を click する。
+    await page.locator('#suggest-list .suggest-item').first().waitFor({ state: 'visible' });
     await clickAndExpectChangeUnchecked(
       page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
       async (before, after, ctx) => {
@@ -111,6 +117,8 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
 
     // 山田太郎（マスタ yomi 既存）に違う yomi を手入力 → 上書きしないこと
     await page.fill('#inp-name', '山田');
+    // TEST-001: 同上、2回目の suggest 選択でも明示的に可視待機する。
+    await page.locator('#suggest-list .suggest-item').first().waitFor({ state: 'visible' });
     await clickAndExpectChangeUnchecked(
       page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
       async (before, after, ctx) => {
@@ -249,6 +257,9 @@ test.describe('A-4 Stage 2: IME 自動取得', () => {
   test('サジェスト選択後にふりがな欄を手動修正 → 修正後 yomi がマスタに反映される', async ({ page }) => {
     // 山本花子（マスタ yomi 空）を選択
     await page.fill('#inp-name', '山本');
+    // TEST-001: CI 負荷下で suggest-list の描画完了前に click が始まると flaky 化するため、
+    // 親 .suggest-item の可視を明示的に待ってから子の .si-info を click する。
+    await page.locator('#suggest-list .suggest-item').first().waitFor({ state: 'visible' });
     await clickAndExpectChangeUnchecked(
       page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
       async (before, after, ctx) => {
