@@ -79,6 +79,7 @@ function loadEnv(path) {
        addPlayerFromMaster:addPlayerFromMaster,
        changePlayerClass:changePlayerClass,
        createEmptyBranchMaster:createEmptyBranchMaster,
+       buildBulkEditModalHtml:buildBulkEditModalHtml,
        _setState:function(s){state=s;},
        _getState:function(){return state;}
      };`
@@ -313,6 +314,41 @@ function makePlayer(id,name,cls,entryNo){
   const s2 = makeEmptyState();
   assertEq(env.nextEntryNoForClass('A',s2), 1, '5.6 empty class → next = 1');
   assertEq(env.nextEntryNoForClass('B',s2), 1, '5.6 empty class B → next = 1');
+}
+
+// ============================================================
+// §5.7 名前一括編集モーダル: 表示も entry_no 経由（Codex Should Fix 1）
+//   buildBulkEditModalHtml が削除後の参加者を index ではなく entry_no で
+//   ラベル表示すること。A-3 は削除後も "A03" のままで "A02" に詰まらない。
+// ============================================================
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState();
+  s.players.A = [
+    makePlayer('p1','田中',  'A', 1),
+    makePlayer('p2','佐藤',  'A', 2),
+    makePlayer('p3','鈴木',  'A', 3),
+  ];
+  env._setState(s);
+
+  // 削除前: 3 名すべての表示確認
+  const beforeHtml = env.buildBulkEditModalHtml('A', s.players.A);
+  assert(beforeHtml.indexOf('>A01<')>=0, '5.7-pre A01 ラベル存在');
+  assert(beforeHtml.indexOf('>A02<')>=0, '5.7-pre A02 ラベル存在');
+  assert(beforeHtml.indexOf('>A03<')>=0, '5.7-pre A03 ラベル存在');
+
+  // p2 (A02) を削除
+  s.players.A = s.players.A.filter(function(p){return p.id!=='p2';});
+  env._setState(s);
+
+  // 削除後: A01 と A03 のみ表示。A02 への詰め直しはない（欠番維持）。
+  const afterHtml = env.buildBulkEditModalHtml('A', s.players.A);
+  assert(afterHtml.indexOf('>A01<')>=0, '5.7-post A01 ラベル残存（unchanged）');
+  assert(afterHtml.indexOf('>A03<')>=0, '5.7-post A03 ラベル残存（gap maintained, NOT shifted to A02）');
+  assert(afterHtml.indexOf('>A02<')<0,  '5.7-post A02 ラベルは存在しない（欠番のため）');
+
+  // 旧バグの再発検出: cls+(i+1) で 2 番目（残った p3）が "A2" に見える状態を阻止
+  assert(afterHtml.indexOf('>A2<')<0,   '5.7-post 旧 cls+(i+1) 形式が残っていない（A2 単独）');
 }
 
 // ============================================================

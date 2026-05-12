@@ -3305,8 +3305,10 @@ function removePlayer(id,cls){
 function buildBulkEditModalHtml(cls, players){
   var rows='';
   for(var i=0;i<players.length;i++){
+    // A-5.1 §11.8: 一括編集モーダルでも entry_no を表示（欠番維持を視覚化）。
+    // A-4 §2: 番号表示は 2 桁ゼロ埋めに統一（参加者一覧・対戦相手変更・PDF と整合）。
     rows+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
-      +'<span style="font-size:12px;color:#888;min-width:28px">'+cls+(i+1)+'</span>'
+      +'<span style="font-size:12px;color:#888;min-width:28px">'+cls+entryNoOf(cls,players[i].id)+'</span>'
       +'<input type="text" id="bulk-name-'+players[i].id+'" value="'+escapeHtml(players[i].name)+'" '
       +'style="flex:1;height:34px;padding:0 10px;border:1px solid #ccc;border-radius:6px;font-size:14px;font-family:inherit">'
       +'</div>';
