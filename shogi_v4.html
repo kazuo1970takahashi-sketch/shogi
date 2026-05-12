@@ -3293,6 +3293,12 @@ function removePlayer(id,cls){
   // A-4 §3.1.4: 当該 player の _pendingNewYomi も破棄
   if(_pendingNewYomi&&Object.prototype.hasOwnProperty.call(_pendingNewYomi,id))delete _pendingNewYomi[id];
   renderRegList();save();
+  // A-5.1-SAVE-001: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+  // false は「保存未確認」（保存失敗と断定しない）。削除は rollback しない・運営は継続する。
+  if(!verifyPlayerAbsent(id,cls)){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-001: removePlayer の保存が確認できませんでした (player='+id+', cls='+cls+')');
+    showMsg('削除は反映されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+  }
 }
 
 // ============================================================
@@ -3495,6 +3501,29 @@ function verifyMasterPersisted(memberId,expectedName){
     return false;
   }catch(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('MASTER-001: branch master verify failed',e);
+    return false;
+  }
+}
+
+// A-5.1-SAVE-001: shogi_v4 を再読込し、対象 player.id が state.players[cls] に存在しないことを検証。
+// 戻り値: true  = 削除対象 id が保存後の localStorage に存在しない（= 削除が永続化された）
+//        false = 「保存未確認」（id がまだ存在 / 例外 / 構造不正 / 空 / parse 不可）
+// false は「保存失敗」と断定しない。呼出側は warn 表示のみで削除フローは継続する。
+function verifyPlayerAbsent(playerId,cls){
+  if(typeof localStorage==='undefined')return false;
+  try{
+    var raw=localStorage.getItem(STORAGE_KEY);
+    if(typeof raw!=='string'||!raw)return false;
+    var parsed=JSON.parse(raw);
+    if(!parsed||!parsed.players)return false;
+    var arr=parsed.players[cls];
+    if(!Array.isArray(arr))return false;
+    for(var i=0;i<arr.length;i++){
+      if(arr[i]&&arr[i].id===playerId)return false;
+    }
+    return true;
+  }catch(e){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-001: verifyPlayerAbsent failed',e);
     return false;
   }
 }
