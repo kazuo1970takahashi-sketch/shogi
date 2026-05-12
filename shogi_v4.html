@@ -3345,6 +3345,160 @@ function bulkEditNames(cls){
   bindBulkEditModalEvents(cls, players);
 }
 
+// ============================================================
+// MASTER-001: 参加者名修正時の会員マスタ反映
+//   editPlayer() を入口とし、新氏名が確定したらユーザの明示確認に応じて
+//   会員マスタも更新する。無条件上書きは禁止。
+//   - member_id があれば member_id で対象会員を特定（氏名照合より優先）
+//   - なければ findMemberCandidates() で旧氏名から候補検索
+//     - 0件 / 複数件: マスタ更新ボタンを無効化（参加者名のみ更新）
+//     - 1件 + ユーザ確認: applyMasterMemberEdit() → saveBranchMaster()
+//   既存挙動（同名拒否 alert / renderRegList / save / 必須関数定義）は維持。
+//   Enter 連打防止: デフォルトフォーカスは安全側の「この大会のみ修正」。
+// ============================================================
+function findMasterRenameTarget(p,master){
+  if(!master||!Array.isArray(master.members))return {status:'no_master',member:null};
+  if(p&&typeof p.member_id==='string'&&p.member_id){
+    for(var i=0;i<master.members.length;i++){
+      var m=master.members[i];
+      if(m&&m.id===p.member_id&&m.deleted!==true)return {status:'by_member_id',member:m};
+    }
+    return {status:'none',member:null};
+  }
+  var lookup={name:(p&&p.name)||'',yomi:(p&&typeof p.yomi==='string')?p.yomi:''};
+  var cands=findMemberCandidates(lookup,master);
+  if(cands.length===1)return {status:'unique',member:cands[0]};
+  if(cands.length>1)return {status:'multi',member:null};
+  return {status:'none',member:null};
+}
+
+function applyParticipantRenameOnly(p,newName){
+  p.name=newName;
+  try{renderRegList();}catch(e){}
+  try{save();}catch(e){}
+}
+
+// 戻り値: {success, error?, duplicateCount?}
+// 失敗時も呼び出し側で applyParticipantRenameOnly() を必ず実行することで
+// 「マスタ更新失敗でも大会データは整合性を保つ」を担保する。
+function applyParticipantRenameWithMaster(p,newName,memberId){
+  if(typeof memberId!=='string'||!memberId)return {success:false,error:'invalid_member_id'};
+  var master=null;
+  try{master=loadBranchMaster();}catch(e){return {success:false,error:'load_failed'};}
+  if(!master||!Array.isArray(master.members))return {success:false,error:'no_master'};
+  if(master._loaded_with_corruption===true)return {success:false,error:'corrupted'};
+  var target=null;
+  for(var i=0;i<master.members.length;i++){
+    if(master.members[i]&&master.members[i].id===memberId){target=master.members[i];break;}
+  }
+  if(!target)return {success:false,error:'not_found'};
+  if(target.deleted===true)return {success:false,error:'deleted'};
+  // ふりがな更新は本タスクの必須範囲外。既存値を保持する。
+  var preserveYomi=(typeof target.yomi==='string')?target.yomi:'';
+  var r=applyMasterMemberEdit(memberId,newName,preserveYomi,master);
+  if(!r||!r.success)return {success:false,error:(r&&r.error)||'edit_failed'};
+  try{saveBranchMaster(master);}catch(e){return {success:false,error:'save_failed'};}
+  return {success:true,duplicateCount:r.duplicateCount||0};
+}
+
+function buildMasterSyncModalHtml(oldName,newName,targetInfo){
+  var html='<div style="background:#fff;border-radius:12px;padding:24px;width:420px;max-width:90vw;max-height:85vh;overflow-y:auto">';
+  html+='<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">参加者名の修正と会員マスタ反映</h3>';
+  html+='<div style="font-size:13px;color:#333;line-height:1.8;margin-bottom:12px">';
+  html+='<div><span style="color:#888">変更前：</span>'+escapeHtml(oldName)+'</div>';
+  html+='<div><span style="color:#888">変更後：</span><strong>'+escapeHtml(newName)+'</strong></div>';
+  html+='</div>';
+  html+='<div style="border-top:1px solid #eee;padding-top:12px;margin-bottom:12px;font-size:13px;line-height:1.7;color:#333">';
+  var masterEnabled=false;
+  if(targetInfo.status==='by_member_id'||targetInfo.status==='unique'){
+    masterEnabled=true;
+    var label=(targetInfo.status==='by_member_id')?'対象会員（member_id で特定）':'対象会員（同名1件で特定）';
+    var mName=escapeHtml((targetInfo.member&&targetInfo.member.name)||'');
+    var mYomi=escapeHtml((targetInfo.member&&targetInfo.member.yomi)||'');
+    html+='<div style="color:#1F3864;font-weight:500;margin-bottom:4px">'+escapeHtml(label)+'</div>';
+    html+='<div>氏名：'+mName+'</div>';
+    if(mYomi)html+='<div style="color:#666">ふりがな：'+mYomi+'</div>';
+  } else if(targetInfo.status==='multi'){
+    html+='<div style="color:#a05000">同名候補が複数あるため、会員マスタの更新は今回スキップします。</div>';
+  } else if(targetInfo.status==='none'){
+    html+='<div style="color:#a05000">該当する会員マスタが見つかりませんでした。会員マスタは更新できません。</div>';
+  } else {
+    html+='<div style="color:#a05000">会員マスタが利用できないため、参加者名のみ更新できます。</div>';
+  }
+  html+='</div>';
+  html+='<div style="display:flex;flex-direction:column;gap:8px">';
+  html+='<button type="button" id="ms-tournament-only" class="btn-primary" style="padding:10px 16px;font-size:14px">この大会のみ修正</button>';
+  var disabledAttr=masterEnabled?'':' disabled';
+  var enabledStyle='background:#fff;color:#1F3864;border:1px solid #1F3864;cursor:pointer';
+  var disabledStyle='background:#eee;color:#999;border:1px solid #ddd;cursor:not-allowed';
+  var btnStyle=masterEnabled?enabledStyle:disabledStyle;
+  html+='<button type="button" id="ms-master-too" style="padding:10px 16px;font-size:14px;border-radius:8px;'+btnStyle+'"'+disabledAttr+'>会員マスタも更新する</button>';
+  html+='<button type="button" id="ms-cancel" style="padding:10px 16px;font-size:14px;border-radius:8px;background:#fff;color:#666;border:1px solid #ccc;cursor:pointer">キャンセル</button>';
+  html+='</div>';
+  html+='<p style="font-size:11px;color:#888;margin-top:10px;line-height:1.5">「会員マスタも更新する」は対象会員が安全に1件特定できる場合のみ有効です。</p>';
+  html+='</div>';
+  return html;
+}
+
+function bindMasterSyncModalEvents(p,newName,targetInfo){
+  function close(){var m=document.getElementById('member-sync-modal');if(m&&m.remove)m.remove();}
+  var tBtn=document.getElementById('ms-tournament-only');
+  if(tBtn)tBtn.addEventListener('click',function(){
+    close();
+    applyParticipantRenameOnly(p,newName);
+    if(typeof showMsg==='function')showMsg('参加者名を更新しました（会員マスタは変更していません）','ok');
+  });
+  var mBtn=document.getElementById('ms-master-too');
+  if(mBtn&&!mBtn.disabled){
+    mBtn.addEventListener('click',function(){
+      var candidate=targetInfo&&targetInfo.member;
+      if(!candidate||typeof candidate.id!=='string'||!candidate.id){
+        close();
+        applyParticipantRenameOnly(p,newName);
+        if(typeof showMsg==='function')showMsg('対象会員が特定できなかったため、大会参加者名のみ更新しました','warn');
+        return;
+      }
+      var r=applyParticipantRenameWithMaster(p,newName,candidate.id);
+      close();
+      if(r&&r.success){
+        // member_id 未付与の参加者には後付け補完（安全に1件特定できた場合のみ到達）
+        if(typeof p.member_id!=='string'||!p.member_id)p.member_id=candidate.id;
+        applyParticipantRenameOnly(p,newName);
+        var dupNote=(r.duplicateCount>0)?'（同名の別会員が '+r.duplicateCount+' 件あります）':'';
+        if(typeof showMsg==='function')showMsg('参加者名と会員マスタを更新しました'+dupNote,'ok');
+      } else {
+        applyParticipantRenameOnly(p,newName);
+        var eCode=(r&&r.error)?r.error:'unknown';
+        if(typeof showMsg==='function')showMsg('会員マスタ更新に失敗したため、大会参加者名のみ更新しました（'+escapeHtml(eCode)+'）','warn');
+      }
+    });
+  }
+  var cBtn=document.getElementById('ms-cancel');
+  if(cBtn)cBtn.addEventListener('click',function(){close();});
+}
+
+function openMemberMasterSyncDialog(p,newName){
+  var existing=document.getElementById('member-sync-modal');
+  if(existing&&existing.remove)existing.remove();
+  var master=null;
+  try{master=loadBranchMaster();}catch(e){master=null;}
+  var targetInfo;
+  if(!master||master._loaded_with_corruption===true){
+    targetInfo={status:'no_master',member:null};
+  } else {
+    targetInfo=findMasterRenameTarget(p,master);
+  }
+  var modal=document.createElement('div');
+  modal.id='member-sync-modal';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=buildMasterSyncModalHtml(p.name||'',newName,targetInfo);
+  document.body.appendChild(modal);
+  bindMasterSyncModalEvents(p,newName,targetInfo);
+  // Enter 連打や誤操作対策: 安全側の「この大会のみ修正」をデフォルトフォーカス
+  var focusBtn=document.getElementById('ms-tournament-only');
+  if(focusBtn&&focusBtn.focus){try{focusBtn.focus();}catch(e){}}
+}
+
 function editPlayer(id,cls){
   var players=state.players[cls];
   var p=null;
@@ -3355,8 +3509,13 @@ function editPlayer(id,cls){
   newName=newName.trim();
   var all=state.players.A.concat(state.players.B);
   for(var i=0;i<all.length;i++){if(all[i].name===newName&&all[i].id!==id){alert('同じ名前がいます');return;}}
-  p.name=newName;
-  renderRegList();save();
+  // MASTER-001: normalize 後に変更なしならモーダルを開かず、旧フローと同じく参加者名のみ更新。
+  if(normalizePersonName(p.name)===normalizePersonName(newName)){
+    applyParticipantRenameOnly(p,newName);
+    return;
+  }
+  // MASTER-001: 会員マスタ反映の分岐確認モーダルを開く。
+  openMemberMasterSyncDialog(p,newName);
 }
 
 function startTournament(){
