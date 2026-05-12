@@ -3467,6 +3467,54 @@ function findMasterRenameTarget(p,master){
   return {status:'none',member:null};
 }
 
+// A-5.1-SAVE-003: shogi_v4 を再読込し、保存済み state を返す。
+// 戻り値: state オブジェクト / null（空・破損 JSON・構造不正・schema 不正・例外）
+// 呼出側は null または期待値不一致を「保存未確認」として扱う（保存失敗と断定しない）。
+//
+// PR #48 Codex Must Fix: 最低限の state schema を検証して、{started:true} のような壊れた
+// object を「有効」として通してしまう false positive を防ぐ。具体的には players/pairings/
+// results それぞれが object で、A/B が Array であることまでをここで保証する。
+function readPersistedState(){
+  if(typeof localStorage==='undefined')return null;
+  try{
+    var raw=localStorage.getItem(STORAGE_KEY);
+    if(typeof raw!=='string'||!raw)return null;
+    var parsed=JSON.parse(raw);
+    if(!parsed||typeof parsed!=='object')return null;
+    if(!parsed.players||typeof parsed.players!=='object')return null;
+    if(!Array.isArray(parsed.players.A)||!Array.isArray(parsed.players.B))return null;
+    if(!parsed.pairings||typeof parsed.pairings!=='object')return null;
+    if(!Array.isArray(parsed.pairings.A)||!Array.isArray(parsed.pairings.B))return null;
+    if(!parsed.results||typeof parsed.results!=='object')return null;
+    if(!Array.isArray(parsed.results.A)||!Array.isArray(parsed.results.B))return null;
+    return parsed;
+  }catch(e){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003: readPersistedState failed',e);
+    return null;
+  }
+}
+
+// A-5.1-SAVE-003 / PR #48 Codex Should Fix: pairings 配列の簡易シグネチャ比較。
+// length のみだと「同件数だが中身が古い stale pairings」を見逃すため、p1/p2/winner と、
+// 両側に存在する場合のみ lastModifiedBy を比較する。過剰な deep equal は持たない。
+function pairingsMatchSnapshot(persisted,expected){
+  if(!Array.isArray(persisted)||!Array.isArray(expected))return false;
+  if(persisted.length!==expected.length)return false;
+  for(var i=0;i<expected.length;i++){
+    var pe=expected[i],pp=persisted[i];
+    if(!pe||!pp||typeof pe!=='object'||typeof pp!=='object')return false;
+    if(pe.p1!==pp.p1)return false;
+    if(pe.p2!==pp.p2)return false;
+    if((pe.winner||null)!==(pp.winner||null))return false;
+    // lastModifiedBy は normalizeState の補完範囲。両側に存在する場合のみ比較し、
+    // どちらか欠損は容認（旧データ互換のため false にしない）。
+    if(typeof pe.lastModifiedBy!=='undefined'&&typeof pp.lastModifiedBy!=='undefined'){
+      if(pe.lastModifiedBy!==pp.lastModifiedBy)return false;
+    }
+  }
+  return true;
+}
+
 // shogi_v4 を再読込し、対象 player の name が expectedName になっているかを検証。
 // 例外時は false（呼出側は「保存未確認」として扱う）。
 function verifyStatePersisted(playerId,expectedName){
@@ -3805,6 +3853,13 @@ function startTournament(){
   if(state.players.A.length>0)generatePairing('A');
   if(state.players.B.length>0)generatePairing('B');
   showTab('tournament');save();
+  // A-5.1-SAVE-003: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+  // false は「保存未確認」（保存失敗と断定しない）。大会開始は rollback しない・運営は継続する。
+  var persisted_st=readPersistedState();
+  if(!persisted_st||persisted_st.started!==true){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003: startTournament の保存が確認できませんでした');
+    showMsg('大会を開始しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+  }
 }
 
 // ============================================================
@@ -4033,6 +4088,13 @@ function generatePairing(cls){
 
   state.pairings[cls]=pairs;
   save();
+  // A-5.1-SAVE-003: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+  // false は「保存未確認」（保存失敗と断定しない）。組合せ生成は rollback しない・運営は継続する。
+  var persisted_gp=readPersistedState();
+  if(!persisted_gp||!persisted_gp.pairings||!Array.isArray(persisted_gp.pairings[cls])||persisted_gp.pairings[cls].length!==pairs.length){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003: generatePairing の保存が確認できませんでした (cls='+cls+', expected='+pairs.length+')');
+    showMsg('組み合わせを生成しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+  }
 }
 
 function setWinner(cls,idx,wid){
@@ -4042,6 +4104,14 @@ function setWinner(cls,idx,wid){
     state.pairings[cls][idx].winner=wid;
   }
   renderTournament(cls);save();
+  // A-5.1-SAVE-003: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+  // false は「保存未確認」（保存失敗と断定しない）。勝敗入力は rollback しない・運営は継続する。
+  var expectedWinner=state.pairings[cls][idx].winner;
+  var persisted_sw=readPersistedState();
+  if(!persisted_sw||!persisted_sw.pairings||!Array.isArray(persisted_sw.pairings[cls])||!persisted_sw.pairings[cls][idx]||persisted_sw.pairings[cls][idx].winner!==expectedWinner){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003: setWinner の保存が確認できませんでした (cls='+cls+', idx='+idx+', expected='+expectedWinner+')');
+    showMsg('勝敗を入力しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+  }
 }
 
 function buildChangePairingModalHtml(cls, idx, candidates, match){
@@ -4181,6 +4251,20 @@ function submitRound(cls){
   state.pairings[cls]=[];
   if(state.results[cls].length<state.rounds)generatePairing(cls);
   renderTournament(cls);save();
+  // A-5.1-SAVE-003: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+  // false は「保存未確認」（保存失敗と断定しない）。回戦確定は rollback しない・運営は継続する。
+  // 内部で generatePairing(cls) が呼ばれた場合、in-memory の state.pairings[cls] は新ペアを保持する。
+  // PR #48 Codex Should Fix: pairings は length 一致だけでは stale を見逃すため、
+  // pairingsMatchSnapshot で p1/p2/winner（lastModifiedBy は両側に存在する場合のみ）も比較する。
+  var expectedRoundsLen=state.results[cls].length;
+  var expectedPairings=state.pairings[cls];
+  var persisted_sr=readPersistedState();
+  var resultsOk=persisted_sr&&persisted_sr.results&&Array.isArray(persisted_sr.results[cls])&&persisted_sr.results[cls].length===expectedRoundsLen;
+  var pairingsOk=persisted_sr&&persisted_sr.pairings&&pairingsMatchSnapshot(persisted_sr.pairings[cls],expectedPairings);
+  if(!resultsOk||!pairingsOk){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003: submitRound の保存が確認できませんでした (cls='+cls+', expectedRounds='+expectedRoundsLen+', expectedPairings='+expectedPairings.length+')');
+    showMsg('回戦を確定しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+  }
 }
 
 // ============================================================
