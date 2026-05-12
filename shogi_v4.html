@@ -3261,6 +3261,12 @@ function addPlayer(){
   inpName.focus();
   showMsg(name+'（'+cls+'クラス）を登録しました','ok');
   renderRegList();save();
+  // A-5.1-SAVE-002: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+  // false は「保存未確認」（保存失敗と断定しない）。追加は rollback しない・運営は継続する。
+  if(!verifyPlayerPersistedById(id,cls,name)){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-002: addPlayer の保存が確認できませんでした (player=' + id + ', cls=' + cls + ', name=' + name + ')');
+    showMsg('参加者は登録されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+  }
 }
 
 function removePlayer(id,cls){
@@ -3524,6 +3530,30 @@ function verifyPlayerAbsent(playerId,cls){
     return true;
   }catch(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-001: verifyPlayerAbsent failed',e);
+    return false;
+  }
+}
+
+// A-5.1-SAVE-002: shogi_v4 を再読込し、追加対象 player が指定 cls に存在し、name も一致することを検証。
+// 戻り値: true  = id + cls + name の3軸一致（= 追加が永続化された）
+//        false = 「保存未確認」（不在 / name 不一致 / 例外 / 構造不正 / 空 / parse 不可）
+// false は「保存失敗」と断定しない。呼出側は warn 表示のみで追加フローは継続する。
+// id を主軸にすることで、同姓同名の別 player による偽陽性を防ぐ。
+function verifyPlayerPersistedById(playerId,cls,expectedName){
+  if(typeof localStorage==='undefined')return false;
+  try{
+    var raw=localStorage.getItem(STORAGE_KEY);
+    if(typeof raw!=='string'||!raw)return false;
+    var parsed=JSON.parse(raw);
+    if(!parsed||!parsed.players)return false;
+    var arr=parsed.players[cls];
+    if(!Array.isArray(arr))return false;
+    for(var i=0;i<arr.length;i++){
+      if(arr[i]&&arr[i].id===playerId)return arr[i].name===expectedName;
+    }
+    return false;
+  }catch(e){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-002: verifyPlayerPersistedById failed',e);
     return false;
   }
 }
