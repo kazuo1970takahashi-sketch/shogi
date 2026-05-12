@@ -232,11 +232,43 @@ function getName(id,cls){
   return '(削除)';
 }
 
-// A-4 §7: entry_no は永続化せず配列 index+1 から都度算出する。
+// A-5.1 §11.8 (欠番維持): entry_no を player に永続化する。
+//   削除発生後も他参加者の番号を詰めない（再採番は現場混乱を招くため禁止）。
+//   旧 A-4 §7 の「配列 index+1 から都度算出」は normalizeState による
+//   legacy backfill 経由で互換維持し、新規採番は nextEntryNoForClass で
+//   max(entry_no)+1 を採る。entryNoOf は entry_no を優先し、未付与時は
+//   index+1 にフォールバック（安全網）。
 function entryNoOf(cls,id){
   var players=state.players[cls];
-  for(var i=0;i<players.length;i++){if(players[i].id===id)return ('00'+(i+1)).slice(-2);}
+  for(var i=0;i<players.length;i++){
+    if(players[i].id===id){
+      var en=players[i].entry_no;
+      if(typeof en==='number'&&en>0)return ('00'+en).slice(-2);
+      return ('00'+(i+1)).slice(-2);
+    }
+  }
   return '--';
+}
+
+// A-5.1 §11.8: 同一クラス内で次に採番すべき entry_no を返す。
+//   max(entry_no)+1 を採用し、削除発生で生まれた欠番は再利用しない。
+//   entry_no 未付与の legacy player があれば、その場で配列 index+1 を
+//   backfill する（既存表示と整合）。
+function nextEntryNoForClass(cls,stateObj){
+  var s=stateObj||state;
+  var players=(s&&s.players&&s.players[cls])||[];
+  var maxEntryNo=0;
+  for(var i=0;i<players.length;i++){
+    var p=players[i];
+    if(!p)continue;
+    var en=p.entry_no;
+    if(typeof en!=='number'||en<=0){
+      p.entry_no=i+1;
+      en=i+1;
+    }
+    if(en>maxEntryNo)maxEntryNo=en;
+  }
+  return maxEntryNo+1;
 }
 
 // A-4 §2: 「番号｜名前」の表示フォーマット。プレフィックス幅2桁ゼロ埋め。
@@ -322,6 +354,14 @@ function normalizeState(raw){
       };
       // 支部マスタとの紐付け（F2）。既存JSON（member_id 不在）は従来通り。
       if(p&&typeof p.member_id==='string'&&p.member_id)pp.member_id=p.member_id;
+      // A-5.1 §11.8: entry_no を永続化（欠番維持）。
+      //   保存済みの entry_no があればそれを使う。
+      //   legacy データ（entry_no 不在）は配列 index+1 で補完。
+      if(p&&typeof p.entry_no==='number'&&p.entry_no>0){
+        pp.entry_no=p.entry_no;
+      } else {
+        pp.entry_no=idx+1;
+      }
       return pp;
     }).filter(function(p){return p.name;});
 
@@ -1171,7 +1211,9 @@ function addPlayerFromMaster(memberId,cls,master,state){
     cls:cls,
     member:(member.member==='other')?'other':'member',
     grade:(member.grade==='chu')?'chu':'ippan',
-    member_id:member.id
+    member_id:member.id,
+    // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（欠番維持）
+    entry_no:nextEntryNoForClass(cls,state)
   };
   state.players[cls].push(player);
   return {success:true,player:player};
@@ -1198,6 +1240,10 @@ function changePlayerClass(memberId,newCls,master,state){
   if(oldCls===newCls)return {success:false,error:'same_class'};
   state.players[oldCls].splice(oldIdx,1);
   target.cls=newCls;
+  // A-5.1 §11.8: クラス移動先で新規 entry_no を採番。
+  //   旧クラスの entry_no は破棄（欠番として残す）。新クラス内では
+  //   max(entry_no)+1 を採る。
+  target.entry_no=nextEntryNoForClass(newCls,state);
   state.players[newCls].push(target);
   for(var mi=0;mi<master.members.length;mi++){
     if(master.members[mi]&&master.members[mi].id===memberId){
@@ -1785,7 +1831,8 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi){
     if(existingMids[m.id]||existingNames[m.name]){skipped++;continue;}
     var cls=(m.last_class==='A'||m.last_class==='B')?m.last_class:'A';
     var pid='p'+Date.now()+Math.floor(Math.random()*1000)+'_'+p;
-    state.players[cls].push({id:pid,name:m.name,cls:cls,member:'member',grade:'ippan',member_id:m.id});
+    // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（欠番維持）
+    state.players[cls].push({id:pid,name:m.name,cls:cls,member:'member',grade:'ippan',member_id:m.id,entry_no:nextEntryNoForClass(cls,state)});
     existingMids[m.id]=true;
     existingNames[m.name]=true;
     added++;
@@ -2814,8 +2861,9 @@ function makePlayerRow(p,cls,i){
 
   var num=document.createElement('span');
   // A-4 §2: 番号表示は 2 桁ゼロ埋めに統一（ペアリング・PDF と整合）
+  // A-5.1 §11.8: index ではなく entryNoOf 経由で entry_no を表示（欠番維持）
   num.style.cssText='color:#1F3864;font-size:12px;font-weight:bold;min-width:28px';
-  num.textContent=('00'+(i+1)).slice(-2);
+  num.textContent=entryNoOf(cls,p.id);
   mainDiv.appendChild(num);
 
   var name=document.createElement('span');
@@ -3177,6 +3225,8 @@ function addPlayer(){
   var id='p'+Date.now()+Math.floor(Math.random()*1000);
   var newPlayer={id:id,name:name,cls:cls,member:memberValue,grade:gradeValue};
   if(memberIdValue)newPlayer.member_id=memberIdValue;
+  // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（欠番維持）
+  newPlayer.entry_no=nextEntryNoForClass(cls,state);
   state.players[cls].push(newPlayer);
 
   // A-4 §3.1.4 + Should Fix 2: yomi のマスタ反映条件
@@ -3937,12 +3987,13 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
   var opts='';
   for(var i=0;i<candidates.length;i++){
     // A-4 §3 MF6-a: プルダウン表示も「番号｜名前」フォーマット
-    var optLabel=('00'+(i+1)).slice(-2)+'｜'+candidates[i].name;
+    // A-5.1 §11.8: 番号は entryNoOf 経由（欠番維持された entry_no を反映）
+    var optLabel=entryNoOf(cls,candidates[i].id)+'｜'+candidates[i].name;
     opts+='<option value="'+candidates[i].id+'"'+(candidates[i].id===match.p1?' selected':'')+'>'+escapeHtml(optLabel)+'</option>';
   }
   var opts2='';
   for(var i=0;i<candidates.length;i++){
-    var optLabel2=('00'+(i+1)).slice(-2)+'｜'+candidates[i].name;
+    var optLabel2=entryNoOf(cls,candidates[i].id)+'｜'+candidates[i].name;
     opts2+='<option value="'+candidates[i].id+'"'+(candidates[i].id===match.p2?' selected':'')+'>'+escapeHtml(optLabel2)+'</option>';
   }
   return '<div style="background:rgba(0,0,0,0.5);position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;display:flex;align-items:center;justify-content:center;" id="chg-modal">'
