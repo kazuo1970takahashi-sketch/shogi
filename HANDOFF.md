@@ -332,6 +332,29 @@ P1 修正後のパッケージを Codex に再レビュー依頼。
 
 新しい P1 相当の問題は検出されず。差分も `removePlayer` と `generatePairing` にほぼ閉じ、余計な挙動変更なしと評価された。Codex が指摘した疑問点（防御的堅牢性、アルゴリズムの割り切り）は本セクション末尾の「設計上の割り切り」に記録。
 
+### 2026-05-12〜13: A-5.1 保存安全化（SAVE-001 / 002 / 003）
+
+MASTER-001（PR #40）で確立した「保存後 re-read で検証」原則を、shogi_v4.html 内の他保存処理に **段階的に** 適用するフェーズ。SAVE-DESIGN-001 v0.1（PR #45）の保存処理棚卸しを起点に、Must スコープを 1 PR ずつ Codex レビューを通して投入。
+
+| Task ID | 対象 | PR | Squash SHA | 主な追加 |
+|---|---|---|---|---|
+| A-5.1-SAVE-001 | `removePlayer` の保存未確認検知 | #46 | `219d328` | `verifyPlayerAbsent(id, cls)` |
+| A-5.1-SAVE-002 | `addPlayer` の保存未確認検知 | #47 | `a19e193` | `verifyPlayerPersistedById(id, cls, name)`（id + cls + name 3 軸） |
+| A-5.1-SAVE-003 | 大会進行 core path 4 関数（`startTournament` / `generatePairing` / `setWinner` / `submitRound`） | #48 | `1e13ce1` | `readPersistedState()`（schema 検証付き）+ `pairingsMatchSnapshot()`（field-compare） |
+
+**共通方針（SAVE-DESIGN-001 §1.4 と整合）**:
+- 保存確認できない場合も「保存失敗」と断定せず「保存未確認」として `showMsg(.., 'warn')` + `console.warn`
+- alert / rollback / retry なし（現場停止リスク回避、運営は継続）
+- helper は保存対象別に分け、過剰な汎用化はしない
+- 1 PR を Must スコープに絞り、Should / Nice-to-Have は別 PR に分離
+
+**残タスク候補**:
+- A-5.1-SAVE-003b（参加者操作・手動編集系の Should 群）
+- A-5.1-SAVE-004（`generatePairing` の field-compare、SAVE-003 Codex Nice-to-Have 由来）
+- A-5.1-SAVE-UX（warn 集約・retry UI・文言短縮）
+
+**詳細**: `docs/notes/20260513_shogi_a5_1_save_completion_summary_v0.md`
+
 ---
 
 ## 6. 持ち越し項目(将来の改修候補)
