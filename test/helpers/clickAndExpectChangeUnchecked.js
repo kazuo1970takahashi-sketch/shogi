@@ -31,40 +31,17 @@ async function expectClickableUnchecked(locator) {
 
   // 段階 3 (handler 検出) は skip
 
-  // VISUAL-001: 再描画される要素（suggest list など）で
-  // elementHandle 取得直後に DOM が差し替わると getComputedStyle が空オブジェクトを返し
-  // parseFloat(cs.opacity) が NaN になる flaky を防ぐ。locator.evaluate で都度
-  // 再解決しつつ、opacity が数値化できるまで最大 5 秒ポーリングする。
-  let styles = null;
-  const stylesDeadline = Date.now() + 5000;
-  let lastErr = null;
-  while (Date.now() < stylesDeadline) {
-    try {
-      const candidate = await locator.evaluate((el) => {
-        const cs = getComputedStyle(el);
-        const op = parseFloat(cs.opacity);
-        if (Number.isNaN(op)) return null;
-        return {
-          pointerEvents: cs.pointerEvents,
-          opacity: op,
-          visibility: cs.visibility,
-          display: cs.display,
-          borderRadius: parseFloat(cs.borderTopLeftRadius || '0'),
-        };
-      });
-      if (candidate) { styles = candidate; break; }
-    } catch (e) {
-      lastErr = e;
-    }
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  if (!styles) {
-    throw new Error(
-      'expectClickableUnchecked: computed style did not stabilize within 5s' +
-        (lastErr ? ` (last error: ${lastErr.message})` : '')
-    );
-  }
   const handle = await locator.elementHandle();
+  const styles = await handle.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return {
+      pointerEvents: cs.pointerEvents,
+      opacity: parseFloat(cs.opacity),
+      visibility: cs.visibility,
+      display: cs.display,
+      borderRadius: parseFloat(cs.borderTopLeftRadius || '0'),
+    };
+  });
   expect(styles.pointerEvents, 'pointer-events: none').not.toBe('none');
   expect(styles.opacity, 'opacity 0.5 未満は不可').toBeGreaterThanOrEqual(0.5);
   expect(styles.visibility, 'visibility: hidden').not.toBe('hidden');
