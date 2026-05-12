@@ -11,7 +11,7 @@
 
 | Task ID | 内容 | Branch | PR | Status | Squash SHA | Codex | CI |
 |---|---|---|---|---|---|---|---|
-| A-5.1-SAVE-001 | 参加者削除時の保存未確認検知 | `feat/a5-1-save-001-remove-player-verify` | [#46](https://github.com/kazuo1970takahashi-sketch/shogi/pull/46) | Done / Merged | `219d328` | Pass | Unit / Security / E2E SUCCESS |
+| A-5.1-SAVE-001 | 参加者削除時の保存未確認検知 | `feat/a5-1-save-001-remove-player-verify` | [#46](https://github.com/kazuo1970takahashi-sketch/shogi/pull/46) | Done / Merged | `219d328e011824b38457a98a49ce65dcd9cdff00` | —（PR コメント・closing 記録に判定値の記載なし） | Unit / Security / E2E SUCCESS |
 | A-5.1-SAVE-002 | 参加者追加時の保存未確認検知 | `feat/a5-1-save-002-add-player-verify` | [#47](https://github.com/kazuo1970takahashi-sketch/shogi/pull/47) | Done / Merged | `a19e1934d0f927ba9737712e8ed15c48f165cf86` | B+ / Conditional Go（Must/Should なし） | Unit / Security / E2E SUCCESS |
 | A-5.1-SAVE-003 | 大会進行 core path の保存未確認検知 | `feat/a5-1-save-003-pairing-results-verify` | [#48](https://github.com/kazuo1970takahashi-sketch/shogi/pull/48) | Done / Merged | `1e13ce19c7e97dbf610eaea385c79b71a09075ed` | B+ / Conditional Go（Must/Should なし、再レビュー後） | Unit / Security / E2E SUCCESS |
 
