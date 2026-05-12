@@ -105,6 +105,7 @@ function loadEnv(path) {
      return {
        STORAGE_KEY:STORAGE_KEY,
        readPersistedState:readPersistedState,
+       pairingsMatchSnapshot:pairingsMatchSnapshot,
        startTournament:startTournament,
        generatePairing:generatePairing,
        setWinner:setWinner,
@@ -517,6 +518,200 @@ function makePlayer(id,name,cls,entryNo){
   assert(typeof env.generatePairing === 'function', '14-3 generatePairing がエクスポート可能');
   assert(typeof env.setWinner === 'function', '14-4 setWinner がエクスポート可能');
   assert(typeof env.submitRound === 'function', '14-5 submitRound がエクスポート可能');
+  // PR #48 Codex Should Fix: pairingsMatchSnapshot helper も追加
+  assert(typeof env.pairingsMatchSnapshot === 'function', '14-6 pairingsMatchSnapshot がエクスポート可能');
+}
+
+// ============================================================
+// 15. PR #48 Codex Must Fix: readPersistedState が state schema 不正 object を null にする
+// ============================================================
+{
+  const env = loadEnv(targetPath);
+  const STORAGE_KEY = env.STORAGE_KEY;
+  // 15-1: {started:true} のみは不正（players 構造なし）
+  env._ctx.localStorage._[STORAGE_KEY] = JSON.stringify({started:true});
+  assertEq(env.readPersistedState(), null, '15-1 {started:true} のみは null（players 欠落）');
+
+  // 15-2: players が非 object
+  env._ctx.localStorage._[STORAGE_KEY] = JSON.stringify({players:'not_object',pairings:{A:[],B:[]},results:{A:[],B:[]}});
+  assertEq(env.readPersistedState(), null, '15-2 players 非 object は null');
+
+  // 15-3: players.A が Array でない
+  env._ctx.localStorage._[STORAGE_KEY] = JSON.stringify({players:{A:'not_array',B:[]},pairings:{A:[],B:[]},results:{A:[],B:[]}});
+  assertEq(env.readPersistedState(), null, '15-3 players.A 非 Array は null');
+
+  // 15-4: players.B が Array でない
+  env._ctx.localStorage._[STORAGE_KEY] = JSON.stringify({players:{A:[],B:null},pairings:{A:[],B:[]},results:{A:[],B:[]}});
+  assertEq(env.readPersistedState(), null, '15-4 players.B 非 Array は null');
+
+  // 15-5: pairings が非 object
+  env._ctx.localStorage._[STORAGE_KEY] = JSON.stringify({players:{A:[],B:[]},pairings:'not_object',results:{A:[],B:[]}});
+  assertEq(env.readPersistedState(), null, '15-5 pairings 非 object は null');
+
+  // 15-6: pairings.A が Array でない
+  env._ctx.localStorage._[STORAGE_KEY] = JSON.stringify({players:{A:[],B:[]},pairings:{A:'x',B:[]},results:{A:[],B:[]}});
+  assertEq(env.readPersistedState(), null, '15-6 pairings.A 非 Array は null');
+
+  // 15-7: pairings.B が Array でない
+  env._ctx.localStorage._[STORAGE_KEY] = JSON.stringify({players:{A:[],B:[]},pairings:{A:[],B:42},results:{A:[],B:[]}});
+  assertEq(env.readPersistedState(), null, '15-7 pairings.B 非 Array は null');
+
+  // 15-8: results が非 object
+  env._ctx.localStorage._[STORAGE_KEY] = JSON.stringify({players:{A:[],B:[]},pairings:{A:[],B:[]},results:'not_object'});
+  assertEq(env.readPersistedState(), null, '15-8 results 非 object は null');
+
+  // 15-9: results.A が Array でない
+  env._ctx.localStorage._[STORAGE_KEY] = JSON.stringify({players:{A:[],B:[]},pairings:{A:[],B:[]},results:{A:'x',B:[]}});
+  assertEq(env.readPersistedState(), null, '15-9 results.A 非 Array は null');
+
+  // 15-10: results.B が Array でない
+  env._ctx.localStorage._[STORAGE_KEY] = JSON.stringify({players:{A:[],B:[]},pairings:{A:[],B:[]},results:{A:[],B:false}});
+  assertEq(env.readPersistedState(), null, '15-10 results.B 非 Array は null');
+
+  // 15-11: 全フィールド OK は state を返す（最低限 schema を満たせば null にしない）
+  env._ctx.localStorage._[STORAGE_KEY] = JSON.stringify({players:{A:[],B:[]},pairings:{A:[],B:[]},results:{A:[],B:[]},started:false});
+  const got = env.readPersistedState();
+  assert(got !== null, '15-11 最低限 schema を満たす object は state を返す');
+  assertEq(got && got.started, false, '15-12 戻り値が parsed 内容を保持');
+}
+
+// ============================================================
+// 16. PR #48 Codex Must Fix: startTournament false positive 防止
+//     localStorage に {started:true} のような壊れた object が残っていても、
+//     schema 不正で readPersistedState が null を返すため warn が出ること。
+// ============================================================
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState();
+  s.players.A = [makePlayer('p1','田中','A',1), makePlayer('p2','佐藤','A',2)];
+  env._setState(s);
+
+  // 壊れた state を pre-populate（started=true だが players/pairings/results 欠落）
+  env._ctx.localStorage._[env.STORAGE_KEY] = JSON.stringify({started:true});
+  // 以降の setItem を失敗させて、startTournament の save() を空振りに
+  env._ctx.localStorage._failOnSet = true;
+
+  env.startTournament();
+
+  // localStorage は依然として壊れた state（更新失敗）
+  assertEq(env.readPersistedState(), null, '16-1 localStorage は schema 不正で null');
+  // 旧実装（schema 検証なし）なら persisted_st.started===true で false negative。
+  // 新実装は readPersistedState が null を返すため warn が出る。
+  assert(env._regMsgHtml().indexOf('alert-warn') !== -1, '16-2 startTournament で warn 表示（false positive 防止）');
+  const warnText = env._warnCalls.join('\n');
+  assert(warnText.indexOf('SAVE-003') !== -1, '16-3 console.warn に SAVE-003 タグ');
+  assert(warnText.indexOf('startTournament') !== -1, '16-4 console.warn に startTournament を含む');
+  assertEq(env._alertCalls.length, 0, '16-5 alert は呼ばれない');
+}
+
+// ============================================================
+// 17. PR #48 Codex Should Fix: submitRound の pairings stale 検知
+//     length は同じ 1 だが中身が異なる stale pairings が localStorage に残っている場合、
+//     pairingsMatchSnapshot の field-compare で warn が出ること。
+// ============================================================
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState(2);
+  s.players.A = [makePlayer('p1','田中','A',1), makePlayer('p2','佐藤','A',2)];
+  s.started = true;
+  s.pairings.A = [{p1:'p1',p2:'p2',winner:'p1',lastModifiedBy:'auto'}];
+  env._setState(s);
+  env.save();
+
+  // localStorage を「同件数だが中身が異なる stale」で上書き:
+  //   results.A は 1 件（length 一致でも results.length チェックを通すため pre-fill）
+  //   pairings.A は 1 件で内容が完全に異なる
+  env._ctx.localStorage._[env.STORAGE_KEY] = JSON.stringify({
+    players: { A: s.players.A, B: [] },
+    rounds: 2,
+    started: true,
+    pairings: { A: [{p1:'staleX',p2:'staleY',winner:null,lastModifiedBy:'auto'}], B: [] },
+    results: { A: [{p1:'r1px',p2:'r1py',winner:'r1px',lastModifiedBy:'auto'}], B: [] },
+    report: {date:'',place:'',start:'',end:'',sei:'',fuku:'',note:''}
+  });
+  env._ctx.localStorage._failOnSet = true;
+
+  env.submitRound('A');
+
+  // in-memory は反映: results.A=[match1 snapshot]、pairings.A=[新ペア（generatePairing 内部）]
+  const after = env._getState();
+  assertEq(after.results.A.length, 1, '17-1 in-memory: results.A 件数 = 1');
+  assertEq(after.pairings.A.length, 1, '17-2 in-memory: pairings.A 件数 = 1（rounds=2 で再生成）');
+
+  // localStorage は stale のまま:
+  //   results.A.length は 1（in-memory と一致）
+  //   pairings.A.length も 1（in-memory と一致）→ 旧 length-only check ならすり抜ける
+  const persisted = env.readPersistedState();
+  assertEq(persisted && persisted.results.A.length, 1, '17-3 localStorage: results.A 件数 = 1（stale）');
+  assertEq(persisted && persisted.pairings.A.length, 1, '17-4 localStorage: pairings.A 件数 = 1（stale 内容）');
+  // pairingsMatchSnapshot は中身を見て不一致を検出
+  assertEq(env.pairingsMatchSnapshot(persisted.pairings.A, after.pairings.A), false, '17-5 pairingsMatchSnapshot で stale 検知');
+
+  // warn 表示（field-compare による検知）
+  assert(env._regMsgHtml().indexOf('alert-warn') !== -1, '17-6 stale pairings 検知で showMsg(.., warn)');
+  const warnText = env._warnCalls.join('\n');
+  assert(warnText.indexOf('SAVE-003') !== -1, '17-7 console.warn に SAVE-003 タグ');
+  assert(warnText.indexOf('submitRound') !== -1, '17-8 console.warn に submitRound を含む');
+  assertEq(env._alertCalls.length, 0, '17-9 alert は呼ばれない');
+}
+
+// ============================================================
+// 18. pairingsMatchSnapshot helper 単体: field-compare の挙動確認
+// ============================================================
+{
+  const env = loadEnv(targetPath);
+  // 完全一致
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'}],
+    [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'}]
+  ), true, '18-1 完全一致は true');
+
+  // p1 不一致
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'X',p2:'b',winner:null,lastModifiedBy:'auto'}],
+    [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'}]
+  ), false, '18-2 p1 不一致は false');
+
+  // p2 不一致
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'a',p2:'Y',winner:null,lastModifiedBy:'auto'}],
+    [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'}]
+  ), false, '18-3 p2 不一致は false');
+
+  // winner 不一致
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'a',p2:'b',winner:'a',lastModifiedBy:'auto'}],
+    [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'}]
+  ), false, '18-4 winner 不一致は false');
+
+  // length 不一致
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'}],
+    []
+  ), false, '18-5 length 不一致は false');
+
+  // 両側空は true（length 0 == 0）
+  assertEq(env.pairingsMatchSnapshot([], []), true, '18-6 両側空は true');
+
+  // 非 Array は false
+  assertEq(env.pairingsMatchSnapshot(null, []), false, '18-7 persisted null は false');
+  assertEq(env.pairingsMatchSnapshot([], null), false, '18-8 expected null は false');
+
+  // lastModifiedBy が片側のみ → 容認（既存データ互換）
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'a',p2:'b',winner:null}],
+    [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'}]
+  ), true, '18-9 lastModifiedBy 片側欠損は容認（true）');
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'}],
+    [{p1:'a',p2:'b',winner:null}]
+  ), true, '18-10 expected 側欠損も容認（true）');
+
+  // 両側に lastModifiedBy があり値が違う → false
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'a',p2:'b',winner:null,lastModifiedBy:'manual'}],
+    [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'}]
+  ), false, '18-11 両側 lastModifiedBy 不一致は false');
 }
 
 // ============================================================
