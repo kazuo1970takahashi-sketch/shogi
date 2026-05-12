@@ -249,12 +249,17 @@ function verifyPlayerAbsent(playerId, cls) -> boolean
 
 ## 5. 推奨順序（v0.1 で更新）
 
-| 段階 | 内容 | 対応 callsite |
-|---|---|---|
-| **A-5.1-SAVE-001** | 大会データ保存の verify（**削除 1 件のみ**） | S10（removePlayer） |
-| A-5.1-SAVE-002 | 大会データ保存の verify（state 追加・編集・確定系） | S01（addPlayer）/ S02（過去参加者パネル経路 state）/ S04（サジェスト経路 state）/ S07（過去参加者一括追加 state）/ S08（updateField）/ S11（bulkEditNames）/ S17（changePairing）/ S18（submitRound）/ S19（editPastResult）/ S14（startTournament） |
-| A-5.1-SAVE-003 | 会員マスタ保存の verify + setWinner（V2 拡張 + silent verify 仕様確定後） | S03 / S05（クラス変更時 master）/ S06 / S09（yomi 補完）/ S22（master edit, V2 拡張）/ S23（delete）/ S24（restore）/ **S16（setWinner、silent verify と閾値仕様確定後）** |
-| A-5.1-SAVE-FUTURE | バッチ系・I/O 系・report 系・2 段保存 | S15（generatePairing）/ S20（bindReportEvents、debounce 化検討）/ S21（applyLoadedJson）/ S25（reset）/ S26 / S27 / S28 / S29（import / migration）/ S30（syncBranchMasterOnSave 部分）/ clipboard / file 系の「verify 対象を別仕様で定義する」検討 |
+> **2026-05-13 追記**: SAVE-001 / 002 / 003 はマージ完了。実装スコープは v0.1 計画より狭く着地している（SAVE-002 = S01 のみ、SAVE-003 = 大会進行 core path 4 関数に再定義）。実装結果サマリと残タスク候補は [`20260513_shogi_a5_1_save_completion_summary_v0.md`](20260513_shogi_a5_1_save_completion_summary_v0.md) を参照。
+
+| 段階 | 内容 | 対応 callsite | ステータス |
+|---|---|---|---|
+| **A-5.1-SAVE-001** | 大会データ保存の verify（**削除 1 件のみ**） | S10（removePlayer） | ✅ Done / Merged（PR #46） |
+| A-5.1-SAVE-002 | 大会データ保存の verify（state 追加・編集・確定系） | S01（addPlayer）/ S02（過去参加者パネル経路 state）/ S04（サジェスト経路 state）/ S07（過去参加者一括追加 state）/ S08（updateField）/ S11（bulkEditNames）/ S17（changePairing）/ S18（submitRound）/ S19（editPastResult）/ S14（startTournament） | 🟡 一部完了。実装は **S01 のみ**（PR #47 マージ）。残（S02 / S04 / S07 / S08 / S11 / S17 / S18 / S19 / S14）は SAVE-003 / SAVE-003b に再分配 |
+| A-5.1-SAVE-003 | 会員マスタ保存の verify + setWinner（V2 拡張 + silent verify 仕様確定後） | S03 / S05（クラス変更時 master）/ S06 / S09（yomi 補完）/ S22（master edit, V2 拡張）/ S23（delete）/ S24（restore）/ **S16（setWinner、silent verify と閾値仕様確定後）** | 🟡 **再定義のうえ部分完了**。実装は「大会進行 core path Must 4 関数」（S14 / S15 / S16 / S18）に再定義（PR #48 マージ）。会員マスタ系（S03 / S05 / S06 / S09 / S22 / S23 / S24）は後続検討に送り |
+| **A-5.1-SAVE-003b**（追加） | 参加者操作・手動編集系（受付・編集 Should 群） | S02 / S04 / S07 / S08 / S17 / S19 | 🔲 未着手。SAVE-002 / SAVE-003 計画から繰越し |
+| **A-5.1-SAVE-004**（追加） | `generatePairing(cls)` の簡易シグネチャ比較 | S15 | 🔲 未着手。SAVE-003 Codex Nice-to-Have 由来 |
+| **A-5.1-SAVE-UX**（追加） | warn 集約・retry UI・文言短縮 | 全 SAVE 系横断 | 🔲 未着手。§1.4「後続タスクに切り出す UI 仕様」と整合 |
+| A-5.1-SAVE-FUTURE | バッチ系・I/O 系・report 系・2 段保存 | S20（bindReportEvents、debounce 化検討）/ S21（applyLoadedJson）/ S25（reset）/ S26 / S27 / S28 / S29（import / migration）/ S30（syncBranchMasterOnSave 部分）/ S11（bulkEditNames、バッチ verify）/ clipboard / file 系の「verify 対象を別仕様で定義する」検討 | 🔲 未着手 |
 
 ---
 
@@ -341,6 +346,7 @@ Claude Code 側で判断できないため、髙橋さん・ChatGPT 司令塔に
 |---|---|
 | 2026-05-12 | v0 作成。A-5.1 Stage 1 の保存処理棚卸しとして作成。 |
 | 2026-05-13 | v0.1 Codexレビュー Must Fix / Should Fix 反映。存在しない関数名・callsite漏れを修正し、A-5.1-SAVE-001 を removePlayer 1件に絞る方針へ更新。 |
+| 2026-05-13 | §5「推奨順序」に SAVE-001 / 002 / 003 のマージ完了ステータスと、後続タスク候補（SAVE-003b / SAVE-004 / SAVE-UX）を追記。実装結果サマリは [`20260513_shogi_a5_1_save_completion_summary_v0.md`](20260513_shogi_a5_1_save_completion_summary_v0.md) に分離。 |
 
 ---
 
