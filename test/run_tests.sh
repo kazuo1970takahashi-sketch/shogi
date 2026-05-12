@@ -329,6 +329,22 @@ else
 fi
 
 # ============================================
+# MASTER-001 参加者名修正時の会員マスタ反映 単体テスト
+# ============================================
+echo ""
+echo "【MASTER-001 参加者名修正時の会員マスタ反映】"
+if [ -f "$SCRIPT_DIR/test_master_001.js" ]; then
+  if node "$SCRIPT_DIR/test_master_001.js" "$TARGET" > /tmp/master_001_out.log 2>&1; then
+    ok "MASTER-001 単体テスト 全PASS ($(tail -1 /tmp/master_001_out.log))"
+  else
+    ng "MASTER-001 単体テスト 失敗"
+    cat /tmp/master_001_out.log
+  fi
+else
+  warn "test_master_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
