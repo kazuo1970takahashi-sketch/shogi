@@ -26,6 +26,31 @@ async function setupWithMaster(page, master) {
   await page.goto('/shogi_v4.html');
 }
 
+// TEST-001 follow-up: サジェスト選択用の spec-local helper。
+//
+// 初回 push (commit 6b55f92) で `page.locator('#suggest-list .suggest-item').first().waitFor`
+// を追加したが、PR #44 の CI run [25737796580] で line 92 テストの 2回目の suggest 選択が
+// 両 project で依然 flaky (5s `expect.toBeVisible` timeout / element(s) not found / list が 5s 空)。
+// `page.fill('#inp-name', ...)` 直後に list の `.suggest-item` が一瞬出てから消える挙動を観測したため、
+// 以下 2 段構えで根治する:
+//
+//   案A: `.first()` 依存をやめ、期待テキスト (例: '山田太郎') を含む `.suggest-item` を locator で特定し、
+//        `expect(candidate).toBeVisible({ timeout: 10000 })` で auto-retry 待機する。
+//   案B: クリック直前に `#inp-name` に input イベントを再 dispatch して `updateSuggestList()` を強制再実行し、
+//        万一 stale な closeSuggestList などで list が閉じていた場合でも再描画させる。
+//
+// helper 引数の `expectedChange` はそのまま `clickAndExpectChangeUnchecked` に渡す
+// (Stage 2a/2b の primary assertion 要件を spec 側で維持するため)。
+async function clickSuggestItem(page, expectedText, expectedChange) {
+  const candidate = page.locator('#suggest-list .suggest-item').filter({ hasText: expectedText });
+  // 案B: list を強制再描画 (input 再 dispatch は `updateSuggestList()` を呼び直す)
+  await page.locator('#inp-name').dispatchEvent('input');
+  // 案A: 期待テキストを持つ候補の可視を auto-retry 待機
+  await expect(candidate).toBeVisible({ timeout: 10000 });
+  // .suggest-item は addEventListener('mousedown') 経由 → Unchecked、子の .si-info を click
+  await clickAndExpectChangeUnchecked(candidate.locator('.si-info'), expectedChange);
+}
+
 // ============================================================
 // Stage 1: 登録画面ふりがな入力欄（UIのみ・手動入力）
 // ============================================================
@@ -76,18 +101,11 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
 
   test('サジェスト選択時：マスタの yomi がふりがな欄に反映される', async ({ page }) => {
     await page.fill('#inp-name', '山田');
-    // TEST-001: CI 負荷下で suggest-list の描画完了前に click が始まると flaky 化するため、
-    // 親 .suggest-item の可視を明示的に待ってから子の .si-info を click する。
-    await page.locator('#suggest-list .suggest-item').first().waitFor({ state: 'visible' });
-    // .suggest-item は addEventListener('mousedown') 経由 → Unchecked、子の .si-info を click
-    await clickAndExpectChangeUnchecked(
-      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
-      async (before, after, ctx) => {
-        ctx.primary('no player added (form-only update)');
-        expect(after.state.players.A.length).toBe(before.state.players.A.length);
-        expect(after.state.players.B.length).toBe(before.state.players.B.length);
-      }
-    );
+    await clickSuggestItem(page, '山田太郎', async (before, after, ctx) => {
+      ctx.primary('no player added (form-only update)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      expect(after.state.players.B.length).toBe(before.state.players.B.length);
+    });
     await expect(page.locator('#inp-name')).toHaveValue('山田太郎');
     await expect(page.locator('#inp-yomi')).toHaveValue('やまだたろう');
   });
@@ -95,17 +113,11 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
   test('サジェスト由来：マスタ yomi が空のときのみ手入力した値で補完（既存値は上書きしない）', async ({ page }) => {
     // 山本花子（マスタ yomi が空）に手入力で補完
     await page.fill('#inp-name', '山本');
-    // TEST-001: CI 負荷下で suggest-list の描画完了前に click が始まると flaky 化するため、
-    // 親 .suggest-item の可視を明示的に待ってから子の .si-info を click する。
-    await page.locator('#suggest-list .suggest-item').first().waitFor({ state: 'visible' });
-    await clickAndExpectChangeUnchecked(
-      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
-      async (before, after, ctx) => {
-        ctx.primary('no player added (form-only update)');
-        expect(after.state.players.A.length).toBe(before.state.players.A.length);
-        expect(after.state.players.B.length).toBe(before.state.players.B.length);
-      }
-    );
+    await clickSuggestItem(page, '山本花子', async (before, after, ctx) => {
+      ctx.primary('no player added (form-only update)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      expect(after.state.players.B.length).toBe(before.state.players.B.length);
+    });
     await expect(page.locator('#inp-name')).toHaveValue('山本花子');
     await expect(page.locator('#inp-yomi')).toHaveValue('');
     await page.fill('#inp-yomi', 'やまもとはなこ');
@@ -117,16 +129,11 @@ test.describe('A-4 Stage 1: 登録画面ふりがな入力欄', () => {
 
     // 山田太郎（マスタ yomi 既存）に違う yomi を手入力 → 上書きしないこと
     await page.fill('#inp-name', '山田');
-    // TEST-001: 同上、2回目の suggest 選択でも明示的に可視待機する。
-    await page.locator('#suggest-list .suggest-item').first().waitFor({ state: 'visible' });
-    await clickAndExpectChangeUnchecked(
-      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
-      async (before, after, ctx) => {
-        ctx.primary('no player added (form-only update)');
-        expect(after.state.players.A.length).toBe(before.state.players.A.length);
-        expect(after.state.players.B.length).toBe(before.state.players.B.length);
-      }
-    );
+    await clickSuggestItem(page, '山田太郎', async (before, after, ctx) => {
+      ctx.primary('no player added (form-only update)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      expect(after.state.players.B.length).toBe(before.state.players.B.length);
+    });
     await expect(page.locator('#inp-yomi')).toHaveValue('やまだたろう');
     await page.fill('#inp-yomi', 'まちがいよみ');
     await clickAndExpectChange(page.locator('#addBtn'), shogiAssertions.participantAdded('A'));
@@ -257,17 +264,11 @@ test.describe('A-4 Stage 2: IME 自動取得', () => {
   test('サジェスト選択後にふりがな欄を手動修正 → 修正後 yomi がマスタに反映される', async ({ page }) => {
     // 山本花子（マスタ yomi 空）を選択
     await page.fill('#inp-name', '山本');
-    // TEST-001: CI 負荷下で suggest-list の描画完了前に click が始まると flaky 化するため、
-    // 親 .suggest-item の可視を明示的に待ってから子の .si-info を click する。
-    await page.locator('#suggest-list .suggest-item').first().waitFor({ state: 'visible' });
-    await clickAndExpectChangeUnchecked(
-      page.locator('#suggest-list .suggest-item').first().locator('.si-info'),
-      async (before, after, ctx) => {
-        ctx.primary('no player added (form-only update)');
-        expect(after.state.players.A.length).toBe(before.state.players.A.length);
-        expect(after.state.players.B.length).toBe(before.state.players.B.length);
-      }
-    );
+    await clickSuggestItem(page, '山本花子', async (before, after, ctx) => {
+      ctx.primary('no player added (form-only update)');
+      expect(after.state.players.A.length).toBe(before.state.players.A.length);
+      expect(after.state.players.B.length).toBe(before.state.players.B.length);
+    });
     // ふりがな欄を手動編集（_yomiManuallyEdited=true になる）
     await page.fill('#inp-yomi', 'やまもとはなこ');
     // 山本花子 last_class='B' → B クラスに追加
