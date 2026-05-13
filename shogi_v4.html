@@ -1675,6 +1675,15 @@ function handlePastParticipantClassAdd(memberId,cls){
     var r2=changePlayerClass(memberId,cls,master,state);
     if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');return;}
     saveBranchMaster(master);
+    // MASTER-V2-LASTCLASS S03: 既登録者クラス変更分岐限定の master.last_class 保存検証。
+    // changePlayerClass が master.members[i].last_class を新クラスに更新済み（line 1250）。
+    // saveBranchMaster は例外を握り潰すため、localStorage を再読込して検証する。
+    // 新規追加分岐（addPlayerFromMaster 側）では master を更新しないため、ここに verify を入れない。
+    if(!verifyMasterFieldPersisted(memberId,'last_class',cls)){
+      if(typeof console!=='undefined'&&console.warn){
+        console.warn('[MASTER-V2-LASTCLASS] S03 last_class verify failed',{memberId:memberId,expected:cls});
+      }
+    }
     renderRegList();save();
     var searchInp2=document.getElementById('pp-search');
     renderPastParticipantsPanel(searchInp2?searchInp2.value:'');
@@ -2494,7 +2503,32 @@ function bindMasterEditModalEvents(){
       }
       return;
     }
+    // MASTER-V2-LASTCLASS S22: expected はフォーム生値ではなく applyMasterMemberEdit 適用後の
+    // in-memory master.members[i] の正規化済み値から取得する。city は normalizeCity（trim /
+    // 最大 20 文字）で正規化されているため、フォーム生値を expected にすると false negative になる。
+    var verifyTarget_s22=null;
+    for(var vi_s22=0;vi_s22<master.members.length;vi_s22++){
+      if(master.members[vi_s22]&&master.members[vi_s22].id===memberId){verifyTarget_s22=master.members[vi_s22];break;}
+    }
     saveBranchMaster(master);
+    // saveBranchMaster は例外を握り潰すため、4 fields を localStorage 再読込で検証する。
+    // 1 field 不一致ごとに console.warn を 1 行。rollback / alert / retry なし。
+    if(verifyTarget_s22){
+      var checks_s22=[
+        ['last_class',verifyTarget_s22.last_class],
+        ['member',verifyTarget_s22.member],
+        ['grade',verifyTarget_s22.grade],
+        ['city',verifyTarget_s22.city]
+      ];
+      for(var ci_s22=0;ci_s22<checks_s22.length;ci_s22++){
+        var fname_s22=checks_s22[ci_s22][0],fexp_s22=checks_s22[ci_s22][1];
+        if(!verifyMasterFieldPersisted(memberId,fname_s22,fexp_s22)){
+          if(typeof console!=='undefined'&&console.warn){
+            console.warn('[MASTER-V2-LASTCLASS] S22 verify failed',{memberId:memberId,field:fname_s22,expected:fexp_s22});
+          }
+        }
+      }
+    }
     var modalEl=document.getElementById('master-edit-modal');if(modalEl)modalEl.remove();
     var msg='マスタを更新しました';
     if(result.duplicateCount>0){
@@ -3144,6 +3178,15 @@ function handleSuggestClassAdd(memberId,cls){
     var r2=changePlayerClass(memberId,cls,master,state);
     if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');return;}
     saveBranchMaster(master);
+    // MASTER-V2-LASTCLASS S05: 既登録者クラス変更分岐限定の master.last_class 保存検証。
+    // changePlayerClass が master.members[i].last_class を新クラスに更新済み（line 1250）。
+    // saveBranchMaster は例外を握り潰すため、localStorage を再読込して検証する。
+    // 新規追加分岐（addPlayerFromMaster 側）では master を更新しないため、ここに verify を入れない。
+    if(!verifyMasterFieldPersisted(memberId,'last_class',cls)){
+      if(typeof console!=='undefined'&&console.warn){
+        console.warn('[MASTER-V2-LASTCLASS] S05 last_class verify failed',{memberId:memberId,expected:cls});
+      }
+    }
     postSuccess('['+memberName+'] を '+cls+'クラス に変更しました',r2.player.id,cls,r2.player.name,'クラスを変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください');
     return;
   }
@@ -3683,6 +3726,56 @@ function verifyPlayerFieldPersisted(cls,playerId,field,expected){
     return false;
   }catch(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: verifyPlayerFieldPersisted failed',e);
+    return false;
+  }
+}
+
+// MASTER-V2-LASTCLASS: master member の任意の許可フィールドが localStorage 上で
+// expected と一致するかを検証する。verifyMasterPersisted（name 専用）の field 汎用版。
+// normalizeBranchMaster は通さず raw JSON を直接検証する（保存された実データそのもの
+// を確認するため、normalize による補正値で false negative を作らない）。
+//
+// 戻り値: true  = persisted の member[field] が expected と一致
+//        false = 不一致 / member 不在 / schema 不正 / JSON 不正 / 例外 / 不許可 field
+//
+// 引数:
+//   memberId : master member 側の id（= player.member_id に格納される値）
+//   field    : ALLOWED_FIELDS 内のキー
+//   expected : last_class は 'A' / 'B' / null、member / grade / city は文字列
+//
+// 注意（callsite 向け）:
+//   - expected はフォーム生値ではなく applyMasterMemberEdit / changePlayerClass 適用後の
+//     in-memory master.members[i] の正規化済み値から取る（city の normalizeCity による
+//     trim / 20 文字丸めで false negative を避けるため）。詳細は SAVE-DESIGN-001 v0.1 を
+//     拡張した MASTER-V2-LASTCLASS 設計書 §7.3 参照。
+//   - helper 内で console.warn しない。warn は callsite 側で SXX タグ付きに出す。
+var MASTER_V2_VERIFIABLE_FIELDS={last_class:true,member:true,grade:true,city:true};
+function verifyMasterFieldPersisted(memberId,field,expected){
+  if(typeof localStorage==='undefined')return false;
+  if(typeof memberId!=='string'||!memberId)return false;
+  if(typeof field!=='string'||!Object.prototype.hasOwnProperty.call(MASTER_V2_VERIFIABLE_FIELDS,field))return false;
+  try{
+    var raw=localStorage.getItem(BRANCH_MASTER_KEY);
+    if(typeof raw!=='string'||!raw)return false;
+    var parsed=JSON.parse(raw);
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return false;
+    if(parsed.schema_version!==1)return false;
+    if(!Array.isArray(parsed.members))return false;
+    var found=null;
+    for(var i=0;i<parsed.members.length;i++){
+      var m=parsed.members[i];
+      if(m&&typeof m==='object'&&m.id===memberId){found=m;break;}
+    }
+    if(!found)return false;
+    var actual=found[field];
+    if(field==='last_class'){
+      // 'A' / 'B' / null の三値。raw 側に key 不在で undefined になるケースは null と同一視。
+      var ea=(expected===null||typeof expected==='undefined')?null:expected;
+      var aa=(actual===null||typeof actual==='undefined')?null:actual;
+      return ea===aa;
+    }
+    return actual===expected;
+  }catch(e){
     return false;
   }
 }

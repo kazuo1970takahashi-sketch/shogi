@@ -457,6 +457,22 @@ else
 fi
 
 # ============================================
+# MASTER-V2-LASTCLASS 保存後 re-read verify 単体テスト
+# ============================================
+echo ""
+echo "【MASTER-V2-LASTCLASS 保存後 re-read verify】"
+if [ -f "$SCRIPT_DIR/test_master_v2_lastclass.js" ]; then
+  if node "$SCRIPT_DIR/test_master_v2_lastclass.js" "$TARGET" > /tmp/master_v2_lastclass_out.log 2>&1; then
+    ok "MASTER-V2-LASTCLASS 単体テスト 全PASS ($(tail -1 /tmp/master_v2_lastclass_out.log))"
+  else
+    ng "MASTER-V2-LASTCLASS 単体テスト 失敗"
+    cat /tmp/master_v2_lastclass_out.log
+  fi
+else
+  warn "test_master_v2_lastclass.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
