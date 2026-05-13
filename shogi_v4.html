@@ -2519,7 +2519,10 @@ function bindMasterEditModalEvents(){
     }
     saveBranchMaster(master);
     // saveBranchMaster は例外を握り潰すため、4 fields を localStorage 再読込で検証する。
-    // 1 field 不一致ごとに console.warn を 1 行。rollback / alert / retry なし。
+    // 1 field 不一致ごとに console.warn を 1 行（field 別、後追いデバッグ用）。
+    // SAVE-UX-MIN-NOTIFY-002: user-facing showMsg は 1 件集約のため、verify 結果を s22MasterVerifyOk
+    // 変数に集約する。rollback / alert / retry なし。
+    var s22MasterVerifyOk=true;
     if(verifyTarget_s22){
       var checks_s22=[
         ['last_class',verifyTarget_s22.last_class],
@@ -2533,15 +2536,27 @@ function bindMasterEditModalEvents(){
           if(typeof console!=='undefined'&&console.warn){
             console.warn('[MASTER-V2-LASTCLASS] S22 verify failed',{memberId:memberId,field:fname_s22,expected:fexp_s22});
           }
+          s22MasterVerifyOk=false;
         }
       }
     }
     var modalEl=document.getElementById('master-edit-modal');if(modalEl)modalEl.remove();
-    var msg='マスタを更新しました';
-    if(result.duplicateCount>0){
-      msg+='（同名 '+result.duplicateCount+'件あり：自動統合しません）';
+    // SAVE-UX-DESIGN Level 1 / SAVE-UX-MIN-NOTIFY-002: master verify 失敗時は user-facing
+    // 表示を warn に集約する。success showMsg('マスタを更新しました', ...) で上書きしない
+    // （PR #63 と同パターン）。詳細は docs/specs/20260513_shogi_save_ux_design.md
+    if(typeof showMsg==='function'){
+      if(s22MasterVerifyOk){
+        var msg='マスタを更新しました';
+        if(result.duplicateCount>0){
+          msg+='（同名 '+result.duplicateCount+'件あり：自動統合しません）';
+        }
+        showMsg(msg,result.duplicateCount>0?'warn':'ok');
+      } else {
+        // user-facing は 1 件集約。field 別の詳細は console.warn 側に残す。
+        // duplicate 警告は verify failure を優先するため出さない。
+        showMsg('会員マスタ情報の保存が確認できませんでした','warn');
+      }
     }
-    if(typeof showMsg==='function')showMsg(msg,result.duplicateCount>0?'warn':'ok');
     renderMasterTab();
     // A-4.5 §2.7 (bug fix #7): F7 保存後に過去参加者パネルを再描画(リロード不要で「前回:Xクラス」表示が即更新)
     if(typeof renderPastParticipantsPanel==='function'){
