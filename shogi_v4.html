@@ -4939,15 +4939,34 @@ function isSameDisplayedRank(a,b,cls){
 
 // RANK-TIE-001: ソート済 finals から表示順位を算出する（欠番方式）。
 //   - 先頭は 1 位
-//   - 直前と isSameDisplayedRank なら同順位
-//   - 同点でなければ index+1（タイ後は欠番: 12,12,14）
+//   - 現在の同順位グループ「全員」と isSameDisplayedRank が成立する場合のみ同順位
+//   - 1 人でも不成立なら新順位 = index+1（タイ後は欠番: 12,12,14）
+//   - 直前 1 行だけと比較してはいけない: A/B/C 同点でも直接対決があれば
+//     非隣接（X→Y→Z で X-Z 直接対決決着）の透過的な同順位化を防ぐ必要があるため。
 //   - 表示順位は保存しない。毎回計算する（保存データ構造は不変）。
 function computeDisplayRanks(finals,cls){
   var ranks=[];
+  var currentRank=1;
+  var currentGroup=[];
   for(var i=0;i<finals.length;i++){
-    if(i===0){ranks.push(1);continue;}
-    if(isSameDisplayedRank(finals[i-1],finals[i],cls))ranks.push(ranks[i-1]);
-    else ranks.push(i+1);
+    var row=finals[i];
+    if(i===0){
+      ranks.push(1);
+      currentGroup=[row];
+      continue;
+    }
+    var sameAsGroup=true;
+    for(var g=0;g<currentGroup.length;g++){
+      if(!isSameDisplayedRank(currentGroup[g],row,cls)){sameAsGroup=false;break;}
+    }
+    if(sameAsGroup){
+      ranks.push(currentRank);
+      currentGroup.push(row);
+    }else{
+      currentRank=i+1;
+      ranks.push(currentRank);
+      currentGroup=[row];
+    }
   }
   return ranks;
 }

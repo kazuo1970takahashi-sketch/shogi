@@ -310,6 +310,87 @@ function mkRow(id,name,A,B,C){
   assertEq(env.computeDisplayRanks(finals,'A'), [1,2], '2-10: B のみ違う → 別順位');
 }
 
+// 2-11: Codex Must Fix — 直接対決による「橋渡し」での透過的同順位を防ぐ
+//
+//   X, Y, Z の A/B/C は完全同点。
+//   X と Z は直接対決済みで X が勝ち。
+//   Y は X / Z どちらとも直接対決なし。
+//   sort 後の並びは X, Y, Z。
+//
+//   旧ロジック (直前 1 行比較):
+//     - X (i=0): rank 1
+//     - Y (i=1): X-Y 直接対決なし → 同順位 → rank 1
+//     - Z (i=2): Y-Z 直接対決なし → 同順位 → rank 1
+//     結果: [1,1,1]  ← X と Z が同順位になってしまう（誤り）
+//
+//   新ロジック (グループ全員と比較):
+//     - X (i=0): rank 1, group=[X]
+//     - Y (i=1): group=[X] と全員同点 → rank 1, group=[X,Y]
+//     - Z (i=2): group=[X,Y] のうち X とは直接対決決着 → 不一致 → rank 3
+//     結果: [1,1,3]  ← X と Z が同順位にならない（正）
+{
+  const env = loadEnv(targetPath);
+  const players = [makePlayer('pX','X',1),makePlayer('pY','Y',2),makePlayer('pZ','Z',3)];
+  const st = makeStateWithPlayers(players);
+  // X が Z に直接勝つ試合のみ存在（Y は X/Z と未対戦）
+  st.results.A = [
+    [{p1:'pX',p2:'pZ',winner:'pX'}]
+  ];
+  env._setState(st);
+  const finals = [mkRow('pX','X',2,4,2),mkRow('pY','Y',2,4,2),mkRow('pZ','Z',2,4,2)];
+  const ranks = env.computeDisplayRanks(finals,'A');
+  // 旧ロジックでは [1,1,1] になり assert が失敗、新ロジックでは [1,1,3]
+  assertEq(ranks, [1,1,3], '2-11: 直接対決での橋渡しを防ぐ（X-Z 決着で Z は別順位）');
+  // 補助 assert: X と Z が同じ表示順位グループにならない
+  assert(ranks[0] !== ranks[2], '2-11-a: X (idx 0) と Z (idx 2) は別順位');
+  // 補助 assert: 欠番方式により Z の順位は 3（2 ではない）
+  assertEq(ranks[2], 3, '2-11-b: Z は欠番方式で 3 位（タイ後の次は idx+1）');
+}
+
+// 2-12: 橋渡し逆向き — Y が X / Z 両方に勝っているが A/B/C は同点（極端な構築）
+// 想定: A/B/C 全同点で Y-X 決着, Y-Z 決着 → X と Z は Y 経由でグループ化されない
+// 新ロジック: X 単独 1位 / Y 単独 2位 / Z 単独 3位
+{
+  const env = loadEnv(targetPath);
+  const players = [makePlayer('pX','X',1),makePlayer('pY','Y',2),makePlayer('pZ','Z',3)];
+  const st = makeStateWithPlayers(players);
+  st.results.A = [
+    [{p1:'pY',p2:'pX',winner:'pY'},{p1:'pY',p2:'pZ',winner:'pY'}]
+  ];
+  env._setState(st);
+  const finals = [mkRow('pX','X',2,4,2),mkRow('pY','Y',2,4,2),mkRow('pZ','Z',2,4,2)];
+  const ranks = env.computeDisplayRanks(finals,'A');
+  // X (i=0): rank 1, group=[X]
+  // Y (i=1): X-Y 決着 → 不一致 → rank 2, group=[Y]
+  // Z (i=2): Y-Z 決着 → 不一致 → rank 3, group=[Z]
+  assertEq(ranks, [1,2,3], '2-12: Y が両者に決着あり → 全員別順位');
+}
+
+// 2-13: 橋渡し + 周辺タイ — 前後に通常タイあり、内部に橋渡しがある複合ケース
+// W, X, Y, Z 全員 A/B/C 同点、X-Z 直接対決のみ X 勝ち
+// 新ロジック:
+//   W (i=0): rank 1, group=[W]
+//   X (i=1): W-X 未対戦 → 全員同点 → rank 1, group=[W,X]
+//   Y (i=2): W-Y / X-Y 未対戦 → 全員同点 → rank 1, group=[W,X,Y]
+//   Z (i=3): group 内 X とは決着 → 不一致 → rank 4, group=[Z]
+//   結果: [1,1,1,4]
+{
+  const env = loadEnv(targetPath);
+  const players = [makePlayer('pW','W',1),makePlayer('pX','X',2),makePlayer('pY','Y',3),makePlayer('pZ','Z',4)];
+  const st = makeStateWithPlayers(players);
+  st.results.A = [
+    [{p1:'pX',p2:'pZ',winner:'pX'}]
+  ];
+  env._setState(st);
+  const finals = [
+    mkRow('pW','W',2,4,2),
+    mkRow('pX','X',2,4,2),
+    mkRow('pY','Y',2,4,2),
+    mkRow('pZ','Z',2,4,2)
+  ];
+  assertEq(env.computeDisplayRanks(finals,'A'), [1,1,1,4], '2-13: 橋渡し + 周辺タイ → [1,1,1,4]');
+}
+
 // ============================================================================
 // SECTION 3: 安定性 - 再計算で同じ順位
 // ============================================================================
