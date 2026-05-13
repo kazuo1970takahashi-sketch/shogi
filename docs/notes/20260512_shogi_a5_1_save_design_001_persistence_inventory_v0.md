@@ -250,6 +250,8 @@ function verifyPlayerAbsent(playerId, cls) -> boolean
 ## 5. 推奨順序（v0.1 で更新）
 
 > **2026-05-13 追記**: SAVE-001 / 002 / 003 はマージ完了。実装スコープは v0.1 計画より狭く着地している（SAVE-002 = S01 のみ、SAVE-003 = 大会進行 core path 4 関数に再定義）。実装結果サマリと残タスク候補は [`20260513_shogi_a5_1_save_completion_summary_v0.md`](20260513_shogi_a5_1_save_completion_summary_v0.md) を参照。
+>
+> **2026-05-13 A-5.1-CLOSURE**: A-5.1 保存安全化は「実装系完了」として区切る。SAVE-DESIGN-001 §2.3 で「○ / △」評価だった callsite（S01 / S02 / S04 / S07 / S08 / S10 / S11 / S14 / S15 / S16 / S17 / S18 / S19）は SAVE-001 〜 SAVE-003b-3 ですべて消化済み。残り S20（`bindReportEvents`）/ S21（`applyLoadedJson`）/ S30（`syncBranchMasterOnSave`）は v0.1 §4 で「今は触らない方がよい保存処理」と分類していたとおり Defer / 別タスク扱い（SAVE-UX 設計後 / IMPORT 系 / MASTER V2）に確定。SAVE-UX は A-5.1 完了の必須条件ではなく、後続改善として SAVE-UX-DESIGN を起点に進める。詳細は [`20260513_shogi_a5_1_save_completion_summary_v0.md`](20260513_shogi_a5_1_save_completion_summary_v0.md) §0 参照。
 
 | 段階 | 内容 | 対応 callsite | ステータス |
 |---|---|---|---|
@@ -260,8 +262,13 @@ function verifyPlayerAbsent(playerId, cls) -> boolean
 | **A-5.1-SAVE-003b-2**（追加） | 対局画面 編集経路の保存未確認検知（Must） | S17（bindChangePairingModalEvents）/ S19（bindEditPastResultModalEvents） | ✅ **完了・main マージ済**（PR #54、commit `9f4144f`）。`readPersistedState` + `pairingsMatchSnapshot` を流用、トップレベル新 helper 追加なし。`bindChangePairingModalEvents` は配列全体 field-compare（単発変更 / swap 共通）、`bindEditPastResultModalEvents` は p1 / p2 共通のローカルクロージャ `verifyPastResultPersisted_ep(expectedWinner)` で `results[cls][roundIdx][matchIdx].winner` をインライン確認（多次元 index 欠落も検知） |
 | **A-5.1-SAVE-003b-3**（追加） | 手動編集系の保存未確認検知 | S08（updateField の member / grade select）/ S11（bulkEditNames の一括氏名変更） | ✅ **完了・main マージ済**（PR #57、commit `c5929ec`）。新規 helper `verifyPlayerFieldPersisted(cls, playerId, field, expected)` を 1 個追加（field 軸の厳密一致）。bulkEditNames は既存 `verifyStatePersisted(id, expectedName)` を全件ループし未確認件数を集計、warn は 1 回に集約（SAVE-003b-1 `finalizeAddPastParticipants` と同方式）。pre-save の空欄 / 同名重複 alert は維持。updateField は select onchange のみで keystroke 連発しないため、SAVE-UX 待ちは不要と判断 |
 | **A-5.1-SAVE-004**（追加） | `generatePairing(cls)` の簡易シグネチャ比較 | S15 | ✅ **完了・main マージ済**（PR #50、commit `42e4673`）。SAVE-003 Codex Nice-to-Have 由来。`pairingsMatchSnapshot` 流用で length-only → field-compare 化。同件数 stale pairings を検知可能に |
-| **A-5.1-SAVE-UX**（追加） | warn 集約・retry UI・文言短縮 | 全 SAVE 系横断 | 🔲 未着手。§1.4「後続タスクに切り出す UI 仕様」と整合 |
-| A-5.1-SAVE-FUTURE | バッチ系・I/O 系・report 系・2 段保存 | S20（bindReportEvents、debounce 化検討）/ S21（applyLoadedJson）/ S25（reset）/ S26 / S27 / S28 / S29（import / migration）/ S30（syncBranchMasterOnSave 部分）/ S11（bulkEditNames、バッチ verify）/ clipboard / file 系の「verify 対象を別仕様で定義する」検討 | 🔲 未着手 |
+| **A-5.1-CLOSURE**（追加） | A-5.1 保存安全化「実装系完了」の区切り判定（docs のみ） | — | ✅ **完了**（2026-05-13）。SAVE-DESIGN-001 §2.3「○ / △」評価 callsite はすべて消化済み、未対応 save() callsite に Must は残っていない。残 3 callsite は Defer / 別タスク扱いに確定 |
+| **A-5.1-SAVE-UX-DESIGN**（追加） | SAVE-UX の方針整理 docs（warn 集約 / debounce / retry / aria-live / toast 集約 の採否と粒度） | — | 🔲 未着手。A-5.1-CLOSURE で SAVE-UX 実装の前提として独立タスク化を確定 |
+| **A-5.1-SAVE-UX**（追加） | warn 集約・retry UI・文言短縮・debounce・aria-live・toast 集約 | 全 SAVE 系横断 | 🔲 未着手。§1.4「後続タスクに切り出す UI 仕様」と整合。SAVE-UX-DESIGN の結論に依存 |
+| **A-5.1-SAVE-FUTURE-REPORT**（追加） | `bindReportEvents`（S20）の debounce / blur ベース化 + 保存未確認検知 | S20 | 🔲 未着手。SAVE-UX-DESIGN の結論に依存 |
+| **A-5.1-SAVE-FUTURE-IMPORT**（追加） | `applyLoadedJson`（S21）の保存未確認検知（件数一致主軸） | S21 | 🔲 未着手 |
+| **MASTER-V2-LASTCLASS**（追加、別系統） | 会員マスタ系 V2 拡張（`last_class` / `yomi` 等、name 軸以外の検証）。`syncBranchMasterOnSave`（S30）の 2 段保存もここに同梱 | S03 / S05 / S06 / S09 / S22 / S23 / S24 / S30 | 🔲 未着手 |
+| A-5.1-SAVE-FUTURE | バッチ系・マスタ import / migration 系 | S25（reset）/ S26 / S27 / S28 / S29（import / migration）/ clipboard / file 系の「verify 対象を別仕様で定義する」検討 | 🔲 未着手。S11（bulkEditNames）は SAVE-003b-3 で対応済 |
 
 ---
 
@@ -353,6 +360,7 @@ Claude Code 側で判断できないため、髙橋さん・ChatGPT 司令塔に
 | 2026-05-13 | §5「推奨順序」を SAVE-003b → SAVE-003b-1 / 2 / 3 に細分化。SAVE-003b-1（参加者追加経路、PR #52, commit `af2f173`）を「未着手」→「完了・main マージ済」に更新。残候補は SAVE-003b-2（対局画面編集系）/ SAVE-003b-3（手動編集系）/ SAVE-UX。 |
 | 2026-05-13 | §5「推奨順序」の SAVE-003b-2 を「未着手」→「完了・main マージ済」（PR #54, commit `9f4144f`）に更新。対局画面編集経路（`bindChangePairingModalEvents` / `bindEditPastResultModalEvents` p1 / p2）に保存未確認検知を追加。残候補は SAVE-003b-3（手動編集系）/ SAVE-UX に縮小。Mini Shai-Hulud 第二波 影響確認時に発見した別件 Security hygiene（trufflehog action pinning）は SAVE 系本流とは別 PR 扱い。 |
 | 2026-05-13 | §5「推奨順序」の SAVE-003b-3 を「未着手」→「完了・main マージ済」（PR #57, commit `c5929ec`）に更新。手動編集系（`updateField` の member / grade、`bulkEditNames` の一括氏名変更）に保存未確認検知を追加。新規 helper `verifyPlayerFieldPersisted` を 1 個追加、bulkEditNames は `verifyStatePersisted` 流用 + warn 1 回集約。残候補は SAVE-UX と「A-5.1 保存安全化の区切り判定」のみに縮小。Security hygiene（trufflehog action pinning、PR #56）は別 PR で完了済。 |
+| 2026-05-13 | **A-5.1-CLOSURE**（docs のみ）。§5「推奨順序」冒頭に区切り判定の追記を行い、A-5.1 保存安全化を「実装系完了」として区切ることを確定。§2.3「○ / △」評価 callsite はすべて消化済みで、未対応 save() callsite に Must は残っていないことを記録。残 3 callsite（S20 / S21 / S30）は v0.1 §4 で当初から「今は触らない方がよい」と分類しており、Defer / 別タスク（SAVE-UX 設計後 / IMPORT 系 / MASTER V2）扱いを確定。§5 表に CLOSURE / SAVE-UX-DESIGN / SAVE-FUTURE-REPORT / SAVE-FUTURE-IMPORT / MASTER-V2-LASTCLASS の暫定 ID を追加し、S11（bulkEditNames）が SAVE-003b-3 で対応済となったことを SAVE-FUTURE 行に反映。 |
 
 ---
 
