@@ -1679,6 +1679,12 @@ function handlePastParticipantClassAdd(memberId,cls){
     var searchInp2=document.getElementById('pp-search');
     renderPastParticipantsPanel(searchInp2?searchInp2.value:'');
     showMsg('['+memberName+'] を '+cls+'クラス に変更しました','ok');
+    // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+    // false は「保存未確認」（保存失敗と断定しない）。クラス変更は rollback しない・運営は継続する。
+    if(!verifyPlayerPersistedById(r2.player.id,cls,r2.player.name)){
+      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: handlePastParticipantClassAdd (class change) の保存が確認できませんでした (player='+r2.player.id+', cls='+cls+', name='+r2.player.name+')');
+      showMsg('クラスを変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    }
     return;
   }
   // ケース 1: 未登録（追加 confirm）
@@ -1706,6 +1712,12 @@ function handlePastParticipantClassAdd(memberId,cls){
   var searchInp=document.getElementById('pp-search');
   renderPastParticipantsPanel(searchInp?searchInp.value:'');
   showMsg('['+r.player.name+']（'+cls+'クラス）を登録しました','ok');
+  // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+  // false は「保存未確認」（保存失敗と断定しない）。追加は rollback しない・運営は継続する。
+  if(!verifyPlayerPersistedById(r.player.id,cls,r.player.name)){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: handlePastParticipantClassAdd (add) の保存が確認できませんでした (player='+r.player.id+', cls='+cls+', name='+r.player.name+')');
+    showMsg('参加者は登録されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+  }
 }
 
 // 仕様書 v6 §3.1 / §4.2: F4 ふりがな入力ダイアログ（build/bind/coordinator パターン）
@@ -1826,6 +1838,8 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi){
     if(allCurrent[k].member_id)existingMids[allCurrent[k].member_id]=true;
   }
   var added=0,skipped=0;
+  // A-5.1-SAVE-003b: バッチ追加分の id/cls/name を保持し、save() 後の verify に使う。
+  var addedTargets=[];
   for(var p=0;p<picked.length;p++){
     var m=picked[p];
     if(existingMids[m.id]||existingNames[m.name]){skipped++;continue;}
@@ -1836,6 +1850,7 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi){
     existingMids[m.id]=true;
     existingNames[m.name]=true;
     added++;
+    addedTargets.push({id:pid,cls:cls,name:m.name});
   }
   renderRegList();save();
   renderPastParticipantsPanel('');
@@ -1844,6 +1859,19 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi){
     showMsg('ふりがな未登録のまま '+added+'名を追加しました。未登録者は「他」タブに表示されます。','warn');
   }else{
     showMsg(added+'名を追加しました'+(skipped>0?'（同名・同 member_id 重複 '+skipped+'名はスキップ）':''),'ok');
+  }
+  // A-5.1-SAVE-003b: バッチ追加の保存確認。warn は件数集約して 1 回のみ（UI ノイズ回避）。
+  // rollback しない・運営は継続する。alert も使わない。
+  if(addedTargets.length>0){
+    var unverifiedCount=0;
+    for(var vi=0;vi<addedTargets.length;vi++){
+      var t=addedTargets[vi];
+      if(!verifyPlayerPersistedById(t.id,t.cls,t.name))unverifiedCount++;
+    }
+    if(unverifiedCount>0){
+      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: finalizeAddPastParticipants の保存が確認できませんでした ('+unverifiedCount+'/'+addedTargets.length+' 件未確認)');
+      showMsg(added+'名を追加しましたが、'+unverifiedCount+'名分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    }
   }
 }
 
@@ -3071,7 +3099,9 @@ function handleSuggestClassAdd(memberId,cls){
     if(existingCls)break;
   }
   // 共通：成功後の登録画面後処理（氏名/ふりがな欄クリア + サジェスト閉じ + 再描画）
-  function postSuccess(msgText){
+  // A-5.1-SAVE-003b: 追加 / クラス変更の両経路から呼ばれるため、verify 対象（pid/cls/name）と
+  // 保存未確認時の warn 文言を引数で受け取り、save() 後に検証する。
+  function postSuccess(msgText,verifyPid,verifyCls,verifyName,warnMsg){
     var inpName=document.getElementById('inp-name');
     var inpYomi=document.getElementById('inp-yomi');
     if(inpName)inpName.value='';
@@ -3087,6 +3117,12 @@ function handleSuggestClassAdd(memberId,cls){
       renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
     }
     showMsg(msgText,'ok');
+    // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+    // false は「保存未確認」（保存失敗と断定しない）。追加 / クラス変更とも rollback しない・運営は継続する。
+    if(!verifyPlayerPersistedById(verifyPid,verifyCls,verifyName)){
+      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: handleSuggestClassAdd の保存が確認できませんでした (player='+verifyPid+', cls='+verifyCls+', name='+verifyName+')');
+      showMsg(warnMsg,'warn');
+    }
   }
   // ケース 3: 同クラス登録済（alert OK のみ）
   if(existingCls===cls){
@@ -3100,7 +3136,7 @@ function handleSuggestClassAdd(memberId,cls){
     var r2=changePlayerClass(memberId,cls,master,state);
     if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');return;}
     saveBranchMaster(master);
-    postSuccess('['+memberName+'] を '+cls+'クラス に変更しました');
+    postSuccess('['+memberName+'] を '+cls+'クラス に変更しました',r2.player.id,cls,r2.player.name,'クラスを変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください');
     return;
   }
   // ケース 1: 未登録（追加 confirm）
@@ -3122,7 +3158,7 @@ function handleSuggestClassAdd(memberId,cls){
     }
     return;
   }
-  postSuccess('['+r.player.name+']（'+cls+'クラス）を登録しました');
+  postSuccess('['+r.player.name+']（'+cls+'クラス）を登録しました',r.player.id,cls,r.player.name,'参加者は登録されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください');
 }
 
 function closeSuggestList(){
