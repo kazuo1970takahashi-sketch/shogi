@@ -1679,8 +1679,11 @@ function handlePastParticipantClassAdd(memberId,cls){
     // changePlayerClass が master.members[i].last_class を新クラスに更新済み（line 1250）。
     // saveBranchMaster は例外を握り潰すため、localStorage を再読込して検証する。
     // 新規追加分岐（addPlayerFromMaster 側）では master を更新しないため、ここに verify を入れない。
-    // SAVE-UX-DESIGN Level 1: console.warn + showMsg。詳細は docs/specs/20260513_shogi_save_ux_design.md
-    if(!verifyMasterFieldPersisted(memberId,'last_class',cls)){
+    // SAVE-UX-DESIGN Level 1: console.warn + showMsg。最終表示が warn になるよう、
+    // master verify 失敗時は後段の成功 showMsg を出さない（直後の ok 上書きを防ぐ）。
+    // 詳細は docs/specs/20260513_shogi_save_ux_design.md
+    var s03MasterVerifyOk=verifyMasterFieldPersisted(memberId,'last_class',cls);
+    if(!s03MasterVerifyOk){
       if(typeof console!=='undefined'&&console.warn){
         console.warn('[MASTER-V2-LASTCLASS] S03 last_class verify failed',{memberId:memberId,expected:cls});
       }
@@ -1689,7 +1692,9 @@ function handlePastParticipantClassAdd(memberId,cls){
     renderRegList();save();
     var searchInp2=document.getElementById('pp-search');
     renderPastParticipantsPanel(searchInp2?searchInp2.value:'');
-    showMsg('['+memberName+'] を '+cls+'クラス に変更しました','ok');
+    if(s03MasterVerifyOk){
+      showMsg('['+memberName+'] を '+cls+'クラス に変更しました','ok');
+    }
     // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
     // false は「保存未確認」（保存失敗と断定しない）。クラス変更は rollback しない・運営は継続する。
     if(!verifyPlayerPersistedById(r2.player.id,cls,r2.player.name)){
@@ -3145,7 +3150,10 @@ function handleSuggestClassAdd(memberId,cls){
   // 共通：成功後の登録画面後処理（氏名/ふりがな欄クリア + サジェスト閉じ + 再描画）
   // A-5.1-SAVE-003b: 追加 / クラス変更の両経路から呼ばれるため、verify 対象（pid/cls/name）と
   // 保存未確認時の warn 文言を引数で受け取り、save() 後に検証する。
-  function postSuccess(msgText,verifyPid,verifyCls,verifyName,warnMsg){
+  // SAVE-UX-MIN-NOTIFY-001: options.suppressOkMsg=true のとき成功 showMsg(ok) を出さない。
+  // master verify 失敗時に呼出側で立て、直前に出した warn を ok で上書きしないために使う。
+  function postSuccess(msgText,verifyPid,verifyCls,verifyName,warnMsg,options){
+    options=options||{};
     var inpName=document.getElementById('inp-name');
     var inpYomi=document.getElementById('inp-yomi');
     if(inpName)inpName.value='';
@@ -3160,7 +3168,9 @@ function handleSuggestClassAdd(memberId,cls){
       var ppSearch=document.getElementById('pp-search');
       renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
     }
-    showMsg(msgText,'ok');
+    if(!options.suppressOkMsg){
+      showMsg(msgText,'ok');
+    }
     // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
     // false は「保存未確認」（保存失敗と断定しない）。追加 / クラス変更とも rollback しない・運営は継続する。
     if(!verifyPlayerPersistedById(verifyPid,verifyCls,verifyName)){
@@ -3184,14 +3194,17 @@ function handleSuggestClassAdd(memberId,cls){
     // changePlayerClass が master.members[i].last_class を新クラスに更新済み（line 1250）。
     // saveBranchMaster は例外を握り潰すため、localStorage を再読込して検証する。
     // 新規追加分岐（addPlayerFromMaster 側）では master を更新しないため、ここに verify を入れない。
-    // SAVE-UX-DESIGN Level 1: console.warn + showMsg。詳細は docs/specs/20260513_shogi_save_ux_design.md
-    if(!verifyMasterFieldPersisted(memberId,'last_class',cls)){
+    // SAVE-UX-DESIGN Level 1: console.warn + showMsg。最終表示が warn になるよう、
+    // master verify 失敗時は postSuccess の成功 showMsg を suppressOkMsg で抑止する。
+    // 詳細は docs/specs/20260513_shogi_save_ux_design.md
+    var s05MasterVerifyOk=verifyMasterFieldPersisted(memberId,'last_class',cls);
+    if(!s05MasterVerifyOk){
       if(typeof console!=='undefined'&&console.warn){
         console.warn('[MASTER-V2-LASTCLASS] S05 last_class verify failed',{memberId:memberId,expected:cls});
       }
       showMsg('前回クラス情報の保存が確認できませんでした','warn');
     }
-    postSuccess('['+memberName+'] を '+cls+'クラス に変更しました',r2.player.id,cls,r2.player.name,'クラスを変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください');
+    postSuccess('['+memberName+'] を '+cls+'クラス に変更しました',r2.player.id,cls,r2.player.name,'クラスを変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',{suppressOkMsg:!s05MasterVerifyOk});
     return;
   }
   // ケース 1: 未登録（追加 confirm）
