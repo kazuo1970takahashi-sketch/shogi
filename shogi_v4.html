@@ -3769,10 +3769,14 @@ function verifyMasterFieldPersisted(memberId,field,expected){
     if(!found)return false;
     var actual=found[field];
     if(field==='last_class'){
-      // 'A' / 'B' / null の三値。raw 側に key 不在で undefined になるケースは null と同一視。
-      var ea=(expected===null||typeof expected==='undefined')?null:expected;
-      var aa=(actual===null||typeof actual==='undefined')?null:actual;
-      return ea===aa;
+      // 'A' / 'B' / null の三値のみ受理。undefined（raw 側に key 不在を含む）は null と
+      // 同一視しない（raw JSON 直接検証の目的: 「保存された実データそのものが期待値と
+      // 一致するか」を確認するため、normalize による null 補完を持ち込まない）。
+      var allowedA=(expected==='A'||expected==='B'||expected===null);
+      var allowedP=(actual==='A'||actual==='B'||actual===null);
+      if(!allowedA)return false;
+      if(!allowedP)return false;
+      return actual===expected;
     }
     return actual===expected;
   }catch(e){

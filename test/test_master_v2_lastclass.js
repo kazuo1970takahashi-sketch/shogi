@@ -339,6 +339,104 @@ function makeEmptyState(){
   assertEq(env.verifyMasterFieldPersisted('m1',null,'A'), false, '1-14d null field → false');
 }
 
+// 1-15 (Codex Must Fix): raw member に last_class キーが欠落している場合の厳密検証。
+//   設計書方針: raw JSON 直接検証であるため、欠落 undefined と明示 null を区別する。
+//   normalizeBranchMaster は通さず、actual===undefined を null と同一視しない。
+//
+//   1-15a: last_class キー欠落 + expected=null → false（false positive 防止）
+//   1-15b: last_class キー欠落 + expected=undefined → false（expected 側も 'A'/'B'/null 以外は不許可）
+//   1-15c: last_class キー欠落 + expected='A' → false（既存挙動の再確認）
+{
+  const env = loadEnv(targetPath);
+  // last_class キーを完全に持たない member を raw で seed する
+  // （makeMember / normalizeBranchMaster 経由ではキーが補完されてしまうため、
+  // localStorage に直接書き込む）
+  env._ctx.localStorage._['shogi_branch_master'] = JSON.stringify({
+    schema_version:1,
+    updated_at:'2026-05-13T00:00:00Z',
+    members:[{
+      id:'m1',
+      name:'田中',
+      yomi:'',
+      // last_class: 意図的に欠落
+      last_attended:'2026-04-01',
+      first_attended:'2026-01-01',
+      attendance_count:0,
+      tournament_ids:[],
+      deleted:false,
+      deleted_at:null,
+      note:'',
+      member:'member',
+      grade:'ippan',
+      city:''
+    }]
+  });
+
+  // 念のため raw 側に last_class キーが存在しないことを確認（テスト前提の自己検証）
+  const raw = JSON.parse(env._ctx.localStorage._['shogi_branch_master']);
+  assert(!Object.prototype.hasOwnProperty.call(raw.members[0],'last_class'), '1-15-pre raw member に last_class キーが存在しないこと（テスト前提）');
+
+  // 1-15a: expected=null でも false（欠落 undefined を null と同一視しない）
+  assertEq(env.verifyMasterFieldPersisted('m1','last_class',null), false, '1-15a last_class キー欠落 + expected=null → false（false positive 防止）');
+
+  // 1-15b: expected=undefined でも false（'A'/'B'/null 以外は不許可）
+  assertEq(env.verifyMasterFieldPersisted('m1','last_class',undefined), false, '1-15b last_class キー欠落 + expected=undefined → false');
+
+  // 1-15c: 既存挙動の再確認
+  assertEq(env.verifyMasterFieldPersisted('m1','last_class','A'), false, '1-15c last_class キー欠落 + expected="A" → false');
+}
+
+// 1-16 (Codex Must Fix 補強): last_class: null が明示的に存在する場合は expected=null で true。
+//   1-15 と対になる挙動: 「明示 null」と「キー欠落 undefined」を区別する。
+{
+  const env = loadEnv(targetPath);
+  env._ctx.localStorage._['shogi_branch_master'] = JSON.stringify({
+    schema_version:1,
+    updated_at:'2026-05-13T00:00:00Z',
+    members:[{
+      id:'m1',
+      name:'田中',
+      yomi:'',
+      last_class:null,  // 明示 null
+      last_attended:'2026-04-01',
+      first_attended:'2026-01-01',
+      attendance_count:0,
+      tournament_ids:[],
+      deleted:false,
+      deleted_at:null,
+      note:'',
+      member:'member',
+      grade:'ippan',
+      city:''
+    }]
+  });
+
+  // raw 側に last_class: null が明示的に存在することを確認（テスト前提の自己検証）
+  const raw = JSON.parse(env._ctx.localStorage._['shogi_branch_master']);
+  assert(Object.prototype.hasOwnProperty.call(raw.members[0],'last_class'), '1-16-pre raw member に last_class キーが存在（明示 null）');
+  assertEq(raw.members[0].last_class, null, '1-16-pre raw member の last_class が明示 null');
+
+  // 明示 null vs expected=null → true
+  assertEq(env.verifyMasterFieldPersisted('m1','last_class',null), true, '1-16a 明示 null + expected=null → true');
+
+  // 明示 null vs expected=undefined → false（expected 側不許可）
+  assertEq(env.verifyMasterFieldPersisted('m1','last_class',undefined), false, '1-16b 明示 null + expected=undefined → false');
+
+  // 明示 null vs expected='A' → false
+  assertEq(env.verifyMasterFieldPersisted('m1','last_class','A'), false, '1-16c 明示 null + expected="A" → false');
+}
+
+// 1-17 (Codex Must Fix 補強): expected が 'A' / 'B' / null 以外なら即 false
+//   設計意図: last_class 比較は許容値の三値以外を expected として受け取った時点で false。
+{
+  const env = loadEnv(targetPath);
+  seedMaster(env, [makeMember('m1','田中',{last_class:'A'})]);
+  assertEq(env.verifyMasterFieldPersisted('m1','last_class','C'), false, '1-17a expected="C" → false');
+  assertEq(env.verifyMasterFieldPersisted('m1','last_class',''), false, '1-17b expected="" → false');
+  assertEq(env.verifyMasterFieldPersisted('m1','last_class',0), false, '1-17c expected=0 → false');
+  assertEq(env.verifyMasterFieldPersisted('m1','last_class',false), false, '1-17d expected=false → false');
+}
+
 // ============================================================================
 // SECTION 2: S03 handlePastParticipantClassAdd 既登録者クラス変更分岐
 // ============================================================================
