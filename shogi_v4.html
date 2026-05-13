@@ -3487,8 +3487,11 @@ function addPlayer(){
   // A-5.1-SAVE-002: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
   // false は「保存未確認」（保存失敗と断定しない）。追加は rollback しない・運営は継続する。
   if(!verifyPlayerPersistedById(id,cls,name)){
-    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-002: addPlayer の保存が確認できませんでした (player=' + id + ', cls=' + cls + ', name=' + name + ')');
-    showMsg('参加者は登録されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    notifySaveWarning({
+      message:'参加者は登録されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-002: addPlayer の保存が確認できませんでした (player=' + id + ', cls=' + cls + ', name=' + name + ')',
+      callsiteId:'SAVE-002-addPlayer'
+    });
   }
 }
 
@@ -3525,8 +3528,11 @@ function removePlayer(id,cls){
   // A-5.1-SAVE-001: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
   // false は「保存未確認」（保存失敗と断定しない）。削除は rollback しない・運営は継続する。
   if(!verifyPlayerAbsent(id,cls)){
-    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-001: removePlayer の保存が確認できませんでした (player='+id+', cls='+cls+')');
-    showMsg('削除は反映されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    notifySaveWarning({
+      message:'削除は反映されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-001: removePlayer の保存が確認できませんでした (player='+id+', cls='+cls+')',
+      callsiteId:'SAVE-001-removePlayer'
+    });
   }
 }
 
@@ -4171,8 +4177,11 @@ function startTournament(){
   // false は「保存未確認」（保存失敗と断定しない）。大会開始は rollback しない・運営は継続する。
   var persisted_st=readPersistedState();
   if(!persisted_st||persisted_st.started!==true){
-    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003: startTournament の保存が確認できませんでした');
-    showMsg('大会を開始しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    notifySaveWarning({
+      message:'大会を開始しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-003: startTournament の保存が確認できませんでした',
+      callsiteId:'SAVE-003-startTournament'
+    });
   }
 }
 
@@ -4409,8 +4418,11 @@ function generatePairing(cls){
   var persisted_gp=readPersistedState();
   var pairingsOk_gp=persisted_gp&&persisted_gp.pairings&&pairingsMatchSnapshot(persisted_gp.pairings[cls],pairs);
   if(!pairingsOk_gp){
-    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-004: generatePairing の保存が確認できませんでした (cls='+cls+', expected='+pairs.length+')');
-    showMsg('組み合わせを生成しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    notifySaveWarning({
+      message:'組み合わせを生成しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-004: generatePairing の保存が確認できませんでした (cls='+cls+', expected='+pairs.length+')',
+      callsiteId:'SAVE-004-generatePairing'
+    });
   }
 }
 
@@ -4426,8 +4438,11 @@ function setWinner(cls,idx,wid){
   var expectedWinner=state.pairings[cls][idx].winner;
   var persisted_sw=readPersistedState();
   if(!persisted_sw||!persisted_sw.pairings||!Array.isArray(persisted_sw.pairings[cls])||!persisted_sw.pairings[cls][idx]||persisted_sw.pairings[cls][idx].winner!==expectedWinner){
-    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003: setWinner の保存が確認できませんでした (cls='+cls+', idx='+idx+', expected='+expectedWinner+')');
-    showMsg('勝敗を入力しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    notifySaveWarning({
+      message:'勝敗を入力しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-003: setWinner の保存が確認できませんでした (cls='+cls+', idx='+idx+', expected='+expectedWinner+')',
+      callsiteId:'SAVE-003-setWinner'
+    });
   }
 }
 
@@ -4590,8 +4605,11 @@ function submitRound(cls){
   var resultsOk=persisted_sr&&persisted_sr.results&&Array.isArray(persisted_sr.results[cls])&&persisted_sr.results[cls].length===expectedRoundsLen;
   var pairingsOk=persisted_sr&&persisted_sr.pairings&&pairingsMatchSnapshot(persisted_sr.pairings[cls],expectedPairings);
   if(!resultsOk||!pairingsOk){
-    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003: submitRound の保存が確認できませんでした (cls='+cls+', expectedRounds='+expectedRoundsLen+', expectedPairings='+expectedPairings.length+')');
-    showMsg('回戦を確定しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    notifySaveWarning({
+      message:'回戦を確定しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-003: submitRound の保存が確認できませんでした (cls='+cls+', expectedRounds='+expectedRoundsLen+', expectedPairings='+expectedPairings.length+')',
+      callsiteId:'SAVE-003-submitRound'
+    });
   }
 }
 
