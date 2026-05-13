@@ -4237,6 +4237,17 @@ function bindChangePairingModalEvents(cls, idx){
 
     document.getElementById('chg-modal').remove();
     renderTournament(cls);save();
+    // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+    // false は「保存未確認」（保存失敗と断定しない）。対戦相手変更 / swap は rollback しない・運営は継続する。
+    // pairingsMatchSnapshot で配列全体（p1 / p2 / winner、両側存在時のみ lastModifiedBy）を比較するため、
+    // swap で 2 ペア同時に変わっても、片方だけ stale になっているケースを検知できる。
+    var expectedPairings_cp=state.pairings[cls];
+    var persisted_cp=readPersistedState();
+    var pairingsOk_cp=persisted_cp&&persisted_cp.pairings&&pairingsMatchSnapshot(persisted_cp.pairings[cls],expectedPairings_cp);
+    if(!pairingsOk_cp){
+      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: bindChangePairingModalEvents の保存が確認できませんでした (cls='+cls+', idx='+idx+')');
+      showMsg('対戦相手を変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    }
   });
 }
 
@@ -4502,15 +4513,39 @@ function bindEditPastResultModalEvents(cls, roundIdx, matchIdx){
   document.getElementById('ep-cancel').addEventListener('click',function(){
     document.getElementById('edit-past-modal').remove();
   });
+  // A-5.1-SAVE-003b: 過去結果修正の保存確認。p1 / p2 両経路で readPersistedState 経由に
+  // インライン index 確認で expectedWinner と照合する。多次元 index の存在チェックを必ず行い、
+  // どこかが欠落していれば保存未確認扱い。rollback しない・alert しない。
+  function verifyPastResultPersisted_ep(expectedWinner){
+    var persisted_ep=readPersistedState();
+    if(!persisted_ep||!persisted_ep.results)return false;
+    var rArr=persisted_ep.results[cls];
+    if(!Array.isArray(rArr))return false;
+    var round=rArr[roundIdx];
+    if(!Array.isArray(round))return false;
+    var match=round[matchIdx];
+    if(!match||typeof match!=='object')return false;
+    return match.winner===expectedWinner;
+  }
   document.getElementById('ep-p1').addEventListener('click',function(){
     state.results[cls][roundIdx][matchIdx].winner=state.results[cls][roundIdx][matchIdx].p1;
     document.getElementById('edit-past-modal').remove();
     renderTournament(cls);renderResults();save();
+    var expectedWinner_p1=state.results[cls][roundIdx][matchIdx].winner;
+    if(!verifyPastResultPersisted_ep(expectedWinner_p1)){
+      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: bindEditPastResultModalEvents (p1) の保存が確認できませんでした (cls='+cls+', round='+roundIdx+', match='+matchIdx+', expected='+expectedWinner_p1+')');
+      showMsg('過去結果を修正しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    }
   });
   document.getElementById('ep-p2').addEventListener('click',function(){
     state.results[cls][roundIdx][matchIdx].winner=state.results[cls][roundIdx][matchIdx].p2;
     document.getElementById('edit-past-modal').remove();
     renderTournament(cls);renderResults();save();
+    var expectedWinner_p2=state.results[cls][roundIdx][matchIdx].winner;
+    if(!verifyPastResultPersisted_ep(expectedWinner_p2)){
+      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: bindEditPastResultModalEvents (p2) の保存が確認できませんでした (cls='+cls+', round='+roundIdx+', match='+matchIdx+', expected='+expectedWinner_p2+')');
+      showMsg('過去結果を修正しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    }
   });
 }
 
