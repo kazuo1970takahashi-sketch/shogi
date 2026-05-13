@@ -303,7 +303,8 @@ function makePlayer(id,name,cls,entryNo){
   // console.warn
   const warnText = env._warnCalls.join('\n');
   assert(env._warnCalls.length >= 1, '6-5 console.warn が呼ばれる');
-  assert(warnText.indexOf('SAVE-003') !== -1, '6-6 console.warn に SAVE-003 タグ');
+  // SAVE-004 で generatePairing の warn タグを SAVE-003 → SAVE-004 に変更
+  assert(warnText.indexOf('SAVE-004') !== -1, '6-6 console.warn に SAVE-004 タグ');
   assert(warnText.indexOf('generatePairing') !== -1, '6-7 console.warn に generatePairing を含む');
   assert(warnText.indexOf('cls=A') !== -1, '6-8 console.warn に cls=A を含む');
   // alert は呼ばれない
@@ -712,6 +713,119 @@ function makePlayer(id,name,cls,entryNo){
     [{p1:'a',p2:'b',winner:null,lastModifiedBy:'manual'}],
     [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'}]
   ), false, '18-11 両側 lastModifiedBy 不一致は false');
+}
+
+// ============================================================
+// 19. A-5.1-SAVE-004: generatePairing の保存確認を pairingsMatchSnapshot で field-compare に強化
+//     length 一致だけでは「同件数だが中身が古い stale pairings」を見逃す。
+//     pairings.A.length は同じ 1 だが p1/p2 が違う stale を localStorage に残し、
+//     pairingsMatchSnapshot による検出で warn が出ること。
+// ============================================================
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState();
+  s.players.A = [makePlayer('p1','田中','A',1), makePlayer('p2','佐藤','A',2)];
+  s.started = true;
+  env._setState(s);
+  env.save();
+
+  // localStorage を「pairings.A は 1 件だが中身が完全に異なる stale」で上書き
+  env._ctx.localStorage._[env.STORAGE_KEY] = JSON.stringify({
+    players: { A: s.players.A, B: [] },
+    rounds: 4,
+    started: true,
+    pairings: { A: [{p1:'staleX',p2:'staleY',winner:null,lastModifiedBy:'auto'}], B: [] },
+    results: { A: [], B: [] },
+    report: {date:'',place:'',start:'',end:'',sei:'',fuku:'',note:''}
+  });
+  // setItem を失敗させ、save() で stale が上書きされないようにする
+  env._ctx.localStorage._failOnSet = true;
+
+  env.generatePairing('A');
+
+  const after = env._getState();
+  // in-memory: 新ペア（1 件、p1/p2 = 田中/佐藤 のいずれかの並び）が生成される
+  assertEq(after.pairings.A.length, 1, '19-1 in-memory: pairings.A 件数 = 1（rollback しない）');
+
+  // localStorage は stale のまま:
+  //   pairings.A.length も 1（in-memory と一致）→ 旧 length-only check ならすり抜ける
+  const persisted = env.readPersistedState();
+  assertEq(persisted && persisted.pairings.A.length, 1, '19-2 localStorage: pairings.A 件数 = 1（stale 内容）');
+  // pairingsMatchSnapshot は中身を見て不一致を検出
+  assertEq(env.pairingsMatchSnapshot(persisted.pairings.A, after.pairings.A), false, '19-3 pairingsMatchSnapshot で stale 検知');
+
+  // warn 表示（field-compare による検知）
+  assert(env._regMsgHtml().indexOf('alert-warn') !== -1, '19-4 stale pairings 検知で showMsg(.., warn)');
+  assert(env._regMsgHtml().indexOf('保存が確認できませんでした') !== -1, '19-5 「保存未確認」表現の文言');
+  const warnText = env._warnCalls.join('\n');
+  assert(warnText.indexOf('SAVE-004') !== -1, '19-6 console.warn に SAVE-004 タグ');
+  assert(warnText.indexOf('generatePairing') !== -1, '19-7 console.warn に generatePairing を含む');
+  assert(warnText.indexOf('cls=A') !== -1, '19-8 console.warn に cls=A を含む');
+  // alert / rollback なし
+  assertEq(env._alertCalls.length, 0, '19-9 alert は呼ばれない');
+}
+
+// ============================================================
+// 20. A-5.1-SAVE-004: length-only 回帰防止
+//     length 一致のみのチェックでは見逃すケース（p1/p2/winner/lastModifiedBy のいずれかが違う）を
+//     pairingsMatchSnapshot 経由で検出し、保存確認成功扱いにしないこと。
+// ============================================================
+{
+  const env = loadEnv(targetPath);
+
+  // 20-1〜20-2: p1 だけ違う / 同件数 → length のみなら一致するが false にならねばならない
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'staleX',p2:'p2',winner:null,lastModifiedBy:'auto'}],
+    [{p1:'p1',     p2:'p2',winner:null,lastModifiedBy:'auto'}]
+  ), false, '20-1 length 一致でも p1 違いは false');
+
+  // 20-2: p2 だけ違う
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'p1',p2:'staleY',winner:null,lastModifiedBy:'auto'}],
+    [{p1:'p1',p2:'p2',     winner:null,lastModifiedBy:'auto'}]
+  ), false, '20-2 length 一致でも p2 違いは false');
+
+  // 20-3: winner だけ違う
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'p1',p2:'p2',winner:'p1',lastModifiedBy:'auto'}],
+    [{p1:'p1',p2:'p2',winner:null,lastModifiedBy:'auto'}]
+  ), false, '20-3 length 一致でも winner 違いは false');
+
+  // 20-4: lastModifiedBy が両側に存在し値が違う（旧データ互換ではない）
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'p1',p2:'p2',winner:null,lastModifiedBy:'manual'}],
+    [{p1:'p1',p2:'p2',winner:null,lastModifiedBy:'auto'}]
+  ), false, '20-4 length 一致でも両側 lastModifiedBy 不一致は false');
+
+  // 20-5: 旧データ互換 — lastModifiedBy が片側欠損 → 容認（pairingsMatchSnapshot の既存仕様）
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'p1',p2:'p2',winner:null}],
+    [{p1:'p1',p2:'p2',winner:null,lastModifiedBy:'auto'}]
+  ), true, '20-5 lastModifiedBy 片側欠損は true（旧データ互換）');
+
+  // 20-6: 件数が同じ複数件で 1 件だけ違う場合も検出
+  assertEq(env.pairingsMatchSnapshot(
+    [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'},{p1:'X',p2:'d',winner:null,lastModifiedBy:'auto'}],
+    [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'},{p1:'c',p2:'d',winner:null,lastModifiedBy:'auto'}]
+  ), false, '20-6 複数件で 1 件だけ違う場合も false');
+}
+
+// ============================================================
+// 21. A-5.1-SAVE-004: 新規 helper 追加なしの確認
+//     SAVE-004 では既存の pairingsMatchSnapshot を流用しており、新 helper を増やしていないこと。
+// ============================================================
+{
+  const env = loadEnv(targetPath);
+  // pairingsMatchSnapshot が引き続きエクスポート可能
+  assert(typeof env.pairingsMatchSnapshot === 'function', '21-1 pairingsMatchSnapshot は既存のまま流用');
+  // generatePairing 用に新規 helper を増やしていないことの間接確認:
+  //   pairingsMatchSnapshot 以外の field-compare 系 helper（例: deepEqual / generatePairingMatchSnapshot 等）が
+  //   エクスポートに登場していないこと。エクスポート集合は loadEnv の return オブジェクトに固定されている。
+  const exportedKeys = Object.keys(env).filter(k => !k.startsWith('_'));
+  // 期待エクスポート: STORAGE_KEY / readPersistedState / pairingsMatchSnapshot / startTournament /
+  //                  generatePairing / setWinner / submitRound / save
+  assert(exportedKeys.indexOf('deepEqual') === -1, '21-2 deepEqual は未追加');
+  assert(exportedKeys.indexOf('generatePairingMatchSnapshot') === -1, '21-3 generatePairingMatchSnapshot は未追加');
 }
 
 // ============================================================

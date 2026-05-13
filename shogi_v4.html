@@ -4088,11 +4088,14 @@ function generatePairing(cls){
 
   state.pairings[cls]=pairs;
   save();
-  // A-5.1-SAVE-003: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+  // A-5.1-SAVE-003 / SAVE-004: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
   // false は「保存未確認」（保存失敗と断定しない）。組合せ生成は rollback しない・運営は継続する。
+  // SAVE-004: length 一致だけでは「同件数だが中身が古い stale pairings」を見逃すため、
+  // pairingsMatchSnapshot で p1/p2/winner（lastModifiedBy は両側に存在する場合のみ）も比較する。
   var persisted_gp=readPersistedState();
-  if(!persisted_gp||!persisted_gp.pairings||!Array.isArray(persisted_gp.pairings[cls])||persisted_gp.pairings[cls].length!==pairs.length){
-    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003: generatePairing の保存が確認できませんでした (cls='+cls+', expected='+pairs.length+')');
+  var pairingsOk_gp=persisted_gp&&persisted_gp.pairings&&pairingsMatchSnapshot(persisted_gp.pairings[cls],pairs);
+  if(!pairingsOk_gp){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-004: generatePairing の保存が確認できませんでした (cls='+cls+', expected='+pairs.length+')');
     showMsg('組み合わせを生成しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
   }
 }
