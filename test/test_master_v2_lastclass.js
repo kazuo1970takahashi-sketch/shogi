@@ -1440,6 +1440,71 @@ function getIndicatorEl(env){
 }
 
 // ============================================================================
+// SECTION 10: SAVE-UX-WARN-HELPER-EXPAND — A-5.1 SAVE系 6 callsite の helper 経由化
+// ============================================================================
+// 設計書 / 依頼: SAVE-UX-WARN-HELPER-EXPAND（PR #69 後続）
+// 対象 callsite（Group A + B, 6 件）:
+//   - SAVE-002-addPlayer / SAVE-001-removePlayer（登録欄 add/remove）
+//   - SAVE-003-startTournament / SAVE-004-generatePairing
+//   - SAVE-003-setWinner / SAVE-003-submitRound（大会進行 core）
+// 検証方針: mechanical refactor の整合性確認
+//   (a) 各 callsiteId が source 中に出現する（helper 呼出に置換済み）
+//   (b) 旧 `console.warn('SAVE-XXX: <function>` 1-arg 形が当該文字列リテラルとして残らない
+//   (c) helper 動作（user-facing showMsg / console.warn / indicator +1）は SECTION 8/9 で既存検証済
+//   (d) callsite ごとの verify-fail 経路の振る舞い（warn 表示）は test/test_a5_1_save_*.js が継続検証
+const __EXPAND_SRC = fs.readFileSync(targetPath, 'utf8');
+
+// T-EXP-callsiteId-present-*: 6 callsiteId がすべて helper 引数として現れる
+[
+  'SAVE-001-removePlayer',
+  'SAVE-002-addPlayer',
+  'SAVE-003-startTournament',
+  'SAVE-003-setWinner',
+  'SAVE-003-submitRound',
+  'SAVE-004-generatePairing'
+].forEach(function(cid){
+  var needle = "callsiteId:'" + cid + "'";
+  assert(__EXPAND_SRC.indexOf(needle) !== -1, 'T-EXP-callsiteId-present-' + cid + ': source に ' + needle + ' が存在する');
+});
+
+// T-EXP-original-warn-removed-*: 旧 1-arg console.warn が残っていない
+// （verify helper 内部 catch のもの = 'SAVE-XXX: verify*' / 'readPersistedState failed' は対象外）
+[
+  "console.warn('SAVE-001: removePlayer ",
+  "console.warn('SAVE-002: addPlayer ",
+  "console.warn('SAVE-003: startTournament ",
+  "console.warn('SAVE-003: setWinner ",
+  "console.warn('SAVE-003: submitRound ",
+  "console.warn('SAVE-004: generatePairing "
+].forEach(function(pat){
+  assert(__EXPAND_SRC.indexOf(pat) === -1, 'T-EXP-original-warn-removed: 旧 1-arg warn が残らない (' + pat + ')');
+});
+
+// T-EXP-consoleTag-preserved-*: 旧 console.warn 第1引数の主要文言は consoleTag として保持
+[
+  'SAVE-001: removePlayer の保存が確認できませんでした',
+  'SAVE-002: addPlayer の保存が確認できませんでした',
+  'SAVE-003: startTournament の保存が確認できませんでした',
+  'SAVE-003: setWinner の保存が確認できませんでした',
+  'SAVE-003: submitRound の保存が確認できませんでした',
+  'SAVE-004: generatePairing の保存が確認できませんでした'
+].forEach(function(tag){
+  assert(__EXPAND_SRC.indexOf(tag) !== -1, 'T-EXP-consoleTag-preserved: consoleTag 主要文言が残る (' + tag + ')');
+});
+
+// T-EXP-showMsg-message-preserved-*: 旧 user-facing showMsg('...', 'warn') の文言は helper.message として保持
+[
+  '削除は反映されましたが、保存が確認できませんでした',
+  '参加者は登録されましたが、保存が確認できませんでした',
+  '大会を開始しましたが、保存が確認できませんでした',
+  '勝敗を入力しましたが、保存が確認できませんでした',
+  '回戦を確定しましたが、保存が確認できませんでした',
+  '組み合わせを生成しましたが、保存が確認できませんでした'
+].forEach(function(msg){
+  assert(__EXPAND_SRC.indexOf(msg) !== -1, 'T-EXP-showMsg-message-preserved: user-facing 文言が残る (' + msg + ')');
+});
+
+// ============================================================================
 // 結果
 // ============================================================================
 console.log('\n  MASTER-V2-LASTCLASS-IMPL 単体テスト: PASS '+pass+'件 / FAIL '+fail+'件');
