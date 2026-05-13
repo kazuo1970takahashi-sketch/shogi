@@ -170,6 +170,12 @@ Level 2 indicator はこの **空間的・時間的 limitation を補う**:
 | 最終発生時刻 | **出さない** | 初期 Level 2 では不要 |
 | 詳細展開 | **しない** | クリック操作なし（§4 参照） |
 
+### count 増加単位
+
+- **`N` は `notifySaveWarning` の 1 回呼び出しにつき +1** とする（fields の要素数では増やさない）
+- 例: S22 で 4 fields verify 失敗 → user-facing warn 1 件 / indicator count +1（field 別 `console.warn` は 4 件のまま）
+- 詳細は §7「count 増加単位」を参照
+
 ### N=0 のときの扱い
 
 - **N=0 のときは indicator 非表示**
@@ -258,6 +264,17 @@ updateSaveWarningIndicator() で DOM 反映
 - indicator への接続は **helper 内部** で行う
 - callsite からは見えない（helper を呼ぶだけで indicator にも記録される）
 - 既存の S03 / S05 / S22 の helper 呼び出しは変えない（行数差分ゼロを目標）
+
+### count 増加単位（確定仕様）
+
+- **indicator count は `notifySaveWarning` の 1 回呼び出しにつき +1** とする
+- `fields` が複数要素を持つ場合でも `fields.length` 分は加算しない
+- 例: S22 で 4 fields すべて verify 失敗のケースでも、`notifySaveWarning` の呼出は 1 回 → indicator count は **+1**
+- これは **三層分離（SAVE-UX-DESIGN §6.2）** と整合:
+  - field 別 `console.warn`（debug 詳細）: 4 件
+  - user-facing `showMsg`（一時通知）: 1 件集約（PR #65 で確立）
+  - indicator count（累積状態）: **+1**（本書で確定）
+- 三層がそれぞれ独立した粒度を持つ。集約 / 詳細展開は Level 3 / Level 4 / SAVE-FUTURE-REPORT で再検討
 
 ---
 
@@ -426,6 +443,7 @@ updateSaveWarningIndicator() で DOM 反映
 8. **helper 経由 warn が複数回発生したとき count が増えるか**: 想定通り N+1 になるテスト
 9. **reload で消えることを明示的にテストするか**: テスト環境では `loadEnv` を再呼出すれば確認できる
 10. **alert / modal を追加しないことの確認**: IMPL の diff で `alert(` / `confirm(` の追加がないことを grep で確認
+11. **indicator count の表示上限・桁あふれ表現**: count は内部的には自然数として保持する。表示上の上限と桁あふれ時の表現（例: `99+` / 3 桁以上の省略表示 など）は IMPL 着手時に既存 UI 幅とスマホ表示を確認して決定する。本書では具体値を確定しない
 
 ---
 
@@ -463,3 +481,4 @@ updateSaveWarningIndicator() で DOM 反映
 | 日付 | 内容 |
 |---|---|
 | 2026-05-13 | v0 作成。Level 2 保存状態 indicator の設計確定。UI 配置 / 表示内容 / 状態管理（memory only）/ `notifySaveWarning` 接続（案 C）/ 対象 warning / クリア条件 / Level 2/3/4 境界 / IMPL スコープ案 / 未決事項 / レビュー観点 を整理。実装は SAVE-UX-STATUS-INDICATOR-IMPL で別タスク。 |
+| 2026-05-13 | docs review Should Fix 2 点を反映。§5 / §7 に「count 増加単位」（`notifySaveWarning` 1 回呼出 = count +1、fields.length では加算しない）を確定仕様として追記。三層分離（field 別 console.warn / user-facing showMsg 1 件集約 / indicator count +1）を §7 で明示。§13 に「indicator count の表示上限・桁あふれ表現」を IMPL 着手時に決定する未決事項として追加。 |
