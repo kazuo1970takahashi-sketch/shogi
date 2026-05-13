@@ -473,6 +473,22 @@ else
 fi
 
 # ============================================
+# RANK-TIE-001 順位決定項目完全同点での同順位表示 単体テスト
+# ============================================
+echo ""
+echo "【RANK-TIE-001 順位決定項目完全同点での同順位表示】"
+if [ -f "$SCRIPT_DIR/test_rank_tie_001.js" ]; then
+  if node "$SCRIPT_DIR/test_rank_tie_001.js" "$TARGET" > /tmp/rank_tie_001_out.log 2>&1; then
+    ok "RANK-TIE-001 単体テスト 全PASS ($(tail -1 /tmp/rank_tie_001_out.log))"
+  else
+    ng "RANK-TIE-001 単体テスト 失敗"
+    cat /tmp/rank_tie_001_out.log
+  fi
+else
+  warn "test_rank_tie_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
