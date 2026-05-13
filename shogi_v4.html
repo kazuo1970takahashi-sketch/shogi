@@ -1687,7 +1687,13 @@ function handlePastParticipantClassAdd(memberId,cls){
       if(typeof console!=='undefined'&&console.warn){
         console.warn('[MASTER-V2-LASTCLASS] S03 last_class verify failed',{memberId:memberId,expected:cls});
       }
-      showMsg('前回クラス情報の保存が確認できませんでした','warn');
+      // SAVE-UX-WARN-HELPER: user-facing warn は helper 経由。success showMsg 抑止は下の if(s03MasterVerifyOk) で行う（不変）。
+      notifySaveWarning({
+        message:'前回クラス情報の保存が確認できませんでした',
+        consoleTag:'[MASTER-V2-LASTCLASS]',
+        callsiteId:'S03',
+        fields:['last_class']
+      });
     }
     renderRegList();save();
     var searchInp2=document.getElementById('pp-search');
@@ -2522,7 +2528,10 @@ function bindMasterEditModalEvents(){
     // 1 field 不一致ごとに console.warn を 1 行（field 別、後追いデバッグ用）。
     // SAVE-UX-MIN-NOTIFY-002: user-facing showMsg は 1 件集約のため、verify 結果を s22MasterVerifyOk
     // 変数に集約する。rollback / alert / retry なし。
+    // SAVE-UX-WARN-HELPER: 失敗 field を s22FailedFields に集めて helper の fields 引数に渡す
+    // （debug 用、user-facing 文言には含めない）。
     var s22MasterVerifyOk=true;
+    var s22FailedFields=[];
     if(verifyTarget_s22){
       var checks_s22=[
         ['last_class',verifyTarget_s22.last_class],
@@ -2537,6 +2546,7 @@ function bindMasterEditModalEvents(){
             console.warn('[MASTER-V2-LASTCLASS] S22 verify failed',{memberId:memberId,field:fname_s22,expected:fexp_s22});
           }
           s22MasterVerifyOk=false;
+          s22FailedFields.push(fname_s22);
         }
       }
     }
@@ -2554,7 +2564,13 @@ function bindMasterEditModalEvents(){
       } else {
         // user-facing は 1 件集約。field 別の詳細は console.warn 側に残す。
         // duplicate 警告は verify failure を優先するため出さない。
-        showMsg('会員マスタ情報の保存が確認できませんでした','warn');
+        // SAVE-UX-WARN-HELPER: user-facing warn は helper 経由。success showMsg 抑止は上の if-else で行う（不変）。
+        notifySaveWarning({
+          message:'会員マスタ情報の保存が確認できませんでした',
+          consoleTag:'[MASTER-V2-LASTCLASS]',
+          callsiteId:'S22',
+          fields:s22FailedFields
+        });
       }
     }
     renderMasterTab();
@@ -2905,6 +2921,38 @@ function notifyError(text){
   if(!regVisible)alert(text);
 }
 
+// SAVE-UX-WARN-HELPER: SAVE-UX-DESIGN Level 1 の user-facing warn helper。
+//   showMsg(.., 'warn') と 総括 console.warn のみを担当する。
+//   success showMsg の抑止は callsite 側の責務（PR #63 / #65 と同じ設計を保護する）。
+//   aggregationKey / severity / indicator / retry は後続タスクで扱う。
+//   既存の field 別 console.warn は callsite 側に残す（debug 詳細）。
+// 引数 options:
+//   - message (string, 必須): user-facing 文言。空のときは showMsg を出さず安全側で return
+//   - consoleTag (string): 総括 console.warn のタグ。grep しやすい既存タグ準拠
+//   - callsiteId (string): 'S03' / 'S05' / 'S22' などの識別子
+//   - fields (string[]): 失敗 field 名（debug 用、user-facing 文言には含めない）
+// 戻り値: void。success 抑止判定には使わない。例外は投げない。
+function notifySaveWarning(options){
+  var opts=options||{};
+  var message=(typeof opts.message==='string'&&opts.message)?opts.message:'';
+  var consoleTag=(typeof opts.consoleTag==='string'&&opts.consoleTag)?opts.consoleTag:'[SAVE-WARN]';
+  var callsiteId=(typeof opts.callsiteId==='string')?opts.callsiteId:'unknown';
+  var fields=(Object.prototype.toString.call(opts.fields)==='[object Array]')?opts.fields:[];
+  if(!message){
+    // message 不在は callsite 側 bug の可能性。例外を投げず、debug ログを残して安全 return。
+    if(typeof console!=='undefined'&&console.warn){
+      console.warn(consoleTag,{callsiteId:callsiteId,fields:fields,error:'notifySaveWarning called without message'});
+    }
+    return;
+  }
+  if(typeof showMsg==='function'){
+    showMsg(message,'warn');
+  }
+  if(typeof console!=='undefined'&&console.warn){
+    console.warn(consoleTag,{callsiteId:callsiteId,fields:fields});
+  }
+}
+
 function renderRegList(){
   var clsList=['A','B'];
   for(var ci=0;ci<clsList.length;ci++){
@@ -3217,7 +3265,13 @@ function handleSuggestClassAdd(memberId,cls){
       if(typeof console!=='undefined'&&console.warn){
         console.warn('[MASTER-V2-LASTCLASS] S05 last_class verify failed',{memberId:memberId,expected:cls});
       }
-      showMsg('前回クラス情報の保存が確認できませんでした','warn');
+      // SAVE-UX-WARN-HELPER: user-facing warn は helper 経由。success showMsg 抑止は postSuccess(suppressOkMsg) で行う（不変）。
+      notifySaveWarning({
+        message:'前回クラス情報の保存が確認できませんでした',
+        consoleTag:'[MASTER-V2-LASTCLASS]',
+        callsiteId:'S05',
+        fields:['last_class']
+      });
     }
     postSuccess('['+memberName+'] を '+cls+'クラス に変更しました',r2.player.id,cls,r2.player.name,'クラスを変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',{suppressOkMsg:!s05MasterVerifyOk});
     return;
