@@ -143,6 +143,7 @@ function loadEnv(path) {
        BRANCH_MASTER_KEY:BRANCH_MASTER_KEY,
        verifyMasterFieldPersisted:verifyMasterFieldPersisted,
        MASTER_V2_VERIFIABLE_FIELDS:MASTER_V2_VERIFIABLE_FIELDS,
+       notifySaveWarning:notifySaveWarning,
        handlePastParticipantClassAdd:handlePastParticipantClassAdd,
        handleSuggestClassAdd:handleSuggestClassAdd,
        bindMasterEditModalEvents:bindMasterEditModalEvents,
@@ -654,12 +655,15 @@ function setupS22(env, member, formValues){
   const v2Warns = env._masterV2Warns();
   // 4 fields 全て、in-memory 側の更新後値（last_class=B, member=other, grade=chu, city=静岡市）vs
   // persisted 側（保存失敗なので変更なし: last_class=A, member=member, grade=ippan, city=沼津市）が全て不一致
-  // → 4 件の warn が出る
-  assertEq(v2Warns.length, 4, '4-2a S22 4 fields 全て不一致 → warn 4 行');
-  assert(v2Warns.some(w => w.indexOf('S22 verify failed')!==-1 && w.indexOf('"field":"last_class"')!==-1), '4-2b last_class warn 含む');
-  assert(v2Warns.some(w => w.indexOf('S22 verify failed')!==-1 && w.indexOf('"field":"member"')!==-1), '4-2c member warn 含む');
-  assert(v2Warns.some(w => w.indexOf('S22 verify failed')!==-1 && w.indexOf('"field":"grade"')!==-1), '4-2d grade warn 含む');
-  assert(v2Warns.some(w => w.indexOf('S22 verify failed')!==-1 && w.indexOf('"field":"city"')!==-1), '4-2e city warn 含む');
+  // → field 別の 'S22 verify failed' タグ付き console.warn は 4 件出る
+  // SAVE-UX-WARN-HELPER 以降: 加えて helper の総括 console.warn が 1 件出るが、件数厳密チェックは
+  // helper 化の足枷になるため、field 別 warn が 4 件出ることだけを確認する（依頼書方針）。
+  const v2FieldWarns = v2Warns.filter(w => w.indexOf('S22 verify failed')!==-1);
+  assertEq(v2FieldWarns.length, 4, '4-2a S22 field 別 console.warn が 4 件出る（debug 維持）');
+  assert(v2FieldWarns.some(w => w.indexOf('"field":"last_class"')!==-1), '4-2b last_class warn 含む');
+  assert(v2FieldWarns.some(w => w.indexOf('"field":"member"')!==-1), '4-2c member warn 含む');
+  assert(v2FieldWarns.some(w => w.indexOf('"field":"grade"')!==-1), '4-2d grade warn 含む');
+  assert(v2FieldWarns.some(w => w.indexOf('"field":"city"')!==-1), '4-2e city warn 含む');
 }
 
 // 4-3: S22 1 field だけ不一致 → その field の warn のみ
@@ -1142,6 +1146,107 @@ function installMasterVerifyFailHookFields(env, memberId, fieldOverrides){
   const final = env._regMsgFinal();
   assert(final.indexOf('alert-ok')!==-1, 'T-S22-L1-no-extra-warn-c: 最終表示は alert-ok 種別');
   assert(final.indexOf(SAVE_UX_MASTER_SUCCESS_TEXT)!==-1, 'T-S22-L1-no-extra-warn-d: 最終表示に既存 success 文言が残る');
+}
+
+// ============================================================================
+// SECTION 8: SAVE-UX-WARN-HELPER — notifySaveWarning 単体テスト
+// ============================================================================
+// 設計書: docs/specs/20260513_shogi_save_ux_design.md
+// 方針:
+//   - notifySaveWarning は SAVE-UX Level 1 の user-facing warn helper
+//   - showMsg(warn) と 総括 console.warn のみを担当
+//   - success showMsg の抑止は callsite 側の責務（PR #63 / #65）
+//   - 例外を投げず、callsite の制御フローを壊さない
+
+// T-NSW-basic: 通常呼び出しで showMsg + 総括 console.warn が出る
+{
+  const env = loadEnv(targetPath);
+  env._clear();
+
+  env.notifySaveWarning({
+    message:'テスト警告',
+    consoleTag:'[TEST]',
+    callsiteId:'T01',
+    fields:['last_class']
+  });
+
+  // 最終 reg-msg.innerHTML が alert-warn 種別 + 'テスト警告'
+  const final = env._regMsgFinal();
+  assert(final.indexOf('alert-warn')!==-1, 'T-NSW-basic-a: 最終表示は alert-warn 種別');
+  assert(final.indexOf('テスト警告')!==-1, 'T-NSW-basic-b: 最終表示に message が含まれる');
+
+  // 総括 console.warn が出ること（callsiteId / fields をメタに含む）
+  const testWarns = env._warnCalls.filter(function(w){return w.indexOf('[TEST]')!==-1;});
+  assertEq(testWarns.length, 1, 'T-NSW-basic-c: 総括 console.warn が 1 件');
+  assert(testWarns[0].indexOf('"callsiteId":"T01"')!==-1, 'T-NSW-basic-d: console.warn メタに callsiteId 含まれる');
+  assert(testWarns[0].indexOf('"last_class"')!==-1, 'T-NSW-basic-e: console.warn メタに fields 含まれる');
+
+  // alert は呼ばれない
+  assertEq(env._alertCalls.length, 0, 'T-NSW-basic-f: alert は呼ばれない');
+}
+
+// T-NSW-no-message: message 不在で例外を投げず、安全 return
+{
+  const env = loadEnv(targetPath);
+  env._clear();
+
+  let threw = false;
+  try {
+    env.notifySaveWarning({consoleTag:'[TEST]', callsiteId:'T02'});
+  } catch(e) {
+    threw = true;
+  }
+  assertEq(threw, false, 'T-NSW-no-message-a: 例外を投げない');
+
+  // showMsg は呼ばれない（最終 reg-msg.innerHTML は空、alert-warn が出ていない）
+  const final = env._regMsgFinal();
+  assert(final.indexOf('alert-warn')===-1, 'T-NSW-no-message-b: showMsg(warn) は呼ばれていない');
+
+  // 総括 console.warn は出る（debug 用、message 不在の旨が含まれる）
+  const testWarns = env._warnCalls.filter(function(w){return w.indexOf('[TEST]')!==-1;});
+  assert(testWarns.length >= 1, 'T-NSW-no-message-c: console.warn が出る（debug 用）');
+  assert(testWarns.some(function(w){return w.indexOf('called without message')!==-1;}), 'T-NSW-no-message-d: warn メタに message 不在の旨が含まれる');
+}
+
+// T-NSW-undefined-options: options 自体が undefined でも例外を投げない
+{
+  const env = loadEnv(targetPath);
+  env._clear();
+
+  let threw = false;
+  try {
+    env.notifySaveWarning();  // options 省略
+  } catch(e) {
+    threw = true;
+  }
+  assertEq(threw, false, 'T-NSW-undefined-options-a: options 省略でも例外を投げない');
+
+  // showMsg は呼ばれない
+  const final = env._regMsgFinal();
+  assert(final.indexOf('alert-warn')===-1, 'T-NSW-undefined-options-b: showMsg(warn) は呼ばれていない');
+}
+
+// T-NSW-no-fields: fields 省略でも message があれば showMsg は呼ばれる
+{
+  const env = loadEnv(targetPath);
+  env._clear();
+
+  env.notifySaveWarning({
+    message:'文言X',
+    consoleTag:'[TEST]',
+    callsiteId:'T03'
+    // fields 省略
+  });
+
+  // showMsg は呼ばれる
+  const final = env._regMsgFinal();
+  assert(final.indexOf('alert-warn')!==-1, 'T-NSW-no-fields-a: showMsg(warn) が呼ばれる');
+  assert(final.indexOf('文言X')!==-1, 'T-NSW-no-fields-b: 最終表示に message が含まれる');
+
+  // 総括 console.warn では fields が空配列扱い
+  const testWarns = env._warnCalls.filter(function(w){return w.indexOf('[TEST]')!==-1;});
+  assertEq(testWarns.length, 1, 'T-NSW-no-fields-c: 総括 console.warn が 1 件');
+  assert(testWarns[0].indexOf('"fields":[]')!==-1, 'T-NSW-no-fields-d: fields が空配列で出力される');
 }
 
 // ============================================================================
