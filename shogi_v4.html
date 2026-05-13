@@ -5267,7 +5267,10 @@ function printResults(){
       var bg=rank===1?'#fef8e7':rank===2?'#f5f5f5':rank===3?'#eaf3fb':'#fff';
       html+='<tr style="background:'+bg+'">';
       html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;font-weight:bold">'+rank+'位</td>';
-      html+='<td style="padding:6px 8px;border:1px solid #ccc;font-weight:bold">'+escapeHtml(getNameWithNo(f.p.id,cls))+'</td>';
+      // RANK-PRINT-001: 印刷/PDF 帳票では entry_no を表示せず氏名のみを出力する。
+      //   画面 UI（buildResultsMobileHtml / buildResultsDesktopHtml）や受付・対局カード・
+      //   参加者一覧では従来通り getNameWithNo を使用し本変更の影響を受けない。
+      html+='<td style="padding:6px 8px;border:1px solid #ccc;font-weight:bold">'+escapeHtml(getName(f.p.id,cls))+'</td>';
       for(var r=0;r<state.rounds;r++){
         var round=state.results[cls][r];
         if(!round){html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;color:#ccc">-</td>';continue;}
@@ -5275,7 +5278,8 @@ function printResults(){
         for(var m=0;m<round.length;m++){if(round[m].p1===f.p.id||round[m].p2===f.p.id){match=round[m];break;}}
         if(!match){html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;color:#ccc">-</td>';continue;}
         var oppId=match.p1===f.p.id?match.p2:match.p1;
-        var oppName=getNameWithNo(oppId,cls);
+        // RANK-PRINT-001: 印刷/PDF の対戦相手表示も entry_no なしの氏名のみに変更。
+        var oppName=getName(oppId,cls);
         var oppWins=wins[oppId]||0;
         var won=match.winner===f.p.id;
         var color=won?'#27500A':'#222';

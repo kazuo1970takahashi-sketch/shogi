@@ -489,6 +489,22 @@ else
 fi
 
 # ============================================
+# RANK-PRINT-001 印刷/PDF からエントリー番号を除外 単体テスト
+# ============================================
+echo ""
+echo "【RANK-PRINT-001 印刷/PDF からエントリー番号を除外】"
+if [ -f "$SCRIPT_DIR/test_rank_print_001.js" ]; then
+  if node "$SCRIPT_DIR/test_rank_print_001.js" "$TARGET" > /tmp/rank_print_001_out.log 2>&1; then
+    ok "RANK-PRINT-001 単体テスト 全PASS ($(tail -1 /tmp/rank_print_001_out.log))"
+  else
+    ng "RANK-PRINT-001 単体テスト 失敗"
+    cat /tmp/rank_print_001_out.log
+  fi
+else
+  warn "test_rank_print_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
