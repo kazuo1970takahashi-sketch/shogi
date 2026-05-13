@@ -1679,10 +1679,12 @@ function handlePastParticipantClassAdd(memberId,cls){
     // changePlayerClass が master.members[i].last_class を新クラスに更新済み（line 1250）。
     // saveBranchMaster は例外を握り潰すため、localStorage を再読込して検証する。
     // 新規追加分岐（addPlayerFromMaster 側）では master を更新しないため、ここに verify を入れない。
+    // SAVE-UX-DESIGN Level 1: console.warn + showMsg。詳細は docs/specs/20260513_shogi_save_ux_design.md
     if(!verifyMasterFieldPersisted(memberId,'last_class',cls)){
       if(typeof console!=='undefined'&&console.warn){
         console.warn('[MASTER-V2-LASTCLASS] S03 last_class verify failed',{memberId:memberId,expected:cls});
       }
+      showMsg('前回クラス情報の保存が確認できませんでした','warn');
     }
     renderRegList();save();
     var searchInp2=document.getElementById('pp-search');
@@ -3182,10 +3184,12 @@ function handleSuggestClassAdd(memberId,cls){
     // changePlayerClass が master.members[i].last_class を新クラスに更新済み（line 1250）。
     // saveBranchMaster は例外を握り潰すため、localStorage を再読込して検証する。
     // 新規追加分岐（addPlayerFromMaster 側）では master を更新しないため、ここに verify を入れない。
+    // SAVE-UX-DESIGN Level 1: console.warn + showMsg。詳細は docs/specs/20260513_shogi_save_ux_design.md
     if(!verifyMasterFieldPersisted(memberId,'last_class',cls)){
       if(typeof console!=='undefined'&&console.warn){
         console.warn('[MASTER-V2-LASTCLASS] S05 last_class verify failed',{memberId:memberId,expected:cls});
       }
+      showMsg('前回クラス情報の保存が確認できませんでした','warn');
     }
     postSuccess('['+memberName+'] を '+cls+'クラス に変更しました',r2.player.id,cls,r2.player.name,'クラスを変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください');
     return;

@@ -51,13 +51,19 @@ function makeContext() {
   function makeElem(id) {
     const handlers = {};
     const attrs = {};
+    const innerHTMLHistory = [];
     return {
       id: id || '',
       _innerHTML: '',
+      _innerHTMLHistory: innerHTMLHistory,
       style: { _cssText: '', set cssText(v){this._cssText=v;}, get cssText(){return this._cssText;}, display:'' },
       className: '',
       get innerHTML(){return this._innerHTML;},
-      set innerHTML(v){this._innerHTML=v;},
+      set innerHTML(v){
+        this._innerHTML=v;
+        // showMsg は reg-msg の innerHTML を上書きする。途中経過を検証するため履歴を保持。
+        innerHTMLHistory.push(v);
+      },
       addEventListener(type, fn){
         if(!handlers[type])handlers[type]=[];
         handlers[type].push(fn);
@@ -162,9 +168,24 @@ function loadEnv(path) {
   api._masterV2Warns = function(){
     return warnCalls.filter(function(w){ return w.indexOf('[MASTER-V2-LASTCLASS]')!==-1; });
   };
+  // SAVE-UX-MIN-NOTIFY-001: showMsg は reg-msg の innerHTML を上書きするため、最終状態だけ
+  // 見ても捕捉できない（後続の showMsg で上書きされる）。makeElem に積んだ履歴を返す。
+  api._regMsgHistory = function(){
+    const el = ctx.document._elements['reg-msg'];
+    return (el && el._innerHTMLHistory) ? el._innerHTMLHistory.slice() : [];
+  };
+  api._regMsgSawText = function(text){
+    const hist = api._regMsgHistory();
+    for(let i=0;i<hist.length;i++){
+      if(typeof hist[i]==='string' && hist[i].indexOf(text)!==-1)return true;
+    }
+    return false;
+  };
   api._clear = function(){
     alertCalls.length = 0;
     warnCalls.length = 0;
+    const el = ctx.document._elements['reg-msg'];
+    if(el && el._innerHTMLHistory)el._innerHTMLHistory.length = 0;
   };
   api._registerRadio = function(name,value,checked){
     const r = { name:name, value:value, checked:!!checked, blur:function(){} };
@@ -759,6 +780,129 @@ function setupS22(env, member, formValues){
   const v2Warns = env._masterV2Warns();
   assert(v2Warns.length >= 1, '5-2a callsite 側で MASTER-V2 タグ付き warn が出る');
   assert(v2Warns.every(w => w.indexOf('[MASTER-V2-LASTCLASS]')===0), '5-2b すべての MASTER-V2 warn が [MASTER-V2-LASTCLASS] プレフィックス');
+}
+
+// ============================================================================
+// SECTION 6: SAVE-UX-MIN-NOTIFY-001 — S03 / S05 を Level 0 → Level 1 昇格
+// ============================================================================
+// 設計書: docs/specs/20260513_shogi_save_ux_design.md
+// 方針:
+//   - S03 / S05 の verifyMasterFieldPersisted 失敗時に console.warn に加え
+//     showMsg('前回クラス情報の保存が確認できませんでした','warn') を追加
+//   - 既登録者クラス変更分岐のみ。新規追加分岐では呼ばない（誤通知防止）
+//   - S22 は対象外（本タスクでは未変更）
+const SAVE_UX_MIN_NOTIFY_TEXT = '前回クラス情報の保存が確認できませんでした';
+
+// T-S03-L1-success: S03 既登録者クラス変更 verify 成功時に showMsg(新文言) が呼ばれない
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState();
+  s.players.A = [{id:'p_m1', name:'田中', cls:'A', member:'member', grade:'ippan', member_id:'m1', entry_no:1}];
+  env._setState(s);
+  seedMaster(env, [makeMember('m1','田中',{last_class:'A'})]);
+  env.save();
+  env._clear();
+
+  env.handlePastParticipantClassAdd('m1', 'B');  // A → B クラス変更
+
+  const v2Warns = env._masterV2Warns();
+  assertEq(v2Warns.length, 0, 'T-S03-L1-success-a: console.warn (MASTER-V2) が呼ばれない');
+  assertEq(env._regMsgSawText(SAVE_UX_MIN_NOTIFY_TEXT), false, 'T-S03-L1-success-b: 新文言の showMsg が呼ばれない');
+}
+
+// T-S03-L1-fail: S03 既登録者クラス変更 verify 失敗時に console.warn と showMsg(新文言) の両方が呼ばれる
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState();
+  s.players.A = [{id:'p_m1', name:'田中', cls:'A', member:'member', grade:'ippan', member_id:'m1', entry_no:1}];
+  env._setState(s);
+  seedMaster(env, [makeMember('m1','田中',{last_class:'A'})]);
+  env.save();
+  env._clear();
+
+  env._ctx.localStorage._failOnSet = true;
+  env.handlePastParticipantClassAdd('m1', 'B');
+
+  const v2Warns = env._masterV2Warns();
+  assert(v2Warns.length >= 1, 'T-S03-L1-fail-a: console.warn (MASTER-V2) が呼ばれる（既存挙動維持）');
+  assert(v2Warns.some(w => w.indexOf('S03 last_class verify failed')!==-1), 'T-S03-L1-fail-b: S03 タグ付き console.warn');
+  assertEq(env._regMsgSawText(SAVE_UX_MIN_NOTIFY_TEXT), true, 'T-S03-L1-fail-c: 新文言の showMsg が呼ばれる');
+  // showMsg は 'warn' 種別で書き込まれる（reg-msg の innerHTML に alert-warn クラスを含む）
+  const hist = env._regMsgHistory();
+  assert(hist.some(h => h.indexOf('alert-warn')!==-1 && h.indexOf(SAVE_UX_MIN_NOTIFY_TEXT)!==-1), 'T-S03-L1-fail-d: 新文言が alert-warn 種別で書き込まれる');
+  // alert は呼ばれない（modal / alert 禁止方針）
+  assertEq(env._alertCalls.length, 0, 'T-S03-L1-fail-e: alert は呼ばれない');
+}
+
+// T-S03-L1-newadd: S03 未登録新規追加分岐では showMsg(新文言) が呼ばれない（誤通知防止）
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState();
+  env._setState(s);  // 参加者ゼロ
+  seedMaster(env, [makeMember('m2','佐藤',{last_class:'A'})]);
+  env._clear();
+
+  env._ctx.localStorage._failOnSet = true;  // 保存を強制失敗にしても誤通知が出ないこと
+  env.handlePastParticipantClassAdd('m2', 'B');  // 未登録 → case 1 新規追加
+
+  const v2Warns = env._masterV2Warns();
+  assertEq(v2Warns.length, 0, 'T-S03-L1-newadd-a: console.warn (MASTER-V2) が呼ばれない（新規追加分岐）');
+  assertEq(env._regMsgSawText(SAVE_UX_MIN_NOTIFY_TEXT), false, 'T-S03-L1-newadd-b: 新文言の showMsg が呼ばれない（誤通知防止）');
+}
+
+// T-S05-L1-success: S05 既登録者クラス変更 verify 成功時に showMsg(新文言) が呼ばれない
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState();
+  s.players.A = [{id:'p_m1', name:'田中', cls:'A', member:'member', grade:'ippan', member_id:'m1', entry_no:1}];
+  env._setState(s);
+  seedMaster(env, [makeMember('m1','田中',{last_class:'A'})]);
+  env.save();
+  env._clear();
+
+  env.handleSuggestClassAdd('m1', 'B');
+
+  const v2Warns = env._masterV2Warns();
+  assertEq(v2Warns.length, 0, 'T-S05-L1-success-a: console.warn (MASTER-V2) が呼ばれない');
+  assertEq(env._regMsgSawText(SAVE_UX_MIN_NOTIFY_TEXT), false, 'T-S05-L1-success-b: 新文言の showMsg が呼ばれない');
+}
+
+// T-S05-L1-fail: S05 既登録者クラス変更 verify 失敗時に console.warn と showMsg(新文言) の両方が呼ばれる
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState();
+  s.players.A = [{id:'p_m1', name:'田中', cls:'A', member:'member', grade:'ippan', member_id:'m1', entry_no:1}];
+  env._setState(s);
+  seedMaster(env, [makeMember('m1','田中',{last_class:'A'})]);
+  env.save();
+  env._clear();
+
+  env._ctx.localStorage._failOnSet = true;
+  env.handleSuggestClassAdd('m1', 'B');
+
+  const v2Warns = env._masterV2Warns();
+  assert(v2Warns.length >= 1, 'T-S05-L1-fail-a: console.warn (MASTER-V2) が呼ばれる（既存挙動維持）');
+  assert(v2Warns.some(w => w.indexOf('S05 last_class verify failed')!==-1), 'T-S05-L1-fail-b: S05 タグ付き console.warn');
+  assertEq(env._regMsgSawText(SAVE_UX_MIN_NOTIFY_TEXT), true, 'T-S05-L1-fail-c: 新文言の showMsg が呼ばれる');
+  const hist = env._regMsgHistory();
+  assert(hist.some(h => h.indexOf('alert-warn')!==-1 && h.indexOf(SAVE_UX_MIN_NOTIFY_TEXT)!==-1), 'T-S05-L1-fail-d: 新文言が alert-warn 種別で書き込まれる');
+  assertEq(env._alertCalls.length, 0, 'T-S05-L1-fail-e: alert は呼ばれない');
+}
+
+// T-S05-L1-newadd: S05 未登録新規追加分岐では showMsg(新文言) が呼ばれない（誤通知防止）
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState();
+  env._setState(s);
+  seedMaster(env, [makeMember('m2','佐藤',{last_class:'A'})]);
+  env._clear();
+
+  env._ctx.localStorage._failOnSet = true;
+  env.handleSuggestClassAdd('m2', 'B');  // 未登録 → case 1
+
+  const v2Warns = env._masterV2Warns();
+  assertEq(v2Warns.length, 0, 'T-S05-L1-newadd-a: console.warn (MASTER-V2) が呼ばれない（新規追加分岐）');
+  assertEq(env._regMsgSawText(SAVE_UX_MIN_NOTIFY_TEXT), false, 'T-S05-L1-newadd-b: 新文言の showMsg が呼ばれない（誤通知防止）');
 }
 
 // ============================================================================
