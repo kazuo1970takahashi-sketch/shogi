@@ -4911,6 +4911,66 @@ function calcFinal(cls){
   return res;
 }
 
+// RANK-TIE-001: 順位決定項目（A/B/C/直接対決）が完全同点の参加者を同順位として
+//   表示する。比較対象は競技上の順位決定項目のみ。
+//   含めるもの:   A（勝数）, B（対戦相手の勝数合計）, C（勝った相手の勝数合計）, 直接対決
+//   含めないもの: 参加者配列の登録順・entry_no・氏名・id 等、表示安定化用の tie-breaker
+//   A/B/C はすべて整数のため厳密比較。許容誤差不要。
+//   既存 calcFinal の sort 比較関数構造は変更しない（同点判定は本 helper で独立に行う）。
+function isSameDisplayedRank(a,b,cls){
+  if(!a||!b||!a.p||!b.p)return false;
+  if(a.A!==b.A)return false;
+  if(a.B!==b.B)return false;
+  if(a.C!==b.C)return false;
+  var pid1=a.p.id,pid2=b.p.id;
+  var rounds=(typeof state!=='undefined'&&state&&state.results&&state.results[cls])?state.results[cls]:[];
+  for(var r=0;r<rounds.length;r++){
+    var round=rounds[r];
+    if(!round)continue;
+    for(var m=0;m<round.length;m++){
+      var match=round[m];
+      if((match.p1===pid1&&match.p2===pid2)||(match.p1===pid2&&match.p2===pid1)){
+        if(match.winner===pid1||match.winner===pid2)return false;
+      }
+    }
+  }
+  return true;
+}
+
+// RANK-TIE-001: ソート済 finals から表示順位を算出する（欠番方式）。
+//   - 先頭は 1 位
+//   - 現在の同順位グループ「全員」と isSameDisplayedRank が成立する場合のみ同順位
+//   - 1 人でも不成立なら新順位 = index+1（タイ後は欠番: 12,12,14）
+//   - 直前 1 行だけと比較してはいけない: A/B/C 同点でも直接対決があれば
+//     非隣接（X→Y→Z で X-Z 直接対決決着）の透過的な同順位化を防ぐ必要があるため。
+//   - 表示順位は保存しない。毎回計算する（保存データ構造は不変）。
+function computeDisplayRanks(finals,cls){
+  var ranks=[];
+  var currentRank=1;
+  var currentGroup=[];
+  for(var i=0;i<finals.length;i++){
+    var row=finals[i];
+    if(i===0){
+      ranks.push(1);
+      currentGroup=[row];
+      continue;
+    }
+    var sameAsGroup=true;
+    for(var g=0;g<currentGroup.length;g++){
+      if(!isSameDisplayedRank(currentGroup[g],row,cls)){sameAsGroup=false;break;}
+    }
+    if(sameAsGroup){
+      ranks.push(currentRank);
+      currentGroup.push(row);
+    }else{
+      currentRank=i+1;
+      ranks.push(currentRank);
+      currentGroup=[row];
+    }
+  }
+  return ranks;
+}
+
 // ============================================================
 // RENDER (RESULTS): 最終結果タブの描画
 //   build*Html: HTML文字列を返すだけ(副作用なし)
@@ -4954,8 +5014,9 @@ function buildResultsRoundCellDesktopHtml(cls, playerId, roundIdx, wins){
 // スマホ向け表示全体(カードのリスト)
 function buildResultsMobileHtml(cls, finals, wins){
   var html='';
+  var displayRanks=computeDisplayRanks(finals,cls);
   for(var idx=0;idx<finals.length;idx++){
-    var f=finals[idx];var rank=idx+1;
+    var f=finals[idx];var rank=displayRanks[idx];
     var rowColor=rank===1?'#fef8e7':rank===2?'#f5f5f5':rank===3?'#eaf3fb':'#fff';
     var badge=rank===1?'<span class="badge b1">1位</span>':rank===2?'<span class="badge b2">2位</span>':rank===3?'<span class="badge b3">3位</span>':rank+'位';
     html+='<div style="background:'+rowColor+';border:1px solid #e0e0e0;border-radius:8px;padding:10px 12px;margin-bottom:8px">';
@@ -4980,8 +5041,9 @@ function buildResultsDesktopHtml(cls, finals, wins){
   var html='<div style="overflow-x:auto"><table><thead><tr><th style="width:60px">順位</th><th style="text-align:left">氏名</th>';
   for(var r=1;r<=state.rounds;r++)html+='<th>'+r+'回戦</th>';
   html+='<th>勝数(A)</th><th>負数</th><th>B<br><small style="font-weight:normal;font-size:10px">対戦相手<br>勝数合計</small></th><th>C<br><small style="font-weight:normal;font-size:10px">勝った相手<br>勝数合計</small></th></tr></thead><tbody>';
+  var displayRanks=computeDisplayRanks(finals,cls);
   for(var idx=0;idx<finals.length;idx++){
-    var f=finals[idx];var rank=idx+1;
+    var f=finals[idx];var rank=displayRanks[idx];
     var rowCls=rank===1?'row-r1':rank===2?'row-r2':rank===3?'row-r3':'';
     var badge=rank===1?'<span class="badge b1">1位</span>':rank===2?'<span class="badge b2">2位</span>':rank===3?'<span class="badge b3">3位</span>':rank+'位';
     html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+escapeHtml(getNameWithNo(f.p.id,cls))+'</td>';
@@ -5199,8 +5261,9 @@ function printResults(){
     html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">B<br><small style="font-weight:normal;font-size:10px">対戦相手<br>勝数合計</small></th>';
     html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">C<br><small style="font-weight:normal;font-size:10px">勝った相手<br>勝数合計</small></th>';
     html+='</tr></thead><tbody>';
+    var displayRanks=computeDisplayRanks(finals,cls);
     for(var idx=0;idx<finals.length;idx++){
-      var f=finals[idx];var rank=idx+1;
+      var f=finals[idx];var rank=displayRanks[idx];
       var bg=rank===1?'#fef8e7':rank===2?'#f5f5f5':rank===3?'#eaf3fb':'#fff';
       html+='<tr style="background:'+bg+'">';
       html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;font-weight:bold">'+rank+'位</td>';
