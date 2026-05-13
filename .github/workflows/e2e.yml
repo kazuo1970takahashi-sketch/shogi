@@ -41,7 +41,7 @@ jobs:
       - name: HTMLバリデーション（index.html / shogi_v4.html）
         run: npx html-validate index.html shogi_v4.html
       - name: Secrets検出（APIキー・パスワードのコミット漏れ）
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@v3.95.3
         with:
           path: ./
           base: HEAD~1
