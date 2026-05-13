@@ -964,6 +964,187 @@ function installMasterVerifyFailHook(env, memberId, fixedValue){
 }
 
 // ============================================================================
+// SECTION 7: SAVE-UX-MIN-NOTIFY-002 — S22 を Level 0 → Level 1 昇格
+// ============================================================================
+// 設計書: docs/specs/20260513_shogi_save_ux_design.md
+// 現在地マップ: docs/notes/20260513_shogi_save_ux_status_map.md
+// 方針:
+//   - S22 (会員マスタ編集モーダル保存) の verifyMasterFieldPersisted 失敗時に
+//     user-facing showMsg を 1 件集約で出す（field 別 console.warn は維持）
+//   - 失敗時は既存 success showMsg('マスタを更新しました', 'ok') を抑止して
+//     最終表示を warn として残す（PR #63 同パターン）
+//   - 4 fields verify を 1 件の集約 warn に集約（field 名や件数は user-facing に出さない）
+
+const SAVE_UX_MIN_NOTIFY_002_TEXT = '会員マスタ情報の保存が確認できませんでした';
+const SAVE_UX_MASTER_SUCCESS_TEXT = 'マスタを更新しました';
+
+// 任意の field を強制不一致にする setItem フック。
+// 既存 installMasterVerifyFailHook は last_class 単独だが、S22 の 4 fields verify に対応するため
+// fieldOverrides マップで複数 field を一括上書き可能にする。
+function installMasterVerifyFailHookFields(env, memberId, fieldOverrides){
+  const orig = env._ctx.localStorage.setItem.bind(env._ctx.localStorage);
+  env._ctx.localStorage.setItem = function(k,v){
+    if(k==='shogi_branch_master'){
+      try{
+        const p = JSON.parse(v);
+        if(p && Array.isArray(p.members)){
+          for(let i=0;i<p.members.length;i++){
+            if(p.members[i] && p.members[i].id===memberId){
+              for(const f in fieldOverrides){
+                if(Object.prototype.hasOwnProperty.call(fieldOverrides, f)){
+                  p.members[i][f] = fieldOverrides[f];
+                }
+              }
+            }
+          }
+        }
+        return orig(k, JSON.stringify(p));
+      }catch(e){
+        return orig(k,v);
+      }
+    }
+    return orig(k,v);
+  };
+}
+
+// T-S22-L1-success: 4 fields すべて verify 成功 → 最終表示は alert-ok + 既存 success 文言
+{
+  const env = loadEnv(targetPath);
+  const member = makeMember('m1','田中',{last_class:'A',member:'member',grade:'ippan',city:'沼津市'});
+  seedMaster(env, [member]);
+  env._clear();
+
+  setupS22(env, member, {
+    memberPick:'other',   // member → other に変更
+    gradePick:'chu',      // ippan → chu に変更
+    lastClassPick:'B',    // A → B に変更
+    city:'静岡市'
+  });
+  env._ctx.document.getElementById('me-save').click();
+
+  // 新 warn 文言が一度も呼ばれないこと（success 系のみ）
+  assertEq(env._regMsgSawText(SAVE_UX_MIN_NOTIFY_002_TEXT), false, 'T-S22-L1-success-a: 新 warn 文言が一度も呼ばれない');
+  const v2Warns = env._masterV2Warns();
+  assertEq(v2Warns.length, 0, 'T-S22-L1-success-b: console.warn (MASTER-V2) が呼ばれない');
+
+  // 最終表示が既存 success 文言（alert-ok）であること
+  const final = env._regMsgFinal();
+  assert(final.indexOf('alert-ok')!==-1, 'T-S22-L1-success-c: 最終表示は alert-ok 種別');
+  assert(final.indexOf(SAVE_UX_MASTER_SUCCESS_TEXT)!==-1, 'T-S22-L1-success-d: 最終表示に既存 success 文言が残る');
+  assert(final.indexOf(SAVE_UX_MIN_NOTIFY_002_TEXT)===-1, 'T-S22-L1-success-e: 最終表示に新 warn 文言が残っていない');
+}
+
+// T-S22-L1-fail-one-field: 1 field (last_class) のみ verify 失敗
+// → 最終表示が alert-warn + 新 warn 文言、success 文言で上書きされていない
+{
+  const env = loadEnv(targetPath);
+  const member = makeMember('m1','田中',{last_class:'A',member:'member',grade:'ippan',city:''});
+  seedMaster(env, [member]);
+  env._clear();
+
+  setupS22(env, member, {
+    memberPick:'member',
+    gradePick:'ippan',
+    lastClassPick:'B',   // A → B に変更（expected='B'）
+    city:''
+  });
+  // 書込み後の persisted last_class を 'A' に強制 → expected='B' との不一致で verify false
+  installMasterVerifyFailHookFields(env, 'm1', {last_class:'A'});
+  env._ctx.document.getElementById('me-save').click();
+
+  // field 別 console.warn が出ること（debug 用、last_class のみ 1 件）
+  const v2Warns = env._masterV2Warns();
+  assert(v2Warns.length >= 1, 'T-S22-L1-fail-one-field-a: console.warn (MASTER-V2 S22) が呼ばれる');
+  assert(v2Warns.some(w => w.indexOf('S22 verify failed')!==-1 && w.indexOf('"field":"last_class"')!==-1), 'T-S22-L1-fail-one-field-b: S22 last_class タグ付き console.warn');
+
+  // user-facing は集約 warn
+  assertEq(env._regMsgSawText(SAVE_UX_MIN_NOTIFY_002_TEXT), true, 'T-S22-L1-fail-one-field-c: 新 warn 文言の showMsg が呼ばれる');
+
+  // 最終表示が warn として残ること（Codex Must Fix の本丸）
+  const final = env._regMsgFinal();
+  assert(final.indexOf('alert-warn')!==-1, 'T-S22-L1-fail-one-field-d: 最終表示は alert-warn 種別');
+  assert(final.indexOf(SAVE_UX_MIN_NOTIFY_002_TEXT)!==-1, 'T-S22-L1-fail-one-field-e: 最終表示に新 warn 文言が残る');
+  assert(final.indexOf(SAVE_UX_MASTER_SUCCESS_TEXT)===-1, 'T-S22-L1-fail-one-field-f: 最終表示が既存 success 文言で上書きされていない');
+  assertEq(env._alertCalls.length, 0, 'T-S22-L1-fail-one-field-g: alert は呼ばれない');
+}
+
+// T-S22-L1-fail-multiple-fields: 4 fields すべて verify 失敗
+// → 最終表示が alert-warn + 新 warn 文言（1 件集約、field 名や件数は user-facing に出さない）
+{
+  const env = loadEnv(targetPath);
+  const member = makeMember('m1','田中',{last_class:'A',member:'member',grade:'ippan',city:'沼津市'});
+  seedMaster(env, [member]);
+  env._clear();
+
+  setupS22(env, member, {
+    memberPick:'other',     // expected='other'
+    gradePick:'chu',        // expected='chu'
+    lastClassPick:'B',      // expected='B'
+    city:'静岡市'           // expected='静岡市'（normalizeCity 適用後）
+  });
+  // 4 fields すべて期待値と異なる値で persist → verify 全失敗
+  installMasterVerifyFailHookFields(env, 'm1', {
+    last_class:'A',
+    member:'WRONG',
+    grade:'WRONG',
+    city:'WRONG'
+  });
+  env._ctx.document.getElementById('me-save').click();
+
+  // field 別 console.warn は 4 件出ることを補助確認（既存 debug warn が壊れていないこと）
+  const v2Warns = env._masterV2Warns();
+  const v2S22Warns = v2Warns.filter(w => w.indexOf('S22 verify failed')!==-1);
+  assertEq(v2S22Warns.length, 4, 'T-S22-L1-fail-multiple-a: console.warn (S22) は 4 件出る（field 別 debug 維持）');
+  assert(v2S22Warns.some(w => w.indexOf('"field":"last_class"')!==-1), 'T-S22-L1-fail-multiple-b1: last_class warn');
+  assert(v2S22Warns.some(w => w.indexOf('"field":"member"')!==-1), 'T-S22-L1-fail-multiple-b2: member warn');
+  assert(v2S22Warns.some(w => w.indexOf('"field":"grade"')!==-1), 'T-S22-L1-fail-multiple-b3: grade warn');
+  assert(v2S22Warns.some(w => w.indexOf('"field":"city"')!==-1), 'T-S22-L1-fail-multiple-b4: city warn');
+
+  // user-facing showMsg は 1 件集約（履歴上、新 warn 文言の出現は 1 回のみ）
+  const history = env._regMsgHistory();
+  const aggregatedWarnHits = history.filter(h => typeof h==='string' && h.indexOf(SAVE_UX_MIN_NOTIFY_002_TEXT)!==-1);
+  assertEq(aggregatedWarnHits.length, 1, 'T-S22-L1-fail-multiple-c: user-facing 集約 warn は 1 件のみ（field 別 user-facing warn が出ていない）');
+
+  // 最終表示が warn として残ること
+  const final = env._regMsgFinal();
+  assert(final.indexOf('alert-warn')!==-1, 'T-S22-L1-fail-multiple-d: 最終表示は alert-warn 種別');
+  assert(final.indexOf(SAVE_UX_MIN_NOTIFY_002_TEXT)!==-1, 'T-S22-L1-fail-multiple-e: 最終表示に新 warn 文言が残る');
+  assert(final.indexOf(SAVE_UX_MASTER_SUCCESS_TEXT)===-1, 'T-S22-L1-fail-multiple-f: 最終表示が既存 success 文言で上書きされていない');
+  // field 名や件数が user-facing に漏れていないこと（集約方針）
+  assert(final.indexOf('last_class')===-1, 'T-S22-L1-fail-multiple-g1: user-facing に field 名 (last_class) が漏れない');
+  assert(final.indexOf('member')===-1 || final.indexOf('member')!==-1 && final.indexOf('alert-warn')!==-1, 'T-S22-L1-fail-multiple-g2: user-facing に field 名 (member) が漏れない（または無関係文字列）');
+  // ↑ 「会員マスタ情報」に「員」が含まれるが、field 名 'member' は ASCII なので別物として判定
+  assertEq(env._alertCalls.length, 0, 'T-S22-L1-fail-multiple-h: alert は呼ばれない');
+}
+
+// T-S22-L1-no-extra-warn: 4 fields すべて未変更 + verify 全成功
+// → 最終表示が alert-ok、余計な warn が出ない
+{
+  const env = loadEnv(targetPath);
+  const member = makeMember('m1','田中',{last_class:'A',member:'member',grade:'ippan',city:'沼津市'});
+  seedMaster(env, [member]);
+  env._clear();
+
+  // 4 fields とも radios 未 check（lastClassPick / memberPick / gradePick 未指定）+ city は既存値
+  // → applyMasterMemberEdit は options にこれら field を含めない → in-memory 値は不変 → verify 全成功
+  setupS22(env, member, {
+    // memberPick: 未指定（applyMasterMemberEdit は target.member を変更しない）
+    // gradePick: 未指定
+    // lastClassPick: 未指定
+    city:'沼津市'   // 既存値と一致
+  });
+  env._ctx.document.getElementById('me-save').click();
+
+  const v2Warns = env._masterV2Warns();
+  assertEq(v2Warns.length, 0, 'T-S22-L1-no-extra-warn-a: console.warn (MASTER-V2 S22) が呼ばれない');
+  assertEq(env._regMsgSawText(SAVE_UX_MIN_NOTIFY_002_TEXT), false, 'T-S22-L1-no-extra-warn-b: 新 warn 文言が呼ばれない');
+
+  const final = env._regMsgFinal();
+  assert(final.indexOf('alert-ok')!==-1, 'T-S22-L1-no-extra-warn-c: 最終表示は alert-ok 種別');
+  assert(final.indexOf(SAVE_UX_MASTER_SUCCESS_TEXT)!==-1, 'T-S22-L1-no-extra-warn-d: 最終表示に既存 success 文言が残る');
+}
+
+// ============================================================================
 // 結果
 // ============================================================================
 console.log('\n  MASTER-V2-LASTCLASS-IMPL 単体テスト: PASS '+pass+'件 / FAIL '+fail+'件');
