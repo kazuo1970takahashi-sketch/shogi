@@ -56,6 +56,7 @@ function makeContext() {
       id: id || '',
       _innerHTML: '',
       _innerHTMLHistory: innerHTMLHistory,
+      hidden: false,  // SAVE-UX-STATUS-INDICATOR: el.hidden = true/false の DOM 操作に対応
       style: { _cssText: '', set cssText(v){this._cssText=v;}, get cssText(){return this._cssText;}, display:'' },
       className: '',
       get innerHTML(){return this._innerHTML;},
@@ -144,6 +145,9 @@ function loadEnv(path) {
        verifyMasterFieldPersisted:verifyMasterFieldPersisted,
        MASTER_V2_VERIFIABLE_FIELDS:MASTER_V2_VERIFIABLE_FIELDS,
        notifySaveWarning:notifySaveWarning,
+       recordSaveWarningForIndicator:recordSaveWarningForIndicator,
+       updateSaveWarningIndicator:updateSaveWarningIndicator,
+       _getIndicatorState:function(){return saveWarningIndicatorState;},
        handlePastParticipantClassAdd:handlePastParticipantClassAdd,
        handleSuggestClassAdd:handleSuggestClassAdd,
        bindMasterEditModalEvents:bindMasterEditModalEvents,
@@ -1247,6 +1251,192 @@ function installMasterVerifyFailHookFields(env, memberId, fieldOverrides){
   const testWarns = env._warnCalls.filter(function(w){return w.indexOf('[TEST]')!==-1;});
   assertEq(testWarns.length, 1, 'T-NSW-no-fields-c: 総括 console.warn が 1 件');
   assert(testWarns[0].indexOf('"fields":[]')!==-1, 'T-NSW-no-fields-d: fields が空配列で出力される');
+}
+
+// ============================================================================
+// SECTION 9: SAVE-UX-STATUS-INDICATOR-IMPL — Level 2 保存状態 indicator
+// ============================================================================
+// 設計書: docs/specs/20260513_shogi_save_ux_status_indicator_design.md
+// 方針:
+//   - notifySaveWarning helper 経由の warn を indicator (#save-warning-indicator)
+//     に「保存確認 N件」として累積表示する
+//   - 1 helper 呼出 = count +1（fields.length 分は加算しない）
+//   - memory only（localStorage / sessionStorage / tournament state 不書き込み）
+//   - N=0 で hidden、N>=1 で表示
+
+function getIndicatorEl(env){
+  return env._ctx.document._elements['save-warning-indicator'];
+}
+
+// T-IND-initial-hidden: 初期状態で indicator が hidden、textContent 空
+{
+  const env = loadEnv(targetPath);
+  // 初回 updateSaveWarningIndicator() を呼んで初期状態を反映
+  env.updateSaveWarningIndicator();
+  const el = getIndicatorEl(env);
+  assert(el !== undefined, 'T-IND-initial-hidden-a: indicator 要素が getElementById で取得できる（lazy 生成）');
+  assertEq(el.hidden, true, 'T-IND-initial-hidden-b: 初期 hidden=true');
+  assertEq(el.textContent, '', 'T-IND-initial-hidden-c: 初期 textContent 空');
+  assertEq(env._getIndicatorState().count, 0, 'T-IND-initial-hidden-d: 初期 state.count=0');
+}
+
+// T-IND-once: notifySaveWarning 1 回で indicator が表示され「保存確認 1件」
+{
+  const env = loadEnv(targetPath);
+  env._clear();
+  env.notifySaveWarning({
+    message:'テスト警告',
+    consoleTag:'[TEST]',
+    callsiteId:'T01',
+    fields:['last_class']
+  });
+  const el = getIndicatorEl(env);
+  assertEq(env._getIndicatorState().count, 1, 'T-IND-once-a: count=1');
+  assertEq(el.hidden, false, 'T-IND-once-b: hidden=false（表示）');
+  assertEq(el.textContent, '保存確認 1件', 'T-IND-once-c: textContent=保存確認 1件');
+}
+
+// T-IND-twice: 連続 2 回で「保存確認 2件」
+{
+  const env = loadEnv(targetPath);
+  env._clear();
+  env.notifySaveWarning({message:'A', consoleTag:'[TEST]', callsiteId:'T02', fields:['x']});
+  env.notifySaveWarning({message:'B', consoleTag:'[TEST]', callsiteId:'T02', fields:['y']});
+  const el = getIndicatorEl(env);
+  assertEq(env._getIndicatorState().count, 2, 'T-IND-twice-a: count=2');
+  assertEq(el.hidden, false, 'T-IND-twice-b: hidden=false');
+  assertEq(el.textContent, '保存確認 2件', 'T-IND-twice-c: textContent=保存確認 2件');
+}
+
+// T-IND-fields-4: fields が 4 要素でも 1 回呼出なら count +1（fields.length 分加算しない）
+{
+  const env = loadEnv(targetPath);
+  env._clear();
+  env.notifySaveWarning({
+    message:'4 fields fail',
+    consoleTag:'[TEST]',
+    callsiteId:'T03',
+    fields:['last_class','member','grade','city']
+  });
+  const el = getIndicatorEl(env);
+  assertEq(env._getIndicatorState().count, 1, 'T-IND-fields-4-a: count=1（fields.length=4 でも +1）');
+  assertEq(el.textContent, '保存確認 1件', 'T-IND-fields-4-b: textContent=保存確認 1件');
+}
+
+// T-IND-S03: S03 経由 warn で count +1
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState();
+  s.players.A = [{id:'p_m1', name:'田中', cls:'A', member:'member', grade:'ippan', member_id:'m1', entry_no:1}];
+  env._setState(s);
+  seedMaster(env, [makeMember('m1','田中',{last_class:'A'})]);
+  env.save();
+  env._clear();
+
+  // S03 で master verify を失敗させて helper 経由 warn を発火させる
+  installMasterVerifyFailHookFields(env, 'm1', {last_class:'A'});
+  env.handlePastParticipantClassAdd('m1', 'B');
+
+  assertEq(env._getIndicatorState().count, 1, 'T-IND-S03-a: S03 経由 helper warn で count=1');
+  const el = getIndicatorEl(env);
+  assertEq(el.hidden, false, 'T-IND-S03-b: hidden=false');
+  assertEq(el.textContent, '保存確認 1件', 'T-IND-S03-c: textContent=保存確認 1件');
+}
+
+// T-IND-S05: S05 経由 warn で count +1
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState();
+  s.players.A = [{id:'p_m1', name:'田中', cls:'A', member:'member', grade:'ippan', member_id:'m1', entry_no:1}];
+  env._setState(s);
+  seedMaster(env, [makeMember('m1','田中',{last_class:'A'})]);
+  env.save();
+  env._clear();
+
+  installMasterVerifyFailHookFields(env, 'm1', {last_class:'A'});
+  env.handleSuggestClassAdd('m1', 'B');
+
+  assertEq(env._getIndicatorState().count, 1, 'T-IND-S05-a: S05 経由 helper warn で count=1');
+  const el = getIndicatorEl(env);
+  assertEq(el.hidden, false, 'T-IND-S05-b: hidden=false');
+  assertEq(el.textContent, '保存確認 1件', 'T-IND-S05-c: textContent=保存確認 1件');
+}
+
+// T-IND-S22-multi: S22 で 4 fields すべて失敗でも count +1（user-facing 1 件集約 + indicator +1）
+{
+  const env = loadEnv(targetPath);
+  const member = makeMember('m1','田中',{last_class:'A',member:'member',grade:'ippan',city:'沼津市'});
+  seedMaster(env, [member]);
+  env._clear();
+
+  setupS22(env, member, {
+    memberPick:'other',
+    gradePick:'chu',
+    lastClassPick:'B',
+    city:'静岡市'
+  });
+  // 4 fields すべて期待値と異なる値で persist → verify 全失敗 → notifySaveWarning 1 回呼出
+  installMasterVerifyFailHookFields(env, 'm1', {
+    last_class:'A',
+    member:'WRONG',
+    grade:'WRONG',
+    city:'WRONG'
+  });
+  env._ctx.document.getElementById('me-save').click();
+
+  // S22 4 fields 失敗でも helper 呼出は 1 回 → indicator count +1
+  assertEq(env._getIndicatorState().count, 1, 'T-IND-S22-multi-a: 4 fields 失敗でも count=1（fields.length=4 分加算しない）');
+  const el = getIndicatorEl(env);
+  assertEq(el.hidden, false, 'T-IND-S22-multi-b: hidden=false');
+  assertEq(el.textContent, '保存確認 1件', 'T-IND-S22-multi-c: textContent=保存確認 1件（field 名・件数は user-facing に出さない）');
+}
+
+// T-IND-dom-absent: DOM 不在で例外を投げず silent skip
+{
+  const env = loadEnv(targetPath);
+  // getElementById を override して save-warning-indicator のみ null を返すようにする
+  const origGetElementById = env._ctx.document.getElementById.bind(env._ctx.document);
+  env._ctx.document.getElementById = function(id){
+    if(id === 'save-warning-indicator') return null;
+    return origGetElementById(id);
+  };
+
+  let threw = false;
+  try {
+    env.notifySaveWarning({message:'X', consoleTag:'[TEST]', callsiteId:'T04', fields:[]});
+    env.updateSaveWarningIndicator();
+    env.recordSaveWarningForIndicator({callsiteId:'T04', fields:[]});
+  } catch(e) {
+    threw = true;
+  }
+  assertEq(threw, false, 'T-IND-dom-absent-a: DOM 不在でも例外を投げない');
+  // count は increment される（state は DOM と独立）
+  assert(env._getIndicatorState().count >= 1, 'T-IND-dom-absent-b: state.count は increment される（DOM と独立）');
+}
+
+// T-IND-no-storage: indicator 用に localStorage に書き込みしない
+{
+  const env = loadEnv(targetPath);
+  env._clear();
+  // localStorage の初期キー数を記録
+  const beforeKeys = Object.keys(env._ctx.localStorage._);
+
+  env.notifySaveWarning({message:'X', consoleTag:'[TEST]', callsiteId:'T05', fields:['last_class']});
+  env.notifySaveWarning({message:'Y', consoleTag:'[TEST]', callsiteId:'T05', fields:['member']});
+
+  // helper 呼出後の localStorage キーを確認
+  const afterKeys = Object.keys(env._ctx.localStorage._);
+  // 新規追加されたキーが indicator 系でないことを確認
+  const addedKeys = afterKeys.filter(k => beforeKeys.indexOf(k) === -1);
+  // indicator 関連キー（save-warning-indicator / saveWarningIndicator* など）が増えていないこと
+  const indicatorRelatedKeys = afterKeys.filter(k =>
+    k.indexOf('save-warning-indicator') !== -1 ||
+    k.indexOf('saveWarningIndicator') !== -1 ||
+    k.indexOf('SaveWarn') !== -1
+  );
+  assertEq(indicatorRelatedKeys.length, 0, 'T-IND-no-storage-a: indicator 用の localStorage キーが存在しない');
+  // state は memory 上で increment されている
+  assertEq(env._getIndicatorState().count, 2, 'T-IND-no-storage-b: state.count は memory 上で increment（count=2）');
 }
 
 // ============================================================================

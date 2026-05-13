@@ -28,6 +28,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .alert-err{background:#fcebeb;color:#A32D2D;border:1px solid #f09595}
 .alert-ok{background:#eaf3de;color:#27500A;border:1px solid #97c459}
 .alert-warn{background:#faeeda;color:#633806;border:1px solid #EF9F27}
+.save-warn-pill{flex:0 0 auto;align-self:center;padding:4px 10px;border-radius:12px;background:#faeeda;color:#633806;border:1px solid #EF9F27;font-size:12px;font-weight:500}
 .fee-bar{margin-top:12px;padding:10px 14px;background:#e8f0f8;border-radius:8px;font-size:14px}
 .separator{border:none;border-top:1px solid #eee;margin:12px 0}
 .player-row{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#f8fbff;border:1px solid #d0e4f7;border-radius:8px;margin-bottom:6px;flex-wrap:wrap}
@@ -101,6 +102,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     <button type="button" class="tab" id="tab-tournament">対局管理</button>
     <button type="button" class="tab" id="tab-result">最終結果</button>
     <button type="button" class="tab" id="tab-master">マスタ</button>
+    <span id="save-warning-indicator" class="save-warn-pill" hidden></span>
   </div>
   <div id="pane-reg">
     <div class="section" id="past-participants-section" style="display:none">
@@ -2921,6 +2923,51 @@ function notifyError(text){
   if(!regVisible)alert(text);
 }
 
+// SAVE-UX-STATUS-INDICATOR: Level 2 indicator 用の memory-only state。
+//   localStorage / sessionStorage / tournament state に保存しない（設計書 §6）。
+//   reload で消えるのは意図的。永続ログが必要なら SAVE-FUTURE-REPORT で別設計。
+//   将来 history 等を持つ余地として object 形式。
+var saveWarningIndicatorState={count:0};
+
+// SAVE-UX-STATUS-INDICATOR: indicator count を +1 し、DOM を更新する。
+//   notifySaveWarning 1 回呼出 = count +1（設計書 §7 count 増加単位）。
+//   fields.length 分は加算しない（S22 4 fields 失敗でも +1）。
+//   options は将来拡張用に受け取るが現状は使わない。
+//   例外を投げない（notifySaveWarning の契約を壊さない）。戻り値 void。
+function recordSaveWarningForIndicator(options){
+  try{
+    saveWarningIndicatorState.count+=1;
+    updateSaveWarningIndicator();
+  }catch(e){
+    if(typeof console!=='undefined'&&console.warn){
+      console.warn('[SAVE-WARN-INDICATOR] record failed',e);
+    }
+  }
+}
+
+// SAVE-UX-STATUS-INDICATOR: indicator DOM (#save-warning-indicator) に count を反映。
+//   DOM 不在時は silent skip。textContent で表示（innerHTML 不使用）。
+//   N=0 → hidden / N>=1 → 「保存確認 N件」。
+//   例外を投げない。戻り値 void。
+function updateSaveWarningIndicator(){
+  try{
+    var el=document.getElementById('save-warning-indicator');
+    if(!el)return;
+    var n=saveWarningIndicatorState.count;
+    if(n<=0){
+      el.hidden=true;
+      el.textContent='';
+    }else{
+      el.hidden=false;
+      el.textContent='保存確認 '+n+'件';
+    }
+  }catch(e){
+    if(typeof console!=='undefined'&&console.warn){
+      console.warn('[SAVE-WARN-INDICATOR] update failed',e);
+    }
+  }
+}
+
 // SAVE-UX-WARN-HELPER: SAVE-UX-DESIGN Level 1 の user-facing warn helper。
 //   showMsg(.., 'warn') と 総括 console.warn のみを担当する。
 //   success showMsg の抑止は callsite 側の責務（PR #63 / #65 と同じ設計を保護する）。
@@ -2951,6 +2998,9 @@ function notifySaveWarning(options){
   if(typeof console!=='undefined'&&console.warn){
     console.warn(consoleTag,{callsiteId:callsiteId,fields:fields});
   }
+  // SAVE-UX-STATUS-INDICATOR: helper 1 呼出 = indicator count +1（設計書 §7）。
+  //   fields.length 分は加算しない。callsite 不変。例外を投げない契約を維持。
+  recordSaveWarningForIndicator({callsiteId:callsiteId,fields:fields});
 }
 
 function renderRegList(){
