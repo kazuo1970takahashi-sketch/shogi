@@ -2963,6 +2963,14 @@ function updateField(id,cls,field,value){
     if(players[i].id===id){players[i][field]=value;break;}
   }
   renderRegList();save();
+  // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+  // false は「保存未確認」（保存失敗と断定しない）。属性変更は rollback しない・運営は継続する。
+  // updateField は member / grade を書換えるため、verifyPlayerPersistedById（name 軸）では
+  // 不足。field 軸の verifyPlayerFieldPersisted で expected と厳密一致を確認する。
+  if(!verifyPlayerFieldPersisted(cls,id,field,value)){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: updateField の保存が確認できませんでした (player='+id+', cls='+cls+', field='+field+', expected='+value+')');
+    showMsg('属性を変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+  }
 }
 
 // A-3 サジェスト状態（候補タップで保持される選択 member の参照）
@@ -3426,6 +3434,18 @@ function bindBulkEditModalEvents(cls, players){
     }
     document.getElementById('bulk-edit-modal').remove();
     renderRegList();save();
+    // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+    // 全件 verify し、未確認件数を集計。warn は件数集約して 1 回のみ（UI ノイズ回避）。
+    // rollback しない・運営は継続する。alert も使わない（pre-save の空欄 / 同名重複 alert は別経路）。
+    // 既存 verifyStatePersisted(id, expectedName) を流用し、新 helper は追加しない。
+    var unverified=0;
+    for(var vi=0;vi<players.length;vi++){
+      if(!verifyStatePersisted(players[vi].id,newNames[players[vi].id]))unverified++;
+    }
+    if(unverified>0){
+      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: bulkEditNames の保存が確認できませんでした ('+unverified+'/'+players.length+' 件未確認)');
+      showMsg(players.length+'名のうち '+unverified+'名分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    }
   });
 }
 
@@ -3638,6 +3658,31 @@ function verifyPlayerPersistedById(playerId,cls,expectedName){
     return false;
   }catch(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-002: verifyPlayerPersistedById failed',e);
+    return false;
+  }
+}
+
+// A-5.1-SAVE-003b-3: updateField 用の field 軸 verify。
+// 戻り値: true  = id + cls 一致かつ persisted 側の field 値が expected と一致
+//        false = 「保存未確認」（不在 / 値不一致 / 例外 / 構造不正 / 空 / parse 不可）
+// updateField は member / grade など name 以外の軸を書換えるため、name 軸の
+// verifyPlayerPersistedById や verifyStatePersisted では不足。本 helper は
+// 任意の field 名と expected 値を受け取り、persisted 側で厳密一致を確認する。
+function verifyPlayerFieldPersisted(cls,playerId,field,expected){
+  if(typeof localStorage==='undefined')return false;
+  try{
+    var raw=localStorage.getItem(STORAGE_KEY);
+    if(typeof raw!=='string'||!raw)return false;
+    var parsed=JSON.parse(raw);
+    if(!parsed||!parsed.players)return false;
+    var arr=parsed.players[cls];
+    if(!Array.isArray(arr))return false;
+    for(var i=0;i<arr.length;i++){
+      if(arr[i]&&arr[i].id===playerId)return arr[i][field]===expected;
+    }
+    return false;
+  }catch(e){
+    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: verifyPlayerFieldPersisted failed',e);
     return false;
   }
 }

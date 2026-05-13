@@ -441,6 +441,22 @@ else
 fi
 
 # ============================================
+# A-5.1-SAVE-003b-3 手動編集系 保存未確認検知 単体テスト
+# ============================================
+echo ""
+echo "【A-5.1-SAVE-003b-3 手動編集系 保存未確認検知】"
+if [ -f "$SCRIPT_DIR/test_a5_1_save_003b_edit_fields.js" ]; then
+  if node "$SCRIPT_DIR/test_a5_1_save_003b_edit_fields.js" "$TARGET" > /tmp/a5_1_save_003b_edit_fields_out.log 2>&1; then
+    ok "A-5.1-SAVE-003b-3 単体テスト 全PASS ($(tail -1 /tmp/a5_1_save_003b_edit_fields_out.log))"
+  else
+    ng "A-5.1-SAVE-003b-3 単体テスト 失敗"
+    cat /tmp/a5_1_save_003b_edit_fields_out.log
+  fi
+else
+  warn "test_a5_1_save_003b_edit_fields.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
