@@ -1516,7 +1516,7 @@ import 経路の特徴:
 
 - 種別: docs-only inventory（または code review）
 - 目的: §17.9 弱点 #8 の解消 — `_loaded_with_corruption` 判定が抜けている callsite を洗い出し
-- 範囲: `loadBranchMaster()` 全 26 callsite × `_loaded_with_corruption` 判定の有無マトリクス
+- 範囲: `loadBranchMaster()` 実呼び出し 24 callsite（§17.4.1 参照）× `_loaded_with_corruption` 判定の有無マトリクス
 - 関連: 4 callsite（§17.4）以外で破損フラグを読まずに `saveBranchMaster()` を呼ぶ経路があれば、空マスタ誤上書きリスク
 
 ### 17.12 司令塔メモ：次にやるなら
@@ -1535,7 +1535,7 @@ import 経路の特徴:
 
 - 理由:
   - §17.9 弱点 #8 の早期解消
-  - 全 26 callsite × 判定マトリクス化で「破損フラグを誤って捨てる経路」が無いか確認
+  - 実呼び出し 24 callsite × 判定マトリクス化で「破損フラグを誤って捨てる経路」が無いか確認
   - 弱点 0 件なら docs で完結、見つかれば §17.11.2 の前提整理になる
 
 #### 第三候補: `SAVE-UX-STATE-RESTORE-HANDLING-INVENTORY`（§17.11.3、docs-only）
