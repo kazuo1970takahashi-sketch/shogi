@@ -3552,7 +3552,7 @@ assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'master-verify'; 
 //   kind:         'storage-corrupted'
 //   aggregateKey: 'storage-corrupted:branch-master'
 //   severity:     'warn'
-//   callsiteId:   'STORAGE-CORRUPTED:syncBranchMasterOnSave'
+//   callsiteId:   'PARSE-MASTER-003'
 //
 // showMsg aggregation: 対象外（SAVE_WARN_AGGREGATABLE_KINDS は変更しない）
 // indicator: helper 1 呼出 = +1 維持
@@ -3575,11 +3575,11 @@ var __EXP9_STORAGE_CORRUPTED_BLOCKS = __EXPAND_BLOCKS.filter(function(b){
 assertEq(__EXP9_STORAGE_CORRUPTED_BLOCKS.length, 1,
   'T-EXP9-static-kind-count: kind=storage-corrupted の block は 1 件');
 
-// callsiteId=STORAGE-CORRUPTED:syncBranchMasterOnSave が 1 件
+// callsiteId=PARSE-MASTER-003 が 1 件
 assertEq(
-  __EXP9_STORAGE_CORRUPTED_BLOCKS.filter(function(b){ return b.callsiteId === 'STORAGE-CORRUPTED:syncBranchMasterOnSave'; }).length,
+  __EXP9_STORAGE_CORRUPTED_BLOCKS.filter(function(b){ return b.callsiteId === 'PARSE-MASTER-003'; }).length,
   1,
-  'T-EXP9-static-callsiteId: STORAGE-CORRUPTED:syncBranchMasterOnSave が 1 件');
+  'T-EXP9-static-callsiteId: PARSE-MASTER-003 が 1 件');
 
 // aggregateKey=storage-corrupted:branch-master が 1 件
 assertEq(
@@ -3667,8 +3667,8 @@ function _makeReportState(){
     'T-EXP9-runtime-corruption-meta-aggKey: aggregateKey=storage-corrupted:branch-master');
   assert(lastWarn.indexOf('"severity":"warn"') !== -1,
     'T-EXP9-runtime-corruption-meta-sev: severity=warn');
-  assert(lastWarn.indexOf('"callsiteId":"STORAGE-CORRUPTED:syncBranchMasterOnSave"') !== -1,
-    'T-EXP9-runtime-corruption-meta-callsite: callsiteId=STORAGE-CORRUPTED:syncBranchMasterOnSave');
+  assert(lastWarn.indexOf('"callsiteId":"PARSE-MASTER-003"') !== -1,
+    'T-EXP9-runtime-corruption-meta-callsite: callsiteId=PARSE-MASTER-003');
 }
 
 // T-EXP9-runtime-save-still-called: corruption 検知時も save() は呼ばれる（大会データ保存継続）
@@ -3733,7 +3733,7 @@ function _makeReportState(){
   env.notifySaveWarning({
     message:'支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）',
     consoleTag:'[STORAGE-CORRUPTED] test',
-    callsiteId:'STORAGE-CORRUPTED:syncBranchMasterOnSave',
+    callsiteId:'PARSE-MASTER-003',
     kind:'storage-corrupted',
     aggregateKey:'storage-corrupted:branch-master',
     severity:'warn'
@@ -3819,7 +3819,7 @@ function _makeReportState(){
   env.notifySaveWarning({
     message:'支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）',
     consoleTag:'[STORAGE-CORRUPTED]',
-    callsiteId:'STORAGE-CORRUPTED:syncBranchMasterOnSave',
+    callsiteId:'PARSE-MASTER-003',
     kind:'storage-corrupted',
     aggregateKey:'storage-corrupted:branch-master',
     severity:'warn'
@@ -3845,7 +3845,7 @@ function _makeReportState(){
   env.notifySaveWarning({
     message:'支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）',
     consoleTag:'[STORAGE-CORRUPTED]',
-    callsiteId:'STORAGE-CORRUPTED:syncBranchMasterOnSave',
+    callsiteId:'PARSE-MASTER-003',
     kind:'storage-corrupted',
     aggregateKey:'storage-corrupted:branch-master',
     severity:'warn'

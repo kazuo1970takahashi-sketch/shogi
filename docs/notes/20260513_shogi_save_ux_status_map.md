@@ -1079,7 +1079,7 @@ PR #84 時点の aggregation 対象 (`SAVE_WARN_AGGREGATABLE_KINDS`):
   - `kind`: `'storage-corrupted'`
   - `aggregateKey`: `'storage-corrupted:branch-master'`
   - `severity`: `'warn'`
-  - `callsiteId`: `'STORAGE-CORRUPTED:syncBranchMasterOnSave'`（§13 形式 (b) `KIND-NAMESPACE:funcName`、storage-quota と対称）
+  - `callsiteId`: `'PARSE-MASTER-003'`（§16 inventory ID を runtime callsiteId として流用、§16.14 命名規則の選択方針を参照）
 - aggregation: **対象外**（`SAVE_WARN_AGGREGATABLE_KINDS = new Set(['save-verify','master-verify'])` は変更しない）
 - 不変項目:
   - 関数全体の try-catch 構造
@@ -1104,3 +1104,22 @@ PR #84 時点の aggregation 対象 (`SAVE_WARN_AGGREGATABLE_KINDS`):
 - 将来 aggregation 切替時の論点（§16.10 項目 8）:
   - `storage-corrupted:branch-master` 単独 callsite なので畳み込み問題は当面なし
   - PARSE-LOAD-002 / 003 を後続で接続する場合、`storage-corrupted:state` の畳み込み再検討が必要（§16.5「aggregateKey 畳み込みの注記」）
+
+### 16.14 callsiteId 命名の選択方針（本 PR 時点）
+
+本 PR では runtime `callsiteId` に **`'PARSE-MASTER-003'`**（§16 inventory ID）を採用した。背景:
+
+- §13 命名規則は形式 (a) 既存連番系（`S03` / `SAVE-001-removePlayer` 等）と形式 (b) 新規 kind namespace 系（`STORAGE-QUOTA:save`）の併用を許容している
+- §16.12 暫定提案では形式 (b) の `STORAGE-CORRUPTED:syncBranchMasterOnSave` を「要 §13 規則確認」付きで挙げていた
+- 本 PR では **inventory → impl の対応関係を明確化する** ことを優先し、inventory ID をそのまま runtime callsiteId に流用する選択をした
+- これは §13 の形式 (a)（既存連番系 / タスク由来 ID をそのまま使う形）に分類できるため、命名規則とは矛盾しない（PARSE-MASTER-003 は inventory § §16.3.2 の正式 ID）
+- storage-quota と同じ形式 (b) パターンへの統一は **別 docs / cleanup タスク**（仮: `SAVE-UX-CALLSITE-ID-NAMING-CLEANUP`）で扱う
+
+不変項目（既存 callsiteId）:
+
+- save-verify 系列（`SAVE-001-removePlayer` / `SAVE-002-addPlayer` / `SAVE-003-startTournament` 等 15 件）→ 変更しない（§13 「既存 callsiteId を無理に置換しない」原則）
+- storage-quota 系列（`STORAGE-QUOTA:save` / `STORAGE-QUOTA:saveBranchMaster`）→ 変更しない
+- master-verify 系列（`S03` / `S05` / `S22`）→ 変更しない
+- **追加**: storage-corrupted 系列（`PARSE-MASTER-003`、本 PR 1 件）
+
+将来後続 callsite（PARSE-LOAD-002 / 003 等）を接続する際は、§16.14 の方針に従い inventory ID（`PARSE-LOAD-002` / `PARSE-LOAD-003` 等）を runtime callsiteId として採用するのが自然。形式 (b) への移行を選ぶ場合は cleanup PR で一括処理する。
