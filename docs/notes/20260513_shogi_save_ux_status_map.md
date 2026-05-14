@@ -2305,6 +2305,8 @@ read+save 14 のうち flag を読まないのは 12 件。これらをさらに
 
 #### 21.5.1 結論（リスク評価）
 
+**中リスク 1 件の要約**: 支部マスタ raw が `JSON.parse` 失敗で破損している（または `getItem` 例外 / schema 不一致で空マスタになっている）状況で、user が `addPlayer` 経由で新規参加者を登録すると、`loadBranchMaster()` が返した空マスタに yomi 補完情報を付加し `saveBranchMaster()` で書き戻す経路が走る。結果として `localStorage` の破損 raw（復旧の手がかり）が **新規 1 名のみの「正規」マスタ** に上書きされ、既存マスタ内容の復旧可能性が狭まる **可能性がある**。
+
 - 6 件中 5 件は **間接防御**（master 空 = UI 要素も空 = user 操作で到達しない）により実運用上は低リスク
 - 残り 1 件（[3618](shogi_v4.html:3618) `addPlayer`）が **理論上の唯一の現実的経路**: user が新規参加者を `addPlayer` で登録した際に master 空マスタ + 新規 yomi を書き戻す
 - ただし破損 raw は `loadBranchMaster()` 内 [shogi_v4.html:637](shogi_v4.html:637) で `_loaded_with_corruption=true` を立てた **空マスタを返却** するだけで、`localStorage` の破損 raw は保持される（仕様書 v5 §3.5）→ `addPlayer` が `saveBranchMaster(空マスタ+新規 1 名)` を呼ぶと、その時点で破損 raw が **新規 1 名のみのマスタ** に上書きされる
@@ -2333,7 +2335,12 @@ read+save 14 のうち flag を読まないのは 12 件。これらをさらに
 | schema 構造不正（`members` が array でない 等）| silent 空マスタ | × | × |
 | `JSON.parse` 失敗（破損 raw）| 空マスタ + flag | ○ | ○（4 callsite） |
 
-→ 「support 必要な破損ケース」のうち、**現状の `_loaded_with_corruption` flag は `JSON.parse` 失敗のみ捕捉している**。schema_version bump 系のリスクは §17.9 弱点 #10 として既出（「schema_version bump 時に全 member 消失」）。
+→ 「support 必要な破損ケース」のうち、**現状の `_loaded_with_corruption` flag は `JSON.parse` 失敗のみ捕捉している**。
+
+**§17.9 既存弱点 #10 との対応関係（明示）**:
+- **schema_version bump 部分**は §17.9 既存弱点 #10「schema_version bump 時に全 member 消失」と一致する（`normalizeBranchMaster` line 571 の挙動）。本 audit ではこの部分を #10 の責務として再確認のみ行う。
+- **`getItem` 例外 / schema 構造不正部分**は §17.9 既存項目に明示記載がなく、本 audit で `_loaded_with_corruption` 検出範囲の論点として **初めて活性化** した（弱点 #10 相当の構造的限界の拡張範囲）。
+- 本 PR は §11〜§20 を改訂しない方針のため、§17.9 本体への弱点項目追加 / #10 の拡張記述は別 docs PR の責務とし、本 §21 内のみに記録を留める。後続実装案 `SAVE-UX-BRANCH-MASTER-FLAG-COVERAGE`（§21.10.2）の起動条件に「§17.9 #10 と本論点を結合して扱う」を組み込む。
 
 #### 21.6.3 構造的提案（実装変更を伴うため本 audit では非推奨）
 
@@ -2450,7 +2457,8 @@ read+save 14 のうち flag を読まないのは 12 件。これらをさらに
 #### 21.11.2 次に実装へ進むべきか
 
 - **本 audit 時点では No**（実装変更は不要）
-- 理由:
+- **判断根拠（中リスク 1 件を放置していない理由を明記）**: 中リスク 1 件（[3613](shogi_v4.html:3613)→[3618](shogi_v4.html:3618) `addPlayer` yomi 補完経路）は本 audit で **認識済**。ただし影響範囲は `addPlayer` の yomi 補完経路に限定され、PR #90 で支部マスタ破損 warn の復旧導線（PARSE-MASTER-003 message + マスタタブのインポート・統合への参照）が **既に実装済** である。本 PR は **audit であり実装 PR ではない** ため、即時実装ではなく `SAVE-UX-ADDPLAYER-CORRUPTION-GUARD`（§21.10.2 第一案）として後続化し、運用者フィードバック観察期間中に優先度を再判断する。これは「中リスクを放置」ではなく「中リスクを切り出して観察フェーズに乗せた」状態である。
+- 理由（補足）:
   - 注目 6 callsite のうち 5 件は間接防御で低リスク
   - 1 件（[3618](shogi_v4.html:3618) `addPlayer`）の中リスクは **運用フィードバックで実害が観測されていない**
   - SAVE-UX 設計方針（大会運営継続最優先、§18 / §19）と整合する形で「user 操作を止めない / 復旧導線は §20 でカバー済」を維持
