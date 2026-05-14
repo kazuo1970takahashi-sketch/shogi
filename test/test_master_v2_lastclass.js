@@ -2281,9 +2281,11 @@ assert(__EXPAND_SRC.indexOf("SAVE_WARN_AGGREGATED_MESSAGE='保存確認に失敗
 }
 
 // T-EXP5-helper-aggregation-conditions: helper 内の aggregation 条件が正しい
-//   kind==='save-verify' && severity==='warn' && aggregateKey の AND 判定
-assert(__EXPAND_SRC.indexOf("kind==='save-verify'&&severity==='warn'&&aggregateKey") !== -1,
-  'T-EXP5-helper-aggregation-conditions: helper 内に 3 条件 AND が存在');
+//   SAVE-UX-MASTER-V2-AGGREGATION (PR-B) で kind === 'save-verify' の単独判定から
+//   SAVE_WARN_AGGREGATABLE_KINDS.has(kind) の allow-list 判定に移行。
+//   3 条件 AND (allow-list && severity==='warn' && aggregateKey) を確認。
+assert(__EXPAND_SRC.indexOf("SAVE_WARN_AGGREGATABLE_KINDS.has(kind)&&severity==='warn'&&aggregateKey") !== -1,
+  'T-EXP5-helper-aggregation-conditions: helper 内に 3 条件 AND (allow-list 形式) が存在');
 
 // T-EXP5-helper-window-check: 3 秒未満判定が定数経由
 assert(__EXPAND_SRC.indexOf('(nowTs-lastTs)<SAVE_WARN_AGGREGATION_WINDOW_MS') !== -1,
@@ -2506,7 +2508,9 @@ function _seedAggKey(env, key, msAgo){
     'T-EXP5-runtime-no-aggregateKey: aggregateKey 欠落は集約しない');
 }
 
-// T-EXP5-runtime-wrong-kind-skip: kind!='save-verify' は対象外
+// T-EXP5-runtime-wrong-kind-skip: allow-list 外 kind は対象外
+//   SAVE-UX-MASTER-V2-AGGREGATION (PR-B) 以降、master-verify も allow-list に加わったため、
+//   「allow-list 外」の代表として storage-quota を使う（quota は意図的に対象外維持）。
 {
   var env = _newAggEnv();
   _seedAggKey(env, 'save-verify:entry', 500);
@@ -2514,13 +2518,13 @@ function _seedAggKey(env, key, msAgo){
     message:'別 kind の元 message',
     consoleTag:'[T-WRONG-KIND]',
     callsiteId:'TEST-WRONG-KIND',
-    kind:'master-verify',  // 別 kind
+    kind:'storage-quota',  // allow-list 外
     aggregateKey:'save-verify:entry',
     severity:'warn'
   });
   var final9 = env._regMsgFinal();
   assert(final9.indexOf('別 kind の元 message') !== -1,
-    'T-EXP5-runtime-wrong-kind: kind が異なる場合は集約対象外');
+    'T-EXP5-runtime-wrong-kind: allow-list 外 kind は集約対象外');
 }
 
 // T-EXP5-runtime-wrong-severity-skip: severity!='warn' は対象外
@@ -3074,43 +3078,35 @@ assertEq(
   'T-EXP7-storage-quota-aggKey-still-2: aggregateKey:storage-quota:global は依然 2 件');
 
 // ----------------------------------------------------------------------------
-// T-EXP7-helper-aggregation-condition-unchanged: helper aggregation 条件 不変
+// T-EXP7-helper-aggregation-condition (PR-B 更新): helper aggregation 条件は allow-list 形式
 // ----------------------------------------------------------------------------
+// PR-A (PR #82) 時点では aggregation 条件は `kind === 'save-verify'` 単独判定で、
+// master-verify は意図的に対象外だった。SAVE-UX-MASTER-V2-AGGREGATION (PR-B) で
+// allow-list 形式 `SAVE_WARN_AGGREGATABLE_KINDS.has(kind)` に移行し、master-verify が
+// allow-list に追加された。詳細は SECTION 17 で検証。
 
-// aggregation 条件は kind === 'save-verify' のまま
-assert(__EXPAND_SRC.indexOf("kind==='save-verify'&&severity==='warn'&&aggregateKey") !== -1,
-  'T-EXP7-helper-condition: aggregation 条件は kind===save-verify のまま');
+// aggregation 条件は SAVE_WARN_AGGREGATABLE_KINDS.has(kind) を使う形に変更されている
+assert(__EXPAND_SRC.indexOf("SAVE_WARN_AGGREGATABLE_KINDS.has(kind)&&severity==='warn'&&aggregateKey") !== -1,
+  'T-EXP7-helper-condition: aggregation 条件は allow-list 形式 SAVE_WARN_AGGREGATABLE_KINDS.has(kind) に移行済み');
 
-// AGGREGATABLE_KINDS のような allow-list がまだ追加されていない
-['AGGREGATABLE_KINDS','aggregationEligible','aggregatable_kinds','aggregatableKinds'].forEach(function(forbidden){
-  assert(__EXPAND_SRC.indexOf(forbidden) === -1,
-    'T-EXP7-no-allow-list: '+forbidden+' は本 PR では追加されていない');
-});
-
-// master-verify が aggregation 対象になる新条件が混入していない
-[
-  "kind==='master-verify'",
-  "kind === 'master-verify'",
-  "||kind===",
-  "kind==='save-verify'||"
-].forEach(function(forbidden){
-  assert(__EXPAND_SRC.indexOf(forbidden) === -1,
-    'T-EXP7-no-master-verify-in-condition: aggregation 条件に '+forbidden+' が混入していない');
-});
+// 旧 `kind==='save-verify'` 単独判定 (aggregation 条件としての) が残っていないこと。
+// ※ metadata 文字列としての `kind:'save-verify'` は 15 件残るので別。あくまで if 条件式の
+// 単独 `kind==='save-verify'` & & severity & & aggregateKey の組み合わせがないことを確認。
+assert(__EXPAND_SRC.indexOf("kind==='save-verify'&&severity==='warn'&&aggregateKey") === -1,
+  'T-EXP7-helper-condition-old-removed: 旧 kind===save-verify 単独判定の条件式は残らない');
 
 // ----------------------------------------------------------------------------
 // T-EXP7-runtime: master-verify ランタイム挙動
 // ----------------------------------------------------------------------------
 
-// T-EXP7-runtime-master-verify-not-aggregated: master-verify の連続発火でも短縮文言にならない
-//   helper の aggregation 条件は kind==='save-verify' のため、master-verify は legacy path
+// T-EXP7-runtime-master-verify-1st-original: master-verify 1 回目は元 message
+//   PR-A (PR #82) では master-verify はそもそも aggregation 対象外だったが、PR-B
+//   (SAVE-UX-MASTER-V2-AGGREGATION) で対象化された。連続発火時のランタイム検証は
+//   SECTION 17 に集約し、ここでは「1 回目は元 message」のみ確認する（基本性質）。
 {
   var env = loadEnv(targetPath);
   env._resetSaveWarningAggregationState();
   env._clear();
-  // 同一 aggregateKey 1 秒前にも master-verify が出ていたと仮定
-  var st = env._getSaveWarningAggregationState();
-  st.lastTimestampByKey['master-verify:lastclass'] = Date.now() - 1000;
   env.notifySaveWarning({
     message:'前回クラス情報の保存が確認できませんでした',
     consoleTag:'[MASTER-V2-LASTCLASS] test',
@@ -3121,11 +3117,10 @@ assert(__EXPAND_SRC.indexOf("kind==='save-verify'&&severity==='warn'&&aggregateK
     severity:'warn'
   });
   var final = env._regMsgFinal();
-  // master-verify は aggregation 対象外なので元 message のまま
   assert(final.indexOf('前回クラス情報の保存が確認できませんでした') !== -1,
-    'T-EXP7-runtime-master-verify-original: master-verify の 2 回目も元 message');
+    'T-EXP7-runtime-master-verify-1st-original: master-verify 1 回目は元 message');
   assert(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) === -1,
-    'T-EXP7-runtime-master-verify-no-aggregated: 短縮文言には切替らない');
+    'T-EXP7-runtime-master-verify-1st-no-aggregated: 1 回目は短縮文言を出さない');
 }
 
 // T-EXP7-runtime-master-verify-indicator-plus-1: master-verify 発生で indicator +1
@@ -3216,6 +3211,321 @@ assert(__EXPAND_SRC.indexOf("kind==='save-verify'&&severity==='warn'&&aggregateK
   // save-verify:core は別 key なので 1 回目扱い → 元文言
   assert(final.indexOf('大会を開始しましたが') !== -1,
     'T-EXP7-runtime-no-pollution: master-verify 発火が save-verify の 1 回目扱いを破壊しない');
+}
+
+// ============================================================================
+// SECTION 17: SAVE-UX-MASTER-V2-AGGREGATION — master-verify を aggregation 対象化
+// ============================================================================
+// 依頼: SAVE-UX-MASTER-V2-AGGREGATION (PR-B)
+//
+// 実装:
+//   - shogi_v4.html に SAVE_WARN_AGGREGATABLE_KINDS = new Set(['save-verify','master-verify'])
+//     を追加（notifySaveWarning helper 直前 module scope、既存 SAVE_WARN_* 定数群の近傍）
+//   - aggregation 条件を `kind === 'save-verify'` 単独判定から
+//     `SAVE_WARN_AGGREGATABLE_KINDS.has(kind)` の allow-list 判定に変更
+//   - master-verify (S03 / S05 / S22) が aggregation 対象になる
+//   - storage-quota は意図的に allow-list 外（quota は 1 回ごと確実な認知が必要）
+//
+// 不変項目:
+//   - save-verify 既存 aggregation 挙動（時間窓 3000ms / 短縮文言 / lastTimestampByKey 構造）
+//   - storage-quota は引き続き aggregation 対象外
+//   - master-verify metadata (kind / aggregateKey / severity / callsiteId)
+//   - aggregateKey 'master-verify:lastclass' は不変
+//   - indicator count 発生単位 +1
+//   - console.warn 個別出力
+//   - showMsg type 'warn'
+//   - success showMsg 抑止構造 (s03 if-gate / s05 suppressOkMsg)
+
+// ----------------------------------------------------------------------------
+// T-EXP8-static: SAVE_WARN_AGGREGATABLE_KINDS の存在と内容
+// ----------------------------------------------------------------------------
+
+// 定数宣言が source に存在
+assert(__EXPAND_SRC.indexOf('var SAVE_WARN_AGGREGATABLE_KINDS=new Set(') !== -1,
+  'T-EXP8-allow-list-declared: SAVE_WARN_AGGREGATABLE_KINDS が Set として宣言されている');
+
+// allow-list に 'save-verify' が含まれる
+assert(/SAVE_WARN_AGGREGATABLE_KINDS\s*=\s*new\s+Set\(\[[^\]]*'save-verify'[^\]]*\]\)/.test(__EXPAND_SRC),
+  'T-EXP8-allow-list-has-save-verify: allow-list に save-verify が含まれる');
+
+// allow-list に 'master-verify' が含まれる
+assert(/SAVE_WARN_AGGREGATABLE_KINDS\s*=\s*new\s+Set\(\[[^\]]*'master-verify'[^\]]*\]\)/.test(__EXPAND_SRC),
+  'T-EXP8-allow-list-has-master-verify: allow-list に master-verify が含まれる');
+
+// allow-list に 'storage-quota' が **含まれない**
+//   宣言部の Set 内に storage-quota が現れないことを確認（source 全体での storage-quota
+//   metadata 件数は変わらず 2 件のまま、ここでは allow-list 宣言部のみを対象に検査）
+{
+  var m = __EXPAND_SRC.match(/SAVE_WARN_AGGREGATABLE_KINDS\s*=\s*new\s+Set\(\[([^\]]*)\]\)/);
+  assert(m !== null, 'T-EXP8-allow-list-found: Set literal が抽出できる');
+  var listBody = m ? m[1] : '';
+  assertEq(listBody.indexOf("'storage-quota'"), -1,
+    'T-EXP8-allow-list-no-storage-quota: allow-list 宣言部に storage-quota が含まれない');
+  // 将来候補も含まれていないこと
+  ['parse-failed','duplicate-name','storage-corrupted'].forEach(function(k){
+    assertEq(listBody.indexOf("'"+k+"'"), -1,
+      'T-EXP8-allow-list-no-future-' + k + ': 将来候補 ' + k + ' は含まれない');
+  });
+}
+
+// aggregation 条件で allow-list を使う形に変更されている
+assert(__EXPAND_SRC.indexOf("SAVE_WARN_AGGREGATABLE_KINDS.has(kind)&&severity==='warn'&&aggregateKey") !== -1,
+  'T-EXP8-helper-condition-allow-list: aggregation 条件が allow-list 形式');
+
+// 旧 `kind === 'save-verify'` 単独 aggregation 条件が残らない
+assert(__EXPAND_SRC.indexOf("kind==='save-verify'&&severity==='warn'&&aggregateKey") === -1,
+  'T-EXP8-helper-condition-old-removed: 旧 kind===save-verify 単独 aggregation 条件は残らない');
+
+// aggregationEligible / aggregated flag が追加されていない
+['aggregationEligible','aggregated:true','aggregated: true','aggregated:false','aggregated: false'].forEach(function(forbidden){
+  assert(__EXPAND_SRC.indexOf(forbidden) === -1,
+    'T-EXP8-no-eligible-flag: ' + forbidden + ' は追加されていない');
+});
+
+// 3 系統 metadata 件数維持
+assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'save-verify'; }).length, 15,
+  'T-EXP8-save-verify-count-unchanged: save-verify 15 件維持');
+assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'storage-quota'; }).length, 2,
+  'T-EXP8-storage-quota-count-unchanged: storage-quota 2 件維持');
+assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'master-verify'; }).length, 3,
+  'T-EXP8-master-verify-count-unchanged: master-verify 3 件維持');
+assertEq(__EXPAND_BLOCKS.length, 20,
+  'T-EXP8-3systems-total-unchanged: 3 系統合計 20 件維持');
+
+// ----------------------------------------------------------------------------
+// T-EXP8-runtime: master-verify aggregation ランタイム挙動
+// ----------------------------------------------------------------------------
+
+// T-EXP8-runtime-master-verify-1st-original: 1 回目は元 message
+{
+  var env = _newAggEnv();
+  env.notifySaveWarning({
+    message:'前回クラス情報の保存が確認できませんでした',
+    consoleTag:'[MV] test',
+    callsiteId:'S03',
+    fields:['last_class'],
+    kind:'master-verify',
+    aggregateKey:'master-verify:lastclass',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf('前回クラス情報の保存が確認できませんでした') !== -1,
+    'T-EXP8-runtime-mv-1st-original: master-verify 1 回目は元 message');
+  assert(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) === -1,
+    'T-EXP8-runtime-mv-1st-no-aggregated: 1 回目は短縮文言を出さない');
+}
+
+// T-EXP8-runtime-master-verify-2nd-aggregated: 同一 aggregateKey の 3 秒未満 2 回目は短縮文言
+{
+  var env = _newAggEnv();
+  // 1 秒前に master-verify が出ていたとシード
+  _seedAggKey(env, 'master-verify:lastclass', 1000);
+  env.notifySaveWarning({
+    message:'前回クラス情報の保存が確認できませんでした',
+    consoleTag:'[MV] 2nd',
+    callsiteId:'S05',
+    fields:['last_class'],
+    kind:'master-verify',
+    aggregateKey:'master-verify:lastclass',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) !== -1,
+    'T-EXP8-runtime-mv-2nd-aggregated: master-verify 2 回目は短縮文言');
+  assert(final.indexOf('前回クラス情報の保存が確認できませんでした') === -1,
+    'T-EXP8-runtime-mv-2nd-no-original: 2 回目は元 message を出さない');
+}
+
+// T-EXP8-runtime-master-verify-reset-after-3s: 3 秒経過後はリセット
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'master-verify:lastclass', 5000);  // 5 秒前
+  env.notifySaveWarning({
+    message:'前回クラス情報の保存が確認できませんでした',
+    consoleTag:'[MV] reset',
+    callsiteId:'S22',
+    fields:['last_class'],
+    kind:'master-verify',
+    aggregateKey:'master-verify:lastclass',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf('前回クラス情報の保存が確認できませんでした') !== -1,
+    'T-EXP8-runtime-mv-reset: 3 秒経過後は元 message に戻る');
+  assert(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) === -1,
+    'T-EXP8-runtime-mv-reset-no-aggregated: リセット時は短縮文言を出さない');
+}
+
+// T-EXP8-runtime-master-verify-3-events-indicator-3: 連続 3 件で indicator +3
+{
+  var env = _newAggEnv();
+  ['S03','S05','S22'].forEach(function(cid){
+    env.notifySaveWarning({
+      message:cid+' message',
+      consoleTag:'[MV] '+cid,
+      callsiteId:cid,
+      fields:['last_class'],
+      kind:'master-verify',
+      aggregateKey:'master-verify:lastclass',
+      severity:'warn'
+    });
+  });
+  assertEq(env._getIndicatorState().count, 3,
+    'T-EXP8-runtime-mv-indicator-3: 3 件発生で indicator +3 (発生単位維持)');
+}
+
+// T-EXP8-runtime-master-verify-3-events-console-warn-3: 連続 3 件で console.warn 3 回
+{
+  var env = _newAggEnv();
+  var beforeWarnCount = env._warnCalls.length;
+  ['S03','S05','S22'].forEach(function(cid){
+    env.notifySaveWarning({
+      message:cid+' message',
+      consoleTag:'[MV] '+cid,
+      callsiteId:cid,
+      fields:['last_class'],
+      kind:'master-verify',
+      aggregateKey:'master-verify:lastclass',
+      severity:'warn'
+    });
+  });
+  assertEq(env._warnCalls.length - beforeWarnCount, 3,
+    'T-EXP8-runtime-mv-console-warn-3: 3 件発生で console.warn 3 回 (個別出力維持)');
+}
+
+// T-EXP8-runtime-save-verify-still-aggregates: save-verify 既存 aggregation 挙動維持
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'save-verify:core', 1000);
+  env.notifySaveWarning({
+    message:'大会を開始しましたが、保存が確認できませんでした...',
+    consoleTag:'SAVE-003 test',
+    callsiteId:'SAVE-003-startTournament',
+    kind:'save-verify',
+    aggregateKey:'save-verify:core',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) !== -1,
+    'T-EXP8-runtime-sv-still-aggregates: save-verify は依然 aggregate');
+}
+
+// T-EXP8-runtime-namespace-isolation-mv-no-pollute-sv: master-verify 発火が save-verify state を汚さない
+{
+  var env = _newAggEnv();
+  // master-verify を発火
+  env.notifySaveWarning({
+    message:'MV',
+    consoleTag:'[MV]',
+    callsiteId:'S03',
+    fields:['last_class'],
+    kind:'master-verify',
+    aggregateKey:'master-verify:lastclass',
+    severity:'warn'
+  });
+  env._clear();
+  // save-verify:past を発火 — 別 aggregateKey なので 1 回目扱い
+  env.notifySaveWarning({
+    message:'クラスを変更しましたが、保存が確認できませんでした',
+    consoleTag:'SAVE-003b past',
+    callsiteId:'SAVE-003b-handlePastParticipantClassAdd-class-change',
+    kind:'save-verify',
+    aggregateKey:'save-verify:past',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf('クラスを変更しましたが') !== -1,
+    'T-EXP8-runtime-mv-no-pollute-sv: master-verify 発火が save-verify:past を汚染しない');
+}
+
+// T-EXP8-runtime-namespace-isolation-sv-no-pollute-mv: save-verify 発火が master-verify state を汚さない
+{
+  var env = _newAggEnv();
+  // save-verify を発火
+  env.notifySaveWarning({
+    message:'SV',
+    consoleTag:'[SV]',
+    callsiteId:'SAVE-003-startTournament',
+    kind:'save-verify',
+    aggregateKey:'save-verify:core',
+    severity:'warn'
+  });
+  env._clear();
+  // master-verify:lastclass を発火 — 別 aggregateKey なので 1 回目扱い
+  env.notifySaveWarning({
+    message:'前回クラス情報の保存が確認できませんでした',
+    consoleTag:'[MV]',
+    callsiteId:'S05',
+    fields:['last_class'],
+    kind:'master-verify',
+    aggregateKey:'master-verify:lastclass',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf('前回クラス情報の保存が確認できませんでした') !== -1,
+    'T-EXP8-runtime-sv-no-pollute-mv: save-verify 発火が master-verify:lastclass を汚染しない');
+}
+
+// T-EXP8-runtime-storage-quota-still-not-aggregated: storage-quota は連続発火しても aggregation されない
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'storage-quota:global', 1000);
+  env.notifySaveWarning({
+    message:'保存容量の上限に達しました。データ整理が必要です。',
+    consoleTag:'[STORAGE-QUOTA]',
+    callsiteId:'STORAGE-QUOTA:save',
+    kind:'storage-quota',
+    aggregateKey:'storage-quota:global',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  // storage-quota は allow-list 外なので legacy path (元 message のまま)
+  assert(final.indexOf('保存容量の上限に達しました。データ整理が必要です。') !== -1,
+    'T-EXP8-runtime-sq-not-aggregated: storage-quota は 2 回目も元 message');
+  assert(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) === -1,
+    'T-EXP8-runtime-sq-no-short-msg: 短縮文言には切替らない');
+}
+
+// T-EXP8-runtime-mixed-scenarios: save-verify + master-verify + storage-quota 混在で挙動が崩れない
+{
+  var env = _newAggEnv();
+  // 順に発火: master-verify (1 回目) / save-verify (1 回目) / storage-quota (元 message)
+  env.notifySaveWarning({
+    message:'MV first',
+    consoleTag:'[MV]',
+    callsiteId:'S03',
+    fields:['last_class'],
+    kind:'master-verify',
+    aggregateKey:'master-verify:lastclass',
+    severity:'warn'
+  });
+  // この時点で indicator は 1
+  assertEq(env._getIndicatorState().count, 1, 'T-EXP8-mixed-after-mv: count=1');
+
+  env.notifySaveWarning({
+    message:'SV first',
+    consoleTag:'[SV]',
+    callsiteId:'SAVE-003-startTournament',
+    kind:'save-verify',
+    aggregateKey:'save-verify:core',
+    severity:'warn'
+  });
+  assertEq(env._getIndicatorState().count, 2, 'T-EXP8-mixed-after-sv: count=2');
+
+  env.notifySaveWarning({
+    message:'保存容量の上限に達しました。データ整理が必要です。',
+    consoleTag:'[SQ]',
+    callsiteId:'STORAGE-QUOTA:save',
+    kind:'storage-quota',
+    aggregateKey:'storage-quota:global',
+    severity:'warn'
+  });
+  assertEq(env._getIndicatorState().count, 3, 'T-EXP8-mixed-after-sq: count=3');
+
+  // 最終 showMsg は最後の storage-quota の元 message
+  var final = env._regMsgFinal();
+  assert(final.indexOf('保存容量の上限に達しました。データ整理が必要です。') !== -1,
+    'T-EXP8-mixed-final-msg: 混在 3 件発火後の最終 showMsg は storage-quota の元 message');
 }
 
 // ============================================================================
