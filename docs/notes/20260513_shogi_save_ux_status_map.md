@@ -294,6 +294,7 @@ import / merge / migration 系は **本マップの保存後 verify トラック
 | 2026-05-13 | v0 作成。PR #59 〜 #63 までの保存安全化 / verify / 通知の現在地を callsite 単位で棚卸し。S22 を唯一の要修正候補（Level 0）として特定。SAVE-UX-MIN-NOTIFY-002 を次の最優先タスクと位置づけ。 |
 | 2026-05-13 | docs review Should Fix 2 点を反映。S22 の位置情報を lineNo 単独表現から関数名 + 動作タイミング（`bindMasterEditModalEvents` の me-save click ハンドラ末尾の `showMsg('マスタを更新しました', ...)`）に置換（§4.3 / §5.1 / §6.2 計 4 箇所）。§4 冒頭に「行番号は main=`67bd189` 時点の参考位置、後続では関数名・処理名・メッセージ文言で再特定」の補足を追加。§5.3 に「QUOTA-001 の再分類トリガは SAVE-UX-STATUS-INDICATOR 着手時点」を追記。 |
 | 2026-05-14 | SAVE-UX-AGGREGATION-DOCS-FOLLOWUP に伴い §11 を追記。PR #70 〜 #76 で A-5.1 SAVE 系 15/15 callsite の helper 経由化 / metadata 土台 / `showMsg` aggregation 表示まで完了。Group A〜E と `aggregateKey` の対応表を確定として記載し、後続候補（QUOTA-HANDLING / MASTER-V2-METADATA / AGGREGATION-TUNING / LEVEL-3-WARNING-BAR / INDICATOR-DETAIL）を §8 と並列で示す。詳細仕様は `docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md` §15 を参照。 |
+| 2026-05-14 | SAVE-UX-QUOTA-HANDLING-INVENTORY (Step 1, docs-only) に伴い §12 を追記。`localStorage.setItem` 2 callsite (`save()` / `saveBranchMaster()`) を棚卸し、`QuotaExceededError` 明示判定は 0 件と確認。Step 2 候補 callsite と暫定方針 (`kind: 'storage-quota'` / `aggregateKey: 'storage-quota:global'` / `severity: 'warn'`) を inventory docs (`docs/notes/20260514_shogi_save_ux_quota_inventory.md`) からサマリー。Step 2 着手前に再仕様確認が必要。 |
 
 ---
 
@@ -355,3 +356,45 @@ v0 (2026-05-13) 作成時点で「次タスク = SAVE-UX-MIN-NOTIFY-002 (S22)」
 | 5 | `SAVE-UX-INDICATOR-DETAIL` | indicator 詳細展開や Group 別表示を検討する |
 
 詳細は `docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md` §15.9 を参照。本セクションは候補列挙であり、実装方針は確定しすぎない（着手時に再判断）。
+
+---
+
+## 12. quota / storage exception 系 callsite の現状（v1.1 追補）
+
+`SAVE-UX-QUOTA-HANDLING-INVENTORY` (Step 1) の棚卸し結果を以下にサマリーする。詳細は `docs/notes/20260514_shogi_save_ux_quota_inventory.md` を参照。
+
+### 12.1 現時点の状況
+
+- **`QuotaExceededError` 明示判定は 0 件**
+- `localStorage.setItem` の callsite は **2 件**（`save()` line 404 / `saveBranchMaster()` line 613）
+- いずれも汎用 try-catch で quota とその他のエラーを区別していない
+- quota / storage failure は現時点で **helper 経由化 / metadata 付与なし**
+
+### 12.2 現状 UX
+
+| 経路 | catch 内 | user-facing |
+|---|---|---|
+| `save()` (大会データ) | `notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります...')` | alert + showMsg |
+| `saveBranchMaster()` (支部マスタ) | `console.warn(...)` のみ | **なし**（silent） |
+| `resetAll()` removeItem | 完全 silent `catch(e){}` | なし |
+
+### 12.3 Step 2 で扱う候補 callsite
+
+| # | callsite ID 候補 | 対象 | 優先度 |
+|---|---|---|---|
+| 1 | `STORAGE-QUOTA-save` | `save()` shogi_v4.html:404 | 高 |
+| 2 | `STORAGE-QUOTA-saveBranchMaster` | `saveBranchMaster()` shogi_v4.html:613 | 中 |
+
+### 12.4 暫定方針（Step 2 着手前に再仕様確認）
+
+- `kind: 'storage-quota'`
+- `aggregateKey: 'storage-quota:global'`
+- `severity: 'warn'`
+- showMsg aggregation: **対象外**（初期は毎回個別 message）
+- indicator count: 同じ count に含める方向
+
+### 12.5 Step 2 (SAVE-UX-QUOTA-HANDLING-IMPL) 着手前の再仕様確認
+
+inventory docs §13 に列挙した 8 項目を **着手前に再仕様確認** すること。棚卸し結果次第で kind / aggregateKey / severity / indicator 方針が見直される可能性がある。
+
+参照: `docs/notes/20260514_shogi_save_ux_quota_inventory.md` §11 / §12 / §13

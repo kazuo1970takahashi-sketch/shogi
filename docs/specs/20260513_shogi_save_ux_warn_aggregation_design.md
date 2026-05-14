@@ -438,6 +438,7 @@ Codex / cowork に独立レビューしてもらう観点:
 |---|---|
 | 2026-05-13 | v0 作成。SAVE-UX-WARN-AGGREGATION docs-only design。三層分離原則 / duplicate vs verify failure 優先順位 / kind 分類 / aggregation key / indicator count policy / `notifySaveWarning` schema 拡張候補 / 後続タスク順序 を整理。実装は SAVE-UX-WARN-AGGREGATION-IMPL（および前提の SAVE-UX-WARN-HELPER-EXPAND）で別タスク。 |
 | 2026-05-14 | v1 追補 (SAVE-UX-AGGREGATION-DOCS-FOLLOWUP)。§15 を追加し、PR #70 〜 #76 で main へ反映された確定挙動を記載: helper 経由化 15/15 完了、`kind` / `aggregateKey` / `severity` metadata 土台、`save-verify:{core/entry/edit/past/pairing}` の Group 対応、`showMsg` 3000ms 集約、短縮文言確定、compound 発火例、失敗を隠さない原則、対象外カテゴリと将来方針、次タスク候補。 |
+| 2026-05-14 | v1.1 追補 (SAVE-UX-QUOTA-HANDLING-INVENTORY)。§16 を追加し、`kind` / `aggregateKey` の hyphen-case 統一方針を明文化。v0 §4 / §6 / §8 / §11 / §12 で登場した snake_case 候補（`verify_failed` / `quota_exceeded` / `parse_failed` / `duplicate_name` / `storage_corrupted`）を初期検討段階の候補と位置づけ、今後の実装では採用しない方針を確定。将来 `kind` 候補の hyphen-case 対応表（`storage-quota` / `parse-failed` / `duplicate-name` / `storage-corrupted` / `master-verify`）を整理。inventory docs (`docs/notes/20260514_shogi_save_ux_quota_inventory.md`) へのリンクを追加。 |
 
 ---
 
@@ -645,3 +646,56 @@ aggregation は警告を消すための仕組みでは **ない**。失敗を隠
 | 5 | `SAVE-UX-INDICATOR-DETAIL` | indicator 詳細展開や Group 別表示を検討する |
 
 本書 §11.1 の旧優先順序（HELPER-EXPAND → HELPER-EXPAND-2 → AGGREGATION-IMPL → ...）は PR #70 〜 #76 でほぼ完了したため、本セクションが現時点の最新優先順となる。
+
+---
+
+## 16. `kind` / `aggregateKey` 命名規則 — hyphen-case 統一（v1.1 追補）
+
+### 16.1 統一方針
+
+`kind` と `aggregateKey` は **hyphen-case（kebab-case）に統一** する。
+
+既存実装（PR #75 / #76）で確定している例:
+
+- `kind: 'save-verify'`
+- `aggregateKey: 'save-verify:core'`
+- `aggregateKey: 'save-verify:entry'`
+- `aggregateKey: 'save-verify:edit'`
+- `aggregateKey: 'save-verify:past'`
+- `aggregateKey: 'save-verify:pairing'`
+
+形式仕様:
+
+- 小文字のみ
+- 単語区切りは `-`（hyphen）
+- 階層区切りは `:`（colon、最大 2 階層）
+- 大文字混在禁止、`_` 区切り禁止、`/` 区切り禁止、`.` 区切り禁止
+
+### 16.2 snake_case 旧案の扱い
+
+本書 v0 の §4 / §6 / §8 / §11 / §12 では、初期検討段階で snake_case 候補が登場していた:
+
+- `verify_failed`
+- `duplicate_name`
+- `quota_exceeded`
+- `parse_failed`
+- `storage_corrupted`
+
+これらは **初期検討段階の候補** として扱い、**今後の実装では採用しない**。既存 `save-verify` 系との一貫性を優先する。
+
+### 16.3 今後の `kind` 候補（hyphen-case）
+
+将来検討予定の `kind` 候補（実装方針は確定しすぎず、各タスク着手時に再判断）:
+
+| 旧案 (snake_case) | 新方針 (hyphen-case) | 想定タスク |
+|---|---|---|
+| `verify_failed` | `save-verify`（既存実装で確定） | 完了（PR #75 / #76） |
+| `quota_exceeded` | `storage-quota` | `SAVE-UX-QUOTA-HANDLING-IMPL`（Step 2） |
+| `parse_failed` | `parse-failed` | `SAVE-UX-PARSE-HANDLING`（候補） |
+| `duplicate_name` | `duplicate-name` | `SAVE-UX-DUPLICATE-HANDLING`（候補） |
+| `storage_corrupted` | `storage-corrupted` | `SAVE-UX-CORRUPT-HANDLING`（候補） |
+| — | `master-verify` | `SAVE-UX-MASTER-V2-METADATA`（候補、MASTER-V2-LASTCLASS S03/S05/S22 用） |
+
+### 16.4 関連 inventory docs
+
+- **`docs/notes/20260514_shogi_save_ux_quota_inventory.md`**: SAVE-UX-QUOTA-HANDLING-INVENTORY (docs-only)。`storage-quota` 系の callsite 棚卸しと Step 2 着手前の再仕様確認事項を整理。本書 §16.3 と整合した命名規則（`storage-quota` / `storage-quota:global`）を採用。
