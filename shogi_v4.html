@@ -5287,8 +5287,18 @@ function syncBranchMasterOnSave(){
     // 仕様書 v5 §3.5 / Codex MF #3: 破損由来の空マスタは保存しない。
     // 既存 localStorage を保持し、ユーザの再マイグレ・手動修復を待つ。
     if(master&&master._loaded_with_corruption){
-      if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタが破損しているため自動同期をスキップ（大会データのコピーは継続）');
-      if(typeof showMsg==='function')showMsg('支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）','warn');
+      // SAVE-UX-PARSE-HANDLING-IMPL: 第 4 系統 storage-corrupted を helper 経由化。
+      //   notifySaveWarning が showMsg('warn') / console.warn (consoleTag) / indicator count +1 を担当。
+      //   重複回避のため既存 explicit console.warn / showMsg は呼ばない（PR #79 storage-quota パターン）。
+      //   aggregation 対象外（SAVE_WARN_AGGREGATABLE_KINDS は変更しない）。
+      notifySaveWarning({
+        message:'支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）',
+        consoleTag:'[STORAGE-CORRUPTED] syncBranchMasterOnSave skipped (master._loaded_with_corruption)',
+        callsiteId:'STORAGE-CORRUPTED:syncBranchMasterOnSave',
+        kind:'storage-corrupted',
+        aggregateKey:'storage-corrupted:branch-master',
+        severity:'warn'
+      });
       save();
       return;
     }
