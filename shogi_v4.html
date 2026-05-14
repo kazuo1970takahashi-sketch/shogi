@@ -401,7 +401,45 @@ function normalizeState(raw){
 // STORAGE: localStorageへの保存と復元(旧版キーからの移行込み)
 // ============================================================
 
-function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}catch(e){notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります。大会データをコピー（バックアップ）してください。');}}
+// SAVE-UX-QUOTA-HANDLING-IMPL: QuotaExceededError 判定。
+//   ブラウザ間の差異を吸収:
+//     - Chrome / Edge / Safari / WebKit: name === 'QuotaExceededError' / code === 22
+//     - Firefox 旧版:                    name === 'NS_ERROR_DOM_QUOTA_REACHED' / code === 1014
+//   false negative を減らすため name / code を OR で判定。
+//   詳細: docs/notes/20260514_shogi_save_ux_quota_inventory.md §5.3
+function isQuotaExceededError(e){
+  if(!e)return false;
+  return (
+    e.name==='QuotaExceededError'||
+    e.name==='NS_ERROR_DOM_QUOTA_REACHED'||
+    e.code===22||
+    e.code===1014
+  );
+}
+
+function save(){
+  try{
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+  }catch(e){
+    // SAVE-UX-QUOTA-HANDLING-IMPL: quota の場合は storage-quota 系統に分岐。
+    //   alert は容量問題を user に確実に認知させるため維持。
+    //   notifySaveWarning が showMsg('warn') / console.warn / indicator count +1 を担当する。
+    //   既存 notifyError 経路は quota 以外の汎用例外用に維持（重複 showMsg を避けるため quota では呼ばない）。
+    if(isQuotaExceededError(e)){
+      alert('保存容量の上限に達しました。データ整理が必要です。');
+      notifySaveWarning({
+        message:'保存容量の上限に達しました。データ整理が必要です。',
+        consoleTag:'[STORAGE-QUOTA] save() setItem failed (name='+(e&&e.name)+', code='+(e&&e.code)+')',
+        callsiteId:'STORAGE-QUOTA:save',
+        kind:'storage-quota',
+        aggregateKey:'storage-quota:global',
+        severity:'warn'
+      });
+      return;
+    }
+    notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります。大会データをコピー（バックアップ）してください。');
+  }
+}
 function load(){
   // 現行キー → 旧キーの順に試行。各 key は parse 失敗時に次の key にフォールバック。
   var keys=[STORAGE_KEY].concat(LEGACY_STORAGE_KEYS);
@@ -612,6 +650,21 @@ function saveBranchMaster(master){
     master.updated_at=clone.updated_at;
     localStorage.setItem(BRANCH_MASTER_KEY,JSON.stringify(clone));
   }catch(e){
+    // SAVE-UX-QUOTA-HANDLING-IMPL: quota の場合のみ Level 1 化（notifySaveWarning が
+    //   showMsg / console.warn / indicator count +1 を担当）。quota 以外は従来通り
+    //   console.warn のみで、汎用例外の Level 1 化は別タスクへ持ち越し。
+    //   quota 時の重複 console.warn を避けるため既存 console.warn は quota 以外でのみ呼ぶ。
+    if(isQuotaExceededError(e)){
+      notifySaveWarning({
+        message:'保存容量の上限に達しました。データ整理が必要です。',
+        consoleTag:'[STORAGE-QUOTA] saveBranchMaster() setItem failed (name='+(e&&e.name)+', code='+(e&&e.code)+')',
+        callsiteId:'STORAGE-QUOTA:saveBranchMaster',
+        kind:'storage-quota',
+        aggregateKey:'storage-quota:global',
+        severity:'warn'
+      });
+      return;
+    }
     if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタの保存に失敗。',e);
   }
 }
