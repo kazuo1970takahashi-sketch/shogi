@@ -2774,6 +2774,262 @@ assertEq(
 }
 
 // ============================================================================
+// SECTION 16: SAVE-UX-MASTER-V2-METADATA-IMPL — master-verify metadata 付与
+// ============================================================================
+// 依頼: SAVE-UX-MASTER-V2-METADATA-IMPL (PR-A)
+//
+// 実装範囲:
+//   - MASTER-V2-LASTCLASS S03 / S05 / S22 に master-verify metadata 付与
+//   - kind: 'master-verify'
+//   - aggregateKey: 'master-verify:lastclass'
+//   - severity: 'warn'
+//   - callsiteId は既存 'S03' / 'S05' / 'S22' を維持
+//   - message / consoleTag / fields は既存維持
+//
+// 不変項目:
+//   - notifySaveWarning helper の aggregation 条件 (kind === 'save-verify' のみ)
+//   - save-verify 15 callsite / storage-quota 2 callsite
+//   - helper 内部 / indicator count ロジック
+//   - master-verify は今回 aggregation 対象外（PR-B で別途検討）
+
+// ----------------------------------------------------------------------------
+// T-EXP7-static: master-verify 件数 / metadata / callsiteId 静的検証
+// ----------------------------------------------------------------------------
+
+// kind:'master-verify' が厳密 3 件
+assertEq(
+  (__EXPAND_SRC.match(/kind:'master-verify'/g) || []).length, 3,
+  'T-EXP7-kind-count: kind:master-verify が 3 件');
+
+// aggregateKey:'master-verify:lastclass' が厳密 3 件
+assertEq(
+  (__EXPAND_SRC.match(/aggregateKey:'master-verify:lastclass'/g) || []).length, 3,
+  'T-EXP7-aggKey-count: aggregateKey:master-verify:lastclass が 3 件');
+
+// kind:'master-verify' + severity:'warn' のペアが厳密 3 件
+//   SECTION 13 / 15 と同方針: 同一 options object 内（200 文字以内）の隣接判定
+{
+  var pairCount = 0;
+  var searchIdx = 0;
+  while (true) {
+    var found = __EXPAND_SRC.indexOf("kind:'master-verify'", searchIdx);
+    if (found === -1) break;
+    var window200 = __EXPAND_SRC.substring(found, found + 200);
+    if (window200.indexOf("severity:'warn'") !== -1) pairCount++;
+    searchIdx = found + 20;
+  }
+  assertEq(pairCount, 3,
+    'T-EXP7-master-verify-with-warn-strict: kind:master-verify + severity:warn のペアが 3 件');
+}
+
+// callsiteId が各 1 件（既存維持）
+assertEq(
+  (__EXPAND_SRC.match(/callsiteId:'S03'/g) || []).length, 1,
+  'T-EXP7-callsiteId-S03-count: callsiteId:S03 が 1 件');
+assertEq(
+  (__EXPAND_SRC.match(/callsiteId:'S05'/g) || []).length, 1,
+  'T-EXP7-callsiteId-S05-count: callsiteId:S05 が 1 件');
+assertEq(
+  (__EXPAND_SRC.match(/callsiteId:'S22'/g) || []).length, 1,
+  'T-EXP7-callsiteId-S22-count: callsiteId:S22 が 1 件');
+
+// 各 callsiteId が master-verify metadata と隣接する
+//   S03 / S05 / S22 周辺 200 文字に kind:'master-verify' / aggregateKey:'master-verify:lastclass' / severity:'warn' が含まれる
+["'S03'","'S05'","'S22'"].forEach(function(cidLit){
+  var cidIdx = __EXPAND_SRC.indexOf("callsiteId:"+cidLit);
+  assert(cidIdx !== -1, 'T-EXP7-cid-present: callsiteId:'+cidLit+' が存在');
+  var win = __EXPAND_SRC.substring(cidIdx, cidIdx + 250);
+  assert(win.indexOf("kind:'master-verify'") !== -1,
+    'T-EXP7-cid-with-kind: '+cidLit+' 近傍に kind:master-verify');
+  assert(win.indexOf("aggregateKey:'master-verify:lastclass'") !== -1,
+    'T-EXP7-cid-with-aggKey: '+cidLit+' 近傍に aggregateKey:master-verify:lastclass');
+  assert(win.indexOf("severity:'warn'") !== -1,
+    'T-EXP7-cid-with-severity: '+cidLit+' 近傍に severity:warn');
+});
+
+// ----------------------------------------------------------------------------
+// T-EXP7-save-verify-unchanged: save-verify 既存件数維持
+// ----------------------------------------------------------------------------
+
+// kind:'save-verify' = 15
+assertEq(
+  (__EXPAND_SRC.match(/kind:'save-verify'/g) || []).length, 15,
+  'T-EXP7-save-verify-still-15: kind:save-verify は依然 15 件');
+
+// save-verify aggregateKey 分布維持（SECTION 13 の __EXP4_EXPECTED_DIST と整合）
+{
+  var distExpected = {
+    'save-verify:core':    4,
+    'save-verify:entry':   2,
+    'save-verify:edit':    2,
+    'save-verify:past':    4,
+    'save-verify:pairing': 3
+  };
+  Object.keys(distExpected).forEach(function(ak){
+    var needle = "aggregateKey:'" + ak + "'";
+    var count = (__EXPAND_SRC.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g')) || []).length;
+    assertEq(count, distExpected[ak],
+      'T-EXP7-save-verify-dist-' + ak + ': ' + distExpected[ak] + ' 件');
+  });
+}
+
+// ----------------------------------------------------------------------------
+// T-EXP7-storage-quota-unchanged: storage-quota 既存件数維持
+// ----------------------------------------------------------------------------
+
+assertEq(
+  (__EXPAND_SRC.match(/kind:'storage-quota'/g) || []).length, 2,
+  'T-EXP7-storage-quota-still-2: kind:storage-quota は依然 2 件');
+assertEq(
+  (__EXPAND_SRC.match(/aggregateKey:'storage-quota:global'/g) || []).length, 2,
+  'T-EXP7-storage-quota-aggKey-still-2: aggregateKey:storage-quota:global は依然 2 件');
+
+// ----------------------------------------------------------------------------
+// T-EXP7-helper-aggregation-condition-unchanged: helper aggregation 条件 不変
+// ----------------------------------------------------------------------------
+
+// aggregation 条件は kind === 'save-verify' のまま
+assert(__EXPAND_SRC.indexOf("kind==='save-verify'&&severity==='warn'&&aggregateKey") !== -1,
+  'T-EXP7-helper-condition: aggregation 条件は kind===save-verify のまま');
+
+// AGGREGATABLE_KINDS のような allow-list がまだ追加されていない
+['AGGREGATABLE_KINDS','aggregationEligible','aggregatable_kinds','aggregatableKinds'].forEach(function(forbidden){
+  assert(__EXPAND_SRC.indexOf(forbidden) === -1,
+    'T-EXP7-no-allow-list: '+forbidden+' は本 PR では追加されていない');
+});
+
+// master-verify が aggregation 対象になる新条件が混入していない
+[
+  "kind==='master-verify'",
+  "kind === 'master-verify'",
+  "||kind===",
+  "kind==='save-verify'||"
+].forEach(function(forbidden){
+  assert(__EXPAND_SRC.indexOf(forbidden) === -1,
+    'T-EXP7-no-master-verify-in-condition: aggregation 条件に '+forbidden+' が混入していない');
+});
+
+// ----------------------------------------------------------------------------
+// T-EXP7-runtime: master-verify ランタイム挙動
+// ----------------------------------------------------------------------------
+
+// T-EXP7-runtime-master-verify-not-aggregated: master-verify の連続発火でも短縮文言にならない
+//   helper の aggregation 条件は kind==='save-verify' のため、master-verify は legacy path
+{
+  var env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  // 同一 aggregateKey 1 秒前にも master-verify が出ていたと仮定
+  var st = env._getSaveWarningAggregationState();
+  st.lastTimestampByKey['master-verify:lastclass'] = Date.now() - 1000;
+  env.notifySaveWarning({
+    message:'前回クラス情報の保存が確認できませんでした',
+    consoleTag:'[MASTER-V2-LASTCLASS] test',
+    callsiteId:'S03',
+    fields:['last_class'],
+    kind:'master-verify',
+    aggregateKey:'master-verify:lastclass',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  // master-verify は aggregation 対象外なので元 message のまま
+  assert(final.indexOf('前回クラス情報の保存が確認できませんでした') !== -1,
+    'T-EXP7-runtime-master-verify-original: master-verify の 2 回目も元 message');
+  assert(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) === -1,
+    'T-EXP7-runtime-master-verify-no-aggregated: 短縮文言には切替らない');
+}
+
+// T-EXP7-runtime-master-verify-indicator-plus-1: master-verify 発生で indicator +1
+{
+  var env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  env.notifySaveWarning({
+    message:'前回クラス情報の保存が確認できませんでした',
+    consoleTag:'[MV] test',
+    callsiteId:'S03',
+    fields:['last_class'],
+    kind:'master-verify',
+    aggregateKey:'master-verify:lastclass',
+    severity:'warn'
+  });
+  assertEq(env._getIndicatorState().count, 1,
+    'T-EXP7-runtime-indicator-1: 1 回発生で indicator +1');
+}
+
+// T-EXP7-runtime-master-verify-3-events-indicator-plus-3: S03/S05/S22 相当 3 件で +3
+{
+  var env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  ['S03','S05','S22'].forEach(function(cid){
+    env.notifySaveWarning({
+      message:cid+' test message',
+      consoleTag:'[MV] '+cid,
+      callsiteId:cid,
+      fields:['last_class'],
+      kind:'master-verify',
+      aggregateKey:'master-verify:lastclass',
+      severity:'warn'
+    });
+  });
+  assertEq(env._getIndicatorState().count, 3,
+    'T-EXP7-runtime-indicator-3: 3 件発生で indicator +3（発生単位維持）');
+}
+
+// T-EXP7-runtime-save-verify-still-aggregates: save-verify aggregation 挙動への非干渉
+{
+  var env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  // save-verify:core で 1 秒前にも save-verify が出ていたと仮定
+  var st = env._getSaveWarningAggregationState();
+  st.lastTimestampByKey['save-verify:core'] = Date.now() - 1000;
+  env.notifySaveWarning({
+    message:'大会を開始しましたが、保存が確認できませんでした...',
+    consoleTag:'SAVE-003 test',
+    callsiteId:'SAVE-003-startTournament',
+    kind:'save-verify',
+    aggregateKey:'save-verify:core',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) !== -1,
+    'T-EXP7-runtime-save-verify-still-aggregates: save-verify は依然短縮文言に切替');
+}
+
+// T-EXP7-runtime-master-verify-no-pollution-on-save-verify: master-verify 発火が save-verify の aggregation state を汚さない
+{
+  var env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  // 最初に master-verify を発火
+  env.notifySaveWarning({
+    message:'前回クラス情報の保存が確認できませんでした',
+    consoleTag:'[MV]',
+    callsiteId:'S03',
+    fields:['last_class'],
+    kind:'master-verify',
+    aggregateKey:'master-verify:lastclass',
+    severity:'warn'
+  });
+  // 次に save-verify:core を発火 — これは save-verify:core スコープでは 1 回目扱い
+  env._clear();  // reg-msg 履歴をリセットして次の発火だけ見る
+  env.notifySaveWarning({
+    message:'大会を開始しましたが、保存が確認できませんでした...',
+    consoleTag:'SAVE-003',
+    callsiteId:'SAVE-003-startTournament',
+    kind:'save-verify',
+    aggregateKey:'save-verify:core',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  // save-verify:core は別 key なので 1 回目扱い → 元文言
+  assert(final.indexOf('大会を開始しましたが') !== -1,
+    'T-EXP7-runtime-no-pollution: master-verify 発火が save-verify の 1 回目扱いを破壊しない');
+}
+
+// ============================================================================
 // 結果
 // ============================================================================
 console.log('\n  MASTER-V2-LASTCLASS-IMPL 単体テスト: PASS '+pass+'件 / FAIL '+fail+'件');
