@@ -3450,3 +3450,196 @@ notifySaveWarning({
   - `docs/notes/20260513_shogi_save_ux_status_map.md` — 本 §25
   - `HANDOFF.md` — §25 IMPL-LIGHT ポインタ追加
 - 変更しないファイル: `docs/specs/` / `.github/workflows/` / `package.json` / `package-lock.json` / `playwright.config.js`
+
+## 26. SAVE-UX-STATE-RESTORE-OBSERVATION（v2.6 追補 / PR #97 後の運用観察フェーズ整理）
+
+### 26.1 このセクションの目的
+
+- PR #97（`fix(save-ux): state復元全失敗時にwarnを表示` / `SAVE-UX-STATE-RESTORE-HANDLING-IMPL-LIGHT`）が main に着地し、PARSE-LOAD-003 warn 化 (`callsiteId:'PARSE-LOAD-003'` / `kind:'storage-corrupted'` / `aggregateKey:'storage-corrupted:state'` / `severity:'warn'`) が反映された
+- 本 §26 は **追加実装にすぐ進まず、まずは現場 UX と発生条件を観察するフェーズ** に入ったことを明示する
+- 次の判断（追加実装の起票 / IMPL-FULL への昇格 / 文言調整 / 表示頻度制御 等）に必要な観察対象と着手条件をここで確定させ、§22〜§25 で積み上げた論点を「観察 → 条件付き起票」というワークフローに接続する
+- 司令塔向けスタンス: **`SAVE-UX state restore` 系は §25 で silent failure の最小対策が完了しているため、本 §26 はあえて「やらない」を明示する整理**
+
+### 26.2 観察対象
+
+§22〜§25 で IMPL-LIGHT 採用時に「regression を起こさない」「うるさくしすぎない」境界として設計した不変項目を、運用文脈で実際に成立しているか観察する。
+
+#### 26.2.1 観察対象 A — 初回起動 / 全キー未保存
+
+- **シナリオ**: 新規利用者がブラウザを初めて開いたとき / 旧端末から移行直後で `localStorage` が空のとき / 利用者が「閲覧履歴とサイトデータを削除」した直後
+- **期待**:
+  - `notifySaveWarning` が **発火しない**（PARSE-LOAD-003 warn が出ない）
+  - 起動直後の UI に「保存データを復元できなかった」旨の警告が一切表示されない
+  - 新規利用者・データクリア後の利用者を不安にさせない
+- **判定方法**: `<div id="reg-msg">` / `<span id="save-warning-indicator">` の初期 frame に PARSE-LOAD-003 由来文言が出ないこと、console に `[STORAGE-CORRUPTED] load() initial state fallback (all keys failed)` が出ないこと
+- **設計根拠**: §25.4 判定境界、§24.6.1 `anyFailure` フラグ、テスト振る舞いケース 1（`test/test_save_ux_parse_load_003.js`）でアサート済
+
+#### 26.2.2 観察対象 B — 破損起源の全キー失敗
+
+- **シナリオ**: `localStorage` の `state_v4` / `state_v3` 双方が JSON 不正・schema 不一致 / `getItem` が `SecurityError` 等で throw / `normalizeState` が必須フィールド欠落で throw — のいずれかで **全キー復元失敗** となった起動
+- **期待**:
+  - `notifySaveWarning` が PARSE-LOAD-003 経路で **1 回発火**
+  - message: **「保存データを復元できなかったため、初期状態で起動しました。」**（§24.6.3 第一候補 / §25.5 採用文言）
+  - `silent failure` ではなくなる（利用者が「データが消えた」状態に気づける）
+  - ただし alert / modal / 復旧 modal は出さない（§25.7 既出制約を維持）
+- **判定方法**: 該当発生時に `reg-msg` 側にメッセージが見える / `save-warning-indicator` が更新される / console に `[STORAGE-CORRUPTED] load() initial state fallback (all keys failed)` が出る
+- **設計根拠**: §25.4 「破損起源」定義、§25.5 metadata、テスト振る舞いケース 2
+
+#### 26.2.3 観察対象 C — v4 失敗 → v3 成功（PARSE-LOAD-002A）
+
+- **シナリオ**: `state_v4` が parse 失敗するが、`state_v3` から normalize 成功して state が復元できたとき（古い保存形式 fallback が機能した場合）
+- **期待**:
+  - 今回（PR #97 / IMPL-LIGHT）は **warn 対象外**
+  - `notifySaveWarning` は発火しない
+  - 古い state で起動する可能性は残るが、本 IMPL-LIGHT では意図的にスコープ外（§22.3.3 / §25.4 / §25.7）
+- **観察すべき副作用**:
+  - 「古いデータで起動した」ことが UI 上どこにも示されないため、利用者・現場運営者が新規データの欠落に気づけない可能性
+  - これは `PARSE-LOAD-002A` / `SAVE-UX-LEGACY-FALLBACK-NOTIFY` の後続判断材料になる
+- **後続判断**: 観察対象 C で「v3 fallback が混乱を生む」事象が現場で観測されたら §26.3 条件 2 で起票判断
+
+#### 26.2.4 観察対象 D — セッションごと最大 1 回の boot warn
+
+- **シナリオ**: `load()` は `DOMContentLoaded` 経由 `initApp()` から 1 回しか呼ばれないため、PARSE-LOAD-003 warn は **boot 1 回 / セッションごと最大 1 回** の発火頻度になる
+- **期待**:
+  - 毎回起動時に warn が出てもうるさすぎないか確認
+  - `aggregateKey: 'storage-corrupted:state'` は **aggregation 対象外**（`SAVE_WARN_AGGREGATABLE_KINDS` に含めない）維持で問題ないか確認
+  - 必要なら **表示頻度制御 / aggregation 対象化 / dismiss / suppress** を後続で検討
+- **観察ポイント**:
+  - boot warn が頻繁な利用者（破損が継続する端末）でも、UI が読みづらくならないこと
+  - PARSE-MASTER-003（保存時 / runtime）と PARSE-LOAD-003（boot 時）の **timing 非対称**（§25.6）が二重通知として体感されないこと
+- **設計根拠**: §25.5 aggregation 対象外維持、§25.6 timing 非対称、§24.7 boot-safe 大改修は採用しない
+
+#### 26.2.5 観察対象 E — 文言の強さ
+
+- **シナリオ**: 採用文言「保存データを復元できなかったため、初期状態で起動しました。」を運用者・現場スタッフ・利用者が実際に見たとき
+- **期待**:
+  - 「破損」「壊れた」など強い断定を避けた文言で、現場運営者に状況が伝わる
+  - 「初期状態で起動しました」が現場で「データが消えて初期化された」「もう一度設定し直す必要がある」と正しく理解される
+  - 復旧手順（「過去大会データの取込で復元できる場合があります」等）が必要と感じるかどうか
+- **観察ポイント**:
+  - 文言が**弱すぎ**て見落とされる場合 → §26.3 条件 1 へ
+  - 文言が**強すぎ**て不安を煽る場合 → 文言調整（severity / message 再検討）
+  - 復旧導線が必要と感じる場合 → §26.3 条件 6 へ
+- **設計根拠**: §24.6.3 第一候補採用、§25.5 採用文言、§22.5.2 message 案、§18.4.1 alert/modal 不使用方針との整合
+
+### 26.3 追加実装へ進む条件
+
+§22〜§25 で温存した 6 つの後続候補（`LEGACY-FALLBACK-NOTIFY` / `STORAGE-CORRUPTED-HANDLING-IMPL` / `STATE-RESTORE-HANDLING-IMPL-FULL` / `notifySaveWarning` boot-safe / severity 昇格 / 復旧導線）に対する **着手条件** を整理する。**いずれも観察結果が出るまで起票しない**。
+
+#### 26.3.1 条件 1 — 破損時に warning が見えない / 見落とされる
+
+- **観察起点**: 観察対象 B / E
+- **観察徴候**: 破損が発生したのに利用者・運営者が気づかない / `reg-msg` の表示寿命が短すぎる / indicator が更新されても見落とされる
+- **次候補**:
+  - `SAVE-WARNING-VISIBILITY-LIFETIME`（仮 Task ID）— `reg-msg` 表示寿命 / indicator 表示挙動の改善
+  - `notifySaveWarning` 表示経路の追加テスト
+  - boot warn 限定の sticky 表示検討（aggregation 大改修ではなく軽量化）
+
+#### 26.3.2 条件 2 — v4 失敗 → v3 成功でも現場が混乱する
+
+- **観察起点**: 観察対象 C
+- **観察徴候**: 古い state で起動したことに気づかず「新しいデータが消えた」と誤解される / shogi_v3 deprecate を進められない状況が発生する
+- **次候補**:
+  - `SAVE-UX-LEGACY-FALLBACK-NOTIFY`（PARSE-LOAD-002A 単独通知、§22.3.3 シナリオ）
+  - `PARSE-LOAD-002A` の軽量 warn 化（PARSE-LOAD-003 と並列構造 / 設計対称、ただし `kind` は `storage-corrupted` ではなく別 ID 候補）
+  - **注意**: 「古いデータで起動しました」の文言は「破損」と「fallback 成功」を混同させやすいため、**文言は慎重に検討**（§24.6.3 第二・第三候補の再検討、運用者レビューを挟む）
+
+#### 26.3.3 条件 3 — JSON.parse 失敗 / normalizeState 失敗そのものを区別したい
+
+- **観察起点**: 観察対象 B（破損起源の内訳を運用者が知りたいと表明した場合）
+- **観察徴候**: 「JSON.parse 失敗（構文不正）」と「normalizeState 失敗（schema 不一致）」を分離してログ / メッセージで識別したいニーズが現場から出る
+- **次候補**:
+  - `SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL`（§16.9 案 B 既出 / §22.7.2 第二案）
+  - `PARSE-LOAD-002` + `PARSE-LOAD-003` をまとめて扱い、catch ごとに `callsiteId` を分ける
+  - §16.9 案 B に接続（4 系統合計 callsite 数: 22 → 23 or 24 への増分）
+
+#### 26.3.4 条件 4 — getItem 例外や SecurityError が現実に発生する
+
+- **観察起点**: 観察対象 B（PARSE-LOAD-001 経路の throw が console / レポートで確認された場合）
+- **観察徴候**: iOS Safari プライベートモード / `localStorage` quota / `SecurityError` 等で `getItem(key)` 自体が throw する事象が現実に発生する
+- **次候補**:
+  - `SAVE-UX-STATE-RESTORE-HANDLING-IMPL-FULL`（§22.7.2 第三案 / §24.7）
+  - `PARSE-LOAD-001` + `PARSE-LOAD-002` + `PARSE-LOAD-003` すべてを扱う
+  - ただし**頻度が低い**ならそのまま後回し（PARSE-LOAD-003 経由で warn は出るため silent failure ではない）
+
+#### 26.3.5 条件 5 — 毎セッション warn がうるさい / 過剰
+
+- **観察起点**: 観察対象 D
+- **観察徴候**: 破損が継続する端末で boot warn が毎セッション出続け、利用者が UI を読みづらくなる / dismiss できないことが運用ストレスになる
+- **次候補**:
+  - `SAVE-UX-AGGREGATION-TUNING`（仮）— `storage-corrupted:state` の aggregation 対象化、表示頻度制御
+  - dismiss / suppress 設計（session-scoped flag で 2 回目以降抑制 等）
+  - **注意**: IMPL-LIGHT 時点では aggregation 対象外維持。観察結果次第で評価する（§25.7「aggregation 大改修」非実装行と整合）
+
+#### 26.3.6 条件 6 — 復旧導線が必要
+
+- **観察起点**: 観察対象 E
+- **観察徴候**: warn 文言を見た現場運営者が「どうやって復旧するのか分からない」と表明する / 大会運営継続のため復旧手順が必要になる
+- **次候補**:
+  - recovery guidance の state restore 版（§18 PARSE-MASTER-003 recovery guidance の state 側展開）
+  - バックアップ復元 / JSON export / `localStorage` reset guidance の文言追加
+  - **注意**: 「自動復旧」は §17.12 / §18.10「やらない候補」と整合させて **慎重に扱う**。あくまで「次の行動」を 1 句追加する Light 案を起点とする（§18.5.1 と同パターン）
+
+### 26.4 当面やらないこと
+
+§22〜§25 の非実装制約を維持する。**観察フェーズで以下に着手しない**ことを明示する。
+
+- すぐに `PARSE-LOAD-002` 個別 warn へ広げない（§25.7、LOAD-003 経由で warn が出るため二重通知を避ける）
+- すぐに `PARSE-LOAD-001` 個別 warn へ広げない（同上）
+- すぐに `SAVE-UX-STATE-RESTORE-HANDLING-IMPL-FULL` へ進まない（§22.7.2 第三案 / §24.7、現時点で重い）
+- `notifySaveWarning` 全体改修をしない（§24.4 候補 D 棄却、`SAVE-UX-NOTIFY-BOOT-SAFE` 仮称も含めて凍結）
+- aggregation 大改修をしない（§25.7、IMPL-LIGHT 時点では現状維持）
+- `alert` / `modal` を追加しない（SAVE-UX-DESIGN §2.3 / §18.4.1 / §25.7 と整合）
+- 自動復旧しない（§17.12 / §18.10「やらない候補」維持）
+- 外部送信 / ログ送信しない（§19.5 / §18.8.1 個人情報の取扱い #4 と整合）
+- 初回起動に warn を出さない（§24.6.1 `anyFailure` フラグ / §25.4 判定境界 / regression 防止が最優先）
+- v4 失敗 → v3 成功（PARSE-LOAD-002A）を **今回のフェーズで** 後追い実装しない（§22.3.3 / §25.4 / §25.7、観察対象 C の結果次第で §26.3.2 条件 2 に従う）
+
+### 26.5 次フェーズ候補の優先順位
+
+| 順位 | 候補 | 着手条件 | 起源セクション |
+|---|---|---|---|
+| **第一候補** | **運用観察継続**（本 §26） | デフォルト。観察徴候が出るまで継続 | §26.2 / §25.9 |
+| 第二候補 | `SAVE-UX-LEGACY-FALLBACK-NOTIFY` | 観察対象 C で v4 失敗 → v3 成功による現場混乱が観測された場合（§26.3.2） | §22.3.3 / §26.3.2 |
+| 第三候補 | `SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL` | JSON.parse 失敗 / normalizeState 失敗の区別ニーズが出た場合 / PARSE-LOAD-002 + 003 をまとめて扱う判断になった場合（§26.3.3） | §16.9 案 B / §22.7.2 / §26.3.3 |
+| 第四候補 | `SAVE-UX-STATE-RESTORE-HANDLING-IMPL-FULL` | `getItem` 例外も含め LOAD-001 / 002 / 003 全件を扱う必要が出た場合（§26.3.4） | §22.7.2 / §24.7 / §26.3.4 |
+| 第五候補 | `SAVE-WARNING-VISIBILITY-LIFETIME` | warn が出ても見落とされる / 消える / 表示が弱い場合（§26.3.1） | §26.3.1 |
+
+#### 26.5.1 第一候補の根拠
+
+- PR #97 で **silent failure の最小対策は完了**（§25 既出）
+- 初回起動 no-warn / v3 fallback no-warn の境界もテストで担保済（`test/test_save_ux_parse_load_003.js` 振る舞いケース 1 / 3）
+- まず現場で **文言・頻度・見え方** を観察してから次の判断をすべき（§24.6.3 採用文言は IMPL-LIGHT プロンプト推奨だが、運用者レビューを挟む余地がある）
+- 観察徴候が出るまで新規 docs-only inventory を増やさない（§23 で確認した「inventory pool 一区切り」方針と整合）
+
+#### 26.5.2 第二候補〜第五候補の起点条件まとめ
+
+| 候補 | 起点となる観察徴候 |
+|---|---|
+| `LEGACY-FALLBACK-NOTIFY` | 観察対象 C で「v3 で起動したことに気づけない」混乱が出る |
+| `STORAGE-CORRUPTED-HANDLING-IMPL` | JSON.parse 失敗と normalizeState 失敗の区別ニーズが出る |
+| `STATE-RESTORE-HANDLING-IMPL-FULL` | `getItem` 例外 / `SecurityError` が現実に発生する頻度になる |
+| `SAVE-WARNING-VISIBILITY-LIFETIME` | warn が表示寿命・配置で見落とされる |
+
+### 26.6 完了条件
+
+本 docs-only PR の完了条件:
+
+- PR #97 の到達点（§25 既出）が §26 に観察フェーズとして反映されている
+- 追加実装へ進む条件（§26.3.1〜§26.3.6）が明文化されている
+- 当面やらないこと（§26.4）が明文化されている
+- 次フェーズ候補の優先順位（§26.5）が整理されている
+- **実装変更なし** / **テスト変更なし** / **CI 設定変更なし**
+- 変更ファイルは `docs/notes/20260513_shogi_save_ux_status_map.md` と `HANDOFF.md` のみ
+- `shogi_v4.html` / `test/` / `docs/specs/` / `.github/workflows/` / `package.json` / `package-lock.json` / `playwright.config.js` は変更しない
+- §22〜§25 と矛盾する記述がない（特に §25.4 判定境界 / §25.7 対象外項目 / §25.9 次フェーズ と整合）
+
+### 26.7 関連 PR / docs
+
+- 起源 PR: #97 `fix(save-ux): state復元全失敗時にwarnを表示`（merge commit `e6793498`、§25 で着地確認）
+- 前段 docs-only PR: #94（§22）/ #95（§23）/ #96（§24）
+- 本 observation PR: `docs(save-ux): state復元warn後の運用観察ポイントを整理`（§26 追加）
+- 変更ファイル:
+  - `docs/notes/20260513_shogi_save_ux_status_map.md` — 本 §26
+  - `HANDOFF.md` — §26 observation ポインタ追加
+- 変更しないファイル: `shogi_v4.html` / `test/` / `docs/specs/` / `.github/workflows/` / `package.json` / `package-lock.json` / `playwright.config.js`
