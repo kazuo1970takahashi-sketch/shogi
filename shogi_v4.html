@@ -3014,6 +3014,12 @@ var saveWarningIndicatorState={count:0};
 //   短縮文言は当日運営中の混乱を避けるため reload を促さず「内容を確認してください」に留める。
 var SAVE_WARN_AGGREGATION_WINDOW_MS=3000;
 var SAVE_WARN_AGGREGATED_MESSAGE='保存確認に失敗した操作が複数あります。内容を確認してください。';
+// SAVE-UX-MASTER-V2-AGGREGATION: aggregation 対象 kind の allow-list。
+//   - 'save-verify' (A-5.1 SAVE 系 15 callsite、PR #76 で aggregation 対象化)
+//   - 'master-verify' (MASTER-V2-LASTCLASS S03/S05/S22、本 PR で aggregation 対象化)
+//   storage-quota は意図的に含めない（quota は 1 回 1 回確実な認知が必要、
+//   PR #79 設計参照）。将来 kind 追加時はここに 1 要素追加して判断可能。
+var SAVE_WARN_AGGREGATABLE_KINDS=new Set(['save-verify','master-verify']);
 var saveWarningAggregationState={lastTimestampByKey:{}};
 
 // テスト用 reset。本番 UI からは呼ばない（clear UI / reset UI は実装しない）。
@@ -3098,13 +3104,14 @@ function notifySaveWarning(options){
     }
     return;
   }
-  // SAVE-UX-WARN-AGGREGATION-IMPL-DISPLAY: showMsg のみ集約。
-  //   条件: kind==='save-verify' && severity==='warn' && aggregateKey が truthy
+  // SAVE-UX-WARN-AGGREGATION-IMPL-DISPLAY / SAVE-UX-MASTER-V2-AGGREGATION: showMsg のみ集約。
+  //   条件: SAVE_WARN_AGGREGATABLE_KINDS.has(kind) && severity==='warn' && aggregateKey が truthy
+  //   現在の allow-list: 'save-verify' / 'master-verify'。storage-quota は対象外。
   //   同一 aggregateKey で 3 秒未満に再発した場合のみ短縮文言に切替。
   //   1 回目 / 別 key / 3 秒経過後 / metadata 不足は元 message のまま。
   //   console.warn / indicator count / showMsg type は不変（失敗を隠さない原則）。
   var displayMessage=message;
-  if(kind==='save-verify'&&severity==='warn'&&aggregateKey){
+  if(SAVE_WARN_AGGREGATABLE_KINDS.has(kind)&&severity==='warn'&&aggregateKey){
     var nowTs=Date.now();
     var lastTs=saveWarningAggregationState.lastTimestampByKey[aggregateKey];
     if(typeof lastTs==='number'&&(nowTs-lastTs)<SAVE_WARN_AGGREGATION_WINDOW_MS){
