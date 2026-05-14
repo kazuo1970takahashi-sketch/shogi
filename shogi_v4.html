@@ -1747,7 +1747,10 @@ function handlePastParticipantClassAdd(memberId,cls){
         message:'前回クラス情報の保存が確認できませんでした',
         consoleTag:'[MASTER-V2-LASTCLASS]',
         callsiteId:'S03',
-        fields:['last_class']
+        fields:['last_class'],
+        kind:'master-verify',
+        aggregateKey:'master-verify:lastclass',
+        severity:'warn'
       });
     }
     renderRegList();save();
@@ -2642,7 +2645,10 @@ function bindMasterEditModalEvents(){
           message:'会員マスタ情報の保存が確認できませんでした',
           consoleTag:'[MASTER-V2-LASTCLASS]',
           callsiteId:'S22',
-          fields:s22FailedFields
+          fields:s22FailedFields,
+          kind:'master-verify',
+          aggregateKey:'master-verify:lastclass',
+          severity:'warn'
         });
       }
     }
@@ -3455,7 +3461,10 @@ function handleSuggestClassAdd(memberId,cls){
         message:'前回クラス情報の保存が確認できませんでした',
         consoleTag:'[MASTER-V2-LASTCLASS]',
         callsiteId:'S05',
-        fields:['last_class']
+        fields:['last_class'],
+        kind:'master-verify',
+        aggregateKey:'master-verify:lastclass',
+        severity:'warn'
       });
     }
     postSuccess('['+memberName+'] を '+cls+'クラス に変更しました',r2.player.id,cls,r2.player.name,'クラスを変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',{suppressOkMsg:!s05MasterVerifyOk});
