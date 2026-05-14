@@ -3322,3 +3322,119 @@ notifySaveWarning({
   - [shogi_v4.html:5294](shogi_v4.html:5294) PARSE-MASTER-003 message（設計対称性の比較対象、PR #90 IMPL-LIGHT 着地済）
   - [shogi_v4.html:5791-5812](shogi_v4.html:5791) `initApp()` + `DOMContentLoaded` 経路
 - PR [#88](https://github.com/kazuo1970takahashi-sketch/shogi/pull/88) / [#89](https://github.com/kazuo1970takahashi-sketch/shogi/pull/89) / [#90](https://github.com/kazuo1970takahashi-sketch/shogi/pull/90) / [#91](https://github.com/kazuo1970takahashi-sketch/shogi/pull/91) / [#92](https://github.com/kazuo1970takahashi-sketch/shogi/pull/92) / [#93](https://github.com/kazuo1970takahashi-sketch/shogi/pull/93) / [#94](https://github.com/kazuo1970takahashi-sketch/shogi/pull/94) / [#95](https://github.com/kazuo1970takahashi-sketch/shogi/pull/95)
+
+## 25. SAVE-UX-STATE-RESTORE-HANDLING-IMPL-LIGHT（v2.5 追補 / PARSE-LOAD-003 warn 化 実装着地）
+
+### 25.1 実装目的
+
+- `load()` で全キーから state 復元できず初期 state へ rollover した経路（PARSE-LOAD-003）は silent failure になっていた
+- 運営者が「保存データを復元できなかったこと」に気付ける最小通知を `notifySaveWarning` 経由で導入する
+- §24 design check で「候補 A（`load()` 内 `anyFailure` フラグ + `notifySaveWarning` 直接呼出）」を採用可と確認済（§24.5 / §24.8.1）
+
+### 25.2 実装範囲
+
+- 対象 callsite: **PARSE-LOAD-003 のみ**
+- 4 系統合計 callsite 数: 21 → **22**（`storage-corrupted` 系統: 1 → 2、§16.13 と整合）
+- 差分: [shogi_v4.html:443-459](shogi_v4.html:443) `load()` 本体に `anyFailure` フラグ + `notifySaveWarning` 呼出を追加（+15 行程度）
+
+### 25.3 採用方式
+
+- §24.5 候補 A
+  - `load()` 関数内に `var anyFailure=false` を導入
+  - PARSE-LOAD-001（getItem 例外）catch で `anyFailure=true`
+  - PARSE-LOAD-002（JSON.parse 失敗）catch で `anyFailure=true`
+  - ループ完走後、初期 state へ rollover する直前で `if(anyFailure) notifySaveWarning({...})`
+- §24.4 候補 B（pending queue）/ C（initApp 側フラグ） / D（boot-safe 大改修）は **採用しない**
+
+### 25.4 判定境界
+
+| 状況 | `anyFailure` | warn 発火 | 備考 |
+|---|---|---|---|
+| 初回起動（全キー null）| false | ❌ | regression 防止対象 |
+| 全キー getItem 例外（LOAD-001 経由）| true | ✅ | 破損起源 |
+| 全キー JSON.parse 失敗（LOAD-002 経由）| true | ✅ | 破損起源 |
+| v4 fail → v3 success（PARSE-LOAD-002A）| - | ❌ | ループ内 `return` で PARSE-LOAD-003 不到達、IMPL-LIGHT 対象外 |
+| v4 null → v3 success | - | ❌ | 同上、正常 fallback |
+
+- `localStorage.getItem(key)` が null を返しただけの場合（キー未保存）は `anyFailure` に含めない
+- 「破損起源（getItem 例外 or JSON.parse 失敗）が 1 回以上発生し、結果として state 復元に失敗した」場合のみ warn
+
+### 25.5 metadata
+
+```js
+notifySaveWarning({
+  message: '保存データを復元できなかったため、初期状態で起動しました。',
+  consoleTag: '[STORAGE-CORRUPTED] load() initial state fallback (all keys failed)',
+  callsiteId: 'PARSE-LOAD-003',
+  kind: 'storage-corrupted',
+  aggregateKey: 'storage-corrupted:state',
+  severity: 'warn'
+});
+```
+
+- `kind: 'storage-corrupted'` ✅ §16.5 既存 4 系統 4 番目を継続使用
+- `aggregateKey: 'storage-corrupted:state'` ✅ §16.5 で予約済（`:branch-master` と並列）
+- `severity: 'warn'` ✅ §22.5.3 通り、error 昇格は後続検討
+- `callsiteId: 'PARSE-LOAD-003'` ✅ §16 inventory ID 流用
+- aggregation 対象外維持（`SAVE_WARN_AGGREGATABLE_KINDS` は変更しない）
+- **採用 message 文言**: 第一候補「保存データを復元できなかったため、初期状態で起動しました。」（§24.6.3 提示の第一候補 / IMPL-LIGHT プロンプト推奨。「破損」等の強い断定を避け、復旧導線は過剰に出さない）
+
+### 25.6 PARSE-MASTER-003 との関係
+
+- metadata は並列（`kind:'storage-corrupted'` / `aggregateKey` の名前空間は対称）
+- timing は **非対称**:
+  - PARSE-MASTER-003: 保存時 / runtime（保存のたびに発火しうる）
+  - PARSE-LOAD-003: boot 時（セッションごと最大 1 回）
+- この timing 非対称は `load()` 内インラインコメントと本 §25 に明示
+
+### 25.7 対象外（IMPL-LIGHT スコープ非対象）
+
+| 項目 | 理由 |
+|---|---|
+| PARSE-LOAD-001 単独 warn 化 | LOAD-003 経由で warn が出るため二重通知になる |
+| PARSE-LOAD-002 単独 warn 化 | 同上 |
+| PARSE-LOAD-002A（v4 失敗 → v3 成功）対応 | ループ内 `return` で PARSE-LOAD-003 不到達。意図的（§22.3.3） |
+| PARSE-LOAD-002B 単独対応 | LOAD-003 と合流するため IMPL-LIGHT で同時カバー |
+| `SAVE-UX-STATE-RESTORE-HANDLING-IMPL-FULL` / 案 B | §24.7、現時点で重い |
+| `SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL`（LOAD-002 上位案）| §16.9 案 B、IMPL-LIGHT の後続判断材料 |
+| `notifySaveWarning` の boot-safe 大改修 | 候補 D 棄却（§24.4） |
+| severity `error` 昇格 | §22.5.3、後続検討 |
+| `alert` / `modal` での通知 | SAVE-UX-DESIGN §2.3 / §18.4.1 と矛盾 |
+| 自動復旧 / バックアップ復元 | §17.12 / §18.10「やらない候補」 |
+| 外部送信 / ログ送信 | §19.5 |
+| aggregation 大改修 / 表示頻度制御 | IMPL-LIGHT では現状維持。boot 時 / セッションごと最大 1 回の warn は許容 |
+
+### 25.8 テスト概要
+
+- 新規ファイル: `test/test_save_ux_parse_load_003.js`
+- `test/run_tests.sh` から起動（既存パターン踏襲）
+- 観点（合計 15 アサート）:
+  1. 構造アサート: `callsiteId:'PARSE-LOAD-003'` 近傍に `kind:'storage-corrupted'` / `aggregateKey:'storage-corrupted:state'` / `severity:'warn'` / message 主要語句（「保存データ」「復元」「初期状態」）が存在
+  2. 振る舞いケース 1: 全キー null（初回起動）→ PARSE-LOAD-003 warn が出ない
+  3. 振る舞いケース 2: v4 / v3 ともに JSON.parse 失敗 → PARSE-LOAD-003 warn が 1 回発火、metadata 検証
+  4. 振る舞いケース 3: v4 parse 失敗 + v3 fallback 成功（PARSE-LOAD-002A）→ PARSE-LOAD-003 warn が出ない（対象外確認）
+- 振る舞いテストは `load()` を mock `localStorage` で実行し、`notifySaveWarning` を spy に置換して captured options を検査
+
+### 25.9 次フェーズ
+
+- 本 IMPL-LIGHT 後はまず **運用観察**:
+  - PARSE-LOAD-003 warn が初回起動で出ていないこと
+  - 破損遭遇時に warn 文言が読みやすいか / 復旧導線（過去大会データの取込等）への自然な接続があるか
+- 観察結果次第で以下を起票判断:
+  - `SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL`（LOAD-002 上位案、§16.9 案 B）
+  - `SAVE-UX-STATE-RESTORE-HANDLING-IMPL-FULL`（§24.7、pending queue / boot-safe 改修）
+  - `SAVE-UX-LEGACY-FALLBACK-NOTIFY`（PARSE-LOAD-002A 単独通知、§22.3.3 シナリオ）
+  - severity `error` 昇格判断（§22.5.3）
+
+### 25.10 関連 PR / docs
+
+- 本 IMPL-LIGHT PR: `fix(save-ux): state復元全失敗時にwarnを表示`（PARSE-LOAD-003 warn 化）
+- 起源 design check: §22（state restore inventory）/ §23（closure refinement）/ §24（design check / 候補 A 確定）
+- 既存対称参照: §16（PARSE handling inventory）/ §17〜§21（PARSE-MASTER-003 / `_loaded_with_corruption` 系）
+- 変更ファイル:
+  - `shogi_v4.html` — `load()` 本体に `anyFailure` フラグ + `notifySaveWarning` 呼出
+  - `test/test_save_ux_parse_load_003.js`（新規）
+  - `test/run_tests.sh` — 新規テスト起動 stanza 追加
+  - `docs/notes/20260513_shogi_save_ux_status_map.md` — 本 §25
+  - `HANDOFF.md` — §25 IMPL-LIGHT ポインタ追加
+- 変更しないファイル: `docs/specs/` / `.github/workflows/` / `package.json` / `package-lock.json` / `playwright.config.js`

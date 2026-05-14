@@ -442,19 +442,37 @@ function save(){
 }
 function load(){
   // 現行キー → 旧キーの順に試行。各 key は parse 失敗時に次の key にフォールバック。
+  // SAVE-UX-STATE-RESTORE-HANDLING-IMPL-LIGHT (§25):
+  //   破損起源（getItem 例外 or JSON.parse 失敗）が 1 回以上発生し、かつ state 復元に失敗した
+  //   場合のみ PARSE-LOAD-003 warn を出す。初回起動（全 key が null）では warn しない（regression 防止）。
+  //   PARSE-MASTER-003 と metadata は並列だが timing は非対称（PARSE-LOAD-003 は boot 時、
+  //   セッションごと最大 1 回。PARSE-MASTER-003 は保存ごとに発火しうる）。
   var keys=[STORAGE_KEY].concat(LEGACY_STORAGE_KEYS);
+  var anyFailure=false;
   for(var i=0;i<keys.length;i++){
     var d=null;
-    try{d=localStorage.getItem(keys[i]);}catch(e){continue;}
+    try{d=localStorage.getItem(keys[i]);}catch(e){anyFailure=true;continue;}
     if(!d)continue;
     try{
       state=normalizeState(JSON.parse(d));
       return;
     }catch(e){
       // この key の JSON は壊れている → 次の key を試す
+      anyFailure=true;
     }
   }
   // すべての key が空 or 壊れている → 初期 state を normalize
+  if(anyFailure){
+    // PARSE-LOAD-003: 破損起源の全キー失敗時のみ warn。aggregation 対象外。
+    notifySaveWarning({
+      message:'保存データを復元できなかったため、初期状態で起動しました。',
+      consoleTag:'[STORAGE-CORRUPTED] load() initial state fallback (all keys failed)',
+      callsiteId:'PARSE-LOAD-003',
+      kind:'storage-corrupted',
+      aggregateKey:'storage-corrupted:state',
+      severity:'warn'
+    });
+  }
   state=normalizeState(state);
 }
 

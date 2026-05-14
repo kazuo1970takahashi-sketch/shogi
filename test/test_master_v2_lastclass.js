@@ -1655,9 +1655,10 @@ function extractNotifySaveWarningBlocks(src){
 // shogi_v4.html 全体に対する block 抽出（共有変数として SECTION 13 / 15 / 16 / 18 で使用）
 var __EXPAND_BLOCKS = extractNotifySaveWarningBlocks(__EXPAND_SRC);
 
-// 抽出件数の sanity check: 15 (save-verify) + 2 (storage-quota) + 3 (master-verify) + 1 (storage-corrupted) = 21
-assertEq(__EXPAND_BLOCKS.length, 21,
-  'T-HELPER-shogi-blocks: shogi_v4.html から 21 個の notifySaveWarning block を抽出');
+// 抽出件数の sanity check: 15 (save-verify) + 2 (storage-quota) + 3 (master-verify) + 2 (storage-corrupted) = 22
+// SAVE-UX-STATE-RESTORE-HANDLING-IMPL-LIGHT (§25): storage-corrupted 1 → 2（PARSE-MASTER-003 + PARSE-LOAD-003）。
+assertEq(__EXPAND_BLOCKS.length, 22,
+  'T-HELPER-shogi-blocks: shogi_v4.html から 22 個の notifySaveWarning block を抽出');
 
 // ============================================================================
 // SECTION 10 (continued)
@@ -3293,7 +3294,7 @@ assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'storage-quota'; 
   'T-EXP8-storage-quota-count-unchanged: storage-quota 2 件維持');
 assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'master-verify'; }).length, 3,
   'T-EXP8-master-verify-count-unchanged: master-verify 3 件維持');
-// 既存 3 系統の合計が 20 件のまま（4 系統合計は SECTION 18 / T-HELPER-shogi-blocks 側で 21 を assert）
+// 既存 3 系統の合計が 20 件のまま（4 系統合計は SECTION 18 / T-HELPER-shogi-blocks 側で 22 を assert、§25 で +1）
 {
   var __exp8_sv = __EXPAND_BLOCKS.filter(function(b){ return b.kind === 'save-verify'; }).length;
   var __exp8_sq = __EXPAND_BLOCKS.filter(function(b){ return b.kind === 'storage-quota'; }).length;
@@ -3571,9 +3572,10 @@ var __EXP9_STORAGE_CORRUPTED_BLOCKS = __EXPAND_BLOCKS.filter(function(b){
   return b.kind === 'storage-corrupted';
 });
 
-// kind=storage-corrupted の block が厳密 1 件
-assertEq(__EXP9_STORAGE_CORRUPTED_BLOCKS.length, 1,
-  'T-EXP9-static-kind-count: kind=storage-corrupted の block は 1 件');
+// kind=storage-corrupted の block 件数（PARSE-MASTER-003 + PARSE-LOAD-003 = 2）
+// SAVE-UX-STATE-RESTORE-HANDLING-IMPL-LIGHT (§25) で PARSE-LOAD-003 を追加し 1 → 2 へ。
+assertEq(__EXP9_STORAGE_CORRUPTED_BLOCKS.length, 2,
+  'T-EXP9-static-kind-count: kind=storage-corrupted の block は 2 件');
 
 // callsiteId=PARSE-MASTER-003 が 1 件
 assertEq(
@@ -3587,11 +3589,11 @@ assertEq(
   1,
   'T-EXP9-static-aggKey: aggregateKey=storage-corrupted:branch-master が 1 件');
 
-// severity=warn が 1 件
+// severity=warn が 2 件（PARSE-MASTER-003 + PARSE-LOAD-003、§25 で +1）
 assertEq(
   __EXP9_STORAGE_CORRUPTED_BLOCKS.filter(function(b){ return b.severity === 'warn'; }).length,
-  1,
-  'T-EXP9-static-severity: storage-corrupted block の severity=warn が 1 件');
+  2,
+  'T-EXP9-static-severity: storage-corrupted block の severity=warn が 2 件');
 
 // 既存 explicit console.warn / showMsg 直接呼び出しが除去されている（PR #79 storage-quota パターン）
 assertEq(__EXPAND_SRC.indexOf("console.warn('支部マスタが破損しているため自動同期をスキップ（大会データのコピーは継続）')"), -1,
@@ -3612,17 +3614,17 @@ assert(__EXPAND_SRC.indexOf("console.warn('支部マスタ同期に失敗（既�
     'T-EXP9-static-allow-list-no-storage-corrupted: storage-corrupted は allow-list に含まれない');
 }
 
-// 4 系統 metadata 件数（合計 21）
+// 4 系統 metadata 件数（合計 22、§25 で storage-corrupted 1 → 2）
 assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'save-verify'; }).length, 15,
   'T-EXP9-static-save-verify-15: save-verify 15 件維持');
 assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'storage-quota'; }).length, 2,
   'T-EXP9-static-storage-quota-2: storage-quota 2 件維持');
 assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'master-verify'; }).length, 3,
   'T-EXP9-static-master-verify-3: master-verify 3 件維持');
-assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'storage-corrupted'; }).length, 1,
-  'T-EXP9-static-storage-corrupted-1: storage-corrupted 1 件');
-assertEq(__EXPAND_BLOCKS.length, 21,
-  'T-EXP9-static-4systems-total: 4 系統合計 21 件');
+assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'storage-corrupted'; }).length, 2,
+  'T-EXP9-static-storage-corrupted-2: storage-corrupted 2 件（PARSE-MASTER-003 + PARSE-LOAD-003）');
+assertEq(__EXPAND_BLOCKS.length, 22,
+  'T-EXP9-static-4systems-total: 4 系統合計 22 件');
 
 // ----------------------------------------------------------------------------
 // T-EXP9-runtime: syncBranchMasterOnSave 経由の corruption 検知挙動
