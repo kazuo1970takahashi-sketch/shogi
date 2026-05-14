@@ -1586,18 +1586,11 @@ const __EXPAND_SRC = fs.readFileSync(targetPath, 'utf8');
   assert(__EXPAND_SRC.indexOf(msg) !== -1, 'T-EXP2-master001-untouched: MASTER-001 系文言が残る (' + msg + ')');
 });
 
-// T-EXP2-helper-schema-unchanged: notifySaveWarning helper 内部の引数 schema 受理が変更されていない
-//   → fields / kind / aggregateKey / severity 追加の痕跡がない
-[
-  "Object.prototype.toString.call(opts.fields)",   // helper 内 fields 受理
-  "recordSaveWarningForIndicator({callsiteId:callsiteId,fields:fields})"  // indicator 連携
-].forEach(function(pat){
-  assert(__EXPAND_SRC.indexOf(pat) !== -1, 'T-EXP2-helper-schema-unchanged: helper 内部の '+pat+' が維持されている');
-});
-// kind / aggregateKey / severity が schema に追加されていないこと
-['opts.kind','opts.aggregateKey','opts.severity'].forEach(function(forbidden){
-  assert(__EXPAND_SRC.indexOf(forbidden) === -1, 'T-EXP2-helper-schema-no-add: schema に '+forbidden+' は追加されていない');
-});
+// T-EXP2-helper-schema: PR #73 時点では metadata 未追加だったが、SAVE-UX-WARN-AGGREGATION-IMPL
+//   (SECTION 13) で metadata 土台が入り、`opts.kind` / `opts.aggregateKey` / `opts.severity` が
+//   公式に schema へ追加される。helper 内部の検証は SECTION 13 へ移譲（履歴目的のコメント残置）。
+assert(__EXPAND_SRC.indexOf('Object.prototype.toString.call(opts.fields)') !== -1,
+  'T-EXP2-helper-fields-receiver-preserved: helper の fields 受理ロジックが維持');
 
 // ============================================================================
 // SECTION 12: SAVE-UX-WARN-HELPER-EXPAND-3 — Group D の 4 callsite を helper 経由化
@@ -1706,16 +1699,323 @@ assert(__EXPAND_SRC.indexOf('suppressOkMsg:!s05MasterVerifyOk') !== -1,
   assert(__EXPAND_SRC.indexOf(msg) !== -1, 'T-EXP3-master001-untouched: MASTER-001 系 '+msg+' が残る');
 });
 
-// T-EXP3-helper-schema-unchanged: notifySaveWarning 内部 schema 不変
+// T-EXP3-helper-schema: PR #74 時点では metadata 未追加だったが、SAVE-UX-WARN-AGGREGATION-IMPL
+//   (SECTION 13) で metadata 土台が入る。helper 内部の検証は SECTION 13 へ移譲。
+assert(__EXPAND_SRC.indexOf('Object.prototype.toString.call(opts.fields)') !== -1,
+  'T-EXP3-helper-fields-receiver-preserved: helper の fields 受理ロジックが維持');
+
+// ============================================================================
+// SECTION 13: SAVE-UX-WARN-AGGREGATION-IMPL — metadata 土台（集約はまだしない）
+// ============================================================================
+// 依頼: SAVE-UX-WARN-AGGREGATION-IMPL（PR #74 後続）
+// 設計: docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md
+//
+// 今回の合言葉: 「集約はまだしない。集約できる土台だけ入れる」
+//
+// 実装範囲:
+//   (a) notifySaveWarning に任意 metadata { kind, aggregateKey, severity } を追加
+//   (b) metadata なし呼び出しでも従来通り動作する後方互換
+//   (c) metadata あり呼び出しで console.warn 出力 object に metadata が含まれる
+//   (d) undefined metadata は output object から除外
+//   (e) A-5.1 SAVE 系 15 件すべてに metadata（kind:'save-verify' / severity:'warn' /
+//       aggregateKey:'save-verify:<group>'）を付与
+//   (f) recordSaveWarningForIndicator に metadata を渡せる経路を確保
+//
+// 集約・抑制・表示分岐は本 PR で実装しない:
+//   - showMsg 抑制 / 時間窓 / 短縮 message / 連続検知なし
+//   - console.warn 集約なし
+//   - indicator count 集約なし（発生単位で +1 を維持）
+//   - severity による表示分岐なし
+//
+// 対象外（metadata 不付与）:
+//   - MASTER-V2-LASTCLASS S03 / S05 / S22
+//   - MASTER-001 系
+//   - quota / parse / duplicate / import / migration / S30
+//   - ふりがな success-with-caveat 通知
+
+// Group ↔ aggregateKey 対応表（依頼書 §11 + PR #70/#73/#74 の実態）:
+//   A 大会進行 core         → save-verify:core    (4件)
+//   B 登録欄 add/remove     → save-verify:entry   (2件)
+//   C 登録欄 編集           → save-verify:edit    (2件)
+//   D 過去参加者経路        → save-verify:past    (4件)
+//   E 対局画面 編集         → save-verify:pairing (3件)
+//                                            計 15件
+
+// ----------------------------------------------------------------------------
+// T-EXP4-15-callsites-metadata: 15 callsiteId それぞれに 3 metadata（kind/aggregateKey/severity）が
+//   notifySaveWarning 呼出 object 内に付与されていることを source 静的検証
+// ----------------------------------------------------------------------------
+var __EXP4_CALLSITES = [
+  // [callsiteId, aggregateKey]
+  // Group A (core)
+  ['SAVE-003-startTournament',                          'save-verify:core'],
+  ['SAVE-004-generatePairing',                          'save-verify:core'],
+  ['SAVE-003-setWinner',                                'save-verify:core'],
+  ['SAVE-003-submitRound',                              'save-verify:core'],
+  // Group B (entry)
+  ['SAVE-002-addPlayer',                                'save-verify:entry'],
+  ['SAVE-001-removePlayer',                             'save-verify:entry'],
+  // Group C (edit)
+  ['SAVE-003b-updateField',                             'save-verify:edit'],
+  ['SAVE-003b-bulkEditNames',                           'save-verify:edit'],
+  // Group D (past)
+  ['SAVE-003b-handlePastParticipantClassAdd-class-change','save-verify:past'],
+  ['SAVE-003b-handlePastParticipantClassAdd-add',       'save-verify:past'],
+  ['SAVE-003b-handleSuggestClassAdd',                   'save-verify:past'],
+  ['SAVE-003b-finalizeAddPastParticipants',             'save-verify:past'],
+  // Group E (pairing)
+  ['SAVE-003b-bindChangePairingModalEvents',            'save-verify:pairing'],
+  ['SAVE-003b-bindEditPastResultModalEvents-p1',        'save-verify:pairing'],
+  ['SAVE-003b-bindEditPastResultModalEvents-p2',        'save-verify:pairing']
+];
+
+// metadata 付与 callsite 数の妥当性
+assertEq(__EXP4_CALLSITES.length, 15, 'T-EXP4-callsite-count: 15 callsite を対象とする');
+
+// 各 callsite が notifySaveWarning ブロック内で aggregateKey / kind / severity を保持する
+__EXP4_CALLSITES.forEach(function(pair){
+  var cid = pair[0];
+  var ak = pair[1];
+  // callsiteId が source に存在
+  var cidNeedle = "callsiteId:'" + cid + "'";
+  assert(__EXPAND_SRC.indexOf(cidNeedle) !== -1, 'T-EXP4-callsiteId-present: ' + cid);
+  // 当該 callsiteId 直後にブロック内で aggregateKey:'save-verify:<group>' が存在
+  // （callsiteId は 1 行で出るため、その後 200 文字以内に aggregateKey が出ることを確認）
+  var cidIdx = __EXPAND_SRC.indexOf(cidNeedle);
+  var window200 = __EXPAND_SRC.substring(cidIdx, cidIdx + 250);
+  assert(window200.indexOf("aggregateKey:'" + ak + "'") !== -1,
+    'T-EXP4-aggregateKey-correct: ' + cid + ' → ' + ak);
+  assert(window200.indexOf("kind:'save-verify'") !== -1,
+    'T-EXP4-kind-save-verify: ' + cid + ' → kind:save-verify');
+  assert(window200.indexOf("severity:'warn'") !== -1,
+    'T-EXP4-severity-warn: ' + cid + ' → severity:warn');
+});
+
+// ----------------------------------------------------------------------------
+// T-EXP4-aggregateKey-distribution: aggregateKey が Group 単位で正しい件数分配
+// ----------------------------------------------------------------------------
+var __EXP4_EXPECTED_DIST = {
+  'save-verify:core':    4,
+  'save-verify:entry':   2,
+  'save-verify:edit':    2,
+  'save-verify:past':    4,
+  'save-verify:pairing': 3
+};
+Object.keys(__EXP4_EXPECTED_DIST).forEach(function(ak){
+  // grep カウント: aggregateKey:'<ak>'
+  var needle = "aggregateKey:'" + ak + "'";
+  var count = (__EXPAND_SRC.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g')) || []).length;
+  assertEq(count, __EXP4_EXPECTED_DIST[ak],
+    'T-EXP4-aggregateKey-distribution: ' + ak + ' は ' + __EXP4_EXPECTED_DIST[ak] + ' 件');
+});
+
+// 全 kind:'save-verify' / severity:'warn' の件数も 15 件ずつ
+{
+  var kindCount = (__EXPAND_SRC.match(/kind:'save-verify'/g) || []).length;
+  var severityCount = (__EXPAND_SRC.match(/severity:'warn'/g) || []).length;
+  assertEq(kindCount, 15, 'T-EXP4-kind-count: kind:save-verify は 15 件');
+  assertEq(severityCount, 15, 'T-EXP4-severity-count: severity:warn は 15 件');
+}
+
+// ----------------------------------------------------------------------------
+// T-EXP4-aggregateKey-format: 命名規則（kebab-case / 小文字 / `:` 区切り / 2 階層）
+// ----------------------------------------------------------------------------
+Object.keys(__EXP4_EXPECTED_DIST).forEach(function(ak){
+  // kebab-case + : 区切り、2 階層
+  assert(/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/.test(ak),
+    'T-EXP4-aggregateKey-format: ' + ak + ' が kebab-case + : 区切り + 2階層');
+  // 大文字混在禁止
+  assertEq(ak, ak.toLowerCase(), 'T-EXP4-aggregateKey-lowercase: ' + ak);
+  // _ や / 区切り不使用
+  assertEq(ak.indexOf('_'), -1, 'T-EXP4-aggregateKey-no-underscore: ' + ak);
+  assertEq(ak.indexOf('/'), -1, 'T-EXP4-aggregateKey-no-slash: ' + ak);
+});
+
+// ----------------------------------------------------------------------------
+// T-EXP4-helper-schema-extended: notifySaveWarning helper 内で metadata 受理処理が存在
+// ----------------------------------------------------------------------------
 [
-  "Object.prototype.toString.call(opts.fields)",
-  "recordSaveWarningForIndicator({callsiteId:callsiteId,fields:fields})"
+  'var kind=opts.kind',
+  'var aggregateKey=opts.aggregateKey',
+  'var severity=opts.severity',
+  'if(kind!==undefined)warnMeta.kind=kind',
+  'if(aggregateKey!==undefined)warnMeta.aggregateKey=aggregateKey',
+  'if(severity!==undefined)warnMeta.severity=severity'
 ].forEach(function(pat){
-  assert(__EXPAND_SRC.indexOf(pat) !== -1, 'T-EXP3-helper-schema-unchanged: helper 内部の '+pat+' が維持');
+  assert(__EXPAND_SRC.indexOf(pat) !== -1, 'T-EXP4-helper-schema-extended: ' + pat);
 });
-['opts.kind','opts.aggregateKey','opts.severity'].forEach(function(forbidden){
-  assert(__EXPAND_SRC.indexOf(forbidden) === -1, 'T-EXP3-helper-schema-no-add: schema に '+forbidden+' は追加されていない');
+
+// ----------------------------------------------------------------------------
+// T-EXP4-undefined-excluded: 出力 object に undefined を入れない for-loop pattern
+//   "kind:undefined" のような literal は source に絶対存在しない
+// ----------------------------------------------------------------------------
+['kind:undefined','aggregateKey:undefined','severity:undefined'].forEach(function(pat){
+  assert(__EXPAND_SRC.indexOf(pat) === -1, 'T-EXP4-undefined-excluded: ' + pat + ' は source に存在しない');
 });
+
+// ----------------------------------------------------------------------------
+// T-EXP4-indicator-count-policy-preserved: indicator count は発生単位で +1 のまま
+//   recordSaveWarningForIndicator 内に count+=1 が存在、集約ロジックなし
+// ----------------------------------------------------------------------------
+assert(__EXPAND_SRC.indexOf('saveWarningIndicatorState.count+=1') !== -1,
+  'T-EXP4-indicator-count-1-per-call: count+=1 が維持');
+
+// 集約っぽい記述が存在しないこと（時間窓 / aggregateKey によるカウント集約 / 短縮 message）
+[
+  'aggregateKey',  // ※ aggregateKey 自体は metadata として存在するが、これは別 assert で個別検証
+  'time window',
+  'time_window',
+  'shortMessage',
+  'short_message',
+  'aggregateCount',
+  'dedupedCount',
+  'suppressedByAggregate',
+  'lastAggregateKey'
+].forEach(function(pat){
+  if(pat === 'aggregateKey')return;  // metadata としての存在は OK
+  assert(__EXPAND_SRC.indexOf(pat) === -1,
+    'T-EXP4-no-aggregation-display: 集約表示の痕跡が存在しない (' + pat + ')');
+});
+
+// indicator count++ ロジック内に kind / aggregateKey / severity による分岐がない
+// （recordSaveWarningForIndicator 関数本体の前後 500 文字を見る）
+{
+  var recordIdx = __EXPAND_SRC.indexOf('function recordSaveWarningForIndicator(');
+  assert(recordIdx !== -1, 'T-EXP4-record-function-exists: recordSaveWarningForIndicator が存在');
+  var recordBody = __EXPAND_SRC.substring(recordIdx, recordIdx + 500);
+  // count+=1 が存在
+  assert(recordBody.indexOf('count+=1') !== -1, 'T-EXP4-record-count-plus-one: 関数内に count+=1 が存在');
+  // kind / aggregateKey / severity による条件分岐 / 計算がない
+  ['if(opts.aggregateKey','if(opts.kind','if(opts.severity'].forEach(function(pat){
+    assert(recordBody.indexOf(pat) === -1,
+      'T-EXP4-record-no-metadata-branch: 関数内に '+pat+' による集約分岐なし');
+  });
+}
+
+// ----------------------------------------------------------------------------
+// T-EXP4-out-of-scope-no-metadata: 対象外 callsite に metadata が付与されていない
+//   S03 / S05 / S22 (MASTER-V2-LASTCLASS) — 既存実装で kind 等を含まない
+// ----------------------------------------------------------------------------
+["callsiteId:'S03',","callsiteId:'S05',","callsiteId:'S22',"].forEach(function(cidPat){
+  var idx = __EXPAND_SRC.indexOf(cidPat);
+  if(idx === -1) return;  // 当該 callsite が無ければスキップ
+  // 当該 callsite 周辺 200 文字に kind:'save-verify' / aggregateKey:'save-verify: が含まれていない
+  var window200 = __EXPAND_SRC.substring(Math.max(0,idx-100), idx + 200);
+  assert(window200.indexOf("kind:'save-verify'") === -1,
+    'T-EXP4-master-v2-no-save-verify-kind: '+cidPat+' に kind:save-verify が付かない');
+  assert(window200.indexOf("aggregateKey:'save-verify:") === -1,
+    'T-EXP4-master-v2-no-save-verify-aggregate: '+cidPat+' に save-verify:* aggregateKey が付かない');
+});
+
+// MASTER-001 系 / ふりがな success-with-caveat に kind / aggregateKey 注入なし
+//   （これらは showMsg 直接呼出のままで helper 経由化されていないため、metadata は構造的に付かない）
+assert(__EXPAND_SRC.indexOf("ふりがな未登録のまま ") !== -1,
+  'T-EXP4-yomi-caveat-preserved: ふりがな success-with-caveat 文言が残る');
+assert(__EXPAND_SRC.indexOf("参加者名を更新しましたが、保存できていない可能性があります") !== -1,
+  'T-EXP4-master-001-preserved: MASTER-001 系 warn 文言が残る');
+
+// ----------------------------------------------------------------------------
+// T-EXP4-showMsg-unchanged: user-facing showMsg('...', 'warn') 呼出のままの文言が維持される
+//   helper 内で showMsg(message, 'warn') を行うため、user-facing 文言は変化しない
+// ----------------------------------------------------------------------------
+[
+  '削除は反映されましたが、保存が確認できませんでした',
+  '参加者は登録されましたが、保存が確認できませんでした',
+  '大会を開始しましたが、保存が確認できませんでした',
+  '勝敗を入力しましたが、保存が確認できませんでした',
+  '回戦を確定しましたが、保存が確認できませんでした',
+  '組み合わせを生成しましたが、保存が確認できませんでした',
+  '属性を変更しましたが、保存が確認できませんでした',
+  '対戦相手を変更しましたが、保存が確認できませんでした',
+  '過去結果を修正しましたが、保存が確認できませんでした',
+  'クラスを変更しましたが、保存が確認できませんでした'
+].forEach(function(msg){
+  assert(__EXPAND_SRC.indexOf(msg) !== -1, 'T-EXP4-showMsg-unchanged: ' + msg);
+});
+
+// ----------------------------------------------------------------------------
+// T-EXP4-success-suppression-preserved: success showMsg 抑止構造（s03 if-gate / s05 suppressOkMsg）
+//   は本 PR で未変更
+// ----------------------------------------------------------------------------
+assert(__EXPAND_SRC.indexOf('if(s03MasterVerifyOk){') !== -1,
+  'T-EXP4-s03-if-gate-preserved');
+assert(__EXPAND_SRC.indexOf('suppressOkMsg:!s05MasterVerifyOk') !== -1,
+  'T-EXP4-s05-suppressOkMsg-preserved');
+
+// ----------------------------------------------------------------------------
+// T-EXP4-runtime-backward-compat: metadata なし呼び出しでも helper が動作する
+//   ランタイム検証: helper を実行してみる
+// ----------------------------------------------------------------------------
+{
+  var env = loadEnv(targetPath);
+  env._clear();
+  // metadata なし呼び出し（PR #66 以前の 4 引数形式）
+  env.notifySaveWarning({
+    message: 'テスト warn',
+    consoleTag: '[TEST-BACKCOMPAT]',
+    callsiteId: 'TEST-NO-METADATA',
+    fields: ['x']
+  });
+  assertEq(env._getIndicatorState().count, 1,
+    'T-EXP4-runtime-backward-compat-a: metadata なしでも indicator +1');
+  // console.warn 出力に kind/aggregateKey/severity が含まれていない
+  var lastWarn = env._warnCalls[env._warnCalls.length - 1];
+  assert(lastWarn.indexOf('"kind"') === -1, 'T-EXP4-runtime-backward-compat-b: metadata なしで kind が出ない');
+  assert(lastWarn.indexOf('"aggregateKey"') === -1, 'T-EXP4-runtime-backward-compat-c: metadata なしで aggregateKey が出ない');
+  assert(lastWarn.indexOf('"severity"') === -1, 'T-EXP4-runtime-backward-compat-d: metadata なしで severity が出ない');
+}
+
+// ----------------------------------------------------------------------------
+// T-EXP4-runtime-metadata-included: metadata あり呼び出しで console.warn 出力に含まれる
+// ----------------------------------------------------------------------------
+{
+  var env2 = loadEnv(targetPath);
+  env2._clear();
+  env2.notifySaveWarning({
+    message: 'テスト warn metadata',
+    consoleTag: '[TEST-METADATA]',
+    callsiteId: 'TEST-WITH-METADATA',
+    fields: ['y'],
+    kind: 'save-verify',
+    aggregateKey: 'save-verify:core',
+    severity: 'warn'
+  });
+  var lastWarn2 = env2._warnCalls[env2._warnCalls.length - 1];
+  assert(lastWarn2.indexOf('"kind":"save-verify"') !== -1,
+    'T-EXP4-runtime-metadata-a: console.warn 出力に kind が含まれる');
+  assert(lastWarn2.indexOf('"aggregateKey":"save-verify:core"') !== -1,
+    'T-EXP4-runtime-metadata-b: console.warn 出力に aggregateKey が含まれる');
+  assert(lastWarn2.indexOf('"severity":"warn"') !== -1,
+    'T-EXP4-runtime-metadata-c: console.warn 出力に severity が含まれる');
+  // indicator count は依然 +1（集約しない）
+  assertEq(env2._getIndicatorState().count, 1,
+    'T-EXP4-runtime-metadata-d: metadata 有でも indicator は発生単位 +1');
+}
+
+// ----------------------------------------------------------------------------
+// T-EXP4-runtime-undefined-excluded: undefined metadata は output から除外
+// ----------------------------------------------------------------------------
+{
+  var env3 = loadEnv(targetPath);
+  env3._clear();
+  env3.notifySaveWarning({
+    message: 'テスト warn partial',
+    consoleTag: '[TEST-PARTIAL]',
+    callsiteId: 'TEST-PARTIAL-METADATA',
+    kind: 'save-verify'
+    // aggregateKey / severity 省略
+  });
+  var lastWarn3 = env3._warnCalls[env3._warnCalls.length - 1];
+  assert(lastWarn3.indexOf('"kind":"save-verify"') !== -1,
+    'T-EXP4-runtime-partial-a: kind だけ与えると kind だけ出る');
+  assert(lastWarn3.indexOf('"aggregateKey"') === -1,
+    'T-EXP4-runtime-partial-b: 省略した aggregateKey は出ない');
+  assert(lastWarn3.indexOf('"severity"') === -1,
+    'T-EXP4-runtime-partial-c: 省略した severity は出ない');
+  // "undefined" 文字列が含まれない（"kind":null や "kind":undefined もダメ）
+  assert(lastWarn3.indexOf('undefined') === -1,
+    'T-EXP4-runtime-partial-d: 出力に undefined 文字列が含まれない');
+}
 
 // ============================================================================
 // 結果

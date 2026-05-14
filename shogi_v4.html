@@ -1709,7 +1709,10 @@ function handlePastParticipantClassAdd(memberId,cls){
       notifySaveWarning({
         message:'クラスを変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
         consoleTag:'SAVE-003b: handlePastParticipantClassAdd (class change) の保存が確認できませんでした (player='+r2.player.id+', cls='+cls+', name='+r2.player.name+')',
-        callsiteId:'SAVE-003b-handlePastParticipantClassAdd-class-change'
+        callsiteId:'SAVE-003b-handlePastParticipantClassAdd-class-change',
+        kind:'save-verify',
+        aggregateKey:'save-verify:past',
+        severity:'warn'
       });
     }
     return;
@@ -1745,7 +1748,10 @@ function handlePastParticipantClassAdd(memberId,cls){
     notifySaveWarning({
       message:'参加者は登録されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
       consoleTag:'SAVE-003b: handlePastParticipantClassAdd (add) の保存が確認できませんでした (player='+r.player.id+', cls='+cls+', name='+r.player.name+')',
-      callsiteId:'SAVE-003b-handlePastParticipantClassAdd-add'
+      callsiteId:'SAVE-003b-handlePastParticipantClassAdd-add',
+      kind:'save-verify',
+      aggregateKey:'save-verify:past',
+      severity:'warn'
     });
   }
 }
@@ -1902,7 +1908,10 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi){
       notifySaveWarning({
         message:added+'名を追加しましたが、'+unverifiedCount+'名分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
         consoleTag:'SAVE-003b: finalizeAddPastParticipants の保存が確認できませんでした ('+unverifiedCount+'/'+addedTargets.length+' 件未確認)',
-        callsiteId:'SAVE-003b-finalizeAddPastParticipants'
+        callsiteId:'SAVE-003b-finalizeAddPastParticipants',
+        kind:'save-verify',
+        aggregateKey:'save-verify:past',
+        severity:'warn'
       });
     }
   }
@@ -2980,13 +2989,17 @@ function updateSaveWarningIndicator(){
 // SAVE-UX-WARN-HELPER: SAVE-UX-DESIGN Level 1 の user-facing warn helper。
 //   showMsg(.., 'warn') と 総括 console.warn のみを担当する。
 //   success showMsg の抑止は callsite 側の責務（PR #63 / #65 と同じ設計を保護する）。
-//   aggregationKey / severity / indicator / retry は後続タスクで扱う。
 //   既存の field 別 console.warn は callsite 側に残す（debug 詳細）。
 // 引数 options:
 //   - message (string, 必須): user-facing 文言。空のときは showMsg を出さず安全側で return
 //   - consoleTag (string): 総括 console.warn のタグ。grep しやすい既存タグ準拠
-//   - callsiteId (string): 'S03' / 'S05' / 'S22' などの識別子
+//   - callsiteId (string): 'SAVE-XXX-<functionName>' などの識別子
 //   - fields (string[]): 失敗 field 名（debug 用、user-facing 文言には含めない）
+// 任意 metadata（SAVE-UX-WARN-AGGREGATION-IMPL 土台）:
+//   - kind (string): warn の種別（例: 'save-verify'）。helper 内で値検証しない
+//   - aggregateKey (string): 将来 aggregation 表示の同一性キー（例: 'save-verify:core'）。
+//                            helper 内で値検証・showMsg 抑制・count 集約を行わない
+//   - severity (string): 警告レベル（例: 'warn'）。helper 内で表示分岐しない
 // 戻り値: void。success 抑止判定には使わない。例外は投げない。
 function notifySaveWarning(options){
   var opts=options||{};
@@ -2994,10 +3007,20 @@ function notifySaveWarning(options){
   var consoleTag=(typeof opts.consoleTag==='string'&&opts.consoleTag)?opts.consoleTag:'[SAVE-WARN]';
   var callsiteId=(typeof opts.callsiteId==='string')?opts.callsiteId:'unknown';
   var fields=(Object.prototype.toString.call(opts.fields)==='[object Array]')?opts.fields:[];
+  // SAVE-UX-WARN-AGGREGATION-IMPL: 任意 metadata を console.warn / indicator 経路に流す。
+  //   undefined のときは output object に含めない（プレースホルダ値の混入を避ける）。
+  //   集約・抑制・表示分岐は本 PR で実装しない（土台のみ）。
+  var kind=opts.kind;
+  var aggregateKey=opts.aggregateKey;
+  var severity=opts.severity;
   if(!message){
     // message 不在は callsite 側 bug の可能性。例外を投げず、debug ログを残して安全 return。
     if(typeof console!=='undefined'&&console.warn){
-      console.warn(consoleTag,{callsiteId:callsiteId,fields:fields,error:'notifySaveWarning called without message'});
+      var bugMeta={callsiteId:callsiteId,fields:fields,error:'notifySaveWarning called without message'};
+      if(kind!==undefined)bugMeta.kind=kind;
+      if(aggregateKey!==undefined)bugMeta.aggregateKey=aggregateKey;
+      if(severity!==undefined)bugMeta.severity=severity;
+      console.warn(consoleTag,bugMeta);
     }
     return;
   }
@@ -3005,11 +3028,20 @@ function notifySaveWarning(options){
     showMsg(message,'warn');
   }
   if(typeof console!=='undefined'&&console.warn){
-    console.warn(consoleTag,{callsiteId:callsiteId,fields:fields});
+    var warnMeta={callsiteId:callsiteId,fields:fields};
+    if(kind!==undefined)warnMeta.kind=kind;
+    if(aggregateKey!==undefined)warnMeta.aggregateKey=aggregateKey;
+    if(severity!==undefined)warnMeta.severity=severity;
+    console.warn(consoleTag,warnMeta);
   }
   // SAVE-UX-STATUS-INDICATOR: helper 1 呼出 = indicator count +1（設計書 §7）。
   //   fields.length 分は加算しない。callsite 不変。例外を投げない契約を維持。
-  recordSaveWarningForIndicator({callsiteId:callsiteId,fields:fields});
+  //   SAVE-UX-WARN-AGGREGATION-IMPL: metadata は indicator 経路に渡すが count 集約には使わない。
+  var indicatorPayload={callsiteId:callsiteId,fields:fields};
+  if(kind!==undefined)indicatorPayload.kind=kind;
+  if(aggregateKey!==undefined)indicatorPayload.aggregateKey=aggregateKey;
+  if(severity!==undefined)indicatorPayload.severity=severity;
+  recordSaveWarningForIndicator(indicatorPayload);
 }
 
 function renderRegList(){
@@ -3134,7 +3166,10 @@ function updateField(id,cls,field,value){
     notifySaveWarning({
       message:'属性を変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
       consoleTag:'SAVE-003b: updateField の保存が確認できませんでした (player='+id+', cls='+cls+', field='+field+', expected='+value+')',
-      callsiteId:'SAVE-003b-updateField'
+      callsiteId:'SAVE-003b-updateField',
+      kind:'save-verify',
+      aggregateKey:'save-verify:edit',
+      severity:'warn'
     });
   }
 }
@@ -3302,7 +3337,10 @@ function handleSuggestClassAdd(memberId,cls){
       notifySaveWarning({
         message:warnMsg,
         consoleTag:'SAVE-003b: handleSuggestClassAdd の保存が確認できませんでした (player='+verifyPid+', cls='+verifyCls+', name='+verifyName+')',
-        callsiteId:'SAVE-003b-handleSuggestClassAdd'
+        callsiteId:'SAVE-003b-handleSuggestClassAdd',
+        kind:'save-verify',
+        aggregateKey:'save-verify:past',
+        severity:'warn'
       });
     }
   }
@@ -3505,7 +3543,10 @@ function addPlayer(){
     notifySaveWarning({
       message:'参加者は登録されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
       consoleTag:'SAVE-002: addPlayer の保存が確認できませんでした (player=' + id + ', cls=' + cls + ', name=' + name + ')',
-      callsiteId:'SAVE-002-addPlayer'
+      callsiteId:'SAVE-002-addPlayer',
+      kind:'save-verify',
+      aggregateKey:'save-verify:entry',
+      severity:'warn'
     });
   }
 }
@@ -3546,7 +3587,10 @@ function removePlayer(id,cls){
     notifySaveWarning({
       message:'削除は反映されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
       consoleTag:'SAVE-001: removePlayer の保存が確認できませんでした (player='+id+', cls='+cls+')',
-      callsiteId:'SAVE-001-removePlayer'
+      callsiteId:'SAVE-001-removePlayer',
+      kind:'save-verify',
+      aggregateKey:'save-verify:entry',
+      severity:'warn'
     });
   }
 }
@@ -3646,7 +3690,10 @@ function bindBulkEditModalEvents(cls, players){
       notifySaveWarning({
         message:players.length+'名のうち '+unverified+'名分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
         consoleTag:'SAVE-003b: bulkEditNames の保存が確認できませんでした ('+unverified+'/'+players.length+' 件未確認)',
-        callsiteId:'SAVE-003b-bulkEditNames'
+        callsiteId:'SAVE-003b-bulkEditNames',
+        kind:'save-verify',
+        aggregateKey:'save-verify:edit',
+        severity:'warn'
       });
     }
   });
@@ -4198,7 +4245,10 @@ function startTournament(){
     notifySaveWarning({
       message:'大会を開始しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
       consoleTag:'SAVE-003: startTournament の保存が確認できませんでした',
-      callsiteId:'SAVE-003-startTournament'
+      callsiteId:'SAVE-003-startTournament',
+      kind:'save-verify',
+      aggregateKey:'save-verify:core',
+      severity:'warn'
     });
   }
 }
@@ -4439,7 +4489,10 @@ function generatePairing(cls){
     notifySaveWarning({
       message:'組み合わせを生成しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
       consoleTag:'SAVE-004: generatePairing の保存が確認できませんでした (cls='+cls+', expected='+pairs.length+')',
-      callsiteId:'SAVE-004-generatePairing'
+      callsiteId:'SAVE-004-generatePairing',
+      kind:'save-verify',
+      aggregateKey:'save-verify:core',
+      severity:'warn'
     });
   }
 }
@@ -4459,7 +4512,10 @@ function setWinner(cls,idx,wid){
     notifySaveWarning({
       message:'勝敗を入力しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
       consoleTag:'SAVE-003: setWinner の保存が確認できませんでした (cls='+cls+', idx='+idx+', expected='+expectedWinner+')',
-      callsiteId:'SAVE-003-setWinner'
+      callsiteId:'SAVE-003-setWinner',
+      kind:'save-verify',
+      aggregateKey:'save-verify:core',
+      severity:'warn'
     });
   }
 }
@@ -4559,7 +4615,10 @@ function bindChangePairingModalEvents(cls, idx){
       notifySaveWarning({
         message:'対戦相手を変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
         consoleTag:'SAVE-003b: bindChangePairingModalEvents の保存が確認できませんでした (cls='+cls+', idx='+idx+')',
-        callsiteId:'SAVE-003b-bindChangePairingModalEvents'
+        callsiteId:'SAVE-003b-bindChangePairingModalEvents',
+        kind:'save-verify',
+        aggregateKey:'save-verify:pairing',
+        severity:'warn'
       });
     }
   });
@@ -4629,7 +4688,10 @@ function submitRound(cls){
     notifySaveWarning({
       message:'回戦を確定しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
       consoleTag:'SAVE-003: submitRound の保存が確認できませんでした (cls='+cls+', expectedRounds='+expectedRoundsLen+', expectedPairings='+expectedPairings.length+')',
-      callsiteId:'SAVE-003-submitRound'
+      callsiteId:'SAVE-003-submitRound',
+      kind:'save-verify',
+      aggregateKey:'save-verify:core',
+      severity:'warn'
     });
   }
 }
@@ -4853,7 +4915,10 @@ function bindEditPastResultModalEvents(cls, roundIdx, matchIdx){
       notifySaveWarning({
         message:'過去結果を修正しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
         consoleTag:'SAVE-003b: bindEditPastResultModalEvents (p1) の保存が確認できませんでした (cls='+cls+', round='+roundIdx+', match='+matchIdx+', expected='+expectedWinner_p1+')',
-        callsiteId:'SAVE-003b-bindEditPastResultModalEvents-p1'
+        callsiteId:'SAVE-003b-bindEditPastResultModalEvents-p1',
+        kind:'save-verify',
+        aggregateKey:'save-verify:pairing',
+        severity:'warn'
       });
     }
   });
@@ -4866,7 +4931,10 @@ function bindEditPastResultModalEvents(cls, roundIdx, matchIdx){
       notifySaveWarning({
         message:'過去結果を修正しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
         consoleTag:'SAVE-003b: bindEditPastResultModalEvents (p2) の保存が確認できませんでした (cls='+cls+', round='+roundIdx+', match='+matchIdx+', expected='+expectedWinner_p2+')',
-        callsiteId:'SAVE-003b-bindEditPastResultModalEvents-p2'
+        callsiteId:'SAVE-003b-bindEditPastResultModalEvents-p2',
+        kind:'save-verify',
+        aggregateKey:'save-verify:pairing',
+        severity:'warn'
       });
     }
   });
