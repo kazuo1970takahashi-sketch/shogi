@@ -799,6 +799,8 @@ PR #82〜#84 連鎖完了時点での次タスク候補:
 
 ### 16.3 callsite inventory
 
+本 inventory の対象 callsite を **5 系統（A〜E）** に分類する。§16.3.6 は系統ではなく、inventory 対象外として参考列挙する **範囲外メモ** であり、系統数にはカウントしない（PR 本文 / HANDOFF.md ポインタ / §16.11 の見立て表も A〜E の 5 系統で揃える）。
+
 #### 16.3.1 系統 A: state restore（大会データ読込）
 
 | 候補 ID | 関数 / 行 | 対象データ | 失敗種別 | 現在挙動 | user-facing | データ保全重要度 | 大会中 UX 影響 | SAVE-UX 接続候補 | 備考 |
@@ -843,7 +845,9 @@ PR #82〜#84 連鎖完了時点での次タスク候補:
 | PARSE-IMPORT-MASTER-004 | runMasterImport / Phase 2 import の `reader.onerror` ([2399](../../shogi_v4.html:2399) / [2464](../../shogi_v4.html:2464)) | ファイル読込 | FileReader error | **`setStatus('ファイルの読み込みに失敗しました')`** | **○ setStatus** | 中 | モーダル内テキスト | 候補 | parse 前段の I/O 失敗。 |
 | PARSE-IMPORT-TOURNAMENT-001 | `parseTournamentTextInput()` ([2884](../../shogi_v4.html:2884)) per-block JSON.parse | 過去大会 import テキスト | block 毎の JSON.parse failure | errors 配列で返却（throw しない） | — | 低 | upstream（migration / phase2 mass import）に依存 | 候補（upstream に集約） | 「一部成功」を扱える設計。第 4 系統候補としては優先度低。 |
 
-#### 16.3.6 系統 F: その他（参考）
+#### 16.3.6 範囲外メモ（参考）
+
+以下は inventory **対象外** の callsite。系統 A〜E にはカウントしないが、grep 整理時に当たるため参考列挙する。
 
 | 候補 ID | 関数 / 行 | 備考 |
 |---|---|---|
@@ -915,6 +919,14 @@ PR #84 で確立した「kind allow-list 方式」に沿って、第 4 系統候
 **暫定**:
 
 - 初期実装に進む場合は `storage-corrupted:branch-master`（PARSE-MASTER-003）+ 将来 `storage-corrupted:state`（PARSE-LOAD-002）の 2 本構成が自然
+
+**aggregateKey 畳み込みの注記**:
+
+- `storage-corrupted:state` は PARSE-LOAD-002（per-key の JSON.parse 失敗）と PARSE-LOAD-003（全キー失敗 = 合流点 / 初期 state へフォールバック）を同一 key に畳む候補
+- 初期実装では aggregation 対象外（§16.7）のため、この畳み込みは showMsg 短縮表示には**影響しない**（indicator count / consoleTag のメタ情報用途のみ）
+- 一方、将来 `SAVE_WARN_AGGREGATABLE_KINDS` に `storage-corrupted` を追加する場合、PARSE-LOAD-002（次キーへフォールバック余地あり）と PARSE-LOAD-003（全キー失敗 = 致命的）は recovery guidance の重みが異なるため、同一 message に縮約してよいかを再確認する必要がある
+- 必要に応じて `storage-corrupted:state-parse`（PARSE-LOAD-002 用 / 軽度）と `storage-corrupted:state-allfail`（PARSE-LOAD-003 用 / 致命）の key 分割を検討する（同様に `storage-corrupted:branch-master` も PARSE-MASTER-002 と PARSE-MASTER-003 の粒度分割を後続再検討対象とする）
+- 本注記は将来 aggregation 切替時の論点メモであり、初期 impl PR では対応不要。§16.10 の論点リストにも掲載する
 
 ### 16.6 severity 候補
 
@@ -1011,6 +1023,7 @@ PR #84 時点の aggregation 対象 (`SAVE_WARN_AGGREGATABLE_KINDS`):
 5. **`error` severity の必要性**: 重大なデータ破損を warn で表現してよいか
 6. **aggregateKey 粒度**: `:global` 1 本 / `:state`+`:branch-master` 2 本 / 関数単位
 7. **dual notify 抑制**: notifyError / alert / showMsg / notifySaveWarning の重複発火が parse 系で起きうるか（特に `loadData` で alert + 内部 showMsg が並ぶ可能性）
+8. **aggregateKey 畳み込みの再判定（将来 aggregation 切替時）**: `storage-corrupted:state` に PARSE-LOAD-002（per-key parse 失敗・フォールバック余地あり）と PARSE-LOAD-003（全キー失敗 = 致命的）を同居させる構造は、初期 aggregation 対象外では問題ないが、将来 `SAVE_WARN_AGGREGATABLE_KINDS` に追加した場合に同一 recovery guidance で扱ってよいかを再確認する。必要なら `storage-corrupted:state-parse` / `storage-corrupted:state-allfail` などへ key 分割（branch-master 側も PARSE-MASTER-002 / PARSE-MASTER-003 の分割を要検討）。詳細は §16.5「aggregateKey 畳み込みの注記」
 
 ### 16.11 §15 の 3 系統 → 第 4 系統候補（追加後の見立て）
 
