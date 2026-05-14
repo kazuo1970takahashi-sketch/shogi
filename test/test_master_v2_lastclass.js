@@ -1571,16 +1571,9 @@ const __EXPAND_SRC = fs.readFileSync(targetPath, 'utf8');
   assert(__EXPAND_SRC.indexOf(msg) !== -1, 'T-EXP2-showMsg-message-preserved: user-facing 文言が残る (' + msg + ')');
 });
 
-// T-EXP2-group-d-untouched-*: Group D（過去参加者経路）の旧形式 console.warn が依然残ること
-//   = 今回 Group D を変更していない静的裏付け（SAVE-UX-WARN-HELPER-EXPAND-3 へ持ち越し）
-[
-  "console.warn('SAVE-003b: handlePastParticipantClassAdd (class change) ",
-  "console.warn('SAVE-003b: handlePastParticipantClassAdd (add) ",
-  "console.warn('SAVE-003b: handleSuggestClassAdd ",
-  "console.warn('SAVE-003b: finalizeAddPastParticipants "
-].forEach(function(pat){
-  assert(__EXPAND_SRC.indexOf(pat) !== -1, 'T-EXP2-group-d-untouched: Group D の旧 console.warn が残る (' + pat + ')');
-});
+// T-EXP2-group-d-deferred: PR #73 時点では Group D は次タスクへ持ち越し（コメント残置）。
+//   実際の Group D helper 経由化は SAVE-UX-WARN-HELPER-EXPAND-3 (SECTION 12) で検証する。
+//   ここでは PR #73 の境界条件 assert を SECTION 12 に移譲した記録として履歴を残す。
 
 // T-EXP2-master001-untouched: MASTER-001 系 callsite の応急処置 warn 文言が source に残る（未変更裏付け）
 //   MASTER-001 系には特殊な warn 文言（参加者名 / 会員マスタ）が複数あり、本 PR では一切触らない
@@ -1604,6 +1597,124 @@ const __EXPAND_SRC = fs.readFileSync(targetPath, 'utf8');
 // kind / aggregateKey / severity が schema に追加されていないこと
 ['opts.kind','opts.aggregateKey','opts.severity'].forEach(function(forbidden){
   assert(__EXPAND_SRC.indexOf(forbidden) === -1, 'T-EXP2-helper-schema-no-add: schema に '+forbidden+' は追加されていない');
+});
+
+// ============================================================================
+// SECTION 12: SAVE-UX-WARN-HELPER-EXPAND-3 — Group D の 4 callsite を helper 経由化
+// ============================================================================
+// 依頼: SAVE-UX-WARN-HELPER-EXPAND-3（PR #73 後続、最終）
+// Group D の 4 件すべて単純置換可と判定:
+//   D-1: SAVE-003b-handlePastParticipantClassAdd-class-change
+//        success ok (s03MasterVerifyOk gate) → verify-fail warn 上書き構造、PR #70 Group B と同形
+//   D-2: SAVE-003b-handlePastParticipantClassAdd-add
+//        success ok → verify-fail warn 上書き構造、PR #70 Group B と同形
+//   D-3: SAVE-003b-handleSuggestClassAdd
+//        postSuccess 内、warnMsg は static 文字列パラメータ（動的連結ではない）。message:warnMsg で渡せる
+//   D-4: SAVE-003b-finalizeAddPastParticipants
+//        success ok / ふりがな warn → verify-fail warn 上書き構造
+//        ふりがな warn (1883) は別カテゴリの success-with-caveat 通知で、本 PR の置換対象ではない（不変）
+
+// T-EXP3-callsiteId-present-*: 今回追加 4 callsiteId がすべて helper 引数として現れる
+[
+  'SAVE-003b-handlePastParticipantClassAdd-class-change',
+  'SAVE-003b-handlePastParticipantClassAdd-add',
+  'SAVE-003b-handleSuggestClassAdd',
+  'SAVE-003b-finalizeAddPastParticipants'
+].forEach(function(cid){
+  var needle = "callsiteId:'" + cid + "'";
+  assert(__EXPAND_SRC.indexOf(needle) !== -1, 'T-EXP3-callsiteId-present-' + cid + ': source に ' + needle + ' が存在する');
+});
+
+// T-EXP3-original-warn-removed-*: 旧 1-arg console.warn が残っていない
+[
+  "console.warn('SAVE-003b: handlePastParticipantClassAdd (class change) ",
+  "console.warn('SAVE-003b: handlePastParticipantClassAdd (add) ",
+  "console.warn('SAVE-003b: handleSuggestClassAdd ",
+  "console.warn('SAVE-003b: finalizeAddPastParticipants "
+].forEach(function(pat){
+  assert(__EXPAND_SRC.indexOf(pat) === -1, 'T-EXP3-original-warn-removed: 旧 1-arg warn が残らない (' + pat + ')');
+});
+
+// T-EXP3-consoleTag-preserved-*: 旧 console.warn 第1引数の主要文言が consoleTag として保持
+[
+  'SAVE-003b: handlePastParticipantClassAdd (class change) の保存が確認できませんでした',
+  'SAVE-003b: handlePastParticipantClassAdd (add) の保存が確認できませんでした',
+  'SAVE-003b: handleSuggestClassAdd の保存が確認できませんでした',
+  'SAVE-003b: finalizeAddPastParticipants の保存が確認できませんでした'
+].forEach(function(tag){
+  assert(__EXPAND_SRC.indexOf(tag) !== -1, 'T-EXP3-consoleTag-preserved: consoleTag 主要文言が残る (' + tag + ')');
+});
+
+// T-EXP3-showMsg-message-preserved-*: 既存 user-facing 文言が helper.message または warnMsg 経由で保持
+[
+  'クラスを変更しましたが、保存が確認できませんでした',          // D-1
+  '参加者は登録されましたが、保存が確認できませんでした',        // D-2 (PR #70 SAVE-002 と共通文言)
+  '名分の保存が確認できませんでした'                              // D-4 動的（substring 検証）
+].forEach(function(msg){
+  assert(__EXPAND_SRC.indexOf(msg) !== -1, 'T-EXP3-showMsg-message-preserved: user-facing 文言が残る (' + msg + ')');
+});
+
+// T-EXP3-d3-dynamic-message: D-3 (handleSuggestClassAdd) の message は呼出側の warnMsg を渡す
+//   postSuccess 関数の引数 warnMsg を helper.message に渡している構造を確認
+assert(__EXPAND_SRC.indexOf('message:warnMsg,') !== -1,
+  'T-EXP3-d3-dynamic-message: D-3 で message:warnMsg として呼出側パラメータをそのまま渡している');
+
+// T-EXP3-d4-yomi-caveat-preserved: D-4 finalizeAddPastParticipants の「ふりがな未登録」success-with-caveat 通知が不変
+//   line 1883 付近の `'ふりがな未登録のまま N名を追加しました'` は本 PR で触らない（別カテゴリの通知）
+assert(__EXPAND_SRC.indexOf("ふりがな未登録のまま ") !== -1,
+  'T-EXP3-d4-yomi-caveat-preserved: ふりがな未登録 success-with-caveat 通知が残る（本 PR で触らない）');
+// 通知形式: showMsg('ふりがな未登録のまま N名を...', 'warn') の生形が残っていること
+//   helper 経由化されていない（success-with-caveat は verify-fail とは別カテゴリ）
+assert(__EXPAND_SRC.indexOf("showMsg('ふりがな未登録のまま ") !== -1,
+  'T-EXP3-d4-yomi-caveat-untouched: ふりがな warn は showMsg 直接呼出のまま（helper 化していない）');
+
+// T-EXP3-success-suppression-preserved: D-1 / D-3 の success showMsg 抑止構造が維持される
+//   D-1: `if(s03MasterVerifyOk){ showMsg(...,'ok'); }` ゲート (line 1703 付近)
+//   D-3: `postSuccess(..., {suppressOkMsg:!s05MasterVerifyOk});` フラグ渡し (line 3329 付近)
+assert(__EXPAND_SRC.indexOf('if(s03MasterVerifyOk){') !== -1,
+  'T-EXP3-success-suppression-preserved-d1: D-1 s03MasterVerifyOk ゲートが維持');
+assert(__EXPAND_SRC.indexOf('suppressOkMsg:!s05MasterVerifyOk') !== -1,
+  'T-EXP3-success-suppression-preserved-d3: D-3 suppressOkMsg フラグが維持');
+
+// T-EXP3-group-abce-untouched: Group A/B/C/E の helper 経由化済 callsiteId が依然 source に残る
+//   (本 PR では PR #70 / #73 で確立した 11 件を一切触っていない)
+[
+  // PR #70 (Group A + B)
+  'SAVE-001-removePlayer',
+  'SAVE-002-addPlayer',
+  'SAVE-003-startTournament',
+  'SAVE-003-setWinner',
+  'SAVE-003-submitRound',
+  'SAVE-004-generatePairing',
+  // PR #73 (Group C + E)
+  'SAVE-003b-updateField',
+  'SAVE-003b-bulkEditNames',
+  'SAVE-003b-bindChangePairingModalEvents',
+  'SAVE-003b-bindEditPastResultModalEvents-p1',
+  'SAVE-003b-bindEditPastResultModalEvents-p2'
+].forEach(function(cid){
+  var needle = "callsiteId:'" + cid + "'";
+  assert(__EXPAND_SRC.indexOf(needle) !== -1, 'T-EXP3-group-abce-untouched: PR #70/#73 で確立した '+cid+' が残る');
+});
+
+// T-EXP3-master001-untouched: MASTER-001 系の応急処置 warn 文言が残存（本 PR で触らない裏付け）
+[
+  '参加者名を更新しましたが、保存できていない可能性があります',
+  '会員マスタは更新しましたが、大会データの保存ができていない可能性があります',
+  '会員マスタは保存できなかった可能性があります'
+].forEach(function(msg){
+  assert(__EXPAND_SRC.indexOf(msg) !== -1, 'T-EXP3-master001-untouched: MASTER-001 系 '+msg+' が残る');
+});
+
+// T-EXP3-helper-schema-unchanged: notifySaveWarning 内部 schema 不変
+[
+  "Object.prototype.toString.call(opts.fields)",
+  "recordSaveWarningForIndicator({callsiteId:callsiteId,fields:fields})"
+].forEach(function(pat){
+  assert(__EXPAND_SRC.indexOf(pat) !== -1, 'T-EXP3-helper-schema-unchanged: helper 内部の '+pat+' が維持');
+});
+['opts.kind','opts.aggregateKey','opts.severity'].forEach(function(forbidden){
+  assert(__EXPAND_SRC.indexOf(forbidden) === -1, 'T-EXP3-helper-schema-no-add: schema に '+forbidden+' は追加されていない');
 });
 
 // ============================================================================

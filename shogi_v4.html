@@ -1706,8 +1706,11 @@ function handlePastParticipantClassAdd(memberId,cls){
     // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
     // false は「保存未確認」（保存失敗と断定しない）。クラス変更は rollback しない・運営は継続する。
     if(!verifyPlayerPersistedById(r2.player.id,cls,r2.player.name)){
-      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: handlePastParticipantClassAdd (class change) の保存が確認できませんでした (player='+r2.player.id+', cls='+cls+', name='+r2.player.name+')');
-      showMsg('クラスを変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+      notifySaveWarning({
+        message:'クラスを変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+        consoleTag:'SAVE-003b: handlePastParticipantClassAdd (class change) の保存が確認できませんでした (player='+r2.player.id+', cls='+cls+', name='+r2.player.name+')',
+        callsiteId:'SAVE-003b-handlePastParticipantClassAdd-class-change'
+      });
     }
     return;
   }
@@ -1739,8 +1742,11 @@ function handlePastParticipantClassAdd(memberId,cls){
   // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
   // false は「保存未確認」（保存失敗と断定しない）。追加は rollback しない・運営は継続する。
   if(!verifyPlayerPersistedById(r.player.id,cls,r.player.name)){
-    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: handlePastParticipantClassAdd (add) の保存が確認できませんでした (player='+r.player.id+', cls='+cls+', name='+r.player.name+')');
-    showMsg('参加者は登録されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    notifySaveWarning({
+      message:'参加者は登録されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-003b: handlePastParticipantClassAdd (add) の保存が確認できませんでした (player='+r.player.id+', cls='+cls+', name='+r.player.name+')',
+      callsiteId:'SAVE-003b-handlePastParticipantClassAdd-add'
+    });
   }
 }
 
@@ -1893,8 +1899,11 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi){
       if(!verifyPlayerPersistedById(t.id,t.cls,t.name))unverifiedCount++;
     }
     if(unverifiedCount>0){
-      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: finalizeAddPastParticipants の保存が確認できませんでした ('+unverifiedCount+'/'+addedTargets.length+' 件未確認)');
-      showMsg(added+'名を追加しましたが、'+unverifiedCount+'名分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+      notifySaveWarning({
+        message:added+'名を追加しましたが、'+unverifiedCount+'名分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+        consoleTag:'SAVE-003b: finalizeAddPastParticipants の保存が確認できませんでした ('+unverifiedCount+'/'+addedTargets.length+' 件未確認)',
+        callsiteId:'SAVE-003b-finalizeAddPastParticipants'
+      });
     }
   }
 }
@@ -3290,8 +3299,11 @@ function handleSuggestClassAdd(memberId,cls){
     // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
     // false は「保存未確認」（保存失敗と断定しない）。追加 / クラス変更とも rollback しない・運営は継続する。
     if(!verifyPlayerPersistedById(verifyPid,verifyCls,verifyName)){
-      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: handleSuggestClassAdd の保存が確認できませんでした (player='+verifyPid+', cls='+verifyCls+', name='+verifyName+')');
-      showMsg(warnMsg,'warn');
+      notifySaveWarning({
+        message:warnMsg,
+        consoleTag:'SAVE-003b: handleSuggestClassAdd の保存が確認できませんでした (player='+verifyPid+', cls='+verifyCls+', name='+verifyName+')',
+        callsiteId:'SAVE-003b-handleSuggestClassAdd'
+      });
     }
   }
   // ケース 3: 同クラス登録済（alert OK のみ）
