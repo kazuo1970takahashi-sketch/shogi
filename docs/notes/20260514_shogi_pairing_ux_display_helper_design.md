@@ -499,3 +499,110 @@ options = {
   - `docs/notes/20260514_shogi_pairing_ux_display_helper_design.md`（本ファイル、新規）
   - `HANDOFF.md`（PAIRING-UX-DISPLAY-HELPER-DESIGN ポインタ追加）
 - 変更しないファイル: `shogi_v4.html` / `test/` / `docs/specs/` / `.github/workflows/` / `package.json` / `package-lock.json` / `playwright.config.js`
+
+---
+
+## 14. IMPL-LIGHT 着地（2026-05-15 追補）
+
+`PAIRING-UX-DISPLAY-HELPER-IMPL-LIGHT` を実装し、main 反映を予定する。
+
+### 14.1 実装した helper
+
+- **関数名**: `formatParticipantLabel(player, options)` — §7.1 第一案（`player` オブジェクトを直接渡す形）を採用
+- **追加場所**: [shogi_v4.html:281-321 周辺](shogi_v4.html:281)（既存 `getNameWithNo()` ([277](shogi_v4.html:277)) と `getFee()` の間）
+- **戻り値**: 文字列のみ（object 戻り値 / `parts` / `ariaLabel` / `privacyLevel` / `warnings` は **実装しない** — §7.4 確定しないポイントを尊重）
+
+### 14.2 採用した options（最小版）
+
+```
+options = {
+  mode: 'compact' | 'standard',   // default 'compact'
+  includeRecord: boolean,         // 勝敗数を併記
+  record: { wins: number, losses: number },
+  includeCategory: boolean        // standard モードのみ有効
+}
+```
+
+- `audience` / `includeClass` / `includeEntryNo` / `includeGrade` / `includeOpponentHistory` / `recordContext` / `maxLength` / `mobileCompact` は **今回は実装しない**（後続タスクで追加余地を残す）
+- `mode: 'detail'` / `'print'` は **今回は実装しない**（§4.3 / §4.4、IMPL-LIGHT 範囲外）
+
+### 14.3 採用した表示フォーマット
+
+| パターン | 出力例 |
+|---|---|
+| compact | `A-12 山田太郎` |
+| compact + record | `A-12 山田太郎（2勝0敗）` |
+| standard | `A-12 山田太郎` |
+| standard + category(member) | `A-12 山田太郎（沼津支部員）` |
+| standard + category(other) | `A-03 鈴木一郎（他）` |
+| standard + record | `A-12 山田太郎（2勝0敗）` |
+| standard + category + record | `A-12 山田太郎（沼津支部員 / 2勝0敗）` |
+
+- **category の表記**:
+  - `player.member === 'member'` → `沼津支部員`
+  - `player.member === 'other'` → `他`
+  - 未設定 / 不明 → category 部を **出さない**（`undefined` / `null` が文字列に混入しないことをテストで保証）
+- **「支部名」は出さない** — 単一支部運営前提（§2.1 / §2.4）。`player.branch` 等の存在しないフィールドは一切参照しない（テストで保証）
+
+### 14.4 安全側の挙動
+
+- 不正な `player`（`null` / `undefined` / string）→ **空文字** を返す（throw しない）
+- `entry_no` 未設定 → `'--'` フォールバック（`entryNoOf()` と同様の安全網）
+- `mode` 省略 → `compact` 扱い
+- `compact` で `includeCategory: true` を渡しても category は **出ない**（compact 仕様、§4.1）
+- `record.wins` / `record.losses` が型不正 → record 部を **出さない**
+- 戻り値は **HTML escape 前のプレーン文字列**。callsite で `escapeHtml()` を通す前提（既存 `getName()` / `getNameWithNo()` と同じ流儀）
+
+### 14.5 UI 適用範囲
+
+- **A 案を採用**: helper 追加 + テスト追加のみ。**既存 UI への適用は今回行わない**
+- 既存 `getName()` / `getNameWithNo()` / `entryNoOf()` / `getWins()` は **未変更**（並存）
+- pairing-card / score-card / 「対戦相手の変更」モーダル / 印刷経路 などへの helper 配線は **後続タスク** で個別に判断
+
+### 14.6 追加テスト
+
+- 新規ファイル: `test/test_pairing_ux_display_helper.js`
+- `test/run_tests.sh` に起動 stanza 追加
+- 23 アサート（構造 5 + 振る舞い 18）全 PASS:
+  1. `formatParticipantLabel` が 1 件だけ定義されている
+  2. 既存 `getName()` / `getNameWithNo()` が維持されている
+  3. `player.branch` を参照していない（単一支部前提）
+  4. helper 定義近傍に `沼津支部員` 表記が含まれる
+  5. helper が関数として取り出せる
+  6〜10. compact / standard の基本表示と各 option 組合せ
+  11. category 未設定時に `undefined` / `null` が混入しない
+  12. compact では `includeCategory:true` でも category が出ない
+  13〜14. `record` 型不正時のフォールバック
+  15〜17. 不正な `player`（`null` / `undefined` / string）→ 空文字
+  18. `entry_no` 未設定 → `--` フォールバック
+  19. `mode` 省略 → compact
+  20〜23. その他境界ケース
+
+### 14.7 不変項目（IMPL-LIGHT で守ったこと）
+
+- `warning object` / `evaluatePairingQuality()` ([4384](shogi_v4.html:4384)) **未変更**
+- 既存 `getName()` ([231](shogi_v4.html:231)) / `getNameWithNo()` ([277](shogi_v4.html:277)) / `entryNoOf()` ([243](shogi_v4.html:243)) **未変更**（並存）
+- 既存テスト 46 件すべて PASS（69 件中、新規 23 を除く）
+- forbidden files 未変更: `docs/specs/` / `.github/workflows/` / `package.json` / `package-lock.json` / `playwright.config.js`
+- 自動組み合わせロジック / 対戦履歴ロジック / SAVE-UX 関連ロジック 未変更
+- `detail` / `print/card` モード 未実装
+- `audience` / `privacyLevel` / `warnings` フィールド 未実装
+
+### 14.8 次タスク候補
+
+§10 の優先順位は維持。helper 着地後の次の選択肢:
+
+| 順位 | 候補 | 想定スコープ |
+|---|---|---|
+| 第一 | `PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT` | Phase 1（PR #100 §5.1）— pairing-card に `formatParticipantLabel(player, {mode:'standard', includeRecord:true, record:{...}})` を配線、警告本文に理由補足 |
+| 第二 | `PAIRING-UX-DISPLAY-LABELS-IMPL-LIGHT` | 「対戦相手の変更」モーダルの option label を `compact` 化、行内表示を `standard` 化（`includeCategory` は同姓識別 opt-in） |
+
+両者とも helper 関数を 1 行呼び出す形で配線でき、warning object / `evaluatePairingQuality()` を改修せずに進められる。
+
+### 14.9 変更ファイル（本 IMPL-LIGHT PR）
+
+- `shogi_v4.html` — `formatParticipantLabel` helper 追加（+45 行 / -0、既存 helper は未変更）
+- `test/test_pairing_ux_display_helper.js`（新規）
+- `test/run_tests.sh` — 起動 stanza 追加
+- `docs/notes/20260514_shogi_pairing_ux_display_helper_design.md` — 本 §14
+- `HANDOFF.md` — IMPL-LIGHT ポインタ追加
