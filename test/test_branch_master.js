@@ -2526,6 +2526,36 @@ const env = loadEnv(targetPath);
   }
 }
 
+// ============================================================
+// SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-LIGHT
+// 支部マスタ破損 warn message に復旧導線が含まれることを主要語句で確認
+// （docs/notes/20260513_shogi_save_ux_status_map.md §18.5.1 L-1）
+// 全文一致ではなく主要語句で検証し、将来の微調整に対し過敏にしない
+// ============================================================
+{
+  const htmlSrc = fs.readFileSync(targetPath,'utf8');
+  // PARSE-MASTER-003 (_loaded_with_corruption) ブロックの notifySaveWarning 呼出を局所抽出
+  const callsiteAnchor = "callsiteId:'PARSE-MASTER-003'";
+  const anchorIdx = htmlSrc.indexOf(callsiteAnchor);
+  assert(anchorIdx>=0,'IMPL-LIGHT: PARSE-MASTER-003 callsite が shogi_v4.html に存在する');
+  // anchor から手前 600 文字以内に message: 文字列があるはず（同一 notifySaveWarning 呼出オブジェクト）
+  const sliceStart = Math.max(0,anchorIdx-600);
+  const block = htmlSrc.substring(sliceStart,anchorIdx);
+  const msgMatch = block.match(/message:'([^']*)'/);
+  assert(msgMatch!==null,'IMPL-LIGHT: PARSE-MASTER-003 近傍に message:\'...\' リテラルが存在する');
+  const msg = msgMatch ? msgMatch[1] : '';
+  // §18.5.1 L-1 主要語句（症状 / 影響 / 大会運営継続 / 次の行動）
+  const keywords = [
+    '支部マスタ','破損',           // 症状
+    '自動同期','スキップ',          // 影響
+    '大会データのコピー','継続',    // 大会運営継続
+    'マスタタブ','インポート','統合','復旧'  // 次の行動（既存 UI 導線）
+  ];
+  for (let i=0;i<keywords.length;i++) {
+    assert(msg.indexOf(keywords[i])>=0,'IMPL-LIGHT: warn message に「'+keywords[i]+'」が含まれる');
+  }
+}
+
 // 結果出力
 if (fail===0) {
   console.log('  支部マスタ機能テスト: PASS '+pass+'件 / FAIL 0件');
