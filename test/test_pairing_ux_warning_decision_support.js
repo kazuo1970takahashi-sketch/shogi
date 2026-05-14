@@ -247,6 +247,54 @@ assert(bcpBody.indexOf('formatParticipantLabel') >= 0,
 }
 
 // ============================================================
+// 15) pcTotals のセマンティクス（cowork Should Fix PR #103）:
+//     未確定 / winner 未入力の対局を losses に含めない
+// ============================================================
+{
+  // 15-a. winner 未確定の match を totals 加算から除外する guard が存在する
+  //       （!pcMatch.winner / !match.winner 等のチェック）
+  const hasWinnerGuard =
+    /if\s*\(\s*!?\s*pcMatch\s*(\|\||&&)[^\)]*winner/.test(bcpBody) ||
+    /if\s*\(\s*!pcMatch\.winner\s*\)/.test(bcpBody) ||
+    /if\s*\(\s*!pcMatch\s*\|\|\s*!pcMatch\.winner\s*\)/.test(bcpBody);
+  assert(hasWinnerGuard,
+    'pcTotals 集計ループに winner 未確定 match を除外する guard が存在する');
+
+  // 15-b. ソースに「完了 / 確定 / completed / winner 未確定」等の意味論コメントがある
+  const hasSemanticComment =
+    bcpBody.indexOf('completed results only') >= 0 ||
+    bcpBody.indexOf('結果入力済み') >= 0 ||
+    bcpBody.indexOf('winner 確定') >= 0 ||
+    bcpBody.indexOf('winner 未確定') >= 0;
+  assert(hasSemanticComment,
+    'pcTotals 集計に「結果入力済み / winner 確定済み」セマンティクスを明示するコメントが存在する');
+
+  // 15-c. losses は Math.max(0, ...) で負値防御されている
+  const lossesLine = bcpBody.match(/var\s+l\s*=\s*[^;]+;/);
+  assert(lossesLine !== null, 'losses 計算行を抽出できる');
+  if (lossesLine) {
+    assert(/Math\.max\s*\(\s*0\s*,/.test(lossesLine[0]),
+      'losses が Math.max(0, ...) で負値防御されている（cowork Nice to Have PR #103）');
+  }
+}
+
+// ============================================================
+// 16) docs（warning_decision_support_design.md）に pcTotals セマンティクスが明記されている
+// ============================================================
+{
+  const docPath = require('path').join(__dirname, '..', 'docs', 'notes', '20260514_shogi_pairing_ux_warning_decision_support_design.md');
+  try {
+    const doc = fs.readFileSync(docPath, 'utf8');
+    assert(doc.indexOf('結果入力済み') >= 0 || doc.indexOf('winner 確定') >= 0,
+      'design doc に「結果入力済み / winner 確定済み」のセマンティクス明記がある');
+    assert(doc.indexOf('losses') >= 0 && (doc.indexOf('確定済み対局数') >= 0 || doc.indexOf('completed results') >= 0),
+      'design doc に "losses = 確定済み対局数 - wins" 相当の説明がある');
+  } catch (e) {
+    ng('design doc を読み取れる: ' + e.message);
+  }
+}
+
+// ============================================================
 // 結果サマリ
 // ============================================================
 console.log('');

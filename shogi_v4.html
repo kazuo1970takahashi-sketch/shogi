@@ -4946,14 +4946,27 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
   //   formatParticipantLabel(player, {mode:'standard', includeRecord:true, record:{wins, losses}})
   //   経由で補助ラベルを生成し、各 winner-btn の下に小さく表示する。
   //   既存の button (winner-btn) と n1/n2（getNameWithNo）はそのまま維持（並存）。
+  //
+  // cowork Should Fix (PR #103) / pcTotals セマンティクス:
+  //   pairing-card record uses completed results only;
+  //   unfinished current pairings must not count as losses.
+  //   - 集計対象は state.results[cls]（submitRound() で全 winner 確定後に push、
+  //     editPastResult() は winner を p1/p2 で上書きするのみで null 化しない）
+  //   - 現ラウンド (state.pairings[cls]) は対象外。winner 未入力の現行対局を
+  //     loss と数えない。
+  //   - 防御的に pcMatch.winner が無い場合は totals にも加算しない
+  //     （getWins() の winner-only 集計と整合させ、losses = totals - wins
+  //     を「確定済み対局数 - 勝ち数」として常に正に保つ）。
   var pcWins=getWins(cls);
   var pcTotals={};
   for(var pcI=0;pcI<state.players[cls].length;pcI++)pcTotals[state.players[cls][pcI].id]=0;
   for(var pcR=0;pcR<state.results[cls].length;pcR++){
     for(var pcM=0;pcM<state.results[cls][pcR].length;pcM++){
       var pcMatch=state.results[cls][pcR][pcM];
-      if(pcMatch&&pcMatch.p1&&Object.prototype.hasOwnProperty.call(pcTotals,pcMatch.p1))pcTotals[pcMatch.p1]++;
-      if(pcMatch&&pcMatch.p2&&Object.prototype.hasOwnProperty.call(pcTotals,pcMatch.p2))pcTotals[pcMatch.p2]++;
+      // winner 未確定の match は totals に含めない（cowork Should Fix PR #103）
+      if(!pcMatch||!pcMatch.winner)continue;
+      if(pcMatch.p1&&Object.prototype.hasOwnProperty.call(pcTotals,pcMatch.p1))pcTotals[pcMatch.p1]++;
+      if(pcMatch.p2&&Object.prototype.hasOwnProperty.call(pcTotals,pcMatch.p2))pcTotals[pcMatch.p2]++;
     }
   }
   var pcPlayerById={};
@@ -4962,7 +4975,8 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
     var pObj=pcPlayerById[playerId];
     if(!pObj)return '';
     var w=pcWins[playerId]||0;
-    var l=(pcTotals[playerId]||0)-w;
+    // losses は「確定済み対局数 - 勝ち数」。負値防御（cowork PR #103 Nice to Have）。
+    var l=Math.max(0,(pcTotals[playerId]||0)-w);
     return formatParticipantLabel(pObj,{mode:'standard',includeRecord:true,record:{wins:w,losses:l}});
   }
 

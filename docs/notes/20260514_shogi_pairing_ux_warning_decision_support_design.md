@@ -579,6 +579,13 @@ options = {
 - 補助ラベル生成用に id→player のマップを構築
 - すべて pairing-card 描画ループの前で 1 回計算（パフォーマンス配慮）
 
+**`pcTotals` のセマンティクス（cowork Should Fix PR #103 反映）**:
+- pairing-card の勝敗数表示は **「結果入力済み（winner 確定済み）対局のみ」** を対象にする
+- 未確定 / 現在進行中（`state.pairings[cls]`）の対局は **`pcTotals` に含めない / losses にも含めない**
+- `losses = Math.max(0, totals - wins)` は「**確定済み対局数 - 勝ち数**」として扱う
+- 防御的に `pcMatch.winner` が無い match は `pcTotals` 加算からも除外（`getWins()` の winner-only 集計と整合させ、losses ≧ 0 を不変に保つ）
+- 既存 `submitRound()` ([4803](shogi_v4.html:4803)) は全 winner 確定後にのみ `state.results` へ push するため通常は到達しないが、`editPastResult()` 経由や将来の改修に対する regression 防止
+
 ### 12.3 不変項目（IMPL-LIGHT で守ったこと）
 
 - ✅ `warning object` 構造 **未変更**（`avoidablePairIndexes` / 候補名フィールド等を追加していない）
@@ -619,13 +626,21 @@ options = {
   - `player.branch` / `state.branches` 不参照
 - 既存 `test_pairing_ux_display_helper.js`（28 アサート）含む `run_tests.sh` 全体: **70 PASS / 0 FAIL**
 
-### 12.6 次タスク候補
+### 12.6 次タスク候補 / 運用観察項目
 
 | 順位 | 候補 | 起点条件 |
 |---|---|---|
-| 第一 | **運用観察** | Phase 1 着地後、現場で勝敗数併記の効果を観察。スクロール往復が実際に減ったか / 補足文が適切に伝わるか / 補助ラベルがスマホで読めるか |
+| 第一 | **運用観察** | Phase 1 着地後、現場で勝敗数併記の効果を観察 |
 | 第二 | `PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-PHASE2`（仮）| Phase 1 の効果不十分 / 「どのペアか」が分からない不満が出た場合。`evaluatePairingQuality` 戻り値に `avoidablePairIndexes` 追加、警告本文に該当ペア展開 |
 | 第三 | `PAIRING-UX-DISPLAY-LABELS-IMPL-LIGHT` | 「対戦相手の変更」モーダル option / 行内表示の helper 化（独立して進められる）|
+
+**運用観察項目**（cowork Nice to Have PR #103 追補）:
+- スクロール往復が実際に減ったか
+- 補足文「勝敗数が異なるペアがあります...」が現場運営者に適切に伝わるか
+- **補助ラベルのスマホ表示**: `font-size:11px` + `max-width:9em` + `word-break:break-word` で **折り返し / 読みやすさ** が許容範囲か
+- 補助ラベルが長くなる（参加者名が長い場合）時に pairing-card 全体のレイアウトが崩れないか
+- 既存 button テキスト（`getNameWithNo()` = `01｜山田太郎`）と補助ラベル（`A-12 山田太郎（2勝0敗）`）の **名前重複** が視覚的に許容範囲か / 統合要求が出るか
+- rematch 単独警告に補足文が出ないことが現場で受け入れられるか
 
 ### 12.7 変更ファイル（本 IMPL-LIGHT PR）
 
