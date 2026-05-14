@@ -1999,4 +1999,177 @@ PR #90 着地後も以下は **意図的に不変**:
 - [shogi_v4.html:5295](shogi_v4.html:5295) PARSE-MASTER-003 message（PR #90 で L-1 反映済み）
 - [shogi_v4.html:2784](shogi_v4.html:2784) マイグレ wizard 既存バナー（本 closure 時点で文言調整なし）
 - [test/test_branch_master.js](test/test_branch_master.js) IMPL-LIGHT 主要語句アサーション section（PR #90 で追加）
+
+## 20. SAVE-UX-NEXT-INVENTORY（v2.0 追補 / 残タスク棚卸しと Next Action 整理）
+
+- 種別: **docs-only inventory**（実装はしない / 仕様は確定しない / 既存セクション §11〜§19 を改訂しない）
+- 対象 main HEAD: `225acf8`（PR #91 closure squash merge 後）
+- Task ID: `SAVE-UX-NEXT-INVENTORY`
+- 目的: 支部マスタ破損対応 closure（§19）完了後の SAVE-UX 全体地図と Next Action 候補を整理する。既存 §11〜§19 が分散して保持している「未完了候補」「運用者フィードバック待ち項目」「並走可能な docs-only タスク」を 1 箇所に集約し、別チャットからの再開で「次に何を投げるか」を判断しやすくする
+- 関連: §15（aggregation follow-up map）/ §16（parse inventory + impl）/ §17（branch master root cause）/ §18（recovery guidance 設計）/ §19（branch master closure）
+
+### 20.1 完了済み SAVE-UX PR 地図（最新到達点）
+
+本セクションでは「未完了候補」と「次手の判断材料」を主目的とするため、完了済み PR は系統別 / 寄稿サマリのみ記録する。詳細は各 §（参照列）に寄せる。
+
+| 系統 | 完了 PR（代表）| 主寄稿セクション | 種別 |
+|---|---|---|---|
+| save-verify（15 callsite）| PR #70 / #73 / #74 / #75 / #76 など | §11 / §15 | helper 経由化 / metadata / aggregation |
+| storage-quota（2 callsite）| PR #78 / #79 / #80 | §12 / §14 / §15 | inventory → impl → aggregation 対象外維持 |
+| master-verify（3 callsite）| PR #82 `94fdcd0` / #83 `8df51a9` / #84 `e0100dc` | §15 | metadata → structural test → aggregation 対象化 |
+| storage-corrupted（1 callsite）| PR #86 `346c36f` (inventory) / PR #87 `6d5a238` (impl) | §16 / §16.13 / §16.14 | 第 4 系統棚卸し → 案 A 最小実装 |
+| branch master corruption 対応 | PR #88 `9d688c4` / #89 `725941a` / #90 `80c6cfe` / #91 `225acf8` | §17 / §18 / §19 | root cause → guidance 設計 → IMPL-LIGHT → closure |
+
+現在地: **4 系統合計 21 callsite が helper 経由化 + metadata 化 + structural assert 化完了**。aggregation 対象は save-verify + master-verify、対象外は storage-quota + storage-corrupted。branch master 破損 user-facing message は §18.5.1 L-1 で着地。
+
+### 20.2 現状の 4 系統サマリ（再掲、§16.13 由来）
+
+| # | 系統 | kind | callsite 数 | aggregation | indicator | structural assert | 状態 |
+|---|---|---|---|---|---|---|---|
+| 1 | save-verify | `save-verify` | 15 | ○ | ○ | ○ | 完了 |
+| 2 | storage-quota | `storage-quota` | 2 | × | ○ | ○ | 完了 |
+| 3 | master-verify | `master-verify` | 3 | ○ | ○ | ○ | 完了 |
+| 4 | storage-corrupted | `storage-corrupted` | 1 | ×（初期）| ○ | ○ | 完了（案 A）/ 案 B 拡張は未着手 |
+| **合計** | — | — | **21** | — | — | — | — |
+
+### 20.3 未完了 SAVE-UX 候補（横断棚卸し）
+
+§11〜§19 に分散している未完了候補を、4 軸（種別 / 性格 / 出典 / 状態）で 1 表に整理する。**新規 Task ID は提案しない**（既存案を集約するのみ）。
+
+#### 20.3.1 実装系候補（branch master corruption ライン）
+
+| Task ID | 種別 | 出典 | 状態 | 着手条件 |
+|---|---|---|---|---|
+| `SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-MEDIUM` | 実装（中）| §18.5.2 / §18.9.2 / §19.6 | 未着手 | IMPL-LIGHT 運用者フィードバック取得後 |
+| `SAVE-UX-BRANCH-MASTER-CORRUPTION-RECOVERY-IMPL` | 実装（重）| §17.11.2 / §18.9.4 / §19.6 | 未着手 | Light / Medium 完了後（破損 raw export + 復旧 button 等）|
+| `SAVE-UX-STATUS-INDICATOR-DETAIL`（別名 `SAVE-UX-INDICATOR-DETAIL`）| 設計 + 実装（大）| §15.5 / §17.10 / §18.9.3 / §19.6 | 未着手 | warn aggregation の運用感がある程度蓄積後 |
+
+#### 20.3.2 実装系候補（parse / storage / load / import ライン）
+
+| Task ID | 種別 | 出典 | 状態 | 着手条件 |
+|---|---|---|---|---|
+| `SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL`（§16.9 案 B）| 実装（中）| §16.9 / §16.12 | 未着手 | silent → warn 化を含む。PARSE-LOAD-002 / 003 を接続する仕様判断（§16.10 論点 2 / 8）が必要 |
+| `SAVE-UX-MASTER-V2-CALLSITE-ID-NAMING-CLEANUP`（仮）| docs / cleanup | §16.14 | 未着手 | callsiteId 形式 (a) → (b) 統一を望む場合（優先度低） |
+
+#### 20.3.3 docs-only inventory 系候補（並走可能）
+
+| Task ID | 種別 | 出典 | 状態 | 並走可能性 |
+|---|---|---|---|---|
+| `SAVE-UX-BRANCH-MASTER-CALLSITE-AUDIT` | docs-only | §17.11.5 / §18.9.5 / §19.6 | 未着手 | 高（24 callsite × `_loaded_with_corruption` 判定マトリクス、独立に進められる）|
+| `SAVE-UX-STATE-RESTORE-HANDLING-INVENTORY` | docs-only | §17.11.3 | 未着手 | 高（PARSE-LOAD-001 / 002 / 003 の silent failure 棚卸し、§16.9 案 B の前段）|
+| `SAVE-UX-IMPORT-FAILED-HANDLING-INVENTORY`（§16.9 案 C）| docs-only | §16.12 / §17.11.4 | 未着手 | 高（系統 D 大会データ import + 系統 E master import、既存 alert / setStatus UX の温存 / 接続判断）|
+| `SAVE-UX-LOAD-FAILED-HANDLING-INVENTORY`（§16.9 案 D）| docs-only | §16.9 | 未着手 | 中（PARSE-LOAD-001 / PARSE-MASTER-001 / PARSE-MASTER-004、I/O 失敗を別系統として整理する場合）|
+
+#### 20.3.4 運用フィードバック待ち / 文言・window 調整系候補
+
+| Task ID | 種別 | 出典 | 状態 | 着手条件 |
+|---|---|---|---|---|
+| `SAVE-UX-AGGREGATION-TUNING` | 実装（小）+ 設計 | §15.5 / §15.6 / §15.7 | 未着手 | save-verify / master-verify の運用感蓄積後（kind 別短縮 message / kind 別 time window / 3000ms 調整 / master-verify 専用文言 / storage-quota 対象外維持の再評価）|
+| `SAVE-UX-DUAL-NOTIFY-SUPPRESSION` | 設計 + 実装（中）| §15.5 / §15.6 / §15.7 | 未着手 | `alert` / `notifyError` / `notifySaveWarning` 関係の仕様判断が重め（quota + verify 二重通知）|
+| `SAVE-UX-FIELDS-SCHEMA` | 設計（中）| §15.5 / §15.6 | 未着手 | SAVE-FUTURE-REPORT 前提整備として（構造化ログ前）|
+| `SAVE-UX-CONSOLETAG-DOC` | docs-only | §15.5 | 未着手 | consoleTag prefix ルール docs 化、message / consoleTag の動的連結対応 |
+
+#### 20.3.5 Codex Nice-to-Have（PR #91 由来）
+
+| 項目 | 種別 | 出典 | 状態 |
+|---|---|---|---|
+| §19.5「外部送信・ログ送信」根拠への §18.8.1 併記 | docs-only（微小）| PR #91 Codex Review Nice-to-Have | 未対応（Ready 化 / merge 前必須ではないため見送り済）|
+
+#### 20.3.6 個別判断候補
+
+| 項目 | 種別 | 出典 | 状態 |
+|---|---|---|---|
+| MASTER-001 系 callsite helper 経由化 | 個別判断 | §15.5（# 13）| 3 系統完成後の後続候補、優先度低 |
+
+### 20.4 着手条件 × 性格マトリクス
+
+| 性格 \\ 着手条件 | すぐ着手可能 | 運用者フィードバック待ち | 仕様判断重め |
+|---|---|---|---|
+| docs-only inventory | `CALLSITE-AUDIT` / `STATE-RESTORE-HANDLING-INVENTORY` / `IMPORT-FAILED-HANDLING-INVENTORY` / `LOAD-FAILED-HANDLING-INVENTORY` / Codex Nice-to-Have（§19.5 ↔ §18.8.1）| — | — |
+| 実装（小）| — | `AGGREGATION-TUNING`（運用感後）| — |
+| 実装（中）| — | `IMPL-MEDIUM` | `STORAGE-CORRUPTED-HANDLING-IMPL`（案 B、silent → warn 仕様判断）/ `DUAL-NOTIFY-SUPPRESSION` |
+| 実装（重）| — | `CORRUPTION-RECOVERY-IMPL`（Heavy、Light/Medium 完了後）/ `INDICATOR-DETAIL`（運用感蓄積後）| — |
+| 設計（中）| — | — | `FIELDS-SCHEMA` |
+
+「すぐ着手可能」列が **次の docs-only タスクの選択肢プール**。「運用者フィードバック待ち」列はすべて **本 inventory 時点では起動しない**。
+
+### 20.5 推奨 Next Action（1〜3 候補）
+
+司令塔仮説「IMPL-MEDIUM / Heavy 系はフィードバック待ちの可能性が高い」「先に整理すべき残論点があるかも」を踏まえ、**運用者フィードバックを必要としない docs-only タスクから 3 候補**を推奨する。いずれも実装ファイル・テスト・CI 設定に触らず、並走 / 順次どちらでも可。
+
+#### 20.5.1 第一推奨（Must 級）: `SAVE-UX-BRANCH-MASTER-CALLSITE-AUDIT`
+
+- **Task ID**: `SAVE-UX-BRANCH-MASTER-CALLSITE-AUDIT`
+- **目的**: §17.9 弱点 #8（`_loaded_with_corruption` 判定が抜けている callsite が他に無いか）を解消する。`loadBranchMaster()` 実呼び出し 24 callsite（§17.4.1）× `_loaded_with_corruption` 判定の有無マトリクスを作る
+- **想定スコープ**:
+  - `loadBranchMaster()` 全 callsite を抽出
+  - 各 callsite で `_loaded_with_corruption` を読んでいるか / `saveBranchMaster()` を呼ぶか / `applyOverwriteImport` 等の入口経由か を分類
+  - 弱点 0 件 → docs で完結。検出 → 後続 IMPL 候補（§17.11.2 や別 cleanup PR）の前提整理
+- **やらないこと**:
+  - 実装変更（shogi_v4.html）なし
+  - test 追加・変更なし
+  - 検出された弱点の修正着手なし（別 PR で扱う）
+  - 24 callsite 数値の再カウントが §17.4.1 と食い違っても、本 audit では数値整合を優先（structural inventory の再構築ではない）
+- **推奨理由**: 運用者フィードバックを **必要としない**。Light / Medium / Heavy のいずれにも前提整理として効く。空マスタ誤上書きリスクの可視化は Closure §19 の責務外として残されている
+
+#### 20.5.2 第二推奨（Should 級）: `SAVE-UX-STATE-RESTORE-HANDLING-INVENTORY`
+
+- **Task ID**: `SAVE-UX-STATE-RESTORE-HANDLING-INVENTORY`
+- **目的**: 大会データ state restore 系（PARSE-LOAD-001 / 002 / 003）の silent failure / corrupted data を棚卸しする。支部マスタとは別データ種別であり、recovery guidance も異なる（§17.11.3）
+- **想定スコープ**:
+  - PARSE-LOAD-001 / 002 / 003 の現状（severity / 経路 / fallback）を §16 形式で記録
+  - silent → warn 化が望ましいかの暫定判断（§16.9 案 B 前段、§16.10 論点 2）
+  - 大会データ破損時の user-facing UX 方針（1 大会単位 vs 横断的の違い）の暫定整理
+- **やらないこと**:
+  - 実装変更（silent → warn 化を本 inventory ではしない）
+  - 仕様確定（impl 着手前に運用者レビュー）
+  - branch master 系（§17 / §18 / §19）との混同
+- **推奨理由**: §16.9 案 B（`SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL`）の前段。aggregation 対象化判断と silent → warn 判断を分離するためにも、棚卸しを先に置きたい。**第一推奨と並走可能**
+
+#### 20.5.3 第三推奨（Nice to Have 級）: Codex PR #91 Nice-to-Have の追補
+
+- **Task ID（仮）**: `SAVE-UX-CLOSURE-DOC-REFINEMENT`
+- **目的**: §19.5「外部送信・ログ送信」非実装根拠に §18.8.1 を併記し、後続のレビュー / 別チャット再開時の追跡性を改善する（Codex PR #91 Nice-to-Have）
+- **想定スコープ**:
+  - §19.5 表の該当行に `（§18.8.1）` 等の参照を 1 箇所追加
+  - 差分 5〜10 行程度
+- **やらないこと**:
+  - §17 / §18 / §19 の本文改訂
+  - 他の Codex Nice-to-Have の取り込み（別個に判断）
+- **推奨理由**: 最も軽い docs touch。**第一・第二推奨に同梱して 1 PR でも可** / 単独 PR でも可
+
+### 20.6 やらない / 待つと決めるもの
+
+本 inventory 時点では **以下を起動しない**:
+
+| 項目 | 待つ理由 |
+|---|---|
+| `SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-MEDIUM` | §19.8 で「Light 文言の運用感を観察してから次手」明示済。aggregation 対象外で毎回出る warn を Medium 化する前に、Light の体感蓄積が必要 |
+| `SAVE-UX-BRANCH-MASTER-CORRUPTION-RECOVERY-IMPL`（Heavy）| Light / Medium 完了が前提（§18.9.4 / §19.6）|
+| `SAVE-UX-STATUS-INDICATOR-DETAIL` | warn aggregation の運用感蓄積後（§18.9.3 / §19.6）。実装規模が大きい |
+| `SAVE-UX-AGGREGATION-TUNING` | save-verify / master-verify aggregation の運用感蓄積後（§15.7）|
+| `SAVE-UX-DUAL-NOTIFY-SUPPRESSION` | 仕様判断重め（`alert` / `notifyError` / `notifySaveWarning` 関係再設計）。実運用 or 別仕様確認を挟んでから |
+| `SAVE-UX-FIELDS-SCHEMA` | SAVE-FUTURE-REPORT 前段整備が必要。優先度中だが緊急性なし |
+| `SAVE-UX-MASTER-V2-CALLSITE-ID-NAMING-CLEANUP` | callsiteId 形式 (a) ↔ (b) の統一は cleanup タスクとして優先度低（§16.14）|
+| MASTER-001 系 helper 経由化 | 3 系統完成後の後続候補として優先度低（§15.5 # 13）|
+
+### 20.7 司令塔メモ：本 inventory 時点の判断
+
+- **「先に整理すべき残論点があるかも」仮説に対する回答**: ある。`SAVE-UX-BRANCH-MASTER-CALLSITE-AUDIT`（§17.9 弱点 #8 起源）は branch master corruption 対応の中で「次に深掘りすべき docs-only タスク」として明示的に残っている。`SAVE-UX-STATE-RESTORE-HANDLING-INVENTORY` も §16.9 案 B / §17.11.3 で双方から推奨されている
+- **「Medium / Heavy はフィードバック待ち」仮説への回答**: そのとおり。§19.8 / §18.10 / §17.12 がすべて「Light 完了後の運用者フィードバック観察を経て次手判断」を明示。本 inventory は **観察期間中に並走できる docs-only タスク**を 2〜3 個提示することで、SAVE-UX 全体の進捗を止めずに観察期間を活用する
+- **本 inventory 自体は実装着手しない**: §20.5 の 3 候補はいずれも別 PR / 別タスクとして司令塔判断を経由して起動する。本 PR は inventory のみで closure
+- **既存セクション §11〜§19 を改訂しない**: §20 は集約 / 索引であり、上書きや再構築ではない。各 § の参照価値は維持
+
+### 20.8 関連 docs / コード
+
+- `docs/notes/20260513_shogi_save_ux_status_map.md`
+  - §11（PR #70〜#76 後の到達点）/ §12（quota）/ §14（post-quota）/ §15（post-aggregation）
+  - §16（parse handling inventory + impl）/ §16.13（PARSE-MASTER-003 impl）/ §16.14（callsiteId 命名方針）
+  - §17（branch master root cause）/ §18（recovery guidance 設計）/ §19（branch master closure）
+- `docs/specs/20260513_shogi_save_ux_design.md`（SAVE-UX 中核原則、§2.3 modal/alert 不使用）
+- `docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md`（aggregation allow-list、本 inventory 時点で `storage-corrupted` 追加なし）
+- `docs/specs/20260513_shogi_save_ux_status_indicator_design.md`（indicator Level 2 設計、Heavy 案前提）
+- `docs/notes/20260514_shogi_save_ux_quota_inventory.md`（quota inventory の前例）
+- PR [#88](https://github.com/kazuo1970takahashi-sketch/shogi/pull/88) / [#89](https://github.com/kazuo1970takahashi-sketch/shogi/pull/89) / [#90](https://github.com/kazuo1970takahashi-sketch/shogi/pull/90) / [#91](https://github.com/kazuo1970takahashi-sketch/shogi/pull/91)
+- 過去 SAVE-UX PR 群（HANDOFF.md 「保存安全化 / SAVE-UX 現在地マップ」以下のポインタ参照）
 - PR [#88](https://github.com/kazuo1970takahashi-sketch/shogi/pull/88) / [#89](https://github.com/kazuo1970takahashi-sketch/shogi/pull/89) / [#90](https://github.com/kazuo1970takahashi-sketch/shogi/pull/90)
