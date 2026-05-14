@@ -295,6 +295,7 @@ import / merge / migration 系は **本マップの保存後 verify トラック
 | 2026-05-13 | docs review Should Fix 2 点を反映。S22 の位置情報を lineNo 単独表現から関数名 + 動作タイミング（`bindMasterEditModalEvents` の me-save click ハンドラ末尾の `showMsg('マスタを更新しました', ...)`）に置換（§4.3 / §5.1 / §6.2 計 4 箇所）。§4 冒頭に「行番号は main=`67bd189` 時点の参考位置、後続では関数名・処理名・メッセージ文言で再特定」の補足を追加。§5.3 に「QUOTA-001 の再分類トリガは SAVE-UX-STATUS-INDICATOR 着手時点」を追記。 |
 | 2026-05-14 | SAVE-UX-AGGREGATION-DOCS-FOLLOWUP に伴い §11 を追記。PR #70 〜 #76 で A-5.1 SAVE 系 15/15 callsite の helper 経由化 / metadata 土台 / `showMsg` aggregation 表示まで完了。Group A〜E と `aggregateKey` の対応表を確定として記載し、後続候補（QUOTA-HANDLING / MASTER-V2-METADATA / AGGREGATION-TUNING / LEVEL-3-WARNING-BAR / INDICATOR-DETAIL）を §8 と並列で示す。詳細仕様は `docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md` §15 を参照。 |
 | 2026-05-14 | SAVE-UX-QUOTA-HANDLING-INVENTORY (Step 1, docs-only) に伴い §12 を追記。`localStorage.setItem` 2 callsite (`save()` / `saveBranchMaster()`) を棚卸し、`QuotaExceededError` 明示判定は 0 件と確認。Step 2 候補 callsite と暫定方針 (`kind: 'storage-quota'` / `aggregateKey: 'storage-quota:global'` / `severity: 'warn'`) を inventory docs (`docs/notes/20260514_shogi_save_ux_quota_inventory.md`) からサマリー。Step 2 着手前に再仕様確認が必要。 |
+| 2026-05-14 | SAVE-UX-QUOTA-HANDLING-IMPL (Step 2) 実装に伴い §12.6 を追記。`isQuotaExceededError(e)` helper 追加、`save()` / `saveBranchMaster()` で quota 分岐実装、metadata `kind: 'storage-quota'` / `aggregateKey: 'storage-quota:global'` / `severity: 'warn'` / callsiteId `STORAGE-QUOTA:save` / `STORAGE-QUOTA:saveBranchMaster`。showMsg aggregation 対象外、indicator count +1、二重通知許容、resetAll 対象外継続。詳細は inventory docs §15。 |
 
 ---
 
@@ -398,3 +399,19 @@ v0 (2026-05-13) 作成時点で「次タスク = SAVE-UX-MIN-NOTIFY-002 (S22)」
 inventory docs §13 に列挙した 8 項目を **着手前に再仕様確認** すること。棚卸し結果次第で kind / aggregateKey / severity / indicator 方針が見直される可能性がある。
 
 参照: `docs/notes/20260514_shogi_save_ux_quota_inventory.md` §11 / §12 / §13
+
+### 12.6 Step 2 実装完了状況 (SAVE-UX-QUOTA-HANDLING-IMPL)
+
+| 項目 | 状態 |
+|---|---|
+| `isQuotaExceededError(e)` helper | 実装済（4 判定条件: QuotaExceededError / NS_ERROR_DOM_QUOTA_REACHED / code 22 / code 1014） |
+| `save()` の quota 分岐 | 実装済（`alert` + `notifySaveWarning` + `return`、quota 以外は既存 `notifyError` 維持） |
+| `saveBranchMaster()` の quota 分岐 | 実装済（`notifySaveWarning` + `return`、quota 以外は既存 `console.warn` 維持） |
+| metadata 確定値 | `kind: 'storage-quota'` / `aggregateKey: 'storage-quota:global'` / `severity: 'warn'` |
+| callsiteId | `STORAGE-QUOTA:save` / `STORAGE-QUOTA:saveBranchMaster` |
+| showMsg aggregation | 対象外（kind が save-verify ではないため legacy path） |
+| indicator count | 発生単位 +1 維持 |
+| 二重通知（storage-quota + save-verify） | Step 2 では許容（抑制は後続候補） |
+| `resetAll` | 対象外継続 |
+
+詳細は inventory docs §15 を参照。

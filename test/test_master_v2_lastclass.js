@@ -152,6 +152,7 @@ function loadEnv(path) {
        _resetSaveWarningAggregationState:_resetSaveWarningAggregationState,
        SAVE_WARN_AGGREGATION_WINDOW_MS:SAVE_WARN_AGGREGATION_WINDOW_MS,
        SAVE_WARN_AGGREGATED_MESSAGE:SAVE_WARN_AGGREGATED_MESSAGE,
+       isQuotaExceededError:isQuotaExceededError,
        handlePastParticipantClassAdd:handlePastParticipantClassAdd,
        handleSuggestClassAdd:handleSuggestClassAdd,
        bindMasterEditModalEvents:bindMasterEditModalEvents,
@@ -1813,12 +1814,16 @@ Object.keys(__EXP4_EXPECTED_DIST).forEach(function(ak){
     'T-EXP4-aggregateKey-distribution: ' + ak + ' は ' + __EXP4_EXPECTED_DIST[ak] + ' 件');
 });
 
-// 全 kind:'save-verify' / severity:'warn' の件数も 15 件ずつ
+// 全 kind:'save-verify' の件数は 15 件
 {
   var kindCount = (__EXPAND_SRC.match(/kind:'save-verify'/g) || []).length;
-  var severityCount = (__EXPAND_SRC.match(/severity:'warn'/g) || []).length;
   assertEq(kindCount, 15, 'T-EXP4-kind-count: kind:save-verify は 15 件');
-  assertEq(severityCount, 15, 'T-EXP4-severity-count: severity:warn は 15 件');
+  // severity:'warn' の総数は 15 (save-verify) + storage-quota 系（SECTION 15 で追加）。
+  // SECTION 13 では save-verify 範囲の severity 整合性のみ責任を持つため、ここでは
+  // 「最低 15 件以上」の弱い不変条件のみ確認する（具体的件数は SECTION 15 で確認）。
+  var severityCount = (__EXPAND_SRC.match(/severity:'warn'/g) || []).length;
+  assert(severityCount >= 15,
+    'T-EXP4-severity-count-min: severity:warn は最低 15 件以上（save-verify 分）');
 }
 
 // ----------------------------------------------------------------------------
@@ -2410,6 +2415,330 @@ function _seedAggKey(env, key, msAgo){
     assert(k.indexOf('saveWarningAggregation') === -1 && k.indexOf('aggregate') === -1,
       'T-EXP5-runtime-no-aggregation-key-in-ls: ' + k + ' は aggregation キーではない');
   });
+}
+
+// ============================================================================
+// SECTION 15: SAVE-UX-QUOTA-HANDLING-IMPL — quota / storage exception 系
+// ============================================================================
+// 依頼: SAVE-UX-QUOTA-HANDLING-IMPL (PR #78 inventory Step 1 → Step 2 実装)
+// 設計: docs/notes/20260514_shogi_save_ux_quota_inventory.md
+//
+// 実装範囲:
+//   (a) isQuotaExceededError(e) helper を新規追加
+//   (b) save() に quota 分岐 (alert + notifySaveWarning + return)
+//   (c) saveBranchMaster() に quota 分岐 (notifySaveWarning + return)
+//   (d) 対象は save() / saveBranchMaster() のみ。resetAll() 等は対象外
+//
+// metadata:
+//   kind:         'storage-quota'
+//   aggregateKey: 'storage-quota:global'
+//   severity:     'warn'
+//   callsiteId:   'STORAGE-QUOTA:save' / 'STORAGE-QUOTA:saveBranchMaster'
+//
+// showMsg aggregation: 対象外（kind が 'save-verify' ではないため helper 内で legacy path）
+// indicator: helper 1 呼出 = +1 維持
+// console.warn: helper が個別出力、quota 時の既存 console.warn は呼ばない（重複回避）
+// 二重通知: storage-quota + save-verify は Step 2 で許容
+
+// ----------------------------------------------------------------------------
+// T-EXP6-isQuotaExceededError: helper 単体テスト
+// ----------------------------------------------------------------------------
+
+// true ケース 4 種
+{
+  const env = loadEnv(targetPath);
+  assertEq(env.isQuotaExceededError({name:'QuotaExceededError'}), true,
+    'T-EXP6-q-true-a: name === QuotaExceededError');
+  assertEq(env.isQuotaExceededError({name:'NS_ERROR_DOM_QUOTA_REACHED'}), true,
+    'T-EXP6-q-true-b: name === NS_ERROR_DOM_QUOTA_REACHED');
+  assertEq(env.isQuotaExceededError({code:22}), true,
+    'T-EXP6-q-true-c: code === 22');
+  assertEq(env.isQuotaExceededError({code:1014}), true,
+    'T-EXP6-q-true-d: code === 1014');
+  // 複合（name 一致 + code 不一致）も true
+  assertEq(env.isQuotaExceededError({name:'QuotaExceededError',code:0}), true,
+    'T-EXP6-q-true-e: name 一致 + code 0 でも true');
+}
+
+// false ケース 4 種
+{
+  const env = loadEnv(targetPath);
+  assertEq(env.isQuotaExceededError(null), false, 'T-EXP6-q-false-a: null');
+  assertEq(env.isQuotaExceededError(undefined), false, 'T-EXP6-q-false-b: undefined');
+  assertEq(env.isQuotaExceededError({}), false, 'T-EXP6-q-false-c: {} (no name/code)');
+  assertEq(env.isQuotaExceededError({name:'OtherError'}), false, 'T-EXP6-q-false-d: name OtherError');
+  assertEq(env.isQuotaExceededError({code:0}), false, 'T-EXP6-q-false-e: code 0');
+  assertEq(env.isQuotaExceededError({name:'TypeError',code:99}), false, 'T-EXP6-q-false-f: 別エラー');
+}
+
+// ----------------------------------------------------------------------------
+// T-EXP6-save-quota: save() の QuotaExceededError 経路
+// ----------------------------------------------------------------------------
+
+function _stubQuotaError(env){
+  env._ctx.localStorage.setItem = function(){
+    var err = new Error('Quota exceeded (test)');
+    err.name = 'QuotaExceededError';
+    err.code = 22;
+    throw err;
+  };
+}
+
+function _stubGenericError(env){
+  env._ctx.localStorage.setItem = function(){
+    throw new Error('generic setItem failure (test)');
+  };
+}
+
+// T-EXP6-save-quota-alert-and-notify: quota 時に alert + notifySaveWarning が動く
+{
+  const env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  // localStorage.setItem を quota 例外に差し替え
+  _stubQuotaError(env);
+  env._setState(makeEmptyState());
+  env.save();
+  // alert が呼ばれた（1 回）
+  assertEq(env._alertCalls.length, 1, 'T-EXP6-save-quota-alert: alert が 1 回呼ばれる');
+  assert(env._alertCalls[0].indexOf('保存容量の上限に達しました。データ整理が必要です。') !== -1,
+    'T-EXP6-save-quota-alert-text: alert 文言が正しい');
+  // showMsg は notifySaveWarning 経由で出る（reg-msg に「保存容量の上限に達しました」）
+  const final = env._regMsgFinal();
+  assert(final.indexOf('保存容量の上限に達しました。データ整理が必要です。') !== -1,
+    'T-EXP6-save-quota-showMsg: showMsg に quota 文言が出る');
+  assert(final.indexOf('alert-warn') !== -1, 'T-EXP6-save-quota-type: type=warn');
+  // indicator +1
+  assertEq(env._getIndicatorState().count, 1, 'T-EXP6-save-quota-indicator: count=1');
+  // console.warn 出力に metadata が含まれる
+  const lastWarn = env._warnCalls[env._warnCalls.length - 1];
+  assert(lastWarn.indexOf('"kind":"storage-quota"') !== -1,
+    'T-EXP6-save-quota-meta-kind: kind=storage-quota が出力に含まれる');
+  assert(lastWarn.indexOf('"aggregateKey":"storage-quota:global"') !== -1,
+    'T-EXP6-save-quota-meta-aggKey: aggregateKey=storage-quota:global');
+  assert(lastWarn.indexOf('"severity":"warn"') !== -1,
+    'T-EXP6-save-quota-meta-sev: severity=warn');
+  assert(lastWarn.indexOf('"callsiteId":"STORAGE-QUOTA:save"') !== -1,
+    'T-EXP6-save-quota-meta-callsite: callsiteId=STORAGE-QUOTA:save');
+  // 既存 notifyError 文言（'保存に失敗しました。容量超過か、...'）が出ない
+  assert(final.indexOf('プライベートブラウズ') === -1,
+    'T-EXP6-save-quota-no-notifyError: quota 時に既存 notifyError 文言は重複しない');
+}
+
+// T-EXP6-save-non-quota-keeps-notifyError: quota 以外の例外は notifyError 経路
+{
+  const env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  _stubGenericError(env);
+  env._setState(makeEmptyState());
+  env.save();
+  const final = env._regMsgFinal();
+  // notifyError 経由で「保存に失敗しました。容量超過か、プライベートブラウズの可能性...」が出る
+  assert(final.indexOf('プライベートブラウズの可能性') !== -1,
+    'T-EXP6-save-non-quota-notifyError: 非 quota は notifyError 経路維持');
+  // notifySaveWarning は呼ばれていない（indicator count 0）
+  assertEq(env._getIndicatorState().count, 0,
+    'T-EXP6-save-non-quota-no-indicator: 非 quota では indicator +0');
+  // 新 quota 文言は出ない
+  assert(final.indexOf('保存容量の上限に達しました') === -1,
+    'T-EXP6-save-non-quota-no-quota-msg: 非 quota では quota 専用文言が出ない');
+}
+
+// ----------------------------------------------------------------------------
+// T-EXP6-saveBranchMaster-quota: saveBranchMaster() の QuotaExceededError 経路
+// ----------------------------------------------------------------------------
+
+// T-EXP6-saveBM-quota-notify: quota 時に notifySaveWarning が動く
+{
+  const env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  _stubQuotaError(env);
+  const master = env.createEmptyBranchMaster();
+  env.saveBranchMaster(master);
+  // showMsg は出る
+  const final = env._regMsgFinal();
+  assert(final.indexOf('保存容量の上限に達しました。データ整理が必要です。') !== -1,
+    'T-EXP6-saveBM-quota-showMsg: showMsg に quota 文言が出る');
+  // indicator +1
+  assertEq(env._getIndicatorState().count, 1, 'T-EXP6-saveBM-quota-indicator: count=1');
+  // metadata
+  const lastWarn = env._warnCalls[env._warnCalls.length - 1];
+  assert(lastWarn.indexOf('"callsiteId":"STORAGE-QUOTA:saveBranchMaster"') !== -1,
+    'T-EXP6-saveBM-quota-meta-callsite: callsiteId=STORAGE-QUOTA:saveBranchMaster');
+  assert(lastWarn.indexOf('"kind":"storage-quota"') !== -1,
+    'T-EXP6-saveBM-quota-meta-kind: kind=storage-quota');
+  // quota 時に既存 '支部マスタの保存に失敗。' console.warn が重複して呼ばれない
+  const warnTexts = env._warnCalls.join('|||');
+  assertEq(warnTexts.indexOf('支部マスタの保存に失敗。'), -1,
+    'T-EXP6-saveBM-quota-no-dup-warn: quota 時に既存 console.warn は重複しない');
+}
+
+// T-EXP6-saveBM-non-quota-keeps-warn: quota 以外は既存 console.warn 維持
+{
+  const env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  _stubGenericError(env);
+  const master = env.createEmptyBranchMaster();
+  env.saveBranchMaster(master);
+  // 既存 console.warn '支部マスタの保存に失敗。' が呼ばれる
+  const warnTexts = env._warnCalls.join('|||');
+  assert(warnTexts.indexOf('支部マスタの保存に失敗。') !== -1,
+    'T-EXP6-saveBM-non-quota-warn: 非 quota では既存 console.warn 維持');
+  // notifySaveWarning は呼ばれない（indicator count 0）
+  assertEq(env._getIndicatorState().count, 0,
+    'T-EXP6-saveBM-non-quota-no-indicator: 非 quota では indicator +0');
+  // showMsg に quota 文言が出ない
+  const final = env._regMsgFinal();
+  assert(final.indexOf('保存容量の上限に達しました') === -1,
+    'T-EXP6-saveBM-non-quota-no-quota-msg: 非 quota では quota 専用文言が出ない');
+}
+
+// ----------------------------------------------------------------------------
+// T-EXP6-storage-quota-not-aggregated: storage-quota は showMsg aggregation 対象外
+// ----------------------------------------------------------------------------
+
+// T-EXP6-quota-2-consecutive-keeps-original: 連続 2 回でも短縮文言にならない
+{
+  const env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  // 同じ aggregateKey で 1 秒前にも storage-quota が出ていたと仮定
+  const st = env._getSaveWarningAggregationState();
+  st.lastTimestampByKey['storage-quota:global'] = Date.now() - 1000;
+  // ここで storage-quota を発火
+  env.notifySaveWarning({
+    message:'保存容量の上限に達しました。データ整理が必要です。',
+    consoleTag:'[STORAGE-QUOTA] test',
+    callsiteId:'STORAGE-QUOTA:save',
+    kind:'storage-quota',
+    aggregateKey:'storage-quota:global',
+    severity:'warn'
+  });
+  const final = env._regMsgFinal();
+  // aggregation は kind='save-verify' のみ対象なので、storage-quota は短縮されない
+  assert(final.indexOf('保存容量の上限に達しました。データ整理が必要です。') !== -1,
+    'T-EXP6-quota-not-aggregated: storage-quota の 2 回目も元文言');
+  assert(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) === -1,
+    'T-EXP6-quota-no-short-msg: 短縮文言には切り替わらない');
+}
+
+// T-EXP6-quota-twice-indicator-plus-2: 2 回連続で +2
+{
+  const env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  _stubQuotaError(env);
+  env._setState(makeEmptyState());
+  env.save();
+  env.save();
+  assertEq(env._getIndicatorState().count, 2,
+    'T-EXP6-quota-twice-count: 連続 2 回で indicator count +2');
+  // alert も 2 回呼ばれる（quota は毎回確実な認知を優先）
+  assertEq(env._alertCalls.length, 2,
+    'T-EXP6-quota-twice-alert: alert も 2 回');
+}
+
+// ----------------------------------------------------------------------------
+// T-EXP6-save-verify-untouched: save-verify 既存 aggregation 挙動への影響なし
+// ----------------------------------------------------------------------------
+
+// T-EXP6-sv-aggregation-still-works: save-verify は依然 3000ms aggregation 対象
+{
+  const env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  // 1 秒前に save-verify:core が出ていた前提
+  const st = env._getSaveWarningAggregationState();
+  st.lastTimestampByKey['save-verify:core'] = Date.now() - 1000;
+  env.notifySaveWarning({
+    message:'大会を開始しましたが、保存が確認できませんでした...',
+    consoleTag:'SAVE-003 test',
+    callsiteId:'SAVE-003-startTournament',
+    kind:'save-verify',
+    aggregateKey:'save-verify:core',
+    severity:'warn'
+  });
+  const final = env._regMsgFinal();
+  assert(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) !== -1,
+    'T-EXP6-sv-still-aggregates: save-verify は依然短縮文言に切替');
+}
+
+// T-EXP6-quota-doesnt-pollute-sv: storage-quota が save-verify の aggregation state を汚さない
+{
+  const env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  // 最初に storage-quota を発火
+  env.notifySaveWarning({
+    message:'保存容量の上限に達しました。データ整理が必要です。',
+    consoleTag:'[STORAGE-QUOTA]',
+    callsiteId:'STORAGE-QUOTA:save',
+    kind:'storage-quota',
+    aggregateKey:'storage-quota:global',
+    severity:'warn'
+  });
+  // 次に save-verify を発火 — これは 1 回目扱いで元文言
+  env._clear();  // reg-msg 履歴をリセットして次の発火だけ見る
+  env.notifySaveWarning({
+    message:'大会を開始しましたが、保存が確認できませんでした...',
+    consoleTag:'SAVE-003',
+    callsiteId:'SAVE-003-startTournament',
+    kind:'save-verify',
+    aggregateKey:'save-verify:core',
+    severity:'warn'
+  });
+  const final = env._regMsgFinal();
+  // save-verify:core は別 key なので 1 回目扱い → 元文言
+  assert(final.indexOf('大会を開始しましたが') !== -1,
+    'T-EXP6-quota-no-pollution: storage-quota の発火が save-verify の 1 回目扱いを破壊しない');
+}
+
+// ----------------------------------------------------------------------------
+// T-EXP6-static-checks: source 静的検証
+// ----------------------------------------------------------------------------
+
+// helper 定義の存在
+assert(__EXPAND_SRC.indexOf('function isQuotaExceededError(e){') !== -1,
+  'T-EXP6-static-helper-defined: isQuotaExceededError が定義されている');
+
+// 4 つの判定条件すべて source に存在
+[
+  "e.name==='QuotaExceededError'",
+  "e.name==='NS_ERROR_DOM_QUOTA_REACHED'",
+  "e.code===22",
+  "e.code===1014"
+].forEach(function(pat){
+  assert(__EXPAND_SRC.indexOf(pat) !== -1,
+    'T-EXP6-static-helper-condition: ' + pat);
+});
+
+// callsiteId の存在
+assert(__EXPAND_SRC.indexOf("callsiteId:'STORAGE-QUOTA:save'") !== -1,
+  'T-EXP6-static-callsiteId-save: STORAGE-QUOTA:save が存在');
+assert(__EXPAND_SRC.indexOf("callsiteId:'STORAGE-QUOTA:saveBranchMaster'") !== -1,
+  'T-EXP6-static-callsiteId-saveBM: STORAGE-QUOTA:saveBranchMaster が存在');
+
+// kind: 'storage-quota' / aggregateKey: 'storage-quota:global' / severity: 'warn' が各 2 件
+assertEq(
+  (__EXPAND_SRC.match(/kind:'storage-quota'/g) || []).length, 2,
+  'T-EXP6-static-kind-count: kind:storage-quota が 2 件');
+assertEq(
+  (__EXPAND_SRC.match(/aggregateKey:'storage-quota:global'/g) || []).length, 2,
+  'T-EXP6-static-aggKey-count: aggregateKey:storage-quota:global が 2 件');
+
+// resetAll は未変更（quota 系の呼出が含まれない）
+{
+  var resetIdx = __EXPAND_SRC.indexOf('function resetAll()');
+  assert(resetIdx !== -1, 'T-EXP6-static-resetAll-exists: resetAll が存在');
+  var resetEnd = __EXPAND_SRC.indexOf('function ', resetIdx + 20);
+  var resetBody = __EXPAND_SRC.substring(resetIdx, resetEnd);
+  assert(resetBody.indexOf('storage-quota') === -1,
+    'T-EXP6-static-resetAll-untouched: resetAll に storage-quota が混入していない');
+  assert(resetBody.indexOf('notifySaveWarning') === -1,
+    'T-EXP6-static-resetAll-no-helper: resetAll に notifySaveWarning が混入していない');
 }
 
 // ============================================================================
