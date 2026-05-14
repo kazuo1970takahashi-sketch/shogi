@@ -607,3 +607,12 @@ options = {
 - `test/run_tests.sh` — 起動 stanza 追加
 - `docs/notes/20260514_shogi_pairing_ux_display_helper_design.md` — 本 §14
 - `HANDOFF.md` — IMPL-LIGHT ポインタ追加
+
+### 14.10 helper の初 UI 配線（2026-05-15 追補）
+
+- `PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT`（Phase 1）で `formatParticipantLabel` を **UI に配線した最初の callsite** が確定
+- 配線先: [`buildCurrentPairingsHtml`](shogi_v4.html:4914) の pairing-card 補助ラベル（各 winner-btn 直下に 1 行追加）
+- 採用 options: `{mode:'standard', includeRecord:true, record:{wins, losses}}`
+- `includeCategory` は **使わない**（勝敗数の近接表示が目的、支部員区分は情報過多回避）
+- WARNING-DECISION-SUPPORT 側で helper の compact / standard 設計が想定通りに機能することを確認
+- DISPLAY-LABELS-IMPL-LIGHT は本配線を参照して **`includeCategory` を opt-in 検討** できる

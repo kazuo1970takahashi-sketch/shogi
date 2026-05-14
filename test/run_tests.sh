@@ -537,6 +537,22 @@ else
 fi
 
 # ============================================
+# PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT 単体テスト (Phase 1)
+# ============================================
+echo ""
+echo "【PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT】"
+if [ -f "$SCRIPT_DIR/test_pairing_ux_warning_decision_support.js" ]; then
+  if node "$SCRIPT_DIR/test_pairing_ux_warning_decision_support.js" "$TARGET" > /tmp/pairing_ux_warning_decision_support_out.log 2>&1; then
+    ok "WARNING-DECISION-SUPPORT IMPL-LIGHT テスト 全PASS ($(tail -1 /tmp/pairing_ux_warning_decision_support_out.log))"
+  else
+    ng "WARNING-DECISION-SUPPORT IMPL-LIGHT テスト 失敗"
+    cat /tmp/pairing_ux_warning_decision_support_out.log
+  fi
+else
+  warn "test_pairing_ux_warning_decision_support.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
