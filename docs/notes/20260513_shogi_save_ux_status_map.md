@@ -301,6 +301,7 @@ import / merge / migration 系は **本マップの保存後 verify トラック
 | 2026-05-14 | SAVE-UX-MASTER-V2-METADATA-IMPL (PR-A) に伴い §14.2 を **3 系統表**へ更新（master-verify 行追加）、§14.4 で `SAVE-UX-MASTER-V2-METADATA` 行を完了扱いにし PR-B として `SAVE-UX-MASTER-V2-AGGREGATION` 行を追加、§14.5 を更新。S03 / S05 / S22 に `kind:'master-verify'` / `aggregateKey:'master-verify:lastclass'` / `severity:'warn'` metadata を付与。callsiteId は既存 S03 / S05 / S22 維持。aggregation 対象化は PR-B 候補（今回 helper aggregation 条件は変更なし）。 |
 | 2026-05-14 | SAVE-UX-TEST-STRUCTURAL-MATCH に伴い §14.3 と §14.4 の該当行を完了扱いに更新、§14.5 の司令塔おすすめを更新。`extractNotifySaveWarningBlocks(src)` helper（lightweight brace depth scanner）+ 9 fixture 単体テスト追加、SECTION 13 / 15 / 16 の static assert を block 単位の structural match に移行、200 文字 window 依存を解消。実装ロジック / metadata / aggregation / indicator / runtime tests / shogi_v4.html すべて未変更。 |
 | 2026-05-14 | SAVE-UX-MASTER-V2-AGGREGATION (PR-B) に伴い §14.2 の master-verify 行を aggregation 対象に更新、§14.4 の PR-B 行を完了扱いに、§14.5 の司令塔おすすめを更新。`SAVE_WARN_AGGREGATABLE_KINDS = new Set(['save-verify', 'master-verify'])` の kind allow-list を導入し、aggregation 条件を `SAVE_WARN_AGGREGATABLE_KINDS.has(kind) && severity === 'warn' && aggregateKey` に変更。storage-quota は意図的に allow-list 外。aggregateKey / 短縮文言 / time window 3000ms / indicator count / console.warn 個別出力すべて不変。SECTION 17 を新規追加（静的 + ランタイム）。 |
+| 2026-05-14 | SAVE-UX-POST-AGGREGATION-FOLLOWUP-MAP (docs-only) に伴い §15 を追加。PR #82 (`94fdcd0`) / PR #83 (`8df51a9`) / PR #84 (`e0100dc`) 連鎖完了時点の到達点、3 系統表（save-verify 15 / storage-quota 2 / master-verify 3 = 計 20）、allow-list 方針、`metadata → structural test → aggregation 対象化` の 3 段階標準手順候補、未回収 Nice to Have 13 項目、次タスク候補 7 件、司令塔おすすめ（次は `SAVE-UX-PARSE-HANDLING-INVENTORY`）を整理。実装変更なし、test 変更なし、shogi_v4.html 未変更。 |
 
 ---
 
@@ -576,3 +577,189 @@ PR-B で完了。`SAVE_WARN_AGGREGATABLE_KINDS = new Set(['save-verify', 'master
 #### 司令塔おすすめ
 
 `SAVE-UX-MASTER-V2-AGGREGATION` (PR-B) 完了時点では、次は `SAVE-UX-DUAL-NOTIFY-SUPPRESSION`（実運用で二重通知のうるささを感じたら）/ `SAVE-UX-AGGREGATION-TUNING`（3 秒窓 / 短縮文言の調整）/ `SAVE-UX-PARSE-HANDLING` / `SAVE-UX-DUPLICATE-HANDLING`（次の kind 追加候補、inventory から）など。kind allow-list 方式により、新規 kind の aggregation 対象化は `SAVE_WARN_AGGREGATABLE_KINDS` に 1 要素追加するだけで判断可能。
+
+→ PR #84 (aggregation 対象化) 完了に伴い、最新の follow-up map は **§15** を参照。
+
+---
+
+## 15. PR #82〜#84 後の aggregation follow-up map（v1.4 追補）
+
+PR #82（master-verify metadata）/ PR #83（test structural match）/ PR #84（master-verify aggregation 対象化）の 3 PR 連鎖完了時点の地図。
+
+### 15.1 到達点
+
+#### PR #82 (SAVE-UX-MASTER-V2-METADATA-IMPL) — `94fdcd0`
+
+- MASTER-V2-LASTCLASS S03 / S05 / S22 に `master-verify` metadata 付与
+- `kind: 'master-verify'` / `aggregateKey: 'master-verify:lastclass'` / `severity: 'warn'`
+- callsiteId は既存 S03 / S05 / S22 を維持
+- PR-A として **aggregation 対象化は意図的に未実施**（後続 PR-B = PR #84 へ）
+
+#### PR #83 (SAVE-UX-TEST-STRUCTURAL-MATCH) — `8df51a9`
+
+- SAVE-UX test の 200 文字 window 依存を `notifySaveWarning({...})` block 単位の structural match に移行
+- `extractNotifySaveWarningBlocks(src)` lightweight brace depth scanner helper を追加（AST parser / 外部依存なし）
+- helper 単体テスト 9 fixture を追加
+- SECTION 12.5 で 3 系統合計 20 件抽出の sanity check
+- SECTION 13 / 15 / 16 の static assert を block 単位の structural match に移行
+- 旧 200 文字 window assert（`window200` / `searchIdx`）を削除
+- 禁止パターン assert は維持（structural helper の責務外、grep / includes ベース）
+- runtime tests / shogi_v4.html / docs/specs すべて非干渉
+
+#### PR #84 (SAVE-UX-MASTER-V2-AGGREGATION) — `e0100dc`
+
+- `SAVE_WARN_AGGREGATABLE_KINDS = new Set(['save-verify', 'master-verify'])` を notifySaveWarning helper 直前 module scope に追加
+- aggregation 条件を `kind === 'save-verify' && severity === 'warn' && aggregateKey` から `SAVE_WARN_AGGREGATABLE_KINDS.has(kind) && severity === 'warn' && aggregateKey` に変更
+- master-verify を showMsg aggregation 対象化（1 回目元 message / 2 回目以降短縮文言）
+- storage-quota は allow-list 外で対象外維持
+- aggregateKey (`master-verify:lastclass`) / 短縮文言 / time window 3000ms / indicator count / console.warn 個別出力すべて不変
+- SECTION 17 を新規追加（静的 + ランタイム検証 36 件）
+- SECTION 14 / 16 の既存 assert を PR-B 仕様に更新
+
+### 15.2 現在の 3 系統（PR #84 完了時点）
+
+| 系統 | 状態 | kind | aggregateKey | 件数 | aggregation | indicator | structural assert | 備考 |
+|---|---|---|---|---|---|---|---|---|
+| save-verify | 完成 | `save-verify` | `:core` (4) / `:entry` (2) / `:edit` (2) / `:past` (4) / `:pairing` (3) | **15** | **対象** | **対象** | ✅ 完了 | A-5.1 SAVE 系 15 callsite（PR #70 / #73 / #74 / #75 / #76 で確立、PR #83 で structural assert 化） |
+| storage-quota | 完成 | `storage-quota` | `:global` | **2** | **対象外** | **対象** | ✅ 完了 | `save()` / `saveBranchMaster()`（PR #79、callsiteId `STORAGE-QUOTA:save` / `STORAGE-QUOTA:saveBranchMaster`、PR #83 で structural assert 化） |
+| master-verify | 完成 | `master-verify` | `:lastclass` | **3** | **対象** | **対象** | ✅ 完了 | MASTER-V2-LASTCLASS S03 / S05 / S22（PR #82 metadata / PR #83 structural / PR #84 aggregation 対象化） |
+| **合計** | | | | **20** | | | | |
+
+### 15.3 aggregation 対象 kind（allow-list 方式）
+
+PR #84 で導入された定数:
+
+```js
+var SAVE_WARN_AGGREGATABLE_KINDS = new Set(['save-verify', 'master-verify']);
+```
+
+aggregation 条件（helper 内）:
+
+```js
+if (SAVE_WARN_AGGREGATABLE_KINDS.has(kind) && severity === 'warn' && aggregateKey) {
+  // 短縮文言切替判定
+}
+```
+
+| kind | allow-list | 理由 |
+|---|---|---|
+| `save-verify` | ✅ 対象 | PR #76 以来の対象。15 callsite が連続発火しがちなため集約必要 |
+| `master-verify` | ✅ 対象 | PR #84 で対象化。S22 の 4 fields 同時失敗等で連続発火しうるため |
+| `storage-quota` | ❌ 対象外 | quota は 1 回 1 回の確実な認知が必要（PR #79 設計） |
+| `parse-failed` | ❌ 対象外 | 未導入 kind |
+| `duplicate-name` | ❌ 対象外 | 未導入 kind |
+| `storage-corrupted` | ❌ 対象外 | 未導入 kind |
+
+#### 集約方針（不変）
+
+- aggregation は **showMsg の短縮表示のみ** を行う（PR #76 設計）
+- `console.warn` は **個別出力維持**（debug 詳細層）
+- indicator count は **発生単位 +1 維持**（事実を残す）
+- **失敗を隠さない原則** を全 PR で堅持
+- 新規 kind を aggregation 対象にする際は、metadata 付与・structural test・aggregation 対象化判断を **3 段階に分ける**（次節参照）
+
+### 15.4 metadata → structural test → aggregation 対象化 の標準手順候補
+
+PR #82〜#84 の流れを、今後 `parse-failed` / `duplicate-name` / `storage-corrupted` 等を追加するときの **標準手順候補** として記録する:
+
+| 段階 | タスク種別 | 代表 PR | 目的 | 注意 |
+|---|---|---|---|---|
+| 1 | **metadata 付与** | PR #82 (PR-A) | 対象 callsite に `kind` / `aggregateKey` / `severity` を付与。helper 経由化されていない callsite は最小差分で経由化 | aggregation 対象化は **やらない**。test は SECTION N で structural assert |
+| 2 | **structural test 足場整備** | PR #83 | 200 文字 window 依存からの脱却。新 kind を追加すると window 依存だと false positive / false negative の幅が広がるため、kind が増える前に block 単位の structural match に移行 | shogi_v4.html / runtime tests 非干渉 |
+| 3 | **aggregation 対象化判断** | PR #84 (PR-B) | `SAVE_WARN_AGGREGATABLE_KINDS` に 1 要素追加して allow-list 入りさせる。または「意図的に対象外」を選択（storage-quota の判断と同じ） | 必ず段階 1 を先に完了。runtime 検証で連続発火 / 非対象 kind 干渉 / namespace 独立性を確認 |
+| 4 | **docs 反映** | （各 PR と同梱、または follow-up map） | status-map の 3 系統表更新 / 次タスク候補整理 | docs/specs 3 設計書には触らず、notes に集約 |
+
+各段階を **別 PR** に分けることで:
+- レビュー観点が混ざらない（metadata / test / runtime behavior 各々で集中レビュー可）
+- ロールバック粒度が細かい
+- 「対象化見送り」を後から選択肢として残せる
+
+### 15.5 未回収 Nice to Have
+
+#### aggregation / message / window 系
+
+| # | 項目 | 推奨 Task | 優先度 |
+|---|---|---|---|
+| 1 | kind 別短縮 message | `SAVE-UX-AGGREGATION-TUNING` | 低〜中（実運用フィードバック待ち） |
+| 2 | kind 別 time window | 同上 | 低 |
+| 3 | 3000ms window 調整 | 同上 | 低（運用感覚で調整） |
+| 4 | master-verify 専用短縮文言 | 同上 | 低 |
+| 5 | storage-quota の対象外維持の将来再評価 | 同上 | 低 |
+
+#### indicator 系
+
+| # | 項目 | 推奨 Task | 優先度 |
+|---|---|---|---|
+| 6 | kind 別 indicator 内訳表示 | `SAVE-UX-INDICATOR-DETAIL` | 低（実運用フィードバック待ち） |
+| 7 | 詳細展開 UI | 同上 | 低 |
+| 8 | clear UI | 同上 | 低 |
+
+#### fields / consoleTag 系
+
+| # | 項目 | 推奨 Task | 優先度 |
+|---|---|---|---|
+| 9 | fields schema 整理（array / object / metadata 拡張）| `SAVE-UX-FIELDS-SCHEMA` | 中（SAVE-FUTURE-REPORT 前） |
+| 10 | consoleTag prefix ルール docs 化 | `SAVE-UX-CONSOLETAG-DOC` | 低〜中 |
+| 11 | message / consoleTag の動的連結対応 | 同上 | 低 |
+
+#### dual notify 系
+
+| # | 項目 | 推奨 Task | 優先度 |
+|---|---|---|---|
+| 12 | storage-quota + save-verify の二重通知抑制 | `SAVE-UX-DUAL-NOTIFY-SUPPRESSION` | 中（alert / notifyError / notifySaveWarning の関係再設計が必要、実運用 or 別仕様確認を挟む）|
+
+#### MASTER-001 系
+
+| # | 項目 | 推奨 Task | 優先度 |
+|---|---|---|---|
+| 13 | MASTER-001 系 callsite helper 経由化 | （個別判断）| 低（3 系統完成後の後続候補） |
+
+### 15.6 次タスク候補
+
+PR #82〜#84 連鎖完了時点での次タスク候補:
+
+| # | 候補 Task ID | 目的 | 着手条件 | 推奨度 | 備考 |
+|---|---|---|---|---|---|
+| 1 | `SAVE-UX-PARSE-HANDLING-INVENTORY` | parse-failed 系の棚卸し（JSON parse / localStorage corruption / load 失敗）| 第 4 系統候補として | **高** | いきなり実装ではなく inventory から。storage-quota と近いが aggregation 対象化判断は別 |
+| 2 | `SAVE-UX-DUPLICATE-HANDLING-INVENTORY` | duplicate-name 系の棚卸し（同姓同名 / 重複登録 UX）| 受付・参加者登録 UX に近い | 中〜高 | 大会運営の実運用上発生しうる。仕様判断やや重い |
+| 3 | `SAVE-UX-STORAGE-CORRUPTED-HANDLING-INVENTORY` | storage-corrupted 系の棚卸し（保存データ破損・復旧導線）| データ保全 UX として | 中 | storage-quota と並ぶ第 4 系統候補 |
+| 4 | `SAVE-UX-AGGREGATION-TUNING` | 3000ms window / 短縮文言の調整 | 実運用フィードバック後 | 低〜中 | save-verify + master-verify 両系統の体感を見て判断 |
+| 5 | `SAVE-UX-DUAL-NOTIFY-SUPPRESSION` | quota + verify 二重通知抑制 | UX 上重要だが仕様判断重め | 中 | alert / notifyError / notifySaveWarning の関係を再設計する可能性あり |
+| 6 | `SAVE-UX-INDICATOR-DETAIL` | indicator 詳細展開 / kind 別内訳 | 3 系統完成後の表示拡張 | 低〜中 | 実運用フィードバック待ち |
+| 7 | `SAVE-UX-FIELDS-SCHEMA` | fields schema 整理 | 構造化ログ前 | 中 | SAVE-FUTURE-REPORT 前提の整備 |
+
+### 15.7 次にやるなら
+
+#### 第一候補: `SAVE-UX-PARSE-HANDLING-INVENTORY`
+
+**理由**:
+- 3 系統の中核が完成したため、次は第 4 系統候補を inventory するのが自然な流れ
+- いきなり実装ではなく棚卸しから入るのが安全（PR #78 → #79 の Step 1 / Step 2 と同じパターン）
+- parse / storage corrupted / load failure はデータ保全 UX として重要
+- storage-quota と近いが、aggregation 対象にするかどうかは別判断（PR #84 で確立した allow-list 方式で柔軟に判断可）
+- 失敗種別ごとに UX を分ける設計につながる
+
+#### 第二候補: `SAVE-UX-DUPLICATE-HANDLING-INVENTORY`
+
+**理由**:
+- 将棋大会運営では同姓同名・重複登録が実運用上起きうる
+- 受付 UX に近く、現場価値が高い
+- ただし duplicate は仕様判断が少し重いので、parse inventory の次でもよい
+
+#### 第三候補: `SAVE-UX-AGGREGATION-TUNING`
+
+**理由**:
+- save-verify / master-verify が aggregation 対象になったので、文言・window の調整余地はある
+- ただし現時点では実運用フィードバック待ちでよい
+- すぐに着手する必要は低い
+
+#### 第四候補: `SAVE-UX-DUAL-NOTIFY-SUPPRESSION`
+
+**理由**:
+- UX 上は重要だが、`alert` / `notifyError` / `notifySaveWarning` の関係に触る
+- 仕様判断が重め
+- もう少し後でもよい
+
+#### 司令塔暫定おすすめ
+
+次は **`SAVE-UX-PARSE-HANDLING-INVENTORY`** を docs-only inventory として着手するのが自然。PR #78 → #79 の Step 1 / Step 2 と同じ「inventory → 実装」パターンに沿う。実運用フィードバック次第で `SAVE-UX-AGGREGATION-TUNING` や `SAVE-UX-DUAL-NOTIFY-SUPPRESSION` も候補に上がる。
