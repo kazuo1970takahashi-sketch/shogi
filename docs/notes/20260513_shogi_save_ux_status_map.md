@@ -2085,13 +2085,15 @@ PR #90 着地後も以下は **意図的に不変**:
 
 | 性格 \\ 着手条件 | すぐ着手可能 | 運用者フィードバック待ち | 仕様判断重め |
 |---|---|---|---|
-| docs-only inventory | `CALLSITE-AUDIT` / `STATE-RESTORE-HANDLING-INVENTORY` / `IMPORT-FAILED-HANDLING-INVENTORY` / `LOAD-FAILED-HANDLING-INVENTORY` / Codex Nice-to-Have（§19.5 ↔ §18.8.1）| — | — |
+| docs-only inventory | `CALLSITE-AUDIT` / `STATE-RESTORE-HANDLING-INVENTORY` / `IMPORT-FAILED-HANDLING-INVENTORY` / `LOAD-FAILED-HANDLING-INVENTORY` / Codex Nice-to-Have（§19.5 ↔ §18.8.1）/ `CONSOLETAG-DOC` | — | — |
 | 実装（小）| — | `AGGREGATION-TUNING`（運用感後）| — |
 | 実装（中）| — | `IMPL-MEDIUM` | `STORAGE-CORRUPTED-HANDLING-IMPL`（案 B、silent → warn 仕様判断）/ `DUAL-NOTIFY-SUPPRESSION` |
 | 実装（重）| — | `CORRUPTION-RECOVERY-IMPL`（Heavy、Light/Medium 完了後）/ `INDICATOR-DETAIL`（運用感蓄積後）| — |
 | 設計（中）| — | — | `FIELDS-SCHEMA` |
 
 「すぐ着手可能」列が **次の docs-only タスクの選択肢プール**。「運用者フィードバック待ち」列はすべて **本 inventory 時点では起動しない**。
+
+なお、`CONSOLETAG-DOC` は docs-only 軽量タスクとして「すぐ着手可能」に含めるが、§20.5 の Top 3 推奨からは外す（現時点では CALLSITE-AUDIT / STATE-RESTORE-HANDLING-INVENTORY の方が SAVE-UX 全体の前提整理価値が高く、`CONSOLETAG-DOC` は CLOSURE-DOC-REFINEMENT と同梱、または後続微修正で処理可能なため）。§20.3 で定義した候補は §20.4 / §20.5 / §20.6 のいずれかへ必ず分配する方針。
 
 ### 20.5 推奨 Next Action（1〜3 候補）
 
@@ -2128,7 +2130,7 @@ PR #90 着地後も以下は **意図的に不変**:
 
 #### 20.5.3 第三推奨（Nice to Have 級）: Codex PR #91 Nice-to-Have の追補
 
-- **Task ID（仮）**: `SAVE-UX-CLOSURE-DOC-REFINEMENT`
+- **Task ID**: `SAVE-UX-CLOSURE-DOC-REFINEMENT`
 - **目的**: §19.5「外部送信・ログ送信」非実装根拠に §18.8.1 を併記し、後続のレビュー / 別チャット再開時の追跡性を改善する（Codex PR #91 Nice-to-Have）
 - **想定スコープ**:
   - §19.5 表の該当行に `（§18.8.1）` 等の参照を 1 箇所追加
@@ -2172,4 +2174,3 @@ PR #90 着地後も以下は **意図的に不変**:
 - `docs/notes/20260514_shogi_save_ux_quota_inventory.md`（quota inventory の前例）
 - PR [#88](https://github.com/kazuo1970takahashi-sketch/shogi/pull/88) / [#89](https://github.com/kazuo1970takahashi-sketch/shogi/pull/89) / [#90](https://github.com/kazuo1970takahashi-sketch/shogi/pull/90) / [#91](https://github.com/kazuo1970takahashi-sketch/shogi/pull/91)
 - 過去 SAVE-UX PR 群（HANDOFF.md 「保存安全化 / SAVE-UX 現在地マップ」以下のポインタ参照）
-- PR [#88](https://github.com/kazuo1970takahashi-sketch/shogi/pull/88) / [#89](https://github.com/kazuo1970takahashi-sketch/shogi/pull/89) / [#90](https://github.com/kazuo1970takahashi-sketch/shogi/pull/90)
