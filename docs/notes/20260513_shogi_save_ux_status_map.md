@@ -2495,3 +2495,319 @@ read+save 14 のうち flag を読まないのは 12 件。これらをさらに
   - [shogi_v4.html:2845-2846](shogi_v4.html:2845) `openMigrationWizard` 破損バナー判定
   - [shogi_v4.html:4284-4286](shogi_v4.html:4284) `openMemberMasterSyncDialog` 分岐
 - PR [#88](https://github.com/kazuo1970takahashi-sketch/shogi/pull/88) / [#89](https://github.com/kazuo1970takahashi-sketch/shogi/pull/89) / [#90](https://github.com/kazuo1970takahashi-sketch/shogi/pull/90) / [#91](https://github.com/kazuo1970takahashi-sketch/shogi/pull/91) / [#92](https://github.com/kazuo1970takahashi-sketch/shogi/pull/92)
+
+## 22. SAVE-UX-STATE-RESTORE-HANDLING-INVENTORY（v2.2 追補 / 大会データ state restore silent failure 棚卸し）
+
+- 種別: **docs-only inventory**（実装はしない / 仕様は確定しない / §11〜§21 を改訂しない）
+- 対象 main HEAD: `f829009`（PR #93 callsite audit squash merge 後）
+- Task ID: `SAVE-UX-STATE-RESTORE-HANDLING-INVENTORY`
+- 目的: §16.9 案 B 前段として、`load()` 内の PARSE-LOAD-001 / 002 / 003 silent failure を棚卸しし、どの失敗をユーザー通知化 / 復旧導線化 / 運用許容のいずれにするかを docs 上で判断材料化する
+- 起源: §17.11.3（次タスク候補 docs-only inventory）/ §20.5.2 第二推奨 / §21.11.3 推奨
+- 関連: §16.3.1（PARSE-LOAD callsite 表）/ §16.9 案 B（`SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL` の前段）/ §16.10 論点 2（silent → warn 化判断）/ §17〜§21（支部マスタ破損対応の別データ種別版）
+
+### 22.1 Inventory の目的と非目的
+
+#### 22.1.1 目的
+
+1. PARSE-LOAD-001 / 002 / 003 を HEAD `f829009` で再検証し、行番号 / 発生条件 / 挙動 / silent 度を確定する
+2. silent failure が発生した場合の **実運用上の影響** を「大会中 reload」「初回起動」「マルチタブ」などのシナリオ別に整理する
+3. 既存の SAVE-UX 設計方針（`notifySaveWarning` / aggregation / 失敗を隠さない原則）にどう接続するかの選択肢を提示する
+4. 既存の支部マスタ破損対応（§17〜§21）と **重複しない別責務** であることを明確にする
+5. 後続実装案の最小スコープを Task ID ベースで整理する
+
+#### 22.1.2 非目的（本 inventory ではやらない）
+
+- 実装変更（`shogi_v4.html` / test / docs/specs / CI 設定）
+- 仕様確定（silent → warn 化の最終判断は impl 着手前に運用者レビューを挟む）
+- §17〜§21 の改訂
+- 大会データ import 系（PARSE-IMPORT-001/002/003 = 系統 D）/ master import 系（系統 E）の深掘り（別 inventory `SAVE-UX-IMPORT-FAILED-HANDLING-INVENTORY` の責務、§16.9 案 C / §20.3.3）
+
+### 22.2 調査対象の定義
+
+| カテゴリ | 定義 | 対象範囲 |
+|---|---|---|
+| state restore 経路 | `load()` 関数 ([shogi_v4.html:443](shogi_v4.html:443)) 内部の I/O / parse / fallback 全経路 | PARSE-LOAD-001 / 002 / 003（§16.3.1 系統 A）|
+| 呼出元 | `initApp()` ([shogi_v4.html:5791](shogi_v4.html:5791)) のみ | boot 経路 1 callsite |
+| 対象 localStorage キー | `STORAGE_KEY='shogi_v4'` ([shogi_v4.html:215](shogi_v4.html:215)) + `LEGACY_STORAGE_KEYS=['shogi_v3']` ([shogi_v4.html:216](shogi_v4.html:216)) | 現行 1 + レガシ 1 = **2 キー** |
+| user-facing 通知 | `notifySaveWarning` / `showMsg` / `alert` / `setStatus` / `console.warn` のいずれも **state restore 経路では未発火** | — |
+
+### 22.3 PARSE-LOAD-001 / 002 / 003 現状整理（HEAD `f829009` 再検証）
+
+§16.3.1 表を HEAD で再検証。`load()` 関数本体 ([shogi_v4.html:443-459](shogi_v4.html:443)) の構造:
+
+```js
+function load(){
+  // 現行キー → 旧キーの順に試行。各 key は parse 失敗時に次の key にフォールバック。
+  var keys=[STORAGE_KEY].concat(LEGACY_STORAGE_KEYS);
+  for(var i=0;i<keys.length;i++){
+    var d=null;
+    try{d=localStorage.getItem(keys[i]);}catch(e){continue;}   // ← PARSE-LOAD-001
+    if(!d)continue;                                              // (空データは failure ではなく skip)
+    try{
+      state=normalizeState(JSON.parse(d));                       // ← PARSE-LOAD-002（catch）
+      return;
+    }catch(e){
+      // この key の JSON は壊れている → 次の key を試す
+    }
+  }
+  // すべての key が空 or 壊れている → 初期 state を normalize
+  state=normalizeState(state);                                    // ← PARSE-LOAD-003
+}
+```
+
+#### 22.3.1 各 callsite の現状
+
+| ID | 行 | 発生条件 | 現在挙動 | user-facing | silent? | データ保全 重要度 | 大会中 UX 影響 | 復旧導線 | SAVE-UX 接続候補 |
+|---|---:|---|---|---|---|---|---|---|---|
+| PARSE-LOAD-001 | [448](shogi_v4.html:448) | `localStorage.getItem(keys[i])` が例外 throw（localStorage 自体が破損 / 権限不足 / privacy モード制限など）| `catch(e){continue;}` → 次キーへ | **なし** | ✅ silent | 中 | 起動時のみ。次キー（レガシ）にフォールバック可能、両キー共に getItem 失敗で PARSE-LOAD-003 へ合流 | なし（PARSE-LOAD-003 経由の初期 state） | 候補（要検討）|
+| PARSE-LOAD-002 | [451-455](shogi_v4.html:451) | `JSON.parse(d)` が throw（localStorage 内の文字列が JSON として壊れている）| `catch(e){}` → 次キーへ（comment「次の key を試す」のみ） | **なし** | ✅ silent | **高** | **直前の大会データ消失リスク**: 大会中 reload で shogi_v4 が parse 失敗 → shogi_v3 にフォールバック（不在なら PARSE-LOAD-003）。古い大会の旧キー残骸が読まれるリスクあり | なし | **候補（最重要）**|
+| PARSE-LOAD-003 | [457-458](shogi_v4.html:457) | 全キーが getItem 失敗 / 空 / JSON.parse 失敗のいずれか | `state=normalizeState(state);` → 初期 state（normalize 結果）に上書き | **なし** | ✅ silent | **高** | **大会データ全消失 UX**: 「保存データが見つかりませんでした」級の状態だが、user は気づかない | なし | **候補**|
+
+補足:
+- `if(!d)continue;` ([449](shogi_v4.html:449)) は「データ未保存」の正常 skip であり、failure ではない（inventory 対象外）
+- §16.3.1 の行番号アンカー（443 / 450 / 457）は関数定義 / try-block / コメント行を指していたが、本 §22.3 では **実際の失敗発生行** に精緻化（448 / 451 / 458）。§16.3.1 と矛盾せず精度を上げた形
+
+#### 22.3.2 重要観察
+
+1. **state restore 経路は完全 silent**: PARSE-LOAD-001/002/003 のいずれも `console.warn` すら出ない（支部マスタの PARSE-MASTER-002 が console.warn を出すのとは対照的）
+2. **fallback 動作は user に見えない**: shogi_v4 → shogi_v3 → 初期 state の fallback chain が silent に走る
+3. **shogi_v3 レガシキー残骸が読まれるリスク**: 現行 shogi_v4 が parse 失敗 → shogi_v3 に過去の旧大会データが残っていれば、それを「現在の大会」として表示してしまう。実害シナリオは限定的だが、大会データ取り違えの可能性
+4. **boot 1 回限定**: `load()` は `initApp()` 起動時のみ。tournament 中の同期 reload では re-load されるが、in-memory state は `save()` が常時 localStorage に書き戻すため、reload 後の load() で初めて corruption 状態が現れる
+5. **state 側には `_loaded_with_corruption` 相当の flag が存在しない**: 支部マスタ側（§17.4.3）と異なり、`load()` は parse 失敗を呼出側に伝える flag や戻り値を持たない（silent fallback 一択）。後続 impl PR で flag 機構を新設するかは別判断
+
+#### 22.3.3 PARSE-LOAD-002 のサブ分類: 002A / 002B（fallback 結果による UX 差）
+
+§22.3.1 表では PARSE-LOAD-002 を「`JSON.parse` 失敗 → 次キーへ silent fallback」と単一事象として記述したが、**実際の UX は fallback 結果によって 2 系統に分岐する**。本 inventory では **docs 上の分析分類** として 002A / 002B を別建てする（runtime callsiteId としては新設せず、既存の PARSE-LOAD-002 を継続使用、後続 impl PR で分割するかは別判断）。
+
+| サブ分類 | 状態 | 結果 | user 視点 | silent? | 重要度 |
+|---|---|---|---|---|---|
+| **PARSE-LOAD-002A** | shogi_v4 で `JSON.parse` 失敗 → **shogi_v3 成功** | 古い state（前回・過去大会等の残骸データ）で起動 | 「データが消えた」ではなく「**古いデータに戻った**」ように見える可能性。アプリは動作しているように見える | ✅ silent | **高（見えにくさが特に問題）**|
+| **PARSE-LOAD-002B** | shogi_v4 で `JSON.parse` 失敗 → **shogi_v3 も失敗** | PARSE-LOAD-003（全キー失敗）に合流、初期 state へ rollover | 「データが消えた」と気づける（ただし silent なので気づくのは画面を見たとき）| ✅ silent | 高 |
+
+設計接続候補:
+- 共通: kind: `storage-corrupted` / severity: `warn`（後述 §22.5.3 で 003 の error 昇格候補を別途評価）/ aggregation 対象外
+- **002A**: aggregateKey: `storage-corrupted:state-legacy-fallback` 等（レガシキー残骸読み込みの検知点として独立）/ または `storage-corrupted:state` に合流させ message で文脈分離（暫定 message 案: 「保存データの読み込みに一部失敗し、古いデータで起動した可能性があります。最新の大会データを取込で確認してください。」）
+- **002B**: PARSE-LOAD-003 と合流。`storage-corrupted:state` 単一 key で扱える
+
+実装上の注意:
+- 002A は §22.3.2 重要観察 3（レガシキー残骸読み込みリスク）と同じ系統で、**今後 shogi_v3 を deprecate するときに自然解消する**可能性が高い
+- 002A を独立 callsiteId 化するかは impl PR で判断（最小実装では 002 単一でも、`d` の出所キーを `consoleTag` で識別する案）
+- 本 inventory では「状態として登録」までを役割とし、impl の最小スコープ設計は IMPL-LIGHT / 案 B の責務
+
+### 22.4 state restore failure の分類
+
+§22.3.1 の 3 callsite を「通知すべきか / 復旧導線が必要か」の観点で 4 分類:
+
+| 分類 | 該当 | 現状 | 推奨方向性 |
+|---|---|---|---|
+| **すでに user 通知あり** | （なし）| state restore 経路は全 silent | — |
+| **silent だが低リスク** | PARSE-LOAD-001（localStorage I/O 例外、ブラウザ環境依存）| 次キーへ fallback、最終的に PARSE-LOAD-003 合流 | console.warn だけでも追加する価値あり（debug trace）。warn 化は PARSE-LOAD-003 で代用可 |
+| **silent かつ中〜高リスク** | PARSE-LOAD-002（JSON.parse 失敗）| 次キーへ silent fallback、shogi_v3 レガシ残骸読み込みリスクあり | **warn 化が必要**（特に shogi_v4 失敗時 = 直前データ消失の検知点）|
+| **silent かつ高リスク（致命的）** | PARSE-LOAD-003（全キー失敗）| 初期 state に silent rollover | **warn 化が必要**（user が「データが消えた」と気づける唯一の検知点）|
+| **後続実装候補** | PARSE-LOAD-002 / 003（最低限）/ PARSE-LOAD-001（任意）| §16.9 案 B = `SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL` 範囲 | 後述 §22.7 |
+| **運用許容** | なし | 上記すべて何らかの形で improvement 余地あり | — |
+
+### 22.5 warn / alert / showMsg / console.warn の使い分け候補
+
+state restore failure に対し、SAVE-UX 設計方針（§16 / §18 / §19）と整合する形で通知レベルを検討:
+
+| 通知レベル | 検討対象 | 適合性 | 備考 |
+|---|---|---|---|
+| `alert()`（modal） | PARSE-LOAD-003（致命的）| ❌ 不可 | SAVE-UX-DESIGN §2.3「modal/alert を保存通知に使わない」原則に違反。既存 PARSE-IMPORT-002/003（系統 D）は alert を使うが、user 起点の import 操作と異なり state restore は受動的なので「modal で操作を遮る」は過剰 |
+| `showMsg('warn',...)` | PARSE-LOAD-002 / 003 | ⚠️ 直接利用は非推奨 | helper を経由せず直書きすると metadata / indicator / aggregation 統合ができない（§16 4 系統設計から外れる）|
+| `notifySaveWarning({kind:'storage-corrupted', aggregateKey:'storage-corrupted:state', severity:'warn'})` | PARSE-LOAD-002 / 003 | ✅ **推奨** | §16.5 で既に proposed の aggregateKey 構造。第 4 系統 storage-corrupted に **`:state` を追加** することで PARSE-MASTER-003 (`:branch-master`) と並列構造になる |
+| `console.warn` のみ | PARSE-LOAD-001 / 003 | ⚠️ 補助 | debug trace としては有用だが、user-facing には不十分。`notifySaveWarning` 経由化すれば自動的に console.warn も出る（PR #87 PARSE-MASTER-003 パターン） |
+| `notifySaveWarning({severity:'error'})` 拡張 | PARSE-LOAD-003 | ⚠️ 要設計判断 | 現状 `notifySaveWarning` は severity:'warn' 前提（§16.6）。error 級を導入するなら別 helper / 別 UX が必要。本 inventory のスコープ外（§16.6 と整合） |
+
+#### 22.5.1 推奨パターン
+
+PARSE-LOAD-002 / 003 を `notifySaveWarning({kind:'storage-corrupted', aggregateKey:'storage-corrupted:state', severity:'warn'})` 経由化する案が **第 4 系統の自然な拡張**:
+
+- 4 系統現状: save-verify 15 / storage-quota 2 / master-verify 3 / storage-corrupted **1**（PARSE-MASTER-003）
+- 拡張後: storage-corrupted が **1 → 3** に増える（PARSE-MASTER-003 + PARSE-LOAD-002 + PARSE-LOAD-003）
+- aggregateKey 設計: `:branch-master` / `:state` で並列、§16.5 で既に proposed
+- aggregation 対象外維持（`SAVE_WARN_AGGREGATABLE_KINDS` 不変、§16.7）
+
+#### 22.5.2 user-facing message 案（§16.8 から再掲）
+
+PARSE-LOAD-002 / 003 共通 message 案:
+
+```
+保存データの読み込みに失敗しました。必要に応じてバックアップを確認してください。
+```
+
+または、PR #90 IMPL-LIGHT パターン（症状 + 影響 + 大会運営継続 + 次の行動）に寄せた案:
+
+```
+保存データの読み込みに失敗したため初期状態で起動しました（過去大会データの取込で復元できる場合があります）。
+```
+
+最終文言は impl 着手前に運用者レビューで確定（PR #89 §18 設計フェーズと同じ手順）。
+
+#### 22.5.3 PARSE-LOAD-003 severity 昇格候補の評価
+
+PARSE-LOAD-003（全キー失敗 = 初期 state へ rollover）は user 視点で「大会データ全消失」に見えうる **致命的状態**。boot 時のみの発火で頻度は低い可能性が高いが、**発火時の影響は大きい**ため、severity を warn に固定するか error 相当に昇格するかは設計判断が必要。
+
+| 案 | severity | 通知経路 | 利点 | 不利点 |
+|---|---|---|---|---|
+| **初期案（warn 揃え）**| `warn` | `notifySaveWarning({kind:'storage-corrupted', aggregateKey:'storage-corrupted:state', severity:'warn'})` | PARSE-MASTER-003 と並列化しやすい / 実装スコープが小さい / 既存 4 系統設計の自然な拡張 | 「大会データ全消失」の重さに対し warn は弱く見える可能性 |
+| **昇格候補（error 相当）**| `error` 相当 | `notifyError` 経由 / または `notifySaveWarning` に `severity:'error'` 拡張 / または modal/alert を例外的に許容（SAVE-UX-DESIGN §2.3 の精査必要）| user 影響度と通知レベルが整合 | `notifySaveWarning` は warn 前提（§16.6）、error 級は別 helper / 別 UX 設計が必要 / scope が広がる |
+
+**暫定判断**:
+- 初回実装（IMPL-LIGHT）では **warn で揃える案を候補に残す**（実装スコープを最小化、既存 4 系統と並列）
+- ただし PARSE-LOAD-003 は **error 昇格検討対象として明記**: 大会運営現場で「reload で大会データ消えた」事案が観測された場合、または運用者レビューで「warn では弱い」と判断された場合、severity 昇格を再評価
+- 最終判断は IMPL-LIGHT 着手時の運用者レビュー、または §16.6 severity 設計の改訂タイミング
+
+接続:
+- §16.6 severity 候補表で「error 級は別 helper / 別 UX が必要」と既出
+- 本 §22.5.3 はその論点を PARSE-LOAD-003 に specific に適用したもの
+- 後続 IMPL-LIGHT 着手時の判断材料として残す
+
+### 22.6 支部マスタ破損対応 §17〜§21 との関係
+
+#### 22.6.1 重複しない論点
+
+| 軸 | 支部マスタ破損（§17〜§21）| 本 inventory（§22）|
+|---|---|---|
+| 対象データ | `shogi_branch_master` (支部マスタ全員分、横断的) | `shogi_v4` / `shogi_v3` (1 大会単位) |
+| 失敗検知関数 | `loadBranchMaster()` | `load()` |
+| user-facing 通知 | `notifySaveWarning(PARSE-MASTER-003)` 既に発火（PR #87 / #90）| **未発火（全 silent）**|
+| 復旧導線 | マスタタブのインポート・統合（PR #90 で message 化）| **なし**（候補のみ存在: 過去大会データ取込 = `applyLoadedJson`）|
+| 影響範囲 | 過去参加者リスト / yomi 補完 / member 同期 | 進行中大会の round 結果 / pairing / report |
+| 大会中 UX 影響 | sync スキップ、コピー継続（保護済）| **データ消失級**（boot 時に silent rollover）|
+
+#### 22.6.2 共通する設計原則
+
+- 失敗を隠さない原則（§15.3 / §16.6）
+- aggregation 対象外（データ破損は短縮表示で隠さない、§16.7）
+- 自動修復しない（user 同意なしで破損 raw を上書きしない、§17.12 / §18.10）
+- modal/alert 不使用（§18.4）
+- 復旧導線は既存 UI を前提に書く（PR #89 / §18.4.1）
+
+#### 22.6.3 別責務として扱う部分
+
+- 支部マスタ破損は **横断データの保護**（複数大会で共有）→ §17〜§21 が責務
+- 大会データ state restore は **単一大会の完全性**（進行中の round 結果が消える致命的影響）→ 本 §22 が責務
+- 「両者を統一して 1 kind に集約」は §16.5 で議論済だが、recovery guidance の重みが異なるため **`aggregateKey` レベルで分離**（`:branch-master` / `:state`）が結論
+
+### 22.7 後続タスク候補
+
+本 inventory の結果として、3 段階の選択肢を提示する。**本 inventory 自体ではいずれにも着手しない**。impl 起票判断の前提として §22.7.0 の timing 論点を併せて参照すること。
+
+#### 22.7.0 実装着手前に検討すべき論点（boot timing と indicator UI 初期化）
+
+`load()` は `initApp()` ([shogi_v4.html:5791-5792](shogi_v4.html:5791)) からの **boot 経路 1 callsite** のみで呼ばれる。これは PARSE-MASTER-003（`syncBranchMasterOnSave` = 保存時 = UI 初期化後）とは **発火 timing が根本的に異なる**:
+
+| 軸 | PARSE-MASTER-003（既存）| PARSE-LOAD-002 / 003（本 §22 候補）|
+|---|---|---|
+| 発火 timing | `saveData()` 経由 = user 操作 → UI 初期化後 | boot 時 = `initApp()` 内、`load()` 直後 |
+| indicator DOM 初期化状態 | 初期化済み（user 操作の時点で UI 構築完了）| **未確認**（`initApp()` の `load()` 直後の DOM 状態は要確認）|
+| `notifySaveWarning` 副作用 | showMsg + indicator count + console.warn の 3 経路で確実に表示 | indicator UI 未構築なら **silent skip** の可能性あり |
+
+**論点**: PARSE-LOAD-002 / 003 を `notifySaveWarning` 経由化する場合、boot timing で indicator UI がまだ DOM に存在せず、警告が **表示されないリスク** がある。
+
+**IMPL-LIGHT / 案 B 着手時に検討すべき選択肢**:
+1. `notifySaveWarning` 呼び出しを `initApp()` の DOM 初期化処理が終わるまで遅延発火（例: `setTimeout(0)` または DOM ready 後の bind hook 直前）
+2. boot 専用の一時警告キューに警告を積み、UI 初期化完了後に flush
+3. `showMsg` / `alert` / error UI など boot 時に確実に見える手段を使う（ただし SAVE-UX-DESIGN §2.3 modal/alert 不使用原則との緊張関係を再評価）
+4. `notifySaveWarning` 自体を「DOM 未初期化でも安全に空 queue するように改修」して 4 系統を統一
+
+本 §22 inventory では **論点として登録するに留め**、最小スコープは IMPL-LIGHT 着手時に決定する。本 timing 差を見落とすと IMPL-LIGHT が「警告が出ない warn 化」というスコープ膨張 / 仕様後退を起こすため、起票判断の前提として明記する。
+
+#### 22.7.1 docs 整理で十分なケース（最小着地）
+
+- 本 §22 inventory が main に着地すれば、§16.9 案 B 前段は **棚卸し完了** として閉じられる
+- §16.3.1 の表を HEAD で再検証 + 影響シナリオ + 設計接続案が docs 化されるため、後続 impl PR は本 §22 を起動材料として参照可能
+- **追加実装なしで §16.9 案 B の前提整理は完了状態に遷移可能**
+
+#### 22.7.2 実装が必要な場合の最小スコープ候補
+
+| Task ID 案 | 範囲 | 重さ | 着手条件 | §16 既存案との対応 |
+|---|---|---|---|---|
+| `SAVE-UX-STATE-RESTORE-HANDLING-IMPL-LIGHT`（仮）| PARSE-LOAD-003 のみ（全キー失敗 = 致命点のみ warn 化）| **小** | 文言が運用者レビューで確定後 | §16.9 案 B の subset |
+| `SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL`（§16.9 案 B、既出）| PARSE-LOAD-002 + 003 を同 PR で接続 | 中 | 案 B 仕様判断（§16.10 論点 2）後 | §16.9 案 B 本体 |
+| `SAVE-UX-STATE-RESTORE-HANDLING-IMPL-FULL`（仮）| PARSE-LOAD-001 + 002 + 003 を全件 helper 経由化 | 中〜大 | LIGHT / 案 B 完了後の横展開 | §16.9 案 B 拡張 |
+
+各案とも:
+- kind: `storage-corrupted` 既存維持
+- aggregateKey: `storage-corrupted:state` 新規追加（§16.5 で proposed）
+- severity: `warn`
+- aggregation 対象外（`SAVE_WARN_AGGREGATABLE_KINDS` 不変）
+- 文言は §22.5.2 案を起点に運用者レビューで確定
+
+#### 22.7.3 運用フィードバック待ちのケース
+
+- 大会運営現場で「reload 後にデータが消えた」事案が観測されない限り、現状の silent 維持も合理的な選択
+- ただし支部マスタ破損 PR #90 IMPL-LIGHT 着地後の観察期間で「state restore failure も検知したい」という運用者要望が出る可能性があり、その場合は本 §22 を起点に LIGHT 案を即起動できる
+- §19.8 司令塔メモ「Light 文言の運用感を観察してから次手」と同じ姿勢
+
+### 22.8 司令塔向け結論
+
+#### 22.8.0 本 PR の役割と判断ロジック
+
+本 §22 は **inventory 単独 PR** であり、ここでは即時の実装修正を行わない。「実装着手不要」と表現すると silent failure を放置しているように読まれる可能性があるため、正確には:
+
+- **本 PR では実装しない**（inventory PR の責務に閉じる、本 PR の役割は判断材料の整備）
+- PARSE-LOAD-001 / 002 / 003 は **完全 silent** であり、運用者からのフィードバックだけでは検出しづらい（user は気づけないので、観察期間待ちは弱いロジック）
+- そのため、次の意思決定ポイントは「観察フェーズ完了」ではなく **`SAVE-UX-STATE-RESTORE-HANDLING-IMPL-LIGHT` または `SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL` の起票判断** である
+- 本 inventory を main 着地させることで、次 impl PR の起票判断が司令塔判断 1 回で可能な状態へ遷移する
+- これは「silent failure 放置」ではなく「inventory PR を起票判断材料として独立着地させる」設計
+
+別チャットや後続レビューで「なぜ完全 silent なのに放置しているのか」と誤読されないよう、本 inventory の役割は **impl PR の前段** に閉じることを明示する。
+
+#### 22.8.1 §16.9 案 B 前段の整備状況
+
+- **整備完了**（本 inventory を main 着地させれば）。HEAD `f829009` での再検証 + 影響シナリオ + 設計接続案が docs 化された
+- §16.9 案 B 着手時の仕様判断材料が揃った状態へ遷移
+
+#### 22.8.2 次に実装へ進むべきか
+
+- **本 PR では実装しない**（inventory PR の責務、§22.8.0 で明示）
+- silent failure の特性上、運用フィードバック待ちだけでは検出が難しい:
+  - PARSE-LOAD-001 / 002 / 003 はすべて完全 silent（`console.warn` すら出ない）
+  - user は「データが消えた」事象を画面状態でしか気づけない → フィードバックの粒度が荒い
+  - 「観察期間で要望が出るまで待つ」は支部マスタ破損（§19〜§21）と同じパターンに見えるが、state 側は **発火検知点自体が存在しない** ため、観察ベースの判断ロジックは弱い
+- 次の意思決定ポイントは「観察フェーズ完了」ではなく **impl PR 起票判断**:
+  - `SAVE-UX-STATE-RESTORE-HANDLING-IMPL-LIGHT`（仮、§22.7.2 第一案）= PARSE-LOAD-003 のみ warn 化（§22.7.0 boot timing 論点を併せて検討）
+  - `SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL`（§16.9 案 B 既出）= PARSE-LOAD-002 + 003（severity 昇格判断は §22.5.3、boot timing は §22.7.0）
+- 起票判断の追加材料（impl 着手の動機を強める観点）:
+  - 大会運営現場で「reload 後の state 消失」または「古い大会で起動した」事案が発生した場合（PARSE-LOAD-002A 経由の間接観察 §22.3.3 も可能）
+  - schema_version bump 等で `JSON.parse` 成功でも normalize 失敗が増える状況
+  - PR #93 §21 audit の `ADDPLAYER-CORRUPTION-GUARD` と並走で実装する場合
+  - 支部マスタ破損 §17〜§21 観察期間で「state 側も同種の検知が欲しい」要望が出る
+
+#### 22.8.3 推奨 Next Action
+
+| # | Task ID | 性格 | 起動条件 |
+|---|---|---|---|
+| 1 (Nice to Have) | `SAVE-UX-CLOSURE-DOC-REFINEMENT`（§20.5.3 / §21.11.3 既出）| docs-only（微小）| 単独 or 後続、Codex PR #91 Nice-to-Have 取込 |
+| 2 (条件付き、Should)  | `SAVE-UX-STATE-RESTORE-HANDLING-IMPL-LIGHT`（仮、§22.7.2 第一案）| 実装（小）| 文言が運用者レビューで確定 + 観察期間で「state 側通知が欲しい」要望が出た後 |
+| 3 (条件付き)  | `SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL`（§16.9 案 B、既出）| 実装（中）| LIGHT 完了後、または PARSE-LOAD-002 silent → warn 仕様判断後 |
+
+`SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-MEDIUM` / `CORRUPTION-RECOVERY-IMPL`（Heavy）/ `ADDPLAYER-CORRUPTION-GUARD`（§21.10.2）はすべて運用フィードバック待ちを維持。
+
+支部マスタ破損対応 §17〜§21 と本 §22 が両方着地したことで、SAVE-UX **「データ保全系」inventory は branch-master 側・state 側ともに揃った状態** になる。次の重さは impl 着手のタイミング判断のみ。
+
+### 22.9 関連 docs / コード
+
+- `docs/notes/20260513_shogi_save_ux_status_map.md`
+  - §16.3.1（PARSE-LOAD callsite 表、本 §22 の原典）
+  - §16.5 / §16.6 / §16.7（aggregateKey / severity / aggregation 設計）
+  - §16.8（user-facing message 案）
+  - §16.9 案 B（`SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL`、本 §22 の後続候補）
+  - §16.10 論点 2 / 8（silent → warn 化判断、aggregateKey 畳み込み再判定）
+  - §16.13（PARSE-MASTER-003 impl 完了状況、4 系統 21 callsite）
+  - §17〜§21（支部マスタ破損対応、本 §22 と並列の別データ種別）
+  - §20.5.2（第二推奨 = 本 §22）
+  - §21.11.3（推奨 Next Action として本 §22 を提示）
+- `docs/specs/20260513_shogi_save_ux_design.md`（SAVE-UX 中核原則 §2.3 modal/alert 不使用、本 §22 の通知レベル選択の根拠）
+- `docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md`（aggregation allow-list、本 inventory 時点で変更なし）
+- 主要コード参照:
+  - [shogi_v4.html:215-216](shogi_v4.html:215) STORAGE_KEY / LEGACY_STORAGE_KEYS 定義
+  - [shogi_v4.html:443-459](shogi_v4.html:443) `load()` 関数本体（PARSE-LOAD-001/002/003 の源泉）
+  - [shogi_v4.html:448](shogi_v4.html:448) PARSE-LOAD-001（localStorage.getItem catch）
+  - [shogi_v4.html:451](shogi_v4.html:451) PARSE-LOAD-002（JSON.parse catch）
+  - [shogi_v4.html:458](shogi_v4.html:458) PARSE-LOAD-003（全キー失敗の初期化）
+  - [shogi_v4.html:5791-5792](shogi_v4.html:5791) `initApp()` から `load()` 呼出（boot 経路 1 callsite）
+  - [shogi_v4.html:5294](shogi_v4.html:5294) PARSE-MASTER-003 message（比較対象、PR #90 IMPL-LIGHT 着地済）
+- PR [#88](https://github.com/kazuo1970takahashi-sketch/shogi/pull/88) / [#89](https://github.com/kazuo1970takahashi-sketch/shogi/pull/89) / [#90](https://github.com/kazuo1970takahashi-sketch/shogi/pull/90) / [#91](https://github.com/kazuo1970takahashi-sketch/shogi/pull/91) / [#92](https://github.com/kazuo1970takahashi-sketch/shogi/pull/92) / [#93](https://github.com/kazuo1970takahashi-sketch/shogi/pull/93)
