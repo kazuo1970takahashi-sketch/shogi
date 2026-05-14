@@ -1459,6 +1459,209 @@ function getIndicatorEl(env){
 //   (d) callsite ごとの verify-fail 経路の振る舞い（warn 表示）は test/test_a5_1_save_*.js が継続検証
 const __EXPAND_SRC = fs.readFileSync(targetPath, 'utf8');
 
+// ============================================================================
+// SECTION 12.5: extractNotifySaveWarningBlocks helper (SAVE-UX-TEST-STRUCTURAL-MATCH)
+// ============================================================================
+// 旧 SECTION 13 / 15 / 16 の static assert で使用していた「200 文字 window」依存方式から、
+// notifySaveWarning({...}) block 単位の structural match に移行するための helper。
+//
+// 方針:
+//   - AST parser を使わない（外部依存追加しない）
+//   - lightweight brace depth scanner で notifySaveWarning({...}) block を抽出
+//   - single / double quote 文字列内の `{` / `}` は brace count しない
+//   - escape 文字を考慮
+//   - template literal / regex literal は今回想定外（shogi_v4.html 内未使用と Plan Mode で確認）
+//
+// 出力 block オブジェクト:
+//   { block, start, end, lineNumber, callsiteId, kind, severity, aggregateKey,
+//     message, consoleTag, hasFields, hasMessage, hasConsoleTag }
+// プロパティ抽出:
+//   - 厳密な string literal 値（'...' / "..."）のみ抽出
+//   - 動的連結（'...'+expr+'...'）は最初の literal セグメントが抽出される（OK: kind/severity/
+//     aggregateKey/callsiteId は常に純 string literal、これらの厳密一致 assert がメイン用途）
+//   - fields は厳密パースしない（hasFields boolean のみ）
+//   - property 順序非依存
+
+function _extractStringPropFromBlock(block, propName){
+  // `propName:'...'` または `propName:"..."` の string literal を抽出。
+  // escape 文字 (\\.) を考慮、非貪欲マッチ。
+  var re = new RegExp(
+    '\\b' + propName + '\\s*:\\s*([\'"])((?:\\\\.|(?!\\1)[\\s\\S])*?)\\1'
+  );
+  var m = re.exec(block);
+  if (!m) return null;
+  // escape 解除（簡易: \' / \" / \\ / \n / \r / \t のみ）
+  return m[2]
+    .replace(/\\\\/g, ' ')   // 一旦 NUL に退避
+    .replace(/\\'/g, "'")
+    .replace(/\\"/g, '"')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+    .replace(/ /g, '\\');
+}
+
+function extractNotifySaveWarningBlocks(src){
+  var blocks = [];
+  if (typeof src !== 'string') return blocks;
+  var marker = 'notifySaveWarning({';
+  var i = 0;
+  while (true) {
+    var found = src.indexOf(marker, i);
+    if (found === -1) break;
+    var braceStart = found + marker.length - 1;  // '{' の位置
+    var depth = 0;
+    var pos = braceStart;
+    var inStr = false;
+    var strChar = '';
+    var end = -1;
+    while (pos < src.length) {
+      var ch = src.charAt(pos);
+      if (inStr) {
+        if (ch === '\\') { pos += 2; continue; }
+        if (ch === strChar) { inStr = false; pos++; continue; }
+        pos++;
+        continue;
+      }
+      if (ch === "'" || ch === '"') {
+        inStr = true; strChar = ch; pos++; continue;
+      }
+      if (ch === '{') { depth++; pos++; continue; }
+      if (ch === '}') {
+        depth--;
+        if (depth === 0) { end = pos; break; }
+        pos++;
+        continue;
+      }
+      pos++;
+    }
+    if (end === -1) {
+      // malformed block: 閉じ brace が見つからない → 安全に skip して次へ
+      i = found + marker.length;
+      continue;
+    }
+    var block = src.substring(braceStart, end + 1);
+    var startLineNum = src.substring(0, found).split('\n').length;
+    blocks.push({
+      block: block,
+      start: braceStart,
+      end: end,
+      lineNumber: startLineNum,
+      callsiteId: _extractStringPropFromBlock(block, 'callsiteId'),
+      kind: _extractStringPropFromBlock(block, 'kind'),
+      severity: _extractStringPropFromBlock(block, 'severity'),
+      aggregateKey: _extractStringPropFromBlock(block, 'aggregateKey'),
+      message: _extractStringPropFromBlock(block, 'message'),
+      consoleTag: _extractStringPropFromBlock(block, 'consoleTag'),
+      hasFields: /\bfields\s*:/.test(block),
+      hasMessage: /\bmessage\s*:/.test(block),
+      hasConsoleTag: /\bconsoleTag\s*:/.test(block)
+    });
+    i = end + 1;
+  }
+  return blocks;
+}
+
+// ----------------------------------------------------------------------------
+// helper 単体テスト
+// ----------------------------------------------------------------------------
+
+// T-HELPER-1: 単純な 1 block
+{
+  var src = "notifySaveWarning({ kind: 'save-verify', severity: 'warn' });";
+  var bs = extractNotifySaveWarningBlocks(src);
+  assertEq(bs.length, 1, 'T-HELPER-1: 単純な 1 block を抽出');
+  assertEq(bs[0].kind, 'save-verify', 'T-HELPER-1-kind');
+  assertEq(bs[0].severity, 'warn', 'T-HELPER-1-severity');
+}
+
+// T-HELPER-2: 複数 block
+{
+  var src = "notifySaveWarning({ kind: 'A' });\nnotifySaveWarning({ kind: 'B' });";
+  var bs = extractNotifySaveWarningBlocks(src);
+  assertEq(bs.length, 2, 'T-HELPER-2: 2 block を抽出');
+  assertEq(bs[0].kind, 'A', 'T-HELPER-2-kind-A');
+  assertEq(bs[1].kind, 'B', 'T-HELPER-2-kind-B');
+}
+
+// T-HELPER-3: 改行を含む block
+{
+  var src = "notifySaveWarning({\n  kind: 'save-verify',\n  severity: 'warn',\n  aggregateKey: 'save-verify:core'\n});";
+  var bs = extractNotifySaveWarningBlocks(src);
+  assertEq(bs.length, 1, 'T-HELPER-3: 複数行 block を抽出');
+  assertEq(bs[0].kind, 'save-verify', 'T-HELPER-3-kind');
+  assertEq(bs[0].aggregateKey, 'save-verify:core', 'T-HELPER-3-aggregateKey');
+}
+
+// T-HELPER-4: string 内 brace に騙されない
+{
+  var src = "notifySaveWarning({ message: 'test { with brace }', kind: 'X' });";
+  var bs = extractNotifySaveWarningBlocks(src);
+  assertEq(bs.length, 1, 'T-HELPER-4: string 内 brace に騙されず 1 block');
+  assertEq(bs[0].message, 'test { with brace }', 'T-HELPER-4-message');
+  assertEq(bs[0].kind, 'X', 'T-HELPER-4-kind');
+}
+
+// T-HELPER-5: escape 文字を処理
+{
+  var src = "notifySaveWarning({ message: 'it\\'s { ok }', kind: 'Y' });";
+  var bs = extractNotifySaveWarningBlocks(src);
+  assertEq(bs.length, 1, 'T-HELPER-5: escape 文字で壊れない');
+  assertEq(bs[0].kind, 'Y', 'T-HELPER-5-kind');
+  assertEq(bs[0].message, "it's { ok }", 'T-HELPER-5-message-unescaped');
+}
+
+// T-HELPER-6: property 順序入れ替え
+{
+  var src = "notifySaveWarning({ aggregateKey: 'x:y', severity: 'warn', kind: 'Z', callsiteId: 'C1' });";
+  var bs = extractNotifySaveWarningBlocks(src);
+  assertEq(bs.length, 1, 'T-HELPER-6: order-independent');
+  assertEq(bs[0].kind, 'Z', 'T-HELPER-6-kind');
+  assertEq(bs[0].severity, 'warn', 'T-HELPER-6-severity');
+  assertEq(bs[0].aggregateKey, 'x:y', 'T-HELPER-6-aggregateKey');
+  assertEq(bs[0].callsiteId, 'C1', 'T-HELPER-6-callsiteId');
+}
+
+// T-HELPER-7: fields の存在確認
+{
+  var src1 = "notifySaveWarning({ fields: ['last_class'], kind: 'K1' });";
+  var bs1 = extractNotifySaveWarningBlocks(src1);
+  assertEq(bs1[0].hasFields, true, 'T-HELPER-7-with: fields ありで hasFields=true');
+  var src2 = "notifySaveWarning({ kind: 'K2' });";
+  var bs2 = extractNotifySaveWarningBlocks(src2);
+  assertEq(bs2[0].hasFields, false, 'T-HELPER-7-without: fields なしで hasFields=false');
+}
+
+// T-HELPER-8: malformed block (閉じ brace なし)
+{
+  var src = "notifySaveWarning({ kind: 'X', severity: 'warn'\nnotifySaveWarning({ kind: 'Y' });";
+  var bs = extractNotifySaveWarningBlocks(src);
+  // 1 つ目は malformed → skip、2 つ目は正常に抽出される（または 0 件）
+  //   現実装では `{` から走査して閉じ `}` を探すが、途中で次の `notifySaveWarning(` に
+  //   入っても brace 数で対応 `}` を見つけて 1 つ目を切り出してしまう可能性がある。
+  //   いずれにせよ throw しないことを最低保証する。
+  assert(Array.isArray(bs), 'T-HELPER-8: malformed でも throw せず配列を返す');
+}
+
+// T-HELPER-9: lineNumber が取れる
+{
+  var src = "// line 1\n// line 2\nnotifySaveWarning({ kind: 'L' });";
+  var bs = extractNotifySaveWarningBlocks(src);
+  assertEq(bs.length, 1, 'T-HELPER-9: 1 block');
+  assertEq(bs[0].lineNumber, 3, 'T-HELPER-9-lineNumber: block 開始行 = 3');
+}
+
+// shogi_v4.html 全体に対する block 抽出（共有変数として SECTION 13 / 15 / 16 で使用）
+var __EXPAND_BLOCKS = extractNotifySaveWarningBlocks(__EXPAND_SRC);
+
+// 抽出件数の sanity check: 15 (save-verify) + 2 (storage-quota) + 3 (master-verify) = 20
+assertEq(__EXPAND_BLOCKS.length, 20,
+  'T-HELPER-shogi-blocks: shogi_v4.html から 20 個の notifySaveWarning block を抽出');
+
+// ============================================================================
+// SECTION 10 (continued)
+// ============================================================================
+
 // T-EXP-callsiteId-present-*: 6 callsiteId がすべて helper 引数として現れる
 [
   'SAVE-001-removePlayer',
@@ -1777,27 +1980,32 @@ var __EXP4_CALLSITES = [
 // metadata 付与 callsite 数の妥当性
 assertEq(__EXP4_CALLSITES.length, 15, 'T-EXP4-callsite-count: 15 callsite を対象とする');
 
-// 各 callsite が notifySaveWarning ブロック内で aggregateKey / kind / severity を保持する
+// SAVE-UX-TEST-STRUCTURAL-MATCH: 200 文字 window 依存から block 単位の structural match に移行。
+//   extractNotifySaveWarningBlocks (SECTION 12.5) で抽出した __EXPAND_BLOCKS を使用する。
+
+// save-verify 系 block を絞り込み
+var __EXP4_SAVE_VERIFY_BLOCKS = __EXPAND_BLOCKS.filter(function(b){
+  return b.kind === 'save-verify';
+});
+
+// 各 callsiteId が save-verify block として 1 件存在し、期待 aggregateKey / severity を持つ
 __EXP4_CALLSITES.forEach(function(pair){
   var cid = pair[0];
-  var ak = pair[1];
-  // callsiteId が source に存在
-  var cidNeedle = "callsiteId:'" + cid + "'";
-  assert(__EXPAND_SRC.indexOf(cidNeedle) !== -1, 'T-EXP4-callsiteId-present: ' + cid);
-  // 当該 callsiteId 直後にブロック内で aggregateKey:'save-verify:<group>' が存在
-  // （callsiteId は 1 行で出るため、その後 200 文字以内に aggregateKey が出ることを確認）
-  var cidIdx = __EXPAND_SRC.indexOf(cidNeedle);
-  var window200 = __EXPAND_SRC.substring(cidIdx, cidIdx + 250);
-  assert(window200.indexOf("aggregateKey:'" + ak + "'") !== -1,
-    'T-EXP4-aggregateKey-correct: ' + cid + ' → ' + ak);
-  assert(window200.indexOf("kind:'save-verify'") !== -1,
-    'T-EXP4-kind-save-verify: ' + cid + ' → kind:save-verify');
-  assert(window200.indexOf("severity:'warn'") !== -1,
-    'T-EXP4-severity-warn: ' + cid + ' → severity:warn');
+  var expectedAk = pair[1];
+  var matched = __EXP4_SAVE_VERIFY_BLOCKS.filter(function(b){ return b.callsiteId === cid; });
+  assertEq(matched.length, 1, 'T-EXP4-callsiteId-unique: callsiteId=' + cid + ' は save-verify block として 1 件');
+  if (matched.length === 1) {
+    assertEq(matched[0].kind, 'save-verify',
+      'T-EXP4-kind-save-verify: ' + cid + ' → kind=save-verify');
+    assertEq(matched[0].severity, 'warn',
+      'T-EXP4-severity-warn: ' + cid + ' → severity=warn');
+    assertEq(matched[0].aggregateKey, expectedAk,
+      'T-EXP4-aggregateKey-correct: ' + cid + ' → aggregateKey=' + expectedAk);
+  }
 });
 
 // ----------------------------------------------------------------------------
-// T-EXP4-aggregateKey-distribution: aggregateKey が Group 単位で正しい件数分配
+// T-EXP4-aggregateKey-distribution: aggregateKey が Group 単位で正しい件数分配（structural）
 // ----------------------------------------------------------------------------
 var __EXP4_EXPECTED_DIST = {
   'save-verify:core':    4,
@@ -1807,37 +2015,24 @@ var __EXP4_EXPECTED_DIST = {
   'save-verify:pairing': 3
 };
 Object.keys(__EXP4_EXPECTED_DIST).forEach(function(ak){
-  // grep カウント: aggregateKey:'<ak>'
-  var needle = "aggregateKey:'" + ak + "'";
-  var count = (__EXPAND_SRC.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g')) || []).length;
+  var count = __EXP4_SAVE_VERIFY_BLOCKS.filter(function(b){
+    return b.aggregateKey === ak;
+  }).length;
   assertEq(count, __EXP4_EXPECTED_DIST[ak],
     'T-EXP4-aggregateKey-distribution: ' + ak + ' は ' + __EXP4_EXPECTED_DIST[ak] + ' 件');
 });
 
-// 全 kind:'save-verify' の件数は 15 件（厳密 fixed）
-{
-  var kindCount = (__EXPAND_SRC.match(/kind:'save-verify'/g) || []).length;
-  assertEq(kindCount, 15, 'T-EXP4-kind-count: kind:save-verify は 15 件');
-  // kind:'save-verify' + severity:'warn' のペアが厳密に 15 件であることを保証。
-  //   各 notifySaveWarning 呼出で kind と severity は同一 options object 内（200 文字以内）に
-  //   隣接する。 kind:save-verify の出現箇所近傍に severity:'warn' が含まれることをペア単位で
-  //   カウントすることで、save-verify 系の severity 整合性を save-verify スコープに閉じて
-  //   厳密に検証する。
-  //   SECTION 13 は save-verify 15 件の存在責務を持ち、SECTION 15 は storage-quota 2 件の
-  //   存在責務を持つ。severity:'warn' 総数（17）の検証は両者の合算となるため、ここでは
-  //   save-verify スコープに限定した固定 15 件 assert に統一する。
-  var pairCount = 0;
-  var searchIdx = 0;
-  while (true) {
-    var found = __EXPAND_SRC.indexOf("kind:'save-verify'", searchIdx);
-    if (found === -1) break;
-    var window200 = __EXPAND_SRC.substring(found, found + 200);
-    if (window200.indexOf("severity:'warn'") !== -1) pairCount++;
-    searchIdx = found + 18;  // 'kind:save-verify' は 17 文字、次の検索開始位置を進める
-  }
-  assertEq(pairCount, 15,
-    'T-EXP4-save-verify-with-warn-strict: kind:save-verify + severity:warn のペアが 15 件');
-}
+// kind:'save-verify' の件数 = 15（structural）
+assertEq(__EXP4_SAVE_VERIFY_BLOCKS.length, 15,
+  'T-EXP4-kind-count: kind=save-verify の block は 15 件');
+
+// kind=save-verify + severity=warn のペアが厳密に 15 件（structural）
+//   SECTION 13 は save-verify 15 件の存在責務を持つ。block 単位の filter で
+//   save-verify スコープに閉じた severity 整合性を保証する（200 文字 window 非依存）。
+assertEq(
+  __EXP4_SAVE_VERIFY_BLOCKS.filter(function(b){ return b.severity === 'warn'; }).length,
+  15,
+  'T-EXP4-save-verify-with-warn-strict: kind=save-verify + severity=warn の block が 15 件');
 
 // ----------------------------------------------------------------------------
 // T-EXP4-aggregateKey-format: 命名規則（kebab-case / 小文字 / `:` 区切り / 2 階層）
@@ -1915,18 +2110,20 @@ assert(__EXPAND_SRC.indexOf('saveWarningIndicatorState.count+=1') !== -1,
 }
 
 // ----------------------------------------------------------------------------
-// T-EXP4-out-of-scope-no-metadata: 対象外 callsite に metadata が付与されていない
-//   S03 / S05 / S22 (MASTER-V2-LASTCLASS) — 既存実装で kind 等を含まない
+// T-EXP4-out-of-scope-no-save-verify: S03 / S05 / S22 に save-verify metadata が付かない (structural)
+//   PR #82 で S03 / S05 / S22 は master-verify metadata 付与済み（SECTION 16 で検証）。
+//   ここでは「save-verify スコープには含まれない」境界を structural match で確認する。
+//   200 文字 window 非依存。SAVE-UX-TEST-STRUCTURAL-MATCH に従う。
 // ----------------------------------------------------------------------------
-["callsiteId:'S03',","callsiteId:'S05',","callsiteId:'S22',"].forEach(function(cidPat){
-  var idx = __EXPAND_SRC.indexOf(cidPat);
-  if(idx === -1) return;  // 当該 callsite が無ければスキップ
-  // 当該 callsite 周辺 200 文字に kind:'save-verify' / aggregateKey:'save-verify: が含まれていない
-  var window200 = __EXPAND_SRC.substring(Math.max(0,idx-100), idx + 200);
-  assert(window200.indexOf("kind:'save-verify'") === -1,
-    'T-EXP4-master-v2-no-save-verify-kind: '+cidPat+' に kind:save-verify が付かない');
-  assert(window200.indexOf("aggregateKey:'save-verify:") === -1,
-    'T-EXP4-master-v2-no-save-verify-aggregate: '+cidPat+' に save-verify:* aggregateKey が付かない');
+['S03','S05','S22'].forEach(function(cid){
+  var matched = __EXPAND_BLOCKS.filter(function(b){ return b.callsiteId === cid; });
+  matched.forEach(function(b){
+    assert(b.kind !== 'save-verify',
+      'T-EXP4-master-v2-no-save-verify-kind: callsiteId=' + cid + ' に kind=save-verify が付かない');
+    var ak = b.aggregateKey || '';
+    assert(ak.indexOf('save-verify:') !== 0,
+      'T-EXP4-master-v2-no-save-verify-aggregate: callsiteId=' + cid + ' に save-verify:* aggregateKey が付かない');
+  });
 });
 
 // MASTER-001 系 / ふりがな success-with-caveat に kind / aggregateKey 注入なし
@@ -2728,38 +2925,36 @@ assert(__EXPAND_SRC.indexOf('function isQuotaExceededError(e){') !== -1,
     'T-EXP6-static-helper-condition: ' + pat);
 });
 
-// callsiteId の厳密件数（各 1 件、合計 2 件）
+// SAVE-UX-TEST-STRUCTURAL-MATCH: 200 文字 window 依存から block 単位の structural match に移行。
+var __EXP6_STORAGE_QUOTA_BLOCKS = __EXPAND_BLOCKS.filter(function(b){
+  return b.kind === 'storage-quota';
+});
+
+// kind=storage-quota の block が厳密 2 件
+assertEq(__EXP6_STORAGE_QUOTA_BLOCKS.length, 2,
+  'T-EXP6-static-kind-count: kind=storage-quota の block は 2 件');
+
+// callsiteId 各 1 件（合計 2 件）
 assertEq(
-  (__EXPAND_SRC.match(/callsiteId:'STORAGE-QUOTA:save'/g) || []).length, 1,
+  __EXP6_STORAGE_QUOTA_BLOCKS.filter(function(b){ return b.callsiteId === 'STORAGE-QUOTA:save'; }).length,
+  1,
   'T-EXP6-static-callsiteId-save-count: STORAGE-QUOTA:save が 1 件');
 assertEq(
-  (__EXPAND_SRC.match(/callsiteId:'STORAGE-QUOTA:saveBranchMaster'/g) || []).length, 1,
+  __EXP6_STORAGE_QUOTA_BLOCKS.filter(function(b){ return b.callsiteId === 'STORAGE-QUOTA:saveBranchMaster'; }).length,
+  1,
   'T-EXP6-static-callsiteId-saveBM-count: STORAGE-QUOTA:saveBranchMaster が 1 件');
 
-// kind: 'storage-quota' / aggregateKey: 'storage-quota:global' が各 2 件
+// aggregateKey='storage-quota:global' が全 2 件
 assertEq(
-  (__EXPAND_SRC.match(/kind:'storage-quota'/g) || []).length, 2,
-  'T-EXP6-static-kind-count: kind:storage-quota が 2 件');
-assertEq(
-  (__EXPAND_SRC.match(/aggregateKey:'storage-quota:global'/g) || []).length, 2,
-  'T-EXP6-static-aggKey-count: aggregateKey:storage-quota:global が 2 件');
+  __EXP6_STORAGE_QUOTA_BLOCKS.filter(function(b){ return b.aggregateKey === 'storage-quota:global'; }).length,
+  2,
+  'T-EXP6-static-aggKey-count: aggregateKey=storage-quota:global の block が 2 件');
 
-// kind:'storage-quota' + severity:'warn' のペアが厳密に 2 件
-//   SECTION 13 と同方針: 各 callsite 内で kind と severity は隣接（200 文字以内）するため、
-//   ペア単位で数えることで storage-quota スコープに限定した severity 整合性を保証。
-{
-  var pairCount = 0;
-  var searchIdx = 0;
-  while (true) {
-    var found = __EXPAND_SRC.indexOf("kind:'storage-quota'", searchIdx);
-    if (found === -1) break;
-    var window200 = __EXPAND_SRC.substring(found, found + 200);
-    if (window200.indexOf("severity:'warn'") !== -1) pairCount++;
-    searchIdx = found + 20;
-  }
-  assertEq(pairCount, 2,
-    'T-EXP6-static-storage-quota-with-warn-strict: kind:storage-quota + severity:warn のペアが 2 件');
-}
+// kind=storage-quota + severity=warn のペアが厳密 2 件（structural、200 文字 window 非依存）
+assertEq(
+  __EXP6_STORAGE_QUOTA_BLOCKS.filter(function(b){ return b.severity === 'warn'; }).length,
+  2,
+  'T-EXP6-static-storage-quota-with-warn-strict: kind=storage-quota + severity=warn の block が 2 件');
 
 // resetAll は未変更（quota 系の呼出が含まれない）
 {
@@ -2793,59 +2988,53 @@ assertEq(
 //   - master-verify は今回 aggregation 対象外（PR-B で別途検討）
 
 // ----------------------------------------------------------------------------
-// T-EXP7-static: master-verify 件数 / metadata / callsiteId 静的検証
+// T-EXP7-static: master-verify 件数 / metadata / callsiteId 静的検証 (structural)
 // ----------------------------------------------------------------------------
 
-// kind:'master-verify' が厳密 3 件
-assertEq(
-  (__EXPAND_SRC.match(/kind:'master-verify'/g) || []).length, 3,
-  'T-EXP7-kind-count: kind:master-verify が 3 件');
-
-// aggregateKey:'master-verify:lastclass' が厳密 3 件
-assertEq(
-  (__EXPAND_SRC.match(/aggregateKey:'master-verify:lastclass'/g) || []).length, 3,
-  'T-EXP7-aggKey-count: aggregateKey:master-verify:lastclass が 3 件');
-
-// kind:'master-verify' + severity:'warn' のペアが厳密 3 件
-//   SECTION 13 / 15 と同方針: 同一 options object 内（200 文字以内）の隣接判定
-{
-  var pairCount = 0;
-  var searchIdx = 0;
-  while (true) {
-    var found = __EXPAND_SRC.indexOf("kind:'master-verify'", searchIdx);
-    if (found === -1) break;
-    var window200 = __EXPAND_SRC.substring(found, found + 200);
-    if (window200.indexOf("severity:'warn'") !== -1) pairCount++;
-    searchIdx = found + 20;
-  }
-  assertEq(pairCount, 3,
-    'T-EXP7-master-verify-with-warn-strict: kind:master-verify + severity:warn のペアが 3 件');
-}
-
-// callsiteId が各 1 件（既存維持）
-assertEq(
-  (__EXPAND_SRC.match(/callsiteId:'S03'/g) || []).length, 1,
-  'T-EXP7-callsiteId-S03-count: callsiteId:S03 が 1 件');
-assertEq(
-  (__EXPAND_SRC.match(/callsiteId:'S05'/g) || []).length, 1,
-  'T-EXP7-callsiteId-S05-count: callsiteId:S05 が 1 件');
-assertEq(
-  (__EXPAND_SRC.match(/callsiteId:'S22'/g) || []).length, 1,
-  'T-EXP7-callsiteId-S22-count: callsiteId:S22 が 1 件');
-
-// 各 callsiteId が master-verify metadata と隣接する
-//   S03 / S05 / S22 周辺 200 文字に kind:'master-verify' / aggregateKey:'master-verify:lastclass' / severity:'warn' が含まれる
-["'S03'","'S05'","'S22'"].forEach(function(cidLit){
-  var cidIdx = __EXPAND_SRC.indexOf("callsiteId:"+cidLit);
-  assert(cidIdx !== -1, 'T-EXP7-cid-present: callsiteId:'+cidLit+' が存在');
-  var win = __EXPAND_SRC.substring(cidIdx, cidIdx + 250);
-  assert(win.indexOf("kind:'master-verify'") !== -1,
-    'T-EXP7-cid-with-kind: '+cidLit+' 近傍に kind:master-verify');
-  assert(win.indexOf("aggregateKey:'master-verify:lastclass'") !== -1,
-    'T-EXP7-cid-with-aggKey: '+cidLit+' 近傍に aggregateKey:master-verify:lastclass');
-  assert(win.indexOf("severity:'warn'") !== -1,
-    'T-EXP7-cid-with-severity: '+cidLit+' 近傍に severity:warn');
+// SAVE-UX-TEST-STRUCTURAL-MATCH: 200 文字 window 依存から block 単位の structural match に移行。
+var __EXP7_MASTER_VERIFY_BLOCKS = __EXPAND_BLOCKS.filter(function(b){
+  return b.kind === 'master-verify';
 });
+
+// kind=master-verify の block が厳密 3 件
+assertEq(__EXP7_MASTER_VERIFY_BLOCKS.length, 3,
+  'T-EXP7-kind-count: kind=master-verify の block は 3 件');
+
+// aggregateKey='master-verify:lastclass' が全 3 件
+assertEq(
+  __EXP7_MASTER_VERIFY_BLOCKS.filter(function(b){ return b.aggregateKey === 'master-verify:lastclass'; }).length,
+  3,
+  'T-EXP7-aggKey-count: aggregateKey=master-verify:lastclass の block が 3 件');
+
+// kind=master-verify + severity=warn のペアが厳密 3 件（structural、200 文字 window 非依存）
+assertEq(
+  __EXP7_MASTER_VERIFY_BLOCKS.filter(function(b){ return b.severity === 'warn'; }).length,
+  3,
+  'T-EXP7-master-verify-with-warn-strict: kind=master-verify + severity=warn の block が 3 件');
+
+// callsiteId 各 1 件（既存維持）
+['S03','S05','S22'].forEach(function(cid){
+  var matched = __EXP7_MASTER_VERIFY_BLOCKS.filter(function(b){ return b.callsiteId === cid; });
+  assertEq(matched.length, 1,
+    'T-EXP7-callsiteId-' + cid + '-count: callsiteId=' + cid + ' は master-verify block として 1 件');
+  if (matched.length === 1) {
+    // 各 block が kind / aggregateKey / severity を 3 点セットで持つ
+    assertEq(matched[0].kind, 'master-verify',
+      'T-EXP7-cid-with-kind: ' + cid + ' → kind=master-verify');
+    assertEq(matched[0].aggregateKey, 'master-verify:lastclass',
+      'T-EXP7-cid-with-aggKey: ' + cid + ' → aggregateKey=master-verify:lastclass');
+    assertEq(matched[0].severity, 'warn',
+      'T-EXP7-cid-with-severity: ' + cid + ' → severity=warn');
+  }
+});
+
+// SAVE-UX-TEST-STRUCTURAL-MATCH 全体合計確認: save-verify 15 + storage-quota 2 + master-verify 3 = 20
+//   __EXPAND_BLOCKS.length は SECTION 12.5 で sanity check 済（T-HELPER-shogi-blocks）。
+//   ここでは 3 系統合計の整合を最終確認する。
+assertEq(
+  __EXP4_SAVE_VERIFY_BLOCKS.length + __EXP6_STORAGE_QUOTA_BLOCKS.length + __EXP7_MASTER_VERIFY_BLOCKS.length,
+  20,
+  'T-EXP7-3systems-total: 3 系統合計 = 20 件 (save-verify 15 + storage-quota 2 + master-verify 3)');
 
 // ----------------------------------------------------------------------------
 // T-EXP7-save-verify-unchanged: save-verify 既存件数維持
