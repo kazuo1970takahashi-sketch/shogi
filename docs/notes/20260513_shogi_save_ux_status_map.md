@@ -763,3 +763,289 @@ PR #82〜#84 連鎖完了時点での次タスク候補:
 #### 司令塔暫定おすすめ
 
 次は **`SAVE-UX-PARSE-HANDLING-INVENTORY`** を docs-only inventory として着手するのが自然。PR #78 → #79 の Step 1 / Step 2 と同じ「inventory → 実装」パターンに沿う。実運用フィードバック次第で `SAVE-UX-AGGREGATION-TUNING` や `SAVE-UX-DUAL-NOTIFY-SUPPRESSION` も候補に上がる。
+
+---
+
+## 16. SAVE-UX-PARSE-HANDLING-INVENTORY（v1.5 追補 / 第 4 系統候補棚卸し）
+
+- 種別: **docs-only inventory**（実装はしない / 仕様は確定しない）
+- 対象 main HEAD: `0e174d8`（PR #85 docs follow-up map）
+- Task ID: `SAVE-UX-PARSE-HANDLING-INVENTORY`
+- 目的: parse-failed / storage-corrupted / load-failed / import-failed 周辺を第 4 系統候補として棚卸しし、次 impl PR の判断材料にする
+- 関連: §4.4（localStorage / quota / parse / 破損系の callsite マップ初版） / §15.7 第一候補
+
+### 16.1 目的
+
+- §15 で確立した「3 系統（save-verify / storage-quota / master-verify）」の延長として、`JSON.parse` / `localStorage.getItem` / load / import 系の失敗 UX を棚卸しする
+- 既存の sync-on-save 経由 (`syncBranchMasterOnSave` の `_loaded_with_corruption` ブランチ) と、import / restore 経由 (`alert` / `setStatus`) のばらつきを整理する
+- 「第 4 系統として 1 つの kind にまとめるか / 複数 kind に分けるか」の判断材料を出す
+- aggregation 対象にすべきかの暫定判断を整理する（**初期は対象外寄り**）
+- 次 impl PR の最小単位を整理する
+
+注意:
+
+- 本セクションは断定しない。kind / aggregateKey / severity / message はすべて **候補** として記載する
+- 実装は本タスクでは行わない（status-map と HANDOFF.md の追補のみ）
+
+### 16.2 調査範囲
+
+- 対象ファイル: `shogi_v4.html`（read-only / コードは変更しない）
+- grep キーワード:
+  - `JSON.parse` → 14 ヒット
+  - `localStorage.getItem` → ~15 ヒット
+  - `load` / `restore` / `import` / `applyLoadedJson` / `parseTournamentTextInput` / `safeParseImportText`
+  - `_loaded_with_corruption`（既存破損フラグ）
+- 対象範囲外: `JSON.parse(JSON.stringify(...))`（deep clone 用途、失敗想定なし）
+
+### 16.3 callsite inventory
+
+#### 16.3.1 系統 A: state restore（大会データ読込）
+
+| 候補 ID | 関数 / 行 | 対象データ | 失敗種別 | 現在挙動 | user-facing | データ保全重要度 | 大会中 UX 影響 | SAVE-UX 接続候補 | 備考 |
+|---|---|---|---|---|---|---|---|---|---|
+| PARSE-LOAD-001 | `load()` ([443](../../shogi_v4.html:443)) localStorage 取得 | shogi_v4 / レガシキー | localStorage get failure | catch → continue（次キーへ） | **silent** | 中 | 起動時のみ、起動失敗には至らない | **候補（要検討）** | 全キー失敗時は `state=normalizeState(state)` で初期 state。silent ロールアウト。 |
+| PARSE-LOAD-002 | `load()` ([450](../../shogi_v4.html:450)) JSON.parse | shogi_v4 / レガシキー | JSON.parse failure（corrupted） | catch → continue（次キーへ） | **silent** | **高** | 直前の大会データ消失リスク（fallback で旧キー or 初期 state） | **候補（最重要）** | 大会中に reload して silent に初期化される最悪ケースに該当。Level 0。 |
+| PARSE-LOAD-003 | `load()` ([457](../../shogi_v4.html:457)) 全キー失敗 | — | 全キー corrupted or empty | `state=normalizeState(state)` | **silent** | **高** | 大会データ全消失 UX | **候補** | PARSE-LOAD-001 / 002 の合流点。「保存データが見つかりませんでした」級の検知点。 |
+
+#### 16.3.2 系統 B: branch master load（支部マスタ読込）
+
+| 候補 ID | 関数 / 行 | 対象データ | 失敗種別 | 現在挙動 | user-facing | データ保全重要度 | 大会中 UX 影響 | SAVE-UX 接続候補 | 備考 |
+|---|---|---|---|---|---|---|---|---|---|
+| PARSE-MASTER-001 | `loadBranchMaster()` ([628](../../shogi_v4.html:628)) localStorage 取得 | shogi_branch_master | localStorage get failure | catch → `createEmptyBranchMaster()` 返却 | **silent** | 中 | マスタ読込のみ失敗、save 経路で sync スキップ | **候補（要検討）** | 例外系のみ。silent。 |
+| PARSE-MASTER-002 | `loadBranchMaster()` ([632](../../shogi_v4.html:632)) JSON.parse | shogi_branch_master | JSON.parse failure（corrupted） | console.warn + 空マスタ + `_loaded_with_corruption=true` | console.warn のみ（後段の `syncBranchMasterOnSave` で `showMsg('warn')`） | **高** | マスタ破損による sync スキップ、過去参加者欠落 | **候補（既存 CORRUPT-001 / 002 と接続）** | §4.4 CORRUPT-001 と同じ callsite。silent + 既存 alert 系ではない。 |
+| PARSE-MASTER-003 | `syncBranchMasterOnSave()` ([5289](../../shogi_v4.html:5289)) corruption スキップ | shogi_branch_master | `_loaded_with_corruption` 検知 | console.warn + `showMsg('warn')` | **○ showMsg(warn)**（既存 Level 1 相当） | 高 | sync スキップを user に明示 | **候補（既存 showMsg を `notifySaveWarning` 経由化）** | §4.4 CORRUPT-002 と同じ。`notifySaveWarning` 未接続。 |
+| PARSE-MASTER-004 | `syncBranchMasterOnSave()` ([5304](../../shogi_v4.html:5304)) 全体 catch | sync 全体 | 想定外例外 | console.warn のみ | **silent** | 中 | sync 失敗が見えない | 候補 | 大会運営は継続するが、master sync が silent に死ぬ。 |
+
+#### 16.3.3 系統 C: state restore verify（save-verify 系の helper 内部）
+
+§4.1 / 15.2 で既に save-verify 系列として整理済の helper だが、内部の JSON.parse / catch を再掲する（接続済 / 重複扱い）。
+
+| 候補 ID | 関数 / 行 | 失敗種別 | 現在挙動 | 備考 |
+|---|---|---|---|---|
+| （既存 save-verify 系統）| `readPersistedState()` ([3881](../../shogi_v4.html:3881)) / `verifyStatePersisted()` ([3924](../../shogi_v4.html:3924)) / `verifyPlayerAbsent()` ([3970](../../shogi_v4.html:3970)) / `verifyPlayerPersistedById()` ([3994](../../shogi_v4.html:3994)) / `verifyPlayerFieldPersisted()` ([4019](../../shogi_v4.html:4019)) | JSON.parse failure / schema mismatch | catch → console.warn + return `null` / `false`、callsite 側で `notifySaveWarning({kind:'save-verify',...})` 経由 | helper 内部の parse 失敗は呼び出し側 callsite の save-verify warn に **合流済**。本 inventory の新規対象ではない。 |
+| （既存 master-verify 系統）| `verifyMasterPersisted()` ([3947](../../shogi_v4.html:3947)) / `verifyMasterFieldPersisted()` ([4058](../../shogi_v4.html:4058)) | JSON.parse failure / schema mismatch | catch → console.warn or silent + return `false`、callsite 側で `notifySaveWarning({kind:'master-verify',...})` 経由 | 同上。master-verify 系統に合流済。 |
+
+#### 16.3.4 系統 D: 大会データ import / restore（ファイル / 貼り付け）
+
+| 候補 ID | 関数 / 行 | 対象データ | 失敗種別 | 現在挙動 | user-facing | データ保全重要度 | 大会中 UX 影響 | SAVE-UX 接続候補 | 備考 |
+|---|---|---|---|---|---|---|---|---|---|
+| PARSE-IMPORT-001 | `applyLoadedJson()` ([5351](../../shogi_v4.html:5351)) JSON.parse | 外部 JSON（クリップボード / ファイル） | JSON.parse failure（throw） | 内部 catch なし → 呼出側 throw | — | 高 | upstream（loadData / loadFromPaste）に依存 | 候補（upstream に集約） | helper として throws する設計。 |
+| PARSE-IMPORT-002 | `loadData()` ([5368](../../shogi_v4.html:5368)) FileReader.onload catch | ファイル import | applyLoadedJson throw | **`alert('読み込みに失敗しました。正しいファイルか確認してください')`** | **○ alert** | 高 | 取り込み失敗を明示 | 候補（alert → notifySaveWarning 移行は重い） | 既存 alert UX。SAVE-UX-DESIGN §2.3 と緊張関係（modal / alert を保存通知に使わない原則）。 |
+| PARSE-IMPORT-003 | `loadFromPaste()` ([5386](../../shogi_v4.html:5386)) catch | 貼り付け import | applyLoadedJson throw | **`alert('読み込みに失敗しました。正しい大会データか確認してください')`** | **○ alert** | 高 | 取り込み失敗を明示 | 候補（同上） | 同上。 |
+
+#### 16.3.5 系統 E: master import（Phase 2 / overwrite / merge）
+
+| 候補 ID | 関数 / 行 | 対象データ | 失敗種別 | 現在挙動 | user-facing | データ保全重要度 | 大会中 UX 影響 | SAVE-UX 接続候補 | 備考 |
+|---|---|---|---|---|---|---|---|---|---|
+| PARSE-IMPORT-MASTER-001 | `safeParseImportText()` ([869](../../shogi_v4.html:869)) | import テキスト | JSON.parse failure | catch → return `null`（silent） | — | 中 | upstream（processMasterImportText / Phase 2 import）に依存 | 候補（upstream に集約） | parse helper。silent。 |
+| PARSE-IMPORT-MASTER-002 | `processMasterImportText()` ([2473](../../shogi_v4.html:2473)) null check | overwrite / merge import | `safeParseImportText` null | **`setStatus('JSON の解析に失敗しました（フォーマットが不正です）')`** | **○ setStatus（モーダル内テキスト表示）** | 中 | モーダル内テキストで明示 | 候補（既存 setStatus UX 維持） | alert / showMsg ではなくモーダル inline status。 |
+| PARSE-IMPORT-MASTER-003 | Phase 2 import file load ([2356](../../shogi_v4.html:2356)) | Phase 2 import JSON | `safeParseImportText` null | **`setStatus('JSON の解析に失敗しました(フォーマットが不正です)')`** | **○ setStatus** | 中 | モーダル内テキスト | 候補（同上） | 同上。 |
+| PARSE-IMPORT-MASTER-004 | runMasterImport / Phase 2 import の `reader.onerror` ([2399](../../shogi_v4.html:2399) / [2464](../../shogi_v4.html:2464)) | ファイル読込 | FileReader error | **`setStatus('ファイルの読み込みに失敗しました')`** | **○ setStatus** | 中 | モーダル内テキスト | 候補 | parse 前段の I/O 失敗。 |
+| PARSE-IMPORT-TOURNAMENT-001 | `parseTournamentTextInput()` ([2884](../../shogi_v4.html:2884)) per-block JSON.parse | 過去大会 import テキスト | block 毎の JSON.parse failure | errors 配列で返却（throw しない） | — | 低 | upstream（migration / phase2 mass import）に依存 | 候補（upstream に集約） | 「一部成功」を扱える設計。第 4 系統候補としては優先度低。 |
+
+#### 16.3.6 系統 F: その他（参考）
+
+| 候補 ID | 関数 / 行 | 備考 |
+|---|---|---|
+| — | `JSON.parse(JSON.stringify(...))` ([4771](../../shogi_v4.html:4771)) | deep clone 用途。失敗想定なし。inventory 対象外。 |
+| — | `localStorage.removeItem` 周辺 ([5639](../../shogi_v4.html:5639) 等) | reset 操作。本 inventory 対象外。 |
+
+### 16.4 kind 候補
+
+PR #84 で確立した「kind allow-list 方式」に沿って、第 4 系統候補の kind を整理する。
+
+#### 16.4.1 候補 kind 一覧
+
+| 候補 kind | 意味 | 主な callsite | 重要度 | 備考 |
+|---|---|---|---|---|
+| `parse-failed` | JSON.parse 失敗全般（localStorage / import / restore を広く含む） | PARSE-LOAD-002 / PARSE-MASTER-002 / PARSE-IMPORT-* | — | 包括的だが、import 系と save 系の混在で UX 文脈が混ざる |
+| `storage-corrupted` | 保存済データの破損（localStorage 経由のみ） | PARSE-LOAD-002 / PARSE-MASTER-002 / PARSE-MASTER-003 | **高** | save 系列の延長。data 保全 UX として独立価値がある |
+| `load-failed` | localStorage 読込全体の失敗（getItem 例外含む） | PARSE-LOAD-001 / PARSE-LOAD-003 / PARSE-MASTER-001 / PARSE-MASTER-004 | 中 | parse 以外の I/O 失敗も含むかどうかが論点 |
+| `import-failed` | import / restore parse failure（外部データの取込） | PARSE-IMPORT-001〜003 / PARSE-IMPORT-MASTER-001〜004 / PARSE-IMPORT-TOURNAMENT-001 | 中 | 既存 alert / setStatus が user-facing 済 |
+
+#### 16.4.2 1 つにまとめるか / 分けるか
+
+**論点**:
+
+- `parse-failed` 1 つにまとめると **UX 文脈が混ざる**: 大会中の自動 reload で起きる corruption と、user 操作で起きる import failure は意味が違う
+- import 系は既に `alert` / `setStatus` で user-facing UX が確立しており、新 kind 接続のコストが高い
+- save / restore 系は silent が多く、第 4 系統として最も価値が高い
+
+**暫定判断**:
+
+- **`storage-corrupted` を第 4 系統の中核 kind とするのが安全**
+  - 対象: PARSE-LOAD-002 / PARSE-LOAD-003 / PARSE-MASTER-002 / PARSE-MASTER-003
+  - 「保存済データが壊れている」という data 保全 UX に特化
+  - parse 以外の I/O 失敗（PARSE-LOAD-001 / PARSE-MASTER-001）も含めるかは要検討（重要度: 中）
+- **`import-failed` は別系統 / 別 PR**
+  - 既存 alert / setStatus を温存する判断もあり得る
+  - 接続するなら `SAVE-UX-IMPORT-FAILED-HANDLING-INVENTORY` として別 inventory に分けるのが自然
+- **`parse-failed` 単独 kind は採用しない**（広すぎる）
+- **`load-failed` 単独 kind も初期は採用しない**（`storage-corrupted` に含めるか後続検討）
+
+#### 16.4.3 最小実装対象としてどれが安全か
+
+- **PARSE-MASTER-003**（`syncBranchMasterOnSave` の `_loaded_with_corruption` ブランチ）が **最小・最安全**
+  - 既に `showMsg('warn')` で user-facing になっている（Level 1 相当）
+  - `notifySaveWarning({kind:'storage-corrupted', ...})` への置換だけで Level 1 維持・metadata 付与・indicator count 反映が成立
+  - PR #82 (MASTER-V2-METADATA-IMPL) と同じ「既存 showMsg → notifySaveWarning 経由化」パターン
+- PARSE-LOAD-002 / 003 は silent → user-facing への質的変化を伴うため、UX 仕様判断が重い
+
+### 16.5 aggregateKey 候補
+
+§13（callsiteId 命名規則）に従い、kind:データ種別 形式を候補に挙げる。
+
+| 候補 aggregateKey | 用途 | 備考 |
+|---|---|---|
+| `storage-corrupted:state` | 大会データ（shogi_v4 / レガシキー）破損 | PARSE-LOAD-002 / PARSE-LOAD-003 |
+| `storage-corrupted:branch-master` | 支部マスタ破損 | PARSE-MASTER-002 / PARSE-MASTER-003 |
+| `storage-corrupted:global` | 系統横断（単一 aggregateKey に統合） | storage-quota:global と同じ粒度。aggregation 対象外なら細分の価値は低い |
+| `load-failed:state` | localStorage I/O 失敗（大会データ） | PARSE-LOAD-001 |
+| `load-failed:branch-master` | localStorage I/O 失敗（支部マスタ） | PARSE-MASTER-001 |
+| `import-failed:state` | 大会データ import parse failure | PARSE-IMPORT-001〜003 |
+| `import-failed:branch-master` | 支部マスタ import parse failure | PARSE-IMPORT-MASTER-001〜004 |
+| `import-failed:tournament-text` | 過去大会テキスト import | PARSE-IMPORT-TOURNAMENT-001 |
+
+**論点**:
+
+- aggregation 対象外であれば aggregateKey はメタ情報用途に近づく（indicator count / consoleTag タグ付け / 将来 aggregation 切替時の準備）
+- storage-quota は `storage-quota:global` の 1 つで統一されており、parse / corrupted 系も **初期は global 1 本 or データ種別 2 本（state / branch-master）の粗い粒度** が運用しやすい
+- 関数単位は粒度が細かすぎる（保守コスト > 価値）
+
+**暫定**:
+
+- 初期実装に進む場合は `storage-corrupted:branch-master`（PARSE-MASTER-003）+ 将来 `storage-corrupted:state`（PARSE-LOAD-002）の 2 本構成が自然
+
+### 16.6 severity 候補
+
+| severity | 適合候補 | 備考 |
+|---|---|---|
+| `warn` | PARSE-MASTER-003（既存 showMsg('warn')）/ PARSE-LOAD-003（silent → warn 化）| 既存 `notifySaveWarning` の前提（severity: 'warn'）に整合 |
+| `error` | PARSE-MASTER-002（マスタ完全破損）/ PARSE-LOAD-003（全キー破損 = 大会データ全消失） | `notifySaveWarning` は warn 前提のため、`error` を導入するなら別 helper / 別 UX が必要 |
+
+**論点**:
+
+- storage-quota は構造的に save 失敗で重要度が高いが、SAVE-UX-DESIGN §2.3 の「modal / alert を通知に使わない」原則を踏まえ **warn に揃えた経緯**（§5.3）
+- parse / storage-corrupted も同じ原則を適用すれば warn でよい
+- 「error severity の導入」は本タスクのスコープではない（要別タスク: `SAVE-UX-ERROR-SEVERITY`）
+
+**暫定**:
+
+- **第 4 系統は warn に寄せる**（既存 3 系統と整合）
+- 「重大なデータ破損は error にすべき」議論は別タスクへ持ち越し
+
+### 16.7 aggregation 対象判断
+
+PR #84 時点の aggregation 対象 (`SAVE_WARN_AGGREGATABLE_KINDS`):
+
+- `save-verify`（対象）
+- `master-verify`（対象）
+- `storage-quota`（対象**外**）
+
+#### 16.7.1 第 4 系統候補の暫定判断
+
+| 候補 kind | 初期 aggregation | 理由 |
+|---|---|---|
+| `storage-corrupted` | **対象外（推奨）** | データ破損は重要度が高く、短縮表示で隠すより個別 message / recovery guidance が必要。storage-quota と同じ判断軸。 |
+| `parse-failed`（採用しない方針） | — | — |
+| `load-failed` | 対象外（採用するなら） | I/O 失敗は単発で十分。 |
+| `import-failed` | 対象外（採用するなら） | user 操作起点で連発しない。alert / setStatus 既存 UX で十分。 |
+
+#### 16.7.2 司令塔暫定案の妥当性
+
+> 「parse / corrupted 系は、初期実装では aggregation 対象外が安全。理由: データ破損や読み込み失敗は重要度が高く、短縮表示で隠すより、個別 message / recovery guidance が必要。storage-quota と同様に、まずは対象外が自然。ただし、同一エラーが連続発火して UX がうるさい場合は後続で aggregation tuning を検討」
+
+**この暫定案は妥当である**。根拠:
+
+1. storage-quota の判断軸（§14.3 / §15.3 の集約方針）と整合 — 「count / console.warn は発火単位、user-facing message は個別表示」
+2. parse / corrupted は user 認知が重要な data 保全イベント（隠すべきでない）
+3. 連発する典型シナリオが想定しにくい（load は起動時 1 回 / sync は saveData 時のみ / import は user 操作起点）
+4. 後続で `SAVE_WARN_AGGREGATABLE_KINDS` allow-list に追加するだけで切替可能なため、初期判断を保守的に倒すコストが低い
+
+### 16.8 user-facing message 候補
+
+実装時の確定文言ではなく、設計検討用の候補として記載する（**本タスクで確定しない**）。
+
+| 候補 callsite | 候補文言 | 既存 UX との関係 |
+|---|---|---|
+| PARSE-MASTER-003（既存）| 「支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）」 | 既存 showMsg(warn) を流用 |
+| PARSE-LOAD-002 / 003 | 「保存データの読み込みに失敗しました。必要に応じてバックアップを確認してください。」 | 新規（silent → warn 化）。「過去大会データ取込で復元できる」導線示唆を検討 |
+| PARSE-MASTER-002 | 「支部マスタの形式が壊れている可能性があります。マスタ取込で復旧を検討してください。」 | 既存 console.warn + `_loaded_with_corruption` の sync-on-save 経由表示の前段化候補 |
+| PARSE-IMPORT-001〜003（既存 alert） | 「読み込みに失敗しました。正しいファイルか確認してください」 | 既存 alert 文言を維持 / もしくは `notifySaveWarning` 移行時に showMsg 化 |
+| PARSE-IMPORT-MASTER-002〜004（既存 setStatus） | 「JSON の解析に失敗しました（フォーマットが不正です）」 | 既存モーダル inline status を維持 |
+
+**論点**:
+
+- 大会中に出してよい文言か → 「データ整合のため確認してください」は **OK**、「データ消失」は user を不安にさせるため避ける
+- 復旧導線（マスタ取込 / バックアップ）への示唆は **必要**
+- alert / showMsg / notifyError / notifySaveWarning の選択:
+  - 既存 alert 系（PARSE-IMPORT-002 / 003）は user 操作起点で「停止して確認させる」UX、当面温存が無難
+  - silent 系（PARSE-LOAD-* / PARSE-MASTER-001 / 002）は `notifySaveWarning` 経由で showMsg(warn) + indicator + console.warn に揃える方向
+  - notifyError は既存 quota 以外の汎用例外用に維持
+
+### 16.9 実装候補の分割案
+
+| 案 | 範囲 | 重さ | 備考 |
+|---|---|---|---|
+| **A. SAVE-UX-PARSE-HANDLING-IMPL（最小）** | PARSE-MASTER-003 のみ（既存 showMsg → `notifySaveWarning({kind:'storage-corrupted', aggregateKey:'storage-corrupted:branch-master'})` 経由化）+ test 1 件 | 小（PR #82 と同等規模） | **最有力**。既存 Level 1 を helper 経由化するだけで metadata / indicator / structural test が揃う |
+| B. SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL | PARSE-MASTER-003 + PARSE-LOAD-002 / 003 を同 PR で接続 | 中 | silent → warn 化を含み、UX 仕様判断が増える |
+| C. SAVE-UX-IMPORT-FAILED-HANDLING-INVENTORY | 系統 D / E を別 inventory として整理 | 小（docs-only） | 既存 alert / setStatus UX を温存するか接続するかの判断材料を作る |
+| D. SAVE-UX-LOAD-FAILED-HANDLING-INVENTORY | PARSE-LOAD-001 / PARSE-MASTER-001 / PARSE-MASTER-004 を別 inventory として深掘り | 小（docs-only） | I/O 失敗（parse 以外）を分けたい場合 |
+
+#### 16.9.1 司令塔暫定おすすめ
+
+- 次 impl PR は **案 A**（`SAVE-UX-PARSE-HANDLING-IMPL` = 最小 1 callsite）
+  - 理由: PR #82 → #83 → #84 の確立された「metadata → structural test → aggregation 対象化」標準手順（§15.4）を、第 4 系統でも踏襲できる
+  - 既存 Level 1 callsite を helper 経由化するだけなので UX 変化が最小、Codex / cowork review コストも低い
+- 案 B（silent → warn 化を伴う複数 callsite）は **案 A 完了後** の継続 PR が妥当
+- 案 C / D は impl の前に必要か、後で必要かを案 A 完了時点で再判断
+
+### 16.10 実装前に仕様確認を挟むべき論点
+
+実装 PR 着手前に再仕様確認したい論点:
+
+1. **kind 名の確定**: `storage-corrupted` vs `parse-failed` vs `load-failed`（暫定 `storage-corrupted`）
+2. **PARSE-LOAD-002 を silent → warn にすべきか**: 大会中 reload で起きた場合の UX 影響
+3. **PARSE-MASTER-002 と PARSE-MASTER-003 の関係**: 前段（loadBranchMaster）で showMsg を出すか、後段（sync-on-save）に集約するか
+4. **import 系 alert を維持するか / showMsg 化するか**: SAVE-UX-DESIGN §2.3 原則との緊張関係
+5. **`error` severity の必要性**: 重大なデータ破損を warn で表現してよいか
+6. **aggregateKey 粒度**: `:global` 1 本 / `:state`+`:branch-master` 2 本 / 関数単位
+7. **dual notify 抑制**: notifyError / alert / showMsg / notifySaveWarning の重複発火が parse 系で起きうるか（特に `loadData` で alert + 内部 showMsg が並ぶ可能性）
+
+### 16.11 §15 の 3 系統 → 第 4 系統候補（追加後の見立て）
+
+§15.2 の 3 系統表に、第 4 系統候補を加えた将来形:
+
+| 系統 | kind | callsite 数 | aggregation 対象 | indicator | structural assert | 状態 |
+|---|---|---|---|---|---|---|
+| 1. save-verify | `save-verify` | 15 | ○ | ○ | ○ | 完了（PR #82〜#84） |
+| 2. storage-quota | `storage-quota` | 2 | × | ○ | ○ | 完了（PR #79〜#80） |
+| 3. master-verify | `master-verify` | 3 | ○ | ○ | ○ | 完了（PR #82〜#84） |
+| **4. storage-corrupted（候補）** | `storage-corrupted` | 1〜4（案 A=1 / 案 B=3〜4） | **×（初期）** | ○ | ○ | 未着手 |
+
+### 16.12 次にやるなら
+
+#### 第一候補（最有力）: `SAVE-UX-PARSE-HANDLING-IMPL` 案 A
+
+- 範囲: PARSE-MASTER-003 のみ（既存 `syncBranchMasterOnSave` 内 showMsg を `notifySaveWarning` 経由化）
+- kind: `storage-corrupted`
+- aggregateKey: `storage-corrupted:branch-master`
+- severity: `warn`
+- aggregation: 対象外（`SAVE_WARN_AGGREGATABLE_KINDS` は変更しない）
+- callsiteId: `STORAGE-CORRUPTED:syncBranchMasterOnSave`（要 §13 規則確認）
+- 期待効果: 第 4 系統の最小着地、indicator / metadata / test が標準化される
+
+#### 第二候補: `SAVE-UX-IMPORT-FAILED-HANDLING-INVENTORY`
+
+- 範囲: 系統 D（loadData / loadFromPaste / applyLoadedJson）+ 系統 E（master import 系）の棚卸し
+- 種別: docs-only inventory
+- 価値: 既存 alert / setStatus UX を notifySaveWarning に寄せるかどうかの判断材料を作る
+
+#### 第三候補: `SAVE-UX-STORAGE-CORRUPTED-HANDLING-IMPL`（案 B）
+
+- 範囲: PARSE-MASTER-003 + PARSE-LOAD-002 / 003 を同 PR で接続
+- 重さ: 中。silent → warn の質的変化を伴う
+
+#### 司令塔暫定おすすめ
+
+次は **`SAVE-UX-PARSE-HANDLING-IMPL`（案 A / PARSE-MASTER-003 のみ）** が最も自然。既存 Level 1 callsite を helper 経由化するだけで、PR #82〜#84 で確立した 3 段階標準手順（metadata → structural test → aggregation 判定）の 1 順目に乗る。`import-failed` 系は別 inventory として後続検討。本セクションは確定仕様ではなく、impl 着手前に kind / aggregateKey / severity の最終確認を挟むこと。
