@@ -2947,6 +2947,21 @@ function notifyError(text){
 //   将来 history 等を持つ余地として object 形式。
 var saveWarningIndicatorState={count:0};
 
+// SAVE-UX-WARN-AGGREGATION-IMPL-DISPLAY: showMsg aggregation 用の memory-only state。
+//   localStorage / sessionStorage / tournament state には保存しない（reload で消える）。
+//   aggregateKey 単位で「最後に発生した時刻」を保持し、3 秒未満で再発した場合のみ
+//   2 回目以降の showMsg を短縮文言に切り替える。console.warn / indicator count は不変。
+//   時間窓 3000ms は初期値（運用感覚で後続 PR にて調整可能）。
+//   短縮文言は当日運営中の混乱を避けるため reload を促さず「内容を確認してください」に留める。
+var SAVE_WARN_AGGREGATION_WINDOW_MS=3000;
+var SAVE_WARN_AGGREGATED_MESSAGE='保存確認に失敗した操作が複数あります。内容を確認してください。';
+var saveWarningAggregationState={lastTimestampByKey:{}};
+
+// テスト用 reset。本番 UI からは呼ばない（clear UI / reset UI は実装しない）。
+function _resetSaveWarningAggregationState(){
+  saveWarningAggregationState.lastTimestampByKey={};
+}
+
 // SAVE-UX-STATUS-INDICATOR: indicator count を +1 し、DOM を更新する。
 //   notifySaveWarning 1 回呼出 = count +1（設計書 §7 count 増加単位）。
 //   fields.length 分は加算しない（S22 4 fields 失敗でも +1）。
@@ -3024,8 +3039,22 @@ function notifySaveWarning(options){
     }
     return;
   }
+  // SAVE-UX-WARN-AGGREGATION-IMPL-DISPLAY: showMsg のみ集約。
+  //   条件: kind==='save-verify' && severity==='warn' && aggregateKey が truthy
+  //   同一 aggregateKey で 3 秒未満に再発した場合のみ短縮文言に切替。
+  //   1 回目 / 別 key / 3 秒経過後 / metadata 不足は元 message のまま。
+  //   console.warn / indicator count / showMsg type は不変（失敗を隠さない原則）。
+  var displayMessage=message;
+  if(kind==='save-verify'&&severity==='warn'&&aggregateKey){
+    var nowTs=Date.now();
+    var lastTs=saveWarningAggregationState.lastTimestampByKey[aggregateKey];
+    if(typeof lastTs==='number'&&(nowTs-lastTs)<SAVE_WARN_AGGREGATION_WINDOW_MS){
+      displayMessage=SAVE_WARN_AGGREGATED_MESSAGE;
+    }
+    saveWarningAggregationState.lastTimestampByKey[aggregateKey]=nowTs;
+  }
   if(typeof showMsg==='function'){
-    showMsg(message,'warn');
+    showMsg(displayMessage,'warn');
   }
   if(typeof console!=='undefined'&&console.warn){
     var warnMeta={callsiteId:callsiteId,fields:fields};

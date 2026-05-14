@@ -238,7 +238,14 @@ function makePlayer(id,name,cls,entryNo){
   assertEq(env.readPersistedState(), null, '4-2 localStorage 未更新（null）');
   // warn 表示
   assert(env._regMsgHtml().indexOf('alert-warn') !== -1, '4-3 showMsg(.., warn) が出ている');
-  assert(env._regMsgHtml().indexOf('保存が確認できませんでした') !== -1, '4-4 「保存未確認」表現の文言');
+  // SAVE-UX-WARN-AGGREGATION-IMPL-DISPLAY: startTournament は内部で generatePairing も呼ぶため
+  // 同一 aggregateKey 'save-verify:core' の helper 呼出が連続発生する。2 回目（startTournament 側）
+  // は 3 秒未満で発火するため短縮文言に切り替わる。元文言 / 短縮文言いずれかが出れば「保存未確認」
+  // 警告が user-facing に出た裏付けとなる。
+  assert(
+    env._regMsgHtml().indexOf('保存が確認できませんでした') !== -1 ||
+    env._regMsgHtml().indexOf('保存確認に失敗した操作が複数あります') !== -1,
+    '4-4 「保存未確認」表現の文言（元 message または aggregation 短縮 message）');
   assert(env._regMsgHtml().indexOf('保存失敗') === -1, '4-5 「保存失敗」と断定しない');
   // console.warn
   const warnText = env._warnCalls.join('\n');

@@ -148,6 +148,10 @@ function loadEnv(path) {
        recordSaveWarningForIndicator:recordSaveWarningForIndicator,
        updateSaveWarningIndicator:updateSaveWarningIndicator,
        _getIndicatorState:function(){return saveWarningIndicatorState;},
+       _getSaveWarningAggregationState:function(){return saveWarningAggregationState;},
+       _resetSaveWarningAggregationState:_resetSaveWarningAggregationState,
+       SAVE_WARN_AGGREGATION_WINDOW_MS:SAVE_WARN_AGGREGATION_WINDOW_MS,
+       SAVE_WARN_AGGREGATED_MESSAGE:SAVE_WARN_AGGREGATED_MESSAGE,
        handlePastParticipantClassAdd:handlePastParticipantClassAdd,
        handleSuggestClassAdd:handleSuggestClassAdd,
        bindMasterEditModalEvents:bindMasterEditModalEvents,
@@ -2015,6 +2019,397 @@ assert(__EXPAND_SRC.indexOf('suppressOkMsg:!s05MasterVerifyOk') !== -1,
   // "undefined" 文字列が含まれない（"kind":null や "kind":undefined もダメ）
   assert(lastWarn3.indexOf('undefined') === -1,
     'T-EXP4-runtime-partial-d: 出力に undefined 文字列が含まれない');
+}
+
+// ============================================================================
+// SECTION 14: SAVE-UX-WARN-AGGREGATION-IMPL-DISPLAY — showMsg 最小集約表示
+// ============================================================================
+// 依頼: SAVE-UX-WARN-AGGREGATION-IMPL-DISPLAY (PR #75 後続)
+//
+// 仕様:
+//   - 対象: kind==='save-verify' && severity==='warn' && aggregateKey truthy
+//   - 同一 aggregateKey で 3 秒未満に再発した場合のみ短縮文言に切替
+//   - console.warn / indicator count は不変（失敗を隠さない原則）
+//   - showMsg type は常に 'warn'
+//   - aggregation state は memory only / module scope
+//   - localStorage / sessionStorage / tournament state には保存しない
+//
+// 短縮文言: '保存確認に失敗した操作が複数あります。内容を確認してください。'
+// 時間窓:    3000ms（初期値、後続調整可）
+
+// ----------------------------------------------------------------------------
+// SECTION 14 静的検証
+// ----------------------------------------------------------------------------
+
+// T-EXP5-constants-defined: 短縮文言と time window が定数化されている
+assert(__EXPAND_SRC.indexOf('SAVE_WARN_AGGREGATION_WINDOW_MS=3000') !== -1,
+  'T-EXP5-constants-defined-a: time window 3000ms が定数化されている');
+assert(__EXPAND_SRC.indexOf("SAVE_WARN_AGGREGATED_MESSAGE='保存確認に失敗した操作が複数あります。内容を確認してください。'") !== -1,
+  'T-EXP5-constants-defined-b: 短縮文言が定数化されている');
+
+// T-EXP5-aggregation-state-memory-only: aggregation state は memory only
+//   localStorage / sessionStorage / tournament state へ書き込まないこと
+//   saveWarningAggregationState を含むコードに localStorage.setItem / sessionStorage が
+//   絡まないこと
+{
+  var stateIdx = __EXPAND_SRC.indexOf('var saveWarningAggregationState=');
+  assert(stateIdx !== -1, 'T-EXP5-state-decl: saveWarningAggregationState が宣言されている');
+  // state 宣言から helper 終了までの範囲に localStorage / sessionStorage の書込みがない
+  var helperEndIdx = __EXPAND_SRC.indexOf('function renderRegList()', stateIdx);
+  var helperSlice = __EXPAND_SRC.substring(stateIdx, helperEndIdx);
+  assert(helperSlice.indexOf('localStorage.setItem') === -1,
+    'T-EXP5-state-no-localStorage: aggregation 関連で localStorage.setItem を呼ばない');
+  assert(helperSlice.indexOf('sessionStorage') === -1,
+    'T-EXP5-state-no-sessionStorage: aggregation 関連で sessionStorage を使わない');
+  assert(helperSlice.indexOf('state.report') === -1 && helperSlice.indexOf('state.players') === -1,
+    'T-EXP5-state-no-tournament-state: aggregation 関連で tournament state を変更しない');
+}
+
+// T-EXP5-helper-aggregation-conditions: helper 内の aggregation 条件が正しい
+//   kind==='save-verify' && severity==='warn' && aggregateKey の AND 判定
+assert(__EXPAND_SRC.indexOf("kind==='save-verify'&&severity==='warn'&&aggregateKey") !== -1,
+  'T-EXP5-helper-aggregation-conditions: helper 内に 3 条件 AND が存在');
+
+// T-EXP5-helper-window-check: 3 秒未満判定が定数経由
+assert(__EXPAND_SRC.indexOf('(nowTs-lastTs)<SAVE_WARN_AGGREGATION_WINDOW_MS') !== -1,
+  'T-EXP5-helper-window-check: 時間窓判定が定数経由');
+
+// T-EXP5-helper-uses-aggregated-message: aggregation 時に短縮文言を使う
+assert(__EXPAND_SRC.indexOf('displayMessage=SAVE_WARN_AGGREGATED_MESSAGE') !== -1,
+  'T-EXP5-helper-aggregated-msg-used: aggregation 時に SAVE_WARN_AGGREGATED_MESSAGE を使う');
+
+// T-EXP5-showMsg-still-called: 集約時も showMsg が必ず呼ばれる（type='warn'）
+assert(__EXPAND_SRC.indexOf("showMsg(displayMessage,'warn')") !== -1,
+  'T-EXP5-showMsg-always-called: displayMessage を必ず showMsg(., warn) で出す');
+
+// T-EXP5-console-warn-individual: console.warn は集約しない（PR #75 の個別 warnMeta 出力が維持）
+assert(__EXPAND_SRC.indexOf('console.warn(consoleTag,warnMeta)') !== -1,
+  'T-EXP5-console-warn-individual: console.warn は個別出力を維持');
+
+// T-EXP5-record-still-called: recordSaveWarningForIndicator が必ず呼ばれる（aggregation で抑制されない）
+assert(__EXPAND_SRC.indexOf('recordSaveWarningForIndicator(indicatorPayload)') !== -1,
+  'T-EXP5-record-still-called: indicator path は集約しない');
+
+// T-EXP5-no-aggregation-display-extras: 禁止された aggregation 表示パターンが存在しない
+[
+  'aggregateCount',
+  'dedupedCount',
+  'suppressedByAggregate',
+  'lastAggregateKey',  // ※ 個別変数名としては OK だが「表示用」存在を検出
+  'aggregatedToast',
+  'warningBar',
+  'retryButton'
+].forEach(function(pat){
+  // saveWarningAggregationState.lastTimestampByKey は OK、それ以外の表示系痕跡を弾く
+  if(pat === 'lastAggregateKey'){
+    // ふつう state 名としても存在しないはず
+    assert(__EXPAND_SRC.indexOf(pat) === -1,
+      'T-EXP5-no-extras-' + pat + ': '+pat+' が存在しない');
+  }else{
+    assert(__EXPAND_SRC.indexOf(pat) === -1,
+      'T-EXP5-no-extras-' + pat + ': '+pat+' が存在しない');
+  }
+});
+
+// T-EXP5-yomi-notice-not-helper: ふりがな success-with-caveat 通知が helper 経由ではない
+//   = showMsg 直接呼出のままで aggregation 条件に届かない構造的裏付け
+{
+  var yomiNoticeIdx = __EXPAND_SRC.indexOf("showMsg('ふりがな未登録のまま ");
+  assert(yomiNoticeIdx !== -1, 'T-EXP5-yomi-notice-direct-call-a: showMsg 直接呼出が存在');
+  // 直前 200 文字内に notifySaveWarning 呼出がない
+  var before = __EXPAND_SRC.substring(Math.max(0, yomiNoticeIdx - 300), yomiNoticeIdx);
+  assert(before.indexOf('notifySaveWarning({') === -1,
+    'T-EXP5-yomi-notice-not-via-helper: ふりがな通知の直前に notifySaveWarning 呼出がない');
+}
+
+// ----------------------------------------------------------------------------
+// SECTION 14 ランタイム検証: aggregation 挙動
+// ----------------------------------------------------------------------------
+
+// 共通テストヘルパ: 新規 env を作って aggregation state をリセット
+function _newAggEnv(){
+  var env = loadEnv(targetPath);
+  env._resetSaveWarningAggregationState();
+  env._clear();
+  return env;
+}
+// 「last timestamp を N ミリ秒前にセット」で同一 key の連続発生を再現
+function _seedAggKey(env, key, msAgo){
+  var state = env._getSaveWarningAggregationState();
+  state.lastTimestampByKey[key] = Date.now() - msAgo;
+}
+
+// T-EXP5-runtime-1st-uses-original: 1 回目は元 message を表示
+{
+  var env = _newAggEnv();
+  env.notifySaveWarning({
+    message:'保存確認に失敗しました（元 message）',
+    consoleTag:'[TEST-AGG-1ST]',
+    callsiteId:'TEST-AGG-1ST',
+    kind:'save-verify',
+    aggregateKey:'save-verify:entry',
+    severity:'warn'
+  });
+  var final1 = env._regMsgFinal();
+  assert(final1.indexOf('保存確認に失敗しました（元 message）') !== -1,
+    'T-EXP5-runtime-1st: 1 回目は元 message が表示');
+  assert(final1.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) === -1,
+    'T-EXP5-runtime-1st-no-aggregated: 1 回目は短縮文言を含まない');
+}
+
+// T-EXP5-runtime-2nd-within-window: 同一 aggregateKey の 3 秒未満 2 回目は短縮 message
+{
+  var env = _newAggEnv();
+  // 1 回目相当: 1 秒前に既発生をシード
+  _seedAggKey(env, 'save-verify:entry', 1000);
+  env.notifySaveWarning({
+    message:'元 message-A',
+    consoleTag:'[TEST-AGG-2ND]',
+    callsiteId:'TEST-AGG-2ND',
+    kind:'save-verify',
+    aggregateKey:'save-verify:entry',
+    severity:'warn'
+  });
+  var final2 = env._regMsgFinal();
+  assert(final2.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) !== -1,
+    'T-EXP5-runtime-2nd: 3 秒未満 2 回目は短縮 message');
+  assert(final2.indexOf('元 message-A') === -1,
+    'T-EXP5-runtime-2nd-no-original: 2 回目は元 message を出さない');
+}
+
+// T-EXP5-runtime-3rd-within-window: 3 回目も短縮 message
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'save-verify:entry', 500);
+  env.notifySaveWarning({
+    message:'元 message-B',
+    consoleTag:'[T3]',
+    callsiteId:'TEST-AGG-3RD',
+    kind:'save-verify',
+    aggregateKey:'save-verify:entry',
+    severity:'warn'
+  });
+  var final3 = env._regMsgFinal();
+  assert(final3.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) !== -1,
+    'T-EXP5-runtime-3rd: 3 回目も短縮 message');
+}
+
+// T-EXP5-runtime-reset-after-3s: 3 秒以上経過後は元 message に戻る
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'save-verify:entry', 5000);  // 5 秒前
+  env.notifySaveWarning({
+    message:'リセット後の元 message',
+    consoleTag:'[T-RESET]',
+    callsiteId:'TEST-AGG-RESET',
+    kind:'save-verify',
+    aggregateKey:'save-verify:entry',
+    severity:'warn'
+  });
+  var final4 = env._regMsgFinal();
+  assert(final4.indexOf('リセット後の元 message') !== -1,
+    'T-EXP5-runtime-reset: 3 秒経過後は元 message に戻る');
+  assert(final4.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) === -1,
+    'T-EXP5-runtime-reset-no-aggregated: リセット時は短縮文言を出さない');
+}
+
+// T-EXP5-runtime-boundary: ちょうど 3000ms はリセット側（< 3000 のみ集約）
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'save-verify:entry', 3000);  // ちょうど 3 秒前
+  env.notifySaveWarning({
+    message:'境界文言',
+    consoleTag:'[T-BOUND]',
+    callsiteId:'TEST-AGG-BOUND',
+    kind:'save-verify',
+    aggregateKey:'save-verify:entry',
+    severity:'warn'
+  });
+  var final5 = env._regMsgFinal();
+  // 3000ms は集約しない（< のみ）
+  assert(final5.indexOf('境界文言') !== -1,
+    'T-EXP5-runtime-boundary: ちょうど 3000ms はリセット側');
+}
+
+// T-EXP5-runtime-different-keys-independent: 別 aggregateKey は独立
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'save-verify:entry', 500);  // entry は 0.5 秒前
+  // edit は別 key なので 1 回目扱い
+  env.notifySaveWarning({
+    message:'edit 系の元 message',
+    consoleTag:'[T-INDEP]',
+    callsiteId:'TEST-AGG-INDEP-EDIT',
+    kind:'save-verify',
+    aggregateKey:'save-verify:edit',
+    severity:'warn'
+  });
+  var final6 = env._regMsgFinal();
+  assert(final6.indexOf('edit 系の元 message') !== -1,
+    'T-EXP5-runtime-independent: 別 aggregateKey は独立、1 回目は元 message');
+}
+
+// T-EXP5-runtime-metadata-missing-no-aggregate: metadata なしは aggregation 対象外
+{
+  var env = _newAggEnv();
+  // 同一文言を 2 回送るが metadata なし → 2 回とも元 message
+  env.notifySaveWarning({
+    message:'メタなし-1',
+    consoleTag:'[T-NOMETA]',
+    callsiteId:'TEST-NOMETA-1'
+  });
+  env.notifySaveWarning({
+    message:'メタなし-2',
+    consoleTag:'[T-NOMETA]',
+    callsiteId:'TEST-NOMETA-2'
+  });
+  var final7 = env._regMsgFinal();
+  assert(final7.indexOf('メタなし-2') !== -1,
+    'T-EXP5-runtime-no-metadata: metadata なしは集約されず元 message を出す');
+  assert(final7.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) === -1,
+    'T-EXP5-runtime-no-metadata-no-aggregated: metadata なしで短縮文言が出ない');
+  // aggregation state も触られていない（lastTimestampByKey 空）
+  var st = env._getSaveWarningAggregationState();
+  assertEq(Object.keys(st.lastTimestampByKey).length, 0,
+    'T-EXP5-runtime-no-metadata-no-state: metadata なしで aggregation state が変化しない');
+}
+
+// T-EXP5-runtime-no-aggregateKey-skip: aggregateKey 欠落は集約対象外
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'save-verify:entry', 500);
+  env.notifySaveWarning({
+    message:'aggregateKey なしの元 message',
+    consoleTag:'[T-NOAGG]',
+    callsiteId:'TEST-NOAGG',
+    kind:'save-verify',
+    severity:'warn'
+    // aggregateKey 省略
+  });
+  var final8 = env._regMsgFinal();
+  assert(final8.indexOf('aggregateKey なしの元 message') !== -1,
+    'T-EXP5-runtime-no-aggregateKey: aggregateKey 欠落は集約しない');
+}
+
+// T-EXP5-runtime-wrong-kind-skip: kind!='save-verify' は対象外
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'save-verify:entry', 500);
+  env.notifySaveWarning({
+    message:'別 kind の元 message',
+    consoleTag:'[T-WRONG-KIND]',
+    callsiteId:'TEST-WRONG-KIND',
+    kind:'master-verify',  // 別 kind
+    aggregateKey:'save-verify:entry',
+    severity:'warn'
+  });
+  var final9 = env._regMsgFinal();
+  assert(final9.indexOf('別 kind の元 message') !== -1,
+    'T-EXP5-runtime-wrong-kind: kind が異なる場合は集約対象外');
+}
+
+// T-EXP5-runtime-wrong-severity-skip: severity!='warn' は対象外
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'save-verify:entry', 500);
+  env.notifySaveWarning({
+    message:'別 severity の元 message',
+    consoleTag:'[T-WRONG-SEV]',
+    callsiteId:'TEST-WRONG-SEV',
+    kind:'save-verify',
+    aggregateKey:'save-verify:entry',
+    severity:'info'  // 別 severity
+  });
+  var final10 = env._regMsgFinal();
+  assert(final10.indexOf('別 severity の元 message') !== -1,
+    'T-EXP5-runtime-wrong-severity: severity が異なる場合は集約対象外');
+}
+
+// T-EXP5-runtime-console-warn-individual: 集約時も console.warn は個別に出る（含 metadata）
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'save-verify:entry', 500);
+  var beforeWarnCount = env._warnCalls.length;
+  env.notifySaveWarning({
+    message:'集約時の console',
+    consoleTag:'[T-CONSOLE]',
+    callsiteId:'TEST-CONSOLE',
+    kind:'save-verify',
+    aggregateKey:'save-verify:entry',
+    severity:'warn'
+  });
+  // console.warn が 1 回呼ばれた（集約しても出る）
+  var afterWarnCount = env._warnCalls.length;
+  assertEq(afterWarnCount - beforeWarnCount, 1,
+    'T-EXP5-runtime-console-warn-individual: 集約時も console.warn が個別に呼ばれる');
+  // 出力内容に metadata が残る
+  var lastWarn = env._warnCalls[env._warnCalls.length - 1];
+  assert(lastWarn.indexOf('"aggregateKey":"save-verify:entry"') !== -1,
+    'T-EXP5-runtime-console-warn-keeps-metadata: aggregateKey が console.warn 出力に残る');
+  assert(lastWarn.indexOf('[T-CONSOLE]') !== -1,
+    'T-EXP5-runtime-console-warn-keeps-tag: consoleTag が出力に残る');
+}
+
+// T-EXP5-runtime-indicator-still-plus-1: 集約時も indicator は +1
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'save-verify:entry', 500);
+  // 集約済前の indicator count は 0
+  assertEq(env._getIndicatorState().count, 0,
+    'T-EXP5-runtime-indicator-pre: 開始時 count=0');
+  env.notifySaveWarning({
+    message:'集約時 indicator',
+    consoleTag:'[T-IND]',
+    callsiteId:'TEST-IND',
+    kind:'save-verify',
+    aggregateKey:'save-verify:entry',
+    severity:'warn'
+  });
+  assertEq(env._getIndicatorState().count, 1,
+    'T-EXP5-runtime-indicator-plus-1: 集約時も count+=1（発生単位維持）');
+}
+
+// T-EXP5-runtime-showMsg-type-warn: 集約時も showMsg type は 'warn'
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'save-verify:entry', 500);
+  env.notifySaveWarning({
+    message:'type 検証',
+    consoleTag:'[T-TYPE]',
+    callsiteId:'TEST-TYPE',
+    kind:'save-verify',
+    aggregateKey:'save-verify:entry',
+    severity:'warn'
+  });
+  // reg-msg の innerHTML に alert-warn class が含まれる
+  var final = env._regMsgFinal();
+  assert(final.indexOf('alert-warn') !== -1,
+    'T-EXP5-runtime-showMsg-type-warn: 集約時も showMsg type は warn');
+}
+
+// T-EXP5-runtime-localStorage-untouched: aggregation で localStorage が変化しない
+{
+  var env = _newAggEnv();
+  var beforeKeys = Object.keys(env._ctx.localStorage._);
+  // 同一 key で 3 回呼ぶ（1 元 + 2 短縮 + 3 短縮）
+  for(var i=0;i<3;i++){
+    env.notifySaveWarning({
+      message:'ls 検証 ' + i,
+      consoleTag:'[T-LS]',
+      callsiteId:'TEST-LS',
+      kind:'save-verify',
+      aggregateKey:'save-verify:entry',
+      severity:'warn'
+    });
+  }
+  var afterKeys = Object.keys(env._ctx.localStorage._);
+  assertEq(afterKeys.length, beforeKeys.length,
+    'T-EXP5-runtime-localStorage-untouched: aggregation で localStorage キー数が変化しない');
+  // aggregation 関連キーが localStorage に存在しない
+  afterKeys.forEach(function(k){
+    assert(k.indexOf('saveWarningAggregation') === -1 && k.indexOf('aggregate') === -1,
+      'T-EXP5-runtime-no-aggregation-key-in-ls: ' + k + ' は aggregation キーではない');
+  });
 }
 
 // ============================================================================
