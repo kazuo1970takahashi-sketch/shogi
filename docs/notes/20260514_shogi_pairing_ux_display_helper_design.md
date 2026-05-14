@@ -551,6 +551,7 @@ options = {
 - `mode` 省略 → `compact` 扱い
 - `compact` で `includeCategory: true` を渡しても category は **出ない**（compact 仕様、§4.1）
 - `record.wins` / `record.losses` が型不正 → record 部を **出さない**
+- **name 未設定 / 空文字 / 非 string → prefix のみを返す（trailing space を残さない）**（cowork Should Fix PR #102 反映）
 - 戻り値は **HTML escape 前のプレーン文字列**。callsite で `escapeHtml()` を通す前提（既存 `getName()` / `getNameWithNo()` と同じ流儀）
 
 ### 14.5 UI 適用範囲

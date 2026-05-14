@@ -308,7 +308,8 @@ function formatParticipantLabel(player, options){
   var entryNoStr=(typeof en==='number'&&en>0)?('00'+en).slice(-2):'--';
   var name=(typeof player.name==='string')?player.name:'';
   var prefix=cls?(cls+'-'+entryNoStr):entryNoStr;
-  var base=prefix+' '+name;
+  // cowork Should Fix (PR #102): name 未設定 / 非 string 時に trailing space を残さない。
+  var base=name?(prefix+' '+name):prefix;
   var extras=[];
   if(includeCategory){
     var cat='';

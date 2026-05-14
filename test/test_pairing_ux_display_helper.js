@@ -179,6 +179,29 @@ assert(
   assert(formatParticipantLabel(playerNoEntry, { mode:'compact' }) === 'A--- 高橋三郎', 'entry_no 未設定時は "A---" にフォールバック');
 }
 
+// 15. cowork Should Fix (PR #102): name 未設定 / 非 string で trailing space が残らない
+{
+  // name 未設定（undefined）
+  const playerNoName = { id:'p5', cls:'A', entry_no:12 };
+  const out1 = formatParticipantLabel(playerNoName, { mode:'compact' });
+  assert(out1 === 'A-12', 'name 未設定時は "A-12"（trailing space が残らない）');
+  assert(out1.charAt(out1.length-1) !== ' ', 'name 未設定時の末尾文字がスペースでない');
+
+  // name が空文字
+  const playerEmptyName = { id:'p6', cls:'A', entry_no:12, name:'' };
+  const out2 = formatParticipantLabel(playerEmptyName, { mode:'compact' });
+  assert(out2 === 'A-12', 'name が空文字の時は "A-12"（trailing space が残らない）');
+
+  // name が非 string（数値）
+  const playerBadName = { id:'p7', cls:'A', entry_no:12, name:123 };
+  const out3 = formatParticipantLabel(playerBadName, { mode:'compact' });
+  assert(out3 === 'A-12', 'name が非 string の時は "A-12"（trailing space が残らない）');
+
+  // name 未設定 + record あり → prefix + extras（trailing space なし）
+  const out4 = formatParticipantLabel(playerNoName, { mode:'compact', includeRecord:true, record:{ wins:2, losses:0 } });
+  assert(out4 === 'A-12（2勝0敗）', 'name 未設定 + record ありで "A-12（2勝0敗）"（prefix と extras の間に空きスペースが残らない）');
+}
+
 // 14. mode 省略時は compact 扱い（既定値の安全側）
 assert(
   formatParticipantLabel(playerMember, {}) === 'A-12 山田太郎',
