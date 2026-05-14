@@ -1176,45 +1176,97 @@ PR #87 (`SAVE-UX-PARSE-HANDLING-IMPL`) で `syncBranchMasterOnSave()` の `_load
 
 `BRANCH_MASTER_KEY = 'shogi_branch_master'`、schema_version = 1（[shogi_v4.html:468-469](shogi_v4.html:468)）。
 
-主経路は **`saveBranchMaster()`**（[shogi_v4.html:642-670](shogi_v4.html:642)）の単一関数。呼出箇所は計 16 箇所:
+主経路は **`saveBranchMaster()`**（[shogi_v4.html:642-670](shogi_v4.html:642)）の単一関数。
 
-| # | 呼出 callsite | 行 | 経路 | SAVE-UX 接続 |
+#### 17.3.1 `saveBranchMaster(` 検索結果分類
+
+| 分類 | 件数 | 備考 |
+|---|---:|---|
+| 文字列一致 | 16 | `grep -c "saveBranchMaster(" shogi_v4.html` 結果 |
+| 関数定義 | 1 | [shogi_v4.html:642](shogi_v4.html:642)、callsite から除外 |
+| consoleTag 等の文字列 | 1 | [shogi_v4.html:660](shogi_v4.html:660) `'[STORAGE-QUOTA] saveBranchMaster() setItem failed ...'`、callsite から除外 |
+| **実呼び出し** | **14** | **inventory 上の callsite 数** |
+
+#### 17.3.2 実呼び出し 14 callsite 一覧
+
+各 callsite の囲み関数は `awk` で関数定義位置を辿って確定:
+
+| # | 行 | 囲み関数 | 役割 | SAVE-UX 接続 |
 |---|---|---|---|---|
-| 1 | `applyParticipantRenameWithMaster` | [1732](shogi_v4.html:1732) | 参加者名変更 → master member.name 更新 | MASTER-001 verify (S03 同等) |
-| 2 | `applyMemberIdBackfill` ?（または yomi 補完）| [1919](shogi_v4.html:1919) | tournament yomi 反映 | - |
-| 3 | Phase 2 import run | [2269](shogi_v4.html:2269) | phase2 統合 import | - |
-| 4 | applyPhase2Import run（モーダル click） | [2416](shogi_v4.html:2416) | 同上 別経路 | - |
-| 5 | overwrite import | [2484](shogi_v4.html:2484) | マスタ上書き import | - |
-| 6 | merge import | [2500](shogi_v4.html:2500) | マスタ統合 import | - |
-| 7 | master edit modal save | [2602](shogi_v4.html:2602) | S22（4 fields edit）| master-verify S22 ✅ |
-| 8 | master delete | [2725](shogi_v4.html:2725) | tombstone | - |
-| 9 | master restore | [2756](shogi_v4.html:2756) | tombstone 復元 | - |
-| 10 | master reset | [2829](shogi_v4.html:2829) | applyMasterReset → 全 member 消去 | - |
-| 11 | applyMasterMemberEdit 経由 S03 | [3453](shogi_v4.html:3453) | handlePastParticipantClassAdd | save-verify / master-verify S03 ✅ |
-| 12 | yomi 補完 | [3618](shogi_v4.html:3618) | addParticipant → master yomi 補完 | - |
-| 13 | MASTER-001 rename | [4135](shogi_v4.html:4135) | applyParticipantRenameWithMaster 同期 | MASTER-001 (verifyMasterPersisted) ✅ |
-| 14 | sync on save | [5310](shogi_v4.html:5310) | `syncBranchMasterOnSave` 正常経路 | - |
-| 15 | (S05 handleSuggestClassAdd 経由) | (該当 applyMasterMemberEdit) | クラス変更 | save-verify / master-verify S05 ✅ |
-| 16 | (その他 attendance 反映) | （sync 内） | tournament_ids / last_attended | sync 内集約 |
+| 1 | [1732](shogi_v4.html:1732) | `handlePastParticipantClassAdd` | 既登録者クラス変更分岐の `applyMasterMemberEdit` 経由保存（S03 経路） | save-verify `SAVE-003b-handlePastParticipantClassAdd-class-change` / master-verify S03 ✅ |
+| 2 | [1919](shogi_v4.html:1919) | `addSelectedPastParticipants` | 過去参加者を一括登録した際の master member 反映 | - |
+| 3 | [2269](shogi_v4.html:2269) | `bindMasterResetModalEvents` | `applyMasterReset` 結果（全 member 消去後）を保存 | - |
+| 4 | [2416](shogi_v4.html:2416) | `bindPhase2ImportModalEvents` | Phase 2 import 確定時に `applyPhase2Import` 結果を保存 | - |
+| 5 | [2484](shogi_v4.html:2484) | `processMasterImportText`（overwrite mode） | マスタ上書き import 結果を保存 | - |
+| 6 | [2500](shogi_v4.html:2500) | `processMasterImportText`（merge mode） | マスタ統合 import 結果を保存 | - |
+| 7 | [2602](shogi_v4.html:2602) | `bindMasterEditModalEvents` | 会員マスタ編集モーダル保存（S22、4 fields） | master-verify S22 ✅ |
+| 8 | [2725](shogi_v4.html:2725) | `bindMasterTabEvents` | tombstone 削除（`applyMasterMemberDelete` 後） | - |
+| 9 | [2756](shogi_v4.html:2756) | `bindMasterTabEvents` | tombstone 復元（`applyMasterMemberRestore` 後） | - |
+| 10 | [2829](shogi_v4.html:2829) | `bindMigrationModalEvents` | マイグレ統合（過去大会 → 支部マスタ）結果を保存 | - |
+| 11 | [3453](shogi_v4.html:3453) | `handleSuggestClassAdd` | サジェスト由来の既登録者クラス変更分岐（S05 経路） | save-verify `SAVE-003b-handleSuggestClassAdd-class-change` / master-verify S05 ✅ |
+| 12 | [3618](shogi_v4.html:3618) | `addPlayer` | サジェスト選択の既存 member に yomi が空のとき補完保存 | - |
+| 13 | [4135](shogi_v4.html:4135) | `applyParticipantRenameWithMaster` | MASTER-001 = 参加者名変更を master member.name に反映 | MASTER-001 `verifyMasterPersisted` ✅ |
+| 14 | [5310](shogi_v4.html:5310) | `syncBranchMasterOnSave` | sync 正常経路（corruption 検知 = PARSE-MASTER-003 のスキップ後ではない、line 5300 系のフロー） | - |
 
-`saveBranchMaster()` の構造:
+#### 17.3.3 `saveBranchMaster()` 内部構造
 
 - `try { JSON.stringify(clone); localStorage.setItem(...); } catch(e) { ... }`
 - `clone` は schema_version / updated_at / members の 3 フィールド clone（`_loaded_with_corruption` を排除）
 - catch:
   - `isQuotaExceededError(e)` → `notifySaveWarning({kind:'storage-quota', ...})` 経由（PR #79）
-  - その他例外 → `console.warn('支部マスタの保存に失敗。', e)` のみ（silent on user side）
+  - その他例外 → `console.warn('支部マスタの保存に失敗。', e)` のみ（user-facing 通知なし）
 
-**破損原因として考えられる箇所**:
+#### 17.3.4 保存失敗リスクと破損 raw 直接原因の分離
 
-- 「その他例外」分岐（line 668）→ ストレージ系の中途半端な failure（partial write 系）が silent に通る → 後続 `loadBranchMaster()` が壊れた JSON を取得しうる
-- ただし `localStorage.setItem` は atomic（部分書き込みなし）が一般実装。破損は外的要因の方が可能性が高い
+「partial write / その他例外 catch」と「破損 raw が localStorage に残る原因」は別問題として扱う。混同すると root cause 候補の評価が歪むため明示分離する:
+
+**(a) user-facing に出ない保存失敗リスク**:
+
+- 「その他例外」分岐（line 668）は `console.warn` のみで silent on user side
+- 例: `JSON.stringify` 中の循環参照 / `localStorage` がプライベートモード等で disabled / 想定外の DOM Exception
+- 運営者が「保存に失敗していた」事実に気づきにくい
+- ただし **このカスケード自体は壊れた JSON を localStorage に書き込まない**（throw が出れば setItem は実行されないか、実行されても atomic）
+- 後続: §17.11.x で notifySaveWarning 経由化候補（例 callsiteId `STORAGE-WRITE-FAIL:saveBranchMaster` 等）
+
+**(b) 破損 raw の直接原因（root cause としての強さ）**:
+
+- `localStorage.setItem` は基本的に **atomic** と考えられる（partial write 仕様は一般実装に存在しない）
+- 「partial write が silent に通って壊れた JSON を作る」シナリオの可能性は**高くない**
+- むしろ **schema 不整合 / 手動操作 / 不完全 master object を直接保存する経路 / 過去形式とのズレ** の方が原因候補として自然（§17.7 で分類）
+
+→ 「保存失敗 = 破損 raw の原因」ではない。両者は独立した topic として §17.7 / §17.9 で扱う。
 
 ### 17.4 支部マスタの読み込み経路
 
-主経路は **`loadBranchMaster()`**（[shogi_v4.html:626-640](shogi_v4.html:626)）の単一関数。呼出箇所は計 26 箇所（renderMasterTab / openMasterEditModal / Phase 2 import 検証 / applyParticipantRenameWithMaster / etc.）。
+主経路は **`loadBranchMaster()`**（[shogi_v4.html:626-640](shogi_v4.html:626)）の単一関数。
 
-構造:
+#### 17.4.1 `loadBranchMaster(` 検索結果分類
+
+| 分類 | 件数 | 備考 |
+|---|---:|---|
+| 文字列一致 | 25 | `grep -c "loadBranchMaster(" shogi_v4.html` 結果 |
+| 関数定義 | 1 | [shogi_v4.html:626](shogi_v4.html:626)、callsite から除外 |
+| **実呼び出し** | **24** | **inventory 上の callsite 数** |
+
+#### 17.4.2 実呼び出し 24 callsite 一覧（囲み関数別 group）
+
+| group | callsite 行 / 囲み関数 | 用途 |
+|---|---|---|
+| 過去参加者経路 | [1700](shogi_v4.html:1700) `handlePastParticipantClassAdd` / [1899](shogi_v4.html:1899) `addSelectedPastParticipants` / [1979](shogi_v4.html:1979) `renderPastParticipantsPanel` | 過去参加者の取得・反映・パネル描画 |
+| マスタリセット | [2230](shogi_v4.html:2230) `openMasterResetModal` / [2262](shogi_v4.html:2262) `bindMasterResetModalEvents` | リセットモーダルの状態確認・実行 |
+| Phase 2 import | [2311](shogi_v4.html:2311) `openPhase2ImportModal` / [2358](shogi_v4.html:2358) `bindPhase2ImportModalEvents` / [2404](shogi_v4.html:2404) `bindPhase2ImportModalEvents` | 空マスタ事前チェック / プレビュー / 実行 |
+| マスタ import | [2492](shogi_v4.html:2492) `processMasterImportText` | merge mode の現行マスタ取得 |
+| マスタ編集 | [2509](shogi_v4.html:2509) `openMasterEditModal` / [2582](shogi_v4.html:2582) `bindMasterEditModalEvents` | S22 編集モーダル開閉・保存検証 |
+| マスタタブ操作 | [2676](shogi_v4.html:2676) `bindMasterTabEvents`（export） / [2715](shogi_v4.html:2715) `bindMasterTabEvents`（delete） / [2746](shogi_v4.html:2746) `bindMasterTabEvents`（restore） | マスタタブの export / delete / restore |
+| マスタタブ描画 | [2769](shogi_v4.html:2769) `renderMasterTab` | タブ全体描画 |
+| マイグレ統合 | [2827](shogi_v4.html:2827) `bindMigrationModalEvents` / [2845](shogi_v4.html:2845) `openMigrationWizard` | 統合実行・モーダル open（破損バナー判定） |
+| 参加者登録経路 | [3386](shogi_v4.html:3386) `handleSuggestClassAdd` / [3543](shogi_v4.html:3543) `updateSuggestList` / [3573](shogi_v4.html:3573) `addPlayer` / [3613](shogi_v4.html:3613) `addPlayer`（yomi 補完） | サジェスト・追加経路 |
+| MASTER-001 / member sync | [4119](shogi_v4.html:4119) `applyParticipantRenameWithMaster` / [4284](shogi_v4.html:4284) `openMemberMasterSyncDialog` | 参加者名変更同期 |
+| sync on save | [5286](shogi_v4.html:5286) `syncBranchMasterOnSave` | corruption 検知 / 正常 sync 共通入口 |
+
+→ 計 24 callsite。`renderMasterTab` の 1 callsite が UI 全体の起点となり、他の callsite と組み合わさって 1 タブ表示で複数回 `loadBranchMaster` が呼ばれる（パフォーマンスは別 topic）。
+
+#### 17.4.3 `loadBranchMaster()` 内部構造
 
 ```js
 function loadBranchMaster(){
@@ -1326,34 +1378,47 @@ import 経路の特徴:
 
 ### 17.7 破損原因候補（分類）
 
-依頼項目 §4.5 の 10 候補をコードベース実情と照らし合わせて分類:
+#### 17.7.0 「症状」と「原因」の分離
 
-#### 該当しそう（中〜高）
+依頼項目 §4.5 候補 #4 「JSON.parse 不能な文字列が保存されている」は **症状** と **原因** が混在しやすいため、本セクション冒頭で明示分離する:
+
+| 視点 | 内容 | 検知 / 対処 |
+|---|---|---|
+| **症状としての JSON.parse 不能** | `loadBranchMaster()` が `localStorage.getItem` で得た文字列を `JSON.parse` できない状態（`_loaded_with_corruption=true` を立てる検知対象） | PR #87 `PARSE-MASTER-003` で `notifySaveWarning({kind:'storage-corrupted', ...})` 経由化済 |
+| **原因としての「JSON.parse 不能な文字列が localStorage に書き込まれること」** | app の通常経路から発生する可能性は **低め**（`saveBranchMaster` は `JSON.stringify(clone)` を `localStorage.setItem` に渡すだけで、stringify 結果が parse 不能になることはほぼない）。devtools / browser extension / 手動操作 / 外部要因なら **あり得る** | 原因側は本 inventory の主題。アプリ実装での発生経路は §17.7.2 で「可能性低」に分類 |
+
+→ 以降の分類表は **原因（root cause）視点** で評価する。症状側は PR #87 で既に SAVE-UX に乗っているため重複扱いしない。
+
+依頼項目 §4.5 の 10 候補を root cause 視点で分類:
+
+#### 17.7.1 該当しそう（中〜高、root cause として強い）
 
 | # | 候補 | 該当根拠 |
 |---|---|---|
-| 5 | **JSON としては読めるが期待 schema ではない** | `normalizeBranchMaster` 空マスタ返却ケース（schema_version 不一致 / 配列ではない / オブジェクトではない）。schema_version bump 時の全消失リスクは設計コメントに明記済 |
+| 5 | **JSON としては読めるが期待 schema ではない** | `normalizeBranchMaster` が空マスタを返すケース（schema_version 不一致 / 配列ではない / オブジェクトではない）。読み込み時に空マスタ + flag なしで「データが消えた」ように見える。schema_version bump 時の全消失リスクは設計コメントに明記済 |
 | 7 | **手動開発操作で localStorage が不正になった** | dev tools での直接編集、テストデータ流し込み、誤コピペ等。実運用での発生確率は不明だが除外できない |
 | 8 | **browser / devtools / extension 等による値変更** | 同上の系統。Privacy 系拡張 / 容量制限の異なるブラウザ / Safari Private Mode 等 |
-| 9 | **app 内のどこかで不完全な branch master を保存している** | `saveBranchMaster` の catch（quota 以外）が silent。`updateBranchMasterFromTournament` 内例外も後段 catch で silent。**「壊れたまま保存される」確率は低い**（normalize 経由 + atomic setItem）が、要追加調査 |
+| 9 | **app 内のどこかで不完全な branch master を保存している** | `applyOverwriteImport` / `applyMergeImport` / `applyPhase2Import` 等は `normalizeBranchMaster` 経由で堅牢化されるが、`saveBranchMaster(masterToSave)` を呼ぶ前に in-memory master を直接 mutate する経路（line 3618 yomi 補完 / sync 内 attendance 反映 等）に **schema 違反を持ち込む経路** がないか要追加監査。`saveBranchMaster` 自体は schema 検証なしで `JSON.stringify(clone)` を実行する |
 
-#### 可能性が低い（コード上の防御で大半防げる）
+#### 17.7.2 可能性が低い（コード上の防御で大半防げる）
 
 | # | 候補 | 根拠 |
 |---|---|---|
-| 1 | localStorage 書き込み途中失敗 | setItem は atomic、partial write はブラウザ仕様上想定外 |
+| 1 | localStorage 書き込み途中失敗 | `setItem` は atomic、partial write はブラウザ仕様上想定外。失敗時は throw or 部分非保存（既存内容保持）であり「壊れた中間状態の文字列」を作らない |
 | 2 | quota / storage exception | PR #79 で `notifySaveWarning(storage-quota)` 経路として独立処理済 |
-| 3 | 過去バージョン形式との互換不整合 | `normalizeBranchMaster` で schema_version != 1 → 空マスタ（防御済、ただし schema bump 時は全消失） |
-| 4 | JSON.parse 不能な文字列が保存されている | `loadBranchMaster` の catch で `_loaded_with_corruption` 付き空マスタ。**現在 SAVE-UX に乗っているのはここ（PARSE-MASTER-003）** |
+| 3 | 過去バージョン形式との互換不整合 | `normalizeBranchMaster` で schema_version != 1 → 空マスタ（防御済、ただし schema bump 時の全消失は別問題） |
+| 4 | **「JSON.parse 不能な文字列の保存」を app 通常経路から発生させる経路** | `saveBranchMaster` は `JSON.stringify(clone)` の結果だけを書き込む。stringify の出力が parse 不能になるのは循環参照 throw 等の例外時のみ（その場合は setItem 自体が実行されない）。**app 通常経路で「parse 不能な raw を新規に作って書き込む」シナリオは現時点で確認できない**。発生するなら 17.7.1 #7 / #8 など外部要因が主 |
 | 6 | import / migration の不正データ混入 | 全 import 経路が `normalizeBranchMaster` 経由 |
 
-#### 現時点で判断不能（要追加調査）
+注: 「症状としての JSON.parse 不能」は PR #87 で検知済（PARSE-MASTER-003）であり、本表は原因側のみを扱う（§17.7.0 参照）。
+
+#### 17.7.3 現時点で判断不能（要追加調査）
 
 | # | 候補 | 不足情報 |
 |---|---|---|
-| 10 | `_loaded_with_corruption` 付きデータの再保存・伝播 | `saveBranchMaster` の clone は `_loaded_with_corruption` を排除しているが、callsite 側で「破損由来の空マスタを誤って正常マスタとして上書きする」誤動作が起きうるか？ `syncBranchMasterOnSave` では明示的に skip / S03 / S05 / S22 経路では `_loaded_with_corruption` 判定が抜けている可能性 → 要監査 |
+| 10 | `_loaded_with_corruption` 付きデータの再保存・伝播 | `saveBranchMaster` の clone は `_loaded_with_corruption` を排除しているが、callsite 側で「破損由来の空マスタを誤って正常マスタとして上書きする」誤動作が起きうるか？ §17.4 で 4 callsite を確認した範囲では明示判定があるが、`loadBranchMaster()` → in-memory mutate → `saveBranchMaster()` の経路で flag 判定が抜けている可能性 → §17.11.5 callsite audit で全数監査予定 |
 | — | 実運用ログ・テレメトリ | indicator count の集約データなし。実発生件数・パターン不明 |
-| — | localStorage 容量逼迫時の挙動 | quota 直前の状態で部分 write が起きうるか（ブラウザ実装依存） |
+| — | localStorage 容量逼迫時の挙動 | quota 直前の状態で「保存はされたが直後に切り詰められる」等のブラウザ実装依存挙動が起きうるか（partial write とは別問題） |
 
 ### 17.8 既存防御処理
 
