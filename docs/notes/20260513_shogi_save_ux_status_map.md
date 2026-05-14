@@ -2174,3 +2174,324 @@ PR #90 着地後も以下は **意図的に不変**:
 - `docs/notes/20260514_shogi_save_ux_quota_inventory.md`（quota inventory の前例）
 - PR [#88](https://github.com/kazuo1970takahashi-sketch/shogi/pull/88) / [#89](https://github.com/kazuo1970takahashi-sketch/shogi/pull/89) / [#90](https://github.com/kazuo1970takahashi-sketch/shogi/pull/90) / [#91](https://github.com/kazuo1970takahashi-sketch/shogi/pull/91)
 - 過去 SAVE-UX PR 群（HANDOFF.md 「保存安全化 / SAVE-UX 現在地マップ」以下のポインタ参照）
+
+## 21. SAVE-UX-BRANCH-MASTER-CALLSITE-AUDIT（v2.1 追補 / `_loaded_with_corruption` 判定欠落の callsite 監査）
+
+- 種別: **docs-only audit / inventory**（実装はしない / 仕様は確定しない / §11〜§20 を改訂しない）
+- 対象 main HEAD: `8c676c9`（PR #92 next-inventory squash merge 後）
+- Task ID: `SAVE-UX-BRANCH-MASTER-CALLSITE-AUDIT`
+- 目的: §17.9 弱点 #8「`_loaded_with_corruption` の伝播・二重発火リスクが未監査」を解消するため、`shogi_v4.html` 現在 HEAD における支部マスタ関連 callsite を棚卸し、各 callsite が `_loaded_with_corruption` を見るべきか / 見なくてよいかを docs 上で可視化する
+- 起源: §17.11.5（補助タスク）/ §18.9.5 / §19.6 / §20.5.1 第一推奨
+- 関連: §17.4（読み込み経路 24 callsite）/ §17.3（保存経路 14 callsite）/ §17.4.3（`_loaded_with_corruption` 利用 4 callsite）
+
+### 21.1 Audit の目的と非目的
+
+#### 21.1.1 目的
+
+1. `loadBranchMaster()` 24 callsite × `_loaded_with_corruption` 判定の有無マトリクスを作る（§17.11.5 直接の指示）
+2. `saveBranchMaster()` 14 callsite が「load → modify → save」経路で空マスタを誤上書きしうるかを判定する
+3. `_loaded_with_corruption` 検知漏れ（getItem 例外 / `normalizeBranchMaster` schema 不一致など）を構造的にリストする
+4. `notifySaveWarning()` 21 callsite のうち、支部マスタ破損と関係するものを識別する
+5. 上記から、次に **実装** が必要か / **docs 整理** で十分か / **運用フィードバック待ち** かを判断する
+
+#### 21.1.2 非目的（本 audit ではやらない）
+
+- 実装変更（`shogi_v4.html` / test / docs/specs / CI 設定）
+- 仕様確定（防御パターンの最終形は §18 設計方針 / §19 closure 内）
+- `_loaded_with_corruption` 検出条件の拡張（例: schema 不一致でも flag を立てる等）
+- §17〜§20 の既存記述の改訂
+
+### 21.2 調査対象の定義
+
+| カテゴリ | 定義 | 件数（HEAD `8c676c9`）|
+|---|---|---|
+| `loadBranchMaster()` 実呼び出し | 関数定義（[shogi_v4.html:626](shogi_v4.html:626)）を除く呼び出し点 | **24** |
+| `saveBranchMaster()` 実呼び出し | 関数定義（[shogi_v4.html:642](shogi_v4.html:642) 付近）を除く呼び出し点 | **14** |
+| `_loaded_with_corruption` 参照 | assignment 1（[shogi_v4.html:637](shogi_v4.html:637)）+ read 4 + コメント 2 | **read 4** |
+| `notifySaveWarning()` 呼び出し | helper 経由化済 warn callsite（§16.13 4 系統 21 callsite と整合）| **21** |
+
+本 audit 時点で支部マスタ破損 (`_loaded_with_corruption`) を **明示的に読む** 箇所は 4 callsite（§17.4.3 で既知）。`syncBranchMasterOnSave` のみが SAVE-UX indicator に乗る warn 通知（PARSE-MASTER-003）を出し、他の 3 callsite は UI 分岐 / 早期 return のみで warn 通知は出さない。
+
+### 21.3 `loadBranchMaster()` 24 callsite × `_loaded_with_corruption` 判定マトリクス
+
+§17.4.2 の 24 callsite を HEAD `8c676c9` で再検証。すべて同一行で残存（PR #90 の差分は `shogi_v4.html:5295` 1 行のみのため、§17 で記録した行番号と整合）。
+
+`saveBranchMaster()` 同行近傍呼び出しは「load → modify → save」経路の有無を示す。
+
+| # | 行 | 囲み関数 | saveBranchMaster を同関数内で呼ぶ | `_loaded_with_corruption` を読む | 経路性格 |
+|---|---:|---|---|---|---|
+| 1 | [1700](shogi_v4.html:1700) | `handlePastParticipantClassAdd` | yes（[1732](shogi_v4.html:1732)）| no | read+save（過去参加者反映）|
+| 2 | [1899](shogi_v4.html:1899) | `addSelectedPastParticipants` | yes（[1919](shogi_v4.html:1919)）| no | read+save（過去参加者一括追加）|
+| 3 | [1979](shogi_v4.html:1979) | `renderPastParticipantsPanel` | no | no | read-only（パネル描画）|
+| 4 | [2230](shogi_v4.html:2230) | `openMasterResetModal` | no | no | read-only（リセット modal 状態確認）|
+| 5 | [2262](shogi_v4.html:2262) | `bindMasterResetModalEvents` | yes（[2269](shogi_v4.html:2269)）| no | **意図的な overwrite**（リセット実行）|
+| 6 | [2311](shogi_v4.html:2311) | `openPhase2ImportModal` | no | no | read-only（空マスタ事前チェック）|
+| 7 | [2358](shogi_v4.html:2358) | `bindPhase2ImportModalEvents` | no | no | read-only（プレビュー）|
+| 8 | [2404](shogi_v4.html:2404) | `bindPhase2ImportModalEvents` | yes（[2416](shogi_v4.html:2416)）| no | **意図的な overwrite**（Phase 2 import 実行）|
+| 9 | [2492](shogi_v4.html:2492) | `runMasterImport` | yes（[2484](shogi_v4.html:2484) / [2500](shogi_v4.html:2500)）| no | **意図的な overwrite**（master import）|
+| 10 | [2509](shogi_v4.html:2509) | `openMasterEditModal` | no | no | read-only（編集 modal open）|
+| 11 | [2582](shogi_v4.html:2582) | `bindMasterEditModalEvents` | yes（[2602](shogi_v4.html:2602)）| no | read+save（S22 lastclass 編集）|
+| 12 | [2676](shogi_v4.html:2676) | `bindMasterTabEvents`（export）| no | no | read-only（export）|
+| 13 | [2715](shogi_v4.html:2715) | `bindMasterTabEvents`（delete）| yes（[2725](shogi_v4.html:2725)）| no | read+save（member 削除）|
+| 14 | [2746](shogi_v4.html:2746) | `bindMasterTabEvents`（restore）| yes（[2756](shogi_v4.html:2756)）| no | **意図的な overwrite**（restore from JSON）|
+| 15 | [2769](shogi_v4.html:2769) | `renderMasterTab` | no | no | read-only（タブ全体描画）|
+| 16 | [2827](shogi_v4.html:2827) | `bindMigrationModalEvents` | yes（[2829](shogi_v4.html:2829)）| no | **意図的な overwrite**（マイグレ統合実行、wizard 側 #17 で flag 告知済）|
+| 17 | [2845](shogi_v4.html:2845) | `openMigrationWizard` | no | **yes（[2846](shogi_v4.html:2846)）** | read-only + flag 告知（破損バナー表示）|
+| 18 | [3386](shogi_v4.html:3386) | `handleSuggestClassAdd` | yes（[3453](shogi_v4.html:3453)）| no | read+save（サジェスト経由参加者追加）|
+| 19 | [3543](shogi_v4.html:3543) | `handleNameInputChange`（旧 `updateSuggestList`）| no | no | read-only（サジェスト候補更新）|
+| 20 | [3573](shogi_v4.html:3573) | `addPlayer` | no | no | read-only（同関数内 1 つ目、duplicate 検査用）|
+| 21 | [3613](shogi_v4.html:3613) | `addPlayer` | yes（[3618](shogi_v4.html:3618)）| no | read+save（yomi 補完反映）|
+| 22 | [4119](shogi_v4.html:4119) | `applyParticipantRenameWithMaster` | yes（[4135](shogi_v4.html:4135)）| **yes（[4121](shogi_v4.html:4121)）** | read+save（rename 同期、flag 検知時は早期 `error:'corrupted'` return）|
+| 23 | [4284](shogi_v4.html:4284) | `openMemberMasterSyncDialog` | no | **yes（[4286](shogi_v4.html:4286)）** | read-only + 分岐（flag 検知時は `status:'no_master'`）|
+| 24 | [5286](shogi_v4.html:5286) | `syncBranchMasterOnSave` | yes（[5310](shogi_v4.html:5310)）| **yes（[5289](shogi_v4.html:5289)）** | read+save（PARSE-MASTER-003、flag 検知時は notifySaveWarning + save() 継続、saveBranchMaster スキップ）|
+
+#### 21.3.1 行数集計
+
+| 集計軸 | 件数 |
+|---|---:|
+| 全 callsite | 24 |
+| read-only（同関数内で `saveBranchMaster` を呼ばない）| 10 |
+| read+save（同関数内で `saveBranchMaster` を呼ぶ）| 14 |
+| `_loaded_with_corruption` を読む | 4（[2846](shogi_v4.html:2846) / [4121](shogi_v4.html:4121) / [4286](shogi_v4.html:4286) / [5289](shogi_v4.html:5289)）|
+| read+save かつ flag を読む | 2（[4135](shogi_v4.html:4135)= `applyParticipantRenameWithMaster` / [5310](shogi_v4.html:5310)= `syncBranchMasterOnSave`）|
+| read+save かつ flag を読まない（**注目対象**）| **12** |
+
+read+save 14 のうち flag を読まないのは 12 件。これらをさらに「意図的 overwrite」と「load→modify→save」に分けると次節になる。
+
+### 21.4 read+save 14 callsite の経路性格分類
+
+| # | callsite | 性格 | 空マスタ誤上書きリスク |
+|---|---|---|---|
+| 1 | [1732](shogi_v4.html:1732) `handlePastParticipantClassAdd` | load→modify→save（過去参加者反映）| **理論上あり、実運用上は低**（後述 21.5）|
+| 2 | [1919](shogi_v4.html:1919) `addSelectedPastParticipants` | load→modify→save（過去参加者一括追加）| **理論上あり、実運用上は低**（同上）|
+| 3 | [2269](shogi_v4.html:2269) `bindMasterResetModalEvents` | **意図的 overwrite**（リセット）| なし（仕様通り）|
+| 4 | [2416](shogi_v4.html:2416) `bindPhase2ImportModalEvents` | **意図的 overwrite**（Phase 2 import）| なし（仕様通り、wizard 側で flag 告知）|
+| 5 | [2484](shogi_v4.html:2484) `runMasterImport` | **意図的 overwrite**（overwrite モード）| なし（仕様通り）|
+| 6 | [2500](shogi_v4.html:2500) `runMasterImport` | **意図的 overwrite**（merge モード）| なし（merge では既存空 master + import data を結合、import 側 data を優先）|
+| 7 | [2602](shogi_v4.html:2602) `bindMasterEditModalEvents` | load→modify→save（S22 lastclass 編集）| **理論上あり、実運用上は低**（master が空なら編集対象 member が表示されないため到達しない）|
+| 8 | [2725](shogi_v4.html:2725) `bindMasterTabEvents`（delete）| load→modify→save（member 削除）| **理論上あり、実運用上は低**（同上）|
+| 9 | [2756](shogi_v4.html:2756) `bindMasterTabEvents`（restore）| **意図的 overwrite**（JSON 復元）| なし（仕様通り）|
+| 10 | [2829](shogi_v4.html:2829) `bindMigrationModalEvents` | **意図的 overwrite**（マイグレ統合）| なし（wizard 側 [2846](shogi_v4.html:2846) で flag 告知バナー表示済、user 同意の上で実行）|
+| 11 | [3453](shogi_v4.html:3453) `handleSuggestClassAdd` | load→modify→save（サジェスト経由参加者追加）| **理論上あり、実運用上は低**（master が空ならサジェスト候補が表示されないため到達しにくい）|
+| 12 | [3618](shogi_v4.html:3618) `addPlayer` | load→modify→save（yomi 補完反映）| **理論上あり、実運用上は中**（master が空でも user は名前を直接入力可能で到達しうる経路）|
+| 13 | [4135](shogi_v4.html:4135) `applyParticipantRenameWithMaster` | load→modify→save、**flag 検知済** | 防御済（[4121](shogi_v4.html:4121) 早期 return）|
+| 14 | [5310](shogi_v4.html:5310) `syncBranchMasterOnSave` | load→modify→save、**flag 検知済** | 防御済（[5289](shogi_v4.html:5289) で PARSE-MASTER-003 経由保護）|
+
+「意図的 overwrite」5 件は `_loaded_with_corruption` を読まなくても **設計通り** で問題ない（仕様として「現マスタを破棄して新マスタを書く」が確定している経路）。マイグレ統合 [2829](shogi_v4.html:2829) は sibling `openMigrationWizard` [2845](shogi_v4.html:2845)（[2846](shogi_v4.html:2846)）で flag 検知バナーを user に提示してから実行するため、user 同意の遮断が効く。
+
+注目対象は **load→modify→save の 5 件で flag を読まない箇所**:
+
+- [1732](shogi_v4.html:1732) `handlePastParticipantClassAdd`
+- [1919](shogi_v4.html:1919) `addSelectedPastParticipants`
+- [2602](shogi_v4.html:2602) `bindMasterEditModalEvents`（S22）
+- [2725](shogi_v4.html:2725) `bindMasterTabEvents`（delete）
+- [3453](shogi_v4.html:3453) `handleSuggestClassAdd`
+- [3618](shogi_v4.html:3618) `addPlayer`（yomi 補完）
+
+これら 6 件について、実運用上のリスクを §21.5 で評価する。
+
+### 21.5 実運用上のリスク評価（注目 6 件）
+
+`_loaded_with_corruption` が立つのは **`JSON.parse` 失敗時のみ**（[shogi_v4.html:637](shogi_v4.html:637)）。`getItem` 例外時 / `normalizeBranchMaster` schema 不一致時は flag が立たず空マスタが返るだけ（§17.4.3 / 21.7.1 参照）。
+
+| callsite | master 空時の到達可能性 | overwrite による失われるもの | 実運用上の評価 |
+|---|---|---|---|
+| [1732](shogi_v4.html:1732) `handlePastParticipantClassAdd` | **低**: master 空 → 過去参加者リストも空 → user 操作経路で到達しにくい | 過去参加者の class 変更履歴 | 間接防御により低リスク |
+| [1919](shogi_v4.html:1919) `addSelectedPastParticipants` | **低**: 同上（過去参加者選択 UI が表示されない）| 過去参加者の attendance / yomi など | 間接防御により低リスク |
+| [2602](shogi_v4.html:2602) `bindMasterEditModalEvents`（S22）| **低**: master 空 → 編集対象 member が一覧に表示されない → modal が開かない | last_class / yomi など | 間接防御により低リスク |
+| [2725](shogi_v4.html:2725) `bindMasterTabEvents`（delete）| **低**: master 空 → 削除対象 member ボタンが表示されない | member 削除フラグ | 間接防御により低リスク |
+| [3453](shogi_v4.html:3453) `handleSuggestClassAdd` | **低**: master 空 → サジェスト候補が出ない → click 経路に乗らない | サジェスト経由 member 履歴 | 間接防御により低リスク |
+| [3618](shogi_v4.html:3618) `addPlayer`（yomi 補完）| **中**: user は名前を直接入力できるため master 空でも到達可能。ただし yomi 補完が空でも追加自体は成立、空マスタを書き戻すだけで「破損 raw を上書きする」リスクは現実的に存在 | 既存 yomi map 全体 | **唯一現実的な懸念**（後述 21.9）|
+
+#### 21.5.1 結論（リスク評価）
+
+**中リスク 1 件の要約**: 支部マスタ raw が `JSON.parse` 失敗で破損している（または `getItem` 例外 / schema 不一致で空マスタになっている）状況で、user が `addPlayer` 経由で新規参加者を登録すると、`loadBranchMaster()` が返した空マスタに yomi 補完情報を付加し `saveBranchMaster()` で書き戻す経路が走る。結果として `localStorage` の破損 raw（復旧の手がかり）が **新規 1 名のみの「正規」マスタ** に上書きされ、既存マスタ内容の復旧可能性が狭まる **可能性がある**。
+
+- 6 件中 5 件は **間接防御**（master 空 = UI 要素も空 = user 操作で到達しない）により実運用上は低リスク
+- 残り 1 件（[3618](shogi_v4.html:3618) `addPlayer`）が **理論上の唯一の現実的経路**: user が新規参加者を `addPlayer` で登録した際に master 空マスタ + 新規 yomi を書き戻す
+- ただし破損 raw は `loadBranchMaster()` 内 [shogi_v4.html:637](shogi_v4.html:637) で `_loaded_with_corruption=true` を立てた **空マスタを返却** するだけで、`localStorage` の破損 raw は保持される（仕様書 v5 §3.5）→ `addPlayer` が `saveBranchMaster(空マスタ+新規 1 名)` を呼ぶと、その時点で破損 raw が **新規 1 名のみのマスタ** に上書きされる
+- これは「データ消失」というより「データ復旧の可能性を狭める」リスク。元の支部マスタを別途 backup していれば復旧可能
+- 大会データのコピー (`saveData`) 経路には PR #87 (PARSE-MASTER-003) の防御が入っているため、`syncBranchMasterOnSave` で `addPlayer` 直後の master 同期がブロックされる場面はない（PR #87 はあくまで sync-on-save、addPlayer の直接 save は素通り）
+
+### 21.6 `_loaded_with_corruption` 検出漏れの構造分析
+
+#### 21.6.1 flag が立つ条件
+
+`loadBranchMaster()` 内 [shogi_v4.html:626-640](shogi_v4.html:626)（§17.4.3）:
+
+1. `getItem` 例外 → silent に `createEmptyBranchMaster()`（**flag は立たない**）
+2. raw が空 / null → `createEmptyBranchMaster()`（**flag は立たない**、正常な未初期化状態）
+3. `JSON.parse` 失敗 → `createEmptyBranchMaster()` + **`_loaded_with_corruption=true`** ✅
+4. `JSON.parse` 成功 → `normalizeBranchMaster(parsed)` 経由
+   - schema_version != 1 → `createEmptyBranchMaster()`（**flag は立たない**、§17.4.3 「schema bump = 全消失」）
+   - schema 不正 / 構造不正 → `createEmptyBranchMaster()` または個別 skip（**flag は立たない**）
+
+#### 21.6.2 検出されない破損ケース
+
+| ケース | 現状の挙動 | flag | 4 callsite で検出されるか |
+|---|---|---|---|
+| `getItem` 例外（localStorage が壊れている）| silent 空マスタ | × | × |
+| schema_version != 1（v=2 への bump 後の旧データ）| silent 空マスタ | × | × |
+| schema 構造不正（`members` が array でない 等）| silent 空マスタ | × | × |
+| `JSON.parse` 失敗（破損 raw）| 空マスタ + flag | ○ | ○（4 callsite） |
+
+→ 「support 必要な破損ケース」のうち、**現状の `_loaded_with_corruption` flag は `JSON.parse` 失敗のみ捕捉している**。
+
+**§17.9 既存弱点 #10 との対応関係（明示）**:
+- **schema_version bump 部分**は §17.9 既存弱点 #10「schema_version bump 時に全 member 消失」と一致する（`normalizeBranchMaster` line 571 の挙動）。本 audit ではこの部分を #10 の責務として再確認のみ行う。
+- **`getItem` 例外 / schema 構造不正部分**は §17.9 既存項目に明示記載がなく、本 audit で `_loaded_with_corruption` 検出範囲の論点として **初めて活性化** した（弱点 #10 相当の構造的限界の拡張範囲）。
+- 本 PR は §11〜§20 を改訂しない方針のため、§17.9 本体への弱点項目追加 / #10 の拡張記述は別 docs PR の責務とし、本 §21 内のみに記録を留める。後続実装案 `SAVE-UX-BRANCH-MASTER-FLAG-COVERAGE`（§21.10.2）の起動条件に「§17.9 #10 と本論点を結合して扱う」を組み込む。
+
+#### 21.6.3 構造的提案（実装変更を伴うため本 audit では非推奨）
+
+仮に flag 検出範囲を広げるなら、`normalizeBranchMaster()` 内の早期 return / schema 不一致パスでも `result._loaded_with_corruption=true` を立てる選択肢がある。ただし:
+
+- これは `loadBranchMaster()` の挙動変更で、影響範囲が **24 callsite すべてに波及**
+- schema_version bump は今後の意図的な migration 経路として想定されるため、「すべて flag 化」は migration を阻害する
+- そのため schema 不一致系の検出強化は、本 audit のスコープではなく **schema_version bump policy** タスク（§17.9 弱点 #10）の責務
+
+### 21.7 `notifySaveWarning()` 21 callsite と支部マスタ破損の関係
+
+§16.13 の 4 系統表を HEAD `8c676c9` で再検証。callsiteId / kind / aggregateKey を直接抽出した結果:
+
+| # | 行 | callsiteId | kind | aggregateKey | severity | 支部マスタ破損関係 |
+|---|---:|---|---|---|---|---|
+| 1 | 430 | `STORAGE-QUOTA:save` | storage-quota | storage-quota:global | warn | 間接（quota 全般、master 保存時も該当しうる）|
+| 2 | 658 | `STORAGE-QUOTA:saveBranchMaster` | storage-quota | storage-quota:global | warn | **直接**（master 保存時の quota 失敗）|
+| 3 | 1746 | `S03` | master-verify | master-verify:lastclass | warn | 直接（master last_class 同期検証）|
+| 4 | 1765 | `SAVE-003b-handlePastParticipantClassAdd-class-change` | save-verify | save-verify:past | warn | 間接（参加者 state 保存）|
+| 5 | 1804 | `SAVE-003b-handlePastParticipantClassAdd-add` | save-verify | save-verify:past | warn | 間接 |
+| 6 | 1964 | `SAVE-003b-finalizeAddPastParticipants` | save-verify | save-verify:past | warn | 間接 |
+| 7 | 2644 | `S22` | master-verify | master-verify:lastclass | warn | 直接（master last_class 同期検証）|
+| 8 | 3261 | `SAVE-003b-updateField` | save-verify | save-verify:edit | warn | 無関係（大会 state edit）|
+| 9 | 3432 | `SAVE-003b-handleSuggestClassAdd` | save-verify | save-verify:past | warn | 間接 |
+| 10 | 3467 | `S05` | master-verify | master-verify:lastclass | warn | 直接（master last_class 同期検証）|
+| 11 | 3641 | `SAVE-002-addPlayer` | save-verify | save-verify:entry | warn | 間接 |
+| 12 | 3685 | `SAVE-001-removePlayer` | save-verify | save-verify:entry | warn | 間接 |
+| 13 | 3788 | `SAVE-003b-bulkEditNames` | save-verify | save-verify:edit | warn | 無関係 |
+| 14 | 4343 | `SAVE-003-startTournament` | save-verify | save-verify:core | warn | 無関係 |
+| 15 | 4587 | `SAVE-004-generatePairing` | save-verify | save-verify:core | warn | 無関係 |
+| 16 | 4610 | `SAVE-003-setWinner` | save-verify | save-verify:core | warn | 無関係 |
+| 17 | 4713 | `SAVE-003b-bindChangePairingModalEvents` | save-verify | save-verify:pairing | warn | 無関係 |
+| 18 | 4786 | `SAVE-003-submitRound` | save-verify | save-verify:core | warn | 無関係 |
+| 19 | 5013 | `SAVE-003b-bindEditPastResultModalEvents-p1` | save-verify | save-verify:pairing | warn | 無関係 |
+| 20 | 5029 | `SAVE-003b-bindEditPastResultModalEvents-p2` | save-verify | save-verify:pairing | warn | 無関係 |
+| 21 | 5294 | `PARSE-MASTER-003` | storage-corrupted | storage-corrupted:branch-master | warn | **直接**（_loaded_with_corruption 検知）|
+
+集計:
+- 系統別: save-verify 15 / master-verify 3 / storage-quota 2 / storage-corrupted 1 = **21**（§16.13 と一致）
+- 支部マスタ破損 **直接** 関係: 3（`STORAGE-QUOTA:saveBranchMaster` / `S03`〜`S22` 系列のうち master 検証側ではあるが flag とは独立 / `PARSE-MASTER-003`）
+- ※「直接」= master 保存・検証経路で発火、ただし `_loaded_with_corruption` flag を読むのは **`PARSE-MASTER-003` のみ**
+
+#### 21.7.1 重要な観察
+
+- master-verify 系（`S03` / `S05` / `S22`）は master `last_class` の **書き込み verify**（re-read 比較）であり、`_loaded_with_corruption` flag を読まない。flag が立つ破損 raw に対しては、書き込み自体が `saveBranchMaster()` 経由で行われるため、verify よりも先に「flag を読んでスキップする」防御層が必要。現状で flag を読むのは [4135](shogi_v4.html:4135) `applyParticipantRenameWithMaster` と [5310](shogi_v4.html:5310) `syncBranchMasterOnSave` のみ
+- `STORAGE-QUOTA:saveBranchMaster`（658）は quota 例外を捕捉するため、破損 raw に対する書き込みも quota 失敗時は発火する。ただし破損検知とは独立した直交軸
+
+### 21.8 判定マトリクス：見るべき / 見なくてよい / 対象外
+
+§21.3〜§21.7 の結果を **`loadBranchMaster()` callsite 行基準** で 4 分類に集約（同関数内に `saveBranchMaster()` 呼び出しがある場合は load 側 callsite を read+save として扱う）。
+
+| 分類 | 該当 callsite（loadBranchMaster 行）| 件数 | 説明 |
+|---|---|---:|---|
+| **既に見ている**（防御済）| [2845](shogi_v4.html:2845) `openMigrationWizard`（バナー、flag at 2846）/ [4119](shogi_v4.html:4119) `applyParticipantRenameWithMaster`（read+save、flag at 4121）/ [4284](shogi_v4.html:4284) `openMemberMasterSyncDialog`（分岐、flag at 4286）/ [5286](shogi_v4.html:5286) `syncBranchMasterOnSave`（read+save、flag at 5289 = PARSE-MASTER-003）| **4** | §17.4.3 既出。read+save 経路は 2 件、read-only + UI 分岐は 2 件 |
+| **見なくてよい（意図的 overwrite）**| [2262](shogi_v4.html:2262) reset / [2404](shogi_v4.html:2404) Phase 2 import / [2492](shogi_v4.html:2492) master import（save at 2484/2500 = overwrite + merge 両モード）/ [2746](shogi_v4.html:2746) restore / [2827](shogi_v4.html:2827) migration 統合 | **5** | 仕様として「現マスタを破棄して新マスタを書く」が確定。バナー / 確認ダイアログで user 同意済（migration 統合は wizard [2845](shogi_v4.html:2845) で flag 検知済）|
+| **見るべきだが現状未防御（注目）**| [1700](shogi_v4.html:1700) `handlePastParticipantClassAdd`（save at 1732）/ [1899](shogi_v4.html:1899) `addSelectedPastParticipants`（save at 1919）/ [2582](shogi_v4.html:2582) `bindMasterEditModalEvents`（save at 2602）/ [2715](shogi_v4.html:2715) `bindMasterTabEvents` delete（save at 2725）/ [3386](shogi_v4.html:3386) `handleSuggestClassAdd`（save at 3453）/ [3613](shogi_v4.html:3613) `addPlayer` yomi 補完（save at 3618）| **6** | §21.5 評価により 5 件は間接防御で低リスク、1 件（[3613](shogi_v4.html:3613) `addPlayer` yomi 補完）が現実的中リスク |
+| **対象外（read-only / 同関数内に save なし）**| [1979](shogi_v4.html:1979) / [2230](shogi_v4.html:2230) / [2311](shogi_v4.html:2311) / [2358](shogi_v4.html:2358) / [2509](shogi_v4.html:2509) / [2676](shogi_v4.html:2676) / [2769](shogi_v4.html:2769) / [3543](shogi_v4.html:3543) / [3573](shogi_v4.html:3573) | **9** | 描画 / 状態確認 / export / サジェスト更新 / duplicate 検査等。write 経路に乗らないため flag 検知不要 |
+
+合計: 4 + 5 + 6 + 9 = **24 callsite**（§21.3.1 集計と整合）。
+
+補足: 「意図的 overwrite」5 callsite のうち [2492](shogi_v4.html:2492) `runMasterImport` は同関数内に 2 件の `saveBranchMaster()`（[2484](shogi_v4.html:2484) overwrite / [2500](shogi_v4.html:2500) merge）を持つが、load 側 callsite は 1 件で一意に分類される。「見るべき未防御」6 件はいずれも load:save が 1:1 対応。
+
+### 21.9 見つかった論点
+
+#### 21.9.1 構造的論点
+
+1. **flag 検出範囲が `JSON.parse` 失敗のみに限定**（§21.6.2）: `getItem` 例外 / schema_version bump / schema 構造不正 では flag が立たない。これは仕様判断であり、`normalizeBranchMaster` 改修を伴うため本 audit のスコープ外
+2. **read+save 経路で flag を読むのは 2 callsite のみ**（[4135](shogi_v4.html:4135) と [5310](shogi_v4.html:5310)）: 残り 12 件は flag を読まないが、6 件は意図的 overwrite、6 件は flag を読むべき経路。後者 6 件のうち実運用上中リスクは 1 件（[3618](shogi_v4.html:3618)）
+3. **master-verify 系列（`S03` / `S05` / `S22`）は flag と独立**: write 後の re-read verify を担い、flag 検知の前段防御層とは別軸
+
+#### 21.9.2 実運用上の論点
+
+1. `addPlayer` [3618](shogi_v4.html:3618) yomi 補完経路: master 空 + user 直接入力 → `saveBranchMaster(空 + 新規 1 名)` で破損 raw が上書きされる。発生頻度は「破損後に大会受付を再開した場合」に限られる
+2. PR #87 (`PARSE-MASTER-003`) は `syncBranchMasterOnSave` のみを守るため、`saveData`（大会データコピー）契機でない master 書き込み経路は防御外
+3. user-facing 通知は現状 1 callsite（`PARSE-MASTER-003` = 大会データコピー時）のみ。`addPlayer` 経路で破損 master を上書きしても warn は出ない
+
+#### 21.9.3 設計判断としての論点
+
+1. 「破損時はあらゆる write を停止して user に告知」モデル vs. 「破損時でも user 操作を継続させ、別軸で復旧導線を提示」モデル
+2. §18 / §19 closure で確認済の方針は後者（大会運営継続最優先）。本 audit はその方針に沿った形で「現実的中リスク 1 件」を可視化するに留める
+3. 「破損 raw の保護」レベルを user に選ばせる UI（migration wizard の既存バナーは [2846](shogi_v4.html:2846) で flag 検知済）の拡張可能性は §17.10 で既出
+
+### 21.10 後続タスク候補
+
+本 audit の結果として、3 段階の選択肢を提示する。**本 audit 自体ではいずれにも着手しない**。
+
+#### 21.10.1 docs 整理で十分なケース（最小着地）
+
+- 本 §21 audit が main に着地すれば、§17.9 弱点 #8「`_loaded_with_corruption` の伝播・二重発火リスクが未監査」は **可視化完了** として閉じられる
+- マトリクス（§21.8）が docs として残るため、後続 PR レビュー時に「この経路は flag を読むべきか」を判断する根拠が提供される
+- **追加実装なしで弱点 #8 は audit 完了状態に遷移可能**
+
+#### 21.10.2 実装が必要な場合の最小スコープ候補
+
+| Task ID 案 | 範囲 | 重さ | 着手条件 |
+|---|---|---|---|
+| `SAVE-UX-ADDPLAYER-CORRUPTION-GUARD` | [3618](shogi_v4.html:3618) `addPlayer` の yomi 補完 save 経路に `_loaded_with_corruption` 検知を追加（既存防御パターン PARSE-MASTER-003 / `applyParticipantRenameWithMaster` と整合）| **小** | 運用フィードバックで「破損 master 上書き」事案が観測された場合 |
+| `SAVE-UX-MODIFY-EXISTING-CORRUPTION-GUARD` | 注目 6 callsite すべて（[1732](shogi_v4.html:1732) / [1919](shogi_v4.html:1919) / [2602](shogi_v4.html:2602) / [2725](shogi_v4.html:2725) / [3453](shogi_v4.html:3453) / [3618](shogi_v4.html:3618)）に flag 検知を追加 | 中 | 同上、ただし間接防御で低リスクとされた 5 件への横展開判断あり |
+| `SAVE-UX-BRANCH-MASTER-FLAG-COVERAGE` | `normalizeBranchMaster` schema 不一致パスでも flag を立てるよう拡張 | 中〜大 | schema_version bump policy 設計と同時、§17.9 弱点 #10 と連動 |
+
+#### 21.10.3 運用フィードバック待ちのケース
+
+- 大会運営現場で「破損 master 上書き」事象が観測されない限り、現状の 6 callsite 未防御を放置する判断も合理的
+- §19.8 司令塔メモ「Light 文言の運用感を観察してから次手」と同じ姿勢
+- §20.5 推奨 Next Action のうち `SAVE-UX-STATE-RESTORE-HANDLING-INVENTORY`（大会データ side の同種棚卸し）を先行させ、両系統の防御方針を揃えてから実装着手するのが整合性が高い
+
+### 21.11 司令塔向け結論
+
+#### 21.11.1 §17.9 弱点 #8 の解消状況
+
+- **解消完了**（本 audit を main 着地させれば）。マトリクス §21.3 / §21.8 により、24 callsite × `_loaded_with_corruption` 判定の有無が docs 化された
+- 「未監査」状態は本 PR で終了し、以降は「監査済の上で意図的に未防御」状態へ遷移する
+
+#### 21.11.2 次に実装へ進むべきか
+
+- **本 audit 時点では No**（実装変更は不要）
+- **判断根拠（中リスク 1 件を放置していない理由を明記）**: 中リスク 1 件（[3613](shogi_v4.html:3613)→[3618](shogi_v4.html:3618) `addPlayer` yomi 補完経路）は本 audit で **認識済**。ただし影響範囲は `addPlayer` の yomi 補完経路に限定され、PR #90 で支部マスタ破損 warn の復旧導線（PARSE-MASTER-003 message + マスタタブのインポート・統合への参照）が **既に実装済** である。本 PR は **audit であり実装 PR ではない** ため、即時実装ではなく `SAVE-UX-ADDPLAYER-CORRUPTION-GUARD`（§21.10.2 第一案）として後続化し、運用者フィードバック観察期間中に優先度を再判断する。これは「中リスクを放置」ではなく「中リスクを切り出して観察フェーズに乗せた」状態である。
+- 理由（補足）:
+  - 注目 6 callsite のうち 5 件は間接防御で低リスク
+  - 1 件（[3618](shogi_v4.html:3618) `addPlayer`）の中リスクは **運用フィードバックで実害が観測されていない**
+  - SAVE-UX 設計方針（大会運営継続最優先、§18 / §19）と整合する形で「user 操作を止めない / 復旧導線は §20 でカバー済」を維持
+- 実装が必要になる条件:
+  - 大会運営現場で「破損後の `addPlayer` で master が上書きされて復旧不能」事案が発生
+  - schema_version bump（v=2 移行）を実施し、§17.9 弱点 #10 と本 audit の `addPlayer` 経路リスクが結合する場合
+
+#### 21.11.3 推奨 Next Action（§20.5 への反映候補）
+
+| # | Task ID | 性格 | 起動条件 |
+|---|---|---|---|
+| 1 (Should) | `SAVE-UX-STATE-RESTORE-HANDLING-INVENTORY`（§20.5.2 第二推奨）| docs-only | 即座に並走可能、本 audit 完了とは独立 |
+| 2 (Nice to Have) | `SAVE-UX-CLOSURE-DOC-REFINEMENT`（§20.5.3 第三推奨）| docs-only（微小）| Codex PR #91 Nice-to-Have 取込、単独 PR でも本 audit 後続でも可 |
+| 3 (条件付き)  | `SAVE-UX-ADDPLAYER-CORRUPTION-GUARD`（仮、§21.10.2）| 実装（小）| 運用フィードバック後、または `SAVE-UX-STATE-RESTORE-HANDLING-INVENTORY` 完了後 |
+
+`SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-MEDIUM` / `CORRUPTION-RECOVERY-IMPL`（Heavy）は §19.8 / §20.6 の方針通り運用フィードバック待ちを維持。
+
+### 21.12 関連 docs / コード
+
+- `docs/notes/20260513_shogi_save_ux_status_map.md`
+  - §16.13（PARSE-MASTER-003 impl 完了状況、4 系統 21 callsite 集計）
+  - §17.3 / §17.4 / §17.4.3（保存・読込経路、`_loaded_with_corruption` 利用 4 callsite、本 audit の起源）
+  - §17.9 弱点 #8 / #10（schema bump 全消失リスク）
+  - §17.11.5（補助タスク = 本 audit）
+  - §18.9.5 / §19.6 / §20.5.1（後続候補としての推奨）
+- `docs/specs/20260513_shogi_save_ux_design.md`（SAVE-UX 中核原則、本 audit 結論の根拠）
+- `docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md`（aggregation allow-list、本 audit 時点で変更なし）
+- 主要コード参照:
+  - [shogi_v4.html:626-640](shogi_v4.html:626) `loadBranchMaster()` 内部構造
+  - [shogi_v4.html:637](shogi_v4.html:637) `_loaded_with_corruption` 唯一の assignment
+  - [shogi_v4.html:5286-5314](shogi_v4.html:5286) `syncBranchMasterOnSave` PARSE-MASTER-003
+  - [shogi_v4.html:5294](shogi_v4.html:5294) PR #90 IMPL-LIGHT 反映済 warn message
+  - [shogi_v4.html:4119-4135](shogi_v4.html:4119) `applyParticipantRenameWithMaster` flag 検知
+  - [shogi_v4.html:2845-2846](shogi_v4.html:2845) `openMigrationWizard` 破損バナー判定
+  - [shogi_v4.html:4284-4286](shogi_v4.html:4284) `openMemberMasterSyncDialog` 分岐
+- PR [#88](https://github.com/kazuo1970takahashi-sketch/shogi/pull/88) / [#89](https://github.com/kazuo1970takahashi-sketch/shogi/pull/89) / [#90](https://github.com/kazuo1970takahashi-sketch/shogi/pull/90) / [#91](https://github.com/kazuo1970takahashi-sketch/shogi/pull/91) / [#92](https://github.com/kazuo1970takahashi-sketch/shogi/pull/92)
