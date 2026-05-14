@@ -293,3 +293,65 @@ import / merge / migration 系は **本マップの保存後 verify トラック
 |---|---|
 | 2026-05-13 | v0 作成。PR #59 〜 #63 までの保存安全化 / verify / 通知の現在地を callsite 単位で棚卸し。S22 を唯一の要修正候補（Level 0）として特定。SAVE-UX-MIN-NOTIFY-002 を次の最優先タスクと位置づけ。 |
 | 2026-05-13 | docs review Should Fix 2 点を反映。S22 の位置情報を lineNo 単独表現から関数名 + 動作タイミング（`bindMasterEditModalEvents` の me-save click ハンドラ末尾の `showMsg('マスタを更新しました', ...)`）に置換（§4.3 / §5.1 / §6.2 計 4 箇所）。§4 冒頭に「行番号は main=`67bd189` 時点の参考位置、後続では関数名・処理名・メッセージ文言で再特定」の補足を追加。§5.3 に「QUOTA-001 の再分類トリガは SAVE-UX-STATUS-INDICATOR 着手時点」を追記。 |
+| 2026-05-14 | SAVE-UX-AGGREGATION-DOCS-FOLLOWUP に伴い §11 を追記。PR #70 〜 #76 で A-5.1 SAVE 系 15/15 callsite の helper 経由化 / metadata 土台 / `showMsg` aggregation 表示まで完了。Group A〜E と `aggregateKey` の対応表を確定として記載し、後続候補（QUOTA-HANDLING / MASTER-V2-METADATA / AGGREGATION-TUNING / LEVEL-3-WARNING-BAR / INDICATOR-DETAIL）を §8 と並列で示す。詳細仕様は `docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md` §15 を参照。 |
+
+---
+
+## 11. PR #70 〜 #76 後の到達点（v1 追補）
+
+v0 (2026-05-13) 作成時点で「次タスク = SAVE-UX-MIN-NOTIFY-002 (S22)」だったが、その後の実装で SAVE-UX 系は以下まで到達した。本セクションは現状コードと整合させるための追補（実装詳細は対応 PR / 設計書 §15 を参照）。
+
+### 11.1 完了済 PR チェーン（SAVE-UX 関連）
+
+| PR | 内容 |
+|---|---|
+| #65 | SAVE-UX-MIN-NOTIFY-002（S22 を Level 0 → Level 1） |
+| #66 | `notifySaveWarning` helper 追加（S03 / S05 / S22 を helper 経由化） |
+| #67 | SAVE-UX-STATUS-INDICATOR docs-only 設計 |
+| #68 | SAVE-UX-STATUS-INDICATOR-IMPL（Level 2 indicator 実装） |
+| #69 | SAVE-UX-WARN-AGGREGATION docs-only 設計 |
+| #70 | Group A + B 6 件 helper 経由化（startTournament / generatePairing / setWinner / submitRound / addPlayer / removePlayer） |
+| #73 | Group C + E 5 件 helper 経由化（updateField / bulkEditNames / bindChangePairingModalEvents / bindEditPastResult p1 / p2） |
+| #74 | Group D 4 件 helper 経由化（handlePastParticipantClassAdd add / class change / handleSuggestClassAdd postSuccess / finalizeAddPastParticipants verify-fail warn） |
+| #75 | `notifySaveWarning` に任意 metadata `{ kind, aggregateKey, severity }` を追加し、15 件に付与 |
+| #76 | 同一 `aggregateKey` の保存警告が 3000ms 未満で連続発火 → 2 回目以降の `showMsg` を短縮文言に切替 |
+
+### 11.2 A-5.1 SAVE 系 15/15 完了状況
+
+| Group | aggregateKey | 件数 |
+|---|---|---|
+| A 大会進行 core | `save-verify:core` | 4 |
+| B 登録欄 add/remove | `save-verify:entry` | 2 |
+| C 登録欄 編集 | `save-verify:edit` | 2 |
+| D 過去参加者経路 | `save-verify:past` | 4 |
+| E 対局画面 編集 | `save-verify:pairing` | 3 |
+| **計** | | **15** |
+
+全件共通: `kind: 'save-verify'` / `severity: 'warn'`
+
+### 11.3 まだ helper 経由化されていない / metadata 未付与の callsite
+
+§7 / §8 の旧優先順序のうち、SAVE-UX 関連で **未** な領域:
+
+| カテゴリ | 状態 |
+|---|---|
+| MASTER-V2-LASTCLASS S03 / S05 / S22 | helper 経由化済（PR #65 / #66）だが `save-verify` metadata 未付与（意図的に別 kind 体系想定） |
+| MASTER-001 系 | helper 未経由のまま（応急処置 warn 文言で残存） |
+| quota / parse / duplicate | helper 未経由のまま |
+| import / merge / migration | helper 未経由のまま |
+| S30 batch verify | 未着手 |
+| ふりがな success-with-caveat 通知 | `showMsg` 直接呼出のまま（helper 経由ではないため `save-verify` aggregation に届かない） |
+
+### 11.4 §8 後続 Task ID 優先順位 — v1 時点の更新候補
+
+§8 の優先順位は v0 (2026-05-13) 作成時点のもの。PR #65 〜 #76 完了を踏まえた v1 時点の候補:
+
+| # | タスク ID 候補 | 概要 |
+|---|---|---|
+| 1 | `SAVE-UX-QUOTA-HANDLING` | quota exceeded 系を別 kind 体系として整理する |
+| 2 | `SAVE-UX-MASTER-V2-METADATA` | MASTER-V2-LASTCLASS S03 / S05 / S22 を別 kind 体系で metadata 化するか検討する |
+| 3 | `SAVE-UX-AGGREGATION-TUNING` | 3000ms window や短縮文言を運用感覚で調整する |
+| 4 | `SAVE-UX-LEVEL-3-WARNING-BAR` | `showMsg` / indicator より一段強い警告 UI を検討する |
+| 5 | `SAVE-UX-INDICATOR-DETAIL` | indicator 詳細展開や Group 別表示を検討する |
+
+詳細は `docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md` §15.9 を参照。本セクションは候補列挙であり、実装方針は確定しすぎない（着手時に再判断）。
