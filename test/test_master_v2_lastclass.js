@@ -159,6 +159,7 @@ function loadEnv(path) {
        createEmptyBranchMaster:createEmptyBranchMaster,
        saveBranchMaster:saveBranchMaster,
        loadBranchMaster:loadBranchMaster,
+       syncBranchMasterOnSave:syncBranchMasterOnSave,
        normalizeCity:normalizeCity,
        applyMasterMemberEdit:applyMasterMemberEdit,
        save:save,
@@ -1651,12 +1652,12 @@ function extractNotifySaveWarningBlocks(src){
   assertEq(bs[0].lineNumber, 3, 'T-HELPER-9-lineNumber: block 開始行 = 3');
 }
 
-// shogi_v4.html 全体に対する block 抽出（共有変数として SECTION 13 / 15 / 16 で使用）
+// shogi_v4.html 全体に対する block 抽出（共有変数として SECTION 13 / 15 / 16 / 18 で使用）
 var __EXPAND_BLOCKS = extractNotifySaveWarningBlocks(__EXPAND_SRC);
 
-// 抽出件数の sanity check: 15 (save-verify) + 2 (storage-quota) + 3 (master-verify) = 20
-assertEq(__EXPAND_BLOCKS.length, 20,
-  'T-HELPER-shogi-blocks: shogi_v4.html から 20 個の notifySaveWarning block を抽出');
+// 抽出件数の sanity check: 15 (save-verify) + 2 (storage-quota) + 3 (master-verify) + 1 (storage-corrupted) = 21
+assertEq(__EXPAND_BLOCKS.length, 21,
+  'T-HELPER-shogi-blocks: shogi_v4.html から 21 個の notifySaveWarning block を抽出');
 
 // ============================================================================
 // SECTION 10 (continued)
@@ -3261,10 +3262,12 @@ assert(/SAVE_WARN_AGGREGATABLE_KINDS\s*=\s*new\s+Set\(\[[^\]]*'master-verify'[^\
   var listBody = m ? m[1] : '';
   assertEq(listBody.indexOf("'storage-quota'"), -1,
     'T-EXP8-allow-list-no-storage-quota: allow-list 宣言部に storage-quota が含まれない');
-  // 将来候補も含まれていないこと
+  // aggregation 対象外 kind が allow-list に混入していないこと
+  //   storage-corrupted は PR #SAVE-UX-PARSE-HANDLING-IMPL 以降の実 kind だが初期 aggregation 対象外。
+  //   parse-failed / duplicate-name は今後の候補（実装時に再判定）。
   ['parse-failed','duplicate-name','storage-corrupted'].forEach(function(k){
     assertEq(listBody.indexOf("'"+k+"'"), -1,
-      'T-EXP8-allow-list-no-future-' + k + ': 将来候補 ' + k + ' は含まれない');
+      'T-EXP8-allow-list-no-non-aggregated-' + k + ': aggregation 対象外 kind ' + k + ' は allow-list に含まれない');
   });
 }
 
@@ -3282,15 +3285,22 @@ assert(__EXPAND_SRC.indexOf("kind==='save-verify'&&severity==='warn'&&aggregateK
     'T-EXP8-no-eligible-flag: ' + forbidden + ' は追加されていない');
 });
 
-// 3 系統 metadata 件数維持
+// 既存 3 系統 metadata 件数維持（SECTION 18 で第 4 系統 storage-corrupted が +1 されるが、
+// SECTION 17 視点では既存 3 系統の個別 count が変化しないことだけを確認する）
 assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'save-verify'; }).length, 15,
   'T-EXP8-save-verify-count-unchanged: save-verify 15 件維持');
 assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'storage-quota'; }).length, 2,
   'T-EXP8-storage-quota-count-unchanged: storage-quota 2 件維持');
 assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'master-verify'; }).length, 3,
   'T-EXP8-master-verify-count-unchanged: master-verify 3 件維持');
-assertEq(__EXPAND_BLOCKS.length, 20,
-  'T-EXP8-3systems-total-unchanged: 3 系統合計 20 件維持');
+// 既存 3 系統の合計が 20 件のまま（4 系統合計は SECTION 18 / T-HELPER-shogi-blocks 側で 21 を assert）
+{
+  var __exp8_sv = __EXPAND_BLOCKS.filter(function(b){ return b.kind === 'save-verify'; }).length;
+  var __exp8_sq = __EXPAND_BLOCKS.filter(function(b){ return b.kind === 'storage-quota'; }).length;
+  var __exp8_mv = __EXPAND_BLOCKS.filter(function(b){ return b.kind === 'master-verify'; }).length;
+  assertEq(__exp8_sv + __exp8_sq + __exp8_mv, 20,
+    'T-EXP8-3systems-total-unchanged: 既存 3 系統 (save-verify+storage-quota+master-verify) 合計 20 件維持');
+}
 
 // ----------------------------------------------------------------------------
 // T-EXP8-runtime: master-verify aggregation ランタイム挙動
@@ -3526,6 +3536,333 @@ assertEq(__EXPAND_BLOCKS.length, 20,
   var final = env._regMsgFinal();
   assert(final.indexOf('保存容量の上限に達しました。データ整理が必要です。') !== -1,
     'T-EXP8-mixed-final-msg: 混在 3 件発火後の最終 showMsg は storage-quota の元 message');
+}
+
+// ============================================================================
+// SECTION 18: SAVE-UX-PARSE-HANDLING-IMPL — storage-corrupted を第 4 系統として接続
+// ============================================================================
+// 依頼: SAVE-UX-PARSE-HANDLING-IMPL（PR #86 §16 案 A）
+// 設計参照: docs/notes/20260513_shogi_save_ux_status_map.md §16
+//
+// 実装範囲（最小着地、1 callsite のみ）:
+//   - syncBranchMasterOnSave() の _loaded_with_corruption ブランチを notifySaveWarning 経由化
+//   - 既存 explicit console.warn / showMsg('warn') 直接呼び出しは削除（PR #79 storage-quota パターン）
+//
+// metadata:
+//   kind:         'storage-corrupted'
+//   aggregateKey: 'storage-corrupted:branch-master'
+//   severity:     'warn'
+//   callsiteId:   'PARSE-MASTER-003'
+//
+// showMsg aggregation: 対象外（SAVE_WARN_AGGREGATABLE_KINDS は変更しない）
+// indicator: helper 1 呼出 = +1 維持
+// console.warn: helper が個別出力、既存 explicit console.warn は削除（重複回避）
+// 不変項目:
+//   - save() 呼び出し（corruption 検知時も大会データ保存は継続、test_branch_master.js MF#3）
+//   - saveBranchMaster() を呼ばない不変項目（破損由来の空マスタは永続化しない）
+//   - 後段 catch(e) の `console.warn('支部マスタ同期に失敗（既存大会運営は継続）',e)`
+//   - 既存 3 系統（save-verify 15 / storage-quota 2 / master-verify 3）件数・挙動
+
+// ----------------------------------------------------------------------------
+// T-EXP9-static: source 静的検証（PR #80 SAVE-UX-TEST-STRUCTURAL-MATCH 方式）
+// ----------------------------------------------------------------------------
+
+var __EXP9_STORAGE_CORRUPTED_BLOCKS = __EXPAND_BLOCKS.filter(function(b){
+  return b.kind === 'storage-corrupted';
+});
+
+// kind=storage-corrupted の block が厳密 1 件
+assertEq(__EXP9_STORAGE_CORRUPTED_BLOCKS.length, 1,
+  'T-EXP9-static-kind-count: kind=storage-corrupted の block は 1 件');
+
+// callsiteId=PARSE-MASTER-003 が 1 件
+assertEq(
+  __EXP9_STORAGE_CORRUPTED_BLOCKS.filter(function(b){ return b.callsiteId === 'PARSE-MASTER-003'; }).length,
+  1,
+  'T-EXP9-static-callsiteId: PARSE-MASTER-003 が 1 件');
+
+// aggregateKey=storage-corrupted:branch-master が 1 件
+assertEq(
+  __EXP9_STORAGE_CORRUPTED_BLOCKS.filter(function(b){ return b.aggregateKey === 'storage-corrupted:branch-master'; }).length,
+  1,
+  'T-EXP9-static-aggKey: aggregateKey=storage-corrupted:branch-master が 1 件');
+
+// severity=warn が 1 件
+assertEq(
+  __EXP9_STORAGE_CORRUPTED_BLOCKS.filter(function(b){ return b.severity === 'warn'; }).length,
+  1,
+  'T-EXP9-static-severity: storage-corrupted block の severity=warn が 1 件');
+
+// 既存 explicit console.warn / showMsg 直接呼び出しが除去されている（PR #79 storage-quota パターン）
+assertEq(__EXPAND_SRC.indexOf("console.warn('支部マスタが破損しているため自動同期をスキップ（大会データのコピーは継続）')"), -1,
+  'T-EXP9-static-no-old-console-warn: 既存 explicit console.warn が source に残らない');
+assertEq(__EXPAND_SRC.indexOf("showMsg('支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）','warn')"), -1,
+  "T-EXP9-static-no-old-showMsg: 既存 explicit showMsg(..,'warn') が source に残らない");
+
+// 後段 catch(e) の汎用 console.warn は存続（corruption 以外の例外を捕捉するため）
+assert(__EXPAND_SRC.indexOf("console.warn('支部マスタ同期に失敗（既存大会運営は継続）',e)") !== -1,
+  'T-EXP9-static-keeps-generic-catch: syncBranchMasterOnSave 後段 catch の汎用 console.warn は存続');
+
+// SAVE_WARN_AGGREGATABLE_KINDS に storage-corrupted が含まれない（初期 aggregation 対象外）
+{
+  var __exp9_m = __EXPAND_SRC.match(/SAVE_WARN_AGGREGATABLE_KINDS\s*=\s*new\s+Set\(\[([^\]]*)\]\)/);
+  assert(__exp9_m !== null, 'T-EXP9-static-allow-list-found: Set literal が抽出できる');
+  var __exp9_body = __exp9_m ? __exp9_m[1] : '';
+  assertEq(__exp9_body.indexOf("'storage-corrupted'"), -1,
+    'T-EXP9-static-allow-list-no-storage-corrupted: storage-corrupted は allow-list に含まれない');
+}
+
+// 4 系統 metadata 件数（合計 21）
+assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'save-verify'; }).length, 15,
+  'T-EXP9-static-save-verify-15: save-verify 15 件維持');
+assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'storage-quota'; }).length, 2,
+  'T-EXP9-static-storage-quota-2: storage-quota 2 件維持');
+assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'master-verify'; }).length, 3,
+  'T-EXP9-static-master-verify-3: master-verify 3 件維持');
+assertEq(__EXPAND_BLOCKS.filter(function(b){ return b.kind === 'storage-corrupted'; }).length, 1,
+  'T-EXP9-static-storage-corrupted-1: storage-corrupted 1 件');
+assertEq(__EXPAND_BLOCKS.length, 21,
+  'T-EXP9-static-4systems-total: 4 系統合計 21 件');
+
+// ----------------------------------------------------------------------------
+// T-EXP9-runtime: syncBranchMasterOnSave 経由の corruption 検知挙動
+// ----------------------------------------------------------------------------
+
+// 壊れた raw を localStorage に直接書き込む stub（test_branch_master.js MF#3 と同方式）
+function _stubCorruptedBranchMaster(env){
+  env._ctx.localStorage.setItem('shogi_branch_master','{ corrupted master raw');
+}
+
+function _makeReportState(){
+  return {
+    players:{A:[],B:[]},
+    rounds:4,
+    pairings:{A:[],B:[]},
+    results:{A:[],B:[]},
+    started:false,
+    report:{date:'2026年5月14日',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}
+  };
+}
+
+// T-EXP9-runtime-corruption-notify: _loaded_with_corruption 経路で notifySaveWarning が動く
+{
+  var env = _newAggEnv();
+  _stubCorruptedBranchMaster(env);
+  env._setState(_makeReportState());
+  env.syncBranchMasterOnSave();
+  // showMsg は notifySaveWarning 経由で出る
+  var final = env._regMsgFinal();
+  assert(final.indexOf('支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）') !== -1,
+    'T-EXP9-runtime-corruption-showMsg: showMsg に storage-corrupted 文言が出る');
+  assert(final.indexOf('alert-warn') !== -1,
+    'T-EXP9-runtime-corruption-type: showMsg type=warn');
+  // indicator +1
+  assertEq(env._getIndicatorState().count, 1,
+    'T-EXP9-runtime-corruption-indicator: count=1');
+  // console.warn 出力に metadata が含まれる
+  var lastWarn = env._warnCalls[env._warnCalls.length - 1];
+  assert(lastWarn.indexOf('"kind":"storage-corrupted"') !== -1,
+    'T-EXP9-runtime-corruption-meta-kind: kind=storage-corrupted');
+  assert(lastWarn.indexOf('"aggregateKey":"storage-corrupted:branch-master"') !== -1,
+    'T-EXP9-runtime-corruption-meta-aggKey: aggregateKey=storage-corrupted:branch-master');
+  assert(lastWarn.indexOf('"severity":"warn"') !== -1,
+    'T-EXP9-runtime-corruption-meta-sev: severity=warn');
+  assert(lastWarn.indexOf('"callsiteId":"PARSE-MASTER-003"') !== -1,
+    'T-EXP9-runtime-corruption-meta-callsite: callsiteId=PARSE-MASTER-003');
+}
+
+// T-EXP9-runtime-save-still-called: corruption 検知時も save() は呼ばれる（大会データ保存継続）
+{
+  var env = _newAggEnv();
+  _stubCorruptedBranchMaster(env);
+  env._setState(_makeReportState());
+  env._ctx.localStorage.removeItem('shogi_v4');
+  env.syncBranchMasterOnSave();
+  var stateRaw = env._ctx.localStorage.getItem('shogi_v4');
+  assert(typeof stateRaw === 'string' && stateRaw.length > 0,
+    'T-EXP9-runtime-corruption-save-called: 破損マスタ検知時も save() が呼ばれる（shogi_v4 キーが書かれる）');
+}
+
+// T-EXP9-runtime-saveBranchMaster-not-called: 破損 raw を上書きしない（既存不変項目）
+{
+  var env = _newAggEnv();
+  _stubCorruptedBranchMaster(env);
+  env._setState(_makeReportState());
+  var before = env._ctx.localStorage.getItem('shogi_branch_master');
+  env.syncBranchMasterOnSave();
+  var after = env._ctx.localStorage.getItem('shogi_branch_master');
+  assert(before === after,
+    'T-EXP9-runtime-corruption-no-overwrite: corruption 検知時 saveBranchMaster は呼ばれず、破損 raw は localStorage 上で上書きされない');
+}
+
+// T-EXP9-runtime-no-dup-console-warn: 既存 explicit console.warn が呼ばれない（重複回避）
+{
+  var env = _newAggEnv();
+  _stubCorruptedBranchMaster(env);
+  env._setState(_makeReportState());
+  env.syncBranchMasterOnSave();
+  var warnTexts = env._warnCalls.join('|||');
+  assertEq(warnTexts.indexOf('支部マスタが破損しているため自動同期をスキップ（大会データのコピーは継続）'), -1,
+    'T-EXP9-runtime-no-dup-warn: corruption 時に既存 explicit console.warn は呼ばれない（notifySaveWarning の consoleTag のみ）');
+}
+
+// T-EXP9-runtime-non-corruption-no-notify: 非 corruption ケースで notifySaveWarning が呼ばれない
+{
+  var env = _newAggEnv();
+  // 壊れた raw を仕込まない → loadBranchMaster は createEmptyBranchMaster を返す
+  env._ctx.localStorage.removeItem('shogi_branch_master');
+  env._setState(_makeReportState());
+  env.syncBranchMasterOnSave();
+  // notifySaveWarning が呼ばれていない → indicator 0
+  assertEq(env._getIndicatorState().count, 0,
+    'T-EXP9-runtime-non-corruption-indicator: 非 corruption では indicator +0');
+  // showMsg にも storage-corrupted 文言なし
+  var final = env._regMsgFinal();
+  assertEq(final.indexOf('支部マスタが破損しているため自動同期をスキップしました'), -1,
+    'T-EXP9-runtime-non-corruption-no-showMsg: 非 corruption では storage-corrupted 文言が出ない');
+}
+
+// ----------------------------------------------------------------------------
+// T-EXP9-aggregation-not-target: storage-corrupted は aggregation 対象外
+// ----------------------------------------------------------------------------
+
+// T-EXP9-not-aggregated-2nd-original: 同一 aggregateKey で 3 秒未満連発しても元 message のまま
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'storage-corrupted:branch-master', 1000);
+  env.notifySaveWarning({
+    message:'支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）',
+    consoleTag:'[STORAGE-CORRUPTED] test',
+    callsiteId:'PARSE-MASTER-003',
+    kind:'storage-corrupted',
+    aggregateKey:'storage-corrupted:branch-master',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf('支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）') !== -1,
+    'T-EXP9-not-aggregated-2nd-original: storage-corrupted の 2 回目も元 message');
+  assertEq(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE), -1,
+    'T-EXP9-not-aggregated-no-short-msg: 短縮文言には切り替わらない');
+}
+
+// T-EXP9-corruption-twice-indicator-plus-2: 連続 2 回 syncBranchMasterOnSave で indicator +2
+{
+  var env = _newAggEnv();
+  _stubCorruptedBranchMaster(env);
+  env._setState(_makeReportState());
+  env.syncBranchMasterOnSave();
+  env.syncBranchMasterOnSave();
+  assertEq(env._getIndicatorState().count, 2,
+    'T-EXP9-corruption-twice-indicator: 連続 2 回で indicator +2（発生単位維持）');
+}
+
+// ----------------------------------------------------------------------------
+// T-EXP9-namespace-isolation: 既存 3 系統への影響なし
+// ----------------------------------------------------------------------------
+
+// T-EXP9-sv-still-aggregates: save-verify は依然 aggregate
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'save-verify:core', 1000);
+  env.notifySaveWarning({
+    message:'大会を開始しましたが、保存が確認できませんでした...',
+    consoleTag:'SAVE-003 test',
+    callsiteId:'SAVE-003-startTournament',
+    kind:'save-verify',
+    aggregateKey:'save-verify:core',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) !== -1,
+    'T-EXP9-sv-still-aggregates: save-verify は依然短縮文言に切替');
+}
+
+// T-EXP9-mv-still-aggregates: master-verify は依然 aggregate
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'master-verify:lastclass', 1000);
+  env.notifySaveWarning({
+    message:'前回クラス情報の保存が確認できませんでした',
+    consoleTag:'[MV] test',
+    callsiteId:'S05',
+    fields:['last_class'],
+    kind:'master-verify',
+    aggregateKey:'master-verify:lastclass',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf(env.SAVE_WARN_AGGREGATED_MESSAGE) !== -1,
+    'T-EXP9-mv-still-aggregates: master-verify は依然短縮文言に切替');
+}
+
+// T-EXP9-sq-still-not-aggregated: storage-quota は依然 aggregation 対象外
+{
+  var env = _newAggEnv();
+  _seedAggKey(env, 'storage-quota:global', 1000);
+  env.notifySaveWarning({
+    message:'保存容量の上限に達しました。データ整理が必要です。',
+    consoleTag:'[STORAGE-QUOTA]',
+    callsiteId:'STORAGE-QUOTA:save',
+    kind:'storage-quota',
+    aggregateKey:'storage-quota:global',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf('保存容量の上限に達しました。データ整理が必要です。') !== -1,
+    'T-EXP9-sq-still-not-aggregated: storage-quota の 2 回目も元 message');
+}
+
+// T-EXP9-corruption-no-pollute-sv: storage-corrupted 発火が save-verify state を汚染しない
+{
+  var env = _newAggEnv();
+  // 1. storage-corrupted を発火
+  env.notifySaveWarning({
+    message:'支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）',
+    consoleTag:'[STORAGE-CORRUPTED]',
+    callsiteId:'PARSE-MASTER-003',
+    kind:'storage-corrupted',
+    aggregateKey:'storage-corrupted:branch-master',
+    severity:'warn'
+  });
+  env._clear();
+  // 2. save-verify:core を発火 — 別 key なので 1 回目扱い → 元 message
+  env.notifySaveWarning({
+    message:'大会を開始しましたが、保存が確認できませんでした...',
+    consoleTag:'SAVE-003',
+    callsiteId:'SAVE-003-startTournament',
+    kind:'save-verify',
+    aggregateKey:'save-verify:core',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf('大会を開始しましたが') !== -1,
+    'T-EXP9-corruption-no-pollute-sv: storage-corrupted 発火が save-verify:core の 1 回目扱いを破壊しない');
+}
+
+// T-EXP9-corruption-no-pollute-mv: storage-corrupted 発火が master-verify state を汚染しない
+{
+  var env = _newAggEnv();
+  env.notifySaveWarning({
+    message:'支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）',
+    consoleTag:'[STORAGE-CORRUPTED]',
+    callsiteId:'PARSE-MASTER-003',
+    kind:'storage-corrupted',
+    aggregateKey:'storage-corrupted:branch-master',
+    severity:'warn'
+  });
+  env._clear();
+  env.notifySaveWarning({
+    message:'前回クラス情報の保存が確認できませんでした',
+    consoleTag:'[MV]',
+    callsiteId:'S05',
+    fields:['last_class'],
+    kind:'master-verify',
+    aggregateKey:'master-verify:lastclass',
+    severity:'warn'
+  });
+  var final = env._regMsgFinal();
+  assert(final.indexOf('前回クラス情報の保存が確認できませんでした') !== -1,
+    'T-EXP9-corruption-no-pollute-mv: storage-corrupted 発火が master-verify:lastclass の 1 回目扱いを破壊しない');
 }
 
 // ============================================================================

@@ -1062,3 +1062,64 @@ PR #84 時点の aggregation 対象 (`SAVE_WARN_AGGREGATABLE_KINDS`):
 #### 司令塔暫定おすすめ
 
 次は **`SAVE-UX-PARSE-HANDLING-IMPL`（案 A / PARSE-MASTER-003 のみ）** が最も自然。既存 Level 1 callsite を helper 経由化するだけで、PR #82〜#84 で確立した 3 段階標準手順（metadata → structural test → aggregation 判定）の 1 順目に乗る。`import-failed` 系は別 inventory として後続検討。本セクションは確定仕様ではなく、impl 着手前に kind / aggregateKey / severity の最終確認を挟むこと。
+
+### 16.13 SAVE-UX-PARSE-HANDLING-IMPL 実装完了状況（v1.6 追補）
+
+- 対象 main HEAD: PR #86 マージ後 `346c36f` から派生（本 PR マージ後の SHA で更新予定）
+- Task ID: `SAVE-UX-PARSE-HANDLING-IMPL`
+- 範囲: §16.9 案 A（PARSE-MASTER-003 のみ）
+- Branch: `feat/save-ux-parse-handling-impl`
+- 実装内容:
+  - `shogi_v4.html` の `syncBranchMasterOnSave()` 内 `_loaded_with_corruption` ブランチを `notifySaveWarning({...})` 経由化（既存 explicit `console.warn` / `showMsg('warn')` 直接呼び出しを除去）
+  - `test/test_master_v2_lastclass.js` に **SECTION 18** を新規追加（static 9 件 + runtime / aggregation / isolation 12 件）
+  - 同 test の SECTION 12.5 sanity check `__EXPAND_BLOCKS.length` を **20 → 21** に更新
+  - SECTION 17 (master-verify aggregation) 内 T-EXP8-3systems-total を「既存 3 系統合計 20 件維持」に label / 集計方法を更新（`__EXPAND_BLOCKS.length` の直接比較から kind ごと filter 集計の sum 比較へ）
+  - loadEnv export に `syncBranchMasterOnSave` を追加（end-to-end runtime テスト用、PR #86 §16 で承認済の最小着地）
+- metadata:
+  - `kind`: `'storage-corrupted'`
+  - `aggregateKey`: `'storage-corrupted:branch-master'`
+  - `severity`: `'warn'`
+  - `callsiteId`: `'PARSE-MASTER-003'`（§16 inventory ID を runtime callsiteId として流用、§16.14 命名規則の選択方針を参照）
+- aggregation: **対象外**（`SAVE_WARN_AGGREGATABLE_KINDS = new Set(['save-verify','master-verify'])` は変更しない）
+- 不変項目:
+  - 関数全体の try-catch 構造
+  - 後段の汎用 catch `console.warn('支部マスタ同期に失敗（既存大会運営は継続）',e)`
+  - `save()` 呼び出し（corruption 検知時も大会データ保存は継続、test_branch_master.js MF#3 を保護）
+  - `saveBranchMaster()` を corruption 経路で呼ばない（破損由来の空マスタは永続化しない）
+  - 既存 3 系統（save-verify 15 / storage-quota 2 / master-verify 3）の件数・metadata・aggregation 挙動
+- 4 系統現在地（本 PR 完了時点）:
+
+| 系統 | kind | callsite 数 | aggregation | indicator | structural assert | 出典 |
+|---|---|---|---|---|---|---|
+| 1. save-verify | `save-verify` | 15 | ○ | ○ | ○ | PR #82〜#84 |
+| 2. storage-quota | `storage-quota` | 2 | × | ○ | ○ | PR #79〜#80 |
+| 3. master-verify | `master-verify` | 3 | ○ | ○ | ○ | PR #82〜#84 |
+| **4. storage-corrupted** | `storage-corrupted` | **1** | **×（初期）** | ○ | ○ | **本 PR** |
+| **合計** | — | **21** | — | — | — | — |
+
+- 残候補（後続別 PR、§16.9〜§16.10 参照）:
+  - PARSE-LOAD-002 / PARSE-LOAD-003 → 案 B（silent → warn 化を含む、§16.10 論点 2 / 8）
+  - 系統 D（大会データ import）/ 系統 E（master import）→ `SAVE-UX-IMPORT-FAILED-HANDLING-INVENTORY`（案 C）
+  - PARSE-LOAD-001 / PARSE-MASTER-001 / PARSE-MASTER-004 → `SAVE-UX-LOAD-FAILED-HANDLING-INVENTORY`（案 D）
+- 将来 aggregation 切替時の論点（§16.10 項目 8）:
+  - `storage-corrupted:branch-master` 単独 callsite なので畳み込み問題は当面なし
+  - PARSE-LOAD-002 / 003 を後続で接続する場合、`storage-corrupted:state` の畳み込み再検討が必要（§16.5「aggregateKey 畳み込みの注記」）
+
+### 16.14 callsiteId 命名の選択方針（本 PR 時点）
+
+本 PR では runtime `callsiteId` に **`'PARSE-MASTER-003'`**（§16 inventory ID）を採用した。背景:
+
+- §13 命名規則は形式 (a) 既存連番系（`S03` / `SAVE-001-removePlayer` 等）と形式 (b) 新規 kind namespace 系（`STORAGE-QUOTA:save`）の併用を許容している
+- §16.12 暫定提案では形式 (b) の `STORAGE-CORRUPTED:syncBranchMasterOnSave` を「要 §13 規則確認」付きで挙げていた
+- 本 PR では **inventory → impl の対応関係を明確化する** ことを優先し、inventory ID をそのまま runtime callsiteId に流用する選択をした
+- これは §13 の形式 (a)（既存連番系 / タスク由来 ID をそのまま使う形）に分類できるため、命名規則とは矛盾しない（PARSE-MASTER-003 は inventory § §16.3.2 の正式 ID）
+- storage-quota と同じ形式 (b) パターンへの統一は **別 docs / cleanup タスク**（仮: `SAVE-UX-CALLSITE-ID-NAMING-CLEANUP`）で扱う
+
+不変項目（既存 callsiteId）:
+
+- save-verify 系列（`SAVE-001-removePlayer` / `SAVE-002-addPlayer` / `SAVE-003-startTournament` 等 15 件）→ 変更しない（§13 「既存 callsiteId を無理に置換しない」原則）
+- storage-quota 系列（`STORAGE-QUOTA:save` / `STORAGE-QUOTA:saveBranchMaster`）→ 変更しない
+- master-verify 系列（`S03` / `S05` / `S22`）→ 変更しない
+- **追加**: storage-corrupted 系列（`PARSE-MASTER-003`、本 PR 1 件）
+
+将来後続 callsite（PARSE-LOAD-002 / 003 等）を接続する際は、§16.14 の方針に従い inventory ID（`PARSE-LOAD-002` / `PARSE-LOAD-003` 等）を runtime callsiteId として採用するのが自然。形式 (b) への移行を選ぶ場合は cleanup PR で一括処理する。
