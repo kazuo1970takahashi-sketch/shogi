@@ -489,6 +489,22 @@ else
 fi
 
 # ============================================
+# SAVE-UX-STATE-RESTORE-HANDLING-IMPL-LIGHT (§25) PARSE-LOAD-003 単体テスト
+# ============================================
+echo ""
+echo "【SAVE-UX-PARSE-LOAD-003 IMPL-LIGHT】"
+if [ -f "$SCRIPT_DIR/test_save_ux_parse_load_003.js" ]; then
+  if node "$SCRIPT_DIR/test_save_ux_parse_load_003.js" "$TARGET" > /tmp/parse_load_003_out.log 2>&1; then
+    ok "PARSE-LOAD-003 IMPL-LIGHT テスト 全PASS ($(tail -1 /tmp/parse_load_003_out.log))"
+  else
+    ng "PARSE-LOAD-003 IMPL-LIGHT テスト 失敗"
+    cat /tmp/parse_load_003_out.log
+  fi
+else
+  warn "test_save_ux_parse_load_003.js が見つからない"
+fi
+
+# ============================================
 # RANK-PRINT-001 印刷/PDF からエントリー番号を除外 単体テスト
 # ============================================
 echo ""
