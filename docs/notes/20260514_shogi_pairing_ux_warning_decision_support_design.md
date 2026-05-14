@@ -544,3 +544,109 @@ options = {
   - `docs/notes/20260514_shogi_pairing_ux_warning_decision_support_design.md`（本ファイル、新規）
   - `HANDOFF.md`（PAIRING-UX-WARNING-DECISION-SUPPORT-DESIGN ポインタ追加）
 - 変更しないファイル: `shogi_v4.html` / `test/` / `docs/specs/` / `.github/workflows/` / `package.json` / `package-lock.json` / `playwright.config.js`
+
+---
+
+## 12. IMPL-LIGHT 着地（2026-05-15 追補、Phase 1 のみ）
+
+`PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT` として §5.1 Phase 1 のみを実装し、main 反映を予定する。
+
+### 12.1 実装範囲（Phase 1 のみ）
+
+- ✅ **pairing-card に勝敗数併記**（[buildCurrentPairingsHtml](shogi_v4.html:4914)）
+- ✅ **警告バナー近くに短い理由補足**（勝敗起因警告のみ）
+- ❌ Phase 2（警告本文に該当ペア表示、`avoidablePairIndexes` 追加）未実装
+- ❌ Phase 3（ハイライト / ジャンプ）未実装
+- ❌ Phase 4（同勝数候補名表示）未実装
+
+### 12.2 採用した実装方針
+
+**pairing-card 側の勝敗数併記**:
+- 各 winner-btn の **直下に補助ラベル** を 1 行追加（`data-pairing-aux="p1"` / `"p2"` 属性付き）
+- 補助ラベルは `formatParticipantLabel(player, {mode:'standard', includeRecord:true, record:{wins, losses}})` の出力（例: `A-12 山田太郎（2勝0敗）`）
+- 既存 `winner-btn` のテキスト（`getNameWithNo()` = `01｜山田太郎`）は **未変更**（CSS の `width:7em` 制約と既存挙動を温存）
+- 補助ラベルは小さいフォント（`font-size:11px`、`max-width:9em` で折り返し許容）
+- `escapeHtml()` 経由で出力（XSS 防止、既存流儀踏襲）
+
+**警告バナー近くの理由補足**:
+- 既存警告バナー（[buildCurrentPairingsHtml 4933 周辺](shogi_v4.html:4933)）の内側に短い補足文を 1 行追加
+- 条件: `quality.avoidableWinDiffPairs > 0` OR `quality.maxWinDiff >= 2`（勝敗起因警告のみ）
+- 文言: 「勝敗数が異なるペアがあります。各対局カードに表示された勝敗数を確認してください。」
+- **rematch 単独警告（`rematchCount > 0` だけ）には補足を出さない**（再戦警告は勝敗数で判断できないため）
+
+**wins / totals / playerById の準備**:
+- `buildCurrentPairingsHtml` 内で `getWins(cls)` を呼び、`state.results[cls]` を 1 回走査して各プレイヤーの total matches を集計
+- 補助ラベル生成用に id→player のマップを構築
+- すべて pairing-card 描画ループの前で 1 回計算（パフォーマンス配慮）
+
+**`pcTotals` のセマンティクス（cowork Should Fix PR #103 反映）**:
+- pairing-card の勝敗数表示は **「結果入力済み（winner 確定済み）対局のみ」** を対象にする
+- 未確定 / 現在進行中（`state.pairings[cls]`）の対局は **`pcTotals` に含めない / losses にも含めない**
+- `losses = Math.max(0, totals - wins)` は「**確定済み対局数 - 勝ち数**」として扱う
+- 防御的に `pcMatch.winner` が無い match は `pcTotals` 加算からも除外（`getWins()` の winner-only 集計と整合させ、losses ≧ 0 を不変に保つ）
+- 既存 `submitRound()` ([4803](shogi_v4.html:4803)) は全 winner 確定後にのみ `state.results` へ push するため通常は到達しないが、`editPastResult()` 経由や将来の改修に対する regression 防止
+
+### 12.3 不変項目（IMPL-LIGHT で守ったこと）
+
+- ✅ `warning object` 構造 **未変更**（`avoidablePairIndexes` / 候補名フィールド等を追加していない）
+- ✅ `evaluatePairingQuality()` ([4384](shogi_v4.html:4384)) 本体 **未変更**（戻り値 / アルゴリズム / `canMatchInternally` / `forcedMixed` / `oddGroupCount` すべて従来通り）
+- ✅ 既存 `getName()` ([231](shogi_v4.html:231)) / `getNameWithNo()` ([277](shogi_v4.html:277)) / `entryNoOf()` ([243](shogi_v4.html:243)) **未変更**（並存）
+- ✅ `formatParticipantLabel` 本体 **未変更**（PR #102 で実装したものをそのまま使用）
+- ✅ `detail` / `print/card` mode 未実装 / `privacyLevel` / `ariaLabel` フィールド未実装
+- ✅ pairing-card の既存 button / 変更ボタン / 卓番号バッジ構造 **維持**
+- ✅ `player.branch` 等の存在しない支部名フィールド **不参照**（単一支部前提）
+- ✅ CSS ファイル / class 定義 **未変更**（インラインスタイルでの補助ラベル表示のみ）
+- ✅ forbidden files (`docs/specs/` / `.github/workflows/` / `package*.json` / `playwright.config.js`) 未変更
+- ✅ 自動組み合わせロジック / 対戦履歴ロジック / SAVE-UX 関連ロジック 未変更
+
+### 12.4 helper の初 UI 配線
+
+- 本 PR が **`formatParticipantLabel` を UI に配線した最初の callsite**
+- 配線範囲は **pairing-card の補助ラベルのみ**（score-card / 変更モーダル / 受付一覧 / 結果入力 / 印刷 / 対局カード出力 への配線は **行わない**）
+- `mode:'standard'` + `includeRecord:true` + `record:{wins, losses}` の組合せで使用
+- `includeCategory` は **使用しない**（今回は勝敗数の近接表示が目的、支部員区分は情報過多回避）
+- 不正な player（id 未解決）には空文字を返す helper の安全側挙動に依存（補助ラベル要素自体が出ない）
+
+### 12.5 追加テスト
+
+- 新規ファイル: `test/test_pairing_ux_warning_decision_support.js`
+- `test/run_tests.sh` に起動 stanza 追加
+- 49 アサート全 PASS（静的検査ベース）:
+  - 構造: `buildCurrentPairingsHtml` 内で `formatParticipantLabel` が `mode:'standard'` + `includeRecord:true` で呼ばれている / `includeCategory` は使われていない
+  - wins / totals 集計ロジックが pairing-card 描画前に存在し、losses = totals - wins で計算される
+  - 警告バナーブロック内に「勝敗数」「確認」を含む補足文が存在
+  - 補足条件: `avoidableWinDiffPairs` / `maxWinDiff` を見る（rematch 単独に出さない）
+  - 補足文に「禁止」「停止」トーンが含まれない
+  - `evaluatePairingQuality` 戻り値に `avoidablePairIndexes` / `avoidableWinDiffCandidates` / `sameWinGroupCandidates` が追加されていない
+  - 戻り値の従来フィールド 7 件すべて存続
+  - 既存 helper（`getName` / `getNameWithNo` / `entryNoOf` / `formatParticipantLabel`）定義が維持
+  - `detail` / `print` mode / `privacyLevel` / `ariaLabel` の追加なし
+  - pairing-card の `winner-btn` / 変更ボタン / 卓番号バッジ構造維持
+  - 補助ラベル `data-pairing-aux="p1"` / `"p2"` 要素が `escapeHtml()` 経由
+  - `player.branch` / `state.branches` 不参照
+- 既存 `test_pairing_ux_display_helper.js`（28 アサート）含む `run_tests.sh` 全体: **70 PASS / 0 FAIL**
+
+### 12.6 次タスク候補 / 運用観察項目
+
+| 順位 | 候補 | 起点条件 |
+|---|---|---|
+| 第一 | **運用観察** | Phase 1 着地後、現場で勝敗数併記の効果を観察 |
+| 第二 | `PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-PHASE2`（仮）| Phase 1 の効果不十分 / 「どのペアか」が分からない不満が出た場合。`evaluatePairingQuality` 戻り値に `avoidablePairIndexes` 追加、警告本文に該当ペア展開 |
+| 第三 | `PAIRING-UX-DISPLAY-LABELS-IMPL-LIGHT` | 「対戦相手の変更」モーダル option / 行内表示の helper 化（独立して進められる）|
+
+**運用観察項目**（cowork Nice to Have PR #103 追補）:
+- スクロール往復が実際に減ったか
+- 補足文「勝敗数が異なるペアがあります...」が現場運営者に適切に伝わるか
+- **補助ラベルのスマホ表示**: `font-size:11px` + `max-width:9em` + `word-break:break-word` で **折り返し / 読みやすさ** が許容範囲か
+- 補助ラベルが長くなる（参加者名が長い場合）時に pairing-card 全体のレイアウトが崩れないか
+- 既存 button テキスト（`getNameWithNo()` = `01｜山田太郎`）と補助ラベル（`A-12 山田太郎（2勝0敗）`）の **名前重複** が視覚的に許容範囲か / 統合要求が出るか
+- rematch 単独警告に補足文が出ないことが現場で受け入れられるか
+
+### 12.7 変更ファイル（本 IMPL-LIGHT PR）
+
+- `shogi_v4.html` — `buildCurrentPairingsHtml` への wins/totals 計算 + 警告補足 + 補助ラベル追加（既存 helper / warning obj / `evaluatePairingQuality` 不変）
+- `test/test_pairing_ux_warning_decision_support.js`（新規、49 アサート）
+- `test/run_tests.sh` — 起動 stanza 追加
+- `docs/notes/20260514_shogi_pairing_ux_warning_decision_support_design.md` — 本 §12 追補
+- `docs/notes/20260514_shogi_pairing_ux_display_helper_design.md` — helper の初 UI 配線報告（短い追記）
+- `HANDOFF.md` — IMPL-LIGHT ポインタ追加

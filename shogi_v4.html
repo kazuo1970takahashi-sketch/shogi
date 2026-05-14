@@ -4930,12 +4930,60 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
     if(quality.rematchCount>0)warns.push('再戦 '+quality.rematchCount+'件');
     if(quality.avoidableWinDiffPairs>0)warns.push('同勝数で組めた可能性のある異勝数ペア '+quality.avoidableWinDiffPairs+'件');
     if(quality.maxWinDiff>=2)warns.push('勝数差 '+quality.maxWinDiff+' のペアあり');
-    html+='<div class="alert alert-warn" style="margin-bottom:12px">⚠ 要確認：'+escapeHtml(warns.join(' / '))+'<div style="font-size:11px;color:#666;margin-top:4px">※ 操作はブロックされません。例外判断は現場運営に委ねます。</div></div>';
+    // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT (PR #100 Phase 1):
+    //   pairing-card 側に勝敗数を併記した上で、warning object / evaluatePairingQuality()
+    //   を変更せずに、勝敗起因警告のみ「勝敗数を確認」する旨の短い理由補足を追加。
+    //   rematch 単独警告には補足を出さない（記載すると勝敗で再戦警告を解決できると誤読される）。
+    var winRelatedWarn=(quality.avoidableWinDiffPairs>0)||(quality.maxWinDiff>=2);
+    var supplementHtml=winRelatedWarn
+      ?'<div style="font-size:11px;color:#666;margin-top:4px">勝敗数が異なるペアがあります。各対局カードに表示された勝敗数を確認してください。</div>'
+      :'';
+    html+='<div class="alert alert-warn" style="margin-bottom:12px">⚠ 要確認：'+escapeHtml(warns.join(' / '))+supplementHtml+'<div style="font-size:11px;color:#666;margin-top:4px">※ 操作はブロックされません。例外判断は現場運営に委ねます。</div></div>';
+  }
+
+  // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT (PR #100 §5.1 Phase 1):
+  //   pairing-card に勝敗数併記用の補助ラベルを表示するため、wins / totals / player by id を準備。
+  //   formatParticipantLabel(player, {mode:'standard', includeRecord:true, record:{wins, losses}})
+  //   経由で補助ラベルを生成し、各 winner-btn の下に小さく表示する。
+  //   既存の button (winner-btn) と n1/n2（getNameWithNo）はそのまま維持（並存）。
+  //
+  // cowork Should Fix (PR #103) / pcTotals セマンティクス:
+  //   pairing-card record uses completed results only;
+  //   unfinished current pairings must not count as losses.
+  //   - 集計対象は state.results[cls]（submitRound() で全 winner 確定後に push、
+  //     editPastResult() は winner を p1/p2 で上書きするのみで null 化しない）
+  //   - 現ラウンド (state.pairings[cls]) は対象外。winner 未入力の現行対局を
+  //     loss と数えない。
+  //   - 防御的に pcMatch.winner が無い場合は totals にも加算しない
+  //     （getWins() の winner-only 集計と整合させ、losses = totals - wins
+  //     を「確定済み対局数 - 勝ち数」として常に正に保つ）。
+  var pcWins=getWins(cls);
+  var pcTotals={};
+  for(var pcI=0;pcI<state.players[cls].length;pcI++)pcTotals[state.players[cls][pcI].id]=0;
+  for(var pcR=0;pcR<state.results[cls].length;pcR++){
+    for(var pcM=0;pcM<state.results[cls][pcR].length;pcM++){
+      var pcMatch=state.results[cls][pcR][pcM];
+      // winner 未確定の match は totals に含めない（cowork Should Fix PR #103）
+      if(!pcMatch||!pcMatch.winner)continue;
+      if(pcMatch.p1&&Object.prototype.hasOwnProperty.call(pcTotals,pcMatch.p1))pcTotals[pcMatch.p1]++;
+      if(pcMatch.p2&&Object.prototype.hasOwnProperty.call(pcTotals,pcMatch.p2))pcTotals[pcMatch.p2]++;
+    }
+  }
+  var pcPlayerById={};
+  for(var pcJ=0;pcJ<state.players[cls].length;pcJ++)pcPlayerById[state.players[cls][pcJ].id]=state.players[cls][pcJ];
+  function pcBuildAuxLabel(playerId){
+    var pObj=pcPlayerById[playerId];
+    if(!pObj)return '';
+    var w=pcWins[playerId]||0;
+    // losses は「確定済み対局数 - 勝ち数」。負値防御（cowork PR #103 Nice to Have）。
+    var l=Math.max(0,(pcTotals[playerId]||0)-w);
+    return formatParticipantLabel(pObj,{mode:'standard',includeRecord:true,record:{wins:w,losses:l}});
   }
 
   for(var i=0;i<state.pairings[cls].length;i++){
     var m=state.pairings[cls][i];
     var n1=getNameWithNo(m.p1,cls),n2=getNameWithNo(m.p2,cls);
+    var aux1=pcBuildAuxLabel(m.p1),aux2=pcBuildAuxLabel(m.p2);
     var detail=quality.pairDetails[i]||{labels:[]};
     var labelsHtml='';
     for(var li=0;li<detail.labels.length;li++){
@@ -4952,11 +5000,15 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       +'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:28px">'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
       +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+escapeHtml(n1)+'</button>'
+      // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT: formatParticipantLabel による勝敗数併記補助ラベル
+      +(aux1?'<div data-pairing-aux="p1" style="font-size:11px;color:#444;margin-top:3px;text-align:center;line-height:1.3;max-width:9em;word-break:break-word">'+escapeHtml(aux1)+'</div>':'')
       +(m.winner===m.p1?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
       +'</div>'
       +'<span style="font-weight:500;color:#888;padding-top:12px">vs</span>'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
       +'<button class="winner-btn'+(m.winner===m.p2?' selected':'')+'" id="wb_'+cls+'_'+i+'_p2">'+escapeHtml(n2)+'</button>'
+      // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT: formatParticipantLabel による勝敗数併記補助ラベル
+      +(aux2?'<div data-pairing-aux="p2" style="font-size:11px;color:#444;margin-top:3px;text-align:center;line-height:1.3;max-width:9em;word-break:break-word">'+escapeHtml(aux2)+'</div>':'')
       +(m.winner===m.p2?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
       +'</div>'
       +'</div>'
