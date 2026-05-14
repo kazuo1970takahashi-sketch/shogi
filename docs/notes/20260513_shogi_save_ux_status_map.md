@@ -1480,7 +1480,7 @@ import 経路の特徴:
 - 目的: 破損検知時の user-facing message を recovery guidance 化
 - 内容:
   - 現行 message: 「支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）」
-  - 改善案: 「支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）。マスタタブから再読込・初期化・取込で復旧できます。」
+  - 改善案: 「支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）。マスタタブのインポート・統合で復旧できます。」
   - aggregation 対象外を維持（毎回確実に出す）
   - 文言確定前に当日運営シナリオを想定した review が必要
 - 注意: 「backup から復元」「export してから初期化」等は **既存導線（masterExportBtn / openMasterResetModal / processMasterImportText）を前提に書く**
@@ -1529,7 +1529,7 @@ import 経路の特徴:
   - 復旧導線（既存）を user に届けるだけで体感品質が上がる
 - 注意:
   - 文言は aggregation 対象外なので 1 回 1 回必ず出る → 文言が長すぎると現場で不快
-  - 「マスタタブから再読込・初期化・取込で復旧できます」程度で抑える
+  - 「マスタタブのインポート・統合で復旧できます」程度で抑える
 
 #### 第二候補: `SAVE-UX-BRANCH-MASTER-CALLSITE-AUDIT`（§17.11.5、docs-only）
 
@@ -1569,3 +1569,329 @@ import 経路の特徴:
 - [shogi_v4.html:1347-1434](shogi_v4.html:1347) updateBranchMasterFromTournament
 - [shogi_v4.html:2780-2790](shogi_v4.html:2780) buildMigrationModalHtml（破損バナー）
 - [shogi_v4.html:2227-2279](shogi_v4.html:2227) openMasterResetModal / bindMasterResetModalEvents
+
+---
+
+## 18. SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE（v1.8 追補 / 支部マスタ破損 recovery guidance 設計）
+
+- 種別: **docs-only design**（実装はしない / 仕様は確定しない）
+- 対象 main HEAD: `9d688c4`（PR #88 squash merged）
+- Task ID: `SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE`
+- 目的: 支部マスタ破損時に運営者へ何をどう案内するかを整理し、次の impl PR (`SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-LIGHT`) の判断材料を出す
+- 関連: §16（parse 系 inventory）/ §16.13（PARSE-MASTER-003 impl 完了）/ §17（root cause inventory）
+
+### 18.1 目的
+
+PR #87 で破損検知が SAVE-UX indicator / metadata 化され、PR #88 で root cause 棚卸しが完了した。次に取り組むべきは **「破損を検知した後、運営者が次に何をすべきかが分かる UX」** の設計。
+
+本 §18 では:
+
+- 現行 warning message（PR #87 文言）の評価
+- recovery guidance 文言・表示場所の設計方針
+- Light / Medium / Heavy の段階的な実装分類
+- 個人情報・共有設計（A-5 / SAVE-FUTURE 系）との整合確認
+- 次タスク候補（**第一候補は `SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-LIGHT`**）
+
+実装はしない。仕様も確定しない。impl 着手前の judgment material のみ。
+
+### 18.2 PR #87 + #88 後の現状
+
+| 項目 | 状態 | 出典 |
+|---|---|---|
+| 破損検知 → indicator / metadata | ✅ PR #87 PARSE-MASTER-003 | §16.13 |
+| 破損経路の棚卸し | ✅ PR #88 §17 | §17.3 / §17.4 |
+| user-facing message | △ PR #87 で「（大会データのコピーは継続）」明示 / 「何をすべきか」は欠 | §18.3 |
+| 復旧導線 | △ 既存導線（reset / export / import / migration）は存在するが破損文脈で繋がっていない | §18.6 |
+| 表示場所 | △ showMsg（reg-msg）+ indicator pill のみ。マスタタブ冒頭バナーなし | §18.6 |
+
+### 18.3 現行 warning message の評価
+
+#### 18.3.1 現行文言（PR #87 / [shogi_v4.html:5295](shogi_v4.html:5295)）
+
+```
+支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）
+```
+
+#### 18.3.2 良い点
+
+| # | 評価 | 根拠 |
+|---|---|---|
+| 1 | **「破損している」を明示**（症状を隠さない） | SAVE-UX-DESIGN §2.3「失敗を隠さない」と整合 |
+| 2 | **「自動同期をスキップ」を明示**（何が起きていないかを伝える） | 運営者が「いつもの sync が走っていない」と気づける |
+| 3 | **「大会データのコピーは継続」を明示**（不安を抑える） | 大会運営中の致命的不安を抑え、`saveData()` 経路（大会データコピー）の継続を保証 |
+| 4 | aggregation 対象外（毎回確実に出る） | データ破損は短縮表示で隠さない、storage-quota と同じ判断軸（§16.7） |
+| 5 | severity=warn / type=warn | error への昇格は別タスク、warn で UX 整合（§16.6） |
+
+#### 18.3.3 弱い点
+
+| # | 弱点 | 影響 |
+|---|---|---|
+| 1 | **「どうすれば直るか」が書かれていない** | 運営者は破損を認識したが次の行動が分からない |
+| 2 | **既存復旧導線（マスタタブの export / import / reset / migration）への参照がない** | 既に UI に存在する機能を user が見つけられない |
+| 3 | **「大会データのコピーは継続」の含意が運営者には不明瞭** | 「大会データのコピー＝saveData() ボタン」を知っている前提で書かれている |
+| 4 | **showMsg 1 行のみ**（reg-msg の 1 行領域に出る） | 詳細な手順を盛り込むには物理的に窮屈 |
+| 5 | **マスタタブを開いたときに何も警告されない** | indicator pill は気づきが弱く、運営者がマスタタブで操作中も破損に気付かない可能性 |
+
+#### 18.3.4 制約条件
+
+- **長すぎる文言は不可**: aggregation 対象外 = 毎回必ず出る → 当日運営中の混乱を増やす
+- **modal / alert を保存通知に使わない原則**（SAVE-UX-DESIGN §2.3）→ recovery guidance を modal で出すのは原則違反
+- **既存 indicator pill の幅は limit**: 「保存確認 N件」のみ。詳細ボタンは未実装（SAVE-UX-STATUS-INDICATOR-DETAIL は未起票）
+
+### 18.4 recovery guidance 設計方針
+
+#### 18.4.1 基本原則
+
+1. **症状 + 影響 + 次の行動** の 3 点セットで構成する（症状のみ・影響のみは不足）
+2. **既存 UI を前提に書く**: 「マスタタブのインポート・統合で復旧できます」など、既存 button label と一致する語彙を使う（実 UI 上の label は `📂 マスタをインポート` / `📥 過去大会を支部マスタに統合`、`📛 マスタをリセット` は最終手段のため Light の主導線には載せない）
+3. **長文化を避ける**: showMsg の物理制約 + aggregation 対象外による頻度を考慮
+4. **自動修復はしない**: user 同意なしの初期化はデータ消失リスク（§17.12）
+5. **大会運営の継続を最優先**: 「大会データは継続して保存・コピーできます」を最初に明示
+6. **modal / alert は使わない**: SAVE-UX-DESIGN §2.3 / `notifySaveWarning` 経路を維持
+
+#### 18.4.2 既存復旧手段との接続
+
+§17.10 の復旧導線候補 8 件のうち、**既存 UI で実現できるもの**を guidance で参照する:
+
+| 復旧手段 | 既存 UI | guidance での扱い |
+|---|---|---|
+| マスタを初期化 | `📛 マスタをリセット`（[shogi_v4.html:2034](shogi_v4.html:2034)）| Light で参照可（既存導線） |
+| マスタを再読込（reload） | （reload は OS 機能、UI ボタンなし） | Light で参照しない（user の reload 操作に依存しない） |
+| 破損データを export | `📤 マスタをエクスポート`（[shogi_v4.html:2029](shogi_v4.html:2029)）| ⚠️ **破損 raw は `serializeBranchMasterForExport` を通せないため、現実装では破損データそのものを export できない**（normalize 後の空マスタが出る）。Light では言及しない、Medium / Heavy で別経路（破損 raw export）を設計 |
+| バックアップから復元 | `📂 マスタをインポート` overwrite（[shogi_v4.html:2030](shogi_v4.html:2030)）| Light で参照可（バックアップを持っている運営者向け） |
+| 過去大会から再構築 | `📥 過去大会を支部マスタに統合`（[shogi_v4.html:2028](shogi_v4.html:2028)）→ corruption=true で警告バナー（[shogi_v4.html:2784](shogi_v4.html:2784)） | Light で参照可、既に corruption 認知済 |
+| 22 名取込 | `📥 22 名取込(5/10 大会用)` | 専用ボタンのため Light では参照しない |
+
+#### 18.4.3 「大会データのコピーは継続」の文言整理
+
+現行: `（大会データのコピーは継続）`
+
+問題: 「大会データのコピー」が `saveData()` ボタン（クリップボードコピー / ファイル保存）と同義であることは、UI 既存の `📋 大会データをコピー` ボタン label との整合性に依存する。
+
+候補:
+
+- A（現行維持）: `（大会データのコピーは継続）` — 短い、既存運用者には通じる
+- B（明示化）: `（大会データの保存・コピーは継続）` — 「保存」を追加して `save()` 経路も含意
+- C（行動化）: `（大会データのコピーは通常どおり可能）` — 受動表現を能動表現へ
+
+**暫定**: 案 A 維持（短さ優先、既存 user に通じている）。impl 時に運用者レビューで再判定。
+
+### 18.5 guidance message 案
+
+#### 18.5.1 Light 案（最小着地、showMsg 1 行内）
+
+**前提**: PR #87 文言の延長線で、既存 button label 参照を最小追加。
+
+候補 L-1（最有力）:
+
+```
+支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）。マスタタブのインポート・統合で復旧できます。
+```
+
+- 末尾に「マスタタブのインポート・統合で復旧できます」という短い復旧導線を 1 句追加
+- 既存 UI button label `📂 マスタをインポート` / `📥 過去大会を支部マスタに統合` と語彙整合（`📛 マスタをリセット` は最終手段のため Light の主導線には載せない、Medium / Heavy で扱う）
+- 単一文 + 1 行で showMsg 物理制約に収まる
+- aggregation 対象外で毎回出ても許容範囲の長さ
+
+候補 L-2（より穏当）:
+
+```
+支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）。マスタタブから復旧操作ができます。
+```
+
+- 復旧手段を具体化せず「復旧操作ができる」とだけ示す
+- マスタタブを開かせる動線に絞る
+- L-1 より短いが、user 側で「何が復旧操作か」を見つける必要あり
+
+候補 L-3（最短）:
+
+```
+支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）。マスタタブをご確認ください。
+```
+
+- 最短。何をするかは user が決める
+- 文言コストは最小だが、guidance 価値も最小
+
+**暫定推奨**: **L-1**（インポート・統合への参照で行動性が最も高い。「初期化」= リセットは最終手段のため Light の主導線から外す）。impl 着手前に運用者レビューで確定。
+
+#### 18.5.2 Medium 案（マスタタブ冒頭バナー、別表示場所）
+
+showMsg は L-1 を維持しつつ、**マスタタブ冒頭に破損 detail バナー**を出す。
+
+バナー文言案:
+
+```
+⚠️ 支部マスタが破損しています
+自動同期はスキップされています。大会データのコピーは通常どおり可能です。
+復旧方法:
+  • 過去のバックアップがあれば「マスタをインポート」で復元
+  • バックアップがなければ「過去大会を支部マスタに統合」で再構築
+  • どうしても直らない場合は「マスタをリセット」（最終手段）
+```
+
+- バナー = `pane-master` の `<h2>沼津支部 参加者マスタ</h2>` 直前 or 直後
+- 既存マイグレ wizard の corruption バナー（[shogi_v4.html:2784](shogi_v4.html:2784)）と視覚整合（黄色 `#fef3c7` / `#f59e0b`）
+- バナーは showMsg ではなく **静的 DOM** なので長文化可能
+- aggregation 対象外議論とは独立（showMsg と別レイヤ）
+
+#### 18.5.3 Heavy 案（indicator detail UI / warning detail）
+
+indicator pill (`#save-warning-indicator`) を click すると **warning detail panel** を開き、kind 別の発火履歴 + recovery guidance を表示する案。
+
+- SAVE-UX-STATUS-INDICATOR-DETAIL（未起票、別タスク）と連動
+- 本 PR 範囲外、参考扱い
+
+### 18.6 表示場所候補
+
+| 場所 | 既存 | 改善余地 | 段階 |
+|---|---|---|---|
+| `reg-msg`（showMsg）| PR #87 で文言出力済 | 末尾に guidance 1 句追加（L-1）| **Light** |
+| `#save-warning-indicator` pill | count のみ表示 | textContent 拡張は indicator 設計に介入するため不可 | （指標のみ）|
+| マスタタブ冒頭バナー | なし | `buildMasterTabHtml` 冒頭に `_loaded_with_corruption` 判定で挿入 | **Medium** |
+| マイグレ wizard 冒頭バナー | 既存（[shogi_v4.html:2784](shogi_v4.html:2784)）| 文言を §18.5.2 と整合させる微調整余地 | （既存維持）|
+| マスタリセットモーダル | 既存（バックアップ済チェック + テキスト確認）| 破損コンテキストでサジェスト動線を追加 | Medium / Heavy |
+| マスタインポートモーダル | 既存 | overwrite モード推奨をサジェスト | Medium / Heavy |
+| 詳細画面 / warning detail | なし（未起票） | SAVE-UX-STATUS-INDICATOR-DETAIL の延長 | **Heavy** |
+
+### 18.7 Light / Medium / Heavy 分類
+
+#### 18.7.1 Light: showMsg 文言の最小追加（次 impl PR の対象）
+
+| 項目 | 内容 |
+|---|---|
+| 範囲 | [shogi_v4.html:5295](shogi_v4.html:5295) PARSE-MASTER-003 の `message` 文字列のみ |
+| 変更行数 | 1 行（message 文字列の追記） |
+| test | SECTION 18 の T-EXP9-runtime-corruption-showMsg 文言 assert を更新 |
+| Codex review コスト | 低 |
+| user 体感価値 | 中（既存 UI への動線が明確になる） |
+| 仕様判断 | 文言だけのため軽い |
+| 想定 PR | `SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-LIGHT` |
+
+#### 18.7.2 Medium: マスタタブ冒頭バナー + Light を含む
+
+| 項目 | 内容 |
+|---|---|
+| 範囲 | Light + `buildMasterTabHtml` 冒頭に `_loaded_with_corruption` 判定バナー追加 |
+| 変更行数 | 数 10 行（HTML 生成 + style + corruption 判定の loadBranchMaster 連動） |
+| test | バナー DOM の有無 assert を追加 |
+| Codex review コスト | 中（UI 設計判断 + 既存タブレイアウトへの影響） |
+| user 体感価値 | 高（マスタタブを開いた瞬間に状況把握） |
+| 仕様判断 | 文言確定 + UI 配置 + 復旧フロー誘導の整合性 |
+| 想定 PR | `SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-MEDIUM`（Light 後の続編） |
+
+#### 18.7.3 Heavy: indicator detail UI
+
+| 項目 | 内容 |
+|---|---|
+| 範囲 | SAVE-UX-STATUS-INDICATOR-DETAIL（未起票）と連動した detail panel |
+| 変更行数 | 数 100 行（panel 構造 + kind 別履歴 + recovery action button） |
+| test | 多数（DOM / event / aggregation 状態 / kind 別表示） |
+| Codex review コスト | 高（UX 設計新規領域） |
+| user 体感価値 | 高（dev 視点 metadata を user 視点 guidance に翻訳） |
+| 仕様判断 | indicator 設計と連動（docs/specs/...status_indicator_design.md 改定要否含む） |
+| 想定 PR | `SAVE-UX-STATUS-INDICATOR-DETAIL`（先行設計）→ `SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-HEAVY` |
+
+### 18.8 個人情報・共有設計との接続
+
+#### 18.8.1 個人情報の取扱い
+
+支部マスタには member の氏名・ふりがな・支部員区分・グレード・市町村・参加履歴が含まれる（[normalizeBranchMaster の members 構造](shogi_v4.html:603-620)）。
+
+recovery guidance での留意点:
+
+| # | 留意 | 対応 |
+|---|---|---|
+| 1 | guidance message そのものには個人情報を含めない | 「○○さんのデータが壊れています」のような名指しはしない |
+| 2 | 破損 raw export を実装する場合、export ファイルに個人情報が含まれる | 「保管・破棄に注意してください」の注意書きを export ボタン側で明示（既存 `📤 マスタをエクスポート` には `alert('...安全な場所に保管してください')` 既存あり [shogi_v4.html:2693](shogi_v4.html:2693)） |
+| 3 | warning detail panel に member 一覧を出さない（Heavy 案） | kind / aggregateKey / callsiteId など metadata のみで個人情報は出さない |
+| 4 | 破損データを diagnostic で外部送信する案は採用しない | 端末内完結が前提（既存設計と整合） |
+
+#### 18.8.2 共有設計 / 持出し設計との接続
+
+将来候補:
+
+- **SAVE-FUTURE-IMPORT**: 端末移行・マイグレ系（§4.5）→ recovery guidance で「他端末からのインポート」を案内する余地
+- **SAVE-FUTURE-REPORT**: 報告書 / 集計の保存・持出し → branch master 破損が report 経路に影響しないことを明示する余地
+
+本 §18 では **個人情報を含むデータの取扱いに関する新規ルール**は導入しない（既存 `serializeBranchMasterForExport` の方針を維持）。impl PR で文言追加時のみ、既存 alert / showMsg の文言と語彙整合させる。
+
+### 18.9 次タスク候補
+
+#### 18.9.1 第一候補（最有力）: `SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-LIGHT`
+
+- 種別: 実装（小）
+- 範囲: §18.7.1 Light のみ
+- 範囲詳細:
+  - [shogi_v4.html:5295](shogi_v4.html:5295) PARSE-MASTER-003 の `message` 文字列を §18.5.1 案 L-1 に更新
+  - [test/test_master_v2_lastclass.js SECTION 18 の T-EXP9-runtime-corruption-showMsg](test/test_master_v2_lastclass.js) 文言 assert を更新
+  - status-map §18.10 に impl 完了状況を追記
+  - HANDOFF.md ポインタを更新
+- 不変項目:
+  - kind / aggregateKey / severity / callsiteId（既存 `PARSE-MASTER-003`）
+  - aggregation 対象外（`SAVE_WARN_AGGREGATABLE_KINDS` 不変）
+  - 既存 console.warn / indicator 経路
+  - マイグレ wizard 既存バナー文言（[shogi_v4.html:2784](shogi_v4.html:2784)）
+- 制約:
+  - 文言は §18.5.1 案 L-1 / L-2 / L-3 のいずれかに確定（impl 着手前に運用者レビュー）
+  - showMsg 1 行物理制約を満たす
+- 想定 review 観点:
+  - 文言の長さ・冗長性
+  - 既存 button label との語彙整合
+  - aggregation 対象外による頻度許容
+  - test の assert が文字列一致で過剰でないか
+
+#### 18.9.2 第二候補: `SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-MEDIUM`
+
+- 種別: 実装（中）
+- 範囲: §18.7.2 Medium（マスタタブ冒頭バナー + Light を含む）
+- 着手条件: Light 完了 + 運用者フィードバック取得後
+
+#### 18.9.3 第三候補: `SAVE-UX-STATUS-INDICATOR-DETAIL`
+
+- 種別: 設計（docs/specs 改定）+ 実装（大）
+- 範囲: indicator pill click → detail panel
+- 着手条件: SAVE-UX-WARN-AGGREGATION-TUNING 等の運用感がある程度蓄積した後
+
+#### 18.9.4 第四候補: `SAVE-UX-BRANCH-MASTER-CORRUPTION-RECOVERY-IMPL`（§17.11.2）
+
+- 種別: 実装（重）
+- 範囲: 破損 raw export + 復旧 button 等の UI 強化
+- 着手条件: Light / Medium 完了後
+
+#### 18.9.5 補助候補: `SAVE-UX-BRANCH-MASTER-CALLSITE-AUDIT`（§17.11.5）
+
+- 種別: docs-only inventory
+- 範囲: `loadBranchMaster` 実呼び出し 24 callsite × `_loaded_with_corruption` 判定マトリクス
+- 着手条件: Light と独立に進められる
+
+### 18.10 司令塔メモ：次にやるなら
+
+**第一候補 `SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-LIGHT` を採用**:
+
+- 理由:
+  - PR #87 で metadata 経路は揃っているため、文言 1 行の改善で user 体感が変わる
+  - test 変更も SECTION 18 内の文言 assert 1 件のみで済む
+  - 「inventory → 軽 impl → 重 impl」の段階パターン（PR #78 → #79 → … と同様）
+  - Light 完了後の運用者フィードバックを材料に Medium / Heavy の必要性を判定可能
+- 注意:
+  - 文言確定は impl 着手前に運用者レビューを挟む（aggregation 対象外で毎回出る制約）
+  - L-1（推奨）/ L-2 / L-3 のどれにするかは 1 度確定したら頻繁に変えない
+
+**やらない候補**:
+
+- 自動修復（user 同意なしの初期化、§17.12 で既出）
+- modal / alert での guidance 表示（SAVE-UX-DESIGN §2.3 違反）
+- guidance message に個人情報を含める
+
+### 18.11 関連 docs / コード
+
+- `docs/notes/20260513_shogi_save_ux_status_map.md` §16（parse 系 inventory）/ §16.13 / §16.14 / §17（root cause inventory）
+- `docs/specs/20260513_shogi_save_ux_design.md`（SAVE-UX 中核原則、§2.3 modal/alert 不使用）
+- `docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md`（aggregation allow-list）
+- `docs/specs/20260513_shogi_save_ux_status_indicator_design.md`（indicator Level 2 設計、Heavy 案の前提）
+- [shogi_v4.html:5295](shogi_v4.html:5295) PARSE-MASTER-003 message（Light 修正対象）
+- [shogi_v4.html:2018-2037](shogi_v4.html:2018) buildMasterTabHtml（Medium 改修対象）
+- [shogi_v4.html:2780-2790](shogi_v4.html:2780) buildMigrationModalHtml（既存破損バナー、参照）
+- [shogi_v4.html:2227-2279](shogi_v4.html:2227) openMasterResetModal（既存復旧 UI）
+- [shogi_v4.html:2693](shogi_v4.html:2693) masterExportBtn alert（既存個人情報注意喚起）
+- [test/test_master_v2_lastclass.js SECTION 18](test/test_master_v2_lastclass.js) T-EXP9 文言 assert（Light 修正対象）
