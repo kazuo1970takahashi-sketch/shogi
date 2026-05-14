@@ -3348,16 +3348,22 @@ notifySaveWarning({
 
 ### 25.4 判定境界
 
+**「破損起源」の定義**: `localStorage.getItem(key)` の例外、`JSON.parse(raw)` の失敗、**または** `normalizeState(JSON.parse(raw))` の失敗（schema 不一致 / 構造不正）。いずれも `load()` 内の `try { state=normalizeState(JSON.parse(d)); return; } catch(e){ anyFailure=true; }` で一括捕捉される。すなわち本 IMPL-LIGHT における `anyFailure` フラグは「JSON.parse 失敗のみ」ではなく **「parse / normalize 経路で 1 回以上 throw が観測されたか」** を表す（cowork Should Fix 1 / §25 補足）。
+
 | 状況 | `anyFailure` | warn 発火 | 備考 |
 |---|---|---|---|
 | 初回起動（全キー null）| false | ❌ | regression 防止対象 |
 | 全キー getItem 例外（LOAD-001 経由）| true | ✅ | 破損起源 |
 | 全キー JSON.parse 失敗（LOAD-002 経由）| true | ✅ | 破損起源 |
+| 全キー normalizeState 失敗（schema 不一致 / 構造不正）| true | ✅ | 破損起源（LOAD-002 同経路 catch、IMPL-LIGHT では仕様として包含）|
+| 一部 JSON.parse 失敗 + 一部 normalizeState 失敗の混在 | true | ✅ | 破損起源（最終的に state 復元できなければ warn）|
 | v4 fail → v3 success（PARSE-LOAD-002A）| - | ❌ | ループ内 `return` で PARSE-LOAD-003 不到達、IMPL-LIGHT 対象外 |
 | v4 null → v3 success | - | ❌ | 同上、正常 fallback |
 
 - `localStorage.getItem(key)` が null を返しただけの場合（キー未保存）は `anyFailure` に含めない
-- 「破損起源（getItem 例外 or JSON.parse 失敗）が 1 回以上発生し、結果として state 復元に失敗した」場合のみ warn
+- 「破損起源（getItem 例外 / JSON.parse 失敗 / normalizeState 失敗 のいずれか）が 1 回以上発生し、結果として state 復元に失敗した」場合のみ warn
+- 初回起動・全キー null は引き続き warn 対象外（regression 防止が最優先）
+- normalizeState 失敗を bug ではなく **仕様として「破損起源」に含める** ことの妥当性: §24 design check の「破損起源」概念は実装上 `try { state=normalizeState(JSON.parse(d)); }` の 1 catch を共有しており、JSON 構文は通るが構造が壊れた raw（schema 不一致、必須フィールド欠落、配列形が不正、等）も「state を復元できない」という結果は同一であるため、PARSE-LOAD-003 warn の対象に含めるのが自然（§24 と矛盾しない）
 
 ### 25.5 metadata
 
@@ -3378,6 +3384,12 @@ notifySaveWarning({
 - `callsiteId: 'PARSE-LOAD-003'` ✅ §16 inventory ID 流用
 - aggregation 対象外維持（`SAVE_WARN_AGGREGATABLE_KINDS` は変更しない）
 - **採用 message 文言**: 第一候補「保存データを復元できなかったため、初期状態で起動しました。」（§24.6.3 提示の第一候補 / IMPL-LIGHT プロンプト推奨。「破損」等の強い断定を避け、復旧導線は過剰に出さない）
+- **発火条件の確定的定義**（§25.4 「破損起源」と整合、cowork Should Fix 1 反映）:
+  - `localStorage.getItem(key)` の throw — PARSE-LOAD-001 経路
+  - `JSON.parse(raw)` の throw — PARSE-LOAD-002 経路
+  - `normalizeState(JSON.parse(raw))` の throw — JSON 構文は通るが schema 不一致 / 構造不正による破損起源
+  - 上記のいずれかが 1 回以上発生し、かつ全キーで state 復元に失敗した場合のみ warn 発火
+  - message 文言「保存データを復元できなかった」は JSON.parse 失敗 / normalizeState 失敗 / getItem 例外いずれの破損起源にも自然に当てはまる粒度を意識している
 
 ### 25.6 PARSE-MASTER-003 との関係
 

@@ -3583,11 +3583,23 @@ assertEq(
   1,
   'T-EXP9-static-callsiteId: PARSE-MASTER-003 が 1 件');
 
+// callsiteId=PARSE-LOAD-003 が 1 件（§25 SAVE-UX-STATE-RESTORE-HANDLING-IMPL-LIGHT で追加）
+assertEq(
+  __EXP9_STORAGE_CORRUPTED_BLOCKS.filter(function(b){ return b.callsiteId === 'PARSE-LOAD-003'; }).length,
+  1,
+  'T-EXP9-static-callsiteId-load: PARSE-LOAD-003 が 1 件');
+
 // aggregateKey=storage-corrupted:branch-master が 1 件
 assertEq(
   __EXP9_STORAGE_CORRUPTED_BLOCKS.filter(function(b){ return b.aggregateKey === 'storage-corrupted:branch-master'; }).length,
   1,
   'T-EXP9-static-aggKey: aggregateKey=storage-corrupted:branch-master が 1 件');
+
+// aggregateKey=storage-corrupted:state が 1 件（§25 SAVE-UX-STATE-RESTORE-HANDLING-IMPL-LIGHT で追加）
+assertEq(
+  __EXP9_STORAGE_CORRUPTED_BLOCKS.filter(function(b){ return b.aggregateKey === 'storage-corrupted:state'; }).length,
+  1,
+  'T-EXP9-static-aggKey-state: aggregateKey=storage-corrupted:state が 1 件');
 
 // severity=warn が 2 件（PARSE-MASTER-003 + PARSE-LOAD-003、§25 で +1）
 assertEq(
