@@ -1814,16 +1814,29 @@ Object.keys(__EXP4_EXPECTED_DIST).forEach(function(ak){
     'T-EXP4-aggregateKey-distribution: ' + ak + ' は ' + __EXP4_EXPECTED_DIST[ak] + ' 件');
 });
 
-// 全 kind:'save-verify' の件数は 15 件
+// 全 kind:'save-verify' の件数は 15 件（厳密 fixed）
 {
   var kindCount = (__EXPAND_SRC.match(/kind:'save-verify'/g) || []).length;
   assertEq(kindCount, 15, 'T-EXP4-kind-count: kind:save-verify は 15 件');
-  // severity:'warn' の総数は 15 (save-verify) + storage-quota 系（SECTION 15 で追加）。
-  // SECTION 13 では save-verify 範囲の severity 整合性のみ責任を持つため、ここでは
-  // 「最低 15 件以上」の弱い不変条件のみ確認する（具体的件数は SECTION 15 で確認）。
-  var severityCount = (__EXPAND_SRC.match(/severity:'warn'/g) || []).length;
-  assert(severityCount >= 15,
-    'T-EXP4-severity-count-min: severity:warn は最低 15 件以上（save-verify 分）');
+  // kind:'save-verify' + severity:'warn' のペアが厳密に 15 件であることを保証。
+  //   各 notifySaveWarning 呼出で kind と severity は同一 options object 内（200 文字以内）に
+  //   隣接する。 kind:save-verify の出現箇所近傍に severity:'warn' が含まれることをペア単位で
+  //   カウントすることで、save-verify 系の severity 整合性を save-verify スコープに閉じて
+  //   厳密に検証する。
+  //   SECTION 13 は save-verify 15 件の存在責務を持ち、SECTION 15 は storage-quota 2 件の
+  //   存在責務を持つ。severity:'warn' 総数（17）の検証は両者の合算となるため、ここでは
+  //   save-verify スコープに限定した固定 15 件 assert に統一する。
+  var pairCount = 0;
+  var searchIdx = 0;
+  while (true) {
+    var found = __EXPAND_SRC.indexOf("kind:'save-verify'", searchIdx);
+    if (found === -1) break;
+    var window200 = __EXPAND_SRC.substring(found, found + 200);
+    if (window200.indexOf("severity:'warn'") !== -1) pairCount++;
+    searchIdx = found + 18;  // 'kind:save-verify' は 17 文字、次の検索開始位置を進める
+  }
+  assertEq(pairCount, 15,
+    'T-EXP4-save-verify-with-warn-strict: kind:save-verify + severity:warn のペアが 15 件');
 }
 
 // ----------------------------------------------------------------------------
@@ -2715,19 +2728,38 @@ assert(__EXPAND_SRC.indexOf('function isQuotaExceededError(e){') !== -1,
     'T-EXP6-static-helper-condition: ' + pat);
 });
 
-// callsiteId の存在
-assert(__EXPAND_SRC.indexOf("callsiteId:'STORAGE-QUOTA:save'") !== -1,
-  'T-EXP6-static-callsiteId-save: STORAGE-QUOTA:save が存在');
-assert(__EXPAND_SRC.indexOf("callsiteId:'STORAGE-QUOTA:saveBranchMaster'") !== -1,
-  'T-EXP6-static-callsiteId-saveBM: STORAGE-QUOTA:saveBranchMaster が存在');
+// callsiteId の厳密件数（各 1 件、合計 2 件）
+assertEq(
+  (__EXPAND_SRC.match(/callsiteId:'STORAGE-QUOTA:save'/g) || []).length, 1,
+  'T-EXP6-static-callsiteId-save-count: STORAGE-QUOTA:save が 1 件');
+assertEq(
+  (__EXPAND_SRC.match(/callsiteId:'STORAGE-QUOTA:saveBranchMaster'/g) || []).length, 1,
+  'T-EXP6-static-callsiteId-saveBM-count: STORAGE-QUOTA:saveBranchMaster が 1 件');
 
-// kind: 'storage-quota' / aggregateKey: 'storage-quota:global' / severity: 'warn' が各 2 件
+// kind: 'storage-quota' / aggregateKey: 'storage-quota:global' が各 2 件
 assertEq(
   (__EXPAND_SRC.match(/kind:'storage-quota'/g) || []).length, 2,
   'T-EXP6-static-kind-count: kind:storage-quota が 2 件');
 assertEq(
   (__EXPAND_SRC.match(/aggregateKey:'storage-quota:global'/g) || []).length, 2,
   'T-EXP6-static-aggKey-count: aggregateKey:storage-quota:global が 2 件');
+
+// kind:'storage-quota' + severity:'warn' のペアが厳密に 2 件
+//   SECTION 13 と同方針: 各 callsite 内で kind と severity は隣接（200 文字以内）するため、
+//   ペア単位で数えることで storage-quota スコープに限定した severity 整合性を保証。
+{
+  var pairCount = 0;
+  var searchIdx = 0;
+  while (true) {
+    var found = __EXPAND_SRC.indexOf("kind:'storage-quota'", searchIdx);
+    if (found === -1) break;
+    var window200 = __EXPAND_SRC.substring(found, found + 200);
+    if (window200.indexOf("severity:'warn'") !== -1) pairCount++;
+    searchIdx = found + 20;
+  }
+  assertEq(pairCount, 2,
+    'T-EXP6-static-storage-quota-with-warn-strict: kind:storage-quota + severity:warn のペアが 2 件');
+}
 
 // resetAll は未変更（quota 系の呼出が含まれない）
 {

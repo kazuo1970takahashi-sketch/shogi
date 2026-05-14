@@ -296,6 +296,7 @@ import / merge / migration 系は **本マップの保存後 verify トラック
 | 2026-05-14 | SAVE-UX-AGGREGATION-DOCS-FOLLOWUP に伴い §11 を追記。PR #70 〜 #76 で A-5.1 SAVE 系 15/15 callsite の helper 経由化 / metadata 土台 / `showMsg` aggregation 表示まで完了。Group A〜E と `aggregateKey` の対応表を確定として記載し、後続候補（QUOTA-HANDLING / MASTER-V2-METADATA / AGGREGATION-TUNING / LEVEL-3-WARNING-BAR / INDICATOR-DETAIL）を §8 と並列で示す。詳細仕様は `docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md` §15 を参照。 |
 | 2026-05-14 | SAVE-UX-QUOTA-HANDLING-INVENTORY (Step 1, docs-only) に伴い §12 を追記。`localStorage.setItem` 2 callsite (`save()` / `saveBranchMaster()`) を棚卸し、`QuotaExceededError` 明示判定は 0 件と確認。Step 2 候補 callsite と暫定方針 (`kind: 'storage-quota'` / `aggregateKey: 'storage-quota:global'` / `severity: 'warn'`) を inventory docs (`docs/notes/20260514_shogi_save_ux_quota_inventory.md`) からサマリー。Step 2 着手前に再仕様確認が必要。 |
 | 2026-05-14 | SAVE-UX-QUOTA-HANDLING-IMPL (Step 2) 実装に伴い §12.6 を追記。`isQuotaExceededError(e)` helper 追加、`save()` / `saveBranchMaster()` で quota 分岐実装、metadata `kind: 'storage-quota'` / `aggregateKey: 'storage-quota:global'` / `severity: 'warn'` / callsiteId `STORAGE-QUOTA:save` / `STORAGE-QUOTA:saveBranchMaster`。showMsg aggregation 対象外、indicator count +1、二重通知許容、resetAll 対象外継続。詳細は inventory docs §15。 |
+| 2026-05-14 | SAVE-UX-KIND-ASSERT-AND-CALLSITE-ID-DOCS (PR #79 Nice to Have 回収) に伴い §13 を追記。`callsiteId` 命名規則を 2 系統（既存 `S<NN>` / `SAVE-<NNN>-<funcName>` + 新規 `KIND-NAMESPACE:<funcName>`）として整理。値の hyphen-case 規則 (`kind` / `aggregateKey`) は `callsiteId` には適用しない方針を明記（debug / trace 用識別子のため既存形式との互換性を優先）。 |
 
 ---
 
@@ -415,3 +416,61 @@ inventory docs §13 に列挙した 8 項目を **着手前に再仕様確認** 
 | `resetAll` | 対象外継続 |
 
 詳細は inventory docs §15 を参照。
+
+---
+
+## 13. `callsiteId` 命名規則（v1.2 追補）
+
+PR #79 で `STORAGE-QUOTA:save` / `STORAGE-QUOTA:saveBranchMaster` という新形式の `callsiteId` が採用された。これを踏まえて、`callsiteId` の命名規則を以下のように整理する。
+
+### 13.1 系統の併用
+
+`callsiteId` は 2 系統を **併用** する。識別は prefix で行う:
+
+| # | 系統 | 形式 | 例 | 採用 PR |
+|---|---|---|---|---|
+| (a) | 既存（連番 / タスク由来） | `S<NN>` / `SAVE-<NNN>-<funcName>` / `SAVE-<NNNa>-<funcName>` | `S03` / `S05` / `S22` / `SAVE-001-removePlayer` / `SAVE-002-addPlayer` / `SAVE-003-startTournament` / `SAVE-003b-updateField` 等 | PR #65 / #66 / #70 / #73 / #74 |
+| (b) | 新規（kind namespace） | `KIND-NAMESPACE:<funcName>` | `STORAGE-QUOTA:save` / `STORAGE-QUOTA:saveBranchMaster` | PR #79 |
+
+### 13.2 形式仕様
+
+#### (a) 既存形式
+
+- `SAVE-` プレフィックス + 数字 (+ 任意の小サフィックス文字 `a` `b` 等) + `-` + camelCase 関数名
+- もしくは 単一識別子 (`S03` / `S05` / `S22` のような MASTER-V2-LASTCLASS 由来のラベル)
+- 区切り: `-`
+- 既存タスク命名規則との互換性を優先
+
+#### (b) 新規形式
+
+- `KIND-NAMESPACE` 部: kind 系統を表す UPPERCASE + `-` 区切り
+  - 例: `STORAGE-QUOTA` (kind: `storage-quota` に対応)
+- `<funcName>` 部: 対象関数名 (lowerCamelCase)
+- 系統と関数名の区切り: `:` (colon)
+- 例: `STORAGE-QUOTA:save` / `STORAGE-QUOTA:saveBranchMaster`
+
+### 13.3 kind / aggregateKey との関係
+
+| 識別子 | 形式 | hyphen-case 適用 |
+|---|---|---|
+| `kind` の **値** | hyphen-case lowercase（例: `'storage-quota'`） | ✅ 適用 |
+| `aggregateKey` の **値** | hyphen-case lowercase + `:` 区切り（例: `'storage-quota:global'`） | ✅ 適用 |
+| `callsiteId` の **値** | 既存形式 (a) または新規形式 (b)。**hyphen-case 規則は適用されない** | ❌ debug / trace 用識別子として既存形式との互換性を優先 |
+
+`callsiteId` は user-facing ではなく **debug / trace 用の識別子** であり、既存形式（連番 / タスク由来）との互換性を優先するため hyphen-case 規則は強制しない。
+
+新規形式 (b) で `:` 区切りを採用する理由は、kind 系統と関数名を視覚的に分離するため。`aggregateKey` の `:` 区切り（kind:group）とは意味が異なる（同じ記号を使うが用途は別）。
+
+### 13.4 後続 kind 追加時の方針
+
+将来、新規 kind を追加する際は、以下を遵守:
+
+1. **既存の `callsiteId` を無理に置換しない**: 一度付けた `callsiteId` は debug / trace の連続性のため変更しない（PR #70 / #73 / #74 / #79 で確定）
+2. **prefix 衝突を避ける**: 新規 `KIND-NAMESPACE:` 採用時は、既存 `S<NN>` / `SAVE-<NNN>-` / `MASTER-` 等の prefix と衝突しない識別子を選ぶ
+3. **形式は (a) / (b) のどちらでも可**: 設計時にチームで決める。値の hyphen-case 規則とは独立に判断
+
+### 13.5 関連
+
+- 値の hyphen-case 統一: `docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md` §16
+- PR #75 metadata 土台: 同 §15
+- PR #79 storage-quota 実装: `docs/notes/20260514_shogi_save_ux_quota_inventory.md` §15
