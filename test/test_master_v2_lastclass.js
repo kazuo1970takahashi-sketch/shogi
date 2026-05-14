@@ -1505,6 +1505,108 @@ const __EXPAND_SRC = fs.readFileSync(targetPath, 'utf8');
 });
 
 // ============================================================================
+// SECTION 11: SAVE-UX-WARN-HELPER-EXPAND-2 — Group C + E の 5 callsite を helper 経由化
+// ============================================================================
+// 依頼: SAVE-UX-WARN-HELPER-EXPAND-2（PR #70 後続、Group D は SAVE-UX-WARN-HELPER-EXPAND-3 に持ち越し）
+// 対象 callsite（5 件）:
+//   Group C（登録欄編集）:
+//     - SAVE-003b-updateField               属性変更時の verifyPlayerFieldPersisted
+//     - SAVE-003b-bulkEditNames             一括名前変更時の verifyStatePersisted 集約
+//   Group E（対局画面編集）:
+//     - SAVE-003b-bindChangePairingModalEvents       対戦相手変更時の pairingsMatchSnapshot
+//     - SAVE-003b-bindEditPastResultModalEvents-p1   過去結果修正 p1 勝者
+//     - SAVE-003b-bindEditPastResultModalEvents-p2   過去結果修正 p2 勝者
+//
+// 検証方針: mechanical refactor の整合性確認（PR #70 SECTION 10 と同様の静的 source 検証）
+//   (a) 各 callsiteId が source 中に出現する
+//   (b) 旧 `console.warn('SAVE-003b: <function>` 1-arg リテラルが当該位置に残らない
+//   (c) consoleTag / showMsg 文言が保持される
+//   (d) helper 動作（user-facing showMsg / console.warn / indicator +1）は SECTION 8/9 で既存検証済
+//   (e) callsite ごとの verify-fail 経路の挙動は test/test_a5_1_save_003b_*.js が継続検証
+//
+// Group D / MASTER-001 系 / quota / parse / duplicate / import / migration / S30 は今回未対象であることを
+// 静的 assert する（旧形式の console.warn が依然残る = 触っていない、を確認）。
+
+// T-EXP2-callsiteId-present-*: 今回追加 5 callsiteId がすべて helper 引数として現れる
+[
+  'SAVE-003b-updateField',
+  'SAVE-003b-bulkEditNames',
+  'SAVE-003b-bindChangePairingModalEvents',
+  'SAVE-003b-bindEditPastResultModalEvents-p1',
+  'SAVE-003b-bindEditPastResultModalEvents-p2'
+].forEach(function(cid){
+  var needle = "callsiteId:'" + cid + "'";
+  assert(__EXPAND_SRC.indexOf(needle) !== -1, 'T-EXP2-callsiteId-present-' + cid + ': source に ' + needle + ' が存在する');
+});
+
+// T-EXP2-original-warn-removed-*: 旧 1-arg console.warn が残っていない
+[
+  "console.warn('SAVE-003b: updateField ",
+  "console.warn('SAVE-003b: bulkEditNames ",
+  "console.warn('SAVE-003b: bindChangePairingModalEvents ",
+  "console.warn('SAVE-003b: bindEditPastResultModalEvents (p1) ",
+  "console.warn('SAVE-003b: bindEditPastResultModalEvents (p2) "
+].forEach(function(pat){
+  assert(__EXPAND_SRC.indexOf(pat) === -1, 'T-EXP2-original-warn-removed: 旧 1-arg warn が残らない (' + pat + ')');
+});
+
+// T-EXP2-consoleTag-preserved-*: 旧 console.warn 第1引数の主要文言が consoleTag として保持
+[
+  'SAVE-003b: updateField の保存が確認できませんでした',
+  'SAVE-003b: bulkEditNames の保存が確認できませんでした',
+  'SAVE-003b: bindChangePairingModalEvents の保存が確認できませんでした',
+  'SAVE-003b: bindEditPastResultModalEvents (p1) の保存が確認できませんでした',
+  'SAVE-003b: bindEditPastResultModalEvents (p2) の保存が確認できませんでした'
+].forEach(function(tag){
+  assert(__EXPAND_SRC.indexOf(tag) !== -1, 'T-EXP2-consoleTag-preserved: consoleTag 主要文言が残る (' + tag + ')');
+});
+
+// T-EXP2-showMsg-message-preserved-*: 旧 user-facing showMsg('...', 'warn') 文言が helper.message として保持
+[
+  '属性を変更しましたが、保存が確認できませんでした',
+  '名分の保存が確認できませんでした',          // bulkEditNames は動的文字列だが、固定 substring を確認
+  '対戦相手を変更しましたが、保存が確認できませんでした',
+  '過去結果を修正しましたが、保存が確認できませんでした'
+].forEach(function(msg){
+  assert(__EXPAND_SRC.indexOf(msg) !== -1, 'T-EXP2-showMsg-message-preserved: user-facing 文言が残る (' + msg + ')');
+});
+
+// T-EXP2-group-d-untouched-*: Group D（過去参加者経路）の旧形式 console.warn が依然残ること
+//   = 今回 Group D を変更していない静的裏付け（SAVE-UX-WARN-HELPER-EXPAND-3 へ持ち越し）
+[
+  "console.warn('SAVE-003b: handlePastParticipantClassAdd (class change) ",
+  "console.warn('SAVE-003b: handlePastParticipantClassAdd (add) ",
+  "console.warn('SAVE-003b: handleSuggestClassAdd ",
+  "console.warn('SAVE-003b: finalizeAddPastParticipants "
+].forEach(function(pat){
+  assert(__EXPAND_SRC.indexOf(pat) !== -1, 'T-EXP2-group-d-untouched: Group D の旧 console.warn が残る (' + pat + ')');
+});
+
+// T-EXP2-master001-untouched: MASTER-001 系 callsite の応急処置 warn 文言が source に残る（未変更裏付け）
+//   MASTER-001 系には特殊な warn 文言（参加者名 / 会員マスタ）が複数あり、本 PR では一切触らない
+[
+  '参加者名を更新しましたが、保存できていない可能性があります',
+  '会員マスタは更新しましたが、大会データの保存ができていない可能性があります',
+  '会員マスタは保存できなかった可能性があります',
+  '会員マスタ候補が変わったため、会員マスタは更新せず'
+].forEach(function(msg){
+  assert(__EXPAND_SRC.indexOf(msg) !== -1, 'T-EXP2-master001-untouched: MASTER-001 系文言が残る (' + msg + ')');
+});
+
+// T-EXP2-helper-schema-unchanged: notifySaveWarning helper 内部の引数 schema 受理が変更されていない
+//   → fields / kind / aggregateKey / severity 追加の痕跡がない
+[
+  "Object.prototype.toString.call(opts.fields)",   // helper 内 fields 受理
+  "recordSaveWarningForIndicator({callsiteId:callsiteId,fields:fields})"  // indicator 連携
+].forEach(function(pat){
+  assert(__EXPAND_SRC.indexOf(pat) !== -1, 'T-EXP2-helper-schema-unchanged: helper 内部の '+pat+' が維持されている');
+});
+// kind / aggregateKey / severity が schema に追加されていないこと
+['opts.kind','opts.aggregateKey','opts.severity'].forEach(function(forbidden){
+  assert(__EXPAND_SRC.indexOf(forbidden) === -1, 'T-EXP2-helper-schema-no-add: schema に '+forbidden+' は追加されていない');
+});
+
+// ============================================================================
 // 結果
 // ============================================================================
 console.log('\n  MASTER-V2-LASTCLASS-IMPL 単体テスト: PASS '+pass+'件 / FAIL '+fail+'件');

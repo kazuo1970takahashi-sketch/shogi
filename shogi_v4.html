@@ -3122,8 +3122,11 @@ function updateField(id,cls,field,value){
   // updateField は member / grade を書換えるため、verifyPlayerPersistedById（name 軸）では
   // 不足。field 軸の verifyPlayerFieldPersisted で expected と厳密一致を確認する。
   if(!verifyPlayerFieldPersisted(cls,id,field,value)){
-    if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: updateField の保存が確認できませんでした (player='+id+', cls='+cls+', field='+field+', expected='+value+')');
-    showMsg('属性を変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+    notifySaveWarning({
+      message:'属性を変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-003b: updateField の保存が確認できませんでした (player='+id+', cls='+cls+', field='+field+', expected='+value+')',
+      callsiteId:'SAVE-003b-updateField'
+    });
   }
 }
 
@@ -3628,8 +3631,11 @@ function bindBulkEditModalEvents(cls, players){
       if(!verifyStatePersisted(players[vi].id,newNames[players[vi].id]))unverified++;
     }
     if(unverified>0){
-      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: bulkEditNames の保存が確認できませんでした ('+unverified+'/'+players.length+' 件未確認)');
-      showMsg(players.length+'名のうち '+unverified+'名分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+      notifySaveWarning({
+        message:players.length+'名のうち '+unverified+'名分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+        consoleTag:'SAVE-003b: bulkEditNames の保存が確認できませんでした ('+unverified+'/'+players.length+' 件未確認)',
+        callsiteId:'SAVE-003b-bulkEditNames'
+      });
     }
   });
 }
@@ -4538,8 +4544,11 @@ function bindChangePairingModalEvents(cls, idx){
     var persisted_cp=readPersistedState();
     var pairingsOk_cp=persisted_cp&&persisted_cp.pairings&&pairingsMatchSnapshot(persisted_cp.pairings[cls],expectedPairings_cp);
     if(!pairingsOk_cp){
-      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: bindChangePairingModalEvents の保存が確認できませんでした (cls='+cls+', idx='+idx+')');
-      showMsg('対戦相手を変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+      notifySaveWarning({
+        message:'対戦相手を変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+        consoleTag:'SAVE-003b: bindChangePairingModalEvents の保存が確認できませんでした (cls='+cls+', idx='+idx+')',
+        callsiteId:'SAVE-003b-bindChangePairingModalEvents'
+      });
     }
   });
 }
@@ -4829,8 +4838,11 @@ function bindEditPastResultModalEvents(cls, roundIdx, matchIdx){
     renderTournament(cls);renderResults();save();
     var expectedWinner_p1=state.results[cls][roundIdx][matchIdx].winner;
     if(!verifyPastResultPersisted_ep(expectedWinner_p1)){
-      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: bindEditPastResultModalEvents (p1) の保存が確認できませんでした (cls='+cls+', round='+roundIdx+', match='+matchIdx+', expected='+expectedWinner_p1+')');
-      showMsg('過去結果を修正しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+      notifySaveWarning({
+        message:'過去結果を修正しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+        consoleTag:'SAVE-003b: bindEditPastResultModalEvents (p1) の保存が確認できませんでした (cls='+cls+', round='+roundIdx+', match='+matchIdx+', expected='+expectedWinner_p1+')',
+        callsiteId:'SAVE-003b-bindEditPastResultModalEvents-p1'
+      });
     }
   });
   document.getElementById('ep-p2').addEventListener('click',function(){
@@ -4839,8 +4851,11 @@ function bindEditPastResultModalEvents(cls, roundIdx, matchIdx){
     renderTournament(cls);renderResults();save();
     var expectedWinner_p2=state.results[cls][roundIdx][matchIdx].winner;
     if(!verifyPastResultPersisted_ep(expectedWinner_p2)){
-      if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003b: bindEditPastResultModalEvents (p2) の保存が確認できませんでした (cls='+cls+', round='+roundIdx+', match='+matchIdx+', expected='+expectedWinner_p2+')');
-      showMsg('過去結果を修正しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください','warn');
+      notifySaveWarning({
+        message:'過去結果を修正しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+        consoleTag:'SAVE-003b: bindEditPastResultModalEvents (p2) の保存が確認できませんでした (cls='+cls+', round='+roundIdx+', match='+matchIdx+', expected='+expectedWinner_p2+')',
+        callsiteId:'SAVE-003b-bindEditPastResultModalEvents-p2'
+      });
     }
   });
 }
