@@ -437,3 +437,211 @@ Codex / cowork に独立レビューしてもらう観点:
 | 日付 | 内容 |
 |---|---|
 | 2026-05-13 | v0 作成。SAVE-UX-WARN-AGGREGATION docs-only design。三層分離原則 / duplicate vs verify failure 優先順位 / kind 分類 / aggregation key / indicator count policy / `notifySaveWarning` schema 拡張候補 / 後続タスク順序 を整理。実装は SAVE-UX-WARN-AGGREGATION-IMPL（および前提の SAVE-UX-WARN-HELPER-EXPAND）で別タスク。 |
+| 2026-05-14 | v1 追補 (SAVE-UX-AGGREGATION-DOCS-FOLLOWUP)。§15 を追加し、PR #70 〜 #76 で main へ反映された確定挙動を記載: helper 経由化 15/15 完了、`kind` / `aggregateKey` / `severity` metadata 土台、`save-verify:{core/entry/edit/past/pairing}` の Group 対応、`showMsg` 3000ms 集約、短縮文言確定、compound 発火例、失敗を隠さない原則、対象外カテゴリと将来方針、次タスク候補。 |
+
+---
+
+## 15. 実装到達点 (PR #70 〜 #76)
+
+本書 v0 (2026-05-13) は docs-only design として作成された。その後、以下の実装 PR が main へ反映され、設計の主要部が確定挙動として動作している。本セクションは「設計書を後から読む人」が現状コードに即して理解できるようにするための追補（v1 追補）。
+
+### 15.1 完了済 PR と到達点
+
+| PR | 内容 | 反映先 |
+|---|---|---|
+| #70 | Group A + B 6 件 helper 経由化（startTournament / generatePairing / setWinner / submitRound / addPlayer / removePlayer） | `notifySaveWarning` 呼出 |
+| #73 | Group C + E 5 件 helper 経由化（updateField / bulkEditNames / bindChangePairingModalEvents / bindEditPastResult p1 / p2） | 同上 |
+| #74 | Group D 4 件 helper 経由化（handlePastParticipantClassAdd add / class change / handleSuggestClassAdd postSuccess / finalizeAddPastParticipants verify-fail warn） | 同上 |
+| #75 | `notifySaveWarning` schema 拡張: 任意 metadata `{ kind, aggregateKey, severity }` を後方互換で追加。A-5.1 SAVE 系 15 件すべてに metadata 付与 | helper 内部 + 15 callsite |
+| #76 | 同一 `aggregateKey` の保存警告が **3000ms 未満** に連続発火した場合、2 回目以降の user-facing `showMsg` を短縮文言に切替（`console.warn` / indicator count は不変） | helper 内部のみ |
+
+これにより、A-5.1 SAVE 系 15/15 callsite について以下が完了:
+
+- `notifySaveWarning` helper 経由化
+- `kind` / `aggregateKey` / `severity` metadata 付与
+- `showMsg` 最小 aggregation 表示
+- `console.warn` 個別維持
+- indicator count 発生単位 +1 維持
+
+### 15.2 `kind` / `aggregateKey` / `severity` の現時点仕様
+
+#### `kind`
+
+- 現時点では A-5.1 SAVE 系 15 件すべてに **`'save-verify'`** を使用
+- MASTER-V2-LASTCLASS (S03 / S05 / S22) / MASTER-001 / quota / parse / duplicate / import / migration / S30 は **現時点では対象外**（kind 未付与）
+- 将来は別 kind 体系（`master-verify` / `quota-exceeded` / `parse-failed` 等の候補）で整理する。本書 §4.1 の予約値リストは将来候補のメモであり、実装上の制約は持たない
+
+#### `severity`
+
+- 現時点では **`'warn'`** のみ
+- helper 内で severity による表示分岐は **実装しない**（本書 §5 の方針を維持）
+- `info` / `error` 拡張時は CSS / 色 / アイコン分岐の設計が別タスク
+
+#### `aggregateKey`
+
+- **Group 単位** で付与（callsite 単位ではない）
+- 形式: `save-verify:<group>`（kebab-case / 小文字 / `:` 区切り / 2 階層）
+- **kind 単位ではなく `aggregateKey` 単位で集約**する（kind が同じでも Group が異なれば独立）
+
+### 15.3 Group A〜E と `aggregateKey` 対応表（確定）
+
+| Group | 内容 | aggregateKey | 件数 | 含まれる callsite (`callsiteId`) |
+|---|---|---|---|---|
+| A | 大会進行 core | `save-verify:core` | 4 | `SAVE-003-startTournament` / `SAVE-004-generatePairing` / `SAVE-003-setWinner` / `SAVE-003-submitRound` |
+| B | 登録欄 add/remove | `save-verify:entry` | 2 | `SAVE-002-addPlayer` / `SAVE-001-removePlayer` |
+| C | 登録欄 編集 | `save-verify:edit` | 2 | `SAVE-003b-updateField` / `SAVE-003b-bulkEditNames` |
+| D | 過去参加者経路 | `save-verify:past` | 4 | `SAVE-003b-handlePastParticipantClassAdd-class-change` / `-add` / `SAVE-003b-handleSuggestClassAdd` / `SAVE-003b-finalizeAddPastParticipants` |
+| E | 対局画面 編集 | `save-verify:pairing` | 3 | `SAVE-003b-bindChangePairingModalEvents` / `SAVE-003b-bindEditPastResultModalEvents-p1` / `-p2` |
+| **計** | | | **15** | |
+
+### 15.4 `showMsg` aggregation 仕様（確定）
+
+#### 対象条件
+
+helper 内で以下を **AND** で判定:
+
+- `kind === 'save-verify'`
+- `severity === 'warn'`
+- `aggregateKey` が truthy
+
+いずれか欠けると aggregation 対象外（legacy path = 元 message を表示）。
+
+#### 集約単位
+
+- **`aggregateKey` 単位**（kind 単位ではない）
+
+#### time window
+
+- **3000ms**（定数化: `SAVE_WARN_AGGREGATION_WINDOW_MS`）
+
+#### 判定
+
+- `(now - last) < 3000` → aggregation（短縮文言）
+- `(now - last) >= 3000` → リセット（元 message）
+- **ちょうど 3000ms はリセット側**（`< 3000` のみ集約）
+
+#### 1 回目
+
+- 元の `message` を `showMsg(message, 'warn')`
+
+#### 2 回目以降（同一 `aggregateKey` で 3000ms 未満）
+
+- 短縮文言を `showMsg(SAVE_WARN_AGGREGATED_MESSAGE, 'warn')`
+
+#### 短縮文言（確定）
+
+```
+保存確認に失敗した操作が複数あります。内容を確認してください。
+```
+
+定数化: `SAVE_WARN_AGGREGATED_MESSAGE`
+
+#### `showMsg` type
+
+- **常に `'warn'`** を維持（短縮時も）。severity による表示分岐なし
+
+#### aggregation state
+
+- **memory only / module scope**
+- `localStorage` / `sessionStorage` / tournament state には **保存しない**
+- reload で消えるのは意図的
+- 別タブ・別ウィンドウとは共有しない
+
+実装上の構造:
+
+```js
+var saveWarningAggregationState = { lastTimestampByKey: {} };
+```
+
+テスト用 reset 関数 `_resetSaveWarningAggregationState()` あり。本番 UI からは呼ばない。
+
+### 15.5 3000ms の根拠と調整余地
+
+3000ms は **初期値**。次の観点から決定:
+
+- **1000ms 程度** では連続操作や compound 発火の吸収には短すぎる可能性
+- **5000ms 以上** では別操作の保存警告まで巻き込みやすくなる
+
+→ 初期値として 3000ms を採用。
+
+ただし、当日運営で短すぎる / 長すぎると感じた場合は、後続 PR (`SAVE-UX-AGGREGATION-TUNING` 候補) で調整する。定数 1 箇所の変更で対応可能。
+
+### 15.6 compound 発火例（重要論点）
+
+PR #76 のレビューで重要論点になったため明記:
+
+#### 例: startTournament
+
+```
+(1) startTournament 呼出
+    ↓
+(2) 内部で generatePairing('A') 呼出
+    ↓
+(3) generatePairing の verify 失敗
+    → notifySaveWarning (callsiteId: SAVE-004-generatePairing, aggregateKey: save-verify:core)
+    → showMsg("組み合わせを生成しましたが、保存が確認できませんでした...", 'warn')  [1 回目: 元 message]
+    → console.warn 個別出力 + indicator count +1
+    ↓
+(4) startTournament 側の save() 後 verify 失敗
+    → notifySaveWarning (callsiteId: SAVE-003-startTournament, aggregateKey: save-verify:core)
+    → 同一 aggregateKey で数ミリ秒後 → 3000ms 未満 → 短縮文言に切替
+    → showMsg("保存確認に失敗した操作が複数あります。内容を確認してください。", 'warn')  [2 回目: 短縮]
+    → console.warn 個別出力 + indicator count +1
+```
+
+この場合 user の最終可視 `showMsg` は短縮文言。これは **意図された aggregation 挙動** であり、保存確認失敗を隠していない:
+
+- `console.warn` は両方個別に出る（debug 詳細層）
+- indicator count も両方 +1 される（発生単位の事実を残す）
+- 短縮文言自体が「保存確認に失敗した操作が **複数あります**」と明示
+
+### 15.7 「失敗を隠さない」原則（確定）
+
+aggregation は警告を消すための仕組みでは **ない**。失敗を隠さないために以下を維持する:
+
+- `showMsg` は短縮時も **必ず出す**（完全抑制しない）
+- 短縮文言にも「保存確認に失敗」を含める
+- `console.warn` は **全件個別** に出す（集約しない）
+- indicator count は保存警告 1 回につき **+1**（集約しない）
+- 保存処理 / verify helper / storage 構造は変更しない
+
+### 15.8 対象外カテゴリと将来方針
+
+現時点で aggregation 対象外（`save-verify` metadata 未付与）:
+
+| カテゴリ | 現状 |
+|---|---|
+| MASTER-V2-LASTCLASS S03 / S05 / S22 | 既存 helper 経由化済（PR #65 / #66）。`save-verify` aggregation には混ぜない |
+| MASTER-001 系 | helper 未経由のまま（応急処置 warn 文言で残存） |
+| quota | 未着手 |
+| parse | 未着手 |
+| duplicate | 既存 `showMsg('warn')` 直接呼出（duplicate name 検知系） |
+| import / merge / migration | 未着手 |
+| S30 batch verify | 未着手 |
+| ふりがな success-with-caveat 通知 | `finalizeAddPastParticipants` line 1895 の `showMsg('ふりがな未登録のまま N名を追加しました...', 'warn')` 直接呼出。**helper 経由ではない** ため aggregation 条件に構造的に到達しない |
+
+将来方針:
+
+これらは A-5.1 SAVE 系 15 件とは **意味論が異なる** ため、`save-verify` の aggregation には混ぜない。将来必要になった場合は、別 kind / severity / aggregateKey 体系として整理する。
+
+将来候補例（実装方針は確定しすぎない、設計時に再判断）:
+
+- MASTER-V2-LASTCLASS は `master-verify` 系
+- quota は `quota-exceeded` 系
+- parse は `parse-failed` 系
+- duplicate は `duplicate-name` 系
+- ふりがな success-with-caveat は warn ではなく `info` / `caveat` 系の候補
+
+### 15.9 次タスク候補（再整理）
+
+実装フェーズ移行後の候補:
+
+| # | タスク ID 候補 | 概要 |
+|---|---|---|
+| 1 | `SAVE-UX-QUOTA-HANDLING` | quota exceeded 系を別 kind 体系として整理する |
+| 2 | `SAVE-UX-MASTER-V2-METADATA` | MASTER-V2-LASTCLASS S03/S05/S22 を別 kind 体系で metadata 化するか検討する |
+| 3 | `SAVE-UX-AGGREGATION-TUNING` | 3000ms window や短縮文言を運用感覚で調整する |
+| 4 | `SAVE-UX-LEVEL-3-WARNING-BAR` | `showMsg` / indicator より一段強い警告 UI を検討する |
+| 5 | `SAVE-UX-INDICATOR-DETAIL` | indicator 詳細展開や Group 別表示を検討する |
+
+本書 §11.1 の旧優先順序（HELPER-EXPAND → HELPER-EXPAND-2 → AGGREGATION-IMPL → ...）は PR #70 〜 #76 でほぼ完了したため、本セクションが現時点の最新優先順となる。
