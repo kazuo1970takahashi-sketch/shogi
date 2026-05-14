@@ -5292,7 +5292,7 @@ function syncBranchMasterOnSave(){
       //   重複回避のため既存 explicit console.warn / showMsg は呼ばない（PR #79 storage-quota パターン）。
       //   aggregation 対象外（SAVE_WARN_AGGREGATABLE_KINDS は変更しない）。
       notifySaveWarning({
-        message:'支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）',
+        message:'支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）。マスタタブのインポート・統合で復旧できます。',
         consoleTag:'[STORAGE-CORRUPTED] syncBranchMasterOnSave skipped (master._loaded_with_corruption)',
         callsiteId:'PARSE-MASTER-003',
         kind:'storage-corrupted',
