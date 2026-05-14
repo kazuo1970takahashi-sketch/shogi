@@ -1895,3 +1895,108 @@ recovery guidance での留意点:
 - [shogi_v4.html:2227-2279](shogi_v4.html:2227) openMasterResetModal（既存復旧 UI）
 - [shogi_v4.html:2693](shogi_v4.html:2693) masterExportBtn alert（既存個人情報注意喚起）
 - [test/test_master_v2_lastclass.js SECTION 18](test/test_master_v2_lastclass.js) T-EXP9 文言 assert（Light 修正対象）
+
+## 19. SAVE-UX-BRANCH-MASTER-CORRUPTION-CLOSURE（v1.9 追補 / 支部マスタ破損対応 closure）
+
+§17（root cause inventory）→ §18（recovery guidance 設計）→ §18.9.1 IMPL-LIGHT 実装 という 3 段の連鎖が PR #88 / #89 / #90 で main に着地したため、本セクションでクロージャ整理を行う。本 closure は **docs-only** で、実装・テスト・CI 設定には触れていない。
+
+### 19.1 到達点（要約）
+
+支部マスタ破損が発生した場合、現在の挙動は以下に確定している:
+
+- **自動同期はスキップする** — `syncBranchMasterOnSave()` 内の `_loaded_with_corruption` ブランチが `notifySaveWarning` で warn 通知し、`save()` のみを実行（PARSE-MASTER-003）。
+- **大会データのコピーは継続する** — `saveData()` の clipboard/file fallback 経路は不変。大会運営継続を最優先する SAVE-UX 設計方針通り。
+- **ユーザーへの復旧導線は warn message の 1 句で提示** — 既存 UI（マスタタブのインポート・統合）への参照のみで、追加 UI は導入しない。
+- **severity=warn 維持 / aggregation 対象外維持** — `SAVE_WARN_AGGREGATABLE_KINDS` 不変、`kind:'storage-corrupted'` / `aggregateKey:'storage-corrupted:branch-master'` 不変。
+- **自動修復は実装しない** — user 同意のない初期化は §17.12 / §18.10 で明示的に「やらない」と決定済。
+- **modal-alert は実装しない** — SAVE-UX 設計 §2.3 の禁則を踏襲。
+- **Medium 案・Heavy 案は未着手** — 運用者フィードバック待ち（後述 §19.6）。
+
+### 19.2 完了 PR と寄稿
+
+| PR | merge commit | 種別 | 寄稿 | 寄稿先セクション |
+|---|---|---|---|---|
+| [#88](https://github.com/kazuo1970takahashi-sketch/shogi/pull/88) | `9d688c4e74702b00a3da79a00553d127f4e02f4e` | docs-only | 支部マスタ破損 root cause inventory（破損原因候補 10 件の症状-原因分離 / 既存防御 / 弱点 / 復旧導線候補） | §17 |
+| [#89](https://github.com/kazuo1970takahashi-sketch/shogi/pull/89) | `725941ac8a4a8f00251c1e3026d22ad9d5d6b23c` | docs-only | recovery guidance 設計（現行文言評価 / 設計方針 6 件 / Light・Medium・Heavy 分類 / message 案 L-1〜L-3 / 表示場所候補） | §18 |
+| [#90](https://github.com/kazuo1970takahashi-sketch/shogi/pull/90) | `80c6cfe86a2011581174515e212e115658726532` | 実装（小）+ test + docs ポインタ | IMPL-LIGHT 着地（PARSE-MASTER-003 message を §18.5.1 L-1 に更新 / test 主要語句アサーション追加 / HANDOFF ポインタ追加） | §18.5.1 / §18.9.1 |
+
+PR #90 の CI / required checks（参考）: E2E (Playwright) `pass` / Security Scan `pass` / Unit (run_tests.sh) `pass` — `bash test/run_tests.sh shogi_v4.html` ローカルで `PASS=67 / FAIL=0 / WARN=0`、支部マスタ機能テスト single-suite `607件 PASS`。
+
+### 19.3 最終実装 message
+
+[shogi_v4.html:5295](shogi_v4.html:5295) `notifySaveWarning({callsiteId:'PARSE-MASTER-003'}).message`:
+
+```
+支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）。マスタタブのインポート・統合で復旧できます。
+```
+
+§18.4.1 設計方針への対応マッピング:
+
+| 設計要素 | 反映先文言 |
+|---|---|
+| 症状 | 「支部マスタが破損しているため」 |
+| 影響 | 「自動同期をスキップしました」 |
+| 大会運営継続 | 「（大会データのコピーは継続）」 |
+| 次の行動（既存 UI 導線） | 「マスタタブのインポート・統合で復旧できます」 |
+
+「次の行動」は実 UI button label（`📂 マスタをインポート` / `📥 過去大会を支部マスタに統合`）と語彙整合。`📛 マスタをリセット`（最終手段）は Light の主導線に **載せない**（§18.5.1 暫定推奨 / §18.10）。
+
+### 19.4 維持されている方針（不変項目）
+
+PR #90 着地後も以下は **意図的に不変**:
+
+- `kind:'storage-corrupted'`
+- `aggregateKey:'storage-corrupted:branch-master'`
+- `severity:'warn'`
+- `callsiteId:'PARSE-MASTER-003'`
+- `consoleTag:'[STORAGE-CORRUPTED] syncBranchMasterOnSave skipped (master._loaded_with_corruption)'`
+- aggregation 対象外（`SAVE_WARN_AGGREGATABLE_KINDS` に `storage-corrupted` を **追加しない**。データ破損は短縮表示で隠さない方針 §16.9 / §18.4.1）
+- 大会データコピー処理（`saveData` / `saveDataAsFile`）
+- 支部マスタ保存処理（`saveBranchMaster`、`_loaded_with_corruption` を永続化しない）
+- インポート / 統合 / リセット既存 UI ロジック
+- マイグレ wizard 既存バナー文言（[shogi_v4.html:2784](shogi_v4.html:2784)）
+
+### 19.5 やらないと決めたこと（明示的非実装）
+
+| 非実装項目 | 根拠セクション |
+|---|---|
+| 自動修復（user 同意なしの初期化） | §17.12 / §18.10 「やらない候補」 |
+| modal / alert での guidance 表示 | SAVE-UX 設計 §2.3 / §18.4.1 設計方針 |
+| guidance message に個人情報を含める | §18.8 / §18.10 |
+| 外部送信・ログ送信 | §18.4.1 設計方針 |
+| `📛 マスタをリセット`への Light 主導線参照 | §18.5.1 暫定推奨 / §18.10 |
+
+### 19.6 後続候補（着手条件付き、本 closure 時点で未着手）
+
+| 候補 ID | 種別 | 範囲 | 着手条件（本 closure 時点） |
+|---|---|---|---|
+| `SAVE-UX-BRANCH-MASTER-RECOVERY-GUIDANCE-IMPL-MEDIUM`（§18.9.2） | 実装（中） | マスタタブ冒頭バナー + Light | IMPL-LIGHT 運用者フィードバック取得後 |
+| `SAVE-UX-STATUS-INDICATOR-DETAIL`（§18.9.3） | 設計 + 実装（大） | indicator pill click → detail panel | warn aggregation の運用感がある程度蓄積した後 |
+| `SAVE-UX-BRANCH-MASTER-CORRUPTION-RECOVERY-IMPL`（§17.11.2 / §18.9.4） | 実装（重） | 破損 raw export + 復旧 button 等 | Light / Medium 完了後 |
+| `SAVE-UX-BRANCH-MASTER-CALLSITE-AUDIT`（§17.11.5 / §18.9.5） | docs-only | `loadBranchMaster` 実呼び出し 24 callsite × `_loaded_with_corruption` 判定マトリクス | Light と独立に進められる（並走可） |
+
+本 closure 自体は **どの後続候補にも着手していない**。各候補の起動は別タスクとして司令塔判断を経由する。
+
+### 19.7 §17 / §18 との接続
+
+- §17（root cause inventory）は **そのまま参照価値が残る**: 破損原因候補 10 件 / 既存防御 / 弱点リストは、後続 IMPL-MEDIUM / 重 impl 設計時の判断材料として有効。本 closure では §17 を改訂しない。
+- §18（recovery guidance 設計）も **そのまま参照価値が残る**: Light / Medium / Heavy 分類 / message 案 L-1〜L-3 / 表示場所候補は、後続候補の設計時に再利用される。Medium 案・Heavy 案は §18.5.2 / §18.5.3 に保持。
+- 本 §19 は §17 / §18 の上書きではなく、PR #88〜#90 で **どこまで完了したか** の地図を提供する。
+
+### 19.8 司令塔メモ：closure 時点の判断
+
+- 「最小着地で user 体感が変わる」設計通り、PR #90 は `message` 1 フィールドの差し替えに閉じた。
+- Medium 案以降を急がない: aggregation 対象外で毎回出る warn なので、Light 文言の運用感を観察してから次手を判断する。
+- 文言は L-1 で確定済。再変更は避ける（§18.10「1 度確定したら頻繁に変えない」）。
+- 後続着手の優先度は運用者フィードバック次第。docs 上の地図 §17 / §18 / §19 が揃っているため、別チャットからの再開が容易な状態。
+
+### 19.9 関連 docs / コード
+
+- `docs/notes/20260513_shogi_save_ux_status_map.md` §16（parse 系 inventory）/ §17（root cause）/ §18（recovery guidance）
+- `docs/specs/20260513_shogi_save_ux_design.md`（SAVE-UX 中核原則、§2.3 modal/alert 不使用）
+- `docs/specs/20260513_shogi_save_ux_warn_aggregation_design.md`（aggregation allow-list、本 closure 時点で `storage-corrupted` 追加なし）
+- `docs/specs/20260513_shogi_save_ux_status_indicator_design.md`（indicator Level 2 設計、Heavy 案の前提）
+- [shogi_v4.html:5295](shogi_v4.html:5295) PARSE-MASTER-003 message（PR #90 で L-1 反映済み）
+- [shogi_v4.html:2784](shogi_v4.html:2784) マイグレ wizard 既存バナー（本 closure 時点で文言調整なし）
+- [test/test_branch_master.js](test/test_branch_master.js) IMPL-LIGHT 主要語句アサーション section（PR #90 で追加）
+- PR [#88](https://github.com/kazuo1970takahashi-sketch/shogi/pull/88) / [#89](https://github.com/kazuo1970takahashi-sketch/shogi/pull/89) / [#90](https://github.com/kazuo1970takahashi-sketch/shogi/pull/90)
