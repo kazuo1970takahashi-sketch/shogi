@@ -521,6 +521,22 @@ else
 fi
 
 # ============================================
+# PAIRING-UX-DISPLAY-HELPER-IMPL-LIGHT formatParticipantLabel 単体テスト
+# ============================================
+echo ""
+echo "【PAIRING-UX-DISPLAY-HELPER-IMPL-LIGHT】"
+if [ -f "$SCRIPT_DIR/test_pairing_ux_display_helper.js" ]; then
+  if node "$SCRIPT_DIR/test_pairing_ux_display_helper.js" "$TARGET" > /tmp/pairing_ux_display_helper_out.log 2>&1; then
+    ok "DISPLAY-HELPER IMPL-LIGHT テスト 全PASS ($(tail -1 /tmp/pairing_ux_display_helper_out.log))"
+  else
+    ng "DISPLAY-HELPER IMPL-LIGHT テスト 失敗"
+    cat /tmp/pairing_ux_display_helper_out.log
+  fi
+else
+  warn "test_pairing_ux_display_helper.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
