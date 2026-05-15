@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// RECEPTION-UX-START-BUTTON-GUARD-IMPL-LIGHT (PR #111 §9.1 / §10)
+// RECEPTION-UX-START-BUTTON-GUARD-IMPL-LIGHT (PR #111 §9.1 / §10) +
+// RESET-UX-PARTIAL-RESET-IMPL-LIGHT 同期更新 (PR #113 §9.1.1 H-1 / §10.1)
 // 大会開始後の「登録完了・対局開始」再クリックを案内付きで止めるガードを検証する。
+// 部分リセット導入後、alert は新規ボタン「大会進行データをリセット」へ誘導する。
 //
 // 不変項目:
 //   - resetAll() のロジック / state.started=false の戻し設計 未変更
@@ -9,14 +11,15 @@
 //   - pairing algorithm / generatePairing / Fisher-Yates 未変更
 //   - state.started=true の代入位置（startTournament 内）未変更
 //   - 既存 hasOngoing confirm 経路（fail-safe）未変更
+//   - 既存 #resetBtn の文言「大会データをリセット」未変更
 //
 // 観点:
 //   1. startTournament() に state.started === true guard がある
 //   2. guard は total 算出後、参加者数チェック・奇数チェック・既存 hasOngoing confirm より前
 //   3. guard 内で alert が出る
-//   4. alert 文言に主要語句（大会はすでに開始されています / 大会データをリセット /
-//      組み合わせ / 勝敗結果）が含まれる
-//   5. alert 文言に「参加者一覧は残ります」が含まれない
+//   4. alert 文言に主要語句（大会はすでに開始されています / 大会進行データをリセット /
+//      組み合わせ / 勝敗結果 / 参加者一覧は残したまま）が含まれる
+//   5. 既存 #resetBtn の文言「大会データをリセット」がそのまま維持されている
 //   6. guard 内で return している
 //   7. guard 前後の構造上、state.results = {A:[],B:[]} に到達しない（軽量振る舞い検証）
 //   8. guard 前後の構造上、state.pairings = {A:[],B:[]} に到達しない（軽量振る舞い検証）
@@ -110,14 +113,14 @@ const guardSlice = (sliceEnd > idxGuardCond) ? stBody.substring(idxGuardCond, sl
     'guard 内に alert(...) 呼出がある');
   assert(guardSlice.indexOf('大会はすでに開始されています') >= 0,
     'alert 文言に「大会はすでに開始されています」が含まれる');
-  assert(guardSlice.indexOf('大会データをリセット') >= 0,
-    'alert 文言に「大会データをリセット」が含まれる');
+  assert(guardSlice.indexOf('大会進行データをリセット') >= 0,
+    'alert 文言に新規ボタン名「大会進行データをリセット」が含まれる (PR #113 §9.1.1 H-1)');
   assert(guardSlice.indexOf('組み合わせ') >= 0,
     'alert 文言に「組み合わせ」が含まれる');
   assert(guardSlice.indexOf('勝敗結果') >= 0,
     'alert 文言に「勝敗結果」が含まれる');
-  assert(guardSlice.indexOf('参加者一覧は残ります') < 0,
-    'alert 文言に「参加者一覧は残ります」が含まれない（resetAll 現仕様と矛盾するため）');
+  assert(guardSlice.indexOf('参加者一覧は残したまま') >= 0,
+    'alert 文言に「参加者一覧は残したまま」が含まれる (部分リセット導入により真実に)');
   assert(/\breturn\s*;/.test(guardSlice),
     'guard 内で return している');
 }
@@ -255,7 +258,7 @@ assert(idxGenPair > idxGuardCond,
     function startTournament(){
       var total = state.players.A.length + state.players.B.length;
       if(state.started===true){
-        _alert('大会はすでに開始されています。\n参加者を変更する場合は、先に「大会データをリセット」を実行してください。\n大会データをリセットすると、現在の組み合わせ・勝敗結果は削除されます。');
+        _alert('大会はすでに開始されています。\n参加者を変更する場合は、先に「大会進行データをリセット」を実行してください。\n大会進行データをリセットすると、参加者一覧は残したまま、現在の組み合わせ・勝敗結果は削除されます。');
         return;
       }
       // (以降の経路はテスト対象外、ここでは到達検出のために state を破壊的に変える)
@@ -290,8 +293,10 @@ assert(idxGenPair > idxGuardCond,
       '[case2] started=true で startTournament → guard alert が 1 回出る');
     assert(c2.alertCalls[0].indexOf('大会はすでに開始されています') >= 0,
       '[case2] alert 文言に「大会はすでに開始されています」が含まれる');
-    assert(c2.alertCalls[0].indexOf('参加者一覧は残ります') < 0,
-      '[case2] alert 文言に「参加者一覧は残ります」が含まれない');
+    assert(c2.alertCalls[0].indexOf('大会進行データをリセット') >= 0,
+      '[case2] alert 文言に新規ボタン名「大会進行データをリセット」が含まれる');
+    assert(c2.alertCalls[0].indexOf('参加者一覧は残したまま') >= 0,
+      '[case2] alert 文言に「参加者一覧は残したまま」が含まれる');
     assert(JSON.stringify(c2.state.pairings) === snapshotP,
       '[case2] guard 通過後に state.pairings が不変');
     assert(JSON.stringify(c2.state.results) === snapshotR,

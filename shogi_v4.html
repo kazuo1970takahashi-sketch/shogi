@@ -98,6 +98,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     <button type="button" class="btn-sm no-print" id="loadBtn" style="background:#185FA5;color:#fff;border-color:#185FA5">読み込み</button>
     <input type="file" id="loadFile" accept=".json" style="display:none">
     <button type="button" class="btn-danger btn-sm no-print" id="resetBtn">大会データをリセット</button>
+    <button type="button" class="btn-danger btn-sm no-print" id="resetProgressBtn">大会進行データをリセット</button>
   </div>
 </div>
 <div class="container">
@@ -4428,17 +4429,18 @@ function editPlayer(id,cls){
 
 function startTournament(){
   var total=state.players.A.length+state.players.B.length;
-  // RECEPTION-UX-START-BUTTON-GUARD-IMPL-LIGHT (PR #111 §9.1):
+  // RECEPTION-UX-START-BUTTON-GUARD-IMPL-LIGHT (PR #111 §9.1) +
+  // RESET-UX-PARTIAL-RESET-IMPL-LIGHT 同期更新 (PR #113 §9.1.1 H-1 / §10.1):
   //   大会開始済みでの「登録完了・対局開始」再クリックを案内付きで止める。
   //   主ガードは state.started === true。pairings/results 併用判定は行わない。
-  //   alert 文言は PR #111 §7.2。「参加者一覧は残ります」は resetAll() の現仕様
-  //   （state.players も空になる）と矛盾するため明記しない。
+  //   alert 文言は PR #113 §9.1.1 H-1: 新規ボタン「大会進行データをリセット」へ
+  //   誘導し、参加者一覧が残ることを明示する（部分リセット導入により真実に）。
   //   到達させない処理: state.results 初期化 / state.pairings 初期化 /
   //     generatePairing / save() / showTab('tournament') / SAVE-003 verify。
   //   既存 hasOngoing confirm 経路は安全網として温存（state.started=false で
   //   pairings/results のみ残る異常データの fail-safe）。
   if(state.started===true){
-    alert('大会はすでに開始されています。\n参加者を変更する場合は、先に「大会データをリセット」を実行してください。\n大会データをリセットすると、現在の組み合わせ・勝敗結果は削除されます。');
+    alert('大会はすでに開始されています。\n参加者を変更する場合は、先に「大会進行データをリセット」を実行してください。\n大会進行データをリセットすると、参加者一覧は残したまま、現在の組み合わせ・勝敗結果は削除されます。');
     return;
   }
   if(total<2){showMsg('参加者が少なすぎます','err');return;}
@@ -5901,6 +5903,34 @@ function downloadReport(){
   setTimeout(function(){URL.revokeObjectURL(url);},60000);
 }
 
+// RESET-UX-PARTIAL-RESET-IMPL-LIGHT (PR #113 §10.1 / §15):
+//   参加者一覧（state.players）を残したまま、局単位の進行データだけを初期化する。
+//   設計 doc §6.7 / §8: A. 参加者データ / 大会単位データ（players / tournament_id /
+//     rounds / report / _pendingNewYomi*）は維持、B. 大会進行データ
+//     （pairings / results / started）のみ初期化。
+//   resetAll() 自体は変更しない（全リセットとして温存、§10.2）。
+//   PR #112 startTournament guard alert は本ボタンへ誘導するよう同期更新（§10.1）。
+function resetTournamentProgressOnly(){
+  if(!confirm('参加者一覧は残したまま、現在の組み合わせ・勝敗結果を削除します。\nよろしいですか？'))return;
+  // B. 大会進行データ（局単位）のみ初期化
+  state.started=false;
+  state.pairings={A:[],B:[]};
+  state.results={A:[],B:[]};
+  // 開きっぱなしのモーダルを閉じる（resetAll と同設計、進行中操作の取りこぼし防止）
+  ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
+    var m=document.getElementById(mid);if(m)m.remove();
+  });
+  // 大会タブの表示 DOM をクリア（参加者・report・rounds 等の reg/master タブ DOM は触らない）
+  var paneA=document.getElementById('pane-A');if(paneA)paneA.innerHTML='';
+  var paneB=document.getElementById('pane-B');if(paneB)paneB.innerHTML='';
+  var resultA=document.getElementById('result-A');if(resultA)resultA.innerHTML='';
+  var resultB=document.getElementById('result-B');if(resultB)resultB.innerHTML='';
+  save();
+  renderRegList();
+  showTab('reg');
+  showMsg('大会進行データをリセットしました','ok');
+}
+
 function resetAll(){
   if(!confirm('現在の大会データをリセットします（支部マスタは保持されます）'))return;
   state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}};_pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
@@ -5945,6 +5975,9 @@ function bindHeaderEvents(){
   document.getElementById('loadBtn').addEventListener('click',openLoadModal);
   document.getElementById('loadFile').addEventListener('change',loadData);
   document.getElementById('resetBtn').addEventListener('click',resetAll);
+  // RESET-UX-PARTIAL-RESET-IMPL-LIGHT: 参加者を残す部分リセット
+  var resetProgressBtn=document.getElementById('resetProgressBtn');
+  if(resetProgressBtn)resetProgressBtn.addEventListener('click',resetTournamentProgressOnly);
 }
 
 function bindRegistrationEvents(){

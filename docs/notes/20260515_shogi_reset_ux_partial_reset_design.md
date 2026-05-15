@@ -991,3 +991,173 @@ if(state.started===true){
 - VRT snapshot red 時の判断方針（自律更新せず）
 
 DESIGN は本ドキュメントに集約。IMPL-LIGHT 着地時に §17 として「実装着地ノート」を追記する想定（PR #109 / #112 と同じ構成）。
+
+---
+
+## 17. 実装着地ノート（IMPL-LIGHT）
+
+**Task ID**: `RESET-UX-PARTIAL-RESET-IMPL-LIGHT`
+**Branch**: `feat/reset-ux-partial-reset-impl-light`
+**設計 PR**: PR #113（squash merge `9b9cf07`）
+**実装 PR**: 本タスクの Draft PR
+
+### 17.1 採用した実装位置
+
+`resetAll()`（[`shogi_v4.html` L5934 周辺](../../shogi_v4.html)）の **直前** に新規 helper [`resetTournamentProgressOnly()`](../../shogi_v4.html) を追加。`bindHeaderEvents()` に bind を追加。header DOM の [`#resetBtn`](../../shogi_v4.html)（[L100](../../shogi_v4.html)）の **直後** に [`#resetProgressBtn`](../../shogi_v4.html)（[L101](../../shogi_v4.html)）を配置。
+
+### 17.2 採用した helper 実装
+
+```js
+function resetTournamentProgressOnly(){
+  if(!confirm('参加者一覧は残したまま、現在の組み合わせ・勝敗結果を削除します。\nよろしいですか？'))return;
+  // B. 大会進行データ（局単位）のみ初期化
+  state.started=false;
+  state.pairings={A:[],B:[]};
+  state.results={A:[],B:[]};
+  // 開きっぱなしのモーダルを閉じる（resetAll と同設計）
+  ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
+    var m=document.getElementById(mid);if(m)m.remove();
+  });
+  // 大会タブの表示 DOM をクリア（参加者・report・rounds 等の reg/master タブ DOM は触らない）
+  var paneA=document.getElementById('pane-A');if(paneA)paneA.innerHTML='';
+  var paneB=document.getElementById('pane-B');if(paneB)paneB.innerHTML='';
+  var resultA=document.getElementById('result-A');if(resultA)resultA.innerHTML='';
+  var resultB=document.getElementById('result-B');if(resultB)resultB.innerHTML='';
+  save();
+  renderRegList();
+  showTab('reg');
+  showMsg('大会進行データをリセットしました','ok');
+}
+```
+
+#### 採用理由
+
+- `state.started` / `state.pairings` / `state.results` のみ初期化（§8.2）
+- `state.players` / `state.rounds` / `state.tournament_id` / `state.report` / `_pendingNewYomi`/`_yomiAutoBuffer`/`_yomiManuallyEdited` は **代入しない**（§8.1 R2 維持を保証）
+- `BRANCH_MASTER_KEY` / `STORAGE_KEY` / `LEGACY_STORAGE_KEYS` への参照なし（localStorage 直接削除なし、`save()` 経由のみ）
+- 大会タブの表示 DOM は clear（戻ったときに古い表示が残らない）、reg タブ DOM や `rep-*`（大会報告書入力）は **clear しない**（§8.2 報告書 DOM clear なき注記）
+- `showTab('reg')` で参加者登録タブへ遷移、`save()` で localStorage に反映、`renderRegList()` で参加者一覧を再描画
+
+### 17.3 採用した confirm 文言
+
+§7.2 推奨 P-3 寄りの軽量版:
+
+```
+参加者一覧は残したまま、現在の組み合わせ・勝敗結果を削除します。
+よろしいですか？
+```
+
+- 「参加者一覧は残」「組み合わせ」「勝敗結果」を含む（運営者向けの判断材料）
+- 「支部マスタ」「localStorage」「state」「局単位」など内部実装語を含まない
+
+### 17.4 採用した UI 追加
+
+[`shogi_v4.html` L100-101](../../shogi_v4.html):
+
+```html
+<button type="button" class="btn-danger btn-sm no-print" id="resetBtn">大会データをリセット</button>
+<button type="button" class="btn-danger btn-sm no-print" id="resetProgressBtn">大会進行データをリセット</button>
+```
+
+- 既存 `#resetBtn` の **直後** に並列配置（§7.3 L-1 採用）
+- 文言 §7.1 **C-1 新規ボタン側を採用**（既存ボタン側ラベルは「大会データをリセット」のまま、§10.2 既存に触れない方針）
+- `.btn-danger` で destructive スタイル継承
+
+### 17.5 PR #112 startTournament guard alert 同期更新
+
+`startTournament()` 冒頭 guard alert（PR #112 で追加）を §9.1.1 **H-1** に更新:
+
+```
+大会はすでに開始されています。
+参加者を変更する場合は、先に「大会進行データをリセット」を実行してください。
+大会進行データをリセットすると、参加者一覧は残したまま、現在の組み合わせ・勝敗結果は削除されます。
+```
+
+- 新規ボタン名「大会進行データをリセット」へ誘導
+- 「参加者一覧は残したまま」を明示（部分リセット導入により真実になった、PR #111 §7.3 で書けなかった内容が解禁）
+- guard 条件 `if(state.started===true)` / 早期 return / 既存 hasOngoing confirm 経路 はすべて維持
+
+### 17.6 既存挙動を維持したもの
+
+- **`resetAll()`** 本体・confirm 文言・state 再代入内容すべて変更なし
+- **既存 `#resetBtn`** 文言「大会データをリセット」変更なし
+- **`removePlayer()`** 一次禁止 / 二次禁止 alert / 条件 `state.started && pastMatches>0` 変更なし
+- **`startTournament()`** guard 条件 `state.started===true` / 早期 return / hasOngoing confirm 経路（fail-safe）変更なし
+- **`normalizeState`** の `base.started=!!s.started` 変更なし
+- **localStorage schema**: `STORAGE_KEY='shogi_v4'` / `LEGACY_STORAGE_KEYS=['shogi_v3']` / `BRANCH_MASTER_KEY='shogi_branch_master'` 変更なし
+- **pairing algorithm**: `generatePairing` / Fisher-Yates / `evaluatePairingQuality` 変更なし
+- 既存 helper（`getName` / `getNameWithNo` / `entryNoOf` / `formatParticipantLabel` / `pairHasRematch` / `findPairContainingPlayer` / `getDuplicatePlayersInPairings` / `classifyChangePairingCandidate`）変更なし
+
+### 17.7 追加テスト
+
+新規ファイル: [`test/test_reset_ux_partial_reset.js`](../../test/test_reset_ux_partial_reset.js)
+
+`test/run_tests.sh` に呼出 stanza を追加。
+
+#### 17.7.1 静的検査の主要観点
+
+1. `resetTournamentProgressOnly()` helper 存在
+2. `#resetProgressBtn` DOM 存在 / 文言 / `.btn-danger`
+3. `bindHeaderEvents` 内 bind
+4. helper 内 `state.started=false` / `state.pairings={A:[],B:[]}` / `state.results={A:[],B:[]}`
+5. `if(!confirm(...))` キャンセル時 return
+6. 「触らない」7 項目（`state.players` / `state.rounds` / `state.tournament_id` / `state.report` / `_pendingNewYomi` / `_yomiAutoBuffer` / `_yomiManuallyEdited`）への代入が helper 内に **存在しない**
+7. `BRANCH_MASTER_KEY` / `localStorage.removeItem` 呼出なし
+8. `save()` / `renderRegList()` / `showTab('reg')` 呼出
+9. confirm 文言検査: 「参加者一覧は残」「組み合わせ」「勝敗結果」含む / 内部実装語含まない
+10. `resetAll()` の挙動・文言不変 / 既存 `#resetBtn` 文言不変
+11. PR #112 guard 条件 / alert 文言（新ボタン名・「参加者一覧は残したまま」含む）
+12. `removePlayer` 一次・二次禁止維持
+13. localStorage schema / pairing algorithm 維持
+
+#### 17.7.2 振る舞いテスト（軽量 mock）
+
+| ケース | 入力 | 期待 |
+|---|---|---|
+| case1 | `started=true`/`players`あり/`pairings`あり/`results`あり/`rounds=3`/`tournament_id='t_test_001'`/`report`記入済/`_pendingNewYomi`あり → helper | players/rounds/tournament_id/report/_pendingNewYomi/_yomiAutoBuffer/_yomiManuallyEdited 不変、started=false、pairings/results=空、save 1 回、renderRegList 1 回、showTab('reg') 1 回、showMsg「大会進行データをリセットしました」 |
+| case2 | confirm cancel | state 完全不変、save / renderRegList / showTab 呼ばれない |
+| case3 | helper 後 | state.started===false → startTournament guard をすり抜ける前提 |
+| case4 | helper 後 | state.pairings/results 空・state.started=false → removePlayer 一次・二次禁止が自然解除前提、参加者 ID 残存 |
+| case5 | resetAll 相当（mock）| players も消える（helper との別物確認） |
+| case6 | reset 前後 | tournament_id 同一 |
+| case7 | reset 前後 | state.rounds 同一 |
+| case8 | reset 前後 | state.report 同一 |
+| case9 | reset 前後 | _pendingNewYomi / _yomiAutoBuffer / _yomiManuallyEdited 不変 |
+
+合計 **81 件** の assertion すべて PASS。
+
+### 17.8 既存テスト退行確認
+
+`bash test/run_tests.sh shogi_v4.html` の結果:
+
+```
+結果: PASS=75, FAIL=0, WARN=0
+✓ 全テスト合格(警告: 0件)
+```
+
+- `test/test_reception_ux_start_button_guard.js`: PR #112 alert 文言更新に伴い期待値を新文言「大会進行データをリセット」「参加者一覧は残したまま」へ更新（**PASS 64 件**、前回 63 件から +1）
+- それ以外の既存テストはすべて影響なく PASS（既存 74 + 新規 1 = **全 75 stanza PASS**）
+
+### 17.9 VRT / E2E
+
+- header に `#resetProgressBtn` を追加した → header VRT snapshot が **mismatch する可能性**
+- 既存 `#resetBtn` の文言・配置は変えていないため、影響は新ボタン分のみ
+- IMPL-LIGHT 着地時に red の場合は **自律 snapshot 更新せず、判断を仰ぐ**（PR #105 / #109 の流れ）
+- E2E は本タスクで追加しない（§11.4 方針通り）
+- 既存 E2E への影響は確認していない（PR #112 alert 文言を locator として持つテストがあれば追従更新が要）
+
+### 17.10 やっていないこと（IMPL-MEDIUM 以降の余地）
+
+- 既存 `#resetBtn` 文言の変更（C-1 / C-2 / C-3 で「大会データを全リセット」等への改称、§10.2）
+- 既存 `resetAll()` confirm 文言の変更（§7.2 F-1 推奨は IMPL-MEDIUM 送り）
+- ボタン文言切替（IMPL-MEDIUM 案 D 相当）
+- 案 E モーダル選択化
+- 大会開始ボタン disabled 化
+- 大会履歴保存 / undo
+- 参加者番号再採番
+- 支部マスタ / 会員マスタ変更
+- pairing algorithm 変更
+- `removePlayer()` 文言改修
+- WARNING Phase 2〜4 / DISPLAY-LABELS-IMPL-LIGHT
+
+これらは観察結果に応じて別タスクで起票。
