@@ -21,7 +21,7 @@
 //     4. 「大会進行データをリセット」を含む (PR #114 部分リセット誘導)
 //     5. 「参加者一覧は残したまま」を含む
 //     6. 「組み合わせ・勝敗結果」を含む
-//     7. alert 内に「大会データをリセット」(#resetBtn 文言) を含まない (誤誘導抑止)
+//     7. alert 内に「大会データを全リセット」(PR #118 #resetBtn 文言) / 旧「大会データをリセット」のいずれも含まない (誤誘導抑止)
 //     8. alert 内に「リセット」単独表現を含まない (具体化済)
 //   二次禁止 alert 文言:
 //     9. 「勝敗結果」を含む
@@ -30,7 +30,7 @@
 //     12. 「参加者一覧は残したまま」を含む
 //     13. 「組み合わせ・勝敗結果」を含む
 //     14. 「<N>試合」動的文字列 (pastMatches+'試合') が維持されている
-//     15. alert 内に「大会データをリセット」を含まない
+//     15. alert 内に「大会データを全リセット」(PR #118) / 旧「大会データをリセット」のいずれも含まない
 //     16. alert 内に「リセット」単独 (= 「大会進行データをリセット」以外) を含まない
 //   判定ロジック不変:
 //     17. 一次禁止判定 (`if(inPairings)`) が維持
@@ -47,8 +47,8 @@
 //   関連機能不変:
 //     27. resetTournamentProgressOnly() / resetAll() / startTournament guard 不変
 //     28. #resetProgressBtn 文言「大会進行データをリセット」維持
-//     29. 既存 #resetBtn 文言「大会データをリセット」維持
-//     30. 既存 resetAll confirm 文言維持
+//     29. #resetBtn 文言（PR #118 で「大会データを全リセット」へ更新）
+//     30. resetAll confirm 文言（PR #118 で新文言へ更新、主要語句で assert）
 //     31. localStorage schema 維持
 //     32. pairing algorithm 維持
 //
@@ -126,14 +126,16 @@ assert(secondSlice.length > 0, '二次禁止ブロックをスライスできる
     '[一次禁止] alert に「組み合わせ・勝敗結果」が含まれる');
 
   // 誤誘導抑止
-  // 「大会データをリセット」(#resetBtn 文言) を含まないこと。
+  // 現行 #resetBtn 文言「大会データを全リセット」(PR #118) / 旧文言「大会データをリセット」のいずれも
+  // 一次禁止 alert には含まれないこと。
   // ただし「大会進行データをリセット」を含むので、これを除いて検査:
-  // alert 文言から「大会進行データをリセット」を消した後、「大会データをリセット」を検索
   const firstAlertMatch = firstSlice.match(/alert\(([\s\S]*?)\);/);
   const firstAlertText = firstAlertMatch ? firstAlertMatch[1] : '';
   const firstWithoutNew = firstAlertText.split('大会進行データをリセット').join('');
+  assert(firstWithoutNew.indexOf('大会データを全リセット') < 0,
+    '[一次禁止] alert に「大会データを全リセット」(現行 #resetBtn 文言) が含まれない (誤誘導抑止 / PR #118)');
   assert(firstWithoutNew.indexOf('大会データをリセット') < 0,
-    '[一次禁止] alert に「大会データをリセット」(#resetBtn 文言) が含まれない (誤誘導抑止)');
+    '[一次禁止] alert に「大会データをリセット」(旧 #resetBtn 文言) が含まれない (誤誘導抑止 retention)');
 
   // 「リセット」単独表現抑止 (「大会進行データをリセット」以外で「リセット」が出ないこと)
   const firstWithoutNewAndReset = firstWithoutNew;
@@ -167,8 +169,10 @@ assert(secondSlice.length > 0, '二次禁止ブロックをスライスできる
   const secondAlertMatch = secondSlice.match(/alert\(([\s\S]*?)\);/);
   const secondAlertText = secondAlertMatch ? secondAlertMatch[1] : '';
   const secondWithoutNew = secondAlertText.split('大会進行データをリセット').join('');
+  assert(secondWithoutNew.indexOf('大会データを全リセット') < 0,
+    '[二次禁止] alert に「大会データを全リセット」(現行 #resetBtn 文言) が含まれない (誤誘導抑止 / PR #118)');
   assert(secondWithoutNew.indexOf('大会データをリセット') < 0,
-    '[二次禁止] alert に「大会データをリセット」(#resetBtn 文言) が含まれない (誤誘導抑止)');
+    '[二次禁止] alert に「大会データをリセット」(旧 #resetBtn 文言) が含まれない (誤誘導抑止 retention)');
   assert(secondWithoutNew.indexOf('リセット') < 0,
     '[二次禁止] alert に「リセット」単独表現が含まれない (「大会進行データをリセット」のみ)');
 }
@@ -253,8 +257,18 @@ assert(secondSlice.length > 0, '二次禁止ブロックをスライスできる
   const resetBody = resetMatch ? resetMatch[0] : '';
   assert(/players\s*:\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(resetBody),
     'resetAll() 内の players:{A:[],B:[]} 初期化が維持 (全リセット温存)');
-  assert(resetBody.indexOf('現在の大会データをリセットします（支部マスタは保持されます）') >= 0,
-    'resetAll() の confirm 文言が維持');
+  // PR #118 で resetAll() confirm 文言を「参加者一覧・組み合わせ・勝敗結果を含む大会データを
+  // すべてリセットします。\n支部マスタは保持されます。」へ更新済。主要語句を assert。
+  assert(resetBody.indexOf('参加者一覧') >= 0,
+    'resetAll() confirm に「参加者一覧」が含まれる (PR #118)');
+  assert(resetBody.indexOf('組み合わせ') >= 0,
+    'resetAll() confirm に「組み合わせ」が含まれる (PR #118)');
+  assert(resetBody.indexOf('勝敗結果') >= 0,
+    'resetAll() confirm に「勝敗結果」が含まれる (PR #118)');
+  assert(resetBody.indexOf('すべてリセット') >= 0,
+    'resetAll() confirm に「すべてリセット」が含まれる (PR #118)');
+  assert(resetBody.indexOf('支部マスタは保持') >= 0,
+    'resetAll() confirm に「支部マスタは保持」が含まれる (PR #118)');
 
   // startTournament guard 条件不変
   const stMatch = htmlSrc.match(/function startTournament\([\s\S]*?\n\}\n/);
@@ -271,8 +285,8 @@ assert(secondSlice.length > 0, '二次禁止ブロックをスライスできる
   // ボタン文言
   assert(/id="resetProgressBtn"[\s\S]{0,80}>大会進行データをリセット<\/button>/.test(htmlSrc),
     '#resetProgressBtn 文言「大会進行データをリセット」が維持');
-  assert(/id="resetBtn"[\s\S]{0,80}>大会データをリセット<\/button>/.test(htmlSrc),
-    '既存 #resetBtn 文言「大会データをリセット」が維持');
+  assert(/id="resetBtn"[\s\S]{0,80}>大会データを全リセット<\/button>/.test(htmlSrc),
+    '#resetBtn 文言「大会データを全リセット」(PR #118)');
 
   // localStorage schema
   assert(htmlSrc.indexOf("STORAGE_KEY='shogi_v4'") >= 0,
