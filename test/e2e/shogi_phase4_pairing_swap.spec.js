@@ -83,17 +83,27 @@ test.describe('Hotfix Phase 4: pairing change replace + swap', () => {
     pairings.forEach((p) => expect(p.winner).toBeNull());
   });
 
-  // §7 #2: swap で再戦衝突 → エラー
-  test('swap で再戦衝突: 過去 A-C 対戦済 → エラー、状態不変', async ({ page }) => {
+  // §7 #2: swap で再戦衝突 → 候補フィルタが事前に disabled 化
+  //  PAIRING-UX-MANUAL-CHANGE-CANDIDATE-FILTER-IMPL-LIGHT (PR #109) で
+  //  「選んでもエラーになる」候補は事前 disabled になる新仕様に更新。
+  //  旧仕様の事後 alert は安全網としてコード上残存（run_tests.sh の静的検査で担保）。
+  test('swap で再戦衝突: 過去 A-C 対戦済 → pC option が事前 disabled, 状態不変', async ({ page }) => {
     await setupTwoPairs(page, {
       pastResultsA: [[{ p1: 'pA', p2: 'pC', winner: 'pA' }, { p1: 'pB', p2: 'pD', winner: 'pB' }]],
     });
-    let alertMsg = null;
-    page.on('dialog', async (d) => { alertMsg = d.message(); await d.accept(); });
     await page.evaluate(() => window.changePairing('A', 0));
-    await page.selectOption('#chg-p2', 'pC');
-    await page.click('#chg-save');
-    expect(alertMsg).toContain('再戦になる組み合わせが発生します');
+    await expect(page.locator('#chg-modal')).toBeVisible();
+    // pC option が後手 select 内で disabled + data-reason-id="R-rematch-swap"
+    const pcOption = page.locator('#chg-p2 option[value="pC"]');
+    await expect(pcOption).toHaveCount(1);
+    await expect(pcOption).toBeDisabled();
+    await expect(pcOption).toHaveAttribute('data-reason-id', 'R-rematch-swap');
+    await expect(pcOption).toContainText('入替で再戦');
+    // 「選択できない候補」optgroup 配下にある
+    const blockedGroup = page.locator('#chg-p2 optgroup[label="選択できない候補"]');
+    await expect(blockedGroup).toHaveCount(1);
+    await expect(blockedGroup.locator('option[value="pC"]')).toHaveCount(1);
+    // state.pairings は不変
     const pairings = await page.evaluate(() => window.state.pairings.A);
     expect(pairings.map(pairKey).sort()).toEqual(['pA|pB', 'pC|pD']);
   });
@@ -148,15 +158,30 @@ test.describe('Hotfix Phase 4: pairing change replace + swap', () => {
     expect(pairings[0].winner).toBe('pA');
   });
 
-  // §7 #7: swap 相手ペアが winner 入力済み → swap 拒否
-  test('相手ペア winner 入力済み: swap 拒否、状態不変', async ({ page }) => {
+  // §7 #7: swap 相手ペアが winner 入力済み → 候補フィルタが事前に disabled 化
+  //  PAIRING-UX-MANUAL-CHANGE-CANDIDATE-FILTER-IMPL-LIGHT (PR #109) で
+  //  winner-locked 相手ペアの選手は事前 disabled になる新仕様に更新。
+  //  旧仕様の事後 alert は安全網としてコード上残存（run_tests.sh の静的検査で担保）。
+  test('相手ペア winner 入力済み: pC / pD option が事前 disabled, 状態不変', async ({ page }) => {
     await setupTwoPairs(page, { winner1: 'pC' });
-    let alertMsg = null;
-    page.on('dialog', async (d) => { alertMsg = d.message(); await d.accept(); });
     await page.evaluate(() => window.changePairing('A', 0));
-    await page.selectOption('#chg-p2', 'pC');
-    await page.click('#chg-save');
-    expect(alertMsg).toContain('相手ペアが結果入力済みのため、入れ替えできません');
+    await expect(page.locator('#chg-modal')).toBeVisible();
+    // pC option が後手 select 内で disabled + data-reason-id="R-winner-locked"
+    const pcOption = page.locator('#chg-p2 option[value="pC"]');
+    await expect(pcOption).toHaveCount(1);
+    await expect(pcOption).toBeDisabled();
+    await expect(pcOption).toHaveAttribute('data-reason-id', 'R-winner-locked');
+    await expect(pcOption).toContainText('結果入力済');
+    // 同じ winner-locked ペアの相手 pD も disabled になっているはず（同じ理由）
+    const pdOption = page.locator('#chg-p2 option[value="pD"]');
+    await expect(pdOption).toHaveCount(1);
+    await expect(pdOption).toBeDisabled();
+    await expect(pdOption).toHaveAttribute('data-reason-id', 'R-winner-locked');
+    // 「選択できない候補」optgroup 配下にある
+    const blockedGroup = page.locator('#chg-p2 optgroup[label="選択できない候補"]');
+    await expect(blockedGroup).toHaveCount(1);
+    await expect(blockedGroup.locator('option[value="pC"]')).toHaveCount(1);
+    // state.pairings は不変、winner も保持
     const pairings = await page.evaluate(() => window.state.pairings.A);
     expect(pairings.map(pairKey).sort()).toEqual(['pA|pB', 'pC|pD']);
     expect(pairings[1].winner).toBe('pC');
