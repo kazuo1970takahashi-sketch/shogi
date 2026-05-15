@@ -601,6 +601,22 @@ else
 fi
 
 # ============================================
+# RECEPTION-UX-START-BUTTON-GUARD-IMPL-LIGHT 単体テスト
+# ============================================
+echo ""
+echo "【RECEPTION-UX-START-BUTTON-GUARD-IMPL-LIGHT】"
+if [ -f "$SCRIPT_DIR/test_reception_ux_start_button_guard.js" ]; then
+  if node "$SCRIPT_DIR/test_reception_ux_start_button_guard.js" "$TARGET" > /tmp/reception_ux_start_button_guard_out.log 2>&1; then
+    ok "START-BUTTON-GUARD IMPL-LIGHT テスト 全PASS ($(tail -1 /tmp/reception_ux_start_button_guard_out.log))"
+  else
+    ng "START-BUTTON-GUARD IMPL-LIGHT テスト 失敗"
+    cat /tmp/reception_ux_start_button_guard_out.log
+  fi
+else
+  warn "test_reception_ux_start_button_guard.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""

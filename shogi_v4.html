@@ -4428,6 +4428,19 @@ function editPlayer(id,cls){
 
 function startTournament(){
   var total=state.players.A.length+state.players.B.length;
+  // RECEPTION-UX-START-BUTTON-GUARD-IMPL-LIGHT (PR #111 §9.1):
+  //   大会開始済みでの「登録完了・対局開始」再クリックを案内付きで止める。
+  //   主ガードは state.started === true。pairings/results 併用判定は行わない。
+  //   alert 文言は PR #111 §7.2。「参加者一覧は残ります」は resetAll() の現仕様
+  //   （state.players も空になる）と矛盾するため明記しない。
+  //   到達させない処理: state.results 初期化 / state.pairings 初期化 /
+  //     generatePairing / save() / showTab('tournament') / SAVE-003 verify。
+  //   既存 hasOngoing confirm 経路は安全網として温存（state.started=false で
+  //   pairings/results のみ残る異常データの fail-safe）。
+  if(state.started===true){
+    alert('大会はすでに開始されています。\n参加者を変更する場合は、先に「大会データをリセット」を実行してください。\n大会データをリセットすると、現在の組み合わせ・勝敗結果は削除されます。');
+    return;
+  }
   if(total<2){showMsg('参加者が少なすぎます','err');return;}
   if(state.players.A.length%2!==0&&state.players.A.length>0){showMsg('Aクラスが奇数です。運営者を追加してください','warn');return;}
   if(state.players.B.length%2!==0&&state.players.B.length>0){showMsg('Bクラスが奇数です。運営者を追加してください','warn');return;}

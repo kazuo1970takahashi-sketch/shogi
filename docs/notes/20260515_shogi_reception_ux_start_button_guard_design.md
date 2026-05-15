@@ -654,3 +654,141 @@ function isTournamentStartedDefensive(){
 - VRT 不変見込み
 
 DESIGN は本ドキュメントに集約。IMPL-LIGHT 着地時に §17 として「実装着地ノート」を追記する想定（PR #109 と同じ構成）。
+
+---
+
+## 17. 実装着地ノート（IMPL-LIGHT）
+
+**Task ID**: `RECEPTION-UX-START-BUTTON-GUARD-IMPL-LIGHT`
+**Branch**: `feat/reception-ux-start-button-guard-impl-light`
+**設計 PR**: PR #111 (merge `5625e1f`)
+**実装 PR**: 本タスクの Draft PR
+
+### 17.1 採用した実装位置
+
+`startTournament()` 内、`total` 算出（[`shogi_v4.html` L4430](../../shogi_v4.html)）の **直後**、人数チェック・奇数チェック・既存 `hasOngoing` confirm より **前** に guard を追加。
+
+```js
+function startTournament(){
+  var total=state.players.A.length+state.players.B.length;
+  if(state.started===true){
+    alert('大会はすでに開始されています。\n参加者を変更する場合は、先に「大会データをリセット」を実行してください。\n大会データをリセットすると、現在の組み合わせ・勝敗結果は削除されます。');
+    return;
+  }
+  if(total<2){...}
+  if(state.players.A.length%2!==0&&...){...}
+  if(state.players.B.length%2!==0&&...){...}
+  var hasOngoing=state.started && (...);
+  if(hasOngoing){...}
+  state.started=true;
+  state.pairings={A:[],B:[]};
+  state.results={A:[],B:[]};
+  if(state.players.A.length>0)generatePairing('A');
+  if(state.players.B.length>0)generatePairing('B');
+  showTab('tournament');save();
+  ...
+}
+```
+
+### 17.2 採用した alert 文言
+
+§7.2 の推奨文言をそのまま採用:
+
+```
+大会はすでに開始されています。
+参加者を変更する場合は、先に「大会データをリセット」を実行してください。
+大会データをリセットすると、現在の組み合わせ・勝敗結果は削除されます。
+```
+
+- 「参加者一覧は残ります」は **書かない**（§7.3 のとおり、`resetAll()` 現仕様で `state.players` が空になるため）
+- 「大会データをリセット」の鉤括弧表記は画面上の `#resetBtn` 文言（[`shogi_v4.html` L100](../../shogi_v4.html)）と語彙整合
+
+### 17.3 早期 return で到達しなくなった処理
+
+開始済み状態（`state.started===true`）での再クリック時、以下に **到達しない** ことを構造的に保証:
+
+- `state.results = {A:[],B:[]}` の再初期化
+- `state.pairings = {A:[],B:[]}` の再初期化
+- `generatePairing('A')` / `generatePairing('B')` の呼出
+- `showTab('tournament')` の呼出
+- `save()` の呼出
+- SAVE-003 の `readPersistedState` 再検証パス
+
+### 17.4 既存挙動を維持したもの
+
+- 既存 `hasOngoing` confirm 経路（[L4447-4453](../../shogi_v4.html) 相当）は **温存**
+  - 想定: `state.started=false` だが `state.pairings`/`state.results` のみ残る異常データ load 時の fail-safe
+  - 通常運用では guard が先に発火するため到達しない
+- `state.started=true` の代入位置（[L4454 相当](../../shogi_v4.html)）は変更なし
+- `resetAll()` ロジック（[`shogi_v4.html` L5904-5934](../../shogi_v4.html)）は変更なし
+  - `started:false` の戻し / `players:{A:[],B:[]}` 含む全 state 初期化を維持
+- `removePlayer()` 一次禁止（pairings メンバーシップ）/ 二次禁止（`state.started && pastMatches>0`）は変更なし
+- `normalizeState` の `base.started=!!s.started` は変更なし
+- `localStorage` schema（`STORAGE_KEY='shogi_v4'` / `LEGACY_STORAGE_KEYS=['shogi_v3']`）は変更なし
+- `generatePairing` / Fisher-Yates / `evaluatePairingQuality` は変更なし
+- `#startBtn` の DOM / 文言 / disabled 状態は変更なし → VRT snapshot 不変
+
+### 17.5 追加テスト
+
+新規ファイル: [`test/test_reception_ux_start_button_guard.js`](../../test/test_reception_ux_start_button_guard.js)
+
+`test/run_tests.sh` に呼出 stanza を追加。
+
+#### 17.5.1 静的検査
+
+1. `startTournament` 内に `if(state.started===true)` guard がある
+2. guard 位置: `total` 算出後 / 参加者数・奇数チェック / `var hasOngoing=` / 既存 confirm 文言よりも前
+3. guard 内に `alert(...)` がある
+4. alert 文言に「大会はすでに開始されています」「大会データをリセット」「組み合わせ」「勝敗結果」が含まれる
+5. alert 文言に「参加者一覧は残ります」が **含まれない**
+6. guard 内で `return;` している
+7. guard 内で `save()` / `showTab(` / `renderTournament(` / `generatePairing(` を呼ばない
+8. guard 内で `state.results=` / `state.pairings=` の再代入がない
+9. `state.results = {A:[],B:[]}` / `state.pairings = {A:[],B:[]}` / `generatePairing(` の行は guard より **後ろ**（early return で守られる）
+10. `#resetBtn` ボタン文言が「大会データをリセット」のまま（alert 誘導語彙と整合）
+11. 通常開始経路（`state.started=true` / `showTab('tournament')` / `save()`）は guard より後ろに維持
+12. `resetAll()` の `started:false` / `players:{A:[],B:[]}` 維持
+13. `removePlayer()` 一次禁止 / 二次禁止 alert + 条件 (`state.started && pastMatches>0`) 維持
+14. `STORAGE_KEY` / `LEGACY_STORAGE_KEYS` / `normalizeState`(`base.started=!!s.started`) 維持
+
+#### 17.5.2 振る舞いテスト（軽量 mock）
+
+| ケース | 入力 | 期待 |
+|---|---|---|
+| case1 | `started=false`, players 空 → `startTournament()` | guard alert なし、通常経路通過（`state.started=true`） |
+| case2 | `started=true`, pairings/results 有り → `startTournament()` | guard alert 1 回、`state.pairings`/`state.results`/`state.started` 全て不変 |
+| case3 | `started=true`, pairings=[]/results=[] → `startTournament()` | guard alert 1 回（`state.started` 単独判定の確認）、state 不変 |
+| case4 | `resetAll` 後 `started=false` → `startTournament()` | guard alert なし、通常経路通過 |
+
+合計 **63 件** の assertion すべて PASS。
+
+### 17.6 既存テスト退行確認
+
+`bash test/run_tests.sh shogi_v4.html` の結果:
+
+```
+結果: PASS=74, FAIL=0, WARN=0
+✓ 全テスト合格(警告: 0件)
+```
+
+特に既存 B3 順序回帰（`startTournament` 内で人数チェックが confirm より先）は無影響（新 guard の alert 文言は対象キーワードを含まないため）。
+
+### 17.7 VRT / E2E
+
+- DOM 変更なし、ボタン文言・disabled 状態不変 → snapshot 不変見込み
+- 既存 E2E は `startTournament` を **未開始 state** から呼ぶシナリオのみ → 影響なし見込み
+- E2E は本タスクで追加しない（§10.4 の方針通り）
+
+### 17.8 やっていないこと（IMPL-MEDIUM 以降の余地）
+
+- ボタン文言切替（案 D）
+- ボタン disabled 化（案 B）
+- 「参加者を残してデータだけリセット」機能
+- 「結果だけ消す」「pairings だけ組み直す」専用機能
+- 再開始ウィザード（案 E）
+- 大会進行 state machine 化
+- `resetAll` 文言改善
+- `removePlayer` 文言改修
+- WARNING Phase 2〜4 / DISPLAY-LABELS-IMPL-LIGHT / IMPL-MEDIUM 各種
+
+これらは観察結果に応じて別タスク起票。
