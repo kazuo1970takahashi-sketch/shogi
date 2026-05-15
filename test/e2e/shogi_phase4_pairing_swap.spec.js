@@ -93,7 +93,7 @@ test.describe('Hotfix Phase 4: pairing change replace + swap', () => {
     await page.evaluate(() => window.changePairing('A', 0));
     await page.selectOption('#chg-p2', 'pC');
     await page.click('#chg-save');
-    expect(alertMsg).toContain('swap で再戦が発生します');
+    expect(alertMsg).toContain('再戦になる組み合わせが発生します');
     const pairings = await page.evaluate(() => window.state.pairings.A);
     expect(pairings.map(pairKey).sort()).toEqual(['pA|pB', 'pC|pD']);
   });
@@ -156,7 +156,7 @@ test.describe('Hotfix Phase 4: pairing change replace + swap', () => {
     await page.evaluate(() => window.changePairing('A', 0));
     await page.selectOption('#chg-p2', 'pC');
     await page.click('#chg-save');
-    expect(alertMsg).toContain('相手ペアが結果入力済みのため swap できません');
+    expect(alertMsg).toContain('相手ペアが結果入力済みのため、入れ替えできません');
     const pairings = await page.evaluate(() => window.state.pairings.A);
     expect(pairings.map(pairKey).sort()).toEqual(['pA|pB', 'pC|pD']);
     expect(pairings[1].winner).toBe('pC');
