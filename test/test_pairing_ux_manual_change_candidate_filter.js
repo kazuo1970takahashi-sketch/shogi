@@ -20,7 +20,7 @@
 //   4. buildChangePairingModalHtml が optgroup label="選択可能" を出す
 //   5. buildChangePairingModalHtml が optgroup label="選択できない候補" を出す
 //   6. disabled 属性付き option を出す
-//   7. 理由ラベル「結果入力済」「入替で再戦」「2人同時入替」が出力候補にある
+//   7. 理由ラベル「結果入力済」「再戦になる」「同じ選手」が出力候補にある
 //   8. option label は escapeHtml 経由
 //   9. 現 p1 / p2 は selected かつ disabled でない（buildSelectInner ロジック）
 //  10. 候補 0 人時の案内文（data-chg-empty-notice）が条件付きで出る
@@ -111,10 +111,10 @@ const bindBody = bindMatch ? bindMatch[0] : '';
 {
   assert(classifyBody.indexOf('結果入力済') >= 0,
     '理由ラベル「結果入力済」が classify 内に存在');
-  assert(classifyBody.indexOf('入替で再戦') >= 0,
-    '理由ラベル「入替で再戦」が classify 内に存在');
-  assert(classifyBody.indexOf('2人同時入替') >= 0,
-    '理由ラベル「2人同時入替」が classify 内に存在');
+  assert(classifyBody.indexOf('再戦になる') >= 0,
+    '理由ラベル「再戦になる」が classify 内に存在');
+  assert(classifyBody.indexOf('同じ選手') >= 0,
+    '理由ラベル「同じ選手」が classify 内に存在');
 }
 
 // ============================================================
@@ -320,7 +320,7 @@ const bindBody = bindMatch ? bindMatch[0] : '';
     var currentInRole=(role==='p1')?match.p1:match.p2;
     if(candidateId===currentInRole)return {status:'ok',reasonId:null,reasonLabel:''};
     var otherInRole=(role==='p1')?match.p2:match.p1;
-    if(candidateId===otherInRole)return {status:'blocked',reasonId:'R-self',reasonLabel:'2人同時入替'};
+    if(candidateId===otherInRole)return {status:'blocked',reasonId:'R-self',reasonLabel:'同じ選手'};
     var otherIdx=mockFindPairContainingPlayer(cls,candidateId,idx);
     if(otherIdx===-1)return {status:'ok',reasonId:null,reasonLabel:''};
     var otherPair=mockState.pairings[cls][otherIdx];
@@ -329,7 +329,7 @@ const bindBody = bindMatch ? bindMatch[0] : '';
     var droppedFromTarget=(role==='p1')?match.p1:match.p2;
     var Y=(otherPair&&otherPair.p1===candidateId)?otherPair.p2:(otherPair?otherPair.p1:null);
     if(mockPairHasRematch(cls,keepPlayer,candidateId)||(Y&&mockPairHasRematch(cls,droppedFromTarget,Y))){
-      return {status:'blocked',reasonId:'R-rematch-swap',reasonLabel:'入替で再戦'};
+      return {status:'blocked',reasonId:'R-rematch-swap',reasonLabel:'再戦になる'};
     }
     return {status:'ok',reasonId:null,reasonLabel:''};
   }
@@ -347,8 +347,8 @@ const bindBody = bindMatch ? bindMatch[0] : '';
   // 16-b. R-self: role=p1 で候補 = match.p2（同時入替予兆）
   {
     var r=reClassify('A',0,'b','p1');
-    assert(r.status==='blocked' && r.reasonId==='R-self' && r.reasonLabel==='2人同時入替',
-      'role=p1 で候補 = match.p2（b）→ blocked + R-self + "2人同時入替"');
+    assert(r.status==='blocked' && r.reasonId==='R-self' && r.reasonLabel==='同じ選手',
+      'role=p1 で候補 = match.p2（b）→ blocked + R-self + "同じ選手"');
   }
   // 16-c. R-winner-locked: 候補が結果入力済の別ペアに属する
   {
@@ -375,8 +375,8 @@ const bindBody = bindMatch ? bindMatch[0] : '';
     var saved = mockState;
     mockState = rematchState;
     var r=reClassify('A',0,'c','p1');
-    assert(r.status==='blocked' && r.reasonId==='R-rematch-swap' && r.reasonLabel==='入替で再戦',
-      'swap 経路で keepPlayer × X 再戦 → blocked + R-rematch-swap + "入替で再戦"');
+    assert(r.status==='blocked' && r.reasonId==='R-rematch-swap' && r.reasonLabel==='再戦になる',
+      'swap 経路で keepPlayer × X 再戦 → blocked + R-rematch-swap + "再戦になる"');
     mockState = saved;
   }
   // 16-e. 通常 ok: 候補が他ペアに属するが再戦にならない

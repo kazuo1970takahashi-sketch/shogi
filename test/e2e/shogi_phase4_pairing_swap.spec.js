@@ -98,7 +98,7 @@ test.describe('Hotfix Phase 4: pairing change replace + swap', () => {
     await expect(pcOption).toHaveCount(1);
     await expect(pcOption).toBeDisabled();
     await expect(pcOption).toHaveAttribute('data-reason-id', 'R-rematch-swap');
-    await expect(pcOption).toContainText('入替で再戦');
+    await expect(pcOption).toContainText('再戦になる');
     // 「選択できない候補」optgroup 配下にある
     const blockedGroup = page.locator('#chg-p2 optgroup[label="選択できない候補"]');
     await expect(blockedGroup).toHaveCount(1);
