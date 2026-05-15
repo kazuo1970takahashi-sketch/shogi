@@ -389,6 +389,46 @@ function getDuplicatePlayersInPairings(cls){
   return dups;
 }
 
+// PAIRING-UX-MANUAL-CHANGE-CANDIDATE-FILTER-IMPL-LIGHT (PR #108 §9.1):
+//   手動変更モーダルの select 候補を「選択可能 / 選択不可」に事前分類する。
+//   事後判定（bindChangePairingModalEvents）と同じ helper（pairHasRematch /
+//   findPairContainingPlayer）を内部で呼ぶことで、表示と保存時の判定を一致させる。
+//   既存事後判定は安全網として残す（fail-safe）。
+//   role='p1' は先手 select、'p2' は後手 select。現 p1/p2 は status:'ok' 扱いで
+//   reasonId=null（PR #108 §7.1.1 確定）。
+//   戻り値: { status:'ok'|'blocked', reasonId, reasonLabel }
+function classifyChangePairingCandidate(cls, idx, candidateId, role){
+  var pairings=state.pairings&&state.pairings[cls];
+  var match=pairings&&pairings[idx];
+  if(!match)return {status:'blocked',reasonId:'R-invalid',reasonLabel:'選択不可'};
+  var currentInRole=(role==='p1')?match.p1:match.p2;
+  if(candidateId===currentInRole){
+    return {status:'ok',reasonId:null,reasonLabel:''};
+  }
+  var otherInRole=(role==='p1')?match.p2:match.p1;
+  if(candidateId===otherInRole){
+    // 反対側の現在値を同じ役にぶつけると保存時の「同じ選手」/「2 人同時入替」alert に至る。
+    return {status:'blocked',reasonId:'R-self',reasonLabel:'2人同時入替'};
+  }
+  var otherIdx=findPairContainingPlayer(cls,candidateId,idx);
+  if(otherIdx===-1){
+    // replace 経路: 候補が他ペアに属さない。再戦は既存 confirm に任せるため候補側では blocked にしない。
+    return {status:'ok',reasonId:null,reasonLabel:''};
+  }
+  var otherPair=pairings[otherIdx];
+  if(otherPair&&otherPair.winner){
+    return {status:'blocked',reasonId:'R-winner-locked',reasonLabel:'結果入力済'};
+  }
+  // swap 経路: 既存 hard block と同じ条件（keepPlayer-X / droppedFromTarget-Y の双方を判定）
+  var keepPlayer=(role==='p1')?match.p2:match.p1;
+  var droppedFromTarget=(role==='p1')?match.p1:match.p2;
+  var Y=(otherPair&&otherPair.p1===candidateId)?otherPair.p2:(otherPair?otherPair.p1:null);
+  if(pairHasRematch(cls,keepPlayer,candidateId)||(Y&&pairHasRematch(cls,droppedFromTarget,Y))){
+    return {status:'blocked',reasonId:'R-rematch-swap',reasonLabel:'入替で再戦'};
+  }
+  return {status:'ok',reasonId:null,reasonLabel:''};
+}
+
 function normalizeState(raw){
   var base={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''}};
   var s=raw&&typeof raw==='object'?raw:{};
@@ -4687,18 +4727,37 @@ function setWinner(cls,idx,wid){
 }
 
 function buildChangePairingModalHtml(cls, idx, candidates, match){
-  var opts='';
-  for(var i=0;i<candidates.length;i++){
-    // A-4 §3 MF6-a: プルダウン表示も「番号｜名前」フォーマット
-    // A-5.1 §11.8: 番号は entryNoOf 経由（欠番維持された entry_no を反映）
-    var optLabel=entryNoOf(cls,candidates[i].id)+'｜'+candidates[i].name;
-    opts+='<option value="'+candidates[i].id+'"'+(candidates[i].id===match.p1?' selected':'')+'>'+escapeHtml(optLabel)+'</option>';
+  // PAIRING-UX-MANUAL-CHANGE-CANDIDATE-FILTER-IMPL-LIGHT (PR #108 §5.1 / §9.1):
+  //   候補を classifyChangePairingCandidate で事前分類し、native select 内で
+  //   「選択可能」/「選択できない候補」optgroup に分けて出力する。
+  //   選択不可候補は disabled + 短い理由ラベル（「結果入力済」「入替で再戦」「2人同時入替」）。
+  //   現 p1 / p2 は status:'ok' + selected + 非 disabled + 理由ラベルなし（§7.1.1）。
+  //   表示文字列は escapeHtml を通す（個人情報保護）。
+  function buildSelectInner(role,selectedId){
+    var okHtml='',blockedHtml='',okCount=0,blockedCount=0;
+    for(var i=0;i<candidates.length;i++){
+      var c=candidates[i];
+      var clf=classifyChangePairingCandidate(cls,idx,c.id,role);
+      var baseLabel=entryNoOf(cls,c.id)+'｜'+c.name;
+      var sel=(c.id===selectedId)?' selected':'';
+      if(clf.status==='ok'){
+        okHtml+='<option value="'+c.id+'"'+sel+'>'+escapeHtml(baseLabel)+'</option>';
+        okCount++;
+      }else{
+        var blockedLabel=clf.reasonLabel?(baseLabel+'（'+clf.reasonLabel+'）'):baseLabel;
+        blockedHtml+='<option value="'+c.id+'"'+sel+' disabled data-reason-id="'+escapeHtml(clf.reasonId||'')+'">'+escapeHtml(blockedLabel)+'</option>';
+        blockedCount++;
+      }
+    }
+    var inner='';
+    if(okHtml)inner+='<optgroup label="選択可能">'+okHtml+'</optgroup>';
+    if(blockedHtml)inner+='<optgroup label="選択できない候補">'+blockedHtml+'</optgroup>';
+    return {html:inner,okCount:okCount,blockedCount:blockedCount};
   }
-  var opts2='';
-  for(var i=0;i<candidates.length;i++){
-    var optLabel2=entryNoOf(cls,candidates[i].id)+'｜'+candidates[i].name;
-    opts2+='<option value="'+candidates[i].id+'"'+(candidates[i].id===match.p2?' selected':'')+'>'+escapeHtml(optLabel2)+'</option>';
-  }
+  var sel1=buildSelectInner('p1',match.p1);
+  var sel2=buildSelectInner('p2',match.p2);
+  // 現 p1 / p2 は ok に必ず含まれるため、ok>1 で「他に選べる候補あり」を意味する。
+  var hasAlternative=(sel1.okCount>1)||(sel2.okCount>1);
   // PAIRING-UX-MANUAL-CHANGE-ERROR-RECOVERY-IMPL-LIGHT (PR #106 §5.2):
   //   モーダル冒頭に「現在の対局」を読み取り専用で表示し、エラー後でも
   //   元の組み合わせが見える状態を保つ（formatParticipantLabel compact + escapeHtml）。
@@ -4710,6 +4769,15 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
   }
   var currentP1Label=buildChgCurrentLabel(match.p1);
   var currentP2Label=buildChgCurrentLabel(match.p2);
+  // 候補 0 人時の案内（PR #108 §8.2 推奨）と保存ボタン disabled
+  var emptyNoticeHtml=hasAlternative?'':
+    '<div data-chg-empty-notice="1" style="margin-bottom:12px;padding:8px 10px;background:#fff7e6;border:1px solid #f5d490;border-radius:6px;font-size:12px;color:#7a4a00;line-height:1.5">'
+    +'現在の条件では、1人だけ入れ替えできる候補がありません。<br>別の対局を選ぶか、組み合わせ全体を見直してください。'
+    +'</div>';
+  var saveBtnAttr=hasAlternative?'':' disabled';
+  var saveBtnStyle=hasAlternative
+    ?'padding:8px 16px;border-radius:8px;border:none;background:#1F3864;color:#fff;font-size:14px;cursor:pointer'
+    :'padding:8px 16px;border-radius:8px;border:none;background:#bbb;color:#fff;font-size:14px;cursor:not-allowed';
   return '<div style="background:rgba(0,0,0,0.5);position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;display:flex;align-items:center;justify-content:center;" id="chg-modal">'
     +'<div style="background:#fff;border-radius:12px;padding:24px;width:320px;">'
     +'<h3 style="margin-bottom:12px;font-size:16px;color:#1F3864">対戦相手の変更</h3>'
@@ -4719,13 +4787,14 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
     +'<div style="font-size:11px;color:#888;margin:2px 0">対</div>'
     +'<div data-chg-current-role="p2">'+escapeHtml(currentP2Label)+'</div>'
     +'</div>'
+    +emptyNoticeHtml
     +'<div style="margin-bottom:12px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">先手</label>'
-    +'<select id="chg-p1" style="width:100%;height:36px;border:1px solid #ccc;border-radius:8px;font-size:14px">'+opts+'</select></div>'
+    +'<select id="chg-p1" style="width:100%;height:36px;border:1px solid #ccc;border-radius:8px;font-size:14px">'+sel1.html+'</select></div>'
     +'<div style="margin-bottom:20px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">後手</label>'
-    +'<select id="chg-p2" style="width:100%;height:36px;border:1px solid #ccc;border-radius:8px;font-size:14px">'+opts2+'</select></div>'
+    +'<select id="chg-p2" style="width:100%;height:36px;border:1px solid #ccc;border-radius:8px;font-size:14px">'+sel2.html+'</select></div>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end">'
     +'<button onclick="document.getElementById(\'chg-modal\').remove()" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
-    +'<button id="chg-save" style="padding:8px 16px;border-radius:8px;border:none;background:#1F3864;color:#fff;font-size:14px;cursor:pointer">変更を保存</button>'
+    +'<button id="chg-save" style="'+saveBtnStyle+'"'+saveBtnAttr+'>変更を保存</button>'
     +'</div></div></div>';
 }
 
