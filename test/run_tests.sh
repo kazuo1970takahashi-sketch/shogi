@@ -617,6 +617,22 @@ else
 fi
 
 # ============================================
+# RESET-UX-PARTIAL-RESET-IMPL-LIGHT 単体テスト
+# ============================================
+echo ""
+echo "【RESET-UX-PARTIAL-RESET-IMPL-LIGHT】"
+if [ -f "$SCRIPT_DIR/test_reset_ux_partial_reset.js" ]; then
+  if node "$SCRIPT_DIR/test_reset_ux_partial_reset.js" "$TARGET" > /tmp/reset_ux_partial_reset_out.log 2>&1; then
+    ok "PARTIAL-RESET IMPL-LIGHT テスト 全PASS ($(tail -1 /tmp/reset_ux_partial_reset_out.log))"
+  else
+    ng "PARTIAL-RESET IMPL-LIGHT テスト 失敗"
+    cat /tmp/reset_ux_partial_reset_out.log
+  fi
+else
+  warn "test_reset_ux_partial_reset.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
