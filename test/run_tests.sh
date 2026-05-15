@@ -105,8 +105,8 @@ grep -q "再戦になる組み合わせが発生します" "$TARGET" && ok "chan
 grep -q "この組み合わせは過去に対戦済みです" "$TARGET" && ok "changePairing: replace 再戦確認" || ng "replace 再戦確認なし"
 grep -q "function findPairContainingPlayer" "$TARGET" && ok "changePairing: swap helper findPairContainingPlayer 定義" || ng "findPairContainingPlayer 未定義"
 
-# 2-7. removePlayer の保護
-grep -q "進行中の対局に登録されているため削除できません" "$TARGET" && ok "removePlayer: 進行中ブロック" || ng "進行中ブロックなし"
+# 2-7. removePlayer の保護 (PR #116 で文言更新: 「進行中の対局」→「現在の組み合わせ」)
+grep -q "現在の組み合わせに登録されているため削除できません" "$TARGET" && ok "removePlayer: 進行中ブロック" || ng "進行中ブロックなし"
 
 # 2-8. 再生成時の勝敗保護
 grep -q "入力済みの勝敗があります" "$TARGET" && ok "再生成: 勝敗保護確認" || ng "勝敗保護確認なし"
@@ -630,6 +630,22 @@ if [ -f "$SCRIPT_DIR/test_reset_ux_partial_reset.js" ]; then
   fi
 else
   warn "test_reset_ux_partial_reset.js が見つからない"
+fi
+
+# ============================================
+# REMOVE-PLAYER-GUARD-MESSAGE-IMPL-LIGHT 単体テスト
+# ============================================
+echo ""
+echo "【REMOVE-PLAYER-GUARD-MESSAGE-IMPL-LIGHT】"
+if [ -f "$SCRIPT_DIR/test_remove_player_guard_message.js" ]; then
+  if node "$SCRIPT_DIR/test_remove_player_guard_message.js" "$TARGET" > /tmp/remove_player_guard_message_out.log 2>&1; then
+    ok "REMOVE-PLAYER-GUARD-MESSAGE IMPL-LIGHT テスト 全PASS ($(tail -1 /tmp/remove_player_guard_message_out.log))"
+  else
+    ng "REMOVE-PLAYER-GUARD-MESSAGE IMPL-LIGHT テスト 失敗"
+    cat /tmp/remove_player_guard_message_out.log
+  fi
+else
+  warn "test_remove_player_guard_message.js が見つからない"
 fi
 
 # ============================================

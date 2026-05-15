@@ -3766,7 +3766,13 @@ function removePlayer(id,cls){
     if(pm.p1===id||pm.p2===id){inPairings=true;break;}
   }
   if(inPairings){
-    alert(name+'は進行中の対局に登録されているため削除できません。\n\n先に「対戦相手変更」で別の選手に差し替えてから削除してください。');
+    // REMOVE-PLAYER-GUARD-MESSAGE-IMPL-LIGHT (PR #115 §6.4 案 D 一次禁止):
+    //   「現在の組み合わせ」用語に統一し、PR #114 で追加された
+    //   「大会進行データをリセット」(#resetProgressBtn) へも誘導する。
+    //   「対戦相手変更」(soft recovery、results 保持) を第一案として温存。
+    //   「参加者一覧は残したまま、組み合わせ・勝敗結果は削除」を明示し、
+    //   既存 #resetBtn「大会データをリセット」(全リセット) との混同を抑制。
+    alert(name+'は現在の組み合わせに登録されているため削除できません。\n\n別の選手に差し替える場合は「対戦相手変更」を実行してください。\n参加者一覧から削除したい場合は、先に「大会進行データをリセット」を実行してください。\n大会進行データをリセットすると、参加者一覧は残したまま、現在の組み合わせ・勝敗結果は削除されます。');
     return;
   }
   var pastMatches=0;
@@ -3778,7 +3784,12 @@ function removePlayer(id,cls){
   }
   // 大会開始後で過去対局がある参加者は削除禁止（calcFinalがstate.players前提のため、TypeErrorで最終結果タブが落ちる）
   if(state.started&&pastMatches>0){
-    alert(name+'は過去'+pastMatches+'試合分の対戦履歴があるため、大会開始後は削除できません。\n\n誤って登録した場合は「リセット」で大会をやり直してください。');
+    // REMOVE-PLAYER-GUARD-MESSAGE-IMPL-LIGHT (PR #115 §6.4 案 D 二次禁止):
+    //   「対戦履歴」→「勝敗結果」用語統一（state.results 由来であることが
+    //   直感的）/ 「リセット」→「大会進行データをリセット」具体化で
+    //   既存 #resetBtn 誤押下を抑制 / 「参加者一覧は残したまま」明示で
+    //   PR #114 で真実になった内容を伝える（PR #111 §7.3 で書けなかった）。
+    alert(name+'には過去'+pastMatches+'試合分の勝敗結果があるため削除できません。\n\n参加者を削除する場合は、先に「大会進行データをリセット」を実行してください。\n大会進行データをリセットすると、参加者一覧は残したまま、現在の組み合わせ・勝敗結果は削除されます。');
     return;
   }
   var msg=name+'を削除しますか？';

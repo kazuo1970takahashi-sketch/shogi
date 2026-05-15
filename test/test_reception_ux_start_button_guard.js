@@ -216,16 +216,20 @@ assert(idxGenPair > idxGuardCond,
 }
 
 // ============================================================
-// 11) removePlayer() は変更されていない（一次禁止 / 二次禁止 alert が残る）
+// 11) removePlayer() の一次禁止 / 二次禁止 alert + 判定式が残る
+//     (PR #116 REMOVE-PLAYER-GUARD-MESSAGE-IMPL-LIGHT で文言更新済、
+//      ここでは「削除できません」alert 2 箇所と判定式の維持を構造的に保証)
 // ============================================================
 {
   const rmMatch = htmlSrc.match(/function removePlayer\([\s\S]*?\n\}\n/);
   assert(rmMatch !== null, 'removePlayer 関数本体を抽出できる');
   const rmBody = rmMatch ? rmMatch[0] : '';
-  assert(rmBody.indexOf('進行中の対局に登録されているため削除できません') >= 0,
-    'removePlayer 一次禁止 alert が維持されている');
-  assert(rmBody.indexOf('過去') >= 0 && rmBody.indexOf('試合分の対戦履歴があるため、大会開始後は削除できません') >= 0,
-    'removePlayer 二次禁止 alert が維持されている');
+  // 一次禁止 alert: 「現在の組み合わせ」+「削除できません」(PR #115 §6.4 案 D)
+  assert(rmBody.indexOf('現在の組み合わせに登録されているため削除できません') >= 0,
+    'removePlayer 一次禁止 alert が維持されている (PR #116 案 D 文言)');
+  // 二次禁止 alert: 「勝敗結果があるため削除できません」(PR #115 §6.4 案 D)
+  assert(rmBody.indexOf('過去') >= 0 && rmBody.indexOf('試合分の勝敗結果があるため削除できません') >= 0,
+    'removePlayer 二次禁止 alert が維持されている (PR #116 案 D 文言)');
   assert(/state\.started\s*&&\s*pastMatches\s*>\s*0/.test(rmBody),
     'removePlayer 二次禁止条件 (state.started && pastMatches>0) が維持されている');
 }
