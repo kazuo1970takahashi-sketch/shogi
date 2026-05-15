@@ -4699,9 +4699,26 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
     var optLabel2=entryNoOf(cls,candidates[i].id)+'｜'+candidates[i].name;
     opts2+='<option value="'+candidates[i].id+'"'+(candidates[i].id===match.p2?' selected':'')+'>'+escapeHtml(optLabel2)+'</option>';
   }
+  // PAIRING-UX-MANUAL-CHANGE-ERROR-RECOVERY-IMPL-LIGHT (PR #106 §5.2):
+  //   モーダル冒頭に「現在の対局」を読み取り専用で表示し、エラー後でも
+  //   元の組み合わせが見える状態を保つ（formatParticipantLabel compact + escapeHtml）。
+  function buildChgCurrentLabel(pid){
+    var p=null;
+    for(var j=0;j<candidates.length;j++){if(candidates[j].id===pid){p=candidates[j];break;}}
+    if(!p)return cls+'-?? (削除)';
+    return formatParticipantLabel({id:p.id,name:p.name,entry_no:p.entry_no,member:p.member,cls:cls},{mode:'compact'});
+  }
+  var currentP1Label=buildChgCurrentLabel(match.p1);
+  var currentP2Label=buildChgCurrentLabel(match.p2);
   return '<div style="background:rgba(0,0,0,0.5);position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;display:flex;align-items:center;justify-content:center;" id="chg-modal">'
     +'<div style="background:#fff;border-radius:12px;padding:24px;width:320px;">'
-    +'<h3 style="margin-bottom:16px;font-size:16px;color:#1F3864">対戦相手の変更</h3>'
+    +'<h3 style="margin-bottom:12px;font-size:16px;color:#1F3864">対戦相手の変更</h3>'
+    +'<div data-chg-current="1" style="margin-bottom:16px;padding:8px 10px;background:#f5f7fa;border-radius:6px;font-size:13px;color:#333">'
+    +'<div style="font-size:11px;color:#888;margin-bottom:4px">現在の対局</div>'
+    +'<div data-chg-current-role="p1">'+escapeHtml(currentP1Label)+'</div>'
+    +'<div style="font-size:11px;color:#888;margin:2px 0">対</div>'
+    +'<div data-chg-current-role="p2">'+escapeHtml(currentP2Label)+'</div>'
+    +'</div>'
     +'<div style="margin-bottom:12px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">先手</label>'
     +'<select id="chg-p1" style="width:100%;height:36px;border:1px solid #ccc;border-radius:8px;font-size:14px">'+opts+'</select></div>'
     +'<div style="margin-bottom:20px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">後手</label>'
@@ -4719,13 +4736,27 @@ function bindChangePairingModalEvents(cls, idx){
     var match=state.pairings[cls][idx];
     var oldP1=match.p1, oldP2=match.p2;
 
+    // PAIRING-UX-MANUAL-CHANGE-ERROR-RECOVERY-IMPL-LIGHT (PR #106 §5.2 方針 3):
+    //   検証 NG で return する経路で <select> を元の選手 ID へ戻し、
+    //   失敗した選択値がモーダル内に残らないようにする。state.pairings は触らない。
+    function resetSelectsToOriginal(){
+      var s1=document.getElementById('chg-p1');
+      var s2=document.getElementById('chg-p2');
+      if(s1)s1.value=oldP1;
+      if(s2)s2.value=oldP2;
+    }
+
     if(newP1===newP2){alert('同じ選手を先手・後手両方に選べません');return;}
     if(newP1===oldP1 && newP2===oldP2){alert('変更がありません');return;}
 
     var keepPlayer, X;
     if(newP1===oldP1 && newP2!==oldP2){ keepPlayer=oldP1; X=newP2; }
     else if(newP2===oldP2 && newP1!==oldP1){ keepPlayer=oldP2; X=newP1; }
-    else { alert('2 選手同時の変更は対象外です。1 名ずつ変更してください');return; }
+    else {
+      resetSelectsToOriginal();
+      alert('この変更では、2人を同時に入れ替える必要があります。\n現在は1人ずつの変更に対応しています。\n選択を元に戻しました。もう一度、変更したい選手を1人だけ選んでください。');
+      return;
+    }
 
     var otherIdx=findPairContainingPlayer(cls, X, idx);
 
@@ -4738,32 +4769,33 @@ function bindChangePairingModalEvents(cls, idx){
     } else {
       var otherPair=state.pairings[cls][otherIdx];
       if(otherPair.winner){
-        alert('相手ペアが結果入力済みのため swap できません');
+        alert('相手ペアが結果入力済みのため、入れ替えできません');
         return;
       }
       var Y=(otherPair.p1===X)?otherPair.p2:otherPair.p1;
       var droppedFromTarget=(keepPlayer===oldP1)?oldP2:oldP1;
 
       if(pairHasRematch(cls, keepPlayer, X) || pairHasRematch(cls, droppedFromTarget, Y)){
-        alert('swap で再戦が発生します。別の選手を選んでください');
+        resetSelectsToOriginal();
+        alert('この変更を行うと、再戦になる組み合わせが発生します。\n選択を元に戻しました。別の選手を選び直してください。');
         return;
       }
 
       var newOtherP1=(otherPair.p1===X)?droppedFromTarget:otherPair.p1;
       var newOtherP2=(otherPair.p2===X)?droppedFromTarget:otherPair.p2;
 
-      if(!confirm('swap を実行します。\n  ('+getName(oldP1,cls)+'-'+getName(oldP2,cls)+') → ('+getName(newP1,cls)+'-'+getName(newP2,cls)+')\n  ('+getName(otherPair.p1,cls)+'-'+getName(otherPair.p2,cls)+') → ('+getName(newOtherP1,cls)+'-'+getName(newOtherP2,cls)+')\nよろしいですか?'))return;
+      if(!confirm('入れ替えを実行します。\n  ('+getName(oldP1,cls)+'-'+getName(oldP2,cls)+') → ('+getName(newP1,cls)+'-'+getName(newP2,cls)+')\n  ('+getName(otherPair.p1,cls)+'-'+getName(otherPair.p2,cls)+') → ('+getName(newOtherP1,cls)+'-'+getName(newOtherP2,cls)+')\nよろしいですか?'))return;
 
       var backup1=state.pairings[cls][idx];
       var backup2=state.pairings[cls][otherIdx];
-      // A-4 §4: swap で影響を受けた両ペアに lastModifiedBy: 'manual' を付与
+      // A-4 §4: 入れ替えで影響を受けた両ペアに lastModifiedBy: 'manual' を付与
       state.pairings[cls][idx]={p1:newP1,p2:newP2,winner:null,lastModifiedBy:'manual'};
       state.pairings[cls][otherIdx]={p1:newOtherP1,p2:newOtherP2,winner:null,lastModifiedBy:'manual'};
 
       if(getDuplicatePlayersInPairings(cls).length>0){
         state.pairings[cls][idx]=backup1;
         state.pairings[cls][otherIdx]=backup2;
-        alert('内部エラー: swap 後の重複を検出しました。変更を取り消しました');
+        alert('内部エラー: 入れ替え後の重複を検出しました。変更を取り消し、元の組み合わせに戻しました');
         return;
       }
     }

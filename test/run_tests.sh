@@ -100,8 +100,8 @@ grep -q "次の参加者が対局に登録されていません" "$TARGET" && ok
 
 # 2-6. 対戦相手変更の安全機構 (Hotfix Phase 4: replace + swap 自動分岐)
 grep -q "結果入力済みのため変更できません" "$TARGET" && ok "changePairing: 入口 winner 阻止" || ng "入口 winner 阻止なし"
-grep -q "相手ペアが結果入力済みのため swap できません" "$TARGET" && ok "changePairing: swap winner 阻止" || ng "swap winner 阻止なし"
-grep -q "swap で再戦が発生します" "$TARGET" && ok "changePairing: swap 再戦阻止" || ng "swap 再戦阻止なし"
+grep -q "相手ペアが結果入力済みのため、入れ替えできません" "$TARGET" && ok "changePairing: 相手ペア winner 阻止" || ng "相手ペア winner 阻止なし"
+grep -q "再戦になる組み合わせが発生します" "$TARGET" && ok "changePairing: 入れ替え再戦阻止" || ng "入れ替え再戦阻止なし"
 grep -q "この組み合わせは過去に対戦済みです" "$TARGET" && ok "changePairing: replace 再戦確認" || ng "replace 再戦確認なし"
 grep -q "function findPairContainingPlayer" "$TARGET" && ok "changePairing: swap helper findPairContainingPlayer 定義" || ng "findPairContainingPlayer 未定義"
 
@@ -566,6 +566,22 @@ if [ -f "$SCRIPT_DIR/test_pairing_ux_score_list_readability.js" ]; then
   fi
 else
   warn "test_pairing_ux_score_list_readability.js が見つからない"
+fi
+
+# ============================================
+# PAIRING-UX-MANUAL-CHANGE-ERROR-RECOVERY-IMPL-LIGHT 単体テスト
+# ============================================
+echo ""
+echo "【PAIRING-UX-MANUAL-CHANGE-ERROR-RECOVERY-IMPL-LIGHT】"
+if [ -f "$SCRIPT_DIR/test_pairing_ux_manual_change_error_recovery.js" ]; then
+  if node "$SCRIPT_DIR/test_pairing_ux_manual_change_error_recovery.js" "$TARGET" > /tmp/pairing_ux_manual_change_error_recovery_out.log 2>&1; then
+    ok "MANUAL-CHANGE-ERROR-RECOVERY IMPL-LIGHT テスト 全PASS ($(tail -1 /tmp/pairing_ux_manual_change_error_recovery_out.log))"
+  else
+    ng "MANUAL-CHANGE-ERROR-RECOVERY IMPL-LIGHT テスト 失敗"
+    cat /tmp/pairing_ux_manual_change_error_recovery_out.log
+  fi
+else
+  warn "test_pairing_ux_manual_change_error_recovery.js が見つからない"
 fi
 
 # ============================================
