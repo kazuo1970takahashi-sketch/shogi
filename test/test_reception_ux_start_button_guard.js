@@ -11,7 +11,7 @@
 //   - pairing algorithm / generatePairing / Fisher-Yates 未変更
 //   - state.started=true の代入位置（startTournament 内）未変更
 //   - 既存 hasOngoing confirm 経路（fail-safe）未変更
-//   - 既存 #resetBtn の文言「大会データをリセット」未変更
+//   - #resetBtn の文言（PR #118 RESET-UX-FULL-RESET-LABEL-IMPL-LIGHT で「大会データを全リセット」へ更新）
 //
 // 観点:
 //   1. startTournament() に state.started === true guard がある
@@ -19,7 +19,7 @@
 //   3. guard 内で alert が出る
 //   4. alert 文言に主要語句（大会はすでに開始されています / 大会進行データをリセット /
 //      組み合わせ / 勝敗結果 / 参加者一覧は残したまま）が含まれる
-//   5. 既存 #resetBtn の文言「大会データをリセット」がそのまま維持されている
+//   5. #resetBtn の文言（PR #118 で「大会データを全リセット」へ更新）
 //   6. guard 内で return している
 //   7. guard 前後の構造上、state.results = {A:[],B:[]} に到達しない（軽量振る舞い検証）
 //   8. guard 前後の構造上、state.pairings = {A:[],B:[]} に到達しない（軽量振る舞い検証）
@@ -30,7 +30,7 @@
 //  13. 既存 hasOngoing confirm は削除されていない
 //  14. startTournament() の通常開始経路は維持されている
 //  15. state.started = true の代入は startTournament 内に維持されている
-//  16. 「大会データをリセット」が画面ボタン文言と整合（resetBtn）
+//  16. 「大会データを全リセット」(PR #118) が画面ボタン文言（#resetBtn）と整合
 //  17. guard 内で save() / showTab( / renderTournament( を呼んでいない
 
 const fs = require('fs');
@@ -126,12 +126,12 @@ const guardSlice = (sliceEnd > idxGuardCond) ? stBody.substring(idxGuardCond, sl
 }
 
 // ============================================================
-// 16) 「大会データをリセット」が画面ボタン文言（resetBtn）と整合
+// 16) #resetBtn ボタン文言が「大会データを全リセット」（PR #118 で更新）
 // ============================================================
 {
-  // shogi_v4.html L100 に id="resetBtn" の「大会データをリセット」が定義されている
-  assert(/id="resetBtn"[\s\S]{0,200}大会データをリセット/.test(htmlSrc),
-    '画面上の #resetBtn ボタン文言が「大会データをリセット」のまま（alert 誘導語彙と整合）');
+  // shogi_v4.html L100 に id="resetBtn" の「大会データを全リセット」が定義されている
+  assert(/id="resetBtn"[\s\S]{0,200}大会データを全リセット/.test(htmlSrc),
+    '画面上の #resetBtn ボタン文言が「大会データを全リセット」(PR #118)');
 }
 
 // ============================================================

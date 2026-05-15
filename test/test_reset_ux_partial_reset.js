@@ -7,8 +7,8 @@
 //   - resetAll() の仕様 / state.players={A:[],B:[]} 初期化 / 全リセット動線 維持
 //   - removePlayer() の一次禁止 / 二次禁止 / alert 文言 維持
 //   - startTournament() の state.started===true guard 条件 維持
-//   - 既存 #resetBtn 文言「大会データをリセット」維持
-//   - 既存 resetAll() confirm 文言「現在の大会データをリセットします（支部マスタは保持されます）」維持
+//   - 既存 #resetBtn 文言（PR #118 RESET-UX-FULL-RESET-LABEL-IMPL-LIGHT で「大会データを全リセット」へ更新済）
+//   - 既存 resetAll() confirm 文言（PR #118 で「参加者一覧・組み合わせ・勝敗結果を含む大会データをすべてリセットします。\n支部マスタは保持されます。」へ更新済）
 //   - localStorage schema (STORAGE_KEY='shogi_v4' / LEGACY_STORAGE_KEYS / BRANCH_MASTER_KEY) 維持
 //   - pairing algorithm / generatePairing / evaluatePairingQuality 維持
 //   - normalizeState の started 正規化 維持
@@ -35,7 +35,7 @@
 //     15. 内部実装語（支部マスタ / localStorage / state / 局単位）を含まない
 //   既存挙動の不変:
 //     16. resetAll() の players:{A:[],B:[]} 初期化が維持されている
-//     17. 既存 #resetBtn 文言が「大会データをリセット」のまま
+//     17. 既存 #resetBtn 文言（PR #118 で「大会データを全リセット」へ更新）
 //     18. 既存 resetAll() confirm 文言が変更されていない
 //     19. startTournament() guard 条件 state.started===true が維持
 //     20. startTournament() guard alert に新ボタン名「大会進行データをリセット」が含まれる
@@ -205,17 +205,25 @@ assert(/function\s+resetTournamentProgressOnly\s*\(\s*\)\s*\{/.test(htmlSrc),
     'resetAll() 内で players:{A:[],B:[]} 初期化が維持されている (全リセット温存)');
   assert(/started\s*:\s*false/.test(resetBody),
     'resetAll() 内で started:false 初期化が維持されている');
-  // resetAll の confirm 文言が変更されていない
-  assert(resetBody.indexOf('現在の大会データをリセットします（支部マスタは保持されます）') >= 0,
-    'resetAll() の confirm 文言「現在の大会データをリセットします（支部マスタは保持されます）」が維持');
+  // resetAll の confirm 文言（PR #118 で新文言へ更新済、主要語句を assert）
+  assert(resetBody.indexOf('参加者一覧') >= 0,
+    'resetAll() confirm に「参加者一覧」が含まれる (PR #118)');
+  assert(resetBody.indexOf('組み合わせ') >= 0,
+    'resetAll() confirm に「組み合わせ」が含まれる (PR #118)');
+  assert(resetBody.indexOf('勝敗結果') >= 0,
+    'resetAll() confirm に「勝敗結果」が含まれる (PR #118)');
+  assert(resetBody.indexOf('すべてリセット') >= 0,
+    'resetAll() confirm に「すべてリセット」が含まれる (PR #118)');
+  assert(resetBody.indexOf('支部マスタは保持') >= 0,
+    'resetAll() confirm に「支部マスタは保持」が含まれる (PR #118)');
 }
 
 // ============================================================
-// 17) 既存 #resetBtn 文言が「大会データをリセット」のまま
+// 17) 既存 #resetBtn 文言（PR #118 で「大会データを全リセット」へ更新）
 // ============================================================
 {
-  assert(/id="resetBtn"[\s\S]{0,80}>大会データをリセット<\/button>/.test(htmlSrc),
-    '既存 #resetBtn の文言が「大会データをリセット」のまま (IMPL-LIGHT で既存に触れない)');
+  assert(/id="resetBtn"[\s\S]{0,80}>大会データを全リセット<\/button>/.test(htmlSrc),
+    '#resetBtn の文言が「大会データを全リセット」(PR #118 RESET-UX-FULL-RESET-LABEL-IMPL-LIGHT)');
 }
 
 // ============================================================
