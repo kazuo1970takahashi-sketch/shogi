@@ -553,6 +553,22 @@ else
 fi
 
 # ============================================
+# PAIRING-UX-SCORE-LIST-READABILITY-IMPL-LIGHT 単体テスト
+# ============================================
+echo ""
+echo "【PAIRING-UX-SCORE-LIST-READABILITY-IMPL-LIGHT】"
+if [ -f "$SCRIPT_DIR/test_pairing_ux_score_list_readability.js" ]; then
+  if node "$SCRIPT_DIR/test_pairing_ux_score_list_readability.js" "$TARGET" > /tmp/pairing_ux_score_list_readability_out.log 2>&1; then
+    ok "SCORE-LIST-READABILITY IMPL-LIGHT テスト 全PASS ($(tail -1 /tmp/pairing_ux_score_list_readability_out.log))"
+  else
+    ng "SCORE-LIST-READABILITY IMPL-LIGHT テスト 失敗"
+    cat /tmp/pairing_ux_score_list_readability_out.log
+  fi
+else
+  warn "test_pairing_ux_score_list_readability.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
