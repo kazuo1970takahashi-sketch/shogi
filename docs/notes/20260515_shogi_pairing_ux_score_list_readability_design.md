@@ -428,3 +428,128 @@ PR #103 で pairing-card に追加した補助ラベル（`data-pairing-aux="p1"
   - `docs/notes/20260515_shogi_pairing_ux_score_list_readability_design.md`（本ファイル、新規）
   - `HANDOFF.md`（PAIRING-UX-SCORE-LIST-READABILITY-DESIGN ポインタ追加）
 - 変更しないファイル: `shogi_v4.html` / `test/` / `test/e2e/visual_regression.spec.js-snapshots/` / `docs/specs/` / `.github/workflows/` / `package.json` / `package-lock.json` / `playwright.config.js`
+
+---
+
+## 12. IMPL-LIGHT 着地（2026-05-15 追補）
+
+`PAIRING-UX-SCORE-LIST-READABILITY-IMPL-LIGHT` として §8.1 第一候補を実装し、Draft PR で main 反映を予定する。
+
+### 12.1 実装範囲
+
+- ✅ **暫定成績の sort 2 次キー追加**（[`renderTournament`](shogi_v4.html:5067-5079) の比較関数）
+- ✅ **暫定成績カードの番号 / 氏名別要素化**（[`buildScoreGridHtml`](shogi_v4.html:4868)、`.sno` / `.snm` を追加）
+- ✅ **対戦済みリストの並び順明示**（[`buildPlayedHistoryHtml`](shogi_v4.html:4879) 見出しに「（勝数順）」+ 補足文）
+- ✅ CSS 追加（`.score-card .sno` / `.snm`、最小、既存 `.sname` ルールは温存）
+- ❌ **対戦済みリスト独自並び順** 未実装（§4.2 候補 A + C のまま、§7 第二候補へ）
+- ❌ **切替 UI** 未実装（§4.2 候補 D、過剰回避）
+- ❌ `formatParticipantLabel` API / `getNameWithNo` / 既存 `.sname` 削除 すべて行わない
+
+### 12.2 採用した sort 比較関数
+
+```js
+var sorted=players.slice().sort(function(a,b){
+  var winDiff=(wins[b.id]||0)-(wins[a.id]||0);
+  if(winDiff!==0)return winDiff;
+  var ea=(a&&typeof a.entry_no==='number'&&a.entry_no>0)?a.entry_no:Infinity;
+  var eb=(b&&typeof b.entry_no==='number'&&b.entry_no>0)?b.entry_no:Infinity;
+  return ea-eb;
+});
+```
+
+- **1 次キー**: `wins desc`（既存挙動と同じ）
+- **2 次キー**: `entry_no asc`
+- **entry_no fallback**: 未設定 / 0 / 負値 / 非 number は `Infinity` で末尾送り
+- `generatePairing()` 側の sort（[shogi_v4.html:4580](shogi_v4.html:4580)、ランダム化前段）は **対象外**（ペアリング algorithm の意図的ランダム化を維持）
+
+### 12.3 採用した score-card 構造
+
+```html
+<div class="score-card">
+  <div class="sno">A-12</div>        <!-- 新規: 番号、nowrap -->
+  <div class="snm">山田太郎</div>     <!-- 新規: 氏名、word-break:break-word -->
+  <div class="swins">2</div>          <!-- 既存: 大数字、未変更 -->
+  <div style="font-size:11px;color:#888">2勝0敗</div>  <!-- 既存: 小記録、未変更 -->
+</div>
+```
+
+- 番号書式: `cls + '-' + entryNoOf(cls, p.id)` = `'A-12'`（PR #103 pairing-card 補助ラベルと整合）
+- 氏名: `getName(p.id, cls)` を直接呼出
+- 両方 `escapeHtml()` 経由（XSS 防止、既存流儀踏襲）
+- 既存 `.sname` CSS ルールは **削除せず温存**（dead code 化するが他箇所への影響回避）
+
+### 12.4 採用した対戦済みリスト見出し
+
+```html
+<h3>対戦済みリスト<span ...>（勝数順）</span></h3>
+<div ...>※ 暫定成績と同じ勝数順で表示しています。対戦相手はラウンド順です。</div>
+```
+
+- 並び順は **暫定成績と sorted 共有のまま**（変更なし）
+- 「勝数順」明示 + 対戦相手タグが「ラウンド順」であることも併記
+- 切替 UI / 独自 sort は **追加しない**
+
+### 12.5 CSS 追加
+
+```css
+.score-card .sno{font-size:11px;color:#1F3864;font-weight:500;white-space:nowrap;margin-bottom:2px}
+.score-card .snm{font-size:12px;font-weight:500;line-height:1.3;word-break:break-word;margin-bottom:2px}
+```
+
+- 最小限の 2 ルールのみ。`.sname` ルール（既存）は温存
+- `.sno` は `nowrap` で番号が折り返さない
+- `.snm` は `word-break:break-word` で長い氏名のみ折り返し許容
+- `.score-grid` / `.score-card` のレイアウトは **未変更**
+
+### 12.6 不変項目
+
+- ✅ `getName()` ([231](shogi_v4.html:231)) / `getNameWithNo()` ([277](shogi_v4.html:277)) / `entryNoOf()` ([243](shogi_v4.html:243)) / `formatParticipantLabel()` 本体 **未変更**
+- ✅ `getNameWithNo` の他 callsite（変更モーダル / 対戦履歴行頭 / 過去結果 等）は **未改修**（全置換していない）
+- ✅ `evaluatePairingQuality()` ([4384](shogi_v4.html:4384)) / `warning object` 構造 **未変更**
+- ✅ pairing-card 補助ラベル（`data-pairing-aux="p1"`/`"p2"`、PR #103）**未変更**
+- ✅ `generatePairing()` 内 sort（L4580）/ ランダム化ロジック **未変更**
+- ✅ `state.players[cls]` 配列順の物理改変なし（sort は浅いコピーに限定）
+- ✅ `calcFinal` / `renderResults` / `printResults` **未変更**
+- ✅ `buildPastResultsHtml` / `buildCurrentPairingsHtml` 主要構造 **未変更**
+- ✅ 既存 `.sname` CSS ルール **温存**（dead code 化、削除せず）
+- ✅ forbidden files (`docs/specs/` / `.github/workflows/` / `package*.json` / `playwright.config.js`) 未変更
+
+### 12.7 追加テスト
+
+- 新規ファイル: `test/test_pairing_ux_score_list_readability.js`
+- `test/run_tests.sh` に起動 stanza 追加
+- **54 アサート全 PASS**:
+  - 構造: `renderTournament` 比較関数 / `buildScoreGridHtml` `.sno` `.snm` 出力 / `buildPlayedHistoryHtml` 見出し / CSS ルール / `entryNoOf` `getName` 直接呼出 / `escapeHtml` 経由
+  - 不変項目: pairing-card 補助ラベル / `evaluatePairingQuality` 戻り値 / 既存 helper / `generatePairing` ランダム化 / `getNameWithNo` 全置換していない（呼出 12 件残存）
+  - 切替 UI 追加なし / 対戦済みリスト独自 sort 追加なし
+  - **振る舞いテスト** 4 件: 同勝数違い → wins desc / 同勝数 → entry_no asc / entry_no 未設定 → 末尾 / entry_no 不正値（0）→ 末尾
+- 既存 + 新規合わせて **全 71 アサート PASS**（70 → 71、+54 新規、stanza 1 追加）
+
+### 12.8 Visual Regression 影響
+
+- **影響あり想定**: 暫定成績カードの構造変化（`.sname` 1 要素 → `.sno` + `.snm` 2 要素）により、score-card 内のレイアウトが微妙に変化（番号と氏名が確実に別行）
+- 旧 baseline では `getNameWithNo()` の文字列が `.sname` 1 行で表示（一部端末で折り返し）
+- 新 baseline では `.sno`（番号、nowrap）+ `.snm`（氏名）の 2 行構造
+- **Draft PR 作成後、CI の E2E / Visual Regression を確認**。red の場合は **自律更新せず、ユーザー判断を仰ぐ**（PR #103 の流れに従う）
+
+### 12.9 次タスク候補
+
+§7 の優先順位は維持:
+
+| 順位 | 候補 | 起点条件 |
+|---|---|---|
+| 第一 | **運用観察** | 暫定成績カードの新表示が現場で読みやすいか / 同勝数内 entry_no 順が予測可能か / スマホ表示で破綻しないか |
+| 第二 | `PAIRING-UX-PLAYED-LIST-ORDER-IMPL-LIGHT` | 対戦済みリストを独自に番号順化したい需要が出た場合 |
+| 第三 | `PAIRING-UX-DISPLAY-LABELS-IMPL-LIGHT` | 「対戦相手の変更」モーダル option / 行内表示の helper 化（独立進行可）|
+
+### 12.10 変更ファイル（本 IMPL-LIGHT PR）
+
+- `shogi_v4.html`:
+  - CSS（`.score-card .sno` / `.snm` 追加）
+  - `renderTournament` sort 比較関数 2 段化
+  - `buildScoreGridHtml` `.sname` → `.sno` + `.snm`
+  - `buildPlayedHistoryHtml` 見出し「（勝数順）」+ 補足文
+- `test/test_pairing_ux_score_list_readability.js`（新規、54 アサート）
+- `test/run_tests.sh` — 起動 stanza 追加
+- `docs/notes/20260515_shogi_pairing_ux_score_list_readability_design.md` — 本 §12 追補
+- `HANDOFF.md` — IMPL-LIGHT ポインタ追加

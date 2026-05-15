@@ -50,6 +50,10 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .score-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:6px;margin-bottom:12px}
 .score-card{background:#f0f4f8;border-radius:8px;padding:8px 6px;text-align:center}
 .score-card .sname{font-weight:500;font-size:12px}
+/* PAIRING-UX-SCORE-LIST-READABILITY-IMPL-LIGHT (PR #104 §3.2 案 B):
+   暫定成績カードで番号と氏名を別行表示するための class。 */
+.score-card .sno{font-size:11px;color:#1F3864;font-weight:500;white-space:nowrap;margin-bottom:2px}
+.score-card .snm{font-size:12px;font-weight:500;line-height:1.3;word-break:break-word;margin-bottom:2px}
 .score-card .swins{font-size:22px;font-weight:bold;color:#1F3864}
 .badge{display:inline-block;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:500}
 .b1{background:#FAC775;color:#633806}
@@ -4870,14 +4874,28 @@ function buildScoreGridHtml(cls, sorted, wins){
   for(var i=0;i<sorted.length;i++){
     var p=sorted[i];var w=wins[p.id]||0;
     var total=0;for(var r=0;r<state.results[cls].length;r++){for(var m=0;m<state.results[cls][r].length;m++){var mm=state.results[cls][r][m];if(mm.p1===p.id||mm.p2===p.id)total++;}}
-    html+='<div class="score-card"><div class="sname">'+escapeHtml(getNameWithNo(p.id,cls))+'</div><div class="swins">'+w+'</div><div style="font-size:11px;color:#888">'+w+'勝'+(total-w)+'敗</div></div>';
+    // PAIRING-UX-SCORE-LIST-READABILITY-IMPL-LIGHT (PR #104 §3.2 案 B):
+    //   番号 (A-12) と氏名 (山田太郎) を別要素 (.sno / .snm) で別行表示。
+    //   getNameWithNo の単一文字列だと .sname の word-break 未指定で番号と氏名が
+    //   任意位置で折り返される問題を解消。書式は PR #103 pairing-card 補助ラベル
+    //   (A-12 山田太郎（2勝0敗）) と整合。
+    var snoLabel=cls+'-'+entryNoOf(cls,p.id);
+    var snmLabel=getName(p.id,cls);
+    html+='<div class="score-card"><div class="sno">'+escapeHtml(snoLabel)+'</div><div class="snm">'+escapeHtml(snmLabel)+'</div><div class="swins">'+w+'</div><div style="font-size:11px;color:#888">'+w+'勝'+(total-w)+'敗</div></div>';
   }
   html+='</div>';
   return html;
 }
 
 function buildPlayedHistoryHtml(cls, sorted, played){
-  var html='<h3>対戦済みリスト</h3><div style="margin-bottom:12px">';
+  // PAIRING-UX-SCORE-LIST-READABILITY-IMPL-LIGHT (PR #104 §4.2 候補 A + C):
+  //   暫定成績と sorted を共有しているため、対戦済みリストも勝数順 +
+  //   同勝数内エントリー番号順となる。並び順を見出しと補足で明示。
+  //   対戦相手タグは renderTournament の played[] 構築順 = ラウンド順を維持。
+  //   切替 UI / 独自並び順は IMPL-LIGHT 範囲外。
+  var html='<h3>対戦済みリスト<span style="font-size:11px;font-weight:normal;color:#888;margin-left:8px">（勝数順）</span></h3>';
+  html+='<div style="font-size:11px;color:#888;margin-bottom:6px">※ 暫定成績と同じ勝数順で表示しています。対戦相手はラウンド順です。</div>';
+  html+='<div style="margin-bottom:12px">';
   for(var i=0;i<sorted.length;i++){
     var p=sorted[i];
     var tags='';
@@ -5064,7 +5082,19 @@ function renderTournament(cls){
   var wins=getWins(cls);
   var done=state.results[cls].length>=state.rounds;
   var roundNum=state.results[cls].length+1;
-  var sorted=players.slice().sort(function(a,b){return (wins[b.id]||0)-(wins[a.id]||0);});
+  // PAIRING-UX-SCORE-LIST-READABILITY-IMPL-LIGHT (PR #104 §4.1 候補 C):
+  //   暫定成績の並び順を「勝数降順 + 同勝数内エントリー番号順」に明示する。
+  //   1 次キー: wins desc / 2 次キー: entry_no asc。
+  //   entry_no が未設定 / 不正の場合は Infinity にして末尾へ送る（fallback）。
+  //   buildPlayedHistoryHtml と sorted を共有しているため、対戦済みリストも同じ並び順となる。
+  //   generatePairing() 側の sorted（L4580、ランダム化前段）は対象外。
+  var sorted=players.slice().sort(function(a,b){
+    var winDiff=(wins[b.id]||0)-(wins[a.id]||0);
+    if(winDiff!==0)return winDiff;
+    var ea=(a&&typeof a.entry_no==='number'&&a.entry_no>0)?a.entry_no:Infinity;
+    var eb=(b&&typeof b.entry_no==='number'&&b.entry_no>0)?b.entry_no:Infinity;
+    return ea-eb;
+  });
 
   var played={};
   for(var i=0;i<players.length;i++)played[players[i].id]=[];
