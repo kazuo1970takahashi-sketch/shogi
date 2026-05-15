@@ -408,7 +408,7 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
   var otherInRole=(role==='p1')?match.p2:match.p1;
   if(candidateId===otherInRole){
     // 反対側の現在値を同じ役にぶつけると保存時の「同じ選手」/「2 人同時入替」alert に至る。
-    return {status:'blocked',reasonId:'R-self',reasonLabel:'2人同時入替'};
+    return {status:'blocked',reasonId:'R-self',reasonLabel:'同じ選手'};
   }
   var otherIdx=findPairContainingPlayer(cls,candidateId,idx);
   if(otherIdx===-1){
@@ -424,7 +424,7 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
   var droppedFromTarget=(role==='p1')?match.p1:match.p2;
   var Y=(otherPair&&otherPair.p1===candidateId)?otherPair.p2:(otherPair?otherPair.p1:null);
   if(pairHasRematch(cls,keepPlayer,candidateId)||(Y&&pairHasRematch(cls,droppedFromTarget,Y))){
-    return {status:'blocked',reasonId:'R-rematch-swap',reasonLabel:'入替で再戦'};
+    return {status:'blocked',reasonId:'R-rematch-swap',reasonLabel:'再戦になる'};
   }
   return {status:'ok',reasonId:null,reasonLabel:''};
 }
@@ -4730,7 +4730,7 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
   // PAIRING-UX-MANUAL-CHANGE-CANDIDATE-FILTER-IMPL-LIGHT (PR #108 §5.1 / §9.1):
   //   候補を classifyChangePairingCandidate で事前分類し、native select 内で
   //   「選択可能」/「選択できない候補」optgroup に分けて出力する。
-  //   選択不可候補は disabled + 短い理由ラベル（「結果入力済」「入替で再戦」「2人同時入替」）。
+  //   選択不可候補は disabled + 短い理由ラベル（「結果入力済」「再戦になる」「同じ選手」）。
   //   現 p1 / p2 は status:'ok' + selected + 非 disabled + 理由ラベルなし（§7.1.1）。
   //   表示文字列は escapeHtml を通す（個人情報保護）。
   function buildSelectInner(role,selectedId){
