@@ -774,3 +774,76 @@ option label に理由を含めるとき、**必ず `escapeHtml(label + '（' + 
   - `docs/notes/20260515_shogi_pairing_ux_manual_change_candidate_filter_design.md`（本ファイル、新規）
   - `HANDOFF.md`（PAIRING-UX-MANUAL-CHANGE-CANDIDATE-FILTER-DESIGN ポインタ追加）
 - 変更しないファイル: `shogi_v4.html` / `test/` / `test/e2e/visual_regression.spec.js-snapshots/` / `docs/specs/` / `.github/workflows/` / `package.json` / `package-lock.json` / `playwright.config.js`
+
+---
+
+## 17. IMPL-LIGHT 着地メモ（追記）
+
+**Task ID**: `PAIRING-UX-MANUAL-CHANGE-CANDIDATE-FILTER-IMPL-LIGHT`
+**HEAD**: PR #108 squash merge 後の main（`132684f`）から派生
+
+### 17.1 実装内容
+
+1. **`classifyChangePairingCandidate(cls, idx, candidateId, role)` 新設**
+   - 場所: `pairHasRematch` / `findPairContainingPlayer` / `getDuplicatePlayersInPairings` の直後
+   - 戻り値型: `{ status: 'ok' | 'blocked', reasonId: null | 'R-self' | 'R-winner-locked' | 'R-rematch-swap' | 'R-invalid', reasonLabel: string }`
+   - 内部で `pairHasRematch` / `findPairContainingPlayer` を呼ぶ（既存事後判定と同一 helper を共有）
+   - **`R-current` は導入しない**（§7.1.1 確定通り。現 p1 / p2 は `status:'ok'` + `reasonId:null` + `reasonLabel:''`）
+
+2. **`buildChangePairingModalHtml` を optgroup 2 段に刷新**
+   - `buildSelectInner(role, selectedId)` 内部 helper で候補を分類
+   - `<optgroup label="選択可能">` / `<optgroup label="選択できない候補">` に分離
+   - 選択可能候補は通常 option（現 p1 / p2 は `selected` 付与）
+   - 選択不可候補は `disabled` 属性 + `data-reason-id="R-..."` + 短い理由ラベル付与
+   - 理由ラベルは `（結果入力済）` / `（入替で再戦）` / `（2人同時入替）` の 3 種類（8〜12 文字）
+   - すべて `escapeHtml` 経由（個人情報保護）
+
+3. **候補 0 人時の案内 + 保存ボタン disabled**
+   - `hasAlternative = (sel1.okCount > 1) || (sel2.okCount > 1)` で判定
+   - 現 p1 / p2 は常に ok に含まれるため、ok > 1 で「他に選べる候補あり」を意味する
+   - 該当時は `data-chg-empty-notice="1"` の薄黄ブロックを「現在の対局」表示直下に挿入
+   - 文言は §8.2 案 B 寄り: 「現在の条件では、1人だけ入れ替えできる候補がありません。別の対局を選ぶか、組み合わせ全体を見直してください。」
+   - 「変更を保存」ボタンに `disabled` + グレースタイル（`cursor:not-allowed`）
+
+4. **既存事後判定は安全網としてそのまま温存**
+   - `bindChangePairingModalEvents` の click handler は無変更
+   - PR #107 の `resetSelectsToOriginal` / 「現在の対局」表示 / 改善文言 すべて維持
+   - 既存 alert / confirm（変更がありません / 同じ選手 / 2人同時入替 / 結果入力済 / 再戦 / 内部エラー rollback）も全て残存
+   - `state.pairings` の代入位置 / `save()` / `renderTournament(cls)` の呼出設計 未変更
+
+### 17.2 設計との差分
+
+- **replace 再戦は候補表示側で扱わない**（PR #108 §3.4 末尾の通り、IMPL-LIGHT では swap 再戦のみ disabled）
+  - `classifyChangePairingCandidate` の `otherIdx === -1` 分岐は `status:'ok'` を返し、replace 再戦は **既存 confirm に任せる**
+  - selectable optgroup に `（選ぶと再戦）` 注釈は付与しない（実装簡略化のため後続観察送り）
+- それ以外は PR #108 設計どおり
+
+### 17.3 R-current の扱い（再確認）
+
+- 戻り値型に `R-current` は出現しない
+- `shogi_v4.html` 全体で `'R-current'` 文字列ゼロ（テストで担保）
+- 現 p1 / p2 は `status:'ok'` + `selected` + 非 disabled + 理由ラベルなし
+- 差分なし保存は既存 `alert('変更がありません')` に任せる（候補フィルタ側で別 alert を出さない）
+
+### 17.4 テスト
+
+- 新規: `test/test_pairing_ux_manual_change_candidate_filter.js`（73 アサート PASS）
+  - 静的検査: 関数定義 / optgroup 構造 / disabled / 理由ラベル / escapeHtml / data-chg-empty-notice / 保存ボタン disabled
+  - PR #107 温存項目: data-chg-current / resetSelectsToOriginal / 既存 alert 文言
+  - 不変項目: evaluatePairingQuality / generatePairing / pairing-card 補助ラベル / score-card .sno/.snm / 既存 helper 定義
+  - 振る舞いテスト: `classifyChangePairingCandidate` を再現実装（mock state）で 7 ケース検証
+- `test/run_tests.sh` に stanza 追加
+- 既存 72 + 新規 1 = **全 73 stanza PASS**
+
+### 17.5 Visual Regression 影響見込み
+
+- モーダル open 状態は既存 VRT スイートで撮っていない（要確認）
+- red になった場合は **自律 snapshot 更新せず、判断を仰ぐ**
+- スマホ実機確認は **後続観察フェーズ**（disabled option / optgroup の picker 表示が読みやすいか、案 A 縮退が必要か）
+
+### 17.6 後続観察ポイント
+
+- disabled option / optgroup の iOS Safari / Android Chrome / iPad Safari での視認性
+- 「2人同時入替」が事前 disabled で表示される頻度（事後 alert への到達回数の減少）
+- 候補 0 人案内の発動頻度
+- 必要なら `IMPL-MEDIUM` でもう片方の `<select>` の change イベントによる動的再計算、または案 A 縮退（下部理由リスト併記）へ

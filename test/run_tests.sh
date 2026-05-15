@@ -585,6 +585,22 @@ else
 fi
 
 # ============================================
+# PAIRING-UX-MANUAL-CHANGE-CANDIDATE-FILTER-IMPL-LIGHT 単体テスト
+# ============================================
+echo ""
+echo "【PAIRING-UX-MANUAL-CHANGE-CANDIDATE-FILTER-IMPL-LIGHT】"
+if [ -f "$SCRIPT_DIR/test_pairing_ux_manual_change_candidate_filter.js" ]; then
+  if node "$SCRIPT_DIR/test_pairing_ux_manual_change_candidate_filter.js" "$TARGET" > /tmp/pairing_ux_manual_change_candidate_filter_out.log 2>&1; then
+    ok "MANUAL-CHANGE-CANDIDATE-FILTER IMPL-LIGHT テスト 全PASS ($(tail -1 /tmp/pairing_ux_manual_change_candidate_filter_out.log))"
+  else
+    ng "MANUAL-CHANGE-CANDIDATE-FILTER IMPL-LIGHT テスト 失敗"
+    cat /tmp/pairing_ux_manual_change_candidate_filter_out.log
+  fi
+else
+  warn "test_pairing_ux_manual_change_candidate_filter.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
