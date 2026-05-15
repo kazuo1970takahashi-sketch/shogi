@@ -105,7 +105,7 @@ function resetAll(){
 |---|---|---|
 | 1 | `resetAll()` が実際に何を消すか | `state` 全体を初期構造に再代入 + `STORAGE_KEY`/`LEGACY_STORAGE_KEYS` の localStorage 削除 + DOM 一部 clear + 開きっぱなしモーダル close |
 | 2 | `state.players` を消すか | **消す**（`{A:[],B:[]}` に置換、entry_no / member_id / member / grade すべて喪失） |
-| 3 | `state.pairings` / `state.results` / `state.round` / `state.started` | **`pairings={A:[],B:[]}` / `results={A:[],B:[]}` / `started=false` に再代入**。**`state.round` は存在しない**（state 構造に round 単数フィールドなし）。`rounds`（複数）は `4` に戻る |
+| 3 | `state.pairings` / `state.results` / `state.round` / `state.started` | **`pairings={A:[],B:[]}` / `results={A:[],B:[]}` / `started=false` に再代入**。**`state.round`（単数）は存在しない**（state 構造に round 単数フィールドなし、現在ラウンドは `state.results[cls].length` から導出）。**`state.rounds`（複数）は存在する** = 大会の設定値 / 最大局数相当のフィールドであり、現行 `resetAll()` は `4` に戻す |
 | 4 | `pastMatches` / `history` の扱い | **`state.pastMatches` / `state.history` は存在しない**。`pastMatches` は [`removePlayer`](../../shogi_v4.html) 内の **ローカル変数**（`state.results` を走査して集計）。「過去対戦履歴」は `state.results` がそのまま唯一の真理源 |
 | 5 | 支部マスタ / 会員マスタ | **`shogi_branch_master`（`BRANCH_MASTER_KEY`、[L576](../../shogi_v4.html)）は保持**（resetAll コード内に「絶対に消さない」コメント明示、[L5908](../../shogi_v4.html)）。支部マスタ = 会員マスタ（単一支部運営前提、members 配列を含む単一 master） |
 | 6 | `resetAll()` 後の localStorage | `STORAGE_KEY`(`shogi_v4`) / `LEGACY_STORAGE_KEYS`(`shogi_v3`) は削除済 / `BRANCH_MASTER_KEY`(`shogi_branch_master`) は **そのまま** / 次回 `save()` 呼出までは `shogi_v4` キーが localStorage に存在しない状態 |
@@ -132,7 +132,9 @@ var state = {
 
 加えて [`normalizeState`](../../shogi_v4.html) ([L432-488](../../shogi_v4.html)) は **`tournament_id`**（支部マスタ連携用、F2）を JSON load 時に保持する仕様。これは `resetAll` 後の初期 state には付与されない（明示的に `state` を再代入で潰すため）。
 
-**重要**: タスク §2 / §8 で言及されている `state.round` / `state.pastMatches` / `state.history` / `state.branches` / `state.master` 等は **本アプリの state には存在しない**。これらは将来想定の概念であり、設計時に「ある前提」で議論しない。
+**重要**: タスク §2 / §8 で言及されている `state.round`（単数）/ `state.pastMatches` / `state.history` / `state.branches` / `state.master` 等は **本アプリの state には存在しない**。これらは将来想定の概念であり、設計時に「ある前提」で議論しない。
+
+**注意（混同回避）**: 似た名前の **`state.rounds`（複数形）は実在する**（[L212](../../shogi_v4.html) 初期値 `4` / [L433](../../shogi_v4.html) normalize / [L435](../../shogi_v4.html) `Number(s.rounds)||4`）。本ドキュメントで「`state.round` は存在しない」と書くときは **単数形** を指す。`state.rounds`（複数）= **大会の設定値 / 最大局数相当**であり、後述 §6 で部分リセットの取扱を別途検討する。
 
 ### 3.4 [`startTournament`](../../shogi_v4.html) ([L4429-4490](../../shogi_v4.html))（PR #112 着地後）
 
@@ -374,8 +376,12 @@ function removePlayer(id,cls){
 | 支部員区分 | `players[i].member` | `'member'` / `'other'` |
 | 年齢区分 | `players[i].grade` | `'ippan'` / `'chu'` |
 | 支部マスタ連携 ID | `players[i].member_id` | F2、未付与なら不在 |
+| **大会識別子** | **`state.tournament_id`** | F2 支部マスタ連携用、`normalizeState` [L486](../../shogi_v4.html) で JSON load 時に保持。**部分リセットでは「同じ大会の参加者を残したまま進行データだけやり直す」操作のため tournament_id も維持**（消すと「同一大会内の進行リセット」と「別大会作成」の区別が曖昧になる）|
 
-**`state.tournament_id`** は支部マスタ連携用（F2、`normalizeState` [L486](../../shogi_v4.html)）。部分リセットでは **残す**（参加者リストと紐付くため）。全リセットでは **消す**。
+**部分リセットで `state.tournament_id` を残す理由**（PR #113 review 指摘）:
+- 部分リセットは「同一大会の進行データをやり直す」操作であって「別大会を作る」操作ではない
+- `tournament_id` を消すと、後続の支部マスタ連携処理（attendance_count 集計や tournament_ids union）で別大会扱いされる可能性があり、運営者の意図と乖離する
+- 全リセットは「別大会を始める」想定なので、`tournament_id` も消える方が自然（既存 `resetAll` 挙動と一致）
 
 **「参加者番号 / クラス別番号を維持するか」**（タスク §8 確認項目）: **維持する**。`entry_no` は欠番維持の永続フィールドであり、部分リセットでは触らない。物理 index 順も `state.players[cls]` 配列を **そのまま保持** するため変動しない。
 
@@ -385,49 +391,61 @@ function removePlayer(id,cls){
 |---|---|---|
 | 組み合わせ | `state.pairings.A` / `state.pairings.B` | `[]` |
 | 結果 | `state.results.A` / `state.results.B` | `[]` |
-| ラウンド最大値設定 | `state.rounds`（複数形）| **4 に戻す**（資料 §6.2、`resetAll` と同じ。明示初期化しないと旧大会設定が漏れる）|
 | 開始フラグ | `state.started` | `false` |
-| 大会報告書入力 | `state.report` | **要検討**（§6.4） |
-| _pendingNewYomi 等 | `_pendingNewYomi` / `_yomiAutoBuffer` / `_yomiManuallyEdited` | **要検討**（§6.5） |
+
+**§6.3 / §6.4 / §6.5 で個別検討する境界項目**:
+- ラウンド最大値設定 `state.rounds`（複数形、**実在**）→ §6.3 で「**残す**」推奨へ修正（PR #113 review 指摘）
+- 大会報告書入力 `state.report` → §6.4 で「**残す**」推奨へ修正（同上）
+- `_pendingNewYomi` / `_yomiAutoBuffer` / `_yomiManuallyEdited`（参加者編集バッファ）→ §6.5 で「**残す**」推奨へ修正（同上）
 
 **注意**:
 - タスク §8 の「`state.history` / `state.pastMatches`」は **実体不在**。`pastMatches` は `removePlayer` 内のローカル変数であり、`state.results` を空にすれば自動的に 0 集計になる
-- タスク §8 の「`state.round`（単数）」も **実体不在**。`state.rounds`（複数、ラウンド最大値設定）は存在し、デフォルト 4。部分リセットで `4` に戻すか、運用上の最終設定値を **残すか** は運営判断（§6.3）
+- タスク §8 の「`state.round`（単数）」も **実体不在**。一方、似た名前の **`state.rounds`（複数）は実在** = 大会の設定値であり、部分リセットでは **残す**（§6.3）
 - pairing quality / warning / manual change 状態は **derived（再計算）**。`buildCurrentPairingsHtml` 呼出時に `evaluatePairingQuality()` がその場で評価するため、永続化された state は無い → 部分リセットでも明示削除不要
 
 ### 6.3 `state.rounds`（ラウンド最大値設定）の扱い
 
+**PR #113 review 指摘により推奨を反転**: `state.rounds` は **存在する** 大会設定値であり、部分リセットでは **残す** ことを推奨。
+
 | 案 | 内容 | メリット | デメリット |
 |---|---|---|---|
-| **R1** | 部分リセットで **4 に戻す**（resetAll と同じ） | 安全側、設定再入力で気づける | 直前設定が消える |
-| R2 | 部分リセットで **維持** | 直前設定（例: 3 ラウンド大会）を温存 | 全リセットとの差分が増える、運営者が「設定が変わる / 変わらない」を予測しにくい |
+| R1 | 部分リセットで **4 に戻す**（resetAll と同じ） | 全リセットとの差分最小 | **直前の大会設定が消える**（例: 3 ラウンド設定 → 4 に戻る、運営者にとって意外） |
+| **R2（推奨）** | 部分リセットで **維持** | 直前設定（例: 3 ラウンド大会）を温存、運営者が再入力不要 | 全リセットとの差分が 1 項目増える |
 
-**第一推奨: R1（resetAll と揃える）**。理由:
-- 部分リセットの動機は「組み合わせを作り直す」であり、ラウンド数も再確認したい場面が多い
-- `state.rounds` の編集 UI は限定的（[`docs/specs/`](../../docs/specs/) は本タスクで参照不可）、設定再入力コストは低い
-- 全リセットとの差分を最小化することで運営者の混乱を抑える
+**第一推奨: R2（維持）**。理由（PR #113 review）:
+- `state.rounds` は **大会の設定値 / 最大局数相当** であり、参加者・大会識別子と同じく「大会単位」の情報
+- 部分リセットは「同じ大会の進行をやり直す」操作のため、ラウンド数も同じ大会のものとして維持する方が自然
+- 「組み合わせを作り直す」だけなのに、設定したラウンド数が初期値（4）に戻るのは運営者にとって意外
+- 全リセットとの差分は許容（全リセットは「別大会を始める」想定なので 4 へ初期化が自然）
 
 ### 6.4 `state.report`（大会報告書入力）の扱い
 
+**PR #113 review 指摘により推奨を反転**: `state.report` は **同じ大会** の報告書入力情報であり、部分リセットでは **残す** ことを推奨。
+
 | 案 | 内容 | 評価 |
 |---|---|---|
-| **R1** | 部分リセットで **初期値に戻す**（resetAll と同じ） | 全リセットとの差分最小、誤入力混入防止 |
-| R2 | 部分リセットで **維持** | 報告書入力を続けたい場合に便利だが、参加者継続前提のため矛盾しやすい |
+| R1 | 部分リセットで **初期値に戻す**（resetAll と同じ） | 全リセットとの差分最小、ただし運営者の入力（日付・場所・会長名等）が消える |
+| **R2（推奨）** | 部分リセットで **維持** | 報告書入力（日付・場所・会長名・申し送り等）を残せる、参加者継続と整合 |
 | R3 | 部分リセットで **`date` のみ維持** | 細かい場合分け、IMPL-LIGHT には重い |
 
-**第一推奨: R1**。理由:
-- `state.report` は大会報告書（PDF 出力）入力欄であり、参加者を残しても「現在の進行データ報告書」は無意味
-- DOM 側（rep-date / rep-place / rep-start / rep-end / rep-sei / rep-fuku / rep-note）の clear ロジックを `resetAll` から流用できる
-- IMPL-LIGHT の helper 抽出が容易（state 再代入 1 行で済む）
+**第一推奨: R2（維持）**。理由（PR #113 review）:
+- `state.report` は大会報告書（PDF 出力）入力欄 = **大会単位** の情報
+- 部分リセットは「同じ大会」前提のため、報告書入力も維持する方が一貫
+- DOM 側（rep-date / rep-place / 等）も clear しない（helper の処理量が減る、`resetAll` 流用の必要なし）
 
 ### 6.5 `_pendingNewYomi` / `_yomiAutoBuffer` / `_yomiManuallyEdited` の扱い
 
+**PR #113 review 指摘により推奨を反転**: 参加者を残すため、参加者編集バッファも **残す** ことを推奨。
+
 | 案 | 内容 | 評価 |
 |---|---|---|
-| **R1** | 部分リセットで **`_pendingNewYomi` / `_yomiAutoBuffer` / `_yomiManuallyEdited` 全て初期化**（resetAll と同じ） | 安全側、`_pendingNewYomi` は参加者追加時の **新規メンバー候補** バッファ（[A-4 §3.1.4](../../docs/specs/) 相当）であり、参加者継続でも新規追加バッファは流す方が一貫 |
-| R2 | `_pendingNewYomi` のみ維持 | 既存参加者の id にぶら下がる buffer のため維持可能だが、部分リセットの動機（やり直し）と整合しにくい |
+| R1 | 部分リセットで **`_pendingNewYomi` / `_yomiAutoBuffer` / `_yomiManuallyEdited` 全て初期化**（resetAll と同じ） | 安全側だが、参加者継続中に「新規メンバー候補 yomi バッファ」がリセットされるのは運営者にとって意外 |
+| **R2（推奨）** | **`_pendingNewYomi` / `_yomiAutoBuffer` / `_yomiManuallyEdited` を維持** | 参加者編集バッファ = 参加者と紐づく情報のため、参加者を残すなら整合する |
 
-**第一推奨: R1**。
+**第一推奨: R2（維持）**。理由（PR #113 review）:
+- `_pendingNewYomi` は参加者追加時の **新規メンバー候補** バッファ（参加者の id にぶら下がる）
+- 参加者を残す部分リセットでは、これらバッファも同じ大会の状態として維持する方が一貫
+- IMPL-LIGHT で helper が触らないことで実装も簡潔（1 行減る）
 
 ### 6.6 C. マスタデータ（部分リセットでも全リセットでも **残す**）
 
@@ -439,13 +457,17 @@ function removePlayer(id,cls){
 
 **マスタデータを消す動線は導入しない**。誤って消す事故を避けるため、UI からマスタを消すボタンは追加しない（§11 リスク）。
 
-### 6.7 サマリ表
+### 6.7 サマリ表（PR #113 review 反映版）
 
 | カテゴリ | 例 | 部分リセット | 全リセット |
 |---|---|---|---|
-| **A. 参加者データ** | `state.players` / entry_no / member_id / member / grade / `tournament_id` | **残す** | 消す |
-| **B. 大会進行データ** | `state.pairings` / `state.results` / `state.started` / `state.rounds` / `state.report` / `_pendingNewYomi` 等 | **消す** | 消す |
+| **A. 参加者データ / 大会単位データ** | `state.players` / `entry_no` / `member_id` / `member` / `grade` / **`state.tournament_id`** / **`state.rounds`** / **`state.report`** / **`_pendingNewYomi`** / `_yomiAutoBuffer` / `_yomiManuallyEdited` | **残す** | 消す |
+| **B. 大会進行データ（局単位）** | `state.pairings` / `state.results` / `state.started` | **消す** | 消す |
 | **C. マスタデータ** | `shogi_branch_master` | **残す** | **残す** |
+
+**A カテゴリの解釈**: 「大会単位の情報」は部分リセットで残す。`state.rounds`（最大局数）/ `state.report`（報告書入力）/ `state.tournament_id`（支部マスタ連携）/ `_pendingNewYomi`（参加者編集バッファ）はすべて **同一大会内で継続使用される情報** であり、参加者を残すなら同時に維持する方が運営者の意図と整合する。
+
+**B カテゴリ**: 「局単位の情報」のみ部分リセットで消す。`state.pairings`（現在の組み合わせ）/ `state.results`（勝敗結果）/ `state.started`（開始フラグ）の 3 つに絞られる。
 
 ---
 
@@ -472,6 +494,12 @@ function removePlayer(id,cls){
 - 「進行データ」「全リセット」概念の理解が要
 
 **判定方針**: IMPL-LIGHT で C-2 を採用する場合は **VRT / E2E への波及が大きい**（`#resetBtn` 文言変更 → header VRT + E2E locator）。**まず C-1 で着地し、運用観察後に C-2 化を IMPL-MEDIUM で起票** する段階方式が安全。
+
+**PR #113 review 反映の運用**:
+- IMPL-LIGHT は **既存 `#resetBtn` の文言を変更しない**（§10.2、既存に触れない方針）
+- IMPL-LIGHT で新規ボタンに採用する文言は **C-1 / C-2 / C-3 の新規ボタン側のみ**（既存ボタン側ラベルは「大会データをリセット」のまま）
+- 「全リセット」概念は新規ボタンの押下時 confirm 文言と PR #112 alert 文言で表現
+- 既存 `#resetBtn` 側のラベル更新（「大会データを全リセット」など）は IMPL-MEDIUM 以降に送る
 
 #### destructive スタイル
 
@@ -502,6 +530,8 @@ function removePlayer(id,cls){
 
 **第一推奨: F-1**。F-2 はクロスリファレンスが過剰（IMPL-LIGHT には冗長、IMPL-MEDIUM で観察後追加可）。
 
+**注意（PR #113 review 反映）**: 既存 `resetAll` の confirm 文言更新は **IMPL-LIGHT スコープ外**（既存に触れない方針、§10.2）。F-1 の採用は IMPL-MEDIUM 以降に送る。IMPL-LIGHT 時点では既存 confirm 文言「現在の大会データをリセットします（支部マスタは保持されます）」をそのまま温存する。
+
 ### 7.3 ボタン配置
 
 現行: header 上部、保存 / 読込 / **大会データをリセット** が並ぶ（[`shogi_v4.html` L100](../../shogi_v4.html) 周辺）。
@@ -526,31 +556,32 @@ function removePlayer(id,cls){
 
 ---
 
-## 8. 部分リセットのデータ処理仕様
+## 8. 部分リセットのデータ処理仕様（PR #113 review 反映版）
 
 §6 の分類に従って、IMPL-LIGHT 時の挙動を仕様化する。
 
-### 8.1 残すもの（A. 参加者データ）
+### 8.1 残すもの（A. 参加者データ / 大会単位データ）
 
 | 項目 | IMPL-LIGHT の処理 |
 |---|---|
 | `state.players` 配列（A/B 両クラス）| **そのまま保持**（配列参照を保持、要素を一切変更しない） |
 | `entry_no` / `member` / `grade` / `member_id` | 当然保持（players 要素のフィールド） |
-| `state.tournament_id` | 保持（支部マスタ連携） |
+| **`state.tournament_id`** | **保持**（支部マスタ連携、§6.1 review 反映） |
+| **`state.rounds`** | **保持**（大会設定値 / 最大局数、§6.3 R2 review 反映）|
+| **`state.report`** | **保持**（大会報告書入力、§6.4 R2 review 反映）|
+| **`_pendingNewYomi`** / `_yomiAutoBuffer` / `_yomiManuallyEdited` | **保持**（参加者編集バッファ、§6.5 R2 review 反映）|
 
-### 8.2 消すもの（B. 大会進行データ）
+### 8.2 消すもの（B. 大会進行データ / 局単位データ）
 
 | 項目 | IMPL-LIGHT の処理 |
 |---|---|
 | `state.pairings.A` / `state.pairings.B` | `[]` に再代入 |
 | `state.results.A` / `state.results.B` | `[]` に再代入 |
 | `state.started` | `false` に再代入 |
-| `state.rounds` | `4` に再代入（§6.3 R1） |
-| `state.report` | `{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''}` に再代入（§6.4 R1） |
-| `_pendingNewYomi` / `_yomiAutoBuffer` / `_yomiManuallyEdited` | `{}` / `''` / `false` にリセット（§6.5 R1） |
 | 大会タブ DOM 表示 | `pane-A` / `pane-B` / `result-A` / `result-B` の `innerHTML=''` |
-| 大会報告書 DOM | `rep-date` / `rep-place` / `rep-start` / `rep-end` / `rep-sei` / `rep-fuku` / `rep-note` を初期値に reset |
 | 開きっぱなしモーダル | `bulk-edit-modal` / `edit-past-modal` / `chg-modal` / `load-modal` を `remove`（resetAll と同じ） |
+
+**注意**: `state.report` を維持するため、**大会報告書 DOM (`rep-date` / `rep-place` / 等) の clear は行わない**（§6.4 R2 review 反映）。
 
 ### 8.3 残すもの（C. マスタデータ）
 
@@ -563,9 +594,9 @@ function removePlayer(id,cls){
 | 項目 | IMPL-LIGHT の処理 |
 |---|---|
 | `save()` | 呼ぶ（参加者保持後の state を localStorage に反映） |
-| `renderRegList()` | 呼ぶ（参加者一覧を再描画） |
+| `renderRegList()` | 呼ぶ（参加者一覧を再描画。タスク §11 の `renderPlayers()` は本アプリで `renderRegList()` 相当） |
 | `renderTournament(cls)` | 呼ばない（pane-A/B は innerHTML='' で clear するため） |
-| `showTab('reg')` | 呼ぶ（参加者登録タブへ遷移、resetAll と同じ） |
+| `showTab('reg')` | 呼ぶ（参加者登録タブへ遷移、resetAll と同じ。タスク §11 の `showTab('reception')` は本アプリで `showTab('reg')` 相当） |
 | `showMsg(...)` | `'進行データをリセットしました'` などを `'ok'` で表示 |
 
 ### 8.5 確認項目（タスク §8）への回答
@@ -574,7 +605,7 @@ function removePlayer(id,cls){
 |---|---|---|
 | 1 | `state.pastMatches` を消すべきか | **state にフィールドなし**。`pastMatches` は `removePlayer` 内ローカル変数。`state.results` を空にすれば自動的に 0 集計 |
 | 2 | `state.history` を消すべきか | **state にフィールドなし**。「対戦履歴」の真理源は `state.results` |
-| 3 | `state.round` を 1 / 0 / 維持 | **state.round（単数）は存在しない**。`state.rounds`（複数、最大値設定）は §6.3 R1 で `4` に戻す |
+| 3 | `state.round` を 1 / 0 / 維持 | **state.round（単数）は存在しない**（現在ラウンドは `state.results[cls].length` から導出）。**`state.rounds`（複数）は実在** = 大会設定値、§6.3 R2（PR #113 review 反映）で **維持** |
 | 4 | `state.started` を false にするのは確定でよいか | **確定**（PR #112 ガードと整合、`removePlayer` 二次禁止も自然解除） |
 | 5 | `state.players` 内の no / class number を維持するか | **維持**（entry_no 欠番維持、配列順も触らない） |
 | 6 | 受付番号 / クラス別番号を維持するか | **維持**（同上） |
@@ -602,13 +633,35 @@ if(state.started===true){
 
 #### 9.1.1 alert 文言の更新案
 
+**PR #113 review 指摘**: PR #112 の現行 alert は「大会データをリセット」（= 現行 `resetAll`、参加者も消える）を案内している。部分リセット導入後は、誘導先を **部分リセットに寄せ**、参加者一覧が残ることを明示できる。**IMPL-LIGHT の必須スコープ** として alert 文言更新を含める。
+
+##### 9.1.1.1 部分リセット中心型（推奨：参加者一覧は残る点を強調できる）
+
+部分リセットがあれば「参加者一覧は残ります」と書ける（PR #111 §7.3 で書けなかった内容）:
+
 | 案 | alert 文言 | 評価 |
 |---|---|---|
-| **G-1（推奨）**| `大会はすでに開始されています。\n参加者を変更する場合は「組み合わせ・勝敗をリセット」または「大会データを全リセット」を実行してください。\nどちらも、現在の組み合わせ・勝敗結果は削除されます。\n参加者を残したい場合は「組み合わせ・勝敗をリセット」を使ってください。` | 正確、長い |
-| G-2 | `大会はすでに開始されています。\n組み合わせを作り直すには「組み合わせ・勝敗をリセット」を実行してください。\n参加者ごと最初からやり直すには「大会データを全リセット」を実行してください。` | UC1 / UC3 を明示分離 |
-| G-3（最小変更）| 現行 alert を維持し、本タスクで触らない | IMPL-LIGHT 簡潔、ただし誘導先と新ボタンの対応が不明瞭 |
+| **H-1（推奨）**| `大会はすでに開始されています。\n参加者を変更する場合は、先に「大会進行データをリセット」を実行してください。\n大会進行データをリセットすると、参加者一覧は残したまま、現在の組み合わせ・勝敗結果は削除されます。` | C-1 ボタン名（§7.1）と整合、参加者一覧維持を明示 |
+| H-2 | `大会はすでに開始されています。\n参加者を変更する場合は、先に「組み合わせ・勝敗をリセット」を実行してください。\n参加者一覧は残ります。` | C-2 ボタン名（§7.1）と整合、最短 |
 
-**判定方針**: IMPL-LIGHT では **G-2 推奨**。理由は §7.1 推奨 C-1 / C-2 のいずれを採用してもボタン名を取り込んだ alert で運営者に「2 つの選択肢」を提示できる。G-3 は次善（観察後 IMPL-MEDIUM で更新）。
+##### 9.1.1.2 2 ボタン明示型（参考：従来の検討案）
+
+| 案 | alert 文言 | 評価 |
+|---|---|---|
+| G-1 | `大会はすでに開始されています。\n参加者を変更する場合は「組み合わせ・勝敗をリセット」または「大会データを全リセット」を実行してください。\nどちらも、現在の組み合わせ・勝敗結果は削除されます。\n参加者を残したい場合は「組み合わせ・勝敗をリセット」を使ってください。` | 正確、長い |
+| G-2 | `大会はすでに開始されています。\n組み合わせを作り直すには「組み合わせ・勝敗をリセット」を実行してください。\n参加者ごと最初からやり直すには「大会データを全リセット」を実行してください。` | UC1 / UC3 を明示分離 |
+| G-3（最小変更）| 現行 alert を維持し、本タスクで触らない | IMPL-LIGHT 簡潔、ただし誘導先と新ボタンの対応が不明瞭、PR #113 review 指摘で **非推奨** |
+
+##### 9.1.1.3 判定
+
+**IMPL-LIGHT 推奨 = H-1**（PR #113 review 反映）。理由:
+- 部分リセットを主要誘導先に据え、参加者一覧維持を明示できる（PR #111 §7.3 で書けなかった「参加者一覧は残ります」が部分リセット導入により真実になる）
+- §7.1 推奨 C-1「大会進行データをリセット」/「大会データを全リセット」と語彙整合
+- 全リセットに触れず簡潔（運営者は通常 UC1 が主目的、UC3 はボタンを見れば分かる）
+
+§7.1 で C-2 を採用する場合は **H-2** に切替。
+
+**注意**: alert 文言の確定はボタン名（§7.1 C-1 / C-2）の確定とセットで扱う。IMPL-LIGHT 着手前に運営者最終確認。
 
 ### 9.2 removePlayer 整合
 
@@ -656,52 +709,65 @@ if(state.started===true){
 
 ### 9.4 部分リセット後の `tournament_id` 扱い
 
-`tournament_id` は支部マスタ連携用識別子（F2）で、`normalizeState` で load 時のみ保持される。
+**PR #113 review 指摘により方針確定**: `tournament_id` は支部マスタ連携用識別子（F2）で、`normalizeState` で load 時のみ保持される。**部分リセットでは必ず維持** する。
 
 | 案 | 内容 | 評価 |
 |---|---|---|
-| **T-1**（推奨）| 部分リセットで **保持** | 同じ参加者リストを継続するため tournament_id を維持する方が一貫 |
-| T-2 | 部分リセットで **削除** | 「進行データを完全に新規」と捉える場合は削除、ただし参加者保持と矛盾 |
+| **T-1（確定）**| 部分リセットで **保持** | 「同一大会の進行データをやり直す」操作のため tournament_id を維持する方が一貫。消すと支部マスタ連携処理（attendance_count / tournament_ids union）で別大会扱いされる懸念 |
+| T-2 | 部分リセットで **削除** | 「進行データを完全に新規」と捉える場合は削除、**ただし参加者保持と矛盾** → 採用しない |
 
-**第一推奨: T-1**。IMPL-LIGHT 時は `state.tournament_id` に触らない実装で十分。
+**確定: T-1（維持）**。IMPL-LIGHT 時は `state.tournament_id` に触らない実装で十分。§8.1 で「残すもの」として明記済。
 
 ---
 
-## 10. IMPL-LIGHT 候補（後続）
+## 10. IMPL-LIGHT 候補（後続、PR #113 review 反映版）
 
-### 10.1 含める
+### 10.1 含める（やる）
 
 - 新規 helper [`resetTournamentProgressOnly()`](../../shogi_v4.html)（仮）を `resetAll` 近傍に追加
-  - `state.players` / `state.tournament_id` を **触らない**
-  - `state.pairings` / `state.results` / `state.started` / `state.rounds` / `state.report` を初期化
-  - `_pendingNewYomi` / `_yomiAutoBuffer` / `_yomiManuallyEdited` を初期化
-  - 開きっぱなしモーダル close（既存 `resetAll` と同じ）
-  - 大会タブ DOM clear（`pane-A` / `pane-B` / `result-A` / `result-B`）
-  - 大会報告書 DOM reset（`rep-*`）
-  - `renderRegList()` / `showTab('reg')` / `save()` 呼出
+  - **以下を維持（触らない）**:
+    - `state.players` 配列・要素すべて
+    - `state.tournament_id`
+    - `state.rounds`（§6.3 R2 review 反映）
+    - `state.report`（§6.4 R2 review 反映）
+    - `_pendingNewYomi` / `_yomiAutoBuffer` / `_yomiManuallyEdited`（§6.5 R2 review 反映）
+    - `shogi_branch_master`（localStorage）
+  - **以下を初期化（消す）**:
+    - `state.pairings = {A:[],B:[]}`
+    - `state.results = {A:[],B:[]}`
+    - `state.started = false`
+  - 開きっぱなしモーダル close（既存 `resetAll` と同じ：`bulk-edit-modal` / `edit-past-modal` / `chg-modal` / `load-modal`）
+  - 大会タブ DOM clear（`pane-A` / `pane-B` / `result-A` / `result-B` の `innerHTML=''`）
+  - **大会報告書 DOM (`rep-*`) は clear しない**（`state.report` を維持するため、§6.4 review 反映）
+  - `save()` 呼出（localStorage に新 state を反映）
+  - `renderRegList()` 呼出（参加者一覧再描画。タスク §11 の `renderPlayers()` 相当）
+  - `showTab('reg')` 呼出（参加者登録タブへ遷移。タスク §11 の `showTab('reception')` 相当）
   - `showMsg('進行データをリセットしました','ok')`
 - 新規ボタン `#resetProgressBtn`（仮）を header に追加
   - 表示文言: §7.1 推奨 C-1「大会進行データをリセット」または C-2「組み合わせ・勝敗をリセット」（**実装時に運営者最終確認**）
   - `.btn-danger` 系スタイル
   - bind: `bindHeaderEvents` 内に `addEventListener('click', resetTournamentProgressOnly)`
-- 既存 `#resetBtn` 文言更新（C-1 採用なら「大会データを全リセット」、C-2 なら「参加者も含めて全リセット」）
-- 既存 `resetAll` confirm 文言を §7.2 F-1 推奨に更新
-- 部分リセット confirm 文言は §7.2 P-3 推奨
-- PR #112 alert 文言を §9.1.1 G-2 案に更新
+  - 押下時 confirm 文言 §7.2 P-3 推奨を表示
+- **PR #112 startTournament guard alert 文言を新ボタン名に同期**（PR #113 review 必須スコープ、§9.1.1 H-1 推奨）
+  - 例: 「大会はすでに開始されています。\n参加者を変更する場合は、先に「大会進行データをリセット」を実行してください。\n大会進行データをリセットすると、参加者一覧は残したまま、現在の組み合わせ・勝敗結果は削除されます。」
+  - alert 文言の確定はボタン名（C-1 / C-2）の確定とセット
 - 軽量テスト追加（`test/test_reset_ux_partial_reset.js`）
-  - 静的検査: helper 存在、ボタン bind、§8.2 で `state.players` に触らないこと、PR #112 guard 整合
-  - 振る舞いテスト（軽量 mock）: 部分リセット後の state 形状、`removePlayer` 整合、startTournament 再実行可能性
+  - 静的検査: helper 存在 / ボタン bind / 「触らない」項目（`state.players` / `state.tournament_id` / `state.rounds` / `state.report` / `_pendingNewYomi` / `_yomiAutoBuffer` / `_yomiManuallyEdited`）への代入が helper 内に **存在しない** こと / `BRANCH_MASTER_KEY` 参照なし / PR #112 guard 整合 / alert 文言更新
+  - 振る舞いテスト（軽量 mock）: 部分リセット後の state 形状 / `removePlayer` 整合 / `startTournament` 再実行可能性 / `resetAll` 既存挙動維持
 - `test/run_tests.sh` に stanza 追加
 - HANDOFF.md 更新（実装着地サマリ）
 
-### 10.2 含めない（IMPL-MEDIUM 以降の余地）
+### 10.2 含めない（やらない、IMPL-MEDIUM 以降の余地）
 
-- 案 D `resetAll` 仕様の破壊的変更
-- 案 E モーダル選択
+- **既存 `resetAll()` 関数の仕様変更（案 D）**（PR #113 review 反映、IMPL-LIGHT では既存全リセット挙動を温存）
+- **既存全リセット動線の削除**（PR #113 review、温存方針）
+- **既存 `resetAll()` 改名 / 既存 `#resetBtn` 文言変更 / 既存 `resetAll` confirm 文言変更**（PR #113 review 反映、既存に触れない方針 — §7.1 C-1 / C-2 のうち **既存側ラベル更新は IMPL-MEDIUM へ送る**。IMPL-LIGHT は新規ボタンの追加と PR #112 alert 同期更新のみ）
+- 案 E モーダル選択（再開始ウィザード相当）
+- 大会開始ボタン disabled 化
 - 大会履歴保存（過去大会を別領域に退避）
 - undo / redo
-- 部分リセットで `state.rounds` を維持する（§6.3 R2）
-- 部分リセットで `state.report` の `date` のみ維持（§6.4 R3）
+- 部分リセットで `state.rounds` を再度初期化する（§6.3 R1 を採用しない）
+- 部分リセットで `state.report` の `date` のみ維持する（§6.4 R3）
 - 参加者番号の再採番
 - 支部マスタ / 会員マスタの変更
 - pairing algorithm / Fisher-Yates / `evaluatePairingQuality` 変更
@@ -710,9 +776,9 @@ if(state.started===true){
 - DISPLAY-LABELS-IMPL-LIGHT / WARNING Phase 2〜4
 - VRT snapshot 自律更新 / threshold 緩和
 
-### 10.3 想定変更ファイル（IMPL-LIGHT）
+### 10.3 想定変更ファイル（IMPL-LIGHT、PR #113 review 反映版）
 
-- `shogi_v4.html`（+40〜80 行、helper / DOM ボタン / bind / 既存 alert / confirm 文言更新）
+- `shogi_v4.html`（+30〜60 行、helper / 新規ボタン DOM / bind / PR #112 alert 文言更新のみ、**既存 `#resetBtn` 文言・`resetAll` confirm は変更しない**）
 - `test/test_reset_ux_partial_reset.js`（新規、+120〜200 行）
 - `test/run_tests.sh`（+10 行 stanza）
 - `HANDOFF.md`（+1 行 entry）
@@ -725,40 +791,52 @@ if(state.started===true){
 - `package.json` / `package-lock.json`
 - `playwright.config.js`
 - `docs/specs/`
-- VRT snapshot（**`#resetBtn` 文言変更・新ボタン追加で red になる可能性高**、その場合は自律更新せずユーザー判断を仰ぐ）
-- `test/e2e/`（既存 E2E は未開始 state からのシナリオ中心で影響なし見込み、`resetAll` を呼ぶ E2E があれば文言更新追従が要）
+- VRT snapshot（新ボタン追加で red になる可能性あり、その場合は自律更新せずユーザー判断を仰ぐ）
+- `test/e2e/`（既存 E2E は未開始 state からのシナリオ中心で影響なし見込み、PR #112 alert を locator として持つ E2E があれば追従更新）
 
 ---
 
-## 11. テスト方針
+## 11. テスト方針（PR #113 review 反映版）
 
 ### 11.1 静的検査（最小）
 
 - helper `resetTournamentProgressOnly` が存在
-- `state.players` への代入が **helper 内に存在しない**（player 配列の参照保持を保証）
-- `state.tournament_id` への代入が **helper 内に存在しない**
+- **以下への代入が helper 内に存在しない**（「触らない」項目の保証）:
+  - `state.players`
+  - `state.tournament_id`
+  - `state.rounds`（§6.3 R2 review 反映）
+  - `state.report`（§6.4 R2 review 反映）
+  - `_pendingNewYomi` / `_yomiAutoBuffer` / `_yomiManuallyEdited`（§6.5 R2 review 反映）
 - helper 内に `state.pairings={A:[],B:[]}` / `state.results={A:[],B:[]}` / `state.started=false` の再代入が存在
-- helper 内に `state.rounds=4` / `state.report=...` の再代入が存在
 - helper 内に `localStorage.removeItem(BRANCH_MASTER_KEY)` が **存在しない**
+- helper 内に `rep-*` 系 DOM の `value=''` 代入が **存在しない**（`state.report` 維持と整合）
 - 新規ボタン `#resetProgressBtn`（仮）が DOM に存在 / `bindHeaderEvents` 内で `click` bind されている
 - 既存 `resetAll()` は §6.6 のとおり `state.players={A:[],B:[]}` を引き続き行う（破壊変更なし）
-- PR #112 `startTournament` guard 内の alert 文言を §9.1.1 G-2 へ更新した場合、「組み合わせ・勝敗をリセット」「大会データを全リセット」の **両ボタン名** が含まれる
-- confirm 文言が §7.2 推奨と一致
+- 既存 `#resetBtn` の文言は変更されていない（IMPL-LIGHT で既存ボタンに触れない方針、§10.2）
+- 既存 `resetAll()` confirm 文言は変更されていない（同上）
+- **PR #112 `startTournament` guard 内の alert 文言が §9.1.1 H-1（または H-2）に更新済**（PR #113 review 必須）
+  - alert 文言に新ボタン名（C-1 採用なら「大会進行データをリセット」、C-2 なら「組み合わせ・勝敗をリセット」）が含まれる
+  - alert 文言に「参加者一覧は残ります」相当が含まれる（参加者保持が真実になったため）
+- confirm 文言が §7.2 P-3 推奨と一致
 - 既存 `STORAGE_KEY` / `LEGACY_STORAGE_KEYS` / `BRANCH_MASTER_KEY` / `normalizeState` 不変
 
 ### 11.2 振る舞いテスト（軽量 mock）
 
 ```
-1. players=[A:2人,B:2人], started=true, pairings.A=[ペア1], results.A=[[R1勝敗]]
+1. players=[A:2人,B:2人], started=true, pairings.A=[ペア1], results.A=[[R1勝敗]],
+   rounds=3, report.date='2026-05-15', tournament_id='t_abc', _pendingNewYomi={...}
    → resetTournamentProgressOnly()
    → players.A.length===2 / .B.length===2（保持）
    → pairings={A:[],B:[]} / results={A:[],B:[]} / started===false
-   → rounds===4 / report===初期値
-   → tournament_id 維持（あれば）
+   → rounds===3（維持、PR #113 review §6.3 R2）
+   → report.date==='2026-05-15'（維持、§6.4 R2）
+   → tournament_id==='t_abc'（維持、§6.1 review）
+   → _pendingNewYomi の中身が維持（§6.5 R2）
 
 2. 上記 1 直後、startTournament() を呼ぶ
    → PR #112 guard をすり抜け、通常開始経路通過
    → started===true / pairings.A.length>0
+   → rounds===3 が引き続き有効（再開始でも維持）
 
 3. 上記 1 直後、removePlayer(any_player_id, 'A')
    → 一次禁止 alert なし / 二次禁止 alert なし
@@ -768,30 +846,34 @@ if(state.started===true){
    → 既に空でも実行可能、副作用なし（players 維持、他は初期化済のまま）
 
 5. resetAll() を呼ぶ
-   → players={A:[],B:[]} / 既存挙動と一致（破壊変更なし）
+   → players={A:[],B:[]} / rounds===4 / report===初期値 / tournament_id 削除 / _pendingNewYomi={}
+   → 既存挙動と一致（破壊変更なし）
 
 6. resetTournamentProgressOnly 後の save() で localStorage[STORAGE_KEY] が新 state を反映
    → JSON.parse(localStorage[STORAGE_KEY]).players.A.length===2
+   → JSON.parse(localStorage[STORAGE_KEY]).rounds===3（維持確認）
+   → JSON.parse(localStorage[STORAGE_KEY]).tournament_id==='t_abc'（維持確認）
 
 7. resetTournamentProgressOnly 前後で localStorage[BRANCH_MASTER_KEY] が不変
 ```
 
 ### 11.3 既存テスト退行確認
 
-- `test/test_reception_ux_start_button_guard.js`（PR #112 着地、guard 文言更新時は期待値更新が要）
+- `test/test_reception_ux_start_button_guard.js`（**PR #112 alert 文言更新で期待値更新が要**、PR #113 review 必須スコープに含まれる）
 - `test/test_pairing_ux_*` 各種（`resetAll` を呼ばない、影響なし見込み）
 - `test/test_save_ux_parse_load_003.js`（state restore 系、影響なし）
 - `test/test_branch_master.js`（`BRANCH_MASTER_KEY` 不変、影響なし）
 
 ### 11.4 E2E
 
-- 既存 E2E への影響は **`resetAll` を呼ぶシナリオの文言追従** のみ見込み
-- 必要なら追加 1 ケース: 「開始後に部分リセット → 参加者リスト維持 → `removePlayer` 可能 → `startTournament` 再実行」
-- VRT は **本タスクで自律更新しない**（header 文言・ボタン追加で red の可能性高、判断を仰ぐ）
+- 既存 E2E への影響は **PR #112 alert 文言を locator に持つテストの追従** のみ見込み（`大会データをリセット` 文字列を expect していれば新ボタン名へ更新）
+- 必要なら追加 1 ケース: 「開始後に部分リセット → 参加者リスト維持 → `state.rounds` / `state.report` 維持 → `removePlayer` 可能 → `startTournament` 再実行」
+- VRT は **本タスクで自律更新しない**（新ボタン追加で red の可能性、判断を仰ぐ）
 
 ### 11.5 VRT
 
-- `#resetBtn` 文言変更 / 新ボタン追加 → header VRT snapshot が **mismatch する見込み**
+- 新ボタン追加 → header VRT snapshot が **mismatch する可能性**
+- ただし IMPL-LIGHT は **既存 `#resetBtn` 文言を変更しない** ため、影響は新ボタン分のみ（PR #113 review 反映、§10.2）
 - IMPL-LIGHT 着地時に red の場合は **自律 snapshot 更新せず、判断を仰ぐ**（PR #105 / #109 の流れ）
 - 新ボタンの色・サイズは `.btn-danger` を継承、新規 CSS 不要
 
@@ -847,19 +929,22 @@ if(state.started===true){
 ### 13.1 推奨案: **案 C（進行データリセット追加）**
 
 - `state.players` を残して進行データだけ消す **新規 helper** を追加
-- 既存 `resetAll()` は **全リセット** として温存（仕様変更なし、文言のみ更新）
-- ボタン 2 個構成、文言は §7.1 C-1 で着地（C-2 化は観察後 IMPL-MEDIUM）
+- **`state.rounds` / `state.report` / `state.tournament_id` / `_pendingNewYomi` も維持**（PR #113 review 反映、§6.7 サマリ表）
+- 既存 `resetAll()` は **全リセット** として温存（仕様変更なし、IMPL-LIGHT では既存ボタン文言・confirm 文言も触らない）
+- ボタン 2 個構成、新規ボタン文言は §7.1 C-1 / C-2 を運営者最終確認で選択（既存ボタン側ラベル更新は IMPL-MEDIUM へ）
 
-### 13.2 IMPL-LIGHT 進行プラン
+### 13.2 IMPL-LIGHT 進行プラン（PR #113 review 反映）
 
 1. **`RESET-UX-PARTIAL-RESET-IMPL-LIGHT`** を即起票可
-   - §10.1 スコープ（helper 追加 + ボタン追加 + 既存文言更新 + PR #112 alert 同期更新 + 軽量テスト）
+   - §10.1 スコープ（helper 追加 + 新規ボタン追加 + PR #112 alert 同期更新 + 軽量テスト）
+   - **既存 `#resetBtn` 文言 / 既存 `resetAll` confirm 文言は変更しない**
 2. 実機確認（運営者立会いで「参加者を残してやり直す」フローを試す）
 3. **運用観察**（数大会）
 4. 必要なら IMPL-MEDIUM:
    - 案 E モーダル選択化
-   - C-2 文言切替
-   - `state.rounds` / `state.report` の挙動微調整（§6.3 / §6.4）
+   - C-2 文言切替（既存ボタン側ラベルも含む）
+   - 既存 `resetAll` confirm 文言更新（§7.2 F-1）
+   - `state.rounds` / `state.report` の挙動微調整（§6.3 / §6.4 で R2 採用済、観察結果次第で R1 / R3 へ）
 
 ### 13.3 当面やらないこと
 
@@ -887,21 +972,22 @@ if(state.started===true){
 
 ---
 
-## 15. 推奨 Next Action
+## 15. 推奨 Next Action（PR #113 review 反映版）
 
 **`RESET-UX-PARTIAL-RESET-IMPL-LIGHT`** を即起票可能。
 
-スコープ:
-- `resetTournamentProgressOnly()` helper 追加（+20〜40 行）
-- 新規ボタン `#resetProgressBtn` 追加 + bind
-- 既存 `#resetBtn` 文言更新（§7.1 C-1）
-- 既存 `resetAll` confirm 文言更新（§7.2 F-1）
-- PR #112 alert 文言更新（§9.1.1 G-2）
+スコープ（PR #113 review 反映後の確定版）:
+- `resetTournamentProgressOnly()` helper 追加（+20〜40 行、§10.1）
+  - **維持する項目**: `state.players` / `state.tournament_id` / `state.rounds` / `state.report` / `_pendingNewYomi`/`_yomiAutoBuffer`/`_yomiManuallyEdited` / `shogi_branch_master`
+  - **初期化する項目**: `state.pairings` / `state.results` / `state.started`
+- 新規ボタン `#resetProgressBtn` 追加 + bind（押下時 confirm §7.2 P-3）
+- **PR #112 startTournament guard alert 文言を新ボタン名に同期**（§9.1.1 H-1 推奨、必須）
+- **既存 `#resetBtn` 文言・既存 `resetAll` confirm 文言は変更しない**（IMPL-MEDIUM へ送る）
 - 軽量テスト 1 本（`test/test_reset_ux_partial_reset.js` 新規）+ `test/run_tests.sh` stanza
 - HANDOFF.md 1 行 entry
 
 着手判断:
-- 運営者最終確認（ボタン文言の C-1 / C-2 選択）
+- 運営者最終確認（新規ボタン文言の C-1 / C-2 選択）
 - VRT snapshot red 時の判断方針（自律更新せず）
 
 DESIGN は本ドキュメントに集約。IMPL-LIGHT 着地時に §17 として「実装着地ノート」を追記する想定（PR #109 / #112 と同じ構成）。
