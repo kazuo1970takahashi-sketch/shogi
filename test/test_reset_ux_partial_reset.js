@@ -195,7 +195,8 @@ assert(/function\s+resetTournamentProgressOnly\s*\(\s*\)\s*\{/.test(htmlSrc),
 }
 
 // ============================================================
-// 16) resetAll() の players:{A:[],B:[]} 初期化が維持
+// 16) resetAll() の players:{A:[],B:[]} 初期化 / confirm 文言 (PR #118) /
+//     完了 toast 文言 (PR #120 RESET-UX-TOAST-LABEL-IMPL-LIGHT) の維持
 // ============================================================
 {
   const resetMatch = htmlSrc.match(/function resetAll\([\s\S]*?\n\}\n/);
@@ -216,6 +217,11 @@ assert(/function\s+resetTournamentProgressOnly\s*\(\s*\)\s*\{/.test(htmlSrc),
     'resetAll() confirm に「すべてリセット」が含まれる (PR #118)');
   assert(resetBody.indexOf('支部マスタは保持') >= 0,
     'resetAll() confirm に「支部マスタは保持」が含まれる (PR #118)');
+  // resetAll() 完了 toast 文言（RESET-UX-TOAST-LABEL-IMPL-LIGHT、設計 doc §6.1 案 C）
+  assert(resetBody.indexOf("showMsg('大会データを全リセットしました','ok')") >= 0,
+    "resetAll() 完了 toast が showMsg('大会データを全リセットしました','ok') (RESET-UX-TOAST-LABEL-IMPL-LIGHT)");
+  assert(resetBody.indexOf("showMsg('リセットしました','ok')") < 0,
+    "resetAll() 完了 toast の旧文言 showMsg('リセットしました','ok') が残置されていない");
 }
 
 // ============================================================
