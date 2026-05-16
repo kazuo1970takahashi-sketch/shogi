@@ -13,7 +13,8 @@
 - **Project**: SHOGI-TOUR（沼津支部 月例将棋大会 運営ツール）
 - **Repo**: kazuo1970takahashi-sketch/shogi
 - **対象ファイル（参照のみ、本 PR では未変更）**:
-  - [shogi_v4.html](shogi_v4.html)（約 70KB、1441 行、`<script>` セクション）
+  - [shogi_v4.html](shogi_v4.html)（約 312KB、6119 行、`<script>` セクションを含む 1 ファイル構成）
+  - 注：HANDOFF.md §0 の「約 70KB / 1441 行」記載はリファクタ完了直後の旧スナップショットで、本タスク作成時点（2026-05-16 / main HEAD `650176b`）の実測ファイルサイズ・行数は上記の通り。
 - **関連既存仕様**:
   - 参加者登録 / クラス指定: `docs/specs/` 配下の `phaseA*` 系設計
   - reset 仕様 / startTournament guard: PR #112 / PR #113 / PR #118 / PR #120 / PR #121（RESET-UX シリーズ）
@@ -140,10 +141,10 @@ L4464: if(hasOngoing){ if(!confirm('進行中の大会データがあります..
 | [`submitRound(cls)`](shogi_v4.html:4934) | 4934-4990 | ✅ cls 限定 |
 | [`getWins(cls)`](shogi_v4.html:344) | 344-356 | ✅ cls 限定 |
 | [`pairHasRematch(cls, p1, p2)`](shogi_v4.html:358) | 358-366 | ✅ cls 限定 |
-| [`renderTournament(cls)`](shogi_v4.html:5067) | 5067-5125 | ✅ cls 限定 |
-| [`buildScoreGridHtml(cls)`](shogi_v4.html:4868) | 4868-4878 | ✅ cls 限定 |
-| [`buildPlayedHistoryHtml(cls)`](shogi_v4.html:4879) | 4879-4920 | ✅ cls 限定 |
-| [`buildCurrentPairingsHtml(cls)`](shogi_v4.html:4914) | 4914-... | ✅ cls 限定 |
+| [`buildScoreGridHtml(cls, sorted, wins)`](shogi_v4.html:4999) | 4999-5015 | ✅ cls 限定 |
+| [`buildPlayedHistoryHtml(cls, sorted, played)`](shogi_v4.html:5017) | 5017-5034 | ✅ cls 限定 |
+| [`buildCurrentPairingsHtml(cls, roundNum, done)`](shogi_v4.html:5059) | 5059-5169 | ✅ cls 限定 |
+| [`renderTournament(cls)`](shogi_v4.html:5204) | 5204-5246 | ✅ cls 限定 |
 
 **この事実は重要**：「クラス分離はすでに 80% できている」。残るのは **大会全体スコープで作っている関数**：
 
@@ -163,9 +164,11 @@ L4464: if(hasOngoing){ if(!confirm('進行中の大会データがあります..
 | `'A'` / `'B'` 文字列リテラル | 約 20 件 | クラス検証 |
 | `['A','B'].forEach` | 約 10 件 | 全クラス処理 |
 | `state.players.A` / `.B` ドット記法 | 約 15 件 | UI bind |
-| **合計** | 約 38 件 | — |
+| **合計** | **概算 40 件前後**（実装着手時に再カウント） | — |
 
 → C クラス対応には **全件を `classes` 配列 or `classId` ベースに置換** する設計が必要。ただし **1 度に全件置換は危険**（IMPL-LIGHT 範囲を超える）。**段階的移行** が必須。
+
+> **件数の扱い**：本 Design 段階の概算（パターン別 grep ベース、重複カウント・コメント内出現・テストコード分の取扱いで揺らぐ）。§3.2 と §9.1 では同一基準「**概算 40 件前後**」で統一する。**実装着手時（Phase 4〜5）に正確なカウントを取り直す** こと。
 
 ### 3.3 A/B 固定設計の限界まとめ
 
@@ -197,7 +200,7 @@ L4464: if(hasOngoing){ if(!confirm('進行中の大会データがあります..
 | **Phase 1** | `state.classes` を導入（A/B 既存ディクショナリと並走） / `started` をクラス単位に分離（`state.classes[i].started` を導入、`state.started` は両クラス OR で互換維持） / クラス単位「対局開始」「リセット」UI ボタン追加 | 低〜中 |
 | **Phase 2** | `state.pairings` / `state.results` も `{A:[],B:[]}` から `{ [classId]: [] }` に拡張可能な形に整理（既存コードは A/B 直接アクセスを維持しつつ、新規コードは classId 参照） | 中 |
 | **Phase 3** | C クラス UI を追加 / 参加者登録画面でクラス選択を A/B/C に拡張 | 中〜高 |
-| **Phase 4** | A/B literal 比較 38 箇所を classId ベースに置換 / `['A','B'].forEach` を `state.classes.forEach` に置換 | 中（広範囲） |
+| **Phase 4** | A/B literal 比較 約 40 箇所（§3.2 概算）を classId ベースに置換 / `['A','B'].forEach` を `state.classes.forEach` に置換 | 中（広範囲） |
 | **Phase 5** | A/B 固定ディクショナリを廃止 / すべて classId ベースに統一 | 高 |
 
 **本 Design では Phase 1 〜 Phase 2 の範囲を仕様化**。Phase 3 以降は将来タスク。
@@ -243,14 +246,14 @@ function startTournamentForClass(classId){
   var klass = state.classes.find(function(c){ return c.id===classId; });
   if(!klass){ showMsg('クラスが見つかりません','err'); return; }
   if(klass.started===true){
-    alert(klass.name + 'はすでに開始されています。\n' + 
+    alert(klass.name + 'はすでに開始されています。\n' +
           klass.name + 'の進行データをリセットすると、現在の組み合わせ・勝敗結果は削除されます。');
     return;
   }
   var players = state.players[classId];
   if(!players || players.length<2){ showMsg(klass.name+'の参加者が少なすぎます','err'); return; }
   if(players.length%2 !== 0){ showMsg(klass.name+'が奇数です。運営者を追加してください','warn'); return; }
-  
+
   // クラス単位の初期化（他クラスを破壊しない）
   state.pairings[classId] = [];
   state.results[classId]  = [];
@@ -258,7 +261,7 @@ function startTournamentForClass(classId){
   generatePairing(classId);
   showTab('tournament');
   save();
-  
+
   // SAVE-003 verify（クラス単位）
   var persisted = readPersistedState();
   if(!persisted || !classStartedInPersisted(persisted, classId)){
@@ -413,7 +416,7 @@ function classStartedInPersisted(persisted, classId){
 function normalizeState(loaded){
   // 既存処理：state.players[cls] / state.pairings[cls] / state.results[cls] 正規化
   ['A','B'].forEach(function(cls){ /* 既存 */ });
-  
+
   // 新規追加：state.classes の整合性確保
   if(!Array.isArray(loaded.classes)){
     // 旧データ互換：state.started → classes に展開
@@ -474,7 +477,7 @@ function normalizeState(loaded){
 | `state.players={A:[],B:[]}` / `pairings` / `results` | resetAll、resetTournamentProgressOnly、state 初期化 | 約 5 件 |
 | `cls==='A'` / `cls==='B'` 比較 | UI 分岐、表示判定 | 約 10 件 |
 | `state.players.A` / `.B` ドット記法 | UI bind、count 表示 | 約 15 件 |
-| **総計** | — | 約 40 件 |
+| **総計** | — | **概算 40 件前後**（§3.2 と同一基準、実装着手時に再カウント） |
 
 ### 9.2 段階的置換戦略
 
@@ -621,10 +624,10 @@ state = {
   results:  { A:[], B:[] },     // 同上
   rounds: 4,
   report: { ... },
-  
+
   // 旧フラグ（互換のため維持、derived として動作させたい）
   started: false,               // 旧コード互換（all-class OR）
-  
+
   // 新規追加
   classes: [
     { id: 'A', name: 'Aクラス', started: false },
