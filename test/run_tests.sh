@@ -649,6 +649,22 @@ else
 fi
 
 # ============================================
+# ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1 単体テスト
+# ============================================
+echo ""
+echo "【ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1】"
+if [ -f "$SCRIPT_DIR/test_round_class_scope_phase1.js" ]; then
+  if node "$SCRIPT_DIR/test_round_class_scope_phase1.js" "$TARGET" > /tmp/round_class_scope_phase1_out.log 2>&1; then
+    ok "ROUND-CLASS-SCOPE-PHASE1 テスト 全PASS ($(tail -1 /tmp/round_class_scope_phase1_out.log))"
+  else
+    ng "ROUND-CLASS-SCOPE-PHASE1 テスト 失敗"
+    cat /tmp/round_class_scope_phase1_out.log
+  fi
+else
+  warn "test_round_class_scope_phase1.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""

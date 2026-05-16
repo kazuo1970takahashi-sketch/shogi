@@ -155,6 +155,14 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
         <button type="button" class="btn-primary" id="startBtn">登録完了・対局開始</button>
         <span style="font-size:12px;color:#888">※奇数の場合は運営者を追加してから開始</span>
       </div>
+      <!-- ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1 (§5.3 / §10.1 案 A):
+           クラス単位の後追い開始ボタン。既存「登録完了・対局開始」は互換のため温存。
+           Phase 3 以降で pane-A / pane-B 内への移設・C クラス UI 追加を検討する。 -->
+      <div class="flex" style="margin-top:8px">
+        <button type="button" class="btn-sm" id="startBtnA" style="border-color:#2E75B6;color:#2E75B6">Aクラスを開始</button>
+        <button type="button" class="btn-sm" id="startBtnB" style="border-color:#2E75B6;color:#2E75B6">Bクラスを開始</button>
+        <span style="font-size:12px;color:#888">※クラス単位で後追い開始する場合</span>
+      </div>
     </div>
   </div>
   <div id="pane-tournament" style="display:none">
@@ -208,12 +216,20 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
 </div>
 
 <script>
+// ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1 (docs/specs/20260516_shogi_round_class_scope_001.md §4 / §11):
+//   state.classes はクラス単位の進行状態を保持する追加情報。既存の
+//   state.players / state.pairings / state.results / state.started は互換のため温存し、
+//   state.classes と並走させる。Phase 3 以降で {A:[],B:[]} 固定構造を撤去予定。
 var state = {
   players: {A:[], B:[]},
   rounds: 4,
   pairings: {A:[], B:[]},
   results: {A:[], B:[]},
   started: false,
+  classes: [
+    {id:'A', name:'Aクラス', started:false},
+    {id:'B', name:'Bクラス', started:false}
+  ],
   report: {date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''}
 };
 
@@ -431,10 +447,38 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
 }
 
 function normalizeState(raw){
-  var base={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''}};
+  var base={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''}};
   var s=raw&&typeof raw==='object'?raw:{};
   base.rounds=Number(s.rounds)||4;
   base.started=!!s.started;
+  // ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1 (§8.3 / §8.4):
+  //   旧データ互換: state.classes 未定義の旧 JSON は state.started から両クラスへ展開（保守案 a）。
+  //   既存値があれば id/name/started を補完しつつ A/B が欠けていれば追加。
+  if(Array.isArray(s.classes)){
+    var seen={};
+    var normalizedClasses=[];
+    for(var ci=0;ci<s.classes.length;ci++){
+      var raw_c=s.classes[ci];
+      if(!raw_c||typeof raw_c!=='object')continue;
+      var cid=(typeof raw_c.id==='string'&&raw_c.id)?raw_c.id:'';
+      if(!cid||seen[cid])continue;
+      seen[cid]=true;
+      normalizedClasses.push({
+        id:cid,
+        name:(typeof raw_c.name==='string'&&raw_c.name)?raw_c.name:(cid+'クラス'),
+        started:!!raw_c.started
+      });
+    }
+    ['A','B'].forEach(function(cls){
+      if(!seen[cls])normalizedClasses.push({id:cls,name:cls+'クラス',started:!!s.started});
+    });
+    base.classes=normalizedClasses;
+  } else {
+    base.classes=[
+      {id:'A',name:'Aクラス',started:!!s.started},
+      {id:'B',name:'Bクラス',started:!!s.started}
+    ];
+  }
   ['A','B'].forEach(function(cls){
     var players=(s.players&&Array.isArray(s.players[cls]))?s.players[cls]:[];
     base.players[cls]=players.map(function(p,idx){
@@ -4018,6 +4062,48 @@ function readPersistedState(){
   }
 }
 
+// ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1 (§11.2 / §11.3):
+//   クラス単位の started フラグ読み書き helper。
+//   state.started は all-class OR の derived（互換維持）として setClassStarted から同期更新する。
+function isClassStarted(classId){
+  if(!state||!Array.isArray(state.classes))return false;
+  for(var i=0;i<state.classes.length;i++){
+    if(state.classes[i]&&state.classes[i].id===classId)return !!state.classes[i].started;
+  }
+  return false;
+}
+
+function setClassStarted(classId,value){
+  if(!state||!Array.isArray(state.classes))return;
+  var v=!!value;
+  var found=false;
+  for(var i=0;i<state.classes.length;i++){
+    if(state.classes[i]&&state.classes[i].id===classId){
+      state.classes[i].started=v;
+      found=true;
+      break;
+    }
+  }
+  if(!found)state.classes.push({id:classId,name:classId+'クラス',started:v});
+  // 旧 state.started 互換: all-class OR を再計算
+  state.started=state.classes.some(function(c){return c&&c.started===true;});
+}
+
+// ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1 (§8.2):
+//   持続化された persisted state について、指定 classId が started かを判定する helper。
+//   旧データ互換: persisted.classes が無い場合は persisted.started を fallback として使う。
+function classStartedInPersisted(persisted,classId){
+  if(!persisted||typeof persisted!=='object')return false;
+  if(Array.isArray(persisted.classes)){
+    for(var i=0;i<persisted.classes.length;i++){
+      var c=persisted.classes[i];
+      if(c&&c.id===classId)return !!c.started;
+    }
+  }
+  // 旧データ: classes 未定義なら persisted.started を fallback
+  return !!persisted.started;
+}
+
 // A-5.1-SAVE-003 / PR #48 Codex Should Fix: pairings 配列の簡易シグネチャ比較。
 // length のみだと「同件数だが中身が古い stale pairings」を見逃すため、p1/p2/winner と、
 // 両側に存在する場合のみ lastModifiedBy を比較する。過剰な deep equal は持たない。
@@ -4467,6 +4553,12 @@ function startTournament(){
   state.started=true;
   state.pairings={A:[],B:[]};
   state.results={A:[],B:[]};
+  // ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1 (§5.2):
+  //   参加者がいるクラスについて state.classes[*].started を true へ同期。
+  //   既存 state.started=true 代入と並走する互換動線。
+  ['A','B'].forEach(function(cls){
+    if(state.players[cls]&&state.players[cls].length>0)setClassStarted(cls,true);
+  });
   if(state.players.A.length>0)generatePairing('A');
   if(state.players.B.length>0)generatePairing('B');
   showTab('tournament');save();
@@ -4478,6 +4570,47 @@ function startTournament(){
       message:'大会を開始しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
       consoleTag:'SAVE-003: startTournament の保存が確認できませんでした',
       callsiteId:'SAVE-003-startTournament',
+      kind:'save-verify',
+      aggregateKey:'save-verify:core',
+      severity:'warn'
+    });
+  }
+}
+
+// ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1 (§5.1):
+//   指定 classId のみ初期化・開始する。他クラスの pairings / results / started を破壊しない。
+//   既存 startTournament() の互換は維持し、本関数は新導線（クラス別「開始」ボタン）から呼ばれる。
+//   バリデーション・SAVE-003 verify はクラス単位。
+function startTournamentForClass(classId){
+  if(!state||!Array.isArray(state.classes)){showMsg('クラス情報が初期化されていません','err');return;}
+  var klass=null;
+  for(var i=0;i<state.classes.length;i++){
+    if(state.classes[i]&&state.classes[i].id===classId){klass=state.classes[i];break;}
+  }
+  if(!klass){showMsg('クラスが見つかりません','err');return;}
+  if(klass.started===true){
+    alert(klass.name+'はすでに開始されています。\n参加者を変更する場合は、先に「大会進行データをリセット」を実行してください。\n大会進行データをリセットすると、参加者一覧は残したまま、現在の組み合わせ・勝敗結果は削除されます。');
+    return;
+  }
+  var players=(state.players&&state.players[classId])?state.players[classId]:[];
+  if(!players||players.length<2){showMsg(klass.name+'の参加者が少なすぎます','err');return;}
+  if(players.length%2!==0){showMsg(klass.name+'が奇数です。運営者を追加してください','warn');return;}
+  // クラス単位の初期化（他クラスを破壊しない）
+  if(!state.pairings||typeof state.pairings!=='object')state.pairings={A:[],B:[]};
+  if(!state.results||typeof state.results!=='object')state.results={A:[],B:[]};
+  state.pairings[classId]=[];
+  state.results[classId]=[];
+  setClassStarted(classId,true);
+  generatePairing(classId);
+  showTab('tournament');
+  save();
+  // SAVE-003 verify（クラス単位）
+  var persisted_stfc=readPersistedState();
+  if(!persisted_stfc||!classStartedInPersisted(persisted_stfc,classId)){
+    notifySaveWarning({
+      message:klass.name+'を開始しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-003: startTournamentForClass('+classId+') の保存が確認できませんでした',
+      callsiteId:'SAVE-003-startTournamentForClass-'+classId,
       kind:'save-verify',
       aggregateKey:'save-verify:core',
       severity:'warn'
@@ -5927,6 +6060,14 @@ function resetTournamentProgressOnly(){
   state.started=false;
   state.pairings={A:[],B:[]};
   state.results={A:[],B:[]};
+  // ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1 (§11.2):
+  //   state.classes[*].started も全クラス false に同期。setClassStarted ではなく直接代入
+  //   （setClassStarted は state.started を OR で再計算するため、全クラス false なら同結果）。
+  if(Array.isArray(state.classes)){
+    for(var ci=0;ci<state.classes.length;ci++){
+      if(state.classes[ci])state.classes[ci].started=false;
+    }
+  }
   // 開きっぱなしのモーダルを閉じる（resetAll と同設計、進行中操作の取りこぼし防止）
   ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
     var m=document.getElementById(mid);if(m)m.remove();
@@ -5942,9 +6083,23 @@ function resetTournamentProgressOnly(){
   showMsg('大会進行データをリセットしました','ok');
 }
 
+// ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1 (§4.2 Phase 1 / §11.4):
+//   指定 classId のみリセットする。他クラスの pairings / results / started は保持。
+//   resetTournamentProgressOnly() の全クラス一括リセットとは別動線。
+//   Phase 1 では関数のみ提供（UI 導線は Phase 3 以降で追加）。テストから直接呼ぶ前提。
+function resetClassForClass(classId){
+  if(!state||!Array.isArray(state.classes))return;
+  if(!state.pairings||typeof state.pairings!=='object')state.pairings={A:[],B:[]};
+  if(!state.results||typeof state.results!=='object')state.results={A:[],B:[]};
+  state.pairings[classId]=[];
+  state.results[classId]=[];
+  setClassStarted(classId,false);
+  save();
+}
+
 function resetAll(){
   if(!confirm('参加者一覧・組み合わせ・勝敗結果を含む大会データをすべてリセットします。\n支部マスタは保持されます。'))return;
-  state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}};_pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
+  state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}};_pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
   try{
     // 仕様書 3.4.1 / §3.1.5: shogi_branch_master は絶対に消さない
     localStorage.removeItem(STORAGE_KEY);
@@ -5996,6 +6151,12 @@ function bindRegistrationEvents(){
   document.getElementById('bulkEditB').addEventListener('click',function(){bulkEditNames('B');});
   document.getElementById('addBtn').addEventListener('click',addPlayer);
   document.getElementById('startBtn').addEventListener('click',startTournament);
+  // ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1 (§5.3):
+  //   クラス単位の後追い開始ボタン。startTournamentForClass(classId) を呼ぶ。
+  var startBtnA=document.getElementById('startBtnA');
+  if(startBtnA)startBtnA.addEventListener('click',function(){startTournamentForClass('A');});
+  var startBtnB=document.getElementById('startBtnB');
+  if(startBtnB)startBtnB.addEventListener('click',function(){startTournamentForClass('B');});
 
   // 参加者名入力欄: IME対応 + Enterで追加
   var inpName=document.getElementById('inp-name');
