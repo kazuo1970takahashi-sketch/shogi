@@ -1665,10 +1665,12 @@ assertEq(__EXPAND_BLOCKS.length, 22,
 // ============================================================================
 
 // T-EXP-callsiteId-present-*: 6 callsiteId がすべて helper 引数として現れる
+// ROUND-CLASS-START-004: SAVE-003-startTournament は callsiteId:'SAVE-003-startTournament-'+classId
+//   へ classId 単位化（spec §6.5）。literal portion 'SAVE-003-startTournament-' の存在を確認する。
 [
   'SAVE-001-removePlayer',
   'SAVE-002-addPlayer',
-  'SAVE-003-startTournament',
+  'SAVE-003-startTournament-',  // ROUND-CLASS-START-004: per-class callsiteId に変更
   'SAVE-003-setWinner',
   'SAVE-003-submitRound',
   'SAVE-004-generatePairing'
@@ -1703,10 +1705,12 @@ assertEq(__EXPAND_BLOCKS.length, 22,
 });
 
 // T-EXP-showMsg-message-preserved-*: 旧 user-facing showMsg('...', 'warn') の文言は helper.message として保持
+// ROUND-CLASS-START-004: startTournament 系 message は className+'を開始しましたが...' に変わり、
+//   「大会を開始しましたが」リテラルは消滅。className 接頭辞抜きの substring で検査する。
 [
   '削除は反映されましたが、保存が確認できませんでした',
   '参加者は登録されましたが、保存が確認できませんでした',
-  '大会を開始しましたが、保存が確認できませんでした',
+  'を開始しましたが、保存が確認できませんでした',  // ROUND-CLASS-START-004: className+'を開始...' に対応
   '勝敗を入力しましたが、保存が確認できませんでした',
   '回戦を確定しましたが、保存が確認できませんでした',
   '組み合わせを生成しましたが、保存が確認できませんでした'
@@ -1881,11 +1885,12 @@ assert(__EXPAND_SRC.indexOf('suppressOkMsg:!s05MasterVerifyOk') !== -1,
 
 // T-EXP3-group-abce-untouched: Group A/B/C/E の helper 経由化済 callsiteId が依然 source に残る
 //   (本 PR では PR #70 / #73 で確立した 11 件を一切触っていない)
+// ROUND-CLASS-START-004: SAVE-003-startTournament は per-class callsiteId に変更（spec §6.5）。
 [
   // PR #70 (Group A + B)
   'SAVE-001-removePlayer',
   'SAVE-002-addPlayer',
-  'SAVE-003-startTournament',
+  'SAVE-003-startTournament-',  // ROUND-CLASS-START-004: per-class callsiteId
   'SAVE-003-setWinner',
   'SAVE-003-submitRound',
   'SAVE-004-generatePairing',
@@ -1958,7 +1963,9 @@ assert(__EXPAND_SRC.indexOf('Object.prototype.toString.call(opts.fields)') !== -
 var __EXP4_CALLSITES = [
   // [callsiteId, aggregateKey]
   // Group A (core)
-  ['SAVE-003-startTournament',                          'save-verify:core'],
+  // ROUND-CLASS-START-004: startTournament の callsiteId は `'SAVE-003-startTournament-'+classId`
+  //   に変更。extractor は literal portion のみ抽出するため `SAVE-003-startTournament-` で照合。
+  ['SAVE-003-startTournament-',                         'save-verify:core'],
   ['SAVE-004-generatePairing',                          'save-verify:core'],
   ['SAVE-003-setWinner',                                'save-verify:core'],
   ['SAVE-003-submitRound',                              'save-verify:core'],
@@ -2139,10 +2146,11 @@ assert(__EXPAND_SRC.indexOf("参加者名を更新しましたが、保存でき
 // T-EXP4-showMsg-unchanged: user-facing showMsg('...', 'warn') 呼出のままの文言が維持される
 //   helper 内で showMsg(message, 'warn') を行うため、user-facing 文言は変化しない
 // ----------------------------------------------------------------------------
+// ROUND-CLASS-START-004: '大会を開始しましたが' は className+'を開始しましたが' になり消滅。
 [
   '削除は反映されましたが、保存が確認できませんでした',
   '参加者は登録されましたが、保存が確認できませんでした',
-  '大会を開始しましたが、保存が確認できませんでした',
+  'を開始しましたが、保存が確認できませんでした',  // ROUND-CLASS-START-004
   '勝敗を入力しましたが、保存が確認できませんでした',
   '回戦を確定しましたが、保存が確認できませんでした',
   '組み合わせを生成しましたが、保存が確認できませんでした',

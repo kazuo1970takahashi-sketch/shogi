@@ -665,6 +665,22 @@ else
 fi
 
 # ============================================
+# ROUND-CLASS-START-004 atomic wrapper 単体テスト
+# ============================================
+echo ""
+echo "【ROUND-CLASS-START-004 atomic wrapper】"
+if [ -f "$SCRIPT_DIR/test_round_class_start_004.js" ]; then
+  if node "$SCRIPT_DIR/test_round_class_start_004.js" "$TARGET" > /tmp/round_class_start_004_out.log 2>&1; then
+    ok "ROUND-CLASS-START-004 atomic wrapper テスト 全PASS ($(tail -1 /tmp/round_class_start_004_out.log))"
+  else
+    ng "ROUND-CLASS-START-004 atomic wrapper テスト 失敗"
+    cat /tmp/round_class_start_004_out.log
+  fi
+else
+  warn "test_round_class_start_004.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
