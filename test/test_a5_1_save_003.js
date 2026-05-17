@@ -647,13 +647,17 @@ function makePlayer(id,name,cls,entryNo){
   assertEq(after.pairings.A.length, 1, '17-2 in-memory: pairings.A 件数 = 1（rounds=2 で再生成）');
 
   // localStorage は stale のまま:
-  //   results.A.length は 1（in-memory と一致）
-  //   pairings.A.length も 1（in-memory と一致）→ 旧 length-only check ならすり抜ける
+  //   results.A.length は 1（in-memory と一致：outer 配列は round 数として残る、inner 試合は sanitize で空に）
+  //   ROUND-CLASS-START-003 (spec §12.6): readPersistedState は normalizeState 経由で返すため、
+  //     stale match（staleX/staleY のような未登録 player id 参照）は sanitizeMatch で
+  //     p1=''/p2='' に置換 → filter で除去され、pairings.A は [] になる（length=0）。
+  //     旧実装では raw pairings を返したため length=1 だったが、いずれにせよ pairingsMatchSnapshot は
+  //     length 不一致 / 内容不一致のどちらかで stale を検知し warn を出す（17-6）。
   const persisted = env.readPersistedState();
-  assertEq(persisted && persisted.results.A.length, 1, '17-3 localStorage: results.A 件数 = 1（stale）');
-  assertEq(persisted && persisted.pairings.A.length, 1, '17-4 localStorage: pairings.A 件数 = 1（stale 内容）');
-  // pairingsMatchSnapshot は中身を見て不一致を検出
-  assertEq(env.pairingsMatchSnapshot(persisted.pairings.A, after.pairings.A), false, '17-5 pairingsMatchSnapshot で stale 検知');
+  assertEq(persisted && persisted.results.A.length, 1, '17-3 localStorage: results.A 件数 = 1（stale: outer round 配列は維持）');
+  assertEq(persisted && persisted.pairings.A.length, 0, '17-4 localStorage: pairings.A 件数 = 0（normalize sanitizeMatch で stale 除去）');
+  // pairingsMatchSnapshot は length 不一致で stale 検知
+  assertEq(env.pairingsMatchSnapshot(persisted.pairings.A, after.pairings.A), false, '17-5 pairingsMatchSnapshot で stale 検知（length 不一致）');
 
   // warn 表示（field-compare による検知）
   assert(env._regMsgHtml().indexOf('alert-warn') !== -1, '17-6 stale pairings 検知で showMsg(.., warn)');
@@ -754,12 +758,14 @@ function makePlayer(id,name,cls,entryNo){
   // in-memory: 新ペア（1 件、p1/p2 = 田中/佐藤 のいずれかの並び）が生成される
   assertEq(after.pairings.A.length, 1, '19-1 in-memory: pairings.A 件数 = 1（rollback しない）');
 
-  // localStorage は stale のまま:
-  //   pairings.A.length も 1（in-memory と一致）→ 旧 length-only check ならすり抜ける
+  // localStorage は stale:
+  //   ROUND-CLASS-START-003 (spec §12.6): readPersistedState の normalize 経由により stale 除去（17 と同様）。
+  //     pairings.A は 0 件（staleX/staleY が未登録 player id のため sanitizeMatch で filter）。
+  //     pairingsMatchSnapshot は length 不一致で stale を検知（in-memory は 1 件）。
   const persisted = env.readPersistedState();
-  assertEq(persisted && persisted.pairings.A.length, 1, '19-2 localStorage: pairings.A 件数 = 1（stale 内容）');
-  // pairingsMatchSnapshot は中身を見て不一致を検出
-  assertEq(env.pairingsMatchSnapshot(persisted.pairings.A, after.pairings.A), false, '19-3 pairingsMatchSnapshot で stale 検知');
+  assertEq(persisted && persisted.pairings.A.length, 0, '19-2 localStorage: pairings.A 件数 = 0（normalize sanitizeMatch で stale 除去）');
+  // pairingsMatchSnapshot は length 不一致で stale 検知
+  assertEq(env.pairingsMatchSnapshot(persisted.pairings.A, after.pairings.A), false, '19-3 pairingsMatchSnapshot で stale 検知（length 不一致）');
 
   // warn 表示（field-compare による検知）
   assert(env._regMsgHtml().indexOf('alert-warn') !== -1, '19-4 stale pairings 検知で showMsg(.., warn)');

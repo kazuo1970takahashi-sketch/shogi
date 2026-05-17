@@ -245,9 +245,11 @@ assert(idxGenPair > idxGuardCond,
   const nsMatch = htmlSrc.match(/function normalizeState\([\s\S]*?\n\}\n/);
   assert(nsMatch !== null, 'normalizeState 関数本体を抽出できる');
   const nsBody = nsMatch ? nsMatch[0] : '';
-  // normalizeState は base.started=!!s.started; の代入形式
-  assert(/base\.started\s*=\s*!!\s*s\.started/.test(nsBody),
-    'normalizeState の started フィールド正規化 (base.started=!!s.started) が維持されている');
+  // ROUND-CLASS-START-003 (spec §8.2 / §9.4 step 7): normalizeState の started 同期書き込み形式。
+  //   PR #137 (002) で classId 単位 started を正とする方針に変更したため、base.started は
+  //   raw.started の直接 OR ではなく、normalize 済 classes 配列の some(started===true) で導出。
+  assert(/base\.started\s*=\s*classes\.some/.test(nsBody),
+    'normalizeState の started フィールド正規化 (base.started=classes.some(c=>c.started===true)) が維持されている');
 }
 
 // ============================================================

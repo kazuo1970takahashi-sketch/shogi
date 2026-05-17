@@ -214,7 +214,13 @@ var state = {
   pairings: {A:[], B:[]},
   results: {A:[], B:[]},
   started: false,
-  report: {date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''}
+  report: {date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''},
+  // ROUND-CLASS-START-003: classId 単位 started を正とする state.classes を導入。
+  //   既存 dict (players/pairings/results) は当面 A/B 固定構造で維持。詳細: spec §5.2
+  classes: [
+    {id:'A', name:'Aクラス', started:false},
+    {id:'B', name:'Bクラス', started:false}
+  ]
 };
 
 var STORAGE_KEY='shogi_v4';
@@ -430,12 +436,108 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
   return {status:'ok',reasonId:null,reasonLabel:''};
 }
 
+// ROUND-CLASS-START-003: 旧データ/現行/将来データから「class 一覧」を安全に正規化する。
+//   pure 関数。グローバル state を参照しない。詳細: spec §9.2 / §9.3 / §10.3
+//   返り値: [{id, name, started}, ...]
+//   旧データ互換ルール:
+//     - raw.classes が配列なら id/name/started を補完して採用 + A/B を補完
+//     - raw.classes が無い旧データは A/B をデフォルト + raw.started を両クラスに保守的展開
+//     - raw.players/pairings/results dict に未知 classId があれば classes に補完追加
+//     - 過渡期データ（raw.classes 既存だが raw.started=true で classes 内 started=true ゼロ）は、
+//       startTournament が classes を直接更新しない 003 以前の経路との互換のため、
+//       全クラスに started=true を保守的展開（spec §9.3 案 a 準拠）
+function normalizeClasses(raw){
+  var rawStarted=!!(raw&&raw.started);
+  var hasRawClasses=!!(raw&&Array.isArray(raw.classes));
+  var classes;
+  if(hasRawClasses){
+    classes=raw.classes
+      .filter(function(c){return c&&typeof c.id==='string'&&c.id;})
+      .map(function(c){
+        return {
+          id:c.id,
+          name:typeof c.name==='string'&&c.name?c.name:(c.id+'クラス'),
+          started:c.started===true
+        };
+      });
+    // 既存A/B大会の互換補完（足りない側を追加）
+    ['A','B'].forEach(function(cls){
+      var found=false;
+      for(var i=0;i<classes.length;i++){if(classes[i].id===cls){found=true;break;}}
+      if(!found)classes.push({id:cls,name:cls+'クラス',started:false});
+    });
+    // 過渡期互換: raw.started=true だが classes 内に started=true が一つも無い場合、
+    // 003 以前の startTournament（classes を更新しない経路）から保存された state との
+    // 整合性のため、保守的に全 classes へ started=true を展開する（spec §9.3）。
+    if(rawStarted){
+      var anyStarted=false;
+      for(var k=0;k<classes.length;k++){if(classes[k].started===true){anyStarted=true;break;}}
+      if(!anyStarted){for(var j=0;j<classes.length;j++)classes[j].started=true;}
+    }
+  } else {
+    // 旧データ v0/v1: classes 無しの場合は A/B 既定 + raw.started を両方に展開
+    classes=[
+      {id:'A',name:'Aクラス',started:rawStarted},
+      {id:'B',name:'Bクラス',started:rawStarted}
+    ];
+  }
+  appendMissingClassesFromDicts(classes,raw);
+  return classes;
+}
+
+// ROUND-CLASS-START-003: raw.players/pairings/results dict にあるが classes に無い classId を補完。
+//   pure 関数。将来 C クラスを含む JSON を読んでも壊れないための前処理。
+//   classes を破壊的に変更する（push 追加）。spec §9.2
+function appendMissingClassesFromDicts(classes,raw){
+  if(!raw||typeof raw!=='object')return;
+  var existing={};
+  for(var i=0;i<classes.length;i++)existing[classes[i].id]=true;
+  ['players','pairings','results'].forEach(function(dictKey){
+    var d=raw[dictKey];
+    if(!d||typeof d!=='object'||Array.isArray(d))return;
+    Object.keys(d).forEach(function(cid){
+      if(typeof cid!=='string'||!cid)return;
+      if(existing[cid])return;
+      classes.push({id:cid,name:cid+'クラス',started:false});
+      existing[cid]=true;
+    });
+  });
+}
+
+// ROUND-CLASS-START-003: classes 配列から classId-keyed object を生成する pure 関数。
+//   グローバル state を参照しない（spec §10.3）。
+//   initialValue が function（factory）の場合は class ごとに呼び出して個別値を生成する。
+//   配列/object を共有しないように factory を渡すことで参照共有事故を避ける（spec §7.3）。
+function emptyClassDict(classes,initialValue){
+  var out={};
+  if(!Array.isArray(classes))return out;
+  var isFactory=typeof initialValue==='function';
+  for(var i=0;i<classes.length;i++){
+    var c=classes[i];
+    if(!c||typeof c.id!=='string'||!c.id)continue;
+    out[c.id]=isFactory?initialValue(c):initialValue;
+  }
+  return out;
+}
+
 function normalizeState(raw){
-  var base={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''}};
   var s=raw&&typeof raw==='object'?raw:{};
-  base.rounds=Number(s.rounds)||4;
-  base.started=!!s.started;
-  ['A','B'].forEach(function(cls){
+  // ROUND-CLASS-START-003 (spec §9.4 組立順序):
+  //   1. classes を確定 / 2. classes 駆動で dict 初期化 / 3. raw を取り込み /
+  //   4. 互換フィールド state.started を classes から同期書き込み / 5. return base
+  //   helper はグローバル state を参照しない（pure）。
+  var classes=normalizeClasses(s);
+  var base={
+    players:emptyClassDict(classes,function(){return [];}),
+    rounds:Number(s.rounds)||4,
+    pairings:emptyClassDict(classes,function(){return [];}),
+    results:emptyClassDict(classes,function(){return [];}),
+    started:false,
+    report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:''},
+    classes:classes
+  };
+  classes.forEach(function(c){
+    var cls=c.id;
     var players=(s.players&&Array.isArray(s.players[cls]))?s.players[cls]:[];
     base.players[cls]=players.map(function(p,idx){
       var pp={
@@ -485,7 +587,60 @@ function normalizeState(raw){
   }
   // 支部マスタ連携用の tournament_id を保持（F2）
   if(typeof s.tournament_id==='string'&&s.tournament_id)base.tournament_id=s.tournament_id;
+  // ROUND-CLASS-START-003 (spec §8.2 / §9.4 step 7):
+  //   互換フィールド state.started は classes 配列の OR を同期書き込み。
+  //   normalizeState は §8.2 例外3関数の1つ（直接代入を許容、ただし最終必ず同期）。
+  base.started=classes.some(function(c){return c.started===true;});
   return base;
+}
+
+// ROUND-CLASS-START-003 (spec §8.2):
+//   state.classes[i].started を正、state.started は互換フィールド（純 derived ではない）。
+//   通常経路では setClassStarted 経由、§8.2 例外3関数（normalizeState/resetAll/
+//   resetTournamentProgressOnly）で直接代入する場合は最後に syncGlobalStartedFromClasses を呼ぶ。
+function syncGlobalStartedFromClasses(){
+  if(!state||!Array.isArray(state.classes)){state.started=false;return false;}
+  var any=false;
+  for(var i=0;i<state.classes.length;i++){
+    if(state.classes[i]&&state.classes[i].started===true){any=true;break;}
+  }
+  state.started=any;
+  return any;
+}
+
+// ROUND-CLASS-START-003: classId の started を返す。存在しない classId は false（spec §10.1）。
+function isClassStarted(classId){
+  if(!state||!Array.isArray(state.classes))return false;
+  for(var i=0;i<state.classes.length;i++){
+    var c=state.classes[i];
+    if(c&&c.id===classId)return c.started===true;
+  }
+  return false;
+}
+
+// ROUND-CLASS-START-003 (spec §8.2): 通常の started 変更経路。
+//   該当 class だけ更新し、互換フィールド state.started を同期書き込みする。
+//   未知 classId は無視（throw しない）。spec は throw 推奨だが、003 範囲では既存挙動を
+//   壊さない側に寄せる。004 で startTournament 等に組み込む際に厳格化を検討。
+function setClassStarted(classId,value){
+  if(!state||!Array.isArray(state.classes))return;
+  var updated=false;
+  for(var i=0;i<state.classes.length;i++){
+    var c=state.classes[i];
+    if(c&&c.id===classId){c.started=!!value;updated=true;break;}
+  }
+  if(updated)syncGlobalStartedFromClasses();
+}
+
+// ROUND-CLASS-START-003 (spec §12.7): readPersistedState 返り値の normalized state から
+//   当該 classId が started か判定する pure 関数。raw parsed は渡さない（必ず normalize 済を渡す）。
+function classStartedInPersisted(persisted,classId){
+  if(!persisted||!Array.isArray(persisted.classes))return false;
+  for(var i=0;i<persisted.classes.length;i++){
+    var c=persisted.classes[i];
+    if(c&&c.id===classId)return c.started===true;
+  }
+  return false;
 }
 
 // ============================================================
@@ -3997,7 +4152,16 @@ function findMasterRenameTarget(p,master){
 //
 // PR #48 Codex Must Fix: 最低限の state schema を検証して、{started:true} のような壊れた
 // object を「有効」として通してしまう false positive を防ぐ。具体的には players/pairings/
-// results それぞれが object で、A/B が Array であることまでをここで保証する。
+// results それぞれが object であることをここで保証する。
+//
+// ROUND-CLASS-START-003 (spec §12.6):
+//   parsed をそのまま返さず、normalizeState(parsed) 済みの state を返す。
+//   旧データ互換 / C クラス追加への前方互換のため、A/B 固定の配列性チェックは廃止し、
+//   normalize 内で classId-keyed dict として配列保証する。normalize 後に各 classId
+//   について players/pairings/results が配列であることを safety net として確認する。
+//   配列性違反は verify failed として null。raw の非配列は normalize 側で空配列に補正される
+//   ため、ここで null になるのは normalize が classes を生成できなかった等の壊滅的破損のみ。
+//   この方針の根拠は、旧データ load 互換と false positive 防止の両立（spec §12.6 採用案 A）。
 function readPersistedState(){
   if(typeof localStorage==='undefined')return null;
   try{
@@ -4005,13 +4169,32 @@ function readPersistedState(){
     if(typeof raw!=='string'||!raw)return null;
     var parsed=JSON.parse(raw);
     if(!parsed||typeof parsed!=='object')return null;
-    if(!parsed.players||typeof parsed.players!=='object')return null;
-    if(!Array.isArray(parsed.players.A)||!Array.isArray(parsed.players.B))return null;
-    if(!parsed.pairings||typeof parsed.pairings!=='object')return null;
-    if(!Array.isArray(parsed.pairings.A)||!Array.isArray(parsed.pairings.B))return null;
-    if(!parsed.results||typeof parsed.results!=='object')return null;
-    if(!Array.isArray(parsed.results.A)||!Array.isArray(parsed.results.B))return null;
-    return parsed;
+    // 最低限の object 性チェック（A/B 固定 literal は廃止し、可変 classId に対応）
+    if(!parsed.players||typeof parsed.players!=='object'||Array.isArray(parsed.players))return null;
+    if(!parsed.pairings||typeof parsed.pairings!=='object'||Array.isArray(parsed.pairings))return null;
+    if(!parsed.results||typeof parsed.results!=='object'||Array.isArray(parsed.results))return null;
+    // PR #48 Codex Must Fix と整合: 存在する classId エントリは全て Array でなければ verify failed。
+    //   旧 A/B 固定の Array.isArray ハードコードを classId 汎用ルールに置き換え。
+    //   旧データ互換（classes 未定義 + started:bool）は normalize 側で吸収されるため、ここでは触れない。
+    //   採用理由: false positive 防止の意図を維持しつつ、C クラス追加時の前方互換を確保（spec §12.6 候補A）。
+    var _rawDictKeys=['players','pairings','results'];
+    for(var _di=0;_di<_rawDictKeys.length;_di++){
+      var _d=parsed[_rawDictKeys[_di]];
+      var _ks=Object.keys(_d);
+      for(var _ki=0;_ki<_ks.length;_ki++){
+        if(!Array.isArray(_d[_ks[_ki]]))return null;
+      }
+    }
+    var normalized=normalizeState(parsed);
+    if(!normalized||!Array.isArray(normalized.classes)||normalized.classes.length===0)return null;
+    // safety net: normalize 後の各 classId について 3 つとも配列であることを再確認
+    for(var i=0;i<normalized.classes.length;i++){
+      var cid=normalized.classes[i].id;
+      if(!Array.isArray(normalized.players[cid]))return null;
+      if(!Array.isArray(normalized.pairings[cid]))return null;
+      if(!Array.isArray(normalized.results[cid]))return null;
+    }
+    return normalized;
   }catch(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('SAVE-003: readPersistedState failed',e);
     return null;
@@ -5944,7 +6127,7 @@ function resetTournamentProgressOnly(){
 
 function resetAll(){
   if(!confirm('参加者一覧・組み合わせ・勝敗結果を含む大会データをすべてリセットします。\n支部マスタは保持されます。'))return;
-  state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''}};_pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
+  state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''},classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}]};_pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;  // ROUND-CLASS-START-003 (spec §8.2 例外): 全体初期化のため started 直接代入を許容。
   try{
     // 仕様書 3.4.1 / §3.1.5: shogi_branch_master は絶対に消さない
     localStorage.removeItem(STORAGE_KEY);

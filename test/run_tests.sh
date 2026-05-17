@@ -649,6 +649,22 @@ else
 fi
 
 # ============================================
+# ROUND-CLASS-START-003 state/helper/normalize 単体テスト
+# ============================================
+echo ""
+echo "【ROUND-CLASS-START-003 state/helper/normalize】"
+if [ -f "$SCRIPT_DIR/test_round_class_start_state_003.js" ]; then
+  if node "$SCRIPT_DIR/test_round_class_start_state_003.js" "$TARGET" > /tmp/round_class_start_state_003_out.log 2>&1; then
+    ok "ROUND-CLASS-START-003 単体テスト 全PASS ($(tail -1 /tmp/round_class_start_state_003_out.log))"
+  else
+    ng "ROUND-CLASS-START-003 単体テスト 失敗"
+    cat /tmp/round_class_start_state_003_out.log
+  fi
+else
+  warn "test_round_class_start_state_003.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
