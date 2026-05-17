@@ -114,14 +114,21 @@ assert(/function\s+resetTournamentProgressOnly\s*\(\s*\)\s*\{/.test(htmlSrc),
   //   state.started=false 直接代入は廃止し、classes[i].started=false ループ + syncGlobalStartedFromClasses() に置換。
   //   過去バグ防止: state.started=false だけだと classes[i].started=true のまま保存され、再ロード時に
   //   normalizeState の保守的展開で state.started=true に戻ってしまう。
-  assert(/state\.classes[\s\S]*?\.started\s*=\s*false/.test(rtpBody),
-    'helper 内で state.classes[i].started=false への代入が存在（spec §8.2 例外）');
+  assert(/state\.classes[\s\S]*?\.started\s*=\s*false/.test(rtpBody) || /c\.started\s*=\s*false/.test(rtpBody),
+    'helper 内で classes[i].started=false への代入が存在（spec §8.2 例外）');
   assert(/syncGlobalStartedFromClasses\s*\(\s*\)/.test(rtpBody),
     'helper 内で syncGlobalStartedFromClasses() を呼ぶ（state.started 同期書き込み）');
-  assert(/state\.pairings\s*=\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(rtpBody),
-    'helper 内で state.pairings={A:[],B:[]} への代入が存在');
-  assert(/state\.results\s*=\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(rtpBody),
-    'helper 内で state.results={A:[],B:[]} への代入が存在');
+  // ROUND-CLASS-START-004b (spec §12.2): state.pairings={A:[],B:[]} 固定 literal は廃止し、
+  //   state.classes.forEach 経由で classId ベース初期化に置換。
+  assert(/state\.pairings\[\s*c\.id\s*\]\s*=\s*\[\s*\]/.test(rtpBody),
+    'helper 内で state.pairings[c.id]=[] への代入が存在（classes-driven）');
+  assert(/state\.results\[\s*c\.id\s*\]\s*=\s*\[\s*\]/.test(rtpBody),
+    'helper 内で state.results[c.id]=[] への代入が存在（classes-driven）');
+  // 旧 {A:[],B:[]} literal は撤去済（A/B 解消）
+  assert(/state\.pairings\s*=\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(rtpBody) === false,
+    'helper 内に state.pairings={A:[],B:[]} 固定 literal が残っていない（spec §12.2 / S2 解消）');
+  assert(/state\.results\s*=\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(rtpBody) === false,
+    'helper 内に state.results={A:[],B:[]} 固定 literal が残っていない（spec §12.2 / S2 解消）');
 }
 
 // ============================================================
@@ -208,10 +215,15 @@ assert(/function\s+resetTournamentProgressOnly\s*\(\s*\)\s*\{/.test(htmlSrc),
   const resetMatch = htmlSrc.match(/function resetAll\([\s\S]*?\n\}\n/);
   assert(resetMatch !== null, 'resetAll() 関数本体を抽出できる');
   const resetBody = resetMatch ? resetMatch[0] : '';
-  assert(/players\s*:\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(resetBody),
-    'resetAll() 内で players:{A:[],B:[]} 初期化が維持されている (全リセット温存)');
+  // ROUND-CLASS-START-004b (spec §12.3): players:{A:[],B:[]} 固定 literal は廃止し、
+  //   emptyClassDict 経由の classes-driven 初期化に置換。
+  assert(/players\s*:\s*emptyClassDict\(/.test(resetBody),
+    'resetAll() 内で players: emptyClassDict(...) classes-driven 初期化 (全リセット温存)');
   assert(/started\s*:\s*false/.test(resetBody),
     'resetAll() 内で started:false 初期化が維持されている');
+  // 旧 {A:[],B:[]} literal が完全に撤去されていることを確認（S2 解消）
+  assert(/players\s*:\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(resetBody) === false,
+    'resetAll() 内に players:{A:[],B:[]} 固定 literal が残っていない（S2 解消）');
   // resetAll の confirm 文言（PR #118 で新文言へ更新済、主要語句を assert）
   assert(resetBody.indexOf('参加者一覧') >= 0,
     'resetAll() confirm に「参加者一覧」が含まれる (PR #118)');

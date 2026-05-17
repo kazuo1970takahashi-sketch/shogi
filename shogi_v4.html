@@ -4831,7 +4831,6 @@ function verifyStartSavedForCandidates(candidates){
 //     generatePairing per class）は applyStartForCandidates 内部に集約済み。
 //   - SAVE-003 verify は verifyStartSavedForCandidates で classId 単位（spec §6.5）。
 function startTournament(){
-  var total=state.players.A.length+state.players.B.length;
   // RECEPTION-UX-START-BUTTON-GUARD-IMPL-LIGHT (PR #111 §9.1) +
   // RESET-UX-PARTIAL-RESET-IMPL-LIGHT 同期更新 (PR #113 §9.1.1 H-1 / §10.1):
   //   大会開始済みでの「登録完了・対局開始」再クリックを案内付きで止める。
@@ -4841,31 +4840,31 @@ function startTournament(){
     alert('大会はすでに開始されています。\n参加者を変更する場合は、先に「大会進行データをリセット」を実行してください。\n大会進行データをリセットすると、参加者一覧は残したまま、現在の組み合わせ・勝敗結果は削除されます。');
     return;
   }
-  // validate phase 1: total-too-few fast-path（spec §6.2.3 最優先 error と整合）。
-  //   collectStartCandidates 内部でも判定するが、既存テスト（run_tests.sh B3 順序）が
-  //   「参加者が少なすぎます」文言が「進行中の大会データがあります」より前に startTournament
-  //   本体に現れることを期待しているため fast-path も併設する。Aクラス/Bクラス奇数の
-  //   validate（Aクラスが奇数です / Bクラスが奇数です）は validator に集約。
-  if(total<2){showMsg('参加者が少なすぎます','err');return;}
-  // hasOngoing fail-safe は spec §6.6 / inventory §4.4 に従い温存（state.started=false で
-  //   pairings/results のみ残る異常データの保護）。通常フローでは到達しない。
-  var hasOngoing=state.started && (
-    state.pairings.A.length>0 || state.pairings.B.length>0 ||
-    state.results.A.length>0 || state.results.B.length>0
-  );
+  // ROUND-CLASS-START-004b (Codex Should Fix S2):
+  //   hasOngoing fail-safe を state.classes 駆動に置換（A/B literal 解消）。
+  //   spec §6.6 / inventory §4.4 に従い温存（state.started=false で pairings/results のみ
+  //   残る異常データの保護）。通常フローでは到達しない（state.started===true guard と排他）。
+  var hasOngoing=false;
+  if(state.started&&Array.isArray(state.classes)){
+    for(var hi=0;hi<state.classes.length;hi++){
+      var hc=state.classes[hi];if(!hc||typeof hc.id!=='string')continue;
+      var hp=(state.pairings&&state.pairings[hc.id])||[];
+      var hr=(state.results&&state.results[hc.id])||[];
+      if(hp.length>0||hr.length>0){hasOngoing=true;break;}
+    }
+  }
   if(hasOngoing){
     if(!confirm('進行中の大会データがあります。再開始すると現在の結果が消えます。続けますか？'))return;
   }
   // ROUND-CLASS-START-004 (spec §6.6 atomic wrapper):
-  //   validate phase 2: 対象クラス全件を pure validator で検証。
-  //   1 件でも error があれば state を一切変更せず return（bulk atomic / all-or-nothing）。
-  //   Aクラスが奇数です / Bクラスが奇数です などの per-class error は collectStartCandidates
-  //   が validator 経由で生成（旧 inline odd 検査は本 PR で削除、validator に集約）。
+  //   validate phase: 対象クラス全件を pure validator で検証。total-too-few（参加者が少なすぎます）
+  //   / Aクラスが奇数です / Bクラスが奇数です などの error は collectStartCandidates が
+  //   validator 経由で生成（旧 inline 検査は ROUND-CLASS-START-004b で完全に削除、
+  //   validator に集約）。1 件でも error があれば state を一切変更せず return（bulk atomic）。
   var v=collectStartCandidates(state.classes,state.players);
   if(!v.ok){showStartValidationErrors(v.errors);return;}
   // mutate phase: applyStartForCandidates 内で pairings/results 初期化 / setClassStarted /
-  //   generatePairing(classId) を candidate ごとに実行。total 値は legacy 互換用（mutate 不使用）。
-  void total;
+  //   generatePairing(classId) を candidate ごとに実行。
   applyStartForCandidates(v.candidates);
   showTab('tournament');
   // SAVE-003 verify は verifyStartSavedForCandidates で classId 単位（spec §6.5）。
@@ -4892,6 +4891,42 @@ function startTournamentForClass(classId){
   applyStartForCandidates([v.candidateClassId]);
   showTab('tournament');
   verifyStartSavedForCandidates([v.candidateClassId]);
+}
+
+// ROUND-CLASS-START-004b (spec §12.1):
+//   指定 classId の進行データのみリセット。他クラスの pairings / results / started は保持。
+//   class atomic で動作（他クラス state を破壊しない）。
+//   - state.pairings[classId] = []
+//   - state.results[classId]  = []
+//   - setClassStarted(classId, false) で classes[i].started 同期 + state.started 再計算
+//   - DOM クリア: pane-{classId} / result-{classId}（classId ベース、A/B literal 不使用）
+//   - confirm 文言で「他クラスのデータは保持されます」を明示し全体リセットとの混同を防ぐ。
+function resetClassForClass(classId){
+  if(!state||!Array.isArray(state.classes)){showMsg('クラス情報が初期化されていません','err');return;}
+  var klass=null;
+  for(var i=0;i<state.classes.length;i++){
+    if(state.classes[i]&&state.classes[i].id===classId){klass=state.classes[i];break;}
+  }
+  if(!klass){showMsg('クラスが見つかりません','err');return;}
+  var className=klass.name||(classId+'クラス');
+  if(!confirm(className+'の組み合わせ・勝敗結果を削除します。\n他クラスのデータは保持されます。\nよろしいですか？'))return;
+  if(!state.pairings||typeof state.pairings!=='object')state.pairings={};
+  if(!state.results||typeof state.results!=='object')state.results={};
+  state.pairings[classId]=[];
+  state.results[classId]=[];
+  setClassStarted(classId,false);
+  // DOM クリア（classId ベース、A/B literal 不使用）
+  var pane=document.getElementById('pane-'+classId);if(pane)pane.innerHTML='';
+  var rslt=document.getElementById('result-'+classId);if(rslt)rslt.innerHTML='';
+  save();
+  renderRegList();
+  // tournament タブが開いている場合は全クラスを再描画して action bar を再生成
+  if(typeof renderTournament==='function'&&Array.isArray(state.classes)){
+    for(var ri=0;ri<state.classes.length;ri++){
+      if(state.classes[ri]&&state.classes[ri].id)renderTournament(state.classes[ri].id);
+    }
+  }
+  showMsg(className+'をリセットしました','ok');
 }
 
 // ============================================================
@@ -5610,11 +5645,73 @@ function bindTournamentEvents(cls){
   }
 }
 
+// ROUND-CLASS-START-004b (spec §11.3 / §11.4):
+//   pane-{classId} 上部に表示する class action bar を生成する pure helper。
+//   - class started=false かつ参加者 >= 2 かつ偶数 → 「<className>を開始」ボタン
+//   - class started=true                                → 「<className>をリセット」ボタン
+//   - 参加者 0 / 1 / 奇数 / 既開始以外でも、validator が拒否する場合は空（誤操作防止）。
+//   classId / className を escapeHtml して出力（XSS 対策）。
+function buildClassActionBarHtml(cls){
+  var classInfo=null;
+  if(Array.isArray(state.classes)){
+    for(var i=0;i<state.classes.length;i++){
+      if(state.classes[i]&&state.classes[i].id===cls){classInfo=state.classes[i];break;}
+    }
+  }
+  var className=(classInfo&&classInfo.name)?classInfo.name:(cls+'クラス');
+  var players=(state.players&&state.players[cls])||[];
+  var classStarted=isClassStarted(cls);
+  var html='<div class="class-action-bar" style="display:flex;gap:8px;margin-bottom:12px;align-items:center">';
+  if(classStarted){
+    html+='<button type="button" class="btn-danger btn-sm" id="resetBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'をリセット</button>';
+    html+='<span style="font-size:12px;color:#888">※他クラスのデータは保持されます</span>';
+  } else if(players.length>=2 && players.length%2===0){
+    html+='<button type="button" class="btn-primary btn-sm" id="startBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'を開始</button>';
+    html+='<span style="font-size:12px;color:#888">※このクラスのみ後追い開始します</span>';
+  }
+  html+='</div>';
+  return html;
+}
+
+// ROUND-CLASS-START-004b: class action bar の click handler を bind する。
+//   buildClassActionBarHtml が生成したボタンに対して、startTournamentForClass /
+//   resetClassForClass を呼ぶ click handler を登録する。
+function bindClassActionBarEvents(cls){
+  var startBtn=document.getElementById('startBtnClass_'+cls);
+  if(startBtn){
+    startBtn.addEventListener('click',(function(c){return function(){startTournamentForClass(c);};})(cls));
+  }
+  var resetBtn=document.getElementById('resetBtnClass_'+cls);
+  if(resetBtn){
+    resetBtn.addEventListener('click',(function(c){return function(){resetClassForClass(c);};})(cls));
+  }
+}
+
 function renderTournament(cls){
   var el=document.getElementById('pane-'+cls);
   if(!el)return;
-  var players=state.players[cls];
-  if(players.length===0){el.innerHTML='<div class="section"><h2>'+cls+'クラス</h2><p style="color:#888">参加者なし</p></div>';return;}
+  // ROUND-CLASS-START-004b (spec §11.3 / §11.4): class action bar を pane 上部に常に描画する。
+  //   参加者 0 / 未開始 ケースの早期 return でも action bar は出す（後追い開始の導線確保）。
+  var actionBarHtml=buildClassActionBarHtml(cls);
+  var classInfo=null;
+  if(Array.isArray(state.classes)){
+    for(var ci=0;ci<state.classes.length;ci++){
+      if(state.classes[ci]&&state.classes[ci].id===cls){classInfo=state.classes[ci];break;}
+    }
+  }
+  var className=(classInfo&&classInfo.name)?classInfo.name:(cls+'クラス');
+  var players=state.players[cls]||[];
+  if(players.length===0){
+    el.innerHTML='<div class="section">'+actionBarHtml+'<h2>'+escapeHtml(className)+'</h2><p style="color:#888">参加者なし</p></div>';
+    bindClassActionBarEvents(cls);
+    return;
+  }
+  if(!isClassStarted(cls)){
+    // 未開始クラス: 参加者数を表示 + 後追い開始ボタンを案内（action bar 経由）。
+    el.innerHTML='<div class="section">'+actionBarHtml+'<h2>'+escapeHtml(className)+'</h2><p style="color:#666">未開始（参加者 '+players.length+' 名）</p></div>';
+    bindClassActionBarEvents(cls);
+    return;
+  }
   var wins=getWins(cls);
   var done=state.results[cls].length>=state.rounds;
   var roundNum=state.results[cls].length+1;
@@ -5644,7 +5741,9 @@ function renderTournament(cls){
     }
   }
 
-  var html='<div class="section"><h2>'+cls+'クラス</h2>';
+  // ROUND-CLASS-START-004b: action bar を section の冒頭に挿入し、started=true 時の
+  //   「<className>をリセット」導線を確保する。className は state.classes[cls].name を尊重。
+  var html='<div class="section">'+actionBarHtml+'<h2>'+escapeHtml(className)+'</h2>';
   html+=buildScoreGridHtml(cls, sorted, wins);
   html+=buildPlayedHistoryHtml(cls, sorted, played);
   html+=buildPastResultsHtml(cls);
@@ -5652,6 +5751,7 @@ function renderTournament(cls){
 
   el.innerHTML=html;
   bindTournamentEvents(cls);
+  bindClassActionBarEvents(cls);
 }
 
 function buildEditPastResultModalHtml(cls, roundIdx, matchIdx, n1, n2, match){
@@ -6333,27 +6433,33 @@ function downloadReport(){
 function resetTournamentProgressOnly(){
   if(!confirm('参加者一覧は残したまま、現在の組み合わせ・勝敗結果を削除します。\nよろしいですか？'))return;
   // B. 大会進行データ（局単位）のみ初期化
-  // ROUND-CLASS-START-003 (spec §8.2 例外 / §12.2 / Codex Must Fix):
-  //   進行データを全クラス一括でリセットする全体初期化系のため、classes[i].started への
-  //   直接代入を例外的に許容。直後に syncGlobalStartedFromClasses() を呼んで state.started を
-  //   同期書き込みする（spec §8.2「例外の境界（厳格）」必須担保）。
-  //   過去バグ防止: state.started=false だけにすると classes[i].started=true のままで保存され、
-  //   再ロード時 normalizeState の保守的展開で state.started=true に戻ってしまう。
-  if(Array.isArray(state.classes)){
-    state.classes.forEach(function(c){ if(c) c.started=false; });
-  }
+  // ROUND-CLASS-START-004b (spec §12.2):
+  //   state.classes 駆動で全クラス一括リセット。A/B 固定 literal を廃止し、
+  //   pairings[c.id] / results[c.id] / c.started を classId ベースで初期化する。
+  //   spec §8.2 例外: 全体初期化系のため classes[i].started への直接代入を許容、
+  //   直後に syncGlobalStartedFromClasses() で state.started を同期書き込みする
+  //   （Codex Must Fix・過去バグ防止: state.started=false だけにすると classes[i].started=true
+  //    のままで保存され、再ロード時 normalizeState の保守的展開で state.started=true に戻る）。
+  if(!state.pairings||typeof state.pairings!=='object')state.pairings={};
+  if(!state.results||typeof state.results!=='object')state.results={};
+  var classesSnapshot=Array.isArray(state.classes)?state.classes.slice():[];
+  classesSnapshot.forEach(function(c){
+    if(!c||typeof c.id!=='string')return;
+    state.pairings[c.id]=[];
+    state.results[c.id]=[];
+    c.started=false;
+  });
   syncGlobalStartedFromClasses();
-  state.pairings={A:[],B:[]};
-  state.results={A:[],B:[]};
   // 開きっぱなしのモーダルを閉じる（resetAll と同設計、進行中操作の取りこぼし防止）
   ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
     var m=document.getElementById(mid);if(m)m.remove();
   });
-  // 大会タブの表示 DOM をクリア（参加者・report・rounds 等の reg/master タブ DOM は触らない）
-  var paneA=document.getElementById('pane-A');if(paneA)paneA.innerHTML='';
-  var paneB=document.getElementById('pane-B');if(paneB)paneB.innerHTML='';
-  var resultA=document.getElementById('result-A');if(resultA)resultA.innerHTML='';
-  var resultB=document.getElementById('result-B');if(resultB)resultB.innerHTML='';
+  // 大会タブの表示 DOM をクリア（classId ベース、A/B literal 不使用、可変クラスに対応）
+  classesSnapshot.forEach(function(c){
+    if(!c||typeof c.id!=='string')return;
+    var pane=document.getElementById('pane-'+c.id);if(pane)pane.innerHTML='';
+    var rslt=document.getElementById('result-'+c.id);if(rslt)rslt.innerHTML='';
+  });
   save();
   renderRegList();
   showTab('reg');
@@ -6362,7 +6468,24 @@ function resetTournamentProgressOnly(){
 
 function resetAll(){
   if(!confirm('参加者一覧・組み合わせ・勝敗結果を含む大会データをすべてリセットします。\n支部マスタは保持されます。'))return;
-  state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''},classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}]};_pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;  // ROUND-CLASS-START-003 (spec §8.2 例外): 全体初期化のため started 直接代入を許容。
+  // ROUND-CLASS-START-004b (spec §12.3 / §8.2 例外):
+  //   state.classes 駆動で全リセット。{A:[],B:[]} 固定 literal を廃止し、emptyClassDict 経由で
+  //   classId ベースに初期化する。既定 classes は ['A','B']（A/B 大会の互換維持、Phase 6 までは現状維持）。
+  //   全体初期化系のため started 直接代入を例外的に許容（spec §8.2 例外境界）。
+  var defaultClasses=[
+    {id:'A',name:'Aクラス',started:false},
+    {id:'B',name:'Bクラス',started:false}
+  ];
+  state={
+    players:emptyClassDict(defaultClasses,function(){return [];}),
+    rounds:4,
+    pairings:emptyClassDict(defaultClasses,function(){return [];}),
+    results:emptyClassDict(defaultClasses,function(){return [];}),
+    started:false,
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''},
+    classes:defaultClasses
+  };
+  _pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
   try{
     // 仕様書 3.4.1 / §3.1.5: shogi_branch_master は絶対に消さない
     localStorage.removeItem(STORAGE_KEY);
@@ -6373,11 +6496,12 @@ function resetAll(){
     var m=document.getElementById(mid);if(m)m.remove();
   });
   renderRegList();
-  // 表示DOMを明示的にクリア
-  var paneA=document.getElementById('pane-A');if(paneA)paneA.innerHTML='';
-  var paneB=document.getElementById('pane-B');if(paneB)paneB.innerHTML='';
-  var resultA=document.getElementById('result-A');if(resultA)resultA.innerHTML='';
-  var resultB=document.getElementById('result-B');if(resultB)resultB.innerHTML='';
+  // 表示DOMを明示的にクリア（classId ベース、A/B literal 不使用）
+  state.classes.forEach(function(c){
+    if(!c||typeof c.id!=='string')return;
+    var pane=document.getElementById('pane-'+c.id);if(pane)pane.innerHTML='';
+    var rslt=document.getElementById('result-'+c.id);if(rslt)rslt.innerHTML='';
+  });
   // 大会報告書入力欄を初期化
   var repDate=document.getElementById('rep-date');if(repDate)repDate.value='';
   var repPlace=document.getElementById('rep-place');if(repPlace)repPlace.value='労政会館';

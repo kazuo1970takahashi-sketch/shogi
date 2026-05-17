@@ -242,12 +242,14 @@ assert(secondSlice.length > 0, '二次禁止ブロックをスライスできる
   const rtpMatch = htmlSrc.match(/function resetTournamentProgressOnly\([\s\S]*?\n\}\n/);
   assert(rtpMatch !== null, 'resetTournamentProgressOnly() 関数本体を抽出できる');
   const rtpBody = rtpMatch ? rtpMatch[0] : '';
-  assert(/state\.started\s*=\s*false/.test(rtpBody),
-    'resetTournamentProgressOnly() 内の state.started=false が維持');
-  assert(/state\.pairings\s*=\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(rtpBody),
-    'resetTournamentProgressOnly() 内の state.pairings={A:[],B:[]} が維持');
-  assert(/state\.results\s*=\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(rtpBody),
-    'resetTournamentProgressOnly() 内の state.results={A:[],B:[]} が維持');
+  // ROUND-CLASS-START-004b (spec §12.2): A/B 固定 literal は廃止、classes-driven 初期化に置換。
+  //   state.started への同期書き込みは syncGlobalStartedFromClasses() が担当（spec §8.2 例外）。
+  assert(/syncGlobalStartedFromClasses\s*\(\s*\)/.test(rtpBody),
+    'resetTournamentProgressOnly() 内で syncGlobalStartedFromClasses() を呼び state.started を同期');
+  assert(/state\.pairings\[\s*c\.id\s*\]\s*=\s*\[\s*\]/.test(rtpBody),
+    'resetTournamentProgressOnly() 内で state.pairings[c.id]=[] への代入が存在（classes-driven）');
+  assert(/state\.results\[\s*c\.id\s*\]\s*=\s*\[\s*\]/.test(rtpBody),
+    'resetTournamentProgressOnly() 内で state.results[c.id]=[] への代入が存在（classes-driven）');
   assert(rtpBody.indexOf('参加者一覧は残したまま、現在の組み合わせ・勝敗結果を削除します') >= 0,
     'resetTournamentProgressOnly() confirm 文言が維持');
 
@@ -255,8 +257,10 @@ assert(secondSlice.length > 0, '二次禁止ブロックをスライスできる
   const resetMatch = htmlSrc.match(/function resetAll\([\s\S]*?\n\}\n/);
   assert(resetMatch !== null, 'resetAll() 関数本体を抽出できる');
   const resetBody = resetMatch ? resetMatch[0] : '';
-  assert(/players\s*:\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(resetBody),
-    'resetAll() 内の players:{A:[],B:[]} 初期化が維持 (全リセット温存)');
+  // ROUND-CLASS-START-004b (spec §12.3): A/B 固定 literal は廃止、emptyClassDict 経由の
+  //   classes-driven 初期化に置換。
+  assert(/players\s*:\s*emptyClassDict\(/.test(resetBody),
+    'resetAll() 内で players: emptyClassDict(...) classes-driven 初期化 (全リセット温存)');
   // PR #118 で resetAll() confirm 文言を「参加者一覧・組み合わせ・勝敗結果を含む大会データを
   // すべてリセットします。\n支部マスタは保持されます。」へ更新済。主要語句を assert。
   assert(resetBody.indexOf('参加者一覧') >= 0,

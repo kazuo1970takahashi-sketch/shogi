@@ -63,35 +63,33 @@ const stBody = stMatch ? stMatch[0] : '';
 }
 
 // ============================================================
-// 2) guard の位置: total 算出後 / 参加者数チェック・hasOngoing confirm より前
-//   ROUND-CLASS-START-004: Aクラス奇数 / Bクラス奇数 inline 検査は validateStartableClass に
-//     集約された（spec §6.3.2）。startTournament 本体には総合 fast-path（参加者が少なすぎます）
-//     のみ残し、奇数 / no-candidate 判定は collectStartCandidates が担当。
+// 2) guard の位置: 関数冒頭直後（state.started===true）/ hasOngoing confirm より前
+//   ROUND-CLASS-START-004b (Codex Should Fix S2):
+//     - Aクラス奇数 / Bクラス奇数 inline 検査は validateStartableClass に集約（spec §6.3.2）。
+//     - total fast-path（`if(total<2)`）は collectStartCandidates 内部の total-too-few 判定に
+//       一本化、startTournament 本体からは削除（S2 A/B literal 解消）。
+//     - hasOngoing は state.classes 駆動に書き換え（A/B literal 解消）。
+//   旧テスト中で常に拾えていた「人数チェック alert 位置」「Aクラス奇数」literal 依存は本 PR で撤去。
+//   validator/collector 内に文言があるかは htmlSrc full file 検査で担保する。
 // ============================================================
-const idxTotal       = stBody.indexOf('var total=state.players.A.length');
 const idxGuardCond   = stBody.search(/if\s*\(\s*state\.started\s*===\s*true\s*\)/);
-const idxTooFew      = stBody.indexOf('参加者が少なすぎます');
 // hasOngoing は `var hasOngoing=` の変数宣言位置を見る（コメント内の "hasOngoing"
 // 文字列に引っかからないため）。
 const idxHasOngoing  = stBody.search(/var\s+hasOngoing\s*=/);
 const idxOngoingConfirm = stBody.indexOf('進行中の大会データがあります');
 
-assert(idxTotal >= 0, 'total 算出行を抽出できる');
 assert(idxGuardCond >= 0, 'guard 条件位置を抽出できる');
-assert(idxTooFew >= 0, '人数チェック alert 位置を抽出できる');
 assert(idxHasOngoing >= 0, 'hasOngoing 変数位置を抽出できる');
 assert(idxOngoingConfirm >= 0, '既存 confirm 文言位置を抽出できる');
 
-// ROUND-CLASS-START-004: Aクラス/Bクラス奇数文言は startTournament 本体には残らない
-//   （validator の `<className>が奇数です` テンプレートで生成される）。
-//   run_tests.sh は full file grep のため、validator 内に文言があれば検出される。
-assert(htmlSrc.indexOf('Aクラスが奇数です') >= 0 || /が奇数です。運営者を追加してください/.test(htmlSrc),
+// ROUND-CLASS-START-004b: 人数チェック / Aクラス・Bクラス奇数 文言は startTournament 本体から
+//   削除済。collectStartCandidates / validateStartableClass 内（同一 file 内の別関数）で
+//   生成される。htmlSrc 全体に存在することは run_tests.sh / 別単体テストで担保。
+assert(htmlSrc.indexOf('参加者が少なすぎます') >= 0,
+  '「参加者が少なすぎます」文言は file 全体に存在（collectStartCandidates total-too-few へ集約）');
+assert(/が奇数です。運営者を追加してください/.test(htmlSrc),
   '奇数チェック文言は file 全体に存在（validator へ集約）');
 
-assert(idxTotal < idxGuardCond,
-  'guard は total 算出行より後ろにある');
-assert(idxGuardCond < idxTooFew,
-  'guard は人数チェック (参加者が少なすぎます) より前にある');
 assert(idxGuardCond < idxHasOngoing,
   'guard は hasOngoing 算出より前にある');
 assert(idxGuardCond < idxOngoingConfirm,
@@ -102,11 +100,13 @@ assert(idxGuardCond < idxOngoingConfirm,
 // 4) alert 文言の主要語句
 // 5) 「参加者一覧は残ります」が含まれない
 // 6) guard 内で return している
+//
+// ROUND-CLASS-START-004b: guard ブロックの終端は `var hasOngoing=` 直前に変更（旧 total fast-path
+//   削除に伴う）。
 // ============================================================
 
-// guard 本体スライス: guard 条件以降〜次の "if(total<2)" の直前
-const sliceEnd = stBody.indexOf('if(total<2)', idxGuardCond);
-assert(sliceEnd > idxGuardCond, 'guard ブロックの終端（if(total<2) 直前）を取得できる');
+const sliceEnd = stBody.search(/var\s+hasOngoing\s*=/);
+assert(sliceEnd > idxGuardCond, 'guard ブロックの終端（var hasOngoing= 直前）を取得できる');
 const guardSlice = (sliceEnd > idxGuardCond) ? stBody.substring(idxGuardCond, sliceEnd) : '';
 
 {
@@ -201,8 +201,8 @@ assert(idxCollect < idxApply,
   //   inline 代入は **存在しなくてよい**（spec §10.4 atomic wrapper パターン）。
   assert(/state\.started\s*=\s*true/.test(stBody) === false,
     'startTournament 内に state.started=true の inline 代入は **無い**（setClassStarted 経由に集約）');
-  // guard 終了以降のスライス（コメント内の save()/showTab(...) 表記に引っかからないため）
-  const guardEndIdx = stBody.indexOf('if(total<2)', idxGuardCond);
+  // guard 終了以降のスライス（ROUND-CLASS-START-004b: total fast-path 削除に伴い hasOngoing 起点に変更）
+  const guardEndIdx = stBody.search(/var\s+hasOngoing\s*=/);
   const postGuardBody = guardEndIdx >= 0 ? stBody.substring(guardEndIdx) : '';
   assert(postGuardBody.indexOf("showTab('tournament')") >= 0,
     "startTournament 内 (guard 後) に showTab('tournament') の通常経路が維持されている");
@@ -227,9 +227,12 @@ assert(idxCollect < idxApply,
   // resetAll は state={...,started:false,...} の object 代入で初期化する
   assert(/started\s*:\s*false/.test(resetBody),
     'resetAll() 内で started:false 初期化が維持されている');
-  // state.players も空にする現状仕様の確認（IMPL-LIGHT では変更しない）
-  assert(/players\s*:\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(resetBody),
-    'resetAll() 内で players:{A:[],B:[]} 初期化が維持されている（参加者も空にする現仕様）');
+  // ROUND-CLASS-START-004b (spec §12.3): players:{A:[],B:[]} 固定 literal は廃止し、
+  //   emptyClassDict 経由の classes-driven 初期化に置換。既定 classes は ['A','B']。
+  assert(/players\s*:\s*emptyClassDict\(/.test(resetBody),
+    'resetAll() 内で players: emptyClassDict(...) classes-driven 初期化に置換されている');
+  assert(/classes\s*:\s*defaultClasses/.test(resetBody) || /classes\s*:\s*\[\s*\{\s*id\s*:\s*'A'/.test(resetBody),
+    'resetAll() 内で classes が宣言され ["A","B"] 既定値が確保されている');
 }
 
 // ============================================================
