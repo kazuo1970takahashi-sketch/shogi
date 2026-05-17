@@ -100,7 +100,8 @@ function assert(cond,msg){if(cond)ok(); else ng(msg);}
 function assertEq(a,b,msg){if(JSON.stringify(a)===JSON.stringify(b))ok(); else ng(msg+': expected '+JSON.stringify(b)+' got '+JSON.stringify(a));}
 
 function makeEmptyState(){
-  return {players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'',start:'',end:'',sei:'',fuku:'',note:''}};
+  // ROUND-CLASS-START-004: state.classes は PR #138 で導入。test fixture でも classes を含める。
+  return {players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],report:{date:'',place:'',start:'',end:'',sei:'',fuku:'',note:''}};
 }
 
 function makePlayer(id,name,cls,entryNo){

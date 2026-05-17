@@ -144,7 +144,9 @@ function assert(cond,msg){if(cond)ok(); else ng(msg);}
 function assertEq(a,b,msg){if(JSON.stringify(a)===JSON.stringify(b))ok(); else ng(msg+': expected '+JSON.stringify(b)+' got '+JSON.stringify(a));}
 
 function makeEmptyState(rounds){
-  return {players:{A:[],B:[]},rounds:(typeof rounds==='number'?rounds:4),pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,report:{date:'',place:'',start:'',end:'',sei:'',fuku:'',note:''}};
+  // ROUND-CLASS-START-004: state.classes は PR #138 で導入。startTournament が
+  //   collectStartCandidates(state.classes, ...) を呼ぶため、test fixture にも classes を含める。
+  return {players:{A:[],B:[]},rounds:(typeof rounds==='number'?rounds:4),pairings:{A:[],B:[]},results:{A:[],B:[]},started:false,classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],report:{date:'',place:'',start:'',end:'',sei:'',fuku:'',note:''}};
 }
 
 function makePlayer(id,name,cls,entryNo){
@@ -821,6 +823,76 @@ function makePlayer(id,name,cls,entryNo){
     [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'},{p1:'X',p2:'d',winner:null,lastModifiedBy:'auto'}],
     [{p1:'a',p2:'b',winner:null,lastModifiedBy:'auto'},{p1:'c',p2:'d',winner:null,lastModifiedBy:'auto'}]
   ), false, '20-6 複数件で 1 件だけ違う場合も false');
+}
+
+// ============================================================
+// 20b. ROUND-CLASS-START-004 (PR #138 post-merge review S-1 吸収):
+//     pairingsMatchSnapshot の field-compare 経路を**間接的に**カバーする回帰テスト。
+//
+//     背景 (PR #138 post-merge review S-1):
+//       PR #138 で readPersistedState() が normalizeState 経由になった結果、
+//       17 / 19 の「stale pairings」テストは、stale player id (staleX/staleY) が
+//       sanitizeMatch で sanitize されて length=0 になり、length 不一致経路で検知される
+//       ようになった。つまり field-compare 経路の防御テストが薄くなった。
+//
+//     本テストの設計:
+//       - localStorage 側の pairings は in-memory と同じ「2 名 登録済 / length 1」だが、
+//         winner / lastModifiedBy など **field-level だけ stale** な状態を作る。
+//       - player id は登録済（sanitize を通り抜ける）
+//       - length は in-memory と一致（length-only check ではすり抜ける）
+//       - field-compare で mismatch を検知する（pairingsMatchSnapshot false → SAVE-004 warn）
+//
+//     これにより、normalize の sanitize に依存せず pairingsMatchSnapshot 自身の
+//     field-compare 防御が回帰確認される。
+// ============================================================
+{
+  const env = loadEnv(targetPath);
+  const s = makeEmptyState();
+  s.players.A = [makePlayer('p1','田中','A',1), makePlayer('p2','佐藤','A',2)];
+  s.classes[0].started = true; s.started = true;
+  env._setState(s);
+  env.save();
+
+  // localStorage 上 で、player id は登録済（sanitize を通る）、length=1（in-memory と一致）、
+  //   ただし winner が in-memory と異なる field-level stale を作る。
+  //   in-memory はこのあと generatePairing で winner:null の新ペアを作る予定。
+  env._ctx.localStorage._[env.STORAGE_KEY] = JSON.stringify({
+    players:{ A:s.players.A, B:[] },
+    rounds:4,
+    started:true,
+    classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:false}],
+    pairings:{ A:[{p1:'p1',p2:'p2',winner:'p1',lastModifiedBy:'manual'}], B:[] },  // ← winner / lastModifiedBy が stale
+    results:{ A:[], B:[] },
+    report:{date:'',place:'',start:'',end:'',sei:'',fuku:'',note:''}
+  });
+  // setItem 失敗で save() が stale を上書きできないようにする
+  env._ctx.localStorage._failOnSet = true;
+
+  env.generatePairing('A');
+
+  const after = env._getState();
+  // in-memory: winner:null の新ペア 1 件
+  assertEq(after.pairings.A.length, 1, '20b-1 in-memory: pairings.A=1 件（rollback しない）');
+  assertEq(after.pairings.A[0].winner, null, '20b-2 in-memory: winner=null（新規生成）');
+
+  // localStorage: player id は登録済のため normalize を通過、length=1 維持
+  const persisted = env.readPersistedState();
+  assertEq(persisted && persisted.pairings && persisted.pairings.A.length, 1,
+    '20b-3 localStorage: pairings.A length=1（player id 登録済で sanitize 通過、length-only ではすり抜ける）');
+
+  // pairingsMatchSnapshot は field-compare で stale を検知（length が同じため length-only では一致してしまう）
+  assertEq(env.pairingsMatchSnapshot(persisted.pairings.A, after.pairings.A), false,
+    '20b-4 pairingsMatchSnapshot field-compare で stale 検知（length は一致だが winner 不一致）');
+
+  // SAVE-004 warn 表示が出ること（field-compare 経路の防御がアクティブ）
+  assert(env._regMsgHtml().indexOf('alert-warn') !== -1,
+    '20b-5 field-compare 経路で SAVE-004 warn が出る（showMsg('+JSON.stringify('warn')+')）');
+  assert(env._regMsgHtml().indexOf('保存が確認できませんでした') !== -1,
+    '20b-6 「保存未確認」表現の文言');
+  const warnText = env._warnCalls.join('\n');
+  assert(warnText.indexOf('SAVE-004') !== -1, '20b-7 console.warn に SAVE-004 タグ');
+  assert(warnText.indexOf('generatePairing') !== -1, '20b-8 console.warn に generatePairing を含む');
+  assertEq(env._alertCalls.length, 0, '20b-9 alert は呼ばれない');
 }
 
 // ============================================================

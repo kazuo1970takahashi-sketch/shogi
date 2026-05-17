@@ -4627,25 +4627,228 @@ function editPlayer(id,cls){
   openMemberMasterSyncDialog(p,newName);
 }
 
+// ROUND-CLASS-START-004 (spec §6.3.2):
+//   per-class pure validator。他クラスの state を参照しない。
+//   bulk / single 両方で再利用される core。グローバル state を読まない（spec §10.3）。
+//   error kind の優先順位: too-few (cnt===1) > odd (cnt%2!==0 かつ >=3) を内部で確定。
+function validateStartableClass(classInfo,playersForClass){
+  var cnt=Array.isArray(playersForClass)?playersForClass.length:0;
+  var name=(classInfo&&typeof classInfo.name==='string'&&classInfo.name)?classInfo.name:(classInfo&&classInfo.id?classInfo.id+'クラス':'クラス');
+  if(cnt===0)return {kind:'skip-empty'};
+  if(classInfo&&classInfo.started===true)return {kind:'skip-already-started'};
+  if(cnt===1)return {kind:'too-few',message:name+'は参加者が1名のため開始できません'};
+  if(cnt%2!==0)return {kind:'odd',message:name+'が奇数です。運営者を追加してください'};
+  return {kind:'ok'};
+}
+
+// ROUND-CLASS-START-004 (spec §13.2.1):
+//   bulk で「errors 0 件 + candidates 0 件」のとき、skip 内訳を見て文言を分ける pure helper。
+function resolveNoCandidateMessage(skipped){
+  var arr=Array.isArray(skipped)?skipped:[];
+  var hasEmpty=false,hasAlreadyStarted=false;
+  for(var i=0;i<arr.length;i++){
+    var s=arr[i];if(!s)continue;
+    if(s.kind==='skip-empty')hasEmpty=true;
+    if(s.kind==='skip-already-started')hasAlreadyStarted=true;
+  }
+  if(hasEmpty&&!hasAlreadyStarted)return '開始できるクラスがありません。参加者を登録してください。';
+  if(hasAlreadyStarted&&!hasEmpty)return '未開始のクラスはありません。';
+  return '開始対象のクラスがありません。';
+}
+
+// ROUND-CLASS-START-004 (spec §6.3.3):
+//   #startBtn 用 bulk collector。all-or-nothing validation。
+//   pure 関数（グローバル state 非参照、引数のみで動作）。spec §10.3 / §6.6。
+//   返り値: {ok, candidates:[classId], errors:[{classId,kind,message}], skipped:[{classId,kind}]}
+//   error 優先順位:
+//     1. total-too-few（クラス横断、最優先）
+//     2. per-class too-few / odd（validateStartableClass 内部で確定）
+//     3. no-candidate（errors 0 件 + candidates 0 件のフォールバック）
+function collectStartCandidates(classes,players){
+  if(!Array.isArray(classes))return {ok:false,candidates:[],errors:[{classId:null,kind:'no-candidate',message:'クラス情報が初期化されていません'}],skipped:[]};
+  var safePlayers=(players&&typeof players==='object')?players:{};
+  var total=0;
+  for(var i=0;i<classes.length;i++){
+    var ci=classes[i];if(!ci||typeof ci.id!=='string')continue;
+    var arr=safePlayers[ci.id];
+    if(Array.isArray(arr))total+=arr.length;
+  }
+  if(total<2){
+    return {ok:false,candidates:[],errors:[{classId:null,kind:'total-too-few',message:'参加者が少なすぎます'}],skipped:[]};
+  }
+  var errors=[];
+  var candidates=[];
+  var skipped=[];
+  for(var k=0;k<classes.length;k++){
+    var c=classes[k];if(!c||typeof c.id!=='string')continue;
+    var r=validateStartableClass(c,safePlayers[c.id]);
+    switch(r.kind){
+      case 'ok':                   candidates.push(c.id); break;
+      case 'skip-empty':           skipped.push({classId:c.id,kind:'skip-empty'}); break;
+      case 'skip-already-started': skipped.push({classId:c.id,kind:'skip-already-started'}); break;
+      case 'too-few':              errors.push({classId:c.id,kind:'too-few',message:r.message}); break;
+      case 'odd':                  errors.push({classId:c.id,kind:'odd',message:r.message}); break;
+    }
+  }
+  if(errors.length>0){
+    return {ok:false,candidates:[],errors:errors,skipped:skipped};
+  }
+  if(candidates.length===0){
+    return {ok:false,candidates:[],errors:[{classId:null,kind:'no-candidate',message:resolveNoCandidateMessage(skipped)}],skipped:skipped};
+  }
+  return {ok:true,candidates:candidates,errors:[],skipped:skipped};
+}
+
+// ROUND-CLASS-START-004 (spec §6.3.4 / §7.6):
+//   startTournamentForClass(classId) 用 single collector。class atomic。
+//   他クラスの state を見ない（classes は classInfo 解決のみ）。
+//   total-too-few クラス横断 error は適用しない（spec §6.2.3）。
+//   返り値: {ok, candidateClassId, error?:{kind,message}}
+function collectStartCandidateForClass(classId,classes,players){
+  if(typeof classId!=='string'||!classId){
+    return {ok:false,candidateClassId:null,error:{kind:'unknown-class',message:'クラスが見つかりません'}};
+  }
+  if(!Array.isArray(classes)){
+    return {ok:false,candidateClassId:null,error:{kind:'unknown-class',message:'クラスが見つかりません'}};
+  }
+  var classInfo=null;
+  for(var i=0;i<classes.length;i++){
+    if(classes[i]&&classes[i].id===classId){classInfo=classes[i];break;}
+  }
+  if(!classInfo){
+    return {ok:false,candidateClassId:null,error:{kind:'unknown-class',message:'クラスが見つかりません'}};
+  }
+  var safePlayers=(players&&typeof players==='object')?players:{};
+  var r=validateStartableClass(classInfo,safePlayers[classId]);
+  var name=classInfo.name||(classId+'クラス');
+  switch(r.kind){
+    case 'ok':
+      return {ok:true,candidateClassId:classId};
+    case 'skip-empty':
+      return {ok:false,candidateClassId:null,error:{kind:'skip-empty',message:name+'は参加者がいません'}};
+    case 'skip-already-started':
+      return {ok:false,candidateClassId:null,error:{kind:'skip-already-started',message:name+'はすでに開始されています'}};
+    case 'too-few':
+    case 'odd':
+      return {ok:false,candidateClassId:null,error:{kind:r.kind,message:r.message}};
+  }
+  return {ok:false,candidateClassId:null,error:{kind:'unknown-class',message:'クラスが見つかりません'}};
+}
+
+// ROUND-CLASS-START-004 (spec §13.2):
+//   bulk validation errors を集約表示する UI helper。
+//   1 件 → kind に応じて showMsg / alert / showMsg('warn')。複数件 → 1 alert にまとめる。
+function showStartValidationErrors(errors){
+  var arr=Array.isArray(errors)?errors:[];
+  if(arr.length===0)return;
+  if(arr.length===1){
+    var e=arr[0];
+    if(e.kind==='total-too-few'){showMsg(e.message,'err');return;}
+    if(e.kind==='no-candidate'){alert(e.message);return;}
+    if(e.kind==='too-few'){showMsg(e.message,'warn');return;}
+    if(e.kind==='odd'){showMsg(e.message,'warn');return;}
+    showMsg(e.message||'対局を開始できません','err');
+    return;
+  }
+  var msgs=[];
+  for(var i=0;i<arr.length;i++){if(arr[i]&&arr[i].message)msgs.push(arr[i].message);}
+  alert('対局を開始できません：\n\n'+msgs.join('\n'));
+}
+
+// ROUND-CLASS-START-004 (spec §6.4):
+//   validate 済 candidates のみを mutate する writer。
+//   mutate phase 開始前に candidates 全件が state.classes に存在することを再確認することで、
+//   setClassStarted の throw による部分 mutation を防ぐ（atomic mutate）。
+//   各 candidate について pairings/results 初期化 → setClassStarted(true) → generatePairing。
+//   最後に save() を 1 回呼ぶ。
+function applyStartForCandidates(candidates){
+  if(!Array.isArray(candidates)||candidates.length===0)return;
+  if(!state||!Array.isArray(state.classes)){
+    if(typeof console!=='undefined'&&console.warn)console.warn('applyStartForCandidates: state.classes is not initialized');
+    return;
+  }
+  // pre-flight: 全 candidate が state.classes に実在することを確認。
+  //   1 件でも unknown classId があれば mutate せず return（部分開始バグ防止 / spec §6.1 (6)）。
+  var idIndex={};
+  for(var i=0;i<state.classes.length;i++){
+    var c=state.classes[i];
+    if(c&&typeof c.id==='string')idIndex[c.id]=true;
+  }
+  for(var k=0;k<candidates.length;k++){
+    if(!idIndex[candidates[k]]){
+      if(typeof console!=='undefined'&&console.warn)console.warn('applyStartForCandidates: unknown classId in candidates: '+candidates[k]);
+      return;
+    }
+  }
+  if(!state.pairings||typeof state.pairings!=='object')state.pairings={};
+  if(!state.results||typeof state.results!=='object')state.results={};
+  for(var j=0;j<candidates.length;j++){
+    var classId=candidates[j];
+    state.pairings[classId]=[];
+    state.results[classId]=[];
+    setClassStarted(classId,true);   // state.started も同期書き込み（spec §8.2）
+    generatePairing(classId);
+  }
+  save();
+}
+
+// ROUND-CLASS-START-004 (spec §6.5):
+//   SAVE-003 verify を classId 単位で実行する reader。
+//   callsiteId は classId を含める（'SAVE-003-startTournament-' + classId）。
+//   aggregateKey は 'save-verify:core' を共有（既存 indicator 挙動維持）。
+function verifyStartSavedForCandidates(candidates){
+  if(!Array.isArray(candidates)||candidates.length===0)return;
+  var persisted=readPersistedState();
+  for(var i=0;i<candidates.length;i++){
+    var classId=candidates[i];
+    var klass=null;
+    if(state&&Array.isArray(state.classes)){
+      for(var j=0;j<state.classes.length;j++){
+        if(state.classes[j]&&state.classes[j].id===classId){klass=state.classes[j];break;}
+      }
+    }
+    var className=(klass&&klass.name)?klass.name:(classId+'クラス');
+    if(!persisted||!classStartedInPersisted(persisted,classId)){
+      notifySaveWarning({
+        message:className+'を開始しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+        consoleTag:'SAVE-003: startTournament の保存が確認できませんでした (classId='+classId+')',
+        callsiteId:'SAVE-003-startTournament-'+classId,
+        kind:'save-verify',
+        aggregateKey:'save-verify:core',
+        severity:'warn'
+      });
+    }
+  }
+}
+
+// ROUND-CLASS-START-004 (spec §6.6):
+//   #startBtn 一括開始の atomic wrapper（bulk atomic）。
+//   - 既存の `if(state.started===true)` 全クラス開始済 fast-path / hasOngoing fail-safe は
+//     spec §6.6 / §7.5 に従い温存（B クラス後追い開始は別途 startTournamentForClass を使う）。
+//   - validate phase: collectStartCandidates（pure、state を読むだけ）
+//   - mutate phase:   applyStartForCandidates（atomic、validate 済 candidates のみ書く）
+//   - 旧 startTournament の直接 mutate（state.started=true / pairings/results 直書き /
+//     generatePairing per class）は applyStartForCandidates 内部に集約済み。
+//   - SAVE-003 verify は verifyStartSavedForCandidates で classId 単位（spec §6.5）。
 function startTournament(){
   var total=state.players.A.length+state.players.B.length;
   // RECEPTION-UX-START-BUTTON-GUARD-IMPL-LIGHT (PR #111 §9.1) +
   // RESET-UX-PARTIAL-RESET-IMPL-LIGHT 同期更新 (PR #113 §9.1.1 H-1 / §10.1):
   //   大会開始済みでの「登録完了・対局開始」再クリックを案内付きで止める。
-  //   主ガードは state.started === true。pairings/results 併用判定は行わない。
-  //   alert 文言は PR #113 §9.1.1 H-1: 新規ボタン「大会進行データをリセット」へ
-  //   誘導し、参加者一覧が残ることを明示する（部分リセット導入により真実に）。
-  //   到達させない処理: state.results 初期化 / state.pairings 初期化 /
-  //     generatePairing / save() / showTab('tournament') / SAVE-003 verify。
-  //   既存 hasOngoing confirm 経路は安全網として温存（state.started=false で
-  //   pairings/results のみ残る異常データの fail-safe）。
+  //   ROUND-CLASS-START-004: state.started は all-class OR の互換フィールド。
+  //   一部 class のみ開始済の場合も guard が発火する（B 後追いは startTournamentForClass('B')）。
   if(state.started===true){
     alert('大会はすでに開始されています。\n参加者を変更する場合は、先に「大会進行データをリセット」を実行してください。\n大会進行データをリセットすると、参加者一覧は残したまま、現在の組み合わせ・勝敗結果は削除されます。');
     return;
   }
+  // validate phase 1: total-too-few fast-path（spec §6.2.3 最優先 error と整合）。
+  //   collectStartCandidates 内部でも判定するが、既存テスト（run_tests.sh B3 順序）が
+  //   「参加者が少なすぎます」文言が「進行中の大会データがあります」より前に startTournament
+  //   本体に現れることを期待しているため fast-path も併設する。Aクラス/Bクラス奇数の
+  //   validate（Aクラスが奇数です / Bクラスが奇数です）は validator に集約。
   if(total<2){showMsg('参加者が少なすぎます','err');return;}
-  if(state.players.A.length%2!==0&&state.players.A.length>0){showMsg('Aクラスが奇数です。運営者を追加してください','warn');return;}
-  if(state.players.B.length%2!==0&&state.players.B.length>0){showMsg('Bクラスが奇数です。運営者を追加してください','warn');return;}
+  // hasOngoing fail-safe は spec §6.6 / inventory §4.4 に従い温存（state.started=false で
+  //   pairings/results のみ残る異常データの保護）。通常フローでは到達しない。
   var hasOngoing=state.started && (
     state.pairings.A.length>0 || state.pairings.B.length>0 ||
     state.results.A.length>0 || state.results.B.length>0
@@ -4653,25 +4856,42 @@ function startTournament(){
   if(hasOngoing){
     if(!confirm('進行中の大会データがあります。再開始すると現在の結果が消えます。続けますか？'))return;
   }
-  state.started=true;
-  state.pairings={A:[],B:[]};
-  state.results={A:[],B:[]};
-  if(state.players.A.length>0)generatePairing('A');
-  if(state.players.B.length>0)generatePairing('B');
-  showTab('tournament');save();
-  // A-5.1-SAVE-003: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
-  // false は「保存未確認」（保存失敗と断定しない）。大会開始は rollback しない・運営は継続する。
-  var persisted_st=readPersistedState();
-  if(!persisted_st||persisted_st.started!==true){
-    notifySaveWarning({
-      message:'大会を開始しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
-      consoleTag:'SAVE-003: startTournament の保存が確認できませんでした',
-      callsiteId:'SAVE-003-startTournament',
-      kind:'save-verify',
-      aggregateKey:'save-verify:core',
-      severity:'warn'
-    });
+  // ROUND-CLASS-START-004 (spec §6.6 atomic wrapper):
+  //   validate phase 2: 対象クラス全件を pure validator で検証。
+  //   1 件でも error があれば state を一切変更せず return（bulk atomic / all-or-nothing）。
+  //   Aクラスが奇数です / Bクラスが奇数です などの per-class error は collectStartCandidates
+  //   が validator 経由で生成（旧 inline odd 検査は本 PR で削除、validator に集約）。
+  var v=collectStartCandidates(state.classes,state.players);
+  if(!v.ok){showStartValidationErrors(v.errors);return;}
+  // mutate phase: applyStartForCandidates 内で pairings/results 初期化 / setClassStarted /
+  //   generatePairing(classId) を candidate ごとに実行。total 値は legacy 互換用（mutate 不使用）。
+  void total;
+  applyStartForCandidates(v.candidates);
+  showTab('tournament');
+  // SAVE-003 verify は verifyStartSavedForCandidates で classId 単位（spec §6.5）。
+  verifyStartSavedForCandidates(v.candidates);
+}
+
+// ROUND-CLASS-START-004 (spec §7.6):
+//   単独 class 開始用 wrapper（class atomic）。
+//   他クラスの odd / too-few / 未開始状態に引きずられない。
+//   bulk collector を呼ばず、collectStartCandidateForClass で対象 classId 1 件だけ validate。
+//   OK なら applyStartForCandidates([candidate]) と verifyStartSavedForCandidates で
+//   mutate / SAVE-003 verify を bulk と同じ writer 経由で実行。
+function startTournamentForClass(classId){
+  var v=collectStartCandidateForClass(classId,state.classes,state.players);
+  if(!v.ok){
+    var e=v.error||{};
+    if(e.kind==='skip-already-started'){alert(e.message||'');return;}
+    if(e.kind==='unknown-class'){showMsg(e.message||'クラスが見つかりません','err');return;}
+    if(e.kind==='skip-empty'){showMsg(e.message||'参加者がいません','warn');return;}
+    if(e.kind==='too-few'||e.kind==='odd'){showMsg(e.message||'対局を開始できません','warn');return;}
+    showMsg(e.message||'対局を開始できません','err');
+    return;
   }
+  applyStartForCandidates([v.candidateClassId]);
+  showTab('tournament');
+  verifyStartSavedForCandidates([v.candidateClassId]);
 }
 
 // ============================================================
