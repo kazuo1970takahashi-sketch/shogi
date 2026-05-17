@@ -214,9 +214,17 @@ state = {
     ],
     B: [...]
   },
-  started: false  // 大会開始フラグ
+  started: false,  // 大会開始フラグ（all-class OR、互換維持）
+  classes: [       // ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1: クラス単位の進行状態
+    {id:'A', name:'Aクラス', started:false},
+    {id:'B', name:'Bクラス', started:false}
+  ]
 }
 ```
+
+### クラス単位の進行制御（ROUND-CLASS-SCOPE-IMPL-LIGHT-PHASE1）
+
+`state.classes` 配列でクラス単位の `started` フラグを保持し、A クラス進行中に B クラスを後追い開始しても A の `pairings` / `results` が破壊されないようにする。Phase 1 では既存 `{A:[],B:[]}` 固定構造を温存し、新関数 `startTournamentForClass(classId)` / `resetClassForClass(classId)` を追加。詳細は [docs/specs/20260516_shogi_round_class_scope_001.md](docs/specs/20260516_shogi_round_class_scope_001.md)。
 
 ### localStorage キー
 
