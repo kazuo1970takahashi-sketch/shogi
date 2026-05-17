@@ -618,18 +618,24 @@ function isClassStarted(classId){
   return false;
 }
 
-// ROUND-CLASS-START-003 (spec §8.2): 通常の started 変更経路。
-//   該当 class だけ更新し、互換フィールド state.started を同期書き込みする。
-//   未知 classId は無視（throw しない）。spec は throw 推奨だが、003 範囲では既存挙動を
-//   壊さない側に寄せる。004 で startTournament 等に組み込む際に厳格化を検討。
+// ROUND-CLASS-START-003 (spec §8.2 / Codex Should Fix):
+//   通常の started 変更経路。該当 class だけ更新し、互換フィールド state.started を同期書き込みする。
+//   未知 classId は Error を throw する（spec 推奨）。silent no-op にしないことで、classId typo や
+//   DOM 由来の不正 ID を早期検知できる。004 で atomic start の中核 helper になる前提のため厳格化。
+//   isClassStarted（reader）は false 扱いのままで読み取り側の例外を増やさない。
 function setClassStarted(classId,value){
-  if(!state||!Array.isArray(state.classes))return;
-  var updated=false;
+  if(!state||!Array.isArray(state.classes)){
+    throw new Error('setClassStarted: state.classes is not initialized');
+  }
   for(var i=0;i<state.classes.length;i++){
     var c=state.classes[i];
-    if(c&&c.id===classId){c.started=!!value;updated=true;break;}
+    if(c&&c.id===classId){
+      c.started=value===true;
+      syncGlobalStartedFromClasses();
+      return;
+    }
   }
-  if(updated)syncGlobalStartedFromClasses();
+  throw new Error('setClassStarted: unknown classId: '+classId);
 }
 
 // ROUND-CLASS-START-003 (spec §12.7): readPersistedState 返り値の normalized state から

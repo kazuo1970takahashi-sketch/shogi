@@ -218,8 +218,22 @@ console.log('\n--- 4. isClassStarted / setClassStarted ---');
   eq(api.isClassStarted('A'), false, '4-7 false に戻せる');
   eq(api._getState().started, false, '4-8 同期書き込みで state.started=false');
 
-  api.setClassStarted('X', true); // 未知 classId は無視
-  eq(api._getState().started, false, '4-9 未知 classId 経由でも state.started 変化なし');
+  // 4-9. Codex Should Fix / spec §8.2: 未知 classId は Error を throw する
+  //   classId typo / DOM 由来の不正 ID を silent no-op で見逃さないようにする。
+  //   004 で atomic start の中核 helper として使われる前提のため厳格化。
+  var threw = false;
+  var errMsg = '';
+  try {
+    api.setClassStarted('X', true);
+  } catch(e) {
+    threw = true;
+    errMsg = e && e.message ? e.message : String(e);
+  }
+  assert(threw, '4-9 未知 classId は Error を throw する');
+  assert(errMsg.indexOf('unknown classId') !== -1 || errMsg.indexOf('X') !== -1,
+    '4-10 throw message に classId を含む');
+  eq(api._getState().started, false, '4-11 throw 後も state.started 不変');
+  eq(api.isClassStarted('A'), false, '4-12 throw 後も既存 classes は不変');
 }
 
 // ============================================================
