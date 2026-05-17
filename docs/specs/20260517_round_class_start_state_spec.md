@@ -216,44 +216,149 @@ var state = {
 
 #### 6.2.2 対象クラスの境界条件（仕様確定）
 
-| 条件 | 扱い | 理由 |
-| --- | --- | --- |
-| 参加者数 = 0 | skip（対象外） | 「クラスが存在しない」とみなす。エラー扱いにしない |
-| 参加者数 = 1（奇数） | **validate 失敗**（対象、エラー） | 現状 [L4458-4459](../../shogi_v4.html) と同じ「運営者を追加してください」案内が必要 |
-| 参加者数 = 2 以上の奇数 | **validate 失敗**（対象、エラー） | 同上 |
-| 参加者数 = 2 以上の偶数 | **対象、validate OK** | 開始候補 |
-| `started === true` | skip（対象外） | 再開始は別経路（`resetClassForClass(classId)` 後に押し直し）。`#startBtn` で「既開始クラスのエラー」を出すと UX が煩雑 |
-| 全クラスが skip（対象 0 件） | **`#startBtn` 全体としてエラー** | 「開始可能なクラスがありません。参加者を登録してから再度押してください」alert。既存「state.started===true で alert」に近い UX |
-| 全クラスの参加者総数 < 2 | **`#startBtn` 全体としてエラー** | 既存 [L4457](../../shogi_v4.html) `if(total<2)` を維持。`total` は全クラスの参加者合計 |
+| 条件 | error kind | 扱い | 理由 |
+| --- | --- | --- | --- |
+| 参加者数 = 0 | `skip-empty` | skip（対象外） | 「クラスが存在しない」とみなす。エラー扱いにしない |
+| 参加者数 = 1 | `too-few`（**奇数ではなく too-few**） | **validate 失敗**（対象、エラー） | 既存挙動 [L4457](../../shogi_v4.html) `if(total<2)` と同じく「人数が足りない」が真の理由。1 名では対局が成立しない。`odd` より優先 |
+| 参加者数 = 3, 5, 7, …（2 以上の奇数） | `odd` | **validate 失敗**（対象、エラー） | 現状 [L4458-4459](../../shogi_v4.html) と同じ「運営者を追加してください」案内が必要 |
+| 参加者数 = 2 以上の偶数 | `ok` | **対象、validate OK** | 開始候補 |
+| `started === true` | `skip-already-started` | skip（対象外） | 再開始は別経路（`resetClassForClass(classId)` 後に押し直し）。`#startBtn` で「既開始クラスのエラー」を出すと UX が煩雑 |
+| 全クラスの参加者総数 < 2（クラス横断） | `total-too-few`（最優先） | **`#startBtn` 全体としてエラー** | 既存 [L4457](../../shogi_v4.html) `if(total<2)` を維持。`total` は全クラスの参加者合計。クラス別判定より優先 |
+| 全クラスが skip（対象 0 件） | `no-candidate` | **`#startBtn` 全体としてエラー** | 文言は skip 内訳で分岐（§13.2.1） |
+
+#### 6.2.3 error 優先順位（厳格）
+
+`#startBtn`（bulk）押下時の error 集約・優先順位：
+
+1. **`total-too-few`**（クラス横断、最優先）：全クラスの参加者合計 < 2 なら、クラス別 error / skip 判定をすべてバイパスして 1 件の `total-too-few` で reject
+2. **per-class `too-few`**（クラス内）：参加者数 1 のクラスは `too-few`（`odd` ではない）
+3. **per-class `odd`**：参加者数 3 以上の奇数
+4. **`no-candidate`**：errors が空かつ candidates が 0 件のときの最終フォールバック
+
+`startTournamentForClass(classId)`（single）押下時：
+- `total-too-few` クラス横断エラーは **適用しない**（§7.6 / §6.3.4）
+- 当該 classId の per-class `too-few` / `odd` / `skip-*` のみ判定
+
+→ §6.3.2 の `validateStartableClass` 内で `cnt === 1 → too-few` を `cnt % 2 !== 0 → odd` より **先に判定** することで、上記優先順位を保証。表と疑似コードが一致。
 
 ### 6.3 validate phase の仕様
+
+#### 6.3.1 atomicity の境界（重要）
+
+`#startBtn` の一括開始と `startTournamentForClass(classId)` の単独開始は **どちらも atomic** だが、**atomicity の境界が異なる**：
+
+| 関数 | atomicity の境界 | 「validate 失敗で開始拒否」の対象 |
+| --- | --- | --- |
+| `#startBtn` → `startTournament()` | **bulk atomic**：対象クラス全体（参加者あり + 未開始の全クラス） | 対象クラスのうち 1 つでも fail なら **全件 reject**（all-or-nothing） |
+| `startTournamentForClass(classId)` | **class atomic**：対象 classId 1 つだけ | 当該 classId のみ判定。他クラスの odd / too-few / 未開始状態に **引きずられない** |
+
+→ `#startBtn` の all-or-nothing は **bulk start の対象クラス集合に対する atomicity** であり、`startTournamentForClass(classId)` の atomicity は **対象 classId ひとつに閉じる**。単独開始では、他クラスの odd / too-few / 未開始状態を理由に対象 classId の開始を **拒否してはならない**。
+
+**典型シナリオ**：
+- Aクラス：参加者 2 名で開始可能
+- Bクラス：参加者 3 名で奇数（validate fail）
+- → `#startBtn`（一括）：B の odd error により全件 reject。A も開始されない（**all-or-nothing**）
+- → `startTournamentForClass('A')`（単独）：B の状態を見ない。A は開始される（**class atomic**）
+
+この区別は、classId 単位の独立開始（A 単独開始 / B 後追い開始）というシリーズ全体の中心目的の前提条件である。
+
+#### 6.3.2 共通 per-class validator（pure）
 
 ```javascript
 // 仕様（実装はしない）
 
-// 入力：classes 配列、players dict
-// 出力：{ok:boolean, candidates:[classId,...], errors:[{classId, kind, message}, ...]}
-function collectStartCandidates(classes, players){
-  // 1. total = sum(players[c.id].length for c in classes)
-  //    if total < 2: return {ok:false, errors:[{classId:null, kind:'total-too-few', message:'参加者が少なすぎます'}]}
-  // 2. errors = []; candidates = [];
-  // 3. for c in classes:
-  //      cnt = (players[c.id] || []).length;
-  //      if cnt === 0:            continue;          // skip（対象外）
-  //      if c.started === true:   continue;          // skip（対象外）
-  //      if cnt % 2 !== 0:        errors.push({classId:c.id, kind:'odd', message:c.name+'が奇数です。運営者を追加してください'});
-  //                               continue;
-  //      candidates.push(c.id);
-  // 4. if errors.length > 0:           return {ok:false, candidates:[], errors};
-  // 5. if candidates.length === 0:     return {ok:false, candidates:[], errors:[{classId:null, kind:'no-candidate', message:'開始可能なクラスがありません'}]};
-  // 6. return {ok:true, candidates, errors:[]}
+// 単一クラスに対する validation。他クラスの状態に依存しない pure 関数。
+// 入力：classInfo（state.classes 内の 1 エントリ）、playersForClass（state.players[classId]）
+// 出力：{kind: 'ok'|'skip-empty'|'skip-already-started'|'odd'|'too-few', message?: string}
+function validateStartableClass(classInfo, playersForClass){
+  var cnt = Array.isArray(playersForClass) ? playersForClass.length : 0;
+  if(cnt === 0)                  return {kind:'skip-empty'};            // 対象外（skip、エラーにしない）
+  if(classInfo.started === true) return {kind:'skip-already-started'};  // 対象外（skip、エラーにしない）
+  if(cnt === 1)                  return {kind:'too-few', message: classInfo.name + 'は参加者が1名のため開始できません'};
+  if(cnt % 2 !== 0)              return {kind:'odd',     message: classInfo.name + 'が奇数です。運営者を追加してください'};
+  return {kind:'ok'};                                                   // 開始候補
 }
 ```
 
 **重要**：
-- `collectStartCandidates` は **state を一切変更しない pure 関数**（テスト容易）
-- 入力は引数のみ。グローバル `state` を読まない
-- errors と candidates は **同時に返さない**（errors 非空なら candidates は空配列）：errors を表示して return する仕様を保つため
+- **他クラスの state を参照しない**。`state.classes` 全体を見ない。当該クラスの classInfo と players 配列のみで判定
+- **`#startBtn` の bulk start と `startTournamentForClass(classId)` の single start で共有** する pure 関数
+- error kind の優先順位は内部で確定（`too-few > odd`）。§6.2.2 / §13.1 の table と一致
+
+#### 6.3.3 bulk collector（`#startBtn` 用）
+
+```javascript
+// 仕様（実装はしない）
+
+// `#startBtn` 用：複数クラスを集約して all-or-nothing validation
+// 入力：classes 配列、players dict
+// 出力：{ok:boolean, candidates:[classId,...], errors:[{classId, kind, message}, ...]}
+function collectStartCandidates(classes, players){
+  // 1. total = classes.reduce((sum, c) => sum + ((players[c.id] || []).length), 0)
+  //    if total < 2:
+  //      return {ok:false, candidates:[], errors:[{classId:null, kind:'total-too-few', message:'参加者が少なすぎます'}]}
+  //    // ※ total-too-few は §6.2.2 / §13.1 の最優先エラー
+  //
+  // 2. errors = []; candidates = []; skipped = []; (skip kind 別の集約用)
+  // 3. for c in classes:
+  //      r = validateStartableClass(c, players[c.id]);
+  //      switch(r.kind):
+  //        case 'ok':                    candidates.push(c.id); break;
+  //        case 'skip-empty':            skipped.push({classId:c.id, kind:'skip-empty'}); break;
+  //        case 'skip-already-started':  skipped.push({classId:c.id, kind:'skip-already-started'}); break;
+  //        case 'too-few':               errors.push({classId:c.id, kind:'too-few', message:r.message}); break;
+  //        case 'odd':                   errors.push({classId:c.id, kind:'odd',     message:r.message}); break;
+  //
+  // 4. if errors.length > 0:
+  //      return {ok:false, candidates:[], errors:errors, skipped:skipped}    // ← bulk atomic：1 件でも error なら全件 reject
+  //
+  // 5. if candidates.length === 0:
+  //      // 全クラス skip（全員参加者 0 or 全員既開始 or その混在）。§13.2.1 で文言を分岐
+  //      return {ok:false, candidates:[], errors:[{classId:null, kind:'no-candidate', message:resolveNoCandidateMessage(skipped)}], skipped:skipped}
+  //
+  // 6. return {ok:true, candidates:candidates, errors:[], skipped:skipped}
+}
+```
+
+**重要**：
+- `collectStartCandidates` は **`#startBtn`（一括開始）専用**
+- 内部で `validateStartableClass` を **対象クラスごとに 1 回ずつ呼ぶ**（per-class validator の再利用）
+- bulk atomic：1 クラスでも error があれば candidates を空にして reject
+- skip と error は **別カテゴリ**：skip は対象外（エラーにしない）、error は validate 失敗
+- error 優先順位：`total-too-few`（クラス横断）→ per-class の `too-few` → per-class の `odd`
+
+#### 6.3.4 単独開始用 validator wrapper（`startTournamentForClass` 用）
+
+```javascript
+// 仕様（実装はしない）
+
+// `startTournamentForClass(classId)` 用：単一クラスを単独 validation
+// 入力：classId、classes 配列、players dict
+// 出力：{ok:boolean, candidateClassId:string|null, error?:{kind, message}}
+function collectStartCandidateForClass(classId, classes, players){
+  var classInfo = classes.find(function(c){ return c.id === classId; });
+  if(!classInfo){
+    return {ok:false, candidateClassId:null, error:{kind:'unknown-class', message:'クラスが見つかりません'}};
+  }
+  var r = validateStartableClass(classInfo, players[classId]);
+  switch(r.kind){
+    case 'ok':
+      return {ok:true, candidateClassId:classId};
+    case 'skip-empty':
+      return {ok:false, candidateClassId:null, error:{kind:'skip-empty',           message:classInfo.name + 'は参加者がいません'}};
+    case 'skip-already-started':
+      return {ok:false, candidateClassId:null, error:{kind:'skip-already-started', message:classInfo.name + 'はすでに開始されています'}};
+    case 'too-few':
+    case 'odd':
+      return {ok:false, candidateClassId:null, error:{kind:r.kind, message:r.message}};
+  }
+}
+```
+
+**重要**：
+- **他クラスを見ない**。`classes` は `classInfo` の解決にのみ使い、他クラスの started / 参加者数は判定に影響しない
+- 単独開始用 wrapper では、単独経路で skip 理由を **明示的にエラーとして返す**（bulk と違い「skip して continue」ができない。当該クラスが skip なら何も開始しないのが期待動作）
+- `total-too-few` クラス横断エラーは **適用しない**（単独開始では「他クラスを含む全体参加者数 < 2」を理由に拒否してはならない。`too-few`（クラス内 1 名以下）は適用）
 
 ### 6.4 mutate phase の仕様
 
@@ -376,30 +481,37 @@ scope-001 §3.1 / inventory §3 で既に確認済の通り、以下は **クラ
 // 仕様（実装はしない）
 
 function startTournamentForClass(classId){
-  var v = collectStartCandidates(state.classes, state.players);  // 全件 validate
-  // 「1 クラスだけ開始」だが、validate は全件分行う（無関係クラスは skip 経路に乗る）
-  // 当該 classId が candidates に含まれない場合（参加者 0 / 既開始 / 奇数 / errors）は
-  // 当該 classId 関連の error / 状況だけを抽出して alert / showMsg を出して return。
-  // 他クラスの状況は別経路（#startBtn）で扱うため、ここでは触らない。
-
-  if(v.errors.some(e => e.classId === classId)){
-    showSingleClassErrors(classId, v.errors.filter(e => e.classId === classId));
-    return;
-  }
-  if(v.candidates.indexOf(classId) === -1){
-    // skip 対象。参加者 0 / 既開始 / 全体エラー（total < 2 等）
-    showSingleClassSkipReason(classId, state);
-    return;
+  // class atomic：他クラスの state を見ない。validate は当該 classId だけ
+  var v = collectStartCandidateForClass(classId, state.classes, state.players);  // §6.3.4
+  if(!v.ok){
+    showSingleClassError(classId, v.error);   // skip 理由 / error 種別ごとに UI 表示
+    return;                                   // state は一切変更しない
   }
 
   // 当該 classId だけ mutate
-  applyStartForCandidates([classId]);
+  applyStartForCandidates([classId]);         // §6.4 と同じ writer を再利用
   showTab('tournament');
-  verifyStartSavedForCandidates([classId]);
+  verifyStartSavedForCandidates([classId]);   // §6.5
 }
 ```
 
-**重要**：単独経路でも **`collectStartCandidates` を呼ぶ**（validate-only helper の再利用）。単独だからといって validate を簡略化しない（同じバリデーション規約を共有する）。
+**重要**：
+- **単独経路では bulk collector（`collectStartCandidates`）を呼ばない**。代わりに per-class validator wrapper（`collectStartCandidateForClass`, §6.3.4）を使う
+- これにより、A が開始可能・B が奇数のような状態でも `startTournamentForClass('A')` は **A を開始できる**（他クラスの error に引きずられない、class atomic）
+- 共通の per-class pure validator（`validateStartableClass`, §6.3.2）が bulk / single の **両方で再利用** される（バリデーション規約の共有）
+- mutate phase（`applyStartForCandidates`）と SAVE-003 verify（`verifyStartSavedForCandidates`）は bulk / single で **同じ writer を共有**。引数の配列長が違うだけ
+
+#### 7.6.1 bulk と single の対比（仕様確認）
+
+| 観点 | `#startBtn`（bulk） | `startTournamentForClass('A')`（single） |
+| --- | --- | --- |
+| validator | `collectStartCandidates(classes, players)` | `collectStartCandidateForClass('A', classes, players)` |
+| atomic 境界 | 対象クラス集合（参加者あり + 未開始の全クラス） | 対象 classId 1 つ（'A'）のみ |
+| B クラスが奇数の場合 | B の odd error で **全件 reject**（A も開始されない） | B を見ないため **A は開始される** |
+| B クラスが既開始の場合 | bulk validator が B を skip。A だけ validate を通れば A 開始 | 同じく A は開始される（B の状態を見ない） |
+| 参加者 1 名（クラス内） | bulk：当該クラスの `too-few` error / 他クラスも error なら集約 | single：当該クラスの `too-few` error で reject |
+| 全クラス参加者 < 2（横断） | `total-too-few` で全件 reject | **適用しない**。単独開始では当該 classId の `too-few` のみ判定 |
+| skip と error の扱い | skip は対象外（エラーにしない）、error は集約表示 | skip は当該 classId に対する「開始不可」として **明示的にエラー表示**（continue できない） |
 
 ---
 
@@ -434,9 +546,24 @@ function syncGlobalStartedFromClasses(){
 ```
 
 **規約**：
-- `state.classes[i].started` を直接代入する経路は **作らない**（必ず `setClassStarted` 経由）。直接代入を許すと `state.started` の同期忘れが起きる
+- `state.classes[i].started` を直接代入する経路は **原則作らない**（通常の開始・停止変更は必ず `setClassStarted(classId, value)` 経由）。直接代入を許すと `state.started` の同期忘れが起きる
 - `syncGlobalStartedFromClasses` は **冪等**（複数回呼んでも結果が変わらない）
-- `setClassStarted` 以外で `state.started` を **直接代入することは原則禁止**。例外は `resetAll` / `normalizeState` の **state 全体初期化** 経路のみ（ここでは `classes` も同時に初期化されるため一貫性が保たれる）
+- `state.started` を直接代入することは **原則禁止**
+
+**直接代入が許される例外（全体初期化系）**：
+
+通常の状態変更経路では `setClassStarted` を使う。ただし以下の **全体初期化系** 処理では、classes 配列の各エントリの `started` を直接初期化することを **例外的に許容** する。これらは classes / players / pairings / results を **同時に全体リセット** する処理であり、`setClassStarted` をループで呼ぶより一貫性が高い：
+
+| 関数 | 直接代入の理由 | 同期書き込みの担保 |
+| --- | --- | --- |
+| `normalizeState(raw)` | load 中に新しい state を組み立てる。`state.classes` 自体がこの時点で確定する | 最後に `base.started = base.classes.some(c => c.started === true)` を必ず実行（§9.4 step 7） |
+| `resetAll()` | state 全体を新規オブジェクトに置き換える。`classes` も再生成 | 新規オブジェクトに `started:false` を直接書き込み + 直後に save() |
+| `resetTournamentProgressOnly()` | 進行データを全クラス一括でリセット。意味的には全体初期化に近い | ループで `c.started = false` を直接代入した直後に `syncGlobalStartedFromClasses()` を **必ず呼ぶ**（§12.2） |
+
+**例外の境界（厳格）**：
+- 上記 3 関数 **以外で** `state.classes[i].started` / `state.started` の直接代入は禁止
+- 例外関数内でも、直接代入後は **必ず `state.started` を同期** すること（`syncGlobalStartedFromClasses()` を呼ぶか、新規オブジェクトに OR を直接書き込む）
+- **例外範囲をこれ以上広げない**：将来「クラス単位の一括 mute 機能」「クラス単位の archive」等を追加する場合も、`setClassStarted` 経由で実装する
 
 ### 8.3 旧コードからの読み取り互換
 
@@ -584,7 +711,9 @@ function normalizeDictByClasses(rawDict, classes, normalizeEach){
 
 ## 10. helper 設計方針
 
-### 10.1 helper 一覧（003 で実装）
+### 10.1 helper 一覧（003 / 004 で実装）
+
+担当列：**003 = state schema / normalize に集中**、**004 = validator / atomic wrapper を集約**（§15.1.1 参照）。
 
 | helper | シグネチャ | 種別 | グローバル state 参照 | 担当 |
 | --- | --- | --- | --- | --- |
@@ -594,14 +723,17 @@ function normalizeDictByClasses(rawDict, classes, normalizeEach){
 | `isClassStarted(classId)` | `(string) => boolean` | reader | ✅（`state.classes` 読み） | 003 |
 | `setClassStarted(classId, value)` | `(string, boolean) => void` | writer | ✅（`state.classes` 書き / `state.started` 同期書き込み） | 003 |
 | `syncGlobalStartedFromClasses()` | `() => void` | writer | ✅（`state.classes` 読み / `state.started` 書き） | 003 |
-| `classStartedInPersisted(persisted, classId)` | `(any, string) => boolean` | pure | ❌（引数のみ） | 003 |
-| `collectStartCandidates(classes, players)` | `(ClassEntry[], PlayersDict) => StartValidationResult` | pure | ❌（引数のみ） | 004 |
+| `classStartedInPersisted(persisted, classId)` | `(NormalizedState, string) => boolean` | pure | ❌（引数のみ。persisted は normalized state） | 003 |
+| `readPersistedState()` | `() => NormalizedState \| null` | reader（normalize 経由） | ✅（localStorage 読み + normalizeState） | 003 |
+| `validateStartableClass(classInfo, playersForClass)` | `(ClassEntry, Player[]) => {kind, message?}` | **pure**（per-class、**他クラス非参照**） | ❌（引数のみ） | **004**（§15.1.1） |
+| `collectStartCandidates(classes, players)` | `(ClassEntry[], PlayersDict) => BulkStartValidationResult` | pure（bulk 用、内部で `validateStartableClass` × N 回） | ❌（引数のみ） | **004** |
+| `collectStartCandidateForClass(classId, classes, players)` | `(string, ClassEntry[], PlayersDict) => SingleStartValidationResult` | pure（single 用、内部で `validateStartableClass` × 1 回） | ❌（引数のみ） | **004** |
+| `resolveNoCandidateMessage(skipped)` | `(SkippedEntry[]) => string` | pure | ❌ | 004 |
 | `applyStartForCandidates(candidates)` | `(classId[]) => void` | writer | ✅ | 004 |
 | `verifyStartSavedForCandidates(candidates)` | `(classId[]) => void` | reader（warning 発火） | ✅ | 004 |
-| `startTournament()` | `() => void` | wrapper | ✅ | 004 |
-| `startTournamentForClass(classId)` | `(string) => void` | wrapper | ✅ | 004 |
+| `startTournament()` | `() => void` | wrapper（**bulk atomic**） | ✅ | 004 |
+| `startTournamentForClass(classId)` | `(string) => void` | wrapper（**class atomic**、他クラス非依存） | ✅ | 004 |
 | `resetClassForClass(classId)` | `(string) => void` | writer | ✅ | 004 |
-| `getStartTargetClasses(classes, players)` | `(ClassEntry[], PlayersDict) => classId[]` | pure（debug 用、`collectStartCandidates(...).candidates` のショートカット） | ❌ | 004（必要時のみ） |
 
 ### 10.2 pure / writer / reader / wrapper の責務境界
 
@@ -614,7 +746,7 @@ function normalizeDictByClasses(rawDict, classes, normalizeEach){
 
 ### 10.3 グローバル state 非参照原則（再掲）
 
-- `normalizeClasses` / `normalizeDictByClasses` / `emptyClassDict` / `collectStartCandidates` / `classStartedInPersisted` は **すべて pure**。グローバル `state` を読まない
+- `normalizeClasses` / `normalizeDictByClasses` / `emptyClassDict` / `validateStartableClass` / `collectStartCandidates` / `collectStartCandidateForClass` / `resolveNoCandidateMessage` / `classStartedInPersisted` は **すべて pure**。グローバル `state` を読まない
 - 理由：`normalizeState(raw)` 内で組み立て途中の値を helper に渡したい。グローバル `state` を読むと「これから上書き予定の」古い値を見るレースが起きる
 - writer / wrapper のみグローバル `state` を参照可
 
@@ -723,9 +855,9 @@ function resetTournamentProgressOnly(){
   state.classes.forEach(function(c){
     state.pairings[c.id] = [];
     state.results[c.id]  = [];
-    c.started = false;             // 直接代入だが、resetTournamentProgressOnly は全体初期化なので例外的に許容
+    c.started = false;             // §8.2 例外：全体初期化系のため直接代入を許容（直後に同期書き込み必須）
   });
-  syncGlobalStartedFromClasses();  // state.started=false に同期
+  syncGlobalStartedFromClasses();  // state.started=false に同期（§8.2 例外の必須担保）
 
   // DOM クリア（classes 全件分）
   state.classes.forEach(function(c){
@@ -806,7 +938,9 @@ function applyLoadedJson(rawText){
 
 ### 12.6 `readPersistedState()` 仕様（003 で書き換え）
 
-現状（[L4001-4019](../../shogi_v4.html)）は A/B 必須キーで hardcode 検証。新仕様：
+現状（[L4001-4019](../../shogi_v4.html)）は A/B 必須キーで hardcode 検証し、`parsed` をそのまま返している。SAVE-003 verify では `persisted.started !== true` のように **直接フィールド読み** をしており、旧データ・C クラス追加・classes 補完前のいずれでも誤判定（false positive / false negative）が生じうる。
+
+**新仕様（採用案 = 候補 A）**：`readPersistedState()` は **`normalizeState(parsed)` 済みの state を返す**。verify 系は normalized state を前提に比較できる。
 
 ```javascript
 // 仕様（実装はしない）
@@ -818,16 +952,25 @@ function readPersistedState(){
     if(typeof raw !== 'string' || !raw) return null;
     var parsed = JSON.parse(raw);
     if(!parsed || typeof parsed !== 'object') return null;
+
+    // 必須キーの最低限の object 性チェック（A/B 配列必須は廃止）
     if(!parsed.players  || typeof parsed.players  !== 'object') return null;
     if(!parsed.pairings || typeof parsed.pairings !== 'object') return null;
     if(!parsed.results  || typeof parsed.results  !== 'object') return null;
 
-    // 旧データ：classes 未定義の場合は normalizeClasses で補完して返す
-    // 「sanity check」観点では parsed.players.A / .B 等の必須性は緩める（C 追加後の互換）。
-    // 代わりに「any one class entry が players/pairings/results 共通に存在する」を許容条件にする。
-    var classes = normalizeClasses(parsed);
-    if(classes.length === 0) return null;
-    return parsed;
+    // normalize：classes 補完 / players[cls] / pairings[cls] / results[cls] の配列性保証
+    var normalized = normalizeState(parsed);
+    if(!normalized || !Array.isArray(normalized.classes) || normalized.classes.length === 0) return null;
+
+    // 配列性 sanity check：各 classId について 3 つとも配列であることを保証
+    for(var i=0; i<normalized.classes.length; i++){
+      var cid = normalized.classes[i].id;
+      if(!Array.isArray(normalized.players[cid]))  return null;
+      if(!Array.isArray(normalized.pairings[cid])) return null;
+      if(!Array.isArray(normalized.results[cid]))  return null;
+    }
+
+    return normalized;
   }catch(e){
     if(typeof console !== 'undefined' && console.warn) console.warn('SAVE-003: readPersistedState failed', e);
     return null;
@@ -835,24 +978,40 @@ function readPersistedState(){
 }
 ```
 
-**重要**：旧コード（A/B 必須）と互換が必要なため、normalizeClasses で補完済 classes が `[A,B,...]` を含むことを保証する（normalizeClasses §9.2 で A/B 補完済）。
+**重要**（候補 A の採用根拠と仕様）：
+
+| 項目 | 仕様 |
+| --- | --- |
+| 返り値 | **`normalizeState(parsed)` 済みの state**（`parsed` をそのまま返さない） |
+| `classes` 補完 | normalizeState 内で `normalizeClasses(raw)` を必ず先に実行（§9.4 step 1） |
+| `players[classId]` / `pairings[classId]` / `results[classId]` | classId-keyed object として補完。`normalizeDictByClasses` 経由で配列保証（§9.5） |
+| 配列でない classId エントリの扱い | **verify failed として `null` を返す**（empty array に補正はしない）。理由：保存直後検証で配列が欠落していること自体が verify 失敗の根拠 |
+| `started` フィールド | normalizeState 内で `base.started = classes.some(c => c.started)` を同期書き込み済（§9.4 step 7） |
+| 旧データ互換 | `normalizeClasses` が A/B を補完するため、旧データ（`classes` 未定義 + `started:bool`）も自動的に normalized state として返る |
+| SAVE-003 verify からの呼び出し | `classStartedInPersisted(persisted, classId)`（§12.7）は `persisted.classes` 配列を見るだけで判定可能。旧形式分岐は normalize 済のため不要 |
+
+**呼び元への影響**：
+
+- 既存の呼び元（[L4475](../../shogi_v4.html)、[L4718](../../shogi_v4.html)、[L4742](../../shogi_v4.html)、[L4905](../../shogi_v4.html)、[L4977](../../shogi_v4.html)、[L5270](../../shogi_v4.html)）は **`persisted_st.started !== true` のような直接読みをしている**。これらは `classStartedInPersisted(persisted, classId)` 経由に置換する（004 で着手）
+- 既存 verify helper（`verifyPlayerPersistedById` 等）は `parsed.players[cls]` を直接読んでいるが、normalize 済 state でも同じアクセスで動く（dict 構造維持のため）。挙動互換
 
 ### 12.7 `classStartedInPersisted(persisted, classId)` 仕様
+
+`persisted` は `readPersistedState()` の返り値、つまり **`normalizeState(parsed)` 済み state**（§12.6）。`persisted.classes` は必ず配列補完済のため、旧形式分岐は不要：
 
 ```javascript
 // 仕様（実装はしない）
 
+// 前提：persisted は readPersistedState() の返り値（normalized state、§12.6）
 function classStartedInPersisted(persisted, classId){
-  if(!persisted) return false;
-  // 新形式：persisted.classes 配列
-  if(Array.isArray(persisted.classes)){
-    var k = persisted.classes.find(function(c){ return c && c.id === classId; });
-    return !!(k && k.started === true);
-  }
-  // 旧形式：persisted.started のみ。class 別判定不可なので all-class 同期書き込み案 a に従う
-  return persisted.started === true;
+  if(!persisted || !Array.isArray(persisted.classes)) return false;
+  var k = persisted.classes.find(function(c){ return c && c.id === classId; });
+  return !!(k && k.started === true);
 }
 ```
+
+- 旧データ（`classes` 未定義 / `started:bool` のみ）の互換は `readPersistedState()` 経由の normalizeState で吸収済（§9.3 案 a）
+- 呼び元（004 で SAVE-003 verify を class 単位化する箇所）は **`readPersistedState()` の返り値以外を渡してはならない**。raw parsed をそのまま渡されると `persisted.classes` が未定義になり常に false を返す
 
 ### 12.8 「保存失敗時に started だけ進む事故」防止の考え方
 
@@ -867,13 +1026,21 @@ function classStartedInPersisted(persisted, classId){
 
 ### 13.1 validate phase の error kind
 
-| kind | 文言（仕様） | 出し方 |
-| --- | --- | --- |
-| `total-too-few` | `参加者が少なすぎます` | showMsg('err') |
-| `odd` | `<className>が奇数です。運営者を追加してください` | showMsg('warn') |
-| `no-candidate` | `開始可能なクラスがありません。参加者を登録してから再度押してください` | alert |
+| kind | 発生条件 | 文言（仕様） | 出し方 | 優先順位 |
+| --- | --- | --- | --- | --- |
+| `total-too-few` | 全クラス参加者合計 < 2（bulk のみ、クラス横断） | `参加者が少なすぎます` | showMsg('err') | 1（最優先） |
+| `too-few` | クラス内参加者数 = 1 | `<className>は参加者が1名のため開始できません` | showMsg('warn') | 2 |
+| `odd` | クラス内参加者数 = 3, 5, 7, ...（2 以上の奇数） | `<className>が奇数です。運営者を追加してください` | showMsg('warn') | 3 |
+| `no-candidate` | errors 0 件 + candidates 0 件（skip 内訳で文言分岐、§13.2.1） | §13.2.1 参照 | alert | 4（最終フォールバック） |
 
-### 13.2 複数クラスエラーの集約表示
+skip 系（error ではない、bulk では集約・single では明示エラー）：
+
+| skip kind | 発生条件 | bulk での扱い | single での扱い |
+| --- | --- | --- | --- |
+| `skip-empty` | クラス内参加者数 = 0 | 対象外として continue（error にしない） | `<className>は参加者がいません` を showMsg('warn') |
+| `skip-already-started` | `class.started === true` | 同上 continue | `<className>はすでに開始されています` を alert |
+
+### 13.2 複数クラスエラーの集約表示（bulk 用）
 
 ```javascript
 // 仕様（実装はしない）
@@ -881,8 +1048,9 @@ function classStartedInPersisted(persisted, classId){
 function showStartValidationErrors(errors){
   if(errors.length === 1){
     var e = errors[0];
-    if(e.kind === 'total-too-few')   { showMsg(e.message, 'err'); return; }
-    if(e.kind === 'no-candidate')    { alert(e.message); return; }
+    if(e.kind === 'total-too-few')   { showMsg(e.message, 'err');  return; }
+    if(e.kind === 'no-candidate')    { alert(e.message);            return; }
+    if(e.kind === 'too-few')         { showMsg(e.message, 'warn'); return; }
     if(e.kind === 'odd')             { showMsg(e.message, 'warn'); return; }
   }
   // 複数エラー：全件を 1 alert にまとめる
@@ -890,6 +1058,18 @@ function showStartValidationErrors(errors){
   alert('対局を開始できません：\n\n' + msgs.join('\n'));
 }
 ```
+
+#### 13.2.1 `no-candidate` の文言分岐（全クラス skip 内訳に応じて）
+
+bulk で「errors 0 件 + candidates 0 件」のとき、skip 内訳を見て文言を分ける。実装は §6.3.3 の `resolveNoCandidateMessage(skipped)` helper：
+
+| skip 内訳 | 文言（仕様） |
+| --- | --- |
+| 全クラスが `skip-empty`（参加者 0 のみ） | `開始できるクラスがありません。参加者を登録してください。` |
+| 全クラスが `skip-already-started`（既開始のみ） | `未開始のクラスはありません。` |
+| `skip-empty` と `skip-already-started` の混在 | `開始対象のクラスがありません。` |
+
+理由：004 で `#startBtn` の UX を実装する際、「参加者を追加すべきか」「リセットすべきか」を運営者が判断しやすくなる。Codex Nice to Have 指摘への対応。
 
 ### 13.3 SAVE-003 verify の warning（再掲、§6.5）
 
@@ -937,13 +1117,24 @@ PR #136 §8 から：008（旧データマイグレ設計）を本仕様書 §9 
 
 | 優先 | Task ID | 内容 | 種別 | Risk |
 | --- | --- | --- | --- | --- |
-| **第一** | `ROUND-CLASS-START-003` | **state schema / helper / normalize 実装**。`state.classes` 配列導入、§10.1 の helper 群を新設（`normalizeClasses` / `normalizeDictByClasses` / `emptyClassDict` / `isClassStarted` / `setClassStarted` / `syncGlobalStartedFromClasses` / `classStartedInPersisted`）。`normalizeState` を §9.4 の組立順序で書き換え。`readPersistedState` を §12.6 の仕様で書き換え。**unit test を集約**（normalize 互換テスト、helper の pure 性、`state.started` 同期書き込み、§9.3 の旧 `started:true` 展開ルール、未知 classId の drop、空 raw / 破損 raw 等）。**UI は変えない** | impl-LIGHT | Level 3 |
-| **第二** | `ROUND-CLASS-START-004` | **対局開始 UI / startTournament atomic wrapper 実装**。`collectStartCandidates` / `applyStartForCandidates` / `verifyStartSavedForCandidates` / `startTournament`（atomic wrapper）/ `startTournamentForClass` / `resetClassForClass` を新設。`resetTournamentProgressOnly` / `resetAll` を §12 の仕様で書き換え。pane-{classId} 上部に「クラス別開始 / リセット」ボタン追加。VRT snapshot 更新は別 AR で明示許可制 | impl-LIGHT | Level 3 |
+| **第一** | `ROUND-CLASS-START-003` | **state schema / helper / normalize 実装**。`state.classes` 配列導入、以下 helper 群を新設：`normalizeClasses` / `normalizeDictByClasses` / `emptyClassDict(classes, init)` / `isClassStarted` / `setClassStarted` / `syncGlobalStartedFromClasses` / `classStartedInPersisted`。`normalizeState` を §9.4 の組立順序で書き換え。`readPersistedState` を §12.6 の仕様で書き換え（**normalized state を返す**）。**unit test を集約**（normalize 互換、helper の pure 性、`state.started` 同期書き込み、§9.3 旧 `started:true` 展開、未知 classId の drop、空 raw / 破損 raw、readPersistedState の各 classId 配列保証）。**UI は変えない**。**per-class validator（`validateStartableClass` / `collectStartCandidates` / `collectStartCandidateForClass` / `applyStartForCandidates` / `verifyStartSavedForCandidates`）は 003 では作らない**（→ 004） | impl-LIGHT | Level 3 |
+| **第二** | `ROUND-CLASS-START-004` | **対局開始 UI / atomic wrapper 実装 + per-class validator 新設**。以下を新設：(i) **per-class pure validator** `validateStartableClass(classInfo, playersForClass)`（§6.3.2、bulk / single 両方で再利用される core）、(ii) `collectStartCandidates(classes, players)`（§6.3.3 bulk 用）、(iii) `collectStartCandidateForClass(classId, classes, players)`（§6.3.4 single 用）、(iv) `applyStartForCandidates(candidates)`（§6.4 mutate）、(v) `verifyStartSavedForCandidates(candidates)`（§6.5）、(vi) `startTournament()`（atomic wrapper）/ `startTournamentForClass(classId)`（class atomic）/ `resetClassForClass(classId)`。`resetTournamentProgressOnly` / `resetAll` を §12 の仕様で書き換え。pane-{classId} 上部に「クラス別開始 / リセット」ボタン追加。**003 の helper interface（`setClassStarted` / `classStartedInPersisted` / `readPersistedState`）に依存**。VRT snapshot 更新は別 AR で明示許可制 | impl-LIGHT | Level 3 |
 | **第三** | `ROUND-CLASS-START-005` | **周辺ガード + 隣接リスク合流**。`isTournamentDone` を `state.classes` 走査に置換。L3786 削除ガードを `isClassStarted(player.cls)` に置換。inventory §5.7 の隣接リスク（`renderRegList ['A','B']` / `a-count`,`b-count` / `addPlayer state.players.A.concat(.B)` / 保存 verify A/B 走査）を取り込み確認。**新規 C クラスは導入しない**、既存 A/B のクラス独立性のみ強化 | impl-LIGHT〜MEDIUM | Level 3 |
-| **第四** | `ROUND-CLASS-START-006` | **E2E 追加**。(a) A 単独開始 → B 後追い開始の golden path、(b) Aクラス偶数 / Bクラス奇数で `#startBtn` 押下時に **state が変化しないこと**（部分開始バグ防止の核）、(c) A 開始済 / B 未開始時の B 参加者削除許容、(d) A 進行中の `resetClassForClass('B')` で A 保護、(e) 旧データロード互換（`started:true` のみ → `classes` 展開）、(f) SAVE-003 verify per-class 発火、(g) Cクラス相当のダミー追加で renderRegList / `#startBtn` が壊れないこと（007 が完了している場合） | test | Level 3 |
+| **第四** | `ROUND-CLASS-START-006` | **E2E + warning aggregation 回帰確認**。(a) A 単独開始 → B 後追い開始の golden path、(b) Aクラス偶数 / Bクラス奇数で `#startBtn` 押下時に **state が変化しないこと**（bulk all-or-nothing の核）、(c) **A が開始可能 / B が奇数の状態で `startTournamentForClass('A')` が A 単独開始できること**（class atomic、Codex Must Fix 1.1 の核）、(d) A 開始済 / B 未開始時の B 参加者削除許容、(e) A 進行中の `resetClassForClass('B')` で A 保護、(f) 旧データロード互換（`started:true` のみ → `classes` 展開）、(g) SAVE-003 verify per-class 発火、(h) **warning aggregation 回帰確認**（classId 単位 callsiteId 化後も `aggregateKey:'save-verify:core'` の集約が破綻しない、同一クラス内重複 warning が過剰表示されない、別クラス警告が不自然に潰されない）、(i) Cクラス相当のダミー追加で renderRegList / `#startBtn` が壊れないこと（007 が完了している場合） | test | Level 3 |
 | 並走可 | `ROUND-CLASS-START-007` | **C クラス UI 詳細設計**（参加者登録 select の動的化、pane-{classId} / result-{classId} の動的生成、改ページ CSS の汎用化、a11y、レイアウト）。実装は別タスク | docs-only | Level 1 |
 
 **`ROUND-CLASS-START-008` は本仕様書 §9 に統合済** → タスクリストから除去。
+
+#### 15.1.1 per-class validator の担当 PR（Codex 指摘明示）
+
+「per-class pure helper（`validateStartableClass`）はどの PR で実装するか」の判断：
+
+| 案 | 採否 | 理由 |
+| --- | --- | --- |
+| 003 に含める（state/helper と一緒） | ❌ | 003 は state schema / normalize に集中する。validator は startTournament 系の wrapper と密接で、別 PR の境界が不自然になる |
+| **004 に含める**（atomic wrapper と一緒） | ✅ **採用** | `validateStartableClass` は `collectStartCandidates` / `collectStartCandidateForClass` / `startTournament` / `startTournamentForClass` と同じ PR でレビューされたほうが atomic 性の検証が容易 |
+
+→ **per-class validator は 004 で実装**。003 は validator を作らない。004 が 003 の helper interface に依存する形で接続する（`setClassStarted` / `classStartedInPersisted` / `readPersistedState` の 3 つ）。
 
 ### 15.2 依存関係（更新版）
 
@@ -979,8 +1170,12 @@ ROUND-CLASS-START-006 (E2E)
 
 ### 16.1 仕様の網羅性
 
+- §6.3.1 の **bulk atomic vs class atomic** の境界が、シリーズ中心目的（A 単独開始 / B 後追い開始 / 独立進行）と一貫しているか
+- §6.3.2 の per-class pure validator `validateStartableClass` が、bulk / single の両方で安全に再利用できるシグネチャになっているか
+- §7.6 の `startTournamentForClass(classId)` が、他クラスの odd / too-few / 未開始状態に **引きずられない** ことが明確か
 - §6 の `#startBtn` 一括開始 atomic 性が、PR #136 Codex Must Fix の要件をすべて満たしているか
 - §6.2 の「対象クラス」定義が、現場運用（A だけ大会 / 後追い B / 参加者 0 クラス）に矛盾しないか
+- §6.2.3 の error 優先順位（`total-too-few` → `too-few` → `odd` → `no-candidate`）が表と疑似コードで一致しているか
 - §9 の旧データ互換（案 a：両クラス started=true）が、scope-001 §8.4 と整合しているか
 
 ### 16.2 helper 設計の妥当性
@@ -1009,7 +1204,8 @@ ROUND-CLASS-START-006 (E2E)
 ### 16.6 後続タスク分割
 
 - §15 の 003〜007 分割（008 は本仕様書に統合）が、PR 1 個あたりの review コスト・回帰リスクとして適切か
-- 003 と 004 の境界（schema 実装 vs UI 実装）が明確か
+- 003 と 004 の境界（schema 実装 vs validator + UI 実装）が明確か
+- per-class validator を 004 に寄せた判断（§15.1.1）が妥当か（atomic wrapper と一緒にレビューする選択）
 
 ### 16.7 完了条件の照合
 
@@ -1027,10 +1223,13 @@ ROUND-CLASS-START-006 (E2E)
 
 ## 17. 結論
 
-- **`#startBtn` 一括開始**：atomic wrapper（validate phase / mutate phase 分離）として実装する。sequential mutate wrapper は **禁止**（§6）
-- **`#startBtn` 対象クラス**：候補 A（参加者あり + 未開始）+ 参加者 0 / 既開始は skip（§6.2）
-- **classId 単位 started**：`state.classes[i].started` を正、`state.started` は **互換フィールド（同期書き込み）**（§7 / §8）
+- **`#startBtn` 一括開始（bulk atomic）**：atomic wrapper（validate phase / mutate phase 分離）として実装。**bulk atomicity の境界は対象クラス全体**。sequential mutate wrapper は **禁止**（§6）
+- **`startTournamentForClass(classId)`（class atomic）**：**class atomicity の境界は対象 classId 1 つ**。他クラスの odd / too-few / 未開始状態に **引きずられない**。A が開始可能 / B が奇数の状態でも、`startTournamentForClass('A')` は A を開始できる（§6.3.1 / §7.6）
+- **共通 per-class pure validator** `validateStartableClass(classInfo, players)` を bulk / single の両方で再利用。bulk は `collectStartCandidates(classes, players)`、single は `collectStartCandidateForClass(classId, classes, players)` で wrap（§6.3.2 / §6.3.3 / §6.3.4）
+- **`#startBtn` 対象クラス**：候補 A（参加者あり + 未開始）+ 参加者 0 / 既開始は skip（§6.2）。error 優先順位：`total-too-few` → `too-few`（クラス内 1 名）→ `odd` → `no-candidate`（§6.2.3）
+- **classId 単位 started**：`state.classes[i].started` を正、`state.started` は **互換フィールド（同期書き込み）**（§7 / §8）。直接代入の例外は `normalizeState` / `resetAll` / `resetTournamentProgressOnly` の 3 つに限定（§8.2）
 - **旧データ互換**：scope-001 §8.4 案 a（旧 `started:true` を両クラスに保守的展開）を採用、暗黙マイグレ（UI 通知なし）（§9）
+- **`readPersistedState()`**：**normalized state を返す**（候補 A 採用、§12.6）。各 classId について `players[classId]` / `pairings[classId]` / `results[classId]` の配列性を sanity check
 - **helper 設計**：pure / writer / reader / wrapper の境界を厳格化、グローバル `state` 非参照原則（§10）
 - **後続タスク**：008 を本仕様書 §9 に統合 → 003 → 004 → 005 → 006、007 は並走可（§15）
 
