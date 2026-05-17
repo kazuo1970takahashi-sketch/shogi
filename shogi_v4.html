@@ -6107,7 +6107,16 @@ function downloadReport(){
 function resetTournamentProgressOnly(){
   if(!confirm('参加者一覧は残したまま、現在の組み合わせ・勝敗結果を削除します。\nよろしいですか？'))return;
   // B. 大会進行データ（局単位）のみ初期化
-  state.started=false;
+  // ROUND-CLASS-START-003 (spec §8.2 例外 / §12.2 / Codex Must Fix):
+  //   進行データを全クラス一括でリセットする全体初期化系のため、classes[i].started への
+  //   直接代入を例外的に許容。直後に syncGlobalStartedFromClasses() を呼んで state.started を
+  //   同期書き込みする（spec §8.2「例外の境界（厳格）」必須担保）。
+  //   過去バグ防止: state.started=false だけにすると classes[i].started=true のままで保存され、
+  //   再ロード時 normalizeState の保守的展開で state.started=true に戻ってしまう。
+  if(Array.isArray(state.classes)){
+    state.classes.forEach(function(c){ if(c) c.started=false; });
+  }
+  syncGlobalStartedFromClasses();
   state.pairings={A:[],B:[]};
   state.results={A:[],B:[]};
   // 開きっぱなしのモーダルを閉じる（resetAll と同設計、進行中操作の取りこぼし防止）

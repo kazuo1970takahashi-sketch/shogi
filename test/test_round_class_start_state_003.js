@@ -54,6 +54,7 @@ function makeSandbox(jsCode){
        setClassStarted: setClassStarted,
        classStartedInPersisted: classStartedInPersisted,
        readPersistedState: readPersistedState,
+       resetTournamentProgressOnly: resetTournamentProgressOnly,
        _setState: function(s){state = s;},
        _getState: function(){return state;},
        _localStorage: localStorage,
@@ -302,6 +303,44 @@ console.log('\n--- 6. readPersistedState() normalized state ---');
   eq(api.readPersistedState(), null, '6-5a 壊れた JSON は null');
   env.ctx.localStorage._[api.STORAGE_KEY] = 'null';
   eq(api.readPersistedState(), null, '6-5b parsed null は null');
+}
+
+// ============================================================
+// 7. resetTournamentProgressOnly が classes[i].started も false に戻すこと
+//    (Codex Must Fix / spec §8.2 例外 / §12.2)
+//    過去バグ: state.started=false 直接代入だけだと classes[i].started=true のまま保存され、
+//    再ロード時に normalizeState の保守的展開で state.started=true に戻る経路があった。
+//    classes をループで false に戻して syncGlobalStartedFromClasses() で同期書き込みする必要がある。
+// ============================================================
+console.log('\n--- 7. resetTournamentProgressOnly が classes も false に戻す ---');
+{
+  // started=true の進行中データを直接組み立て
+  api._setState({
+    players:{A:[{id:'p1',name:'田中',cls:'A'},{id:'p2',name:'佐藤',cls:'A'}],B:[]},
+    rounds:4,
+    pairings:{A:[{p1:'p1',p2:'p2',winner:null,lastModifiedBy:'auto'}],B:[]},
+    results:{A:[],B:[]},
+    started:true,
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''},
+    classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:true}]
+  });
+
+  api.resetTournamentProgressOnly(); // confirm/save/render は sandbox の mock 経由（confirm=true 既定）
+
+  const after = api._getState();
+  eq(after.started, false, '7-1 state.started=false にリセット');
+  eq(after.classes[0].started, false, '7-2 classes[A].started=false にリセット');
+  eq(after.classes[1].started, false, '7-3 classes[B].started=false にリセット');
+  eq(after.pairings.A.length, 0, '7-4 pairings.A 空');
+  eq(after.pairings.B.length, 0, '7-5 pairings.B 空');
+  eq(after.results.A.length, 0, '7-6 results.A 空');
+  eq(after.players.A.length, 2, '7-7 players.A は維持（部分リセット）');
+
+  // 再ロード経路の確認: 保存された state を normalize しても started=false が維持される
+  const reloaded = api.normalizeState(JSON.parse(JSON.stringify(after)));
+  eq(reloaded.started, false, '7-8 保存 → normalize 再ロードでも state.started=false（保守的展開で復活しない）');
+  eq(reloaded.classes[0].started, false, '7-9 reload 後 classes[A].started=false');
+  eq(reloaded.classes[1].started, false, '7-10 reload 後 classes[B].started=false');
 }
 
 console.log('\n==========================================');

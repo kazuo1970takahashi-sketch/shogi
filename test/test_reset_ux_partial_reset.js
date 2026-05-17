@@ -110,8 +110,14 @@ assert(/function\s+resetTournamentProgressOnly\s*\(\s*\)\s*\{/.test(htmlSrc),
 // 5-7) helper 内の状態初期化代入
 // ============================================================
 {
-  assert(/state\.started\s*=\s*false/.test(rtpBody),
-    'helper 内で state.started=false への代入が存在');
+  // ROUND-CLASS-START-003 (spec §8.2 例外 / §12.2 / Codex Must Fix):
+  //   state.started=false 直接代入は廃止し、classes[i].started=false ループ + syncGlobalStartedFromClasses() に置換。
+  //   過去バグ防止: state.started=false だけだと classes[i].started=true のまま保存され、再ロード時に
+  //   normalizeState の保守的展開で state.started=true に戻ってしまう。
+  assert(/state\.classes[\s\S]*?\.started\s*=\s*false/.test(rtpBody),
+    'helper 内で state.classes[i].started=false への代入が存在（spec §8.2 例外）');
+  assert(/syncGlobalStartedFromClasses\s*\(\s*\)/.test(rtpBody),
+    'helper 内で syncGlobalStartedFromClasses() を呼ぶ（state.started 同期書き込み）');
   assert(/state\.pairings\s*=\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(rtpBody),
     'helper 内で state.pairings={A:[],B:[]} への代入が存在');
   assert(/state\.results\s*=\s*\{\s*A\s*:\s*\[\s*\]\s*,\s*B\s*:\s*\[\s*\]\s*\}/.test(rtpBody),
