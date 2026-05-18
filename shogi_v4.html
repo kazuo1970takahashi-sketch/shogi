@@ -838,6 +838,51 @@ function formatLocalDateForInput(d){
   return y+'-'+m+'-'+day;
 }
 
+// REPORT-UX-001 (Codex Must Fix 1):
+//   `<input type="date">` の value 用に正規化する pure helper。
+//   - "YYYY-MM-DD" はそのまま
+//   - "YYYY年M月D日" / "YYYY年MM月DD日" は "YYYY-MM-DD" に変換（zero-padding）
+//   - 不正値・空値は '' を返す（input.value='' なら placeholder UI 表示、defaults helper が補完）
+//   旧保存形式（v0 以前のテキスト入力時代）の互換維持。
+function normalizeReportDateForInput(value){
+  if(typeof value!=='string'||!value)return '';
+  // 新 ISO 形式
+  var iso=value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(iso)return iso[1]+'-'+iso[2]+'-'+iso[3];
+  // 旧和暦風 "YYYY年M月D日" / "YYYY年MM月DD日"
+  var ja=value.match(/^(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日$/);
+  if(ja)return ja[1]+'-'+('0'+ja[2]).slice(-2)+'-'+('0'+ja[3]).slice(-2);
+  return '';
+}
+
+// REPORT-UX-001 (Codex Must Fix 1):
+//   `<input type="time">` の value 用に正規化する pure helper。
+//   - "HH:MM" / "H:MM" は HH:MM（zero-padding）
+//   - "HH時MM分" / "H時MM分" は HH:MM に変換
+//   - 不正値・空値は '' を返す
+//   旧保存形式（テキスト入力時代）の互換維持。
+function normalizeReportTimeForInput(value){
+  if(typeof value!=='string'||!value)return '';
+  // 新 HH:MM / H:MM
+  var hm=value.match(/^(\d{1,2}):(\d{2})$/);
+  if(hm){
+    var h=parseInt(hm[1],10), mm=hm[2];
+    if(h<0||h>23)return '';
+    var mmNum=parseInt(mm,10);
+    if(mmNum<0||mmNum>59)return '';
+    return ('0'+h).slice(-2)+':'+mm;
+  }
+  // 旧 "HH時MM分" / "H時MM分"
+  var ja=value.match(/^(\d{1,2})時\s*(\d{1,2})分$/);
+  if(ja){
+    var h2=parseInt(ja[1],10), m2=parseInt(ja[2],10);
+    if(h2<0||h2>23)return '';
+    if(m2<0||m2>59)return '';
+    return ('0'+h2).slice(-2)+':'+('0'+m2).slice(-2);
+  }
+  return '';
+}
+
 // REPORT-UX-001: 報告書印刷用に YYYY-MM-DD を「YYYY年M月D日」表記に変換する pure helper。
 //   旧テキスト入力時代の見た目（運営者向け和暦風表記）を保つため。
 //   不正値はそのまま返す（落ちない / 既存値が見える）。
@@ -6889,15 +6934,17 @@ function resetAll(){
     var rslt=document.getElementById('result-'+c.id);if(rslt)rslt.innerHTML='';
   });
   // 大会報告書入力欄を初期化
-  var repDate=document.getElementById('rep-date');if(repDate)repDate.value='';
   var repPlace=document.getElementById('rep-place');if(repPlace)repPlace.value='労政会館';
-  var repStart=document.getElementById('rep-start');if(repStart)repStart.value='';
-  var repEnd=document.getElementById('rep-end');if(repEnd)repEnd.value='';
   var repSei=document.getElementById('rep-sei');if(repSei)repSei.value='';
   var repFuku=document.getElementById('rep-fuku');if(repFuku)repFuku.value='';
   var repNote=document.getElementById('rep-note');if(repNote)repNote.value='';
   var inpYomiR=document.getElementById('inp-yomi');if(inpYomiR)inpYomiR.value='';
   var inpNameR=document.getElementById('inp-name');if(inpNameR)inpNameR.value='';
+  // REPORT-UX-001 (Codex Should Fix - resetAll defaults 再適用):
+  //   date/start/end は state.report が新規初期化された直後に populateReportFields を呼ぶことで、
+  //   保存済み値の正規化代入 → defaults 補完 を一括で再実行する。これにより同一セッションで
+  //   新大会を開始した直後でも、開催日=今日 / 開始=13:00 / 終了=17:00 が自然に再表示される。
+  populateReportFields();
   showTab('reg');
   showMsg('大会データを全リセットしました','ok');
 }
@@ -6989,9 +7036,21 @@ function bindTabEvents(){
 
 function populateReportFields(){
   if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''};
+  // REPORT-UX-001 (Codex Must Fix 1):
+  //   date / start / end は <input type="date|time"> の value 制約に合わせて正規化してから代入する。
+  //   旧形式 "YYYY年MM月DD日" / "H時MM分" が来ても、HTML5 input が値を空に戻して
+  //   ensureReportDateTimeDefaults が今日/13:00/17:00 で上書きする問題を解消する。
+  //   正規化に失敗した場合（不正値）は '' を返し、後段の defaults が補完する。
+  //   保存形式（state.report.* の値）はここでは変更しない（ユーザーが date/time picker で
+  //   修正したタイミングで自然に新 ISO/HHMM 形式へ移行する）。
   ['date','place','start','end','sei','fuku','note'].forEach(function(k){
     var el=document.getElementById('rep-'+k);
-    if(el)el.value=state.report[k]||'';
+    if(!el)return;
+    var raw=state.report[k]||'';
+    var v=raw;
+    if(k==='date')v=normalizeReportDateForInput(raw);
+    else if(k==='start'||k==='end')v=normalizeReportTimeForInput(raw);
+    el.value=v;
   });
   // REPORT-UX-001: 保存済み値の復元後に未入力欄のみ defaults を補完する。
   //   保存済み値・入力済み値があれば ensureReportDateTimeDefaults は何もしない（冪等）。
@@ -7000,24 +7059,41 @@ function populateReportFields(){
   checkReportTimeOrder();
 }
 
+// REPORT-UX-001 (Codex Must Fix 2):
+//   report field の input/change 共通の保存処理を helper 化する。
+//   - state.report[key] = el.value
+//   - save()
+//   - date/time フィールドは change のみ発火するブラウザもあるため、
+//     bindReportEvents から input/change 両イベントでこの helper を呼ぶ。
+//   - start/end の場合は checkReportTimeOrder も呼ぶ。
+//   key は data-report-field 属性、または DOM id の `rep-` プレフィックス除去で決定する。
+function updateReportFieldFromElement(el){
+  if(!el)return;
+  var key=null;
+  if(el.getAttribute){
+    var attrKey=el.getAttribute('data-report-field');
+    if(typeof attrKey==='string'&&attrKey)key=attrKey;
+  }
+  if(!key&&el.id&&el.id.indexOf('rep-')===0)key=el.id.substring(4);
+  if(!key)return;
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''};
+  state.report[key]=el.value;
+  save();
+  if(key==='start'||key==='end')checkReportTimeOrder();
+}
+
 function bindReportEvents(){
   ['date','place','start','end','sei','fuku','note'].forEach(function(k){
     var el=document.getElementById('rep-'+k);
     if(!el)return;
-    el.addEventListener('input',function(e){
-      if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''};
-      state.report[k]=e.target.value;
-      save();
-      // REPORT-UX-001: 開始/終了 input の変更時に警告状態を更新する。
-      //   date input 等の場合は no-op（checkReportTimeOrder 内で時刻形式チェック）。
-      if(k==='start'||k==='end')checkReportTimeOrder();
-    });
-    // REPORT-UX-001: type="date" / type="time" は input イベントだけでなく change でも値が確定する。
-    //   change イベントでも warning 更新が走るよう追加 bind（input は picker 確定で発火しない
-    //   ブラウザ差異への defensive）。
-    if(k==='start'||k==='end'){
-      el.addEventListener('change',function(){checkReportTimeOrder();});
-    }
+    // data-report-field 属性を付与し、updateReportFieldFromElement が key を取得できるようにする
+    if(el.setAttribute)el.setAttribute('data-report-field',k);
+    // REPORT-UX-001 (Codex Must Fix 2):
+    //   date/time input は ブラウザ・OS によって input イベントが発火しない場合がある
+    //   （picker 確定で change のみ）。state.report 更新と save() を両イベントから走らせる。
+    var handler=function(e){ updateReportFieldFromElement(e.target||el); };
+    el.addEventListener('input',handler);
+    el.addEventListener('change',handler);
   });
   var btn=document.getElementById('downloadReportBtn');
   if(btn)btn.addEventListener('click',downloadReport);
