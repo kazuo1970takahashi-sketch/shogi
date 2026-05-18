@@ -856,6 +856,22 @@ else
 fi
 
 # ============================================
+# REPORT-UX-006B date/start/end state-as-SoT / 旧形式互換 単体テスト
+# ============================================
+echo ""
+echo "【REPORT-UX-006B date/start/end state-as-SoT / 旧形式互換】"
+if [ -f "$SCRIPT_DIR/test_report_ux_006b.js" ]; then
+  if node "$SCRIPT_DIR/test_report_ux_006b.js" "$TARGET" > /tmp/report_ux_006b_out.log 2>&1; then
+    ok "REPORT-UX-006B テスト 全PASS ($(tail -1 /tmp/report_ux_006b_out.log))"
+  else
+    ng "REPORT-UX-006B テスト 失敗"
+    cat /tmp/report_ux_006b_out.log
+  fi
+else
+  warn "test_report_ux_006b.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""

@@ -669,10 +669,26 @@ function normalizeState(raw){
   });
   if(s.report&&typeof s.report==='object'){
     // REPORT-UX-006A: place は normalizeReportPlace で trim/fallback して復元する。
-    //   date / start / end / sei / fuku / note は従来通り raw string コピー（本タスクではスコープ外）。
-    ['date','start','end','sei','fuku','note'].forEach(function(k){
+    // REPORT-UX-006B: date / start / end は専用 helper で正規化して復元する（下記の個別分岐）。
+    //   sei / fuku / note は従来通り raw string コピー（本タスクではスコープ外）。
+    ['sei','fuku','note'].forEach(function(k){
       if(typeof s.report[k]==='string')base.report[k]=s.report[k];
     });
+    // REPORT-UX-006B: date は normalizeReportDateForInput で YYYY-MM-DD 形式に正規化して復元。
+    //   旧 '2026年5月18日' 等は '2026-05-18' に migrate、不正値は '' へ（後段の
+    //   ensureReportDateTimeDefaults / populateReportFields が defaults を補完する）。
+    //   旧データ (date 欠落) は base.report.date=''（schema 既定）のまま維持。
+    if(Object.prototype.hasOwnProperty.call(s.report,'date')){
+      base.report.date=normalizeReportDateForInput(s.report.date);
+    }
+    // REPORT-UX-006B: start / end は normalizeReportTimeForInput で HH:MM 形式に正規化して復元。
+    //   旧 '13時00分' 等は '13:00' に migrate、不正値は '' へ。
+    if(Object.prototype.hasOwnProperty.call(s.report,'start')){
+      base.report.start=normalizeReportTimeForInput(s.report.start);
+    }
+    if(Object.prototype.hasOwnProperty.call(s.report,'end')){
+      base.report.end=normalizeReportTimeForInput(s.report.end);
+    }
     // REPORT-UX-006A: place 文字列フィールド。normalizeReportPlace で trim/fallback。
     //   旧データ (place 欠落) は base.report.place='労政会館'（schema 既定）のまま維持。
     //   place=null / '' / '   ' / 非文字列も既定値 '労政会館' に揃える。
@@ -6903,9 +6919,12 @@ function downloadReport(){
   //   入力 UI は <input type="date"> / <input type="time"> の YYYY-MM-DD / HH:MM だが、
   //   印刷時は formatJapaneseDateFromYmd / formatJapaneseTimeFromHhmm で変換。
   //   未入力時は旧来の placeholder「　　年　　月　　日」「　　時　　分」を維持する。
-  var dateRaw=document.getElementById('rep-date').value||'';
-  var startRaw=document.getElementById('rep-start').value||'';
-  var endRaw=document.getElementById('rep-end').value||'';
+  // REPORT-UX-006B (state-as-SoT): date / start / end は state.report を SoT として扱う。
+  //   DOM #rep-date|start|end.value 直読みをやめ、normalize 系 helper で正規化済の値を取得する。
+  //   不正値・空欄は '' に正規化され、placeholder「　　年　　月　　日」「　　時　　分」へ。
+  var dateRaw=normalizeReportDateForInput(state.report&&state.report.date);
+  var startRaw=normalizeReportTimeForInput(state.report&&state.report.start);
+  var endRaw=normalizeReportTimeForInput(state.report&&state.report.end);
   var date=dateRaw?formatJapaneseDateFromYmd(dateRaw):'　　年　　月　　日';
   // REPORT-UX-006A: 会場は state.report.place を SoT として扱う。
   //   DOM #rep-place.value 直読みをやめ、normalizeReportPlace で trim/fallback 済の値を使う。
@@ -7046,8 +7065,9 @@ function downloadReport(){
 
   // REPORT-UX-001: ファイル名用の日付文字列。新 type="date" の YYYY-MM-DD / 旧テキストの
   //   YYYY年MM月DD日 の両方からハイフン・和暦区切りを除去し YYYYMMDD 風にする。
-  var repDate=document.getElementById('rep-date').value||'';
-  var dateNum=repDate.split('-').join('').split('年').join('').split('月').join('').split('日').join('').split(' ').join('');
+  // REPORT-UX-006B: dateRaw は normalizeReportDateForInput 通過済の YYYY-MM-DD / '' なので、
+  //   ハイフン除去のみで YYYYMMDD（不正値時は ''）になる。DOM 直読みをやめ state-as-SoT に統一。
+  var dateNum=dateRaw.split('-').join('');
   // REPORT-UX-004: ファイル名は <reportTitle>_<YYYYMMDD>_報告書 形式。
   //   旧 '沼津支部_<date>_月例将棋大会報告書' のうち、可変部 '月例将棋大会' を reportTitle
   //   ('沼津支部月例将棋大会' 等) に置換し、不変部 '報告書' を末尾で付与。
@@ -7257,16 +7277,23 @@ function populateReportFields(){
   //   旧形式 "YYYY年MM月DD日" / "H時MM分" が来ても、HTML5 input が値を空に戻して
   //   ensureReportDateTimeDefaults が今日/13:00/17:00 で上書きする問題を解消する。
   //   正規化に失敗した場合（不正値）は '' を返し、後段の defaults が補完する。
-  //   保存形式（state.report.* の値）はここでは変更しない（ユーザーが date/time picker で
-  //   修正したタイミングで自然に新 ISO/HHMM 形式へ移行する）。
+  // REPORT-UX-006B (state-as-SoT):
+  //   旧仕様では state.report.* の値はここでは変更しなかったが、本タスクから state も
+  //   正規化後値に同期する（legacy '2026年5月18日' → ISO '2026-05-18' へ自動 migrate）。
+  //   不正値・空欄 → state.report.k=''、後段の ensureReportDateTimeDefaults が両方を補完。
   // REPORT-UX-006A: place は専用 helper で正規化するため、ここでは触らない（後段で個別反映）。
   ['date','start','end','sei','fuku','note'].forEach(function(k){
     var el=document.getElementById('rep-'+k);
     if(!el)return;
     var raw=state.report[k]||'';
     var v=raw;
-    if(k==='date')v=normalizeReportDateForInput(raw);
-    else if(k==='start'||k==='end')v=normalizeReportTimeForInput(raw);
+    if(k==='date'){
+      v=normalizeReportDateForInput(raw);
+      state.report.date=v;
+    } else if(k==='start'||k==='end'){
+      v=normalizeReportTimeForInput(raw);
+      state.report[k]=v;
+    }
     el.value=v;
   });
   // REPORT-UX-006A: 会場（文字列フィールド）。state.report.place を input に反映する。
@@ -7371,6 +7398,21 @@ function updateReportFieldFromElement(el,eventType){
     var normalizedPlace=normalizeReportPlace(el.value);
     state.report.place=normalizedPlace;
     if(eventType==='change')el.value=normalizedPlace;
+  } else if(key==='date'){
+    // REPORT-UX-006B: date は normalizeReportDateForInput で YYYY-MM-DD に正規化。
+    //   <input type="date"> は picker 経由なら通常 ISO 形式だが、念のため helper を通す
+    //   （legacy text の互換と空欄/不正値の '' fallback を維持）。
+    //   DOM 書き戻しは change イベント時のみ（picker 中の中間値を破壊しない）。
+    var normalizedDate=normalizeReportDateForInput(el.value);
+    state.report.date=normalizedDate;
+    if(eventType==='change')el.value=normalizedDate;
+  } else if(key==='start'||key==='end'){
+    // REPORT-UX-006B: start / end は normalizeReportTimeForInput で HH:MM に正規化。
+    //   不正値・空欄は '' へ。DOM 書き戻しは change 時のみ（picker 操作中の中間値保護）。
+    //   checkReportTimeOrder() は本関数末尾で start / end に対して既に呼ばれている。
+    var normalizedTime=normalizeReportTimeForInput(el.value);
+    state.report[key]=normalizedTime;
+    if(eventType==='change')el.value=normalizedTime;
   } else {
     state.report[key]=el.value;
   }
