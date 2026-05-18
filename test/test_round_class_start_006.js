@@ -519,6 +519,11 @@ function seedRegDom(ctx){
 }
 
 // F4: calcTotal の fallback
+//   ROUND-CLASS-START-007 (Codex S2 修正後):
+//     calcTotal は getRegistrationClassList() を唯一の source of truth として使う。
+//     state.classes 不在時は ['A','B'] fallback に揃え、renderRegList との表示乖離を防ぐ。
+//     よって state.players.C が存在しても classes fallback が ['A','B'] のため C は合計対象外。
+//     旧 006 は state.players own-key 走査だったが、S2 で renderRegList と整合させた。
 {
   const env = loadEnv(targetPath);
   // state.classes 不在 + state.players に A/B 以外の own-key がある場合
@@ -526,11 +531,11 @@ function seedRegDom(ctx){
     players:{
       A:[makePlayer('a1','x','A',{member:'member',grade:'ippan'})],  // 500
       B:[],
-      C:[makePlayer('c1','y','C',{member:'other',grade:'ippan'})]    // 1000
+      C:[makePlayer('c1','y','C',{member:'other',grade:'ippan'})]    // 1000（fallback ['A','B'] なので集計外）
     }
   });
-  assertEq(env.calcTotal(), 1500,
-    'F4 state.classes 不在でも state.players own-key 走査で A+C 合計 1500');
+  assertEq(env.calcTotal(), 500,
+    'F4 state.classes 不在時は getRegistrationClassList の ["A","B"] fallback と整合し、A のみ集計 = 500');
 }
 
 // ============================================================

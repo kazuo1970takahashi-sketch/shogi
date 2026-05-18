@@ -42,6 +42,12 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .player-name{font-weight:500;min-width:70px;font-size:14px}
 .player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:14px}
 .sel-sm{height:34px;padding:0 6px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff;font-family:inherit}
+/* ROUND-CLASS-START-007 (spec §15.1 .grid2 3+ クラス棚卸し):
+   現状 A/B 2 クラス前提で `1fr 1fr` 固定。C クラス以降を追加すると 3 番目以降が
+   次行へ折り返される（致命的崩れは無く、半幅占有で並ぶ）。
+   `repeat(auto-fit, minmax(...))` 等への汎用化は VRT baseline 更新を伴うため、
+   本 PR では実施せず、A/B 既存表示と完全互換のままにする。
+   3+ クラス本格 UI レイアウト改善は後続タスク（008 以降）で扱う。 */
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:700px){.grid2{grid-template-columns:1fr}}
 .pairing-card{background:#f8fbff;border:1px solid #d0e4f7;border-radius:10px;padding:12px 12px;margin-bottom:8px}
@@ -79,7 +85,12 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
   .tab{font-size:12px;padding:10px 2px}
   .header h1{font-size:13px}
 }
-@media print{.header,.tab-bar,.no-print{display:none!important}body{background:#fff}#result-B{page-break-before:always}}
+/* ROUND-CLASS-START-007 (spec §15.1):
+   #result-B 固定の page-break を .result-section + .result-section に汎用化。
+   隣接する .result-section 間で改ページ（最初の section は改ページしない）。
+   page-break-before は legacy 互換、break-before は新仕様。両方併用する。
+   3 クラス以上（C+ result section）でも自然に改ページされる。 */
+@media print{.header,.tab-bar,.no-print{display:none!important}body{background:#fff}.result-section+.result-section{page-break-before:always;break-before:page}}
 @media screen and (orientation:landscape) and (max-width:900px){
   #rotate-overlay{display:flex!important}
 }
@@ -176,10 +187,12 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
   <div id="pane-result" style="display:none">
     <!-- ROUND-CLASS-START-005: result-{classId} を state.classes 駆動で append できるよう
          result-list ラッパーで囲む。A/B は既存互換のため静的に保持し、
-         ensureClassResultDomNodes() が不足分のみ末尾に動的補完する。 -->
+         ensureClassResultDomNodes() が不足分のみ末尾に動的補完する。
+         ROUND-CLASS-START-007: .result-section クラスを付与し、印刷時 page-break を
+         #result-B 固定から `.result-section + .result-section` の汎用 CSS に置換。 -->
     <div id="result-list">
-      <div id="result-A"></div>
-      <div id="result-B" style="margin-top:16px"></div>
+      <div id="result-A" class="result-section"></div>
+      <div id="result-B" class="result-section" style="margin-top:16px"></div>
     </div>
     <div style="margin-top:16px;text-align:right" class="no-print">
       <button type="button" class="btn-primary" onclick="printResults()">対戦成績を印刷 / PDF保存</button>
@@ -355,32 +368,28 @@ function getFee(member,grade){
 }
 
 function calcTotal(){
-  // ROUND-CLASS-START-006 (spec §15.1):
-  //   state.classes 駆動で全 class の参加費合計を集計（A/B 固定 literal 解消）。
-  //   state.classes が無い場合は state.players の全 own-key を fallback 走査する（Codex S4）。
-  //   これにより C クラス以降の参加者も合計に含まれる。
+  // ROUND-CLASS-START-007 (Codex Should Fix S2):
+  //   getRegistrationClassList() を唯一の source of truth として使うことで、
+  //   renderRegList と calcTotal の fallback 方針を完全に揃える。
+  //   state.classes が非空でも全 unsafe な場合の挙動分岐:
+  //   - getRegistrationClassList: ['A','B'] fallback
+  //   - calcTotal: 旧 006 では state.classes 駆動経路に入って 0 を返していた → 受付一覧と
+  //     fee-summary の表示が乖離（破損 state 直接注入時）。
+  //   本 PR で両者を getRegistrationClassList 経由に統一し、整合を回復する（spec §15.1 / S2）。
+  //
+  // ROUND-CLASS-START-006 既存仕様（維持）:
+  //   - isSafeClassId() で classId 安全文字のみ許容
+  //   - state.players[classId] が無い classId は 0 加算
   var t=0;
-  function sumFromArr(arr){
-    if(!Array.isArray(arr))return;
+  var classes=getRegistrationClassList();
+  for(var ci=0;ci<classes.length;ci++){
+    var c=classes[ci];
+    if(!c||!isSafeClassId(c.id))continue;
+    var arr=(state&&state.players&&state.players[c.id])||[];
+    if(!Array.isArray(arr))continue;
     for(var i=0;i<arr.length;i++){
       var p=arr[i]; if(!p)continue;
       t+=getFee(p.member||'member',p.grade||'ippan');
-    }
-  }
-  if(state&&Array.isArray(state.classes)&&state.classes.length>0){
-    for(var ci=0;ci<state.classes.length;ci++){
-      var c=state.classes[ci];
-      if(!c||!isSafeClassId(c.id))continue;
-      sumFromArr(state.players&&state.players[c.id]);
-    }
-    return t;
-  }
-  // fallback: state.classes 不在 / 空 → state.players の全 own-key を走査
-  if(state&&state.players&&typeof state.players==='object'){
-    var keys=Object.keys(state.players);
-    for(var ki=0;ki<keys.length;ki++){
-      if(!isSafeClassId(keys[ki]))continue;
-      sumFromArr(state.players[keys[ki]]);
     }
   }
   return t;
@@ -3367,7 +3376,9 @@ function ensureClassRegDomNodes(){
     btn.className='btn-sm';
     btn.style.cssText='border-color:#2E75B6;color:#2E75B6';
     btn.textContent='名前を一括編集';
-    btn.addEventListener('click',(function(cid){return function(){bulkEditNames(cid);};})(c.id));
+    // ROUND-CLASS-START-007 (Codex Should Fix S3):
+    //   bulkEdit click handler bind は ensureClassRegDomNodes 内では行わず、
+    //   bindClassBulkEditHandlers() に集約する。A/B 既存 bind と同経路で統一する。
     header.appendChild(btn);
     section.appendChild(header);
     // list
@@ -3375,6 +3386,29 @@ function ensureClassRegDomNodes(){
     list.id=regClassListId(c.id);
     section.appendChild(list);
     grid.appendChild(section);
+  }
+}
+
+// ROUND-CLASS-START-007 (Codex Should Fix S3):
+//   bulkEdit ボタンの click handler bind を classes-driven に統一する。
+//   A/B 静的ボタン（bulkEditA/B）も C+ 動的ボタン（class-bulkedit-{classId}）も
+//   ここから bulkEditNames(classId) を bind する。
+//   重複 bind 防止: 各ボタンに data-bulkedit-bound 属性を立て、再呼出時に skip する。
+//   呼出契機:
+//     - bindRegistrationEvents (起動時、A/B 静的 DOM 用)
+//     - renderRegList (ensureClassRegDomNodes が C+ 動的 DOM を生成した直後)
+//   classId は getRegistrationClassList() で取得し isSafeClassId/fallback 整合性を維持。
+function bindClassBulkEditHandlers(){
+  var classes=getRegistrationClassList();
+  for(var i=0;i<classes.length;i++){
+    var c=classes[i];
+    if(!c||!isSafeClassId(c.id))continue;
+    var btn=document.getElementById(regClassBulkEditId(c.id));
+    if(!btn)continue;
+    // 既に bind 済みなら skip（idempotent）
+    if(btn.getAttribute&&btn.getAttribute('data-bulkedit-bound')==='true')continue;
+    btn.addEventListener('click',(function(cid){return function(){bulkEditNames(cid);};})(c.id));
+    if(btn.setAttribute)btn.setAttribute('data-bulkedit-bound','true');
   }
 }
 
@@ -3418,6 +3452,9 @@ function ensureClassResultDomNodes(){
     if(document.getElementById('result-'+c.id))continue;
     var d=document.createElement('div');
     d.id='result-'+c.id;
+    // ROUND-CLASS-START-007 (spec §15.1): .result-section クラスを付与し、印刷時の
+    //   page-break を class 駆動汎用 CSS（.result-section + .result-section）に揃える。
+    d.className='result-section';
     if(d.style)d.style.marginTop='16px';
     list.appendChild(d);
   }
@@ -3611,6 +3648,9 @@ function renderRegList(){
   //   classId id-safety は isSafeClassId() で保証され、a-count/b-count/bulkEditA/B 互換 id は
   //   regClassCountId/regClassListId/regClassBulkEditId が翻訳する。
   ensureClassRegDomNodes();
+  // ROUND-CLASS-START-007 (Codex Should Fix S3): C+ 動的セクションの bulkEdit ボタンを bind。
+  //   A/B 静的ボタンは bindRegistrationEvents 起動時に bind 済（idempotent 設計、重複 bind なし）。
+  bindClassBulkEditHandlers();
   var clsList=getRegistrationClassList();
   var allCount=0;
   for(var ci=0;ci<clsList.length;ci++){
@@ -6209,7 +6249,11 @@ function buildResultsMobileHtml(cls, finals, wins){
     html+=badge;
     html+='<div style="display:flex;flex-direction:column;gap:2px">';
     html+='<span style="font-weight:500;font-size:15px">'+escapeHtml(getNameWithNo(f.p.id,cls))+'</span>';
-    html+='<div style="font-size:12px;color:#555">勝<strong>'+f.A+'</strong>　負'+(f.played-f.A)+'　相手:'+f.B+'　勝相手:'+f.C+'</div>';
+    // ROUND-CLASS-START-007 (最終結果タブ ラベル統一):
+    //   モバイル成績カード内のラベルを 4 項目すべて全角コロン「：」付きで揃える。
+    //   表示: 勝：N　負：N　相手：N　勝相手：N
+    //   旧実装はラベル間で半角コロン・コロンなしが混在していた（同 PR で解消）。
+    html+='<div style="font-size:12px;color:#555">勝：<strong>'+f.A+'</strong>　負：'+(f.played-f.A)+'　相手：'+f.B+'　勝相手：'+f.C+'</div>';
     html+='</div>';
     html+='</div>';
     html+='<div style="display:flex;gap:4px">';
@@ -6449,18 +6493,35 @@ function openLoadModal(){
 }
 
 function printResults(){
-  var winA={};
-  state.players.A.forEach(function(p){winA[p.id]=0;});
-  state.results.A.forEach(function(r){r.forEach(function(m){if(m.winner)winA[m.winner]=(winA[m.winner]||0)+1;});});
-  var winB={};
-  state.players.B.forEach(function(p){winB[p.id]=0;});
-  state.results.B.forEach(function(r){r.forEach(function(m){if(m.winner)winB[m.winner]=(winB[m.winner]||0)+1;});});
+  // ROUND-CLASS-START-007 (spec §15.1):
+  //   印刷帳票を state.classes 駆動で組み立てる（A/B 固定 literal 解消）。
+  //   getRegistrationClassList() を使い、renderRegList / calcTotal と同じ source of truth に揃える。
+  //   classId は isSafeClassId() で id-safe 保証済み。3 クラス以上でも自然に表示される。
+  //   既存 A/B 印刷結果は前と変わらない（class 数=2、順序 A→B のまま）。
+  var classes=getRegistrationClassList();
+  // 各クラスの wins 集計を classId-keyed dict に蓄積
+  var winsByClass={};
+  for(var wi=0;wi<classes.length;wi++){
+    var wc=classes[wi]; if(!wc||!isSafeClassId(wc.id))continue;
+    var wid=wc.id;
+    var w={};
+    var wplayers=(state.players&&state.players[wid])||[];
+    wplayers.forEach(function(p){w[p.id]=0;});
+    var wresults=(state.results&&state.results[wid])||[];
+    wresults.forEach(function(r){r.forEach(function(m){if(m.winner)w[m.winner]=(w[m.winner]||0)+1;});});
+    winsByClass[wid]=w;
+  }
 
   function buildTable(cls,wins){
     var finals=calcFinal(cls);
     if(finals.length===0)return '';
+    // class 表示名: state.classes の name を優先（Aクラス / Bクラス / Cクラス 等）
+    var className=cls+'クラス';
+    for(var i=0;i<classes.length;i++){
+      if(classes[i]&&classes[i].id===cls&&classes[i].name){className=classes[i].name;break;}
+    }
     var html='<div style="margin:16px 0 0">';
-    html+='<div style="font-size:15px;font-weight:bold;color:#1F3864;margin-bottom:4px">'+cls+'クラス</div>';
+    html+='<div style="font-size:15px;font-weight:bold;color:#1F3864;margin-bottom:4px">'+escapeHtml(className)+'</div>';
     html+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px">';
     html+='<thead><tr style="background:#e8f0f8"><th style="padding:6px 8px;border:1px solid #ccc;text-align:center">順位</th><th style="padding:6px 8px;border:1px solid #ccc;text-align:left">氏名</th>';
     for(var r=1;r<=state.rounds;r++)html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+r+'回戦</th>';
@@ -6506,10 +6567,18 @@ function printResults(){
     return html;
   }
 
-  // B07: A クラスが空(参加者0でテーブル空文字)なら page-break-before の空白ページを挿入しない
-  var tableA=buildTable('A',winA);
-  var tableB=buildTable('B',winB);
-  var pageBreak=(tableA&&tableB)?'<div style="page-break-before:always"></div>':'';
+  // ROUND-CLASS-START-007 (spec §15.1):
+  //   classes-driven の table 組み立て。各 class の table を生成し、空でない table のみを採用、
+  //   隣接 table 間にだけ page-break を挟む（既存 B07 と同じく空白ページを挿入しない）。
+  //   A/B 既存挙動（A→B 2 枚で page-break 1 回）は維持される。
+  var tables=[];
+  for(var ti=0;ti<classes.length;ti++){
+    var tc=classes[ti]; if(!tc||!isSafeClassId(tc.id))continue;
+    var tbl=buildTable(tc.id, winsByClass[tc.id]||{});
+    if(tbl)tables.push(tbl);
+  }
+  var pageBreakHtml='<div style="page-break-before:always"></div>';
+  var tablesHtml=tables.join(pageBreakHtml);
 
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
     +'<title>沼津支部月例将棋大会 対戦成績</title>'
@@ -6520,9 +6589,7 @@ function printResults(){
     +'@media print{body{padding:0}.no-print{display:none}}</style>'
     +'</head><body>'
     +'<h2>スイス式トーナメント　対戦成績</h2>'
-    +tableA
-    +pageBreak
-    +tableB
+    +tablesHtml
     +'</body></html>';
 
   var now=new Date();
@@ -6757,8 +6824,10 @@ function bindHeaderEvents(){
 }
 
 function bindRegistrationEvents(){
-  document.getElementById('bulkEditA').addEventListener('click',function(){bulkEditNames('A');});
-  document.getElementById('bulkEditB').addEventListener('click',function(){bulkEditNames('B');});
+  // ROUND-CLASS-START-007 (Codex Should Fix S3):
+  //   A/B 静的ボタン (bulkEditA / bulkEditB) と C+ 動的ボタン (class-bulkedit-{classId}) を
+  //   bindClassBulkEditHandlers() で同経路 bind する。重複 bind は data-bulkedit-bound で抑止。
+  bindClassBulkEditHandlers();
   document.getElementById('addBtn').addEventListener('click',addPlayer);
   document.getElementById('startBtn').addEventListener('click',startTournament);
 
