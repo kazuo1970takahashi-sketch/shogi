@@ -113,8 +113,12 @@ assert(drBody.indexOf('window.open(url') >= 0,
   'S7-4 window.open(url, _blank) が残っている');
 assert(drBody.indexOf('沼津支部月例将棋大会報告書') >= 0,
   'S7-5 報告書タイトル「沼津支部月例将棋大会報告書」が本 PR では維持（REPORT-UX-003+ 持ち越し）');
-assert(/prize\s*=\s*7000/.test(drBody),
-  'S7-6 賞金額 7000 ハードコードは本 PR では維持（REPORT-UX-003+ 持ち越し）');
+// REPORT-UX-003A で本 defer は解消済み。prize は state.report.prize / normalizeReportPrize 経由に。
+//   旧 002 時点の `var prize=7000` ハードコード literal は撤去された。
+assert(/prize\s*=\s*7000/.test(drBody) === false,
+  'S7-6 賞金額 prize=7000 ハードコード literal は REPORT-UX-003A で撤去済み');
+assert(/normalizeReportPrize\s*\(/.test(drBody),
+  'S7-6b 003A: downloadReport が normalizeReportPrize() を呼ぶ');
 assert(drBody.indexOf('FAX（943-9443）') >= 0,
   'S7-7 FAX 番号末尾文言は本 PR では維持（REPORT-UX-003+ 持ち越し）');
 
