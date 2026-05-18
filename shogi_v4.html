@@ -6249,7 +6249,11 @@ function buildResultsMobileHtml(cls, finals, wins){
     html+=badge;
     html+='<div style="display:flex;flex-direction:column;gap:2px">';
     html+='<span style="font-weight:500;font-size:15px">'+escapeHtml(getNameWithNo(f.p.id,cls))+'</span>';
-    html+='<div style="font-size:12px;color:#555">勝<strong>'+f.A+'</strong>　負'+(f.played-f.A)+'　相手:'+f.B+'　勝相手:'+f.C+'</div>';
+    // ROUND-CLASS-START-007 (最終結果タブ ラベル統一):
+    //   モバイル成績カード内のラベルを 4 項目すべて全角コロン「：」付きで揃える。
+    //   表示: 勝：N　負：N　相手：N　勝相手：N
+    //   旧実装はラベル間で半角コロン・コロンなしが混在していた（同 PR で解消）。
+    html+='<div style="font-size:12px;color:#555">勝：<strong>'+f.A+'</strong>　負：'+(f.played-f.A)+'　相手：'+f.B+'　勝相手：'+f.C+'</div>';
     html+='</div>';
     html+='</div>';
     html+='<div style="display:flex;gap:4px">';
