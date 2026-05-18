@@ -199,10 +199,15 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     </div>
     <div class="section no-print" style="margin-top:16px">
       <h2>大会報告書</h2>
+      <!-- REPORT-UX-001: 開催日は <input type="date">、開始/終了時間は <input type="time"> で
+           ブラウザ標準のカレンダー/時刻ピッカーを使用。step="300" は 5 分刻み。
+           未入力時は ensureReportDateTimeDefaults() が今日 / 13:00 / 17:00 を補完する。
+           保存済み値・入力済み値は populateReportFields() が優先し、defaults は上書きしない。
+           印刷帳票では downloadReport() が YYYY-MM-DD / HH:MM を YYYY年M月D日 / HH時MM分 に変換して表示する。 -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
         <div>
           <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">開催日</label>
-          <input type="text" id="rep-date" placeholder="例：2026年4月12日" style="width:100%">
+          <input type="date" id="rep-date" style="width:100%">
         </div>
         <div>
           <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">場所</label>
@@ -210,11 +215,12 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
         </div>
         <div>
           <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">開始時間</label>
-          <input type="text" id="rep-start" placeholder="例：12時45分" style="width:100%">
+          <input type="time" id="rep-start" step="300" style="width:100%">
         </div>
         <div>
           <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">終了時間</label>
-          <input type="text" id="rep-end" placeholder="例：16時20分" style="width:100%">
+          <input type="time" id="rep-end" step="300" style="width:100%">
+          <div id="rep-time-warning" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px"></div>
         </div>
         <div>
           <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">担当役員（正）</label>
@@ -820,6 +826,126 @@ function isValidYmd(s){
 function todayYmd(){
   var d=new Date();
   return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+
+// REPORT-UX-001: <input type="date"> に流し込む YYYY-MM-DD（local date、UTC 換算なし）。
+//   `new Date().toISOString().slice(0,10)` は UTC 換算で日本時間の深夜帯にズレるため使わない。
+function formatLocalDateForInput(d){
+  if(!(d instanceof Date)||isNaN(d.getTime()))return '';
+  var y=d.getFullYear();
+  var m=('0'+(d.getMonth()+1)).slice(-2);
+  var day=('0'+d.getDate()).slice(-2);
+  return y+'-'+m+'-'+day;
+}
+
+// REPORT-UX-001 (Codex Must Fix 1):
+//   `<input type="date">` の value 用に正規化する pure helper。
+//   - "YYYY-MM-DD" はそのまま
+//   - "YYYY年M月D日" / "YYYY年MM月DD日" は "YYYY-MM-DD" に変換（zero-padding）
+//   - 不正値・空値は '' を返す（input.value='' なら placeholder UI 表示、defaults helper が補完）
+//   旧保存形式（v0 以前のテキスト入力時代）の互換維持。
+function normalizeReportDateForInput(value){
+  if(typeof value!=='string'||!value)return '';
+  // 新 ISO 形式
+  var iso=value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(iso)return iso[1]+'-'+iso[2]+'-'+iso[3];
+  // 旧和暦風 "YYYY年M月D日" / "YYYY年MM月DD日"
+  var ja=value.match(/^(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日$/);
+  if(ja)return ja[1]+'-'+('0'+ja[2]).slice(-2)+'-'+('0'+ja[3]).slice(-2);
+  return '';
+}
+
+// REPORT-UX-001 (Codex Must Fix 1):
+//   `<input type="time">` の value 用に正規化する pure helper。
+//   - "HH:MM" / "H:MM" は HH:MM（zero-padding）
+//   - "HH時MM分" / "H時MM分" は HH:MM に変換
+//   - 不正値・空値は '' を返す
+//   旧保存形式（テキスト入力時代）の互換維持。
+function normalizeReportTimeForInput(value){
+  if(typeof value!=='string'||!value)return '';
+  // 新 HH:MM / H:MM
+  var hm=value.match(/^(\d{1,2}):(\d{2})$/);
+  if(hm){
+    var h=parseInt(hm[1],10), mm=hm[2];
+    if(h<0||h>23)return '';
+    var mmNum=parseInt(mm,10);
+    if(mmNum<0||mmNum>59)return '';
+    return ('0'+h).slice(-2)+':'+mm;
+  }
+  // 旧 "HH時MM分" / "H時MM分"
+  var ja=value.match(/^(\d{1,2})時\s*(\d{1,2})分$/);
+  if(ja){
+    var h2=parseInt(ja[1],10), m2=parseInt(ja[2],10);
+    if(h2<0||h2>23)return '';
+    if(m2<0||m2>59)return '';
+    return ('0'+h2).slice(-2)+':'+('0'+m2).slice(-2);
+  }
+  return '';
+}
+
+// REPORT-UX-001: 報告書印刷用に YYYY-MM-DD を「YYYY年M月D日」表記に変換する pure helper。
+//   旧テキスト入力時代の見た目（運営者向け和暦風表記）を保つため。
+//   不正値はそのまま返す（落ちない / 既存値が見える）。
+function formatJapaneseDateFromYmd(ymd){
+  if(typeof ymd!=='string')return '';
+  var m=ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m)return ymd;
+  return m[1]+'年'+String(parseInt(m[2],10))+'月'+String(parseInt(m[3],10))+'日';
+}
+
+// REPORT-UX-001: 報告書印刷用に HH:MM を「HH時MM分」表記に変換する pure helper。
+//   旧テキスト入力時代の見た目を保つため。
+//   不正値はそのまま返す。
+function formatJapaneseTimeFromHhmm(hm){
+  if(typeof hm!=='string')return '';
+  var m=hm.match(/^(\d{1,2}):(\d{2})$/);
+  if(!m)return hm;
+  return String(parseInt(m[1],10))+'時'+m[2]+'分';
+}
+
+// REPORT-UX-001: 未入力の開催日 / 開始時間 / 終了時間に既定値を補完する idempotent helper。
+//   - rep-date が空 → 今日（local date）
+//   - rep-start が空 → 13:00
+//   - rep-end が空 → 17:00
+//   既に値があるフィールドは何もしない（タブ切替や再 init で上書きしない契約）。
+//   state.report の値は populateReportFields が input.value にコピーした「後」に呼ぶ前提。
+//   helper 内で state.report も同期更新する（保存忘れ防止）。
+function ensureReportDateTimeDefaults(){
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''};
+  var pairs=[
+    {key:'date', defaultFn:function(){return formatLocalDateForInput(new Date());}},
+    {key:'start',defaultFn:function(){return '13:00';}},
+    {key:'end',  defaultFn:function(){return '17:00';}}
+  ];
+  for(var i=0;i<pairs.length;i++){
+    var k=pairs[i].key;
+    var el=document.getElementById('rep-'+k);
+    if(!el)continue;
+    if(el.value)continue;  // 既存値あり → 触らない
+    var def=pairs[i].defaultFn();
+    el.value=def;
+    state.report[k]=def;
+  }
+}
+
+// REPORT-UX-001: 終了時間が開始時間以前の場合に軽い警告を表示する。
+//   ブロックはしない（現場運用で例外があり得る）。表示専用の #rep-time-warning に文言出力。
+//   start/end どちらかが空 / 不正な場合は警告非表示（消す）。
+function checkReportTimeOrder(){
+  var startEl=document.getElementById('rep-start');
+  var endEl=document.getElementById('rep-end');
+  var warnEl=document.getElementById('rep-time-warning');
+  if(!warnEl)return;
+  var startVal=(startEl&&startEl.value)||'';
+  var endVal=(endEl&&endEl.value)||'';
+  var ok=/^\d{1,2}:\d{2}$/.test(startVal)&&/^\d{1,2}:\d{2}$/.test(endVal);
+  if(ok&&endVal<=startVal){
+    warnEl.textContent='終了時間が開始時間以前になっています。確認してください。';
+    warnEl.style.display='block';
+  } else {
+    warnEl.textContent='';
+    warnEl.style.display='none';
+  }
 }
 
 function generateMemberId(master){
@@ -6320,9 +6446,15 @@ function renderResults(){
   }
 }
 
-// 大会の report.date（"YYYY年MM月DD日"）を YYYY-MM-DD に変換。失敗時は今日。
+// 大会の report.date を YYYY-MM-DD に変換。失敗時は今日。
+// REPORT-UX-001: 旧テキスト入力時代の "YYYY年MM月DD日" と新 type="date" の "YYYY-MM-DD"
+//   の両方を受け付ける（旧データ互換）。
 function getTournamentDateFromReport(r){
   if(r&&typeof r.date==='string'){
+    // 新 schema: type="date" 由来の YYYY-MM-DD
+    var iso=r.date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(iso)return iso[1]+'-'+iso[2]+'-'+iso[3];
+    // 旧 schema: 旧テキスト入力 "YYYY年MM月DD日"
     var m=r.date.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
     if(m)return m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2);
   }
@@ -6620,10 +6752,17 @@ function getTopPlayers(cls){
 }
 
 function downloadReport(){
-  var date=document.getElementById('rep-date').value||'　　年　　月　　日';
+  // REPORT-UX-001: 印刷帳票では日付・時刻を旧形式の和暦風（YYYY年M月D日 / HH時MM分）で表示する。
+  //   入力 UI は <input type="date"> / <input type="time"> の YYYY-MM-DD / HH:MM だが、
+  //   印刷時は formatJapaneseDateFromYmd / formatJapaneseTimeFromHhmm で変換。
+  //   未入力時は旧来の placeholder「　　年　　月　　日」「　　時　　分」を維持する。
+  var dateRaw=document.getElementById('rep-date').value||'';
+  var startRaw=document.getElementById('rep-start').value||'';
+  var endRaw=document.getElementById('rep-end').value||'';
+  var date=dateRaw?formatJapaneseDateFromYmd(dateRaw):'　　年　　月　　日';
   var place=document.getElementById('rep-place').value||'労政会館';
-  var start=document.getElementById('rep-start').value||'　　時　　分';
-  var end=document.getElementById('rep-end').value||'　　時　　分';
+  var start=startRaw?formatJapaneseTimeFromHhmm(startRaw):'　　時　　分';
+  var end=endRaw?formatJapaneseTimeFromHhmm(endRaw):'　　時　　分';
   var sei=document.getElementById('rep-sei').value||'';
   var fuku=document.getElementById('rep-fuku').value||'';
   var note=document.getElementById('rep-note').value||'特になし';
@@ -6696,8 +6835,10 @@ function downloadReport(){
     +'<p style="font-size:11px">※役員会で会計長へ収支報告書として提出ください。</p>'
     +'</body></html>';
 
+  // REPORT-UX-001: ファイル名用の日付文字列。新 type="date" の YYYY-MM-DD / 旧テキストの
+  //   YYYY年MM月DD日 の両方からハイフン・和暦区切りを除去し YYYYMMDD 風にする。
   var repDate=document.getElementById('rep-date').value||'';
-  var dateNum=repDate.split('年').join('').split('月').join('').split('日').join('').split(' ').join('');
+  var dateNum=repDate.split('-').join('').split('年').join('').split('月').join('').split('日').join('').split(' ').join('');
   var title='沼津支部_'+dateNum+'_月例将棋大会報告書';
   html=html.replace('<title>沼津支部月例将棋大会報告書</title>','<title>'+title+'</title>');
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
@@ -6793,15 +6934,17 @@ function resetAll(){
     var rslt=document.getElementById('result-'+c.id);if(rslt)rslt.innerHTML='';
   });
   // 大会報告書入力欄を初期化
-  var repDate=document.getElementById('rep-date');if(repDate)repDate.value='';
   var repPlace=document.getElementById('rep-place');if(repPlace)repPlace.value='労政会館';
-  var repStart=document.getElementById('rep-start');if(repStart)repStart.value='';
-  var repEnd=document.getElementById('rep-end');if(repEnd)repEnd.value='';
   var repSei=document.getElementById('rep-sei');if(repSei)repSei.value='';
   var repFuku=document.getElementById('rep-fuku');if(repFuku)repFuku.value='';
   var repNote=document.getElementById('rep-note');if(repNote)repNote.value='';
   var inpYomiR=document.getElementById('inp-yomi');if(inpYomiR)inpYomiR.value='';
   var inpNameR=document.getElementById('inp-name');if(inpNameR)inpNameR.value='';
+  // REPORT-UX-001 (Codex Should Fix - resetAll defaults 再適用):
+  //   date/start/end は state.report が新規初期化された直後に populateReportFields を呼ぶことで、
+  //   保存済み値の正規化代入 → defaults 補完 を一括で再実行する。これにより同一セッションで
+  //   新大会を開始した直後でも、開催日=今日 / 開始=13:00 / 終了=17:00 が自然に再表示される。
+  populateReportFields();
   showTab('reg');
   showMsg('大会データを全リセットしました','ok');
 }
@@ -6893,21 +7036,64 @@ function bindTabEvents(){
 
 function populateReportFields(){
   if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''};
+  // REPORT-UX-001 (Codex Must Fix 1):
+  //   date / start / end は <input type="date|time"> の value 制約に合わせて正規化してから代入する。
+  //   旧形式 "YYYY年MM月DD日" / "H時MM分" が来ても、HTML5 input が値を空に戻して
+  //   ensureReportDateTimeDefaults が今日/13:00/17:00 で上書きする問題を解消する。
+  //   正規化に失敗した場合（不正値）は '' を返し、後段の defaults が補完する。
+  //   保存形式（state.report.* の値）はここでは変更しない（ユーザーが date/time picker で
+  //   修正したタイミングで自然に新 ISO/HHMM 形式へ移行する）。
   ['date','place','start','end','sei','fuku','note'].forEach(function(k){
     var el=document.getElementById('rep-'+k);
-    if(el)el.value=state.report[k]||'';
+    if(!el)return;
+    var raw=state.report[k]||'';
+    var v=raw;
+    if(k==='date')v=normalizeReportDateForInput(raw);
+    else if(k==='start'||k==='end')v=normalizeReportTimeForInput(raw);
+    el.value=v;
   });
+  // REPORT-UX-001: 保存済み値の復元後に未入力欄のみ defaults を補完する。
+  //   保存済み値・入力済み値があれば ensureReportDateTimeDefaults は何もしない（冪等）。
+  ensureReportDateTimeDefaults();
+  // 復元後 / 初期化後の整合性チェック（保存済み値が end<=start 状態の場合に警告を出す）
+  checkReportTimeOrder();
+}
+
+// REPORT-UX-001 (Codex Must Fix 2):
+//   report field の input/change 共通の保存処理を helper 化する。
+//   - state.report[key] = el.value
+//   - save()
+//   - date/time フィールドは change のみ発火するブラウザもあるため、
+//     bindReportEvents から input/change 両イベントでこの helper を呼ぶ。
+//   - start/end の場合は checkReportTimeOrder も呼ぶ。
+//   key は data-report-field 属性、または DOM id の `rep-` プレフィックス除去で決定する。
+function updateReportFieldFromElement(el){
+  if(!el)return;
+  var key=null;
+  if(el.getAttribute){
+    var attrKey=el.getAttribute('data-report-field');
+    if(typeof attrKey==='string'&&attrKey)key=attrKey;
+  }
+  if(!key&&el.id&&el.id.indexOf('rep-')===0)key=el.id.substring(4);
+  if(!key)return;
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''};
+  state.report[key]=el.value;
+  save();
+  if(key==='start'||key==='end')checkReportTimeOrder();
 }
 
 function bindReportEvents(){
   ['date','place','start','end','sei','fuku','note'].forEach(function(k){
     var el=document.getElementById('rep-'+k);
     if(!el)return;
-    el.addEventListener('input',function(e){
-      if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:''};
-      state.report[k]=e.target.value;
-      save();
-    });
+    // data-report-field 属性を付与し、updateReportFieldFromElement が key を取得できるようにする
+    if(el.setAttribute)el.setAttribute('data-report-field',k);
+    // REPORT-UX-001 (Codex Must Fix 2):
+    //   date/time input は ブラウザ・OS によって input イベントが発火しない場合がある
+    //   （picker 確定で change のみ）。state.report 更新と save() を両イベントから走らせる。
+    var handler=function(e){ updateReportFieldFromElement(e.target||el); };
+    el.addEventListener('input',handler);
+    el.addEventListener('change',handler);
   });
   var btn=document.getElementById('downloadReportBtn');
   if(btn)btn.addEventListener('click',downloadReport);
