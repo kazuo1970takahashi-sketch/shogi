@@ -671,18 +671,19 @@ function makeBaseState(reportOverrides){
   assert(html.indexOf('賞金：▲5,000円') >= 0, 'G1-4 prize 出力不変 (003A)');
 }
 
-// G2: sei / fuku / note は state-as-SoT 化していない (DOM 経路維持)
+// G2: sei / fuku / note も帳票に正しく出力される
+//   REPORT-UX-006C で state-as-SoT 化された。state と DOM が一致していれば従来通り
+//   sei / fuku / note の値が帳票 HTML に現れる。「DOM 経由 vs state 経由」のアサート文言は
+//   006C で更新したが、値が帳票に出ることを確認する保証範囲は維持。
 {
   const env = loadEnv(targetPath);
-  // state は空、DOM だけセット
-  env._setState(makeBaseState({date:'2026-05-18',start:'13:00',end:'17:00'}));
+  env._setState(makeBaseState({date:'2026-05-18',start:'13:00',end:'17:00',sei:'山田',fuku:'佐藤',note:'備考メモ'}));
   seedReportDom(env._ctx, {date:'2026-05-18',start:'13:00',end:'17:00',sei:'山田',fuku:'佐藤',note:'備考メモ',place:'労政会館',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部'});
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  // sei/fuku/note は DOM 経由なので、DOM 値が出る (state 空でも DOM 値で出力される設計を維持)
-  assert(html.indexOf('山田') >= 0, 'G2-1 sei は DOM 経由出力 (本 PR でスコープ外、SoT 化していない)');
-  assert(html.indexOf('佐藤') >= 0, 'G2-2 fuku は DOM 経由出力');
-  assert(html.indexOf('備考メモ') >= 0, 'G2-3 note は DOM 経由出力');
+  assert(html.indexOf('山田') >= 0, 'G2-1 sei が帳票に出力される (REPORT-UX-006C で state-as-SoT 化)');
+  assert(html.indexOf('佐藤') >= 0, 'G2-2 fuku が帳票に出力される (REPORT-UX-006C で state-as-SoT 化)');
+  assert(html.indexOf('備考メモ') >= 0, 'G2-3 note が帳票に出力される (REPORT-UX-006C で state-as-SoT 化)');
 }
 
 // G3: 担当役員 / 参加人数 / 収支 / 備考 構造維持
