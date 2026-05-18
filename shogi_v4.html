@@ -6768,21 +6768,50 @@ function downloadReport(){
   var note=document.getElementById('rep-note').value||'特になし';
 
   var total=calcTotal();
-  var allCount=state.players.A.length+state.players.B.length;
+  // REPORT-UX-002 (M1): allCount を state.classes 駆動の全クラス合計に置換。
+  //   旧 A/B 固定の長さ加算 literal を解消し、C クラス以上の参加人数も正しく合計する。
+  //   getRegistrationClassList() は ROUND-CLASS-START-006/007 で導入済の
+  //   renderRegList / calcTotal と同じ source of truth（spec §15.1 / Codex S2 整合）。
+  var reportClasses=(typeof getRegistrationClassList==='function')?getRegistrationClassList():[];
+  var allCount=0;
+  for(var rci=0;rci<reportClasses.length;rci++){
+    var rcid=reportClasses[rci]&&reportClasses[rci].id;
+    if(!rcid||(typeof isSafeClassId==='function'&&!isSafeClassId(rcid)))continue;
+    var rcArr=(state.players&&state.players[rcid])||[];
+    allCount+=rcArr.length;
+  }
   var prize=7000;
   var balance=total-prize;
   var balanceStr=(balance<0?'▲':'')+Math.abs(balance).toLocaleString()+'円';
 
-  var aTop=getTopPlayers('A');
-  var bTop=getTopPlayers('B');
-
+  // REPORT-UX-002 (M2 / M3): クラス別 top 3 を state.classes 駆動で集計する。
+  //   旧 getTopPlayers の cls 固定呼出と、級優勝 / 級準優勝 / 級3位 の固定 6 行
+  //   ハードコードを解消。各 class について className+'優勝/準優勝/3位' の 3 行を
+  //   生成し、クラス名は state.classes[*].name を尊重（Aクラス/Bクラス/Cクラス…）。
+  //   既存 rankRow() は label 引数を escapeHtml していなかったため、本 PR から rankRow 内側で
+  //   label も escapeHtml し、外側 caller では escape 前の生の className 文字列を渡す。
+  //   こうすることで XSS 安全性を強化しつつ既存 A/B 大会の見た目変化はラベルだけに留める。
   function rankRow(label,players,idx){
     var p=players[idx];
     var name=p?p.name:'';
-    return '<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">'+label+'</td>'
+    return '<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">'+escapeHtml(label)+'</td>'
       +'<td style="padding:6px 10px;border:1px solid #999;">'+escapeHtml(name)+'</td>'
       +'<td style="padding:6px 10px;border:1px solid #999;"></td></tr>';
   }
+  function buildClassRankRows(classes){
+    var rows='';
+    for(var ci=0;ci<classes.length;ci++){
+      var c=classes[ci];
+      if(!c||(typeof isSafeClassId==='function'&&!isSafeClassId(c.id)))continue;
+      var className=(c.name&&typeof c.name==='string')?c.name:(c.id+'クラス');
+      var top=getTopPlayers(c.id);
+      rows+=rankRow(className+'優勝',top,0);
+      rows+=rankRow(className+'準優勝',top,1);
+      rows+=rankRow(className+'3位',top,2);
+    }
+    return rows;
+  }
+  var rankRowsHtml=buildClassRankRows(reportClasses);
 
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
     +'<title>沼津支部月例将棋大会報告書</title>'
@@ -6819,12 +6848,10 @@ function downloadReport(){
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;"></td>'
     +'<td style="padding:6px 10px;border:1px solid #999;background:#d0d0d0;font-weight:bold;text-align:center">お名前</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;background:#d0d0d0;font-weight:bold;text-align:center">お住まい（市町村のみ）</td></tr>'
-    +rankRow('A級優勝',aTop,0)
-    +rankRow('A級準優勝',aTop,1)
-    +rankRow('A級3位',aTop,2)
-    +rankRow('B級優勝',bTop,0)
-    +rankRow('B級準優勝',bTop,1)
-    +rankRow('B級3位',bTop,2)
+    // REPORT-UX-002 (M2): A級/B級 固定 6 行を撤去し、classes-driven な rankRowsHtml に置換。
+    //   reportClasses が ['A','B'] のみの大会では rankRowsHtml が 6 行（A→B 順）になり
+    //   従来構造と等価。C クラス以降は自動的に 3 行ずつ追加される。
+    +rankRowsHtml
     +'</table>'
     +'<br>'
     +'<table>'
