@@ -903,6 +903,31 @@ function formatJapaneseTimeFromHhmm(hm){
   return String(parseInt(m[1],10))+'時'+m[2]+'分';
 }
 
+// REPORT-UX-002 (Codex Should Fix):
+//   報告書帳票用のクラス表示ラベルを返す pure helper。state.classes[*].name を尊重しつつ、
+//   英字1文字の既定クラス名（S/A/B/C/D/E/.../Z クラス）は伝統的な「級」表記に変換する。
+//
+//   変換ルール:
+//     1. name が「英字1文字 + 'クラス'」(例 Sクラス/Aクラス/Bクラス) → 「英字1文字 + '級'」 (S級/A級/B級)
+//     2. name が「英字1文字 + '級'」 (例 S級/A級) → そのまま（二重変換しない）
+//     3. それ以外のカスタム名（小学生/初心者/一般/上級/子ども大会 等） → そのまま尊重
+//     4. name が空文字 / 不正値の場合は c.id+'クラス' fallback、c.id も無ければ '' を返す
+//
+//   pure / 副作用なし。escapeHtml は呼出側 (rankRow) で必ず通すこと（XSS 安全性は label 経路で担保）。
+function getReportClassLabel(c){
+  if(!c)return '';
+  var name=(c.name&&typeof c.name==='string')?c.name:'';
+  var idFallback=(typeof c.id==='string'&&c.id)?(c.id+'クラス'):'';
+  if(!name)return idFallback;
+  // ルール 2: 既に「英字1文字 + 級」なら二重変換しない
+  if(/^[A-Z]級$/.test(name))return name;
+  // ルール 1: 「英字1文字 + クラス」を「英字1文字 + 級」に変換
+  var m=name.match(/^([A-Z])クラス$/);
+  if(m)return m[1]+'級';
+  // ルール 3: カスタム名はそのまま
+  return name;
+}
+
 // REPORT-UX-001: 未入力の開催日 / 開始時間 / 終了時間に既定値を補完する idempotent helper。
 //   - rep-date が空 → 今日（local date）
 //   - rep-start が空 → 13:00
@@ -6799,15 +6824,23 @@ function downloadReport(){
       +'<td style="padding:6px 10px;border:1px solid #999;"></td></tr>';
   }
   function buildClassRankRows(classes){
+    // REPORT-UX-002 (Codex Should Fix):
+    //   既存 A/B 帳票の「A級優勝/B級3位」表記を維持するため、state.classes[*].name を
+    //   そのまま使うのではなく getReportClassLabel(c) でラベル化する。
+    //   - Aクラス → A級、Sクラス → S級、Cクラス → C級（英字1文字+クラス → 英字+級）
+    //   - A級 → A級（二重変換しない）
+    //   - 小学生 / 初心者 / 一般 / 上級 等のカスタム名はそのまま
+    //   ラベル文字列は rankRow 内側で escapeHtml される（XSS 安全性は維持）。
     var rows='';
     for(var ci=0;ci<classes.length;ci++){
       var c=classes[ci];
       if(!c||(typeof isSafeClassId==='function'&&!isSafeClassId(c.id)))continue;
-      var className=(c.name&&typeof c.name==='string')?c.name:(c.id+'クラス');
+      var label=getReportClassLabel(c);
+      if(!label)continue;
       var top=getTopPlayers(c.id);
-      rows+=rankRow(className+'優勝',top,0);
-      rows+=rankRow(className+'準優勝',top,1);
-      rows+=rankRow(className+'3位',top,2);
+      rows+=rankRow(label+'優勝',top,0);
+      rows+=rankRow(label+'準優勝',top,1);
+      rows+=rankRow(label+'3位',top,2);
     }
     return rows;
   }

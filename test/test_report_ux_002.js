@@ -227,6 +227,7 @@ function loadEnv(path){
        calcFinal: calcFinal,
        calcTotal: calcTotal,
        isSafeClassId: isSafeClassId,
+       getReportClassLabel: getReportClassLabel,
        _setState: function(s){state=s;},
        _getState: function(){return state;}
      };`
@@ -268,7 +269,7 @@ function makeRoundRobin3(p){
   ];
 }
 
-// ===== B1: A/B 2 クラスのみで Aクラス/Bクラス 6 行が出る =====
+// ===== B1: A/B 2 クラスのみで A級/B級 6 行が出る（Codex Should Fix: 級表記回復） =====
 {
   const env = loadEnv(targetPath);
   const pA = [
@@ -295,15 +296,19 @@ function makeRoundRobin3(p){
   env.downloadReport();
   const html = env._getLastBlobSrc();
   assert(html.length > 0, 'B1-0 生成 HTML を取得できる');
-  ['Aクラス優勝','Aクラス準優勝','Aクラス3位','Bクラス優勝','Bクラス準優勝','Bクラス3位'].forEach(function(lbl){
-    assert(html.indexOf(lbl) >= 0, 'B1 ラベル「'+lbl+'」が生成 HTML に含まれる');
+  // Codex Should Fix: 既存 A/B 帳票表記の「級」を回復（Aクラス → A級）
+  ['A級優勝','A級準優勝','A級3位','B級優勝','B級準優勝','B級3位'].forEach(function(lbl){
+    assert(html.indexOf(lbl) >= 0, 'B1 ラベル「'+lbl+'」が生成 HTML に含まれる（級表記回復）');
   });
+  // 旧 PR #147 初版の「Aクラス優勝」「Bクラス優勝」は出ない
+  assert(html.indexOf('Aクラス優勝') < 0, 'B1-no-class A 「Aクラス優勝」は出ない（A級優勝に統合）');
+  assert(html.indexOf('Bクラス優勝') < 0, 'B1-no-class B 「Bクラス優勝」は出ない（B級優勝に統合）');
   // A クラス優勝者は a1 (田中)、B クラス優勝者は b1 (伊藤)
   assert(html.indexOf('田中') >= 0, 'B1-A 優勝者「田中」が含まれる');
   assert(html.indexOf('伊藤') >= 0, 'B1-B 優勝者「伊藤」が含まれる');
 }
 
-// ===== B2: A/B/C 3 クラスで C クラス 3 行が追加される =====
+// ===== B2: A/B/C 3 クラスで C 級 3 行が追加される（A/B/C 全て「級」表記） =====
 {
   const env = loadEnv(targetPath);
   const pA = [makePlayer('a1','A1','A'),makePlayer('a2','A2','A'),makePlayer('a3','A3','A'),makePlayer('a4','A4','A')];
@@ -325,13 +330,13 @@ function makeRoundRobin3(p){
   seedReportDom(env._ctx, {date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00'});
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  ['Aクラス優勝','Aクラス準優勝','Aクラス3位',
-   'Bクラス優勝','Bクラス準優勝','Bクラス3位',
-   'Cクラス優勝','Cクラス準優勝','Cクラス3位'].forEach(function(lbl){
-    assert(html.indexOf(lbl) >= 0, 'B2 ラベル「'+lbl+'」が含まれる（C クラス含む 9 行）');
+  ['A級優勝','A級準優勝','A級3位',
+   'B級優勝','B級準優勝','B級3位',
+   'C級優勝','C級準優勝','C級3位'].forEach(function(lbl){
+    assert(html.indexOf(lbl) >= 0, 'B2 ラベル「'+lbl+'」が含まれる（C 級含む 9 行）');
   });
   // C クラス優勝者は c1 (C太郎)
-  assert(html.indexOf('C太郎') >= 0, 'B2 C クラス優勝者「C太郎」が含まれる');
+  assert(html.indexOf('C太郎') >= 0, 'B2 C 級優勝者「C太郎」が含まれる');
 }
 
 // ===== B3: A/B/C 3 クラスで参加人数が A+B+C =====
@@ -361,7 +366,7 @@ function makeRoundRobin3(p){
     'B3 参加人数セルに 10名 (A+B+C 合計) が出る');
 }
 
-// ===== B4: state.classes[*].name カスタムが label に反映 =====
+// ===== B4: state.classes[*].name カスタム（'上級'）が label に反映 =====
 {
   const env = loadEnv(targetPath);
   const pA = [makePlayer('a1','上級王','A'),makePlayer('a2','x','A'),makePlayer('a3','x','A'),makePlayer('a4','x','A')];
@@ -372,7 +377,7 @@ function makeRoundRobin3(p){
     results:{A:makeRoundRobin3(pA), B:[]},
     started:true,
     classes:[
-      {id:'A',name:'上級',started:true},   // カスタム name
+      {id:'A',name:'上級',started:true},   // カスタム name（既定 Aクラス を override）
       {id:'B',name:'Bクラス',started:true}
     ],
     report:{date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00',sei:'',fuku:'',note:''}
@@ -383,9 +388,9 @@ function makeRoundRobin3(p){
   ['上級優勝','上級準優勝','上級3位'].forEach(function(lbl){
     assert(html.indexOf(lbl) >= 0, 'B4 カスタム classes.name が反映され「'+lbl+'」が含まれる');
   });
-  // 旧固定ラベル「Aクラス優勝」/「A級優勝」は含まれない
-  assert(html.indexOf('Aクラス優勝') < 0, 'B4 旧 default ラベル「Aクラス優勝」は含まれない（カスタム name で置換）');
-  assert(html.indexOf('A級優勝') < 0, 'B4 旧旧ラベル「A級優勝」も含まれない');
+  // カスタム name は「級」変換しない → 「A級優勝」は出ない
+  assert(html.indexOf('A級優勝') < 0, 'B4 カスタム name 時、A 級表記は使われない（'+'上級'+'がそのまま）');
+  assert(html.indexOf('Aクラス優勝') < 0, 'B4 旧 PR 初版「Aクラス優勝」も出ない');
 }
 
 // ===== B5: state.classes[*].name の HTML 特殊文字が escapeHtml される =====
@@ -412,6 +417,200 @@ function makeRoundRobin3(p){
     'B5-1 危険な classes.name の <script> が raw として出力されない');
   assert(/&lt;script&gt;alert\(1\)&lt;\/script&gt;優勝/.test(html),
     'B5-2 危険な classes.name が escapeHtml されて出力される');
+}
+
+// ============================================================
+// SECTION K: getReportClassLabel 単体 + 帳票統合（Codex Should Fix）
+// ============================================================
+
+// K1: getReportClassLabel helper の定義
+assert(/function\s+getReportClassLabel\s*\(/.test(htmlSrc),
+  'K1-1 getReportClassLabel() 関数が定義されている');
+// buildClassRankRows が getReportClassLabel を経由する
+{
+  const m = htmlSrc.match(/function buildClassRankRows\([\s\S]*?\n  \}/);
+  const body = m ? m[0] : '';
+  assert(/getReportClassLabel\s*\(/.test(body),
+    'K1-2 buildClassRankRows が getReportClassLabel() を呼ぶ');
+}
+
+// K2: 英字1文字+クラス → 英字+級（既定変換）
+{
+  const env = loadEnv(targetPath);
+  ['S','A','B','C','D','E','F','Z'].forEach(function(letter){
+    assertEq(env.getReportClassLabel({id:letter,name:letter+'クラス'}), letter+'級',
+      'K2 '+letter+'クラス → '+letter+'級');
+  });
+}
+
+// K3: 英字1文字+級 はそのまま（二重変換しない）
+{
+  const env = loadEnv(targetPath);
+  ['S','A','B','C','Z'].forEach(function(letter){
+    assertEq(env.getReportClassLabel({id:letter,name:letter+'級'}), letter+'級',
+      'K3 既に '+letter+'級 → そのまま（二重変換しない）');
+  });
+}
+
+// K4: カスタム名はそのまま尊重
+{
+  const env = loadEnv(targetPath);
+  ['小学生','初心者','一般','上級','子ども大会','中学生','女性','シニア','プロ'].forEach(function(custom){
+    assertEq(env.getReportClassLabel({id:'X',name:custom}), custom,
+      'K4 カスタム名「'+custom+'」はそのまま尊重');
+  });
+}
+
+// K5: 空文字 / 不正値 / fallback
+{
+  const env = loadEnv(targetPath);
+  assertEq(env.getReportClassLabel(null), '', 'K5-1 null → ""');
+  assertEq(env.getReportClassLabel(undefined), '', 'K5-2 undefined → ""');
+  assertEq(env.getReportClassLabel({id:'A',name:''}), 'Aクラス',
+    'K5-3 name 空 + id=A → fallback "Aクラス"');
+  assertEq(env.getReportClassLabel({id:'X'}), 'Xクラス',
+    'K5-4 name 欠落 + id=X → fallback "Xクラス"');
+  assertEq(env.getReportClassLabel({id:'',name:''}), '',
+    'K5-5 id/name 両方空 → ""');
+}
+
+// K6: 2 文字以上の英字（AB クラス等）は変換しない（規則 1 は 1 文字限定）
+{
+  const env = loadEnv(targetPath);
+  // 2文字以上はカスタム扱い（そのまま）
+  assertEq(env.getReportClassLabel({id:'X',name:'ABクラス'}), 'ABクラス',
+    'K6 「ABクラス」は変換せずそのまま（規則 1 は英字 1 文字限定）');
+}
+
+// K7: 小学生クラスでの帳票統合（カスタム名が「小学生優勝」等になる）
+{
+  const env = loadEnv(targetPath);
+  const pA = [makePlayer('a1','花子','A'),makePlayer('a2','x','A'),makePlayer('a3','x','A'),makePlayer('a4','x','A')];
+  env._setState({
+    players:{A:pA,B:[]},
+    rounds:3,
+    pairings:{A:[],B:[]},
+    results:{A:makeRoundRobin3(pA),B:[]},
+    started:true,
+    classes:[
+      {id:'A',name:'小学生',started:true},
+      {id:'B',name:'Bクラス',started:true}
+    ],
+    report:{date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00',sei:'',fuku:'',note:''}
+  });
+  seedReportDom(env._ctx, {date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00'});
+  env.downloadReport();
+  const html = env._getLastBlobSrc();
+  ['小学生優勝','小学生準優勝','小学生3位'].forEach(function(lbl){
+    assert(html.indexOf(lbl) >= 0, 'K7 「'+lbl+'」が含まれる（カスタム名尊重）');
+  });
+  // 「A級優勝」が出ないこと（小学生に置換されているので）
+  assert(html.indexOf('A級優勝') < 0, 'K7-no-A 「A級優勝」は出ない（カスタム名「小学生」が優先）');
+}
+
+// K8: S クラスのある大会で「S 級優勝」帳票
+{
+  const env = loadEnv(targetPath);
+  const pS = [makePlayer('s1','王者','S'),makePlayer('s2','x','S'),makePlayer('s3','x','S'),makePlayer('s4','x','S')];
+  const pA = [makePlayer('a1','x','A'),makePlayer('a2','x','A'),makePlayer('a3','x','A'),makePlayer('a4','x','A')];
+  env._setState({
+    players:{S:pS, A:pA, B:[]},
+    rounds:3,
+    pairings:{S:[],A:[],B:[]},
+    results:{S:makeRoundRobin3(pS),A:makeRoundRobin3(pA),B:[]},
+    started:true,
+    classes:[
+      {id:'S',name:'Sクラス',started:true},
+      {id:'A',name:'Aクラス',started:true},
+      {id:'B',name:'Bクラス',started:true}
+    ],
+    report:{date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00',sei:'',fuku:'',note:''}
+  });
+  seedReportDom(env._ctx, {date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00'});
+  env.downloadReport();
+  const html = env._getLastBlobSrc();
+  ['S級優勝','S級準優勝','S級3位'].forEach(function(lbl){
+    assert(html.indexOf(lbl) >= 0, 'K8-S 「'+lbl+'」が含まれる（S クラス → S 級）');
+  });
+  ['A級優勝','A級準優勝','A級3位'].forEach(function(lbl){
+    assert(html.indexOf(lbl) >= 0, 'K8-A 「'+lbl+'」も含まれる（A クラス → A 級）');
+  });
+  assert(html.indexOf('王者') >= 0, 'K8 S 級優勝者「王者」が含まれる');
+}
+
+// K9: E/F 等 A〜D 以外の英字クラスでも変換が効く
+{
+  const env = loadEnv(targetPath);
+  const pE = [makePlayer('e1','x','E'),makePlayer('e2','x','E'),makePlayer('e3','x','E'),makePlayer('e4','x','E')];
+  env._setState({
+    players:{E:pE, A:[], B:[]},
+    rounds:3,
+    pairings:{E:[],A:[],B:[]},
+    results:{E:makeRoundRobin3(pE),A:[],B:[]},
+    started:true,
+    classes:[
+      {id:'E',name:'Eクラス',started:true},
+      {id:'A',name:'Aクラス',started:true},
+      {id:'B',name:'Bクラス',started:true}
+    ],
+    report:{date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00',sei:'',fuku:'',note:''}
+  });
+  seedReportDom(env._ctx, {date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00'});
+  env.downloadReport();
+  const html = env._getLastBlobSrc();
+  ['E級優勝','E級準優勝','E級3位'].forEach(function(lbl){
+    assert(html.indexOf(lbl) >= 0, 'K9 「'+lbl+'」が含まれる（E クラス → E 級）');
+  });
+}
+
+// K10: state.classes に既に S 級 が name で設定されているケース（二重変換しない）
+{
+  const env = loadEnv(targetPath);
+  const pS = [makePlayer('s1','x','S'),makePlayer('s2','x','S'),makePlayer('s3','x','S'),makePlayer('s4','x','S')];
+  env._setState({
+    players:{S:pS, A:[], B:[]},
+    rounds:3,
+    pairings:{S:[],A:[],B:[]},
+    results:{S:makeRoundRobin3(pS),A:[],B:[]},
+    started:true,
+    classes:[
+      {id:'S',name:'S級',started:true},   // 既に「S級」表記
+      {id:'A',name:'Aクラス',started:true},
+      {id:'B',name:'Bクラス',started:true}
+    ],
+    report:{date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00',sei:'',fuku:'',note:''}
+  });
+  seedReportDom(env._ctx, {date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00'});
+  env.downloadReport();
+  const html = env._getLastBlobSrc();
+  assert(html.indexOf('S級優勝') >= 0, 'K10 既に「S級」 name → そのまま「S級優勝」（二重変換しない）');
+  assert(html.indexOf('S級級優勝') < 0, 'K10-no 「S級級優勝」のような二重変換は起きない');
+}
+
+// K11: XSS — name に <script> 含む場合も escapeHtml で安全
+{
+  const env = loadEnv(targetPath);
+  const pA = [makePlayer('a1','x','A'),makePlayer('a2','x','A'),makePlayer('a3','x','A'),makePlayer('a4','x','A')];
+  env._setState({
+    players:{A:pA,B:[]},
+    rounds:3,
+    pairings:{A:[],B:[]},
+    results:{A:makeRoundRobin3(pA),B:[]},
+    started:true,
+    classes:[
+      {id:'A',name:'<script>alert(2)</script>',started:true},
+      {id:'B',name:'Bクラス',started:true}
+    ],
+    report:{date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00',sei:'',fuku:'',note:''}
+  });
+  seedReportDom(env._ctx, {date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00'});
+  env.downloadReport();
+  const html = env._getLastBlobSrc();
+  // カスタム name はそのまま尊重するが、rankRow 内で escapeHtml される
+  assert(html.indexOf('<script>alert(2)</script>優勝') < 0,
+    'K11-1 危険なカスタム name の <script> raw が出ない');
+  assert(/&lt;script&gt;alert\(2\)&lt;\/script&gt;優勝/.test(html),
+    'K11-2 危険なカスタム name が escapeHtml されて出力される');
 }
 
 // ============================================================
