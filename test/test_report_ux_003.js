@@ -648,10 +648,15 @@ function makeStateForDownload(prize){
 
 // ===== SECTION E: 安全性 / 既存挙動温存 =====
 
-// E1: 他フィールドの挙動温存（date 日本語変換が引き続き動く）
+// E1: 他フィールドの挙動温存（date / start / end 日本語変換が引き続き動く）
+//   REPORT-UX-006B: downloadReport は state-as-SoT のため、state.report.start/end も DOM と
+//   一致させる（旧 DOM-only 経路依存を解消）。「和暦変換が壊れない」アサート自体は不変。
 {
   const env = loadEnv(targetPath);
-  env._setState(makeStateForDownload(7000));
+  const stateE1 = makeStateForDownload(7000);
+  stateE1.report.start='09:05';
+  stateE1.report.end='17:30';
+  env._setState(stateE1);
   seedReportDom(env._ctx, {date:'2026-05-18',place:'労政会館',start:'09:05',end:'17:30',prize:7000});
   env.downloadReport();
   const html = env._getLastBlobSrc();
