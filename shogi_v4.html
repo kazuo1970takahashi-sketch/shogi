@@ -234,7 +234,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
              downloadReport で state.report.prize を参照し、収支表示も同期。 -->
         <div>
           <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">賞金額（円）</label>
-          <input type="number" id="rep-prize" min="0" step="100" placeholder="7000" style="width:100%">
+          <input type="number" id="rep-prize" min="0" step="100" inputmode="numeric" placeholder="7000" style="width:100%">
         </div>
       </div>
       <div style="margin-bottom:12px">
@@ -7189,8 +7189,17 @@ function updateReportFieldFromElement(el){
   // REPORT-UX-003A: prize は数値として保存する。空欄・負数・不正値は 7000 にフォールバック。
   //   0 は有効値として 0 のまま保存（normalizeReportPrize 内部で 0 を valid 扱い）。
   //   既存の string field (date/place/start/end/sei/fuku/note) の保存挙動は変えない。
+  //
+  // REPORT-UX-003B (DOM/state sync):
+  //   正規化後の値を el.value にも書き戻し、「表示値」と「保存・帳票に使われる値」が
+  //   一時的にズレないようにする。空欄入力 → 7000 表示 / 'abc' 入力 → 7000 表示 /
+  //   0 入力 → '0' 表示 / 5000 入力 → '5000' 表示。
+  //   既に el.value がそのまま正規化結果と一致する場合（通常の有効入力）は冗長代入だが、
+  //   ブラウザ実装に依存せず常に同期される副作用を優先する。
   if(key==='prize'){
-    state.report.prize=normalizeReportPrize(el.value);
+    var normalizedPrize=normalizeReportPrize(el.value);
+    state.report.prize=normalizedPrize;
+    el.value=String(normalizedPrize);
   } else {
     state.report[key]=el.value;
   }

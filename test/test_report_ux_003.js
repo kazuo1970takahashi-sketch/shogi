@@ -424,6 +424,148 @@ function seedReportDom(ctx, repValues){
   assertEq(env._getState().report.prize, 0, 'C7 "0" 入力で state.report.prize=0 (fallback されない)');
 }
 
+// ===== SECTION CS: REPORT-UX-003B DOM/state sync =====
+//   updateReportFieldFromElement の prize 分岐で、正規化後の値が #rep-prize.value にも
+//   書き戻されることを確認する。これにより「表示値 / 保存値 / 帳票値」がズレない。
+
+// CS0: HTML に inputmode="numeric" が追加されている（モバイル数値キーボード UX）
+{
+  const m = htmlSrc.match(/<input[^>]*id="rep-prize"[^>]*>/);
+  assert(m !== null, 'CS0-0 #rep-prize input 抽出可');
+  const tag = m ? m[0] : '';
+  assert(/inputmode="numeric"/.test(tag),
+    'CS0 #rep-prize に inputmode="numeric" が追加されている（VRT 影響なし）');
+}
+
+// CS1: 空欄入力 → state.report.prize=7000 / #rep-prize.value="7000"
+{
+  const env = loadEnv(targetPath);
+  env._setState({
+    players:{A:[],B:[]}, rounds:4, pairings:{A:[],B:[]}, results:{A:[],B:[]}, started:false,
+    classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:5000}
+  });
+  seedReportDom(env._ctx);
+  env.bindReportEvents();
+  const el = env._ctx.document.getElementById('rep-prize');
+  el.value = '';  // 空欄入力
+  const fns = (el._handlers && el._handlers['change']) || [];
+  for(let i=0;i<fns.length;i++) fns[i].call(el, {type:'change', target:el});
+  assertEq(env._getState().report.prize, 7000, 'CS1-1 空欄入力 → state.report.prize=7000');
+  assertEq(el.value, '7000', 'CS1-2 空欄入力 → #rep-prize.value="7000" に同期書き戻し');
+}
+
+// CS2: 不正値入力 'abc' → state.report.prize=7000 / #rep-prize.value="7000"
+{
+  const env = loadEnv(targetPath);
+  env._setState({
+    players:{A:[],B:[]}, rounds:4, pairings:{A:[],B:[]}, results:{A:[],B:[]}, started:false,
+    classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:5000}
+  });
+  seedReportDom(env._ctx);
+  env.bindReportEvents();
+  const el = env._ctx.document.getElementById('rep-prize');
+  el.value = 'abc';  // 不正値
+  const fns = (el._handlers && el._handlers['change']) || [];
+  for(let i=0;i<fns.length;i++) fns[i].call(el, {type:'change', target:el});
+  assertEq(env._getState().report.prize, 7000, 'CS2-1 "abc" 入力 → state.report.prize=7000');
+  assertEq(el.value, '7000', 'CS2-2 "abc" 入力 → #rep-prize.value="7000" に同期書き戻し');
+}
+
+// CS3: 0 入力 → state.report.prize=0 / #rep-prize.value="0"（fallback されない）
+{
+  const env = loadEnv(targetPath);
+  env._setState({
+    players:{A:[],B:[]}, rounds:4, pairings:{A:[],B:[]}, results:{A:[],B:[]}, started:false,
+    classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:5000}
+  });
+  seedReportDom(env._ctx);
+  env.bindReportEvents();
+  const el = env._ctx.document.getElementById('rep-prize');
+  el.value = '0';  // 0 入力
+  const fns = (el._handlers && el._handlers['change']) || [];
+  for(let i=0;i<fns.length;i++) fns[i].call(el, {type:'change', target:el});
+  assertEq(env._getState().report.prize, 0, 'CS3-1 "0" 入力 → state.report.prize=0（fallback されない）');
+  assertEq(el.value, '0', 'CS3-2 "0" 入力 → #rep-prize.value="0" を保持');
+}
+
+// CS4: 有効値入力 → state と DOM 一致
+{
+  const env = loadEnv(targetPath);
+  env._setState({
+    players:{A:[],B:[]}, rounds:4, pairings:{A:[],B:[]}, results:{A:[],B:[]}, started:false,
+    classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000}
+  });
+  seedReportDom(env._ctx);
+  env.bindReportEvents();
+  const el = env._ctx.document.getElementById('rep-prize');
+  el.value = '5000';  // 有効値
+  const fns = (el._handlers && el._handlers['change']) || [];
+  for(let i=0;i<fns.length;i++) fns[i].call(el, {type:'change', target:el});
+  assertEq(env._getState().report.prize, 5000, 'CS4-1 "5000" 入力 → state.report.prize=5000');
+  assertEq(el.value, '5000', 'CS4-2 "5000" 入力 → #rep-prize.value="5000"（変化なし）');
+}
+
+// CS5: 負数入力 → state.report.prize=7000 / DOM も "7000"
+{
+  const env = loadEnv(targetPath);
+  env._setState({
+    players:{A:[],B:[]}, rounds:4, pairings:{A:[],B:[]}, results:{A:[],B:[]}, started:false,
+    classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:5000}
+  });
+  seedReportDom(env._ctx);
+  env.bindReportEvents();
+  const el = env._ctx.document.getElementById('rep-prize');
+  el.value = '-100';  // 負数
+  const fns = (el._handlers && el._handlers['change']) || [];
+  for(let i=0;i<fns.length;i++) fns[i].call(el, {type:'change', target:el});
+  assertEq(env._getState().report.prize, 7000, 'CS5-1 "-100" 入力 → state.report.prize=7000');
+  assertEq(el.value, '7000', 'CS5-2 "-100" 入力 → #rep-prize.value="7000" に同期書き戻し');
+}
+
+// CS6: input イベント経由でも同期する
+{
+  const env = loadEnv(targetPath);
+  env._setState({
+    players:{A:[],B:[]}, rounds:4, pairings:{A:[],B:[]}, results:{A:[],B:[]}, started:false,
+    classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:5000}
+  });
+  seedReportDom(env._ctx);
+  env.bindReportEvents();
+  const el = env._ctx.document.getElementById('rep-prize');
+  el.value = '';
+  const fns = (el._handlers && el._handlers['input']) || [];
+  assert(fns.length >= 1, 'CS6-pre rep-prize input handler が bind されている');
+  for(let i=0;i<fns.length;i++) fns[i].call(el, {type:'input', target:el});
+  assertEq(env._getState().report.prize, 7000, 'CS6-1 input 経路でも state.report.prize=7000');
+  assertEq(el.value, '7000', 'CS6-2 input 経路でも #rep-prize.value="7000" に同期');
+}
+
+// CS7: 既存 string field (place/sei/fuku/note 等) の挙動が壊れていないこと
+//   updateReportFieldFromElement の他フィールド分岐は touch していないため不変のはず。
+{
+  const env = loadEnv(targetPath);
+  env._setState({
+    players:{A:[],B:[]}, rounds:4, pairings:{A:[],B:[]}, results:{A:[],B:[]}, started:false,
+    classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000}
+  });
+  seedReportDom(env._ctx);
+  env.bindReportEvents();
+  const placeEl = env._ctx.document.getElementById('rep-place');
+  placeEl.value = '公民館';
+  const fns = (placeEl._handlers && placeEl._handlers['change']) || [];
+  for(let i=0;i<fns.length;i++) fns[i].call(placeEl, {type:'change', target:placeEl});
+  assertEq(env._getState().report.place, '公民館', 'CS7-1 place の string 保存挙動は不変');
+  // DOM 値も上書きされていない（string field は write-back しない）
+  assertEq(placeEl.value, '公民館', 'CS7-2 place は DOM 上書きされない（prize 専用挙動）');
+}
+
 // ===== SECTION D: downloadReport =====
 
 function makeStateForDownload(prize){
