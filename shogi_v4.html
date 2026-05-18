@@ -3412,7 +3412,9 @@ function ensureClassResultDomNodes(){
   if(!list)return;
   for(var i=0;i<state.classes.length;i++){
     var c=state.classes[i];
-    if(!c||typeof c.id!=='string'||!c.id)continue;
+    // ROUND-CLASS-START-006 (Codex Should Fix S1): isSafeClassId() で id-safety を強制し、
+    //   ensureClassPaneDomNodes / ensureClassRegDomNodes / calcTotal と同条件に揃える。
+    if(!c||!isSafeClassId(c.id))continue;
     if(document.getElementById('result-'+c.id))continue;
     var d=document.createElement('div');
     d.id='result-'+c.id;
@@ -6262,7 +6264,9 @@ function renderResults(){
   if(!Array.isArray(state.classes))return;
   for(var i=0;i<state.classes.length;i++){
     var c=state.classes[i];
-    if(!c||typeof c.id!=='string'||!c.id)continue;
+    // ROUND-CLASS-START-006 (Codex Should Fix S1): isSafeClassId() で id-safety を強制し、
+    //   ensureClassResultDomNodes / ensureClassPaneDomNodes / calcTotal と同条件に揃える。
+    if(!c||!isSafeClassId(c.id))continue;
     var cls=c.id;
     var el=document.getElementById('result-'+cls);
     if(!el)continue;
@@ -6852,7 +6856,9 @@ function isTournamentDone(){
   var hasAnyClass=false;
   for(var i=0;i<state.classes.length;i++){
     var c=state.classes[i];
-    if(!c||typeof c.id!=='string'||!c.id)continue;
+    // ROUND-CLASS-START-006 (Codex Should Fix S1): isSafeClassId() で id-safety を強制し、
+    //   ensureClassPaneDomNodes / ensureClassResultDomNodes / calcTotal と同条件に揃える。
+    if(!c||!isSafeClassId(c.id))continue;
     var cls=c.id;
     var players=(state.players&&state.players[cls])||[];
     if(players.length>0){
