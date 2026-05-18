@@ -903,6 +903,31 @@ function formatJapaneseTimeFromHhmm(hm){
   return String(parseInt(m[1],10))+'時'+m[2]+'分';
 }
 
+// REPORT-UX-002 (Codex Should Fix):
+//   報告書帳票用のクラス表示ラベルを返す pure helper。state.classes[*].name を尊重しつつ、
+//   英字1文字の既定クラス名（S/A/B/C/D/E/.../Z クラス）は伝統的な「級」表記に変換する。
+//
+//   変換ルール:
+//     1. name が「英字1文字 + 'クラス'」(例 Sクラス/Aクラス/Bクラス) → 「英字1文字 + '級'」 (S級/A級/B級)
+//     2. name が「英字1文字 + '級'」 (例 S級/A級) → そのまま（二重変換しない）
+//     3. それ以外のカスタム名（小学生/初心者/一般/上級/子ども大会 等） → そのまま尊重
+//     4. name が空文字 / 不正値の場合は c.id+'クラス' fallback、c.id も無ければ '' を返す
+//
+//   pure / 副作用なし。escapeHtml は呼出側 (rankRow) で必ず通すこと（XSS 安全性は label 経路で担保）。
+function getReportClassLabel(c){
+  if(!c)return '';
+  var name=(c.name&&typeof c.name==='string')?c.name:'';
+  var idFallback=(typeof c.id==='string'&&c.id)?(c.id+'クラス'):'';
+  if(!name)return idFallback;
+  // ルール 2: 既に「英字1文字 + 級」なら二重変換しない
+  if(/^[A-Z]級$/.test(name))return name;
+  // ルール 1: 「英字1文字 + クラス」を「英字1文字 + 級」に変換
+  var m=name.match(/^([A-Z])クラス$/);
+  if(m)return m[1]+'級';
+  // ルール 3: カスタム名はそのまま
+  return name;
+}
+
 // REPORT-UX-001: 未入力の開催日 / 開始時間 / 終了時間に既定値を補完する idempotent helper。
 //   - rep-date が空 → 今日（local date）
 //   - rep-start が空 → 13:00
@@ -6768,21 +6793,58 @@ function downloadReport(){
   var note=document.getElementById('rep-note').value||'特になし';
 
   var total=calcTotal();
-  var allCount=state.players.A.length+state.players.B.length;
+  // REPORT-UX-002 (M1): allCount を state.classes 駆動の全クラス合計に置換。
+  //   旧 A/B 固定の長さ加算 literal を解消し、C クラス以上の参加人数も正しく合計する。
+  //   getRegistrationClassList() は ROUND-CLASS-START-006/007 で導入済の
+  //   renderRegList / calcTotal と同じ source of truth（spec §15.1 / Codex S2 整合）。
+  var reportClasses=(typeof getRegistrationClassList==='function')?getRegistrationClassList():[];
+  var allCount=0;
+  for(var rci=0;rci<reportClasses.length;rci++){
+    var rcid=reportClasses[rci]&&reportClasses[rci].id;
+    if(!rcid||(typeof isSafeClassId==='function'&&!isSafeClassId(rcid)))continue;
+    var rcArr=(state.players&&state.players[rcid])||[];
+    allCount+=rcArr.length;
+  }
   var prize=7000;
   var balance=total-prize;
   var balanceStr=(balance<0?'▲':'')+Math.abs(balance).toLocaleString()+'円';
 
-  var aTop=getTopPlayers('A');
-  var bTop=getTopPlayers('B');
-
+  // REPORT-UX-002 (M2 / M3): クラス別 top 3 を state.classes 駆動で集計する。
+  //   旧 getTopPlayers の cls 固定呼出と、級優勝 / 級準優勝 / 級3位 の固定 6 行
+  //   ハードコードを解消。各 class について className+'優勝/準優勝/3位' の 3 行を
+  //   生成し、クラス名は state.classes[*].name を尊重（Aクラス/Bクラス/Cクラス…）。
+  //   既存 rankRow() は label 引数を escapeHtml していなかったため、本 PR から rankRow 内側で
+  //   label も escapeHtml し、外側 caller では escape 前の生の className 文字列を渡す。
+  //   こうすることで XSS 安全性を強化しつつ既存 A/B 大会の見た目変化はラベルだけに留める。
   function rankRow(label,players,idx){
     var p=players[idx];
     var name=p?p.name:'';
-    return '<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">'+label+'</td>'
+    return '<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">'+escapeHtml(label)+'</td>'
       +'<td style="padding:6px 10px;border:1px solid #999;">'+escapeHtml(name)+'</td>'
       +'<td style="padding:6px 10px;border:1px solid #999;"></td></tr>';
   }
+  function buildClassRankRows(classes){
+    // REPORT-UX-002 (Codex Should Fix):
+    //   既存 A/B 帳票の「A級優勝/B級3位」表記を維持するため、state.classes[*].name を
+    //   そのまま使うのではなく getReportClassLabel(c) でラベル化する。
+    //   - Aクラス → A級、Sクラス → S級、Cクラス → C級（英字1文字+クラス → 英字+級）
+    //   - A級 → A級（二重変換しない）
+    //   - 小学生 / 初心者 / 一般 / 上級 等のカスタム名はそのまま
+    //   ラベル文字列は rankRow 内側で escapeHtml される（XSS 安全性は維持）。
+    var rows='';
+    for(var ci=0;ci<classes.length;ci++){
+      var c=classes[ci];
+      if(!c||(typeof isSafeClassId==='function'&&!isSafeClassId(c.id)))continue;
+      var label=getReportClassLabel(c);
+      if(!label)continue;
+      var top=getTopPlayers(c.id);
+      rows+=rankRow(label+'優勝',top,0);
+      rows+=rankRow(label+'準優勝',top,1);
+      rows+=rankRow(label+'3位',top,2);
+    }
+    return rows;
+  }
+  var rankRowsHtml=buildClassRankRows(reportClasses);
 
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
     +'<title>沼津支部月例将棋大会報告書</title>'
@@ -6819,12 +6881,10 @@ function downloadReport(){
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;"></td>'
     +'<td style="padding:6px 10px;border:1px solid #999;background:#d0d0d0;font-weight:bold;text-align:center">お名前</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;background:#d0d0d0;font-weight:bold;text-align:center">お住まい（市町村のみ）</td></tr>'
-    +rankRow('A級優勝',aTop,0)
-    +rankRow('A級準優勝',aTop,1)
-    +rankRow('A級3位',aTop,2)
-    +rankRow('B級優勝',bTop,0)
-    +rankRow('B級準優勝',bTop,1)
-    +rankRow('B級3位',bTop,2)
+    // REPORT-UX-002 (M2): A級/B級 固定 6 行を撤去し、classes-driven な rankRowsHtml に置換。
+    //   reportClasses が ['A','B'] のみの大会では rankRowsHtml が 6 行（A→B 順）になり
+    //   従来構造と等価。C クラス以降は自動的に 3 行ずつ追加される。
+    +rankRowsHtml
     +'</table>'
     +'<br>'
     +'<table>'
