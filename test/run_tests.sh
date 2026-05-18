@@ -824,6 +824,22 @@ else
 fi
 
 # ============================================
+# REPORT-UX-005 configurable organizer 単体テスト
+# ============================================
+echo ""
+echo "【REPORT-UX-005 configurable organizer field】"
+if [ -f "$SCRIPT_DIR/test_report_ux_005.js" ]; then
+  if node "$SCRIPT_DIR/test_report_ux_005.js" "$TARGET" > /tmp/report_ux_005_out.log 2>&1; then
+    ok "REPORT-UX-005 テスト 全PASS ($(tail -1 /tmp/report_ux_005_out.log))"
+  else
+    ng "REPORT-UX-005 テスト 失敗"
+    cat /tmp/report_ux_005_out.log
+  fi
+else
+  warn "test_report_ux_005.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
