@@ -199,6 +199,13 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     </div>
     <div class="section no-print" style="margin-top:16px">
       <h2>大会報告書</h2>
+      <!-- REPORT-UX-004: 大会名（state.report.title）。downloadReport の <title> / h2 / ファイル名
+           で参照される。既定値 '沼津支部月例将棋大会'。「報告書」接尾辞は downloadReport 側で付与。
+           空欄/不正値は normalizeReportTitle で既定値に fallback、DOM 表示値も同期される。 -->
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">大会名</label>
+        <input type="text" id="rep-title" placeholder="沼津支部月例将棋大会" style="width:100%">
+      </div>
       <!-- REPORT-UX-001: 開催日は <input type="date">、開始/終了時間は <input type="time"> で
            ブラウザ標準のカレンダー/時刻ピッカーを使用。step="300" は 5 分刻み。
            未入力時は ensureReportDateTimeDefaults() が今日 / 13:00 / 17:00 を補完する。
@@ -253,7 +260,7 @@ var state = {
   pairings: {A:[], B:[]},
   results: {A:[], B:[]},
   started: false,
-  report: {date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000},
+  report: {date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会'},
   // ROUND-CLASS-START-003: classId 単位 started を正とする state.classes を導入。
   //   既存 dict (players/pairings/results) は当面 A/B 固定構造で維持。詳細: spec §5.2
   classes: [
@@ -605,7 +612,7 @@ function normalizeState(raw){
     pairings:emptyClassDict(classes,function(){return [];}),
     results:emptyClassDict(classes,function(){return [];}),
     started:false,
-    report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000},
+    report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会'},
     classes:classes
   };
   classes.forEach(function(c){
@@ -661,6 +668,11 @@ function normalizeState(raw){
     //   旧データ (prize 欠落) は base.report.prize=7000（schema 既定）のまま維持される。
     if(Object.prototype.hasOwnProperty.call(s.report,'prize')){
       base.report.prize=normalizeReportPrize(s.report.prize);
+    }
+    // REPORT-UX-004: title 文字列フィールド。normalizeReportTitle で trim/fallback。
+    //   旧データ (title 欠落) は base.report.title='沼津支部月例将棋大会'（schema 既定）のまま維持。
+    if(Object.prototype.hasOwnProperty.call(s.report,'title')){
+      base.report.title=normalizeReportTitle(s.report.title);
     }
   }
   // 支部マスタ連携用の tournament_id を保持（F2）
@@ -915,6 +927,20 @@ function formatJapaneseTimeFromHhmm(hm){
   return String(parseInt(m[1],10))+'時'+m[2]+'分';
 }
 
+// REPORT-UX-004: 大会名（タイトル）正規化 pure helper。
+//   既定値: '沼津支部月例将棋大会'（'報告書' 接尾辞は downloadReport 側で付与）。
+//   - 文字列なら trim して返す。空文字なら既定値 fallback。
+//   - null / undefined / 数値・配列等の非文字列はすべて既定値 fallback。
+//   既存帳票互換: state.report.title が無い旧データは normalizeState の schema 既定で
+//   '沼津支部月例将棋大会' になる。
+function normalizeReportTitle(value){
+  if(typeof value==='string'){
+    var trimmed=value.trim();
+    if(trimmed!=='')return trimmed;
+  }
+  return '沼津支部月例将棋大会';
+}
+
 // REPORT-UX-003A: 賞金額（円）正規化 pure helper。
 //   有効値: 0 以上の有限数値（0 を含む）。例: 0, 100, 5000, 7000
 //   不正値: null / undefined / '' / NaN / Infinity / 負数 / 数値化不能文字列 → 既定 7000 fallback
@@ -967,7 +993,7 @@ function getReportClassLabel(c){
 //   state.report の値は populateReportFields が input.value にコピーした「後」に呼ぶ前提。
 //   helper 内で state.report も同期更新する（保存忘れ防止）。
 function ensureReportDateTimeDefaults(){
-  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000};
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会'};
   var pairs=[
     {key:'date', defaultFn:function(){return formatLocalDateForInput(new Date());}},
     {key:'start',defaultFn:function(){return '13:00';}},
@@ -6885,14 +6911,20 @@ function downloadReport(){
   }
   var rankRowsHtml=buildClassRankRows(reportClasses);
 
+  // REPORT-UX-004: 大会名は state.report.title から取得。
+  //   '報告書' 接尾辞は downloadReport 側で付与。状態側 title には含めない（純粋な大会名）。
+  //   reportTitle は trim/fallback 済の純大会名、reportTitleWithSuffix は '<title>報告書' 表示用。
+  var reportTitle=normalizeReportTitle(state.report&&state.report.title);
+  var reportTitleWithSuffix=reportTitle+'報告書';
+
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
-    +'<title>沼津支部月例将棋大会報告書</title>'
+    +'<title>'+escapeHtml(reportTitleWithSuffix)+'</title>'
     +'<style>@page{size:A4;margin:10mm}'
     +'body{font-family:sans-serif;font-size:13px;padding:20px}'
     +'table{border-collapse:collapse;width:100%}'
     +'tr,td{page-break-inside:avoid}'
     +'@media print{body{padding:0}}</style></head><body>'
-    +'<h2 style="text-align:center;font-size:16px;margin-bottom:16px">沼津支部月例将棋大会報告書</h2>'
+    +'<h2 style="text-align:center;font-size:16px;margin-bottom:16px">'+escapeHtml(reportTitleWithSuffix)+'</h2>'
     +'<table>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold;width:120px">日付</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+escapeHtml(date)+'</td></tr>'
@@ -6938,8 +6970,15 @@ function downloadReport(){
   //   YYYY年MM月DD日 の両方からハイフン・和暦区切りを除去し YYYYMMDD 風にする。
   var repDate=document.getElementById('rep-date').value||'';
   var dateNum=repDate.split('-').join('').split('年').join('').split('月').join('').split('日').join('').split(' ').join('');
-  var title='沼津支部_'+dateNum+'_月例将棋大会報告書';
-  html=html.replace('<title>沼津支部月例将棋大会報告書</title>','<title>'+title+'</title>');
+  // REPORT-UX-004: ファイル名は <reportTitle>_<YYYYMMDD>_報告書 形式。
+  //   旧 '沼津支部_<date>_月例将棋大会報告書' のうち、可変部 '月例将棋大会' を reportTitle
+  //   ('沼津支部月例将棋大会' 等) に置換し、不変部 '報告書' を末尾で付与。
+  //   旧形式 (沼津支部_20260518_月例将棋大会報告書) との互換は state.report.title 既定値
+  //   ('沼津支部月例将棋大会') を使った場合の出力 = '沼津支部月例将棋大会_20260518_報告書' で実現。
+  //   <title> タグは初回組立時に reportTitleWithSuffix 由来で生成済のため、ここでは html.replace で
+  //   ファイル名タイトルへ置換する（既存設計の踏襲）。
+  var fileTitleName=reportTitle+'_'+dateNum+'_報告書';
+  html=html.replace('<title>'+escapeHtml(reportTitleWithSuffix)+'</title>','<title>'+escapeHtml(fileTitleName)+'</title>');
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob);
   var win=window.open(url,'_blank');
@@ -7012,7 +7051,7 @@ function resetAll(){
     pairings:emptyClassDict(defaultClasses,function(){return [];}),
     results:emptyClassDict(defaultClasses,function(){return [];}),
     started:false,
-    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000},
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会'},
     classes:defaultClasses
   };
   _pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
@@ -7134,7 +7173,7 @@ function bindTabEvents(){
 }
 
 function populateReportFields(){
-  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000};
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会'};
   // REPORT-UX-001 (Codex Must Fix 1):
   //   date / start / end は <input type="date|time"> の value 制約に合わせて正規化してから代入する。
   //   旧形式 "YYYY年MM月DD日" / "H時MM分" が来ても、HTML5 input が値を空に戻して
@@ -7161,6 +7200,15 @@ function populateReportFields(){
     state.report.prize=normalizedPrize;
     priceEl.value=String(normalizedPrize);
   }
+  // REPORT-UX-004: 大会名（文字列フィールド）。state.report.title を input に反映する。
+  //   - 空欄 / 不正値の場合は normalizeReportTitle 経由で '沼津支部月例将棋大会' fallback
+  //   - state.report.title も同期書き込み（不正値クリーンアップ）
+  var titleEl=document.getElementById('rep-title');
+  if(titleEl){
+    var normalizedTitle=normalizeReportTitle(state.report.title);
+    state.report.title=normalizedTitle;
+    titleEl.value=normalizedTitle;
+  }
   // REPORT-UX-001: 保存済み値の復元後に未入力欄のみ defaults を補完する。
   //   保存済み値・入力済み値があれば ensureReportDateTimeDefaults は何もしない（冪等）。
   ensureReportDateTimeDefaults();
@@ -7185,7 +7233,7 @@ function updateReportFieldFromElement(el){
   }
   if(!key&&el.id&&el.id.indexOf('rep-')===0)key=el.id.substring(4);
   if(!key)return;
-  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000};
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会'};
   // REPORT-UX-003A: prize は数値として保存する。空欄・負数・不正値は 7000 にフォールバック。
   //   0 は有効値として 0 のまま保存（normalizeReportPrize 内部で 0 を valid 扱い）。
   //   既存の string field (date/place/start/end/sei/fuku/note) の保存挙動は変えない。
@@ -7200,6 +7248,12 @@ function updateReportFieldFromElement(el){
     var normalizedPrize=normalizeReportPrize(el.value);
     state.report.prize=normalizedPrize;
     el.value=String(normalizedPrize);
+  } else if(key==='title'){
+    // REPORT-UX-004: title は trim + 空欄 fallback で正規化、DOM 表示も同期書き戻し。
+    //   003B の prize 分岐と同じ「表示値 / 保存値 / 帳票値 を常に一致」ポリシー。
+    var normalizedTitle=normalizeReportTitle(el.value);
+    state.report.title=normalizedTitle;
+    el.value=normalizedTitle;
   } else {
     state.report[key]=el.value;
   }
@@ -7211,7 +7265,10 @@ function bindReportEvents(){
   // REPORT-UX-003A: prize も同じ data-report-field + input/change 両 bind パターンで扱う。
   //   updateReportFieldFromElement 側で key==='prize' のときだけ normalizeReportPrize 経由で
   //   数値化する。Codex Must Fix 2 の input/change 両イベント原則は維持。
-  ['date','place','start','end','sei','fuku','note','prize'].forEach(function(k){
+  // REPORT-UX-004: 'title' も同じ data-report-field + input/change 両 bind パターンで扱う。
+  //   updateReportFieldFromElement 側で key==='title' のとき normalizeReportTitle 経由で
+  //   trim + 空欄 fallback + DOM 同期書き戻し。
+  ['date','place','start','end','sei','fuku','note','prize','title'].forEach(function(k){
     var el=document.getElementById('rep-'+k);
     if(!el)return;
     // data-report-field 属性を付与し、updateReportFieldFromElement が key を取得できるようにする
