@@ -133,15 +133,20 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
       </div>
       <div id="suggest-list" class="suggest-list" style="display:none"></div>
       <div id="reg-msg"></div>
-      <div class="grid2" style="margin-top:12px">
-        <div>
+      <!-- ROUND-CLASS-START-006 (spec §15.1): 受付一覧 grid を id="reg-class-grid" で
+           参照可能にし、ensureClassRegDomNodes() で C クラス以降の受付 section を動的補完できる
+           土台にする。A/B section は静的 DOM のまま維持し、互換 id (a-count/b-count/a-list/b-list)
+           を温存する。新規 class section は class-section-{classId} / class-count-{classId} /
+           class-list-{classId} / class-bulkedit-{classId} で構成。 -->
+      <div class="grid2" id="reg-class-grid" style="margin-top:12px">
+        <div data-class-id="A">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
             <h3 style="margin-bottom:0">Aクラス <span id="a-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
             <button type="button" id="bulkEditA" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
           </div>
           <div id="a-list"></div>
         </div>
-        <div>
+        <div data-class-id="B">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
             <h3 style="margin-bottom:0">Bクラス <span id="b-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
             <button type="button" id="bulkEditB" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
@@ -350,9 +355,34 @@ function getFee(member,grade){
 }
 
 function calcTotal(){
-  var all=state.players.A.concat(state.players.B);
+  // ROUND-CLASS-START-006 (spec §15.1):
+  //   state.classes 駆動で全 class の参加費合計を集計（A/B 固定 literal 解消）。
+  //   state.classes が無い場合は state.players の全 own-key を fallback 走査する（Codex S4）。
+  //   これにより C クラス以降の参加者も合計に含まれる。
   var t=0;
-  for(var i=0;i<all.length;i++)t+=getFee(all[i].member||'member',all[i].grade||'ippan');
+  function sumFromArr(arr){
+    if(!Array.isArray(arr))return;
+    for(var i=0;i<arr.length;i++){
+      var p=arr[i]; if(!p)continue;
+      t+=getFee(p.member||'member',p.grade||'ippan');
+    }
+  }
+  if(state&&Array.isArray(state.classes)&&state.classes.length>0){
+    for(var ci=0;ci<state.classes.length;ci++){
+      var c=state.classes[ci];
+      if(!c||!isSafeClassId(c.id))continue;
+      sumFromArr(state.players&&state.players[c.id]);
+    }
+    return t;
+  }
+  // fallback: state.classes 不在 / 空 → state.players の全 own-key を走査
+  if(state&&state.players&&typeof state.players==='object'){
+    var keys=Object.keys(state.players);
+    for(var ki=0;ki<keys.length;ki++){
+      if(!isSafeClassId(keys[ki]))continue;
+      sumFromArr(state.players[keys[ki]]);
+    }
+  }
   return t;
 }
 
@@ -455,13 +485,22 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
 //     - 過渡期データ（raw.classes 既存だが raw.started=true で classes 内 started=true ゼロ）は、
 //       startTournament が classes を直接更新しない 003 以前の経路との互換のため、
 //       全クラスに started=true を保守的展開（spec §9.3 案 a 準拠）
+// ROUND-CLASS-START-006 (Codex Should Fix S3):
+//   classId は DOM id / querySelector / getElementById に直接合成されるため、
+//   ASCII 安全文字 (`/^[A-Za-z0-9_-]+$/`) のみを許可する。
+//   不正な classId（空 / スペース / quote / 全角 / ピリオド等）は normalizeClasses で skip し、
+//   既定の A/B fallback に頼る。設計 spec §7.2 末尾の前提を実コードで強制する。
+function isSafeClassId(classId){
+  return typeof classId==='string' && /^[A-Za-z0-9_-]+$/.test(classId);
+}
+
 function normalizeClasses(raw){
   var rawStarted=!!(raw&&raw.started);
   var hasRawClasses=!!(raw&&Array.isArray(raw.classes));
   var classes;
   if(hasRawClasses){
     classes=raw.classes
-      .filter(function(c){return c&&typeof c.id==='string'&&c.id;})
+      .filter(function(c){return c&&isSafeClassId(c&&c.id);})
       .map(function(c){
         return {
           id:c.id,
@@ -505,7 +544,10 @@ function appendMissingClassesFromDicts(classes,raw){
     var d=raw[dictKey];
     if(!d||typeof d!=='object'||Array.isArray(d))return;
     Object.keys(d).forEach(function(cid){
-      if(typeof cid!=='string'||!cid)return;
+      // ROUND-CLASS-START-006 (Codex S3): classId id-safety を dict key 由来でも徹底する。
+      //   破損 localStorage 由来の不正 classId（スペース / quote / 全角 等）が dict key として
+      //   入り込んでも、state.classes へは展開しない（DOM id 破綻防止）。
+      if(!isSafeClassId(cid))return;
       if(existing[cid])return;
       classes.push({id:cid,name:cid+'クラス',started:false});
       existing[cid]=true;
@@ -3262,12 +3304,100 @@ function ensureClassPaneDomNodes(){
   if(!grid)return;
   for(var i=0;i<state.classes.length;i++){
     var c=state.classes[i];
-    if(!c||typeof c.id!=='string'||!c.id)continue;
+    if(!c||!isSafeClassId(c.id))continue;
     if(document.getElementById('pane-'+c.id))continue;
     var d=document.createElement('div');
     d.id='pane-'+c.id;
     grid.appendChild(d);
   }
+}
+
+// ROUND-CLASS-START-006 (spec §15.1 / Codex S3):
+//   受付一覧の dom id 構築を classId ベースで担う helper 群。
+//   A/B は静的 DOM の id（a-count / a-list / bulkEditA 等）を温存（互換維持）、
+//   C クラス以降は class-count-{classId} / class-list-{classId} / class-bulkedit-{classId} を採用。
+//   classId は isSafeClassId() で予め保証されている前提で合成する。
+function regClassCountId(classId){
+  if(classId==='A')return 'a-count';
+  if(classId==='B')return 'b-count';
+  return 'class-count-'+classId;
+}
+function regClassListId(classId){
+  if(classId==='A')return 'a-list';
+  if(classId==='B')return 'b-list';
+  return 'class-list-'+classId;
+}
+function regClassBulkEditId(classId){
+  if(classId==='A')return 'bulkEditA';
+  if(classId==='B')return 'bulkEditB';
+  return 'class-bulkedit-'+classId;
+}
+
+// ROUND-CLASS-START-006 (spec §11.3 系の reg 版):
+//   reg-class-grid 内に C クラス以降の section を動的補完する。
+//   既存 A/B section（data-class-id="A"/"B"）は静的 DOM のまま維持。
+//   isSafeClassId で安全な classId のみ追加（Codex S3 / DOM id 破綻防止）。
+//   存在チェック: getElementById(regClassListId(classId)) で既設なら no-op（冪等）。
+//   getElementById 経由のため、grid コンテナが存在しない場合は silent no-op。
+function ensureClassRegDomNodes(){
+  if(!Array.isArray(state.classes))return;
+  var grid=document.getElementById('reg-class-grid');
+  if(!grid)return;
+  for(var i=0;i<state.classes.length;i++){
+    var c=state.classes[i];
+    if(!c||!isSafeClassId(c.id))continue;
+    if(document.getElementById(regClassListId(c.id)))continue;
+    // section コンテナ
+    var section=document.createElement('div');
+    section.setAttribute('data-class-id',c.id);
+    // header (h3 + bulkedit button)
+    var header=document.createElement('div');
+    header.style.cssText='display:flex;align-items:center;justify-content:space-between;margin-bottom:8px';
+    var h3=document.createElement('h3');
+    h3.style.marginBottom='0';
+    h3.textContent=(c.name||c.id+'クラス')+' ';
+    var cnt=document.createElement('span');
+    cnt.id=regClassCountId(c.id);
+    cnt.style.cssText='color:#888;font-size:12px;font-weight:400';
+    h3.appendChild(cnt);
+    header.appendChild(h3);
+    var btn=document.createElement('button');
+    btn.type='button';
+    btn.id=regClassBulkEditId(c.id);
+    btn.className='btn-sm';
+    btn.style.cssText='border-color:#2E75B6;color:#2E75B6';
+    btn.textContent='名前を一括編集';
+    btn.addEventListener('click',(function(cid){return function(){bulkEditNames(cid);};})(c.id));
+    header.appendChild(btn);
+    section.appendChild(header);
+    // list
+    var list=document.createElement('div');
+    list.id=regClassListId(c.id);
+    section.appendChild(list);
+    grid.appendChild(section);
+  }
+}
+
+// ROUND-CLASS-START-006 (Codex Should Fix S4):
+//   state.classes 不在 / 空 / 不正でも renderRegList / count 更新が安全に動作するための fallback。
+//   通常経路（normalizeState 後）は state.classes が必ず存在するが、
+//   破損 localStorage 直接読み / 直前で state を差し替えた中間状態 / 古い JSON migrate 前等の
+//   defensive 経路で fallback ['A','B'] に戻す。
+//   既存 A/B section の DOM id（a-count/a-list/bulkEditA/B）に依存する callsite が安全に動く。
+function getRegistrationClassList(){
+  if(state&&Array.isArray(state.classes)){
+    var out=[];
+    for(var i=0;i<state.classes.length;i++){
+      var c=state.classes[i];
+      if(c&&isSafeClassId(c.id))out.push({id:c.id,name:c.name||(c.id+'クラス'),started:c.started===true});
+    }
+    if(out.length>0)return out;
+  }
+  // fallback: 旧データ互換と同じく ['A','B'] 既定
+  return [
+    {id:'A',name:'Aクラス',started:false},
+    {id:'B',name:'Bクラス',started:false}
+  ];
 }
 
 // ROUND-CLASS-START-005 (spec §11 / §15.1):
@@ -3282,7 +3412,9 @@ function ensureClassResultDomNodes(){
   if(!list)return;
   for(var i=0;i<state.classes.length;i++){
     var c=state.classes[i];
-    if(!c||typeof c.id!=='string'||!c.id)continue;
+    // ROUND-CLASS-START-006 (Codex Should Fix S1): isSafeClassId() で id-safety を強制し、
+    //   ensureClassPaneDomNodes / ensureClassRegDomNodes / calcTotal と同条件に揃える。
+    if(!c||!isSafeClassId(c.id))continue;
     if(document.getElementById('result-'+c.id))continue;
     var d=document.createElement('div');
     d.id='result-'+c.id;
@@ -3473,14 +3605,20 @@ function notifySaveWarning(options){
 }
 
 function renderRegList(){
-  var clsList=['A','B'];
+  // ROUND-CLASS-START-006 (spec §15.1):
+  //   受付一覧を classes-driven にする。fallback で state.classes 不在時も安全に動作する（Codex S4）。
+  //   C クラス以降の section は ensureClassRegDomNodes() が動的補完する。
+  //   classId id-safety は isSafeClassId() で保証され、a-count/b-count/bulkEditA/B 互換 id は
+  //   regClassCountId/regClassListId/regClassBulkEditId が翻訳する。
+  ensureClassRegDomNodes();
+  var clsList=getRegistrationClassList();
+  var allCount=0;
   for(var ci=0;ci<clsList.length;ci++){
-    var cls=clsList[ci];
-    var players=state.players[cls];
-    var countId=cls==='A'?'a-count':'b-count';
-    var listId=cls==='A'?'a-list':'b-list';
-    var countEl=document.getElementById(countId);
-    var listEl=document.getElementById(listId);
+    var cls=clsList[ci].id;
+    var players=(state.players&&Array.isArray(state.players[cls]))?state.players[cls]:[];
+    allCount+=players.length;
+    var countEl=document.getElementById(regClassCountId(cls));
+    var listEl=document.getElementById(regClassListId(cls));
     if(countEl)countEl.textContent='('+players.length+'名)';
     if(listEl){
       listEl.innerHTML='';
@@ -3490,7 +3628,6 @@ function renderRegList(){
     }
   }
   var total=calcTotal();
-  var allCount=state.players.A.length+state.players.B.length;
   var feeEl=document.getElementById('fee-summary');
   if(feeEl){
     if(allCount>0){
@@ -6127,7 +6264,9 @@ function renderResults(){
   if(!Array.isArray(state.classes))return;
   for(var i=0;i<state.classes.length;i++){
     var c=state.classes[i];
-    if(!c||typeof c.id!=='string'||!c.id)continue;
+    // ROUND-CLASS-START-006 (Codex Should Fix S1): isSafeClassId() で id-safety を強制し、
+    //   ensureClassResultDomNodes / ensureClassPaneDomNodes / calcTotal と同条件に揃える。
+    if(!c||!isSafeClassId(c.id))continue;
     var cls=c.id;
     var el=document.getElementById('result-'+cls);
     if(!el)continue;
@@ -6717,7 +6856,9 @@ function isTournamentDone(){
   var hasAnyClass=false;
   for(var i=0;i<state.classes.length;i++){
     var c=state.classes[i];
-    if(!c||typeof c.id!=='string'||!c.id)continue;
+    // ROUND-CLASS-START-006 (Codex Should Fix S1): isSafeClassId() で id-safety を強制し、
+    //   ensureClassPaneDomNodes / ensureClassResultDomNodes / calcTotal と同条件に揃える。
+    if(!c||!isSafeClassId(c.id))continue;
     var cls=c.id;
     var players=(state.players&&state.players[cls])||[];
     if(players.length>0){
