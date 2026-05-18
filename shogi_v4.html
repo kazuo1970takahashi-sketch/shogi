@@ -668,9 +668,17 @@ function normalizeState(raw){
     });
   });
   if(s.report&&typeof s.report==='object'){
-    ['date','place','start','end','sei','fuku','note'].forEach(function(k){
+    // REPORT-UX-006A: place は normalizeReportPlace で trim/fallback して復元する。
+    //   date / start / end / sei / fuku / note は従来通り raw string コピー（本タスクではスコープ外）。
+    ['date','start','end','sei','fuku','note'].forEach(function(k){
       if(typeof s.report[k]==='string')base.report[k]=s.report[k];
     });
+    // REPORT-UX-006A: place 文字列フィールド。normalizeReportPlace で trim/fallback。
+    //   旧データ (place 欠落) は base.report.place='労政会館'（schema 既定）のまま維持。
+    //   place=null / '' / '   ' / 非文字列も既定値 '労政会館' に揃える。
+    if(Object.prototype.hasOwnProperty.call(s.report,'place')){
+      base.report.place=normalizeReportPlace(s.report.place);
+    }
     // REPORT-UX-003A: prize は数値フィールド。normalizeReportPrize で
     //   0 を有効値、不正値（null/undefined/''/NaN/Infinity/負数/数値化不能文字列）は 7000 fallback。
     //   旧データ (prize 欠落) は base.report.prize=7000（schema 既定）のまま維持される。
@@ -979,6 +987,23 @@ function normalizeReportOrganizer(value){
     if(trimmed!=='')return trimmed;
   }
   return '日本将棋連盟沼津支部';
+}
+
+// REPORT-UX-006A: 会場（場所）正規化 pure helper。
+//   既定値: '労政会館'。ラベル「場所」は downloadReport 側で付与し、state には純粋な会場名のみを保存する。
+//   - 文字列なら trim する
+//   - 結果が空文字なら（'' / '   ' 等）既定値 '労政会館' に fallback
+//   - null / undefined / 数値・配列等の非文字列もすべて既定値 fallback
+//   - 長さ制限・特殊文字 sanitization は本タスクでは作り込まない
+//     （帳票表示時は downloadReport 側で escapeHtml されるため XSS 安全）
+//   既存帳票互換: state.report.place が無い旧データは normalizeState の schema 既定で
+//   '労政会館' になる。
+function normalizeReportPlace(value){
+  if(typeof value==='string'){
+    var trimmed=value.trim();
+    if(trimmed!=='')return trimmed;
+  }
+  return '労政会館';
 }
 
 // REPORT-UX-003A: 賞金額（円）正規化 pure helper。
@@ -6882,7 +6907,10 @@ function downloadReport(){
   var startRaw=document.getElementById('rep-start').value||'';
   var endRaw=document.getElementById('rep-end').value||'';
   var date=dateRaw?formatJapaneseDateFromYmd(dateRaw):'　　年　　月　　日';
-  var place=document.getElementById('rep-place').value||'労政会館';
+  // REPORT-UX-006A: 会場は state.report.place を SoT として扱う。
+  //   DOM #rep-place.value 直読みをやめ、normalizeReportPlace で trim/fallback 済の値を使う。
+  //   空欄 / 空白 / 不正値はすべて '労政会館'。escapeHtml は HTML 組立時に通す。
+  var place=normalizeReportPlace(state.report&&state.report.place);
   var start=startRaw?formatJapaneseTimeFromHhmm(startRaw):'　　時　　分';
   var end=endRaw?formatJapaneseTimeFromHhmm(endRaw):'　　時　　分';
   var sei=document.getElementById('rep-sei').value||'';
@@ -7231,7 +7259,8 @@ function populateReportFields(){
   //   正規化に失敗した場合（不正値）は '' を返し、後段の defaults が補完する。
   //   保存形式（state.report.* の値）はここでは変更しない（ユーザーが date/time picker で
   //   修正したタイミングで自然に新 ISO/HHMM 形式へ移行する）。
-  ['date','place','start','end','sei','fuku','note'].forEach(function(k){
+  // REPORT-UX-006A: place は専用 helper で正規化するため、ここでは触らない（後段で個別反映）。
+  ['date','start','end','sei','fuku','note'].forEach(function(k){
     var el=document.getElementById('rep-'+k);
     if(!el)return;
     var raw=state.report[k]||'';
@@ -7240,6 +7269,15 @@ function populateReportFields(){
     else if(k==='start'||k==='end')v=normalizeReportTimeForInput(raw);
     el.value=v;
   });
+  // REPORT-UX-006A: 会場（文字列フィールド）。state.report.place を input に反映する。
+  //   - 空欄 / 不正値の場合は normalizeReportPlace 経由で '労政会館' fallback
+  //   - state.report.place も同期書き込み（不正値クリーンアップ）
+  var placeEl=document.getElementById('rep-place');
+  if(placeEl){
+    var normalizedPlace=normalizeReportPlace(state.report.place);
+    state.report.place=normalizedPlace;
+    placeEl.value=normalizedPlace;
+  }
   // REPORT-UX-003A: 賞金額（数値フィールド）。state.report.prize の値を input に反映する。
   //   - 0 は有効値として 0 を表示
   //   - 欠落 / 不正値は normalizeReportPrize 経由で 7000 にフォールバック
@@ -7325,6 +7363,14 @@ function updateReportFieldFromElement(el,eventType){
     var normalizedOrganizer=normalizeReportOrganizer(el.value);
     state.report.organizer=normalizedOrganizer;
     if(eventType==='change')el.value=normalizedOrganizer;
+  } else if(key==='place'){
+    // REPORT-UX-006A: place は trim + 空欄 fallback で正規化。state には純粋な会場名のみを保存。
+    //   ラベル「場所」は downloadReport 側で付与するため state には含めない。
+    //   IME-safe: title / organizer と同じく、DOM 書き戻しは change イベント時のみに限定。
+    //   input 時は state 更新と save のみ（日本語 IME composing 中のカーソル位置を壊さない）。
+    var normalizedPlace=normalizeReportPlace(el.value);
+    state.report.place=normalizedPlace;
+    if(eventType==='change')el.value=normalizedPlace;
   } else {
     state.report[key]=el.value;
   }

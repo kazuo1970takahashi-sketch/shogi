@@ -840,6 +840,22 @@ else
 fi
 
 # ============================================
+# REPORT-UX-006A place state-as-SoT / normalize / IME-safe 単体テスト
+# ============================================
+echo ""
+echo "【REPORT-UX-006A place state-as-SoT / normalize / IME-safe】"
+if [ -f "$SCRIPT_DIR/test_report_ux_006.js" ]; then
+  if node "$SCRIPT_DIR/test_report_ux_006.js" "$TARGET" > /tmp/report_ux_006_out.log 2>&1; then
+    ok "REPORT-UX-006A テスト 全PASS ($(tail -1 /tmp/report_ux_006_out.log))"
+  else
+    ng "REPORT-UX-006A テスト 失敗"
+    cat /tmp/report_ux_006_out.log
+  fi
+else
+  warn "test_report_ux_006.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
