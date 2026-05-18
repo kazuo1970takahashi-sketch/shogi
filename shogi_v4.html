@@ -929,13 +929,23 @@ function formatJapaneseTimeFromHhmm(hm){
 
 // REPORT-UX-004: 大会名（タイトル）正規化 pure helper。
 //   既定値: '沼津支部月例将棋大会'（'報告書' 接尾辞は downloadReport 側で付与）。
-//   - 文字列なら trim して返す。空文字なら既定値 fallback。
-//   - null / undefined / 数値・配列等の非文字列はすべて既定値 fallback。
+//   - 文字列なら trim する
+//   - **末尾の「報告書」を 1 回除去**して state には「大会名のみ」を保存する。
+//     downloadReport 側で必ず「報告書」を 1 回付与するため、入力に含めると重複する。
+//     例: '特別大会報告書' → '特別大会' / '特別大会' → '特別大会'
+//   - 除去後にさらに trim する（'特別大会  報告書' のような中間空白も吸収）
+//   - 結果が空文字なら（'報告書' 単体や ' ' のみ等）既定値 '沼津支部月例将棋大会' に fallback
+//   - null / undefined / 数値・配列等の非文字列もすべて既定値 fallback
 //   既存帳票互換: state.report.title が無い旧データは normalizeState の schema 既定で
 //   '沼津支部月例将棋大会' になる。
 function normalizeReportTitle(value){
   if(typeof value==='string'){
     var trimmed=value.trim();
+    // Codex Must Fix (PR #150): 末尾の '報告書' を 1 回除去して「大会名のみ」に正規化。
+    //   既存帳票では downloadReport が再度 '報告書' を付与するため、入力に含めると二重になる。
+    if(trimmed.length>=3&&trimmed.slice(-3)==='報告書'){
+      trimmed=trimmed.slice(0,-3).replace(/[\s　]+$/,'');
+    }
     if(trimmed!=='')return trimmed;
   }
   return '沼津支部月例将棋大会';
@@ -7224,7 +7234,7 @@ function populateReportFields(){
 //     bindReportEvents から input/change 両イベントでこの helper を呼ぶ。
 //   - start/end の場合は checkReportTimeOrder も呼ぶ。
 //   key は data-report-field 属性、または DOM id の `rep-` プレフィックス除去で決定する。
-function updateReportFieldFromElement(el){
+function updateReportFieldFromElement(el,eventType){
   if(!el)return;
   var key=null;
   if(el.getAttribute){
@@ -7244,16 +7254,21 @@ function updateReportFieldFromElement(el){
   //   0 入力 → '0' 表示 / 5000 入力 → '5000' 表示。
   //   既に el.value がそのまま正規化結果と一致する場合（通常の有効入力）は冗長代入だが、
   //   ブラウザ実装に依存せず常に同期される副作用を優先する。
+  //   prize は type=number で IME が絡まないため input/change 両方で書き戻す挙動を維持。
   if(key==='prize'){
     var normalizedPrize=normalizeReportPrize(el.value);
     state.report.prize=normalizedPrize;
     el.value=String(normalizedPrize);
   } else if(key==='title'){
-    // REPORT-UX-004: title は trim + 空欄 fallback で正規化、DOM 表示も同期書き戻し。
-    //   003B の prize 分岐と同じ「表示値 / 保存値 / 帳票値 を常に一致」ポリシー。
+    // REPORT-UX-004: title は trim + 末尾「報告書」除去 + 空欄 fallback で正規化。
+    //   Codex Must Fix (PR #150): 「報告書」を含む値を入れても downloadReport で
+    //   二重付与されないよう、state には大会名のみを保存する。
+    //   Codex Should Fix (PR #150): IME 編集中（input イベント）に DOM 書き戻しすると
+    //   日本語入力のカーソル・composing 状態が壊れる可能性があるため、DOM 書き戻しは
+    //   change イベント時のみに限定する。input イベントでは state 更新と save のみ。
     var normalizedTitle=normalizeReportTitle(el.value);
     state.report.title=normalizedTitle;
-    el.value=normalizedTitle;
+    if(eventType==='change')el.value=normalizedTitle;
   } else {
     state.report[key]=el.value;
   }
@@ -7267,7 +7282,9 @@ function bindReportEvents(){
   //   数値化する。Codex Must Fix 2 の input/change 両イベント原則は維持。
   // REPORT-UX-004: 'title' も同じ data-report-field + input/change 両 bind パターンで扱う。
   //   updateReportFieldFromElement 側で key==='title' のとき normalizeReportTitle 経由で
-  //   trim + 空欄 fallback + DOM 同期書き戻し。
+  //   trim + 末尾「報告書」除去 + 空欄 fallback + (change 時のみ DOM 同期書き戻し)。
+  //   イベント種別 (input/change) を updateReportFieldFromElement に渡し、
+  //   title 分岐で IME 影響を避ける制御を可能にする (Codex Should Fix)。
   ['date','place','start','end','sei','fuku','note','prize','title'].forEach(function(k){
     var el=document.getElementById('rep-'+k);
     if(!el)return;
@@ -7276,9 +7293,10 @@ function bindReportEvents(){
     // REPORT-UX-001 (Codex Must Fix 2):
     //   date/time input は ブラウザ・OS によって input イベントが発火しない場合がある
     //   （picker 確定で change のみ）。state.report 更新と save() を両イベントから走らせる。
-    var handler=function(e){ updateReportFieldFromElement(e.target||el); };
-    el.addEventListener('input',handler);
-    el.addEventListener('change',handler);
+    var inputHandler=function(e){ updateReportFieldFromElement(e.target||el,'input'); };
+    var changeHandler=function(e){ updateReportFieldFromElement(e.target||el,'change'); };
+    el.addEventListener('input',inputHandler);
+    el.addEventListener('change',changeHandler);
   });
   var btn=document.getElementById('downloadReportBtn');
   if(btn)btn.addEventListener('click',downloadReport);

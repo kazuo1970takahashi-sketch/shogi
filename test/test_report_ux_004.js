@@ -269,6 +269,29 @@ function loadEnv(path){
   assertEq(env.normalizeReportTitle({}), '沼津支部月例将棋大会', 'B8 オブジェクト fallback');
 }
 
+// B9-B14: 末尾「報告書」除去（Codex Must Fix PR #150）
+{
+  const env = loadEnv(targetPath);
+  assertEq(env.normalizeReportTitle('特別大会報告書'), '特別大会',
+    'B9 末尾「報告書」を除去 → "特別大会"');
+  assertEq(env.normalizeReportTitle(' 特別大会報告書 '), '特別大会',
+    'B10 前後 trim + 末尾「報告書」除去');
+  assertEq(env.normalizeReportTitle('特別大会  報告書'), '特別大会',
+    'B11 中間空白 + 末尾「報告書」も除去後 trim');
+  assertEq(env.normalizeReportTitle('報告書'), '沼津支部月例将棋大会',
+    'B12 "報告書" 単体 → 除去後空 → 既定値 fallback');
+  assertEq(env.normalizeReportTitle('  報告書  '), '沼津支部月例将棋大会',
+    'B13 "  報告書  " → trim 後 "報告書" → 除去後空 → 既定値 fallback');
+  assertEq(env.normalizeReportTitle('沼津支部月例将棋大会報告書'), '沼津支部月例将棋大会',
+    'B14 既定 + 末尾報告書 → 既定大会名のみ（state には大会名のみ保存）');
+  // 「報告書」が中間にある場合は除去しない（末尾の 1 回のみ）
+  assertEq(env.normalizeReportTitle('報告書大会'), '報告書大会',
+    'B15 中間の「報告書」は除去しない（末尾のみ対象）');
+  // 既に末尾除去済（'報告書' なし）は変化なし
+  assertEq(env.normalizeReportTitle('特別大会'), '特別大会',
+    'B16 「報告書」なしはそのまま（二重除去しない）');
+}
+
 // ============================================================
 // SECTION C: normalizeState 旧データ互換
 // ============================================================
@@ -286,6 +309,14 @@ function loadEnv(path){
   // C4: empty string
   const c4 = env.normalizeState({report:{date:'',place:'',start:'',end:'',sei:'',fuku:'',note:'',title:''}});
   assertEq(c4.report.title, '沼津支部月例将棋大会', 'C4 title="" → 既定値 fallback');
+  // C5: 「報告書」付きが旧データから来た場合の除去（Codex Must Fix PR #150）
+  const c5 = env.normalizeState({report:{date:'',place:'',start:'',end:'',sei:'',fuku:'',note:'',title:'特別大会報告書'}});
+  assertEq(c5.report.title, '特別大会',
+    'C5 title="特別大会報告書" → "特別大会" として復元（末尾除去で二重防止）');
+  // C6: 「報告書」単体 → 除去後空 → 既定値
+  const c6 = env.normalizeState({report:{date:'',place:'',start:'',end:'',sei:'',fuku:'',note:'',title:'報告書'}});
+  assertEq(c6.report.title, '沼津支部月例将棋大会',
+    'C6 title="報告書" → 除去後空 → 既定値 fallback');
 }
 
 // ============================================================
@@ -365,7 +396,10 @@ function seedReportDom(ctx, repValues){
   assertEq(el.value, '沼津支部月例将棋大会', 'D4-2 空欄 → DOM 同期書き戻し');
 }
 
-// D5: input event 経路
+// D5: input event 経路 (IME-safe: state 更新のみ、DOM 書き戻しなし)
+//   Codex Should Fix (PR #150): input イベントは IME 編集中にも発火するため、
+//   DOM 書き戻しすると日本語入力のカーソル / composing 状態が壊れる可能性。
+//   そのため input イベントでは state 更新のみで、DOM 書き戻しは行わない。
 {
   const env = loadEnv(targetPath);
   env._setState({
@@ -379,7 +413,57 @@ function seedReportDom(ctx, repValues){
   el.value = '記念大会';
   const fns = (el._handlers && el._handlers['input']) || [];
   for(let i=0;i<fns.length;i++) fns[i].call(el, {type:'input', target:el});
-  assertEq(env._getState().report.title, '記念大会', 'D5 input イベント経路でも state title 更新');
+  assertEq(env._getState().report.title, '記念大会', 'D5-1 input イベント経路でも state title 更新');
+  // input イベントでは DOM 書き戻しなし → el.value は変化なし
+  assertEq(el.value, '記念大会', 'D5-2 input イベント時は DOM 書き戻し無し (IME-safe)');
+}
+
+// D6: input イベント時、'特別大会報告書' を入力しても DOM は触られない
+//   state は正規化された '特別大会' に更新されるが、DOM 上は IME 編集途中扱いで '特別大会報告書' のまま
+{
+  const env = loadEnv(targetPath);
+  env._setState({
+    players:{A:[],B:[]}, rounds:4, pairings:{A:[],B:[]}, results:{A:[],B:[]}, started:false,
+    classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会'}
+  });
+  seedReportDom(env._ctx);
+  env.bindReportEvents();
+  const el = env._ctx.document.getElementById('rep-title');
+  el.value = '特別大会報告書';
+  const inputFns = (el._handlers && el._handlers['input']) || [];
+  for(let i=0;i<inputFns.length;i++) inputFns[i].call(el, {type:'input', target:el});
+  assertEq(env._getState().report.title, '特別大会',
+    'D6-1 input イベント: state は正規化済の "特別大会" (二重防止)');
+  assertEq(el.value, '特別大会報告書',
+    'D6-2 input イベント: DOM は書き戻しなし (IME-safe、ユーザー編集を妨げない)');
+  // 次に change イベントを発火すると DOM も正規化値に書き戻される
+  const changeFns = (el._handlers && el._handlers['change']) || [];
+  for(let i=0;i<changeFns.length;i++) changeFns[i].call(el, {type:'change', target:el});
+  assertEq(env._getState().report.title, '特別大会',
+    'D6-3 change イベント: state は引き続き "特別大会"');
+  assertEq(el.value, '特別大会',
+    'D6-4 change イベント: DOM が "特別大会" に同期書き戻し');
+}
+
+// D7: change で '特別大会報告書' 入力 → state も DOM も '特別大会' に正規化
+{
+  const env = loadEnv(targetPath);
+  env._setState({
+    players:{A:[],B:[]}, rounds:4, pairings:{A:[],B:[]}, results:{A:[],B:[]}, started:false,
+    classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会'}
+  });
+  seedReportDom(env._ctx);
+  env.bindReportEvents();
+  const el = env._ctx.document.getElementById('rep-title');
+  el.value = '特別大会報告書';
+  const fns = (el._handlers && el._handlers['change']) || [];
+  for(let i=0;i<fns.length;i++) fns[i].call(el, {type:'change', target:el});
+  assertEq(env._getState().report.title, '特別大会',
+    'D7-1 change: "特別大会報告書" → state.report.title="特別大会"');
+  assertEq(el.value, '特別大会',
+    'D7-2 change: DOM も "特別大会" に同期書き戻し');
 }
 
 // ============================================================
@@ -468,6 +552,72 @@ function makeStateForDownload(title){
   const html = env._getLastBlobSrc();
   assert(/<title>特別大会_20260518_報告書<\/title>/.test(html),
     'E5-2 カスタム title "特別大会" でファイル名 "特別大会_20260518_報告書"');
+}
+
+// ===== E6: Codex Must Fix PR #150 — 「報告書報告書」二重防止 =====
+
+// E6-A: state.report.title='特別大会報告書' で downloadReport
+//   normalizeReportTitle で '特別大会' に正規化 → downloadReport で「特別大会報告書」になる（二重にならない）
+{
+  const env = loadEnv(targetPath);
+  env._setState(makeStateForDownload('特別大会報告書'));
+  seedReportDom(env._ctx, {date:'2026-05-18',title:'特別大会報告書'});
+  env.downloadReport();
+  const html = env._getLastBlobSrc();
+  assert(html.indexOf('報告書報告書') < 0,
+    'E6-A1 state.title="特別大会報告書" で「報告書報告書」が HTML に出ない');
+  assert(html.indexOf('特別大会報告書') >= 0,
+    'E6-A2 h2 等に「特別大会報告書」が 1 回だけ表示される');
+  assert(html.indexOf('特別大会報告書報告書') < 0,
+    'E6-A3 「特別大会報告書報告書」のような二重表記は出ない');
+  // ファイル名にも報告書報告書が出ない
+  assert(/<title>特別大会_20260518_報告書<\/title>/.test(html),
+    'E6-A4 ファイル名は "特別大会_20260518_報告書"（「特別大会報告書_..._報告書」のような二重構造でない）');
+  assert(html.indexOf('特別大会報告書_') < 0,
+    'E6-A5 ファイル名側にも 特別大会報告書_ プレフィックスが出ない');
+}
+
+// E6-B: 旧保存データ由来で state.report.title='沼津支部月例将棋大会報告書' のケース
+//   既定 title の末尾「報告書」も同じく除去される
+{
+  const env = loadEnv(targetPath);
+  // normalizeState 経由でセット
+  const normalized = env.normalizeState({
+    report:{date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会報告書'}
+  });
+  // 復元結果は title='沼津支部月例将棋大会'（末尾除去）
+  assertEq(normalized.report.title, '沼津支部月例将棋大会',
+    'E6-B0 normalizeState で title="沼津支部月例将棋大会報告書" → "沼津支部月例将棋大会"');
+  env._setState(normalized);
+  seedReportDom(env._ctx, {date:'2026-05-18',title:'沼津支部月例将棋大会'});
+  env.downloadReport();
+  const html = env._getLastBlobSrc();
+  assert(html.indexOf('報告書報告書') < 0,
+    'E6-B1 旧データ "沼津支部月例将棋大会報告書" 由来でも「報告書報告書」が出ない');
+  // 表示は「沼津支部月例将棋大会報告書」が 1 回だけ出る
+  const count = (html.match(/沼津支部月例将棋大会報告書/g) || []).length;
+  assert(count >= 1, 'E6-B2 「沼津支部月例将棋大会報告書」表記が HTML に存在');
+  assert(html.indexOf('沼津支部月例将棋大会報告書報告書') < 0,
+    'E6-B3 「沼津支部月例将棋大会報告書報告書」のような二重表記は出ない');
+}
+
+// E6-C: '報告書' 単体入力 → state は既定値にフォールバック → 帳票も既定 title 1 回
+{
+  const env = loadEnv(targetPath);
+  // populateReportFields 経由で正規化（normalizeState 等価）
+  env._setState({
+    players:{A:[],B:[]}, rounds:4, pairings:{A:[],B:[]}, results:{A:[],B:[]}, started:false,
+    classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false}],
+    report:{date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00',sei:'',fuku:'',note:'',prize:7000,title:'報告書'}
+  });
+  seedReportDom(env._ctx, {date:'2026-05-18',title:'報告書'});
+  // populateReportFields を呼んで state.title を正規化 fallback で上書きしてから downloadReport
+  env.populateReportFields();
+  assertEq(env._getState().report.title, '沼津支部月例将棋大会',
+    'E6-C0 populateReportFields で title="報告書" → 既定値 fallback');
+  env.downloadReport();
+  const html = env._getLastBlobSrc();
+  assert(html.indexOf('報告書報告書') < 0, 'E6-C1 "報告書" 単体入力でも「報告書報告書」が出ない');
 }
 
 // ============================================================
