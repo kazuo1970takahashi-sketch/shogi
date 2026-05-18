@@ -5,7 +5,8 @@
 //
 // 不変項目:
 //   - removePlayer() の判定ロジック (state.pairings[cls] メンバーシップ /
-//     state.started && pastMatches>0 / pastMatches の state.results 走査) 維持
+//     isClassStarted(cls) && pastMatches>0 [ROUND-CLASS-START-005 spec §7.5 で
+//     state.started → isClassStarted(cls) に置換] / pastMatches の state.results 走査) 維持
 //   - removePlayer() の early return 順序 (一次禁止 → 二次禁止) 維持
 //   - removePlayer() の削除成功経路 (filter / _pendingNewYomi 破棄 /
 //     renderRegList() / save() / verifyPlayerAbsent + notifySaveWarning) 維持
@@ -34,7 +35,8 @@
 //     16. alert 内に「リセット」単独 (= 「大会進行データをリセット」以外) を含まない
 //   判定ロジック不変:
 //     17. 一次禁止判定 (`if(inPairings)`) が維持
-//     18. 二次禁止判定 (`if(state.started && pastMatches>0)`) が維持
+//     18. 二次禁止判定 (`if(isClassStarted(cls) && pastMatches>0)`) が維持
+//         [005 で state.started → isClassStarted(cls) に置換、旧 literal の再導入を検出]
 //     19. pastMatches が state.results 走査で算出されている
 //     20. 一次禁止 alert が二次禁止 alert より前にある
 //     21. 一次禁止 / 二次禁止 とも early return している
@@ -80,10 +82,12 @@ const rmBody = rmMatch ? rmMatch[0] : '';
 // 一次禁止 / 二次禁止 alert スライスを抽出
 // ============================================================
 const idxFirstGuard  = rmBody.search(/if\s*\(\s*inPairings\s*\)/);
-const idxSecondGuard = rmBody.search(/if\s*\(\s*state\.started\s*&&\s*pastMatches\s*>\s*0\s*\)/);
+// ROUND-CLASS-START-005 (spec §7.5 / §15.1 row 3): 二次禁止条件は
+//   state.started → isClassStarted(cls) (class atomic) に置換された。
+const idxSecondGuard = rmBody.search(/if\s*\(\s*isClassStarted\s*\(\s*cls\s*\)\s*&&\s*pastMatches\s*>\s*0\s*\)/);
 const idxFilter      = rmBody.search(/state\.players\[cls\]\s*=\s*arr\.filter/);
 assert(idxFirstGuard >= 0, '一次禁止判定 if(inPairings) を抽出できる');
-assert(idxSecondGuard >= 0, '二次禁止判定 if(state.started && pastMatches>0) を抽出できる');
+assert(idxSecondGuard >= 0, '二次禁止判定 if(isClassStarted(cls) && pastMatches>0) を抽出できる (005 classes-driven)');
 assert(idxFilter >= 0, '削除成功経路 state.players[cls]=arr.filter(...) を抽出できる');
 assert(idxFirstGuard < idxSecondGuard,
   '一次禁止判定が二次禁止判定より前にある (early return 順序維持)');
@@ -191,9 +195,11 @@ assert(secondSlice.length > 0, '二次禁止ブロックをスライスできる
   assert(/if\s*\(\s*inPairings\s*\)/.test(rmBody),
     '一次禁止 if(inPairings) が維持');
 
-  // 二次禁止判定
-  assert(/if\s*\(\s*state\.started\s*&&\s*pastMatches\s*>\s*0\s*\)/.test(rmBody),
-    '二次禁止判定 if(state.started && pastMatches>0) が維持');
+  // 二次禁止判定 — ROUND-CLASS-START-005: isClassStarted(cls) ベースへ置換
+  assert(/if\s*\(\s*isClassStarted\s*\(\s*cls\s*\)\s*&&\s*pastMatches\s*>\s*0\s*\)/.test(rmBody),
+    '二次禁止判定 if(isClassStarted(cls) && pastMatches>0) が維持 (005 classes-driven)');
+  assert(/if\s*\(\s*state\.started\s*&&\s*pastMatches\s*>\s*0\s*\)/.test(rmBody) === false,
+    '旧 if(state.started && pastMatches>0) literal が再導入されていない');
 
   // pastMatches の算出
   assert(/var\s+pastMatches\s*=\s*0/.test(rmBody),

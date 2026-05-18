@@ -712,6 +712,22 @@ else
 fi
 
 # ============================================
+# ROUND-CLASS-START-005 周辺ガード + classes-driven UI 合流 単体テスト
+# ============================================
+echo ""
+echo "【ROUND-CLASS-START-005 周辺ガード + classes-driven UI 合流】"
+if [ -f "$SCRIPT_DIR/test_round_class_start_005.js" ]; then
+  if node "$SCRIPT_DIR/test_round_class_start_005.js" "$TARGET" > /tmp/round_class_start_005_out.log 2>&1; then
+    ok "ROUND-CLASS-START-005 テスト 全PASS ($(tail -1 /tmp/round_class_start_005_out.log))"
+  else
+    ng "ROUND-CLASS-START-005 テスト 失敗"
+    cat /tmp/round_class_start_005_out.log
+  fi
+else
+  warn "test_round_class_start_005.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""

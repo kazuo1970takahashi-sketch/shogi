@@ -250,8 +250,14 @@ assert(idxCollect < idxApply,
   // 二次禁止 alert: 「勝敗結果があるため削除できません」(PR #115 §6.4 案 D)
   assert(rmBody.indexOf('過去') >= 0 && rmBody.indexOf('試合分の勝敗結果があるため削除できません') >= 0,
     'removePlayer 二次禁止 alert が維持されている (PR #116 案 D 文言)');
-  assert(/state\.started\s*&&\s*pastMatches\s*>\s*0/.test(rmBody),
-    'removePlayer 二次禁止条件 (state.started && pastMatches>0) が維持されている');
+  // ROUND-CLASS-START-005 (spec §7.5 / §15.1 row 3): 二次禁止条件は
+  //   state.started (all-class OR) から isClassStarted(cls) (class atomic) に置換済。
+  //   旧 literal state.started && pastMatches>0 の再導入を構造的に検出する
+  //   （isClassStarted(cls) && pastMatches>0 形のみ許容）。
+  assert(/isClassStarted\s*\(\s*cls\s*\)\s*&&\s*pastMatches\s*>\s*0/.test(rmBody),
+    'removePlayer 二次禁止条件 isClassStarted(cls) && pastMatches>0 が維持 (005 classes-driven)');
+  assert(/\bstate\.started\s*&&\s*pastMatches\s*>\s*0/.test(rmBody) === false,
+    'removePlayer 二次禁止条件に旧 state.started 直接参照が再導入されていない');
 }
 
 // ============================================================

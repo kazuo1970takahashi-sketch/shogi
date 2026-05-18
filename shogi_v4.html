@@ -158,15 +158,24 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     </div>
   </div>
   <div id="pane-tournament" style="display:none">
-    <div class="grid2">
+    <!-- ROUND-CLASS-START-005 (spec §15.1 / inventory §3.4): pane-{classId} は
+         state.classes 駆動で ensureClassPaneDomNodes() が動的補完する。
+         A/B は既存互換のため静的に保持。grid2 コンテナに id を付与し、
+         3 クラス以上の場合に append できる挿入点とする。 -->
+    <div class="grid2" id="pane-tournament-grid">
       <div id="pane-A"></div>
       <div id="pane-B"></div>
     </div>
   </div>
   <div id="pane-master" style="display:none"></div>
   <div id="pane-result" style="display:none">
-    <div id="result-A"></div>
-    <div id="result-B" style="margin-top:16px"></div>
+    <!-- ROUND-CLASS-START-005: result-{classId} を state.classes 駆動で append できるよう
+         result-list ラッパーで囲む。A/B は既存互換のため静的に保持し、
+         ensureClassResultDomNodes() が不足分のみ末尾に動的補完する。 -->
+    <div id="result-list">
+      <div id="result-A"></div>
+      <div id="result-B" style="margin-top:16px"></div>
+    </div>
     <div style="margin-top:16px;text-align:right" class="no-print">
       <button type="button" class="btn-primary" onclick="printResults()">対戦成績を印刷 / PDF保存</button>
     </div>
@@ -3240,6 +3249,48 @@ function mergeTournamentParticipantsIntoMaster(tournaments,master){
 // UI HELPERS: タブ切替とメッセージ表示
 // ============================================================
 
+// ROUND-CLASS-START-005 (spec §11 / §15.1 / inventory §3.4):
+//   pane-{classId} 不足分を pane-tournament-grid の末尾に append する。
+//   A/B は静的 DOM として既存維持。3 クラス以上の場合のみ動的補完される。
+//   classId は ASCII 制約（spec §7.2 末尾）に従い caller 側で正規化済前提。
+//   既存 pane-{classId} があれば何もしない（冪等）。
+//   getElementById 経由のため、grid コンテナが存在しない場合は silent no-op。
+//   renderTournament / showTab('tournament') から呼ばれる。
+function ensureClassPaneDomNodes(){
+  if(!Array.isArray(state.classes))return;
+  var grid=document.getElementById('pane-tournament-grid');
+  if(!grid)return;
+  for(var i=0;i<state.classes.length;i++){
+    var c=state.classes[i];
+    if(!c||typeof c.id!=='string'||!c.id)continue;
+    if(document.getElementById('pane-'+c.id))continue;
+    var d=document.createElement('div');
+    d.id='pane-'+c.id;
+    grid.appendChild(d);
+  }
+}
+
+// ROUND-CLASS-START-005 (spec §11 / §15.1):
+//   result-{classId} 不足分を result-list の末尾に append する。
+//   既存 A/B は静的 DOM として維持。3 クラス以上の場合のみ補完される。
+//   新規 result-{classId} は既存 result-B と同じ margin-top:16px を付与し
+//   レイアウト連続性を保つ（first / non-first の判別は static result-A の存在前提）。
+//   renderResults / showTab('result') から呼ばれる。
+function ensureClassResultDomNodes(){
+  if(!Array.isArray(state.classes))return;
+  var list=document.getElementById('result-list');
+  if(!list)return;
+  for(var i=0;i<state.classes.length;i++){
+    var c=state.classes[i];
+    if(!c||typeof c.id!=='string'||!c.id)continue;
+    if(document.getElementById('result-'+c.id))continue;
+    var d=document.createElement('div');
+    d.id='result-'+c.id;
+    if(d.style)d.style.marginTop='16px';
+    list.appendChild(d);
+  }
+}
+
 function showTab(t){
   document.getElementById('pane-reg').style.display=t==='reg'?'block':'none';
   document.getElementById('pane-tournament').style.display=t==='tournament'?'block':'none';
@@ -3250,7 +3301,19 @@ function showTab(t){
   document.getElementById('tab-result').className='tab'+(t==='result'?' active':'');
   var tm=document.getElementById('tab-master');if(tm)tm.className='tab'+(t==='master'?' active':'');
   if(t==='result')renderResults();
-  if(t==='tournament'){renderTournament('A');renderTournament('B');}
+  // ROUND-CLASS-START-005 (spec §15.1 row 1): tournament タブ表示時は
+  //   state.classes を走査して renderTournament(c.id) を呼ぶ（A/B literal 解消）。
+  //   ensureClassPaneDomNodes() で pane-{classId} 不足分を補完してから描画する。
+  //   state.classes が空 / 未定義の場合は何も描画しない（normalizeState 後は必ず存在）。
+  if(t==='tournament'){
+    ensureClassPaneDomNodes();
+    if(Array.isArray(state.classes)){
+      for(var i=0;i<state.classes.length;i++){
+        var c=state.classes[i];
+        if(c&&typeof c.id==='string'&&c.id)renderTournament(c.id);
+      }
+    }
+  }
   if(t==='master')renderMasterTab();
 }
 
@@ -3943,8 +4006,15 @@ function removePlayer(id,cls){
       if(rm.p1===id||rm.p2===id)pastMatches++;
     }
   }
-  // 大会開始後で過去対局がある参加者は削除禁止（calcFinalがstate.players前提のため、TypeErrorで最終結果タブが落ちる）
-  if(state.started&&pastMatches>0){
+  // ROUND-CLASS-START-005 (spec §7.5 / §15.1 row 3 持ち越し):
+  //   過去対局保護は当該 player の所属 class の started 状態だけで判定する。
+  //   旧 state.started (all-class OR) では、他クラスが開始済だと未開始クラスの
+  //   参加者も削除できなくなる過剰ブロックがあった（class atomic 違反）。
+  //   isClassStarted(cls) に置換することで、A 開始済 / B 未開始時に B 参加者の
+  //   削除が可能になる（spec §7.6.1 / inventory §5.7 隣接リスク）。
+  //   started クラスの参加者削除は引き続き安全にブロックされる（calcFinal の
+  //   TypeError 回帰を防ぐため pastMatches>0 条件は維持）。
+  if(isClassStarted(cls)&&pastMatches>0){
     // REMOVE-PLAYER-GUARD-MESSAGE-IMPL-LIGHT (PR #115 §6.4 案 D 二次禁止):
     //   「対戦履歴」→「勝敗結果」用語統一（state.results 由来であることが
     //   直感的）/ 「リセット」→「大会進行データをリセット」具体化で
@@ -5646,11 +5716,14 @@ function bindTournamentEvents(cls){
 }
 
 // ROUND-CLASS-START-004b (spec §11.3 / §11.4):
-//   pane-{classId} 上部に表示する class action bar を生成する pure helper。
+//   pane-{classId} 上部に表示する class action bar を生成する view helper / reader。
 //   - class started=false かつ参加者 >= 2 かつ偶数 → 「<className>を開始」ボタン
 //   - class started=true                                → 「<className>をリセット」ボタン
 //   - 参加者 0 / 1 / 奇数 / 既開始以外でも、validator が拒否する場合は空（誤操作防止）。
 //   classId / className を escapeHtml して出力（XSS 対策）。
+//   ROUND-CLASS-START-005 (Codex Review S2 持ち越し):
+//     state.classes / state.players[cls] / isClassStarted(cls) を読むため pure helper ではない
+//     （reader、副作用なし、global state 依存）。引数のみで動作する pure 化は別タスクで検討。
 function buildClassActionBarHtml(cls){
   var classInfo=null;
   if(Array.isArray(state.classes)){
@@ -6044,13 +6117,24 @@ function buildResultsClassHtml(cls, isSP){
 }
 
 function renderResults(){
+  // ROUND-CLASS-START-005 (spec §15.1 row 2): A/B 固定 literal を解消し、
+  //   state.classes を走査して result-{classId} を描画する。
+  //   ensureClassResultDomNodes() で不足分の DOM を補完してから描画する。
+  //   state.classes が空 / 未定義の場合は何も描画しない（normalizeState 後は必ず存在）。
+  //   DOM が存在しない classId は no-op（fail-safe）。
+  ensureClassResultDomNodes();
   var isSP=window.innerWidth<600;
-  ['A','B'].forEach(function(cls){
+  if(!Array.isArray(state.classes))return;
+  for(var i=0;i<state.classes.length;i++){
+    var c=state.classes[i];
+    if(!c||typeof c.id!=='string'||!c.id)continue;
+    var cls=c.id;
     var el=document.getElementById('result-'+cls);
-    if(!el)return;
-    if(state.players[cls].length===0){el.innerHTML='';return;}
+    if(!el)continue;
+    var players=(state.players&&state.players[cls])||[];
+    if(players.length===0){el.innerHTML='';continue;}
     el.innerHTML=buildResultsClassHtml(cls, isSP);
-  });
+  }
 }
 
 // 大会の report.date（"YYYY年MM月DD日"）を YYYY-MM-DD に変換。失敗時は今日。
@@ -6622,13 +6706,24 @@ function bindReportEvents(){
 }
 
 // 全体として大会が完了しているか(参加者のいるクラスが全て全ラウンド消化済みか)
+// ROUND-CLASS-START-005 (spec §15.1 row 3): A/B 固定 literal を解消し
+//   state.classes を走査する形に置換。挙動は既存と等価：
+//     - 参加者のいるクラスが 1 つでもあれば hasAnyClass=true
+//     - そのクラスの results.length < state.rounds なら未完了 (false)
+//     - 参加者 0 のクラスは判定対象外（skip-empty 相当）
+//   3 クラス以上の構成 (C 含む) でも自然に拡張される。
 function isTournamentDone(){
+  if(!Array.isArray(state.classes))return false;
   var hasAnyClass=false;
-  for(var i=0;i<2;i++){
-    var cls=['A','B'][i];
-    if(state.players[cls].length>0){
+  for(var i=0;i<state.classes.length;i++){
+    var c=state.classes[i];
+    if(!c||typeof c.id!=='string'||!c.id)continue;
+    var cls=c.id;
+    var players=(state.players&&state.players[cls])||[];
+    if(players.length>0){
       hasAnyClass=true;
-      if(state.results[cls].length<state.rounds)return false;
+      var results=(state.results&&state.results[cls])||[];
+      if(results.length<state.rounds)return false;
     }
   }
   return hasAnyClass;
