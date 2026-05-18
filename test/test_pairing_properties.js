@@ -380,6 +380,10 @@ console.log('[テスト4] 削除クラッシュ非再現（開始後・過去対
   }
 
   // 4-b: 開始後・過去対局あり → 削除拒否
+  // ROUND-CLASS-START-005 (spec §7.5): removePlayer 二次禁止は
+  //   state.started → isClassStarted(cls) (class atomic) に置換済。
+  //   classes 不在の fixture は post-005 では非現実的（normalizeState 後は必ず存在）。
+  //   fixture に classes[A].started=true を明示することで A クラスのみ開始済を表現する。
   {
     const state = {
       players:{A:[
@@ -393,7 +397,11 @@ console.log('[テスト4] 削除クラッシュ非再現（開始後・過去対
       results:{A:[
         [{p1:'p1',p2:'p2',winner:'p1'},{p1:'p3',p2:'p4',winner:'p3'}]
       ], B:[]},
-      started:true
+      started:true,
+      classes:[
+        {id:'A',name:'Aクラス',started:true},
+        {id:'B',name:'Bクラス',started:false}
+      ]
     };
     const {api} = makeSandbox(jsCode);
     api.setState(deepClone(state));
@@ -418,7 +426,11 @@ console.log('[テスト4] 削除クラッシュ非再現（開始後・過去対
       results:{A:[
         [{p1:'p1',p2:'p2',winner:'p1'},{p1:'p3',p2:'p4',winner:'p3'}]
       ], B:[]},
-      started:true
+      started:true,
+      classes:[
+        {id:'A',name:'Aクラス',started:true},
+        {id:'B',name:'Bクラス',started:false}
+      ]
     };
     const {api} = makeSandbox(jsCode);
     api.setState(deepClone(state));
@@ -442,7 +454,11 @@ console.log('[テスト4] 削除クラッシュ非再現（開始後・過去対
       results:{A:[
         [{p1:'p1',p2:'p2',winner:'p1'},{p1:'p3',p2:'p4',winner:'p3'}]
       ], B:[]},
-      started:true
+      started:true,
+      classes:[
+        {id:'A',name:'Aクラス',started:true},
+        {id:'B',name:'Bクラス',started:false}
+      ]
     };
     const {api} = makeSandbox(jsCode);
     api.setState(deepClone(state));

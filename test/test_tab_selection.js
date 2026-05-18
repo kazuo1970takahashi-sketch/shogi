@@ -78,6 +78,10 @@ const testCases = [
     state: {players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},results:{A:[],B:[]},started:false},
     expected: null
   },
+  // ROUND-CLASS-START-005 (spec §15.1 row 3): isTournamentDone は state.classes 駆動に置換。
+  //   post-005 では state.classes が必ず存在する前提（normalizeState が保証）。
+  //   この test は normalizeState を経由せず state を直接注入するため、
+  //   各 fixture に classes を明示する必要がある。
   {
     name: '開始済み・1回戦のみ終了(進行中) → tournament',
     state: {
@@ -90,7 +94,8 @@ const testCases = [
       rounds:4,
       pairings:{A:[{p1:'p1',p2:'p3',winner:null},{p1:'p2',p2:'p4',winner:null}],B:[]},
       results:{A:[[{p1:'p1',p2:'p2',winner:'p1'},{p1:'p3',p2:'p4',winner:'p3'}]],B:[]},
-      started:true
+      started:true,
+      classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:false}]
     },
     expected: 'tournament'
   },
@@ -111,7 +116,8 @@ const testCases = [
         [{p1:'p1',p2:'p4',winner:'p1'},{p1:'p2',p2:'p3',winner:'p3'}],
         [{p1:'p1',p2:'p2',winner:'p1'},{p1:'p3',p2:'p4',winner:'p3'}]
       ],B:[]},
-      started:true
+      started:true,
+      classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:false}]
     },
     expected: 'result'
   },
@@ -133,7 +139,8 @@ const testCases = [
         ],
         B:[]
       },
-      started:true
+      started:true,
+      classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:true}]
     },
     expected: 'tournament'
   },
@@ -150,7 +157,8 @@ const testCases = [
         A:[[{p1:'a1',p2:'a2',winner:'a1'}],[{p1:'a1',p2:'a2',winner:'a1'}],[{p1:'a1',p2:'a2',winner:'a1'}],[{p1:'a1',p2:'a2',winner:'a1'}]],
         B:[[{p1:'b1',p2:'b2',winner:'b1'}],[{p1:'b1',p2:'b2',winner:'b1'}],[{p1:'b1',p2:'b2',winner:'b1'}],[{p1:'b1',p2:'b2',winner:'b1'}]]
       },
-      started:true
+      started:true,
+      classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:true}]
     },
     expected: 'result'
   },
