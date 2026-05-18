@@ -808,6 +808,22 @@ else
 fi
 
 # ============================================
+# REPORT-UX-004 configurable tournament title 単体テスト
+# ============================================
+echo ""
+echo "【REPORT-UX-004 configurable tournament title field】"
+if [ -f "$SCRIPT_DIR/test_report_ux_004.js" ]; then
+  if node "$SCRIPT_DIR/test_report_ux_004.js" "$TARGET" > /tmp/report_ux_004_out.log 2>&1; then
+    ok "REPORT-UX-004 テスト 全PASS ($(tail -1 /tmp/report_ux_004_out.log))"
+  else
+    ng "REPORT-UX-004 テスト 失敗"
+    cat /tmp/report_ux_004_out.log
+  fi
+else
+  warn "test_report_ux_004.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""

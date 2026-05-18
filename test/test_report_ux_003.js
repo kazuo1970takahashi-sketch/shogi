@@ -82,9 +82,11 @@ function assertEq(a,b,msg){
 
 // A2: schema literals
 {
-  // `report:{...,prize:7000}` 形式と `state.report={...,prize:7000}` 形式を両方カウント
+  // `report:{...,prize:7000,...}` 形式と `state.report={...,prize:7000,...}` 形式を両方カウント
   // （初期 state / normalizeState base / resetAll / 3 箇所の defensive `if(!state.report)` 等）。
-  const matches = htmlSrc.match(/\{\s*date\s*:\s*['"][\s\S]*?prize\s*:\s*7000\s*\}/g) || [];
+  //   REPORT-UX-004 で title が追加されたため、prize:7000 の直後が `}` とは限らない。
+  //   末尾は `[,}]` で許容する。
+  const matches = htmlSrc.match(/\{\s*date\s*:\s*['"][\s\S]*?prize\s*:\s*7000[\s\S]*?\}/g) || [];
   assert(matches.length >= 4,
     'A2 schema リテラル （state 初期化 / normalizeState base / resetAll / defensive）に prize:7000 が含まれる（>=4 箇所、実測 '+matches.length+'）');
 }

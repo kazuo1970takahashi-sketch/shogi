@@ -111,8 +111,12 @@ assert(drBody.indexOf('new Blob([html]') >= 0,
   'S7-3 Blob 経由の別ウィンドウ open が残っている');
 assert(drBody.indexOf('window.open(url') >= 0,
   'S7-4 window.open(url, _blank) が残っている');
-assert(drBody.indexOf('沼津支部月例将棋大会報告書') >= 0,
-  'S7-5 報告書タイトル「沼津支部月例将棋大会報告書」が本 PR では維持（REPORT-UX-003+ 持ち越し）');
+// REPORT-UX-004 で本 defer は解消済み。title は state.report.title / normalizeReportTitle 経由に。
+//   旧 002 時点の '沼津支部月例将棋大会報告書' ハードコード literal は撤去された。
+assert(drBody.indexOf("'沼津支部月例将棋大会報告書'")=== -1 && drBody.indexOf('"沼津支部月例将棋大会報告書"') === -1,
+  'S7-5 報告書タイトル literal は REPORT-UX-004 で撤去済み（state.report.title 経由）');
+assert(/normalizeReportTitle\s*\(/.test(drBody),
+  'S7-5b 004: downloadReport が normalizeReportTitle() を呼ぶ');
 // REPORT-UX-003A で本 defer は解消済み。prize は state.report.prize / normalizeReportPrize 経由に。
 //   旧 002 時点の `var prize=7000` ハードコード literal は撤去された。
 assert(/prize\s*=\s*7000/.test(drBody) === false,
