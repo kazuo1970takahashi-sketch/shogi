@@ -670,10 +670,19 @@ function normalizeState(raw){
   if(s.report&&typeof s.report==='object'){
     // REPORT-UX-006A: place は normalizeReportPlace で trim/fallback して復元する。
     // REPORT-UX-006B: date / start / end は専用 helper で正規化して復元する（下記の個別分岐）。
-    //   sei / fuku / note は従来通り raw string コピー（本タスクではスコープ外）。
-    ['sei','fuku','note'].forEach(function(k){
-      if(typeof s.report[k]==='string')base.report[k]=s.report[k];
-    });
+    // REPORT-UX-006C: sei / fuku / note も専用 helper で trim/fallback して復元する（下記の個別分岐）。
+    //   旧データ (sei/fuku/note 欠落 / null / 非文字列 / 空白のみ) はすべて '' に揃える。
+    if(Object.prototype.hasOwnProperty.call(s.report,'sei')){
+      base.report.sei=normalizeReportSei(s.report.sei);
+    }
+    if(Object.prototype.hasOwnProperty.call(s.report,'fuku')){
+      base.report.fuku=normalizeReportFuku(s.report.fuku);
+    }
+    if(Object.prototype.hasOwnProperty.call(s.report,'note')){
+      // REPORT-UX-006C: note は中間改行を維持して両端 trim のみ。'特になし' は state に保存しない
+      //   （帳票表示時に downloadReport 側で fallback として付与する）。
+      base.report.note=normalizeReportNote(s.report.note);
+    }
     // REPORT-UX-006B: date は normalizeReportDateForInput で YYYY-MM-DD 形式に正規化して復元。
     //   旧 '2026年5月18日' 等は '2026-05-18' に migrate、不正値は '' へ（後段の
     //   ensureReportDateTimeDefaults / populateReportFields が defaults を補完する）。
@@ -1020,6 +1029,47 @@ function normalizeReportPlace(value){
     if(trimmed!=='')return trimmed;
   }
   return '労政会館';
+}
+
+// REPORT-UX-006C: 担当役員（正）正規化 pure helper。
+//   既定値: '' (空欄許容)。氏名フィールドのため空文字を有効値として扱い、specific な default 氏名は持たない。
+//   - 文字列なら trim する
+//   - 空文字 / 空白のみ → ''
+//   - null / undefined / 数値・配列等の非文字列 → ''
+//   - 長さ制限・特殊文字 sanitization は本タスクでは作り込まない
+//     （帳票表示時は downloadReport 側で escapeHtml されるため XSS 安全）
+function normalizeReportSei(value){
+  if(typeof value==='string'){
+    var trimmed=value.trim();
+    if(trimmed!=='')return trimmed;
+  }
+  return '';
+}
+
+// REPORT-UX-006C: 担当役員（副）正規化 pure helper。
+//   仕様は normalizeReportSei と同等（空欄許容、trim、非文字列は ''）。
+function normalizeReportFuku(value){
+  if(typeof value==='string'){
+    var trimmed=value.trim();
+    if(trimmed!=='')return trimmed;
+  }
+  return '';
+}
+
+// REPORT-UX-006C: 申し送り事項（自由記述）正規化 pure helper。
+//   既定値: '' (空欄許容)。'特になし' fallback は state に保存せず、downloadReport 側で
+//   表示時のみ `normalizeReportNote(state.report.note) || '特になし'` として付与する。
+//   - 文字列なら value.trim() で **両端のみ** 除去（中間改行 '\n' は維持）
+//   - 空文字 / 空白のみ → ''
+//   - null / undefined / 数値・配列等の非文字列 → ''
+//   - 改行保持: ' 1行目\n2行目 ' → '1行目\n2行目'
+//   - 帳票表示は downloadReport 側で escapeHtml(note).split('\n').join('<br>') される（XSS 安全 + 改行表示）。
+function normalizeReportNote(value){
+  if(typeof value==='string'){
+    var trimmed=value.trim();
+    if(trimmed!=='')return trimmed;
+  }
+  return '';
 }
 
 // REPORT-UX-003A: 賞金額（円）正規化 pure helper。
@@ -6932,9 +6982,16 @@ function downloadReport(){
   var place=normalizeReportPlace(state.report&&state.report.place);
   var start=startRaw?formatJapaneseTimeFromHhmm(startRaw):'　　時　　分';
   var end=endRaw?formatJapaneseTimeFromHhmm(endRaw):'　　時　　分';
-  var sei=document.getElementById('rep-sei').value||'';
-  var fuku=document.getElementById('rep-fuku').value||'';
-  var note=document.getElementById('rep-note').value||'特になし';
+  // REPORT-UX-006C (state-as-SoT): sei / fuku / note は state.report を SoT として扱う。
+  //   DOM #rep-sei|fuku|note.value 直読みをやめ、専用 helper で正規化済の値を取得する。
+  //   note の '特になし' は state には保存せず、ここで表示時 fallback として付与する
+  //   （normalizeReportNote の戻り値が '' のときのみ）。
+  //   escapeHtml は HTML 組立時に通す。note は `escapeHtml(note).split('\n').join('<br>')` で
+  //   改行表示を維持する（中間改行は normalizeReportNote が保持済み）。
+  var sei=normalizeReportSei(state.report&&state.report.sei);
+  var fuku=normalizeReportFuku(state.report&&state.report.fuku);
+  var noteRaw=normalizeReportNote(state.report&&state.report.note);
+  var note=noteRaw||'特になし';
 
   var total=calcTotal();
   // REPORT-UX-002 (M1): allCount を state.classes 駆動の全クラス合計に置換。
@@ -7282,7 +7339,8 @@ function populateReportFields(){
   //   正規化後値に同期する（legacy '2026年5月18日' → ISO '2026-05-18' へ自動 migrate）。
   //   不正値・空欄 → state.report.k=''、後段の ensureReportDateTimeDefaults が両方を補完。
   // REPORT-UX-006A: place は専用 helper で正規化するため、ここでは触らない（後段で個別反映）。
-  ['date','start','end','sei','fuku','note'].forEach(function(k){
+  // REPORT-UX-006C: sei / fuku / note も専用 helper で正規化するため、ここでは触らない（後段で個別反映）。
+  ['date','start','end'].forEach(function(k){
     var el=document.getElementById('rep-'+k);
     if(!el)return;
     var raw=state.report[k]||'';
@@ -7296,6 +7354,27 @@ function populateReportFields(){
     }
     el.value=v;
   });
+  // REPORT-UX-006C: 担当役員（正・副）・申し送り事項。state.report の値を input/textarea に反映し、
+  //   state も正規化後値で同期書き戻し。note の '特になし' は state に保存しない（表示時のみ fallback）。
+  //   #rep-note には trim 済の pure 値を入れるため、空欄なら textarea も '' のまま（placeholder で「特になし」を案内）。
+  var seiEl=document.getElementById('rep-sei');
+  if(seiEl){
+    var normalizedSei=normalizeReportSei(state.report.sei);
+    state.report.sei=normalizedSei;
+    seiEl.value=normalizedSei;
+  }
+  var fukuEl=document.getElementById('rep-fuku');
+  if(fukuEl){
+    var normalizedFuku=normalizeReportFuku(state.report.fuku);
+    state.report.fuku=normalizedFuku;
+    fukuEl.value=normalizedFuku;
+  }
+  var noteEl=document.getElementById('rep-note');
+  if(noteEl){
+    var normalizedNote=normalizeReportNote(state.report.note);
+    state.report.note=normalizedNote;
+    noteEl.value=normalizedNote;
+  }
   // REPORT-UX-006A: 会場（文字列フィールド）。state.report.place を input に反映する。
   //   - 空欄 / 不正値の場合は normalizeReportPlace 経由で '労政会館' fallback
   //   - state.report.place も同期書き込み（不正値クリーンアップ）
@@ -7413,6 +7492,25 @@ function updateReportFieldFromElement(el,eventType){
     var normalizedTime=normalizeReportTimeForInput(el.value);
     state.report[key]=normalizedTime;
     if(eventType==='change')el.value=normalizedTime;
+  } else if(key==='sei'){
+    // REPORT-UX-006C: sei は trim + 空欄許容（default '' のまま）で正規化。
+    //   IME-safe: 漢字氏名 IME 中の中間値を壊さないよう、DOM 書き戻しは change 時のみ。
+    var normalizedSei=normalizeReportSei(el.value);
+    state.report.sei=normalizedSei;
+    if(eventType==='change')el.value=normalizedSei;
+  } else if(key==='fuku'){
+    // REPORT-UX-006C: fuku は sei と同じ仕様。空欄許容、change 時のみ DOM 同期。
+    var normalizedFuku=normalizeReportFuku(el.value);
+    state.report.fuku=normalizedFuku;
+    if(eventType==='change')el.value=normalizedFuku;
+  } else if(key==='note'){
+    // REPORT-UX-006C: note は両端 trim、**中間改行は維持**。'特になし' は state に保存しない
+    //   （downloadReport 側で表示時のみ fallback として付与する）。
+    //   IME-safe: textarea 内の日本語 IME composing を壊さないよう DOM 書き戻しは change 時のみ。
+    //   空欄 change → state も DOM も '' に揃え、'特になし' は **書き戻さない**。
+    var normalizedNote=normalizeReportNote(el.value);
+    state.report.note=normalizedNote;
+    if(eventType==='change')el.value=normalizedNote;
   } else {
     state.report[key]=el.value;
   }

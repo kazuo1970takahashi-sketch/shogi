@@ -872,6 +872,22 @@ else
 fi
 
 # ============================================
+# REPORT-UX-006C sei/fuku/note state-as-SoT / 改行保持 / IME-safe 単体テスト
+# ============================================
+echo ""
+echo "【REPORT-UX-006C sei/fuku/note state-as-SoT / 改行保持 / IME-safe】"
+if [ -f "$SCRIPT_DIR/test_report_ux_006c.js" ]; then
+  if node "$SCRIPT_DIR/test_report_ux_006c.js" "$TARGET" > /tmp/report_ux_006c_out.log 2>&1; then
+    ok "REPORT-UX-006C テスト 全PASS ($(tail -1 /tmp/report_ux_006c_out.log))"
+  else
+    ng "REPORT-UX-006C テスト 失敗"
+    cat /tmp/report_ux_006c_out.log
+  fi
+else
+  warn "test_report_ux_006c.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
