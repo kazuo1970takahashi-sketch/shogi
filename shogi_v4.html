@@ -270,6 +270,15 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
           <input type="text" id="rep-office-name" placeholder="沼津支部事務局" style="width:100%">
         </div>
       </div>
+      <!-- REPORT-UX-007B-1: 報告書 footer 2行目（会計提出文 / state.report.accountingNote）。
+           downloadReport が '<p style="font-size:11px">…</p>' で参照する。既定値
+           '※役員会で会計長へ収支報告書として提出ください。'。空欄/不正値は normalizeReportAccountingNote
+           で既定値に fallback。DOM 表示値は change イベント時のみ同期書き戻し（input 時は IME-safe）。
+           中間改行は維持し、帳票表示で <br> に変換される。 -->
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">会計提出文</label>
+        <textarea id="rep-accounting-note" placeholder="※役員会で会計長へ収支報告書として提出ください。" style="width:100%;height:48px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical"></textarea>
+      </div>
       <button type="button" class="btn-primary" id="downloadReportBtn">報告書を印刷 / PDF保存</button>
     </div>
   </div>
@@ -282,7 +291,7 @@ var state = {
   pairings: {A:[], B:[]},
   results: {A:[], B:[]},
   started: false,
-  report: {date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会', organizer:'日本将棋連盟沼津支部', fax:'943-9443', officeName:'沼津支部事務局'},
+  report: {date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会', organizer:'日本将棋連盟沼津支部', fax:'943-9443', officeName:'沼津支部事務局', accountingNote:'※役員会で会計長へ収支報告書として提出ください。'},
   // ROUND-CLASS-START-003: classId 単位 started を正とする state.classes を導入。
   //   既存 dict (players/pairings/results) は当面 A/B 固定構造で維持。詳細: spec §5.2
   classes: [
@@ -634,7 +643,7 @@ function normalizeState(raw){
     pairings:emptyClassDict(classes,function(){return [];}),
     results:emptyClassDict(classes,function(){return [];}),
     started:false,
-    report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会', organizer:'日本将棋連盟沼津支部', fax:'943-9443', officeName:'沼津支部事務局'},
+    report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会', organizer:'日本将棋連盟沼津支部', fax:'943-9443', officeName:'沼津支部事務局', accountingNote:'※役員会で会計長へ収支報告書として提出ください。'},
     classes:classes
   };
   classes.forEach(function(c){
@@ -745,6 +754,15 @@ function normalizeState(raw){
     //   officeName=null / '' / '   ' / 非文字列も既定値 '沼津支部事務局' に揃える。
     if(Object.prototype.hasOwnProperty.call(s.report,'officeName')){
       base.report.officeName=normalizeReportOfficeName(s.report.officeName);
+    }
+    // REPORT-UX-007B-1: accountingNote 文字列フィールド。normalizeReportAccountingNote で trim/fallback。
+    //   旧データ (accountingNote 欠落) は base.report.accountingNote='※役員会で会計長へ収支報告書として提出ください。'
+    //   （schema 既定）のまま維持。null / '' / '   ' / 非文字列もすべて既定値 fallback。
+    //   note と異なり「空欄 → 非表示」ではなく「空欄 → default 文言復元」とする
+    //   （footer 2行目を空にしたいケースは現状想定外、必要なら後続タスクで非表示機能を追加）。
+    //   中間改行は normalizeReportAccountingNote が保持する。
+    if(Object.prototype.hasOwnProperty.call(s.report,'accountingNote')){
+      base.report.accountingNote=normalizeReportAccountingNote(s.report.accountingNote);
     }
   }
   // 支部マスタ連携用の tournament_id を保持（F2）
@@ -1074,6 +1092,25 @@ function normalizeReportOfficeName(value){
   return '沼津支部事務局';
 }
 
+// REPORT-UX-007B-1: 会計提出文（footer 2行目）正規化 pure helper。
+//   既定値: '※役員会で会計長へ収支報告書として提出ください。'
+//   報告書 footer 2行目で参照される（'<p style="font-size:11px">...</p>'）。
+//   - 文字列なら value.trim() で **両端のみ** 除去（中間改行 '\n' は維持）
+//   - 空文字 / 空白のみ → default fallback（note と異なり「非表示にしない」ため）
+//   - null / undefined / 数値・配列等の非文字列もすべて既定値 fallback
+//   - 改行保持: ' 1行目\n2行目 ' → '1行目\n2行目'
+//   - 長さ制限・特殊文字 sanitization は本タスクでは作り込まない
+//     （帳票表示時は downloadReport 側で escapeHtml されるため XSS 安全）
+//   既存帳票互換: state.report.accountingNote が無い旧データは normalizeState の schema 既定で
+//   '※役員会で会計長へ収支報告書として提出ください。' になり、default 出力は従来と完全一致。
+function normalizeReportAccountingNote(value){
+  if(typeof value==='string'){
+    var trimmed=value.trim();
+    if(trimmed!=='')return trimmed;
+  }
+  return '※役員会で会計長へ収支報告書として提出ください。';
+}
+
 // REPORT-UX-006A: 会場（場所）正規化 pure helper。
 //   既定値: '労政会館'。ラベル「場所」は downloadReport 側で付与し、state には純粋な会場名のみを保存する。
 //   - 文字列なら trim する
@@ -1184,7 +1221,7 @@ function getReportClassLabel(c){
 //   state.report の値は populateReportFields が input.value にコピーした「後」に呼ぶ前提。
 //   helper 内で state.report も同期更新する（保存忘れ防止）。
 function ensureReportDateTimeDefaults(){
-  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局'};
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。'};
   var pairs=[
     {key:'date', defaultFn:function(){return formatLocalDateForInput(new Date());}},
     {key:'start',defaultFn:function(){return '13:00';}},
@@ -7135,6 +7172,12 @@ function downloadReport(){
   var fax=normalizeReportFax(state.report&&state.report.fax);
   var officeName=normalizeReportOfficeName(state.report&&state.report.officeName);
 
+  // REPORT-UX-007B-1: footer 2行目（会計提出文）は state.report.accountingNote から取得。
+  //   既定値 '※役員会で会計長へ収支報告書として提出ください。' は normalizeReportAccountingNote
+  //   側に集約済み。default のままなら footer 2行目の出力文字列は従来固定値の帳票と完全一致。
+  //   escapeHtml(...).split('\n').join('<br>') で XSS 安全 + 改行表示に変換する（note と同パターン）。
+  var accountingNote=normalizeReportAccountingNote(state.report&&state.report.accountingNote);
+
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
     +'<title>'+escapeHtml(reportTitleWithSuffix)+'</title>'
     +'<style>@page{size:A4;margin:10mm}'
@@ -7185,7 +7228,7 @@ function downloadReport(){
     +'<td style="padding:6px 10px;border:1px solid #999;height:60px">'+escapeHtml(note).split('\n').join('<br>')+'</td></tr>'
     +'</table>'
     +'<p style="margin-top:12px;font-size:11px">※ホームページ掲載の為、当日夜までにFAX（'+escapeHtml(fax)+'）、メールまたは直接'+escapeHtml(officeName)+'まで</p>'
-    +'<p style="font-size:11px">※役員会で会計長へ収支報告書として提出ください。</p>'
+    +'<p style="font-size:11px">'+escapeHtml(accountingNote).split('\n').join('<br>')+'</p>'
     +'</body></html>';
 
   // REPORT-UX-001: ファイル名用の日付文字列。新 type="date" の YYYY-MM-DD / 旧テキストの
@@ -7274,7 +7317,7 @@ function resetAll(){
     pairings:emptyClassDict(defaultClasses,function(){return [];}),
     results:emptyClassDict(defaultClasses,function(){return [];}),
     started:false,
-    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局'},
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。'},
     classes:defaultClasses
   };
   _pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
@@ -7304,6 +7347,9 @@ function resetAll(){
   //   既存の resetAll の DOM 明示初期化方針に揃える。
   var repFax=document.getElementById('rep-fax');if(repFax)repFax.value='943-9443';
   var repOfficeName=document.getElementById('rep-office-name');if(repOfficeName)repOfficeName.value='沼津支部事務局';
+  // REPORT-UX-007B-1: footer 2行目（会計提出文）も schema 既定値に戻す（空欄ではなく default 文言）。
+  //   note と異なり空欄運用なしのため、reset 時は default 文言へ戻す方針。
+  var repAccountingNote=document.getElementById('rep-accounting-note');if(repAccountingNote)repAccountingNote.value='※役員会で会計長へ収支報告書として提出ください。';
   var inpYomiR=document.getElementById('inp-yomi');if(inpYomiR)inpYomiR.value='';
   var inpNameR=document.getElementById('inp-name');if(inpNameR)inpNameR.value='';
   // REPORT-UX-001 (Codex Should Fix - resetAll defaults 再適用):
@@ -7401,7 +7447,7 @@ function bindTabEvents(){
 }
 
 function populateReportFields(){
-  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局'};
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。'};
   // REPORT-UX-001 (Codex Must Fix 1):
   //   date / start / end は <input type="date|time"> の value 制約に合わせて正規化してから代入する。
   //   旧形式 "YYYY年MM月DD日" / "H時MM分" が来ても、HTML5 input が値を空に戻して
@@ -7503,6 +7549,16 @@ function populateReportFields(){
     state.report.officeName=normalizedOfficeName;
     officeNameEl.value=normalizedOfficeName;
   }
+  // REPORT-UX-007B-1: 会計提出文（textarea フィールド）。state.report.accountingNote を textarea に反映する。
+  //   - 空欄 / null / 非文字列は normalizeReportAccountingNote 経由で default 文言 fallback
+  //   - state.report.accountingNote も同期書き込み（不正値クリーンアップ）
+  //   - 中間改行は維持（normalizeReportAccountingNote が保持）
+  var accountingNoteEl=document.getElementById('rep-accounting-note');
+  if(accountingNoteEl){
+    var normalizedAccountingNote=normalizeReportAccountingNote(state.report.accountingNote);
+    state.report.accountingNote=normalizedAccountingNote;
+    accountingNoteEl.value=normalizedAccountingNote;
+  }
   // REPORT-UX-001: 保存済み値の復元後に未入力欄のみ defaults を補完する。
   //   保存済み値・入力済み値があれば ensureReportDateTimeDefaults は何もしない（冪等）。
   ensureReportDateTimeDefaults();
@@ -7527,7 +7583,7 @@ function updateReportFieldFromElement(el,eventType){
   }
   if(!key&&el.id&&el.id.indexOf('rep-')===0)key=el.id.substring(4);
   if(!key)return;
-  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局'};
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。'};
   // REPORT-UX-003A: prize は数値として保存する。空欄・負数・不正値は 7000 にフォールバック。
   //   0 は有効値として 0 のまま保存（normalizeReportPrize 内部で 0 を valid 扱い）。
   //   既存の string field (date/place/start/end/sei/fuku/note) の保存挙動は変えない。
@@ -7617,6 +7673,14 @@ function updateReportFieldFromElement(el,eventType){
     var normalizedOfficeName=normalizeReportOfficeName(el.value);
     state.report.officeName=normalizedOfficeName;
     if(eventType==='change')el.value=normalizedOfficeName;
+  } else if(key==='accountingNote'){
+    // REPORT-UX-007B-1: accountingNote (textarea) は両端 trim + 空欄 fallback で正規化、**中間改行は維持**。
+    //   footer 2行目 '※役員会で…' の文言全体を state.report.accountingNote から取得するため、
+    //   空欄 change → default 文言に戻す（note と異なり「非表示」運用ではない）。
+    //   IME-safe: textarea 内の日本語 IME composing を壊さないよう DOM 書き戻しは change 時のみ。
+    var normalizedAccountingNote=normalizeReportAccountingNote(el.value);
+    state.report.accountingNote=normalizedAccountingNote;
+    if(eventType==='change')el.value=normalizedAccountingNote;
   } else {
     state.report[key]=el.value;
   }
@@ -7661,6 +7725,17 @@ function bindReportEvents(){
     var officeNameChangeHandler=function(e){ updateReportFieldFromElement(e.target||officeNameEl_bind,'change'); };
     officeNameEl_bind.addEventListener('input',officeNameInputHandler);
     officeNameEl_bind.addEventListener('change',officeNameChangeHandler);
+  }
+  // REPORT-UX-007B-1: 'accountingNote' は DOM id が `rep-accounting-note`（kebab-case）で state key が
+  //   `accountingNote`（camelCase）。officeName と同じく id-suffix 自動導出と一致しないため
+  //   明示的に data-report-field を付与してから input/change を bind する。
+  var accountingNoteEl_bind=document.getElementById('rep-accounting-note');
+  if(accountingNoteEl_bind){
+    if(accountingNoteEl_bind.setAttribute)accountingNoteEl_bind.setAttribute('data-report-field','accountingNote');
+    var accountingNoteInputHandler=function(e){ updateReportFieldFromElement(e.target||accountingNoteEl_bind,'input'); };
+    var accountingNoteChangeHandler=function(e){ updateReportFieldFromElement(e.target||accountingNoteEl_bind,'change'); };
+    accountingNoteEl_bind.addEventListener('input',accountingNoteInputHandler);
+    accountingNoteEl_bind.addEventListener('change',accountingNoteChangeHandler);
   }
   var btn=document.getElementById('downloadReportBtn');
   if(btn)btn.addEventListener('click',downloadReport);
