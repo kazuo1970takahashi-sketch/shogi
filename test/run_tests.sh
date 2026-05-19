@@ -888,6 +888,22 @@ else
 fi
 
 # ============================================
+# REPORT-UX-007A footer 1行目 FAX番号 / 事務局名 state-as-SoT / IME-safe 単体テスト
+# ============================================
+echo ""
+echo "【REPORT-UX-007A footer 1行目 FAX番号 / 事務局名 state-as-SoT / IME-safe】"
+if [ -f "$SCRIPT_DIR/test_report_ux_007a.js" ]; then
+  if node "$SCRIPT_DIR/test_report_ux_007a.js" "$TARGET" > /tmp/report_ux_007a_out.log 2>&1; then
+    ok "REPORT-UX-007A テスト 全PASS ($(tail -1 /tmp/report_ux_007a_out.log))"
+  else
+    ng "REPORT-UX-007A テスト 失敗"
+    cat /tmp/report_ux_007a_out.log
+  fi
+else
+  warn "test_report_ux_007a.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""

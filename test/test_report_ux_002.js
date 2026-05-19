@@ -123,8 +123,18 @@ assert(/prize\s*=\s*7000/.test(drBody) === false,
   'S7-6 賞金額 prize=7000 ハードコード literal は REPORT-UX-003A で撤去済み');
 assert(/normalizeReportPrize\s*\(/.test(drBody),
   'S7-6b 003A: downloadReport が normalizeReportPrize() を呼ぶ');
-assert(drBody.indexOf('FAX（943-9443）') >= 0,
-  'S7-7 FAX 番号末尾文言は本 PR では維持（REPORT-UX-003+ 持ち越し）');
+// REPORT-UX-007A で本 defer は解消済み。fax / officeName は state.report 経由に。
+//   旧 002 時点の 'FAX（943-9443）' / '沼津支部事務局' ハードコード literal は撤去された。
+//   default 値同期のため、レンダリング後の HTML には引き続き 'FAX（943-9443）' が現れる
+//   （C3-3 で検証）。本 S7-7 では downloadReport 本体に literal が残っていないことを確認する。
+assert(drBody.indexOf('FAX（943-9443）') === -1,
+  'S7-7 FAX 番号 literal は REPORT-UX-007A で撤去済み（state.report.fax 経由）');
+assert(/normalizeReportFax\s*\(/.test(drBody),
+  'S7-7b 007A: downloadReport が normalizeReportFax() を呼ぶ');
+assert(drBody.indexOf("'沼津支部事務局'") === -1 && drBody.indexOf('"沼津支部事務局"') === -1,
+  'S7-7c 事務局名 literal は REPORT-UX-007A で撤去済み（state.report.officeName 経由）');
+assert(/normalizeReportOfficeName\s*\(/.test(drBody),
+  'S7-7d 007A: downloadReport が normalizeReportOfficeName() を呼ぶ');
 
 // ============================================================
 // SECTION B: 振る舞いテスト (loadEnv 経由)
