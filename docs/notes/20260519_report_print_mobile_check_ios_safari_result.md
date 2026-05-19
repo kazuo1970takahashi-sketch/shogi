@@ -102,11 +102,12 @@
 
 iPhone Safari の Minor Issue を踏まえた後続タスク候補。**いずれも今回は着手しない**。
 
-- **`REPORT-PRINT-005B`** — スマホ向け print fallback UI 棚卸し
+- **`REPORT-PRINT-005B`** — スマホ向け注意書き追加
+  - 運営マニュアル / `index.html` / アプリ内ヘルプに「iPhone Safari では共有ボタン経由でプリント」「自動印刷ダイアログが出ない端末がある」等の注意書きを追加するかの設計
+  - Minor Issue を運用回避するための docs 側対応
+- **`REPORT-PRINT-005C`** — auto print fallback UI 棚卸し
   - `win.print()` が iPhone Safari で自動発火しない問題への対応設計
   - 別ウィンドウ内に「印刷する」ボタン配置案 / 共有ボタン誘導案内など
-- **`REPORT-PRINT-005C`** — iPhone Safari 向け操作案内の追加検討
-  - 運営マニュアル / `index.html` / アプリ内ヘルプに「共有ボタン経由でプリント」案内を追加するかの設計
 - **`REPORT-PRINT-005D`** — PDF 保存 / HTML 保存導線の要件棚卸し
   - 「印刷ダイアログ → PDF 保存」が成立しない端末向けに、HTML 直接保存（`<a download>`）や Web Share API による代替経路の要件整理
 - **`REPORT-PRINT-003 follow-up`** — `printPairings()` の氏名表示位置ズレ調整
