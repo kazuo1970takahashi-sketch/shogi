@@ -920,6 +920,22 @@ else
 fi
 
 # ============================================
+# REPORT-PRINT-003 printPairings 印刷専用 HTML 生成テスト
+# ============================================
+echo ""
+echo "【REPORT-PRINT-003 printPairings 全クラスの現ラウンド組み合わせ印刷】"
+if [ -f "$SCRIPT_DIR/test_report_print_003.js" ]; then
+  if node "$SCRIPT_DIR/test_report_print_003.js" "$TARGET" > /tmp/report_print_003_out.log 2>&1; then
+    ok "REPORT-PRINT-003 テスト 全PASS ($(tail -1 /tmp/report_print_003_out.log))"
+  else
+    ng "REPORT-PRINT-003 テスト 失敗"
+    cat /tmp/report_print_003_out.log
+  fi
+else
+  warn "test_report_print_003.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
