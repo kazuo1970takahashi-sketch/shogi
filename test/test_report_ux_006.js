@@ -11,7 +11,7 @@
 //     A6. bindReportEvents の field list に 'place' が含まれる
 //     A7. updateReportFieldFromElement で key==='place' 分岐があり normalizeReportPlace 経由 + change 時 DOM 同期
 //     A8. downloadReport が normalizeReportPlace(state.report.place) 経由で place を取得し
-//         「場所」行を維持・escapeHtml(place) を維持
+//         「会場」行を維持・escapeHtml(place) を維持 (REPORT-UX-008-1 で「場所」→「会場」改名)
 //
 //   B. normalizeReportPlace helper 単体
 //     B1. 通常文字列: '公民館' → '公民館'
@@ -39,7 +39,7 @@
 //     D5b. ' 公民館 ' change → trim 後の '公民館' が state / DOM 両方
 //
 //   E. downloadReport 連動
-//     E1. state.report.place='公民館' → HTML 内に '公民館' が出る (場所行)
+//     E1. state.report.place='公民館' → HTML 内に '公民館' が出る (会場行)
 //     E2. DOM #rep-place.value と state.report.place が違う場合、state が優先
 //     E3. state.place='' / null / '  ' → '労政会館' fallback
 //     E4. escapeHtml(place) が維持される (XSS)
@@ -136,9 +136,9 @@ assert(/function\s+normalizeReportPlace\s*\(/.test(htmlSrc),
   const body = m ? m[0] : '';
   assert(/normalizeReportPlace\s*\(/.test(body),
     'A8-1 downloadReport が normalizeReportPlace() を呼ぶ');
-  // 「場所」行が HTML 組立内に含まれる
-  assert(/>場所</.test(body),
-    'A8-2 downloadReport の HTML 組立内に「場所」ラベルセルがある');
+  // 「会場」行が HTML 組立内に含まれる (REPORT-UX-008-1)
+  assert(/>会場</.test(body),
+    'A8-2 downloadReport の HTML 組立内に「会場」ラベルセルがある');
   // place 由来の値が escapeHtml 経由で組み立てに使われる
   assert(/escapeHtml\s*\(\s*place\s*\)/.test(body),
     'A8-3 downloadReport が escapeHtml(place) で出力する');
@@ -461,20 +461,20 @@ function makeBaseState(reportOverrides){
 // SECTION E: downloadReport 連動
 // ============================================================
 
-// E1: state.report.place='公民館' → HTML 内に '公民館' (場所行)
+// E1: state.report.place='公民館' → HTML 内に '公民館' (会場行)
 {
   const env = loadEnv(targetPath);
   env._setState(makeBaseState({date:'2026-05-18',start:'13:00',end:'17:00',place:'公民館'}));
   seedReportDom(env._ctx, {date:'2026-05-18',place:'公民館',start:'13:00',end:'17:00',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部'});
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  assert(html.indexOf('>場所<') >= 0,
-    'E1-1 HTML に「場所」ラベル td がある');
+  assert(html.indexOf('>会場<') >= 0,
+    'E1-1 HTML に「会場」ラベル td がある');
   assert(html.indexOf('公民館') >= 0,
     'E1-2 HTML 内に "公民館" が出る');
-  // 場所ラベルセルと組合せ
-  assert(/>場所<[^]*?公民館/.test(html),
-    'E1-3 「場所」ラベルセルの後に "公民館" が出る');
+  // 会場ラベルセルと組合せ
+  assert(/>会場<[^]*?公民館/.test(html),
+    'E1-3 「会場」ラベルセルの後に "公民館" が出る');
 }
 
 // E2: state-as-SoT - DOM と state が異なる場合、state が優先

@@ -225,7 +225,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
           <input type="date" id="rep-date" style="width:100%">
         </div>
         <div>
-          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">場所</label>
+          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">会場</label>
           <input type="text" id="rep-place" value="労政会館" style="width:100%">
         </div>
         <div>
@@ -1111,8 +1111,9 @@ function normalizeReportAccountingNote(value){
   return '※役員会で会計長へ収支報告書として提出ください。';
 }
 
-// REPORT-UX-006A: 会場（場所）正規化 pure helper。
-//   既定値: '労政会館'。ラベル「場所」は downloadReport 側で付与し、state には純粋な会場名のみを保存する。
+// REPORT-UX-006A: 会場 正規化 pure helper。
+//   既定値: '労政会館'。ラベル「会場」は downloadReport 側で付与し、state には純粋な会場名のみを保存する。
+//   ラベル文言: REPORT-UX-008-1 で「場所」→「会場」に変更（内部 field 名 state.report.place は維持）。
 //   - 文字列なら trim する
 //   - 結果が空文字なら（'' / '   ' 等）既定値 '労政会館' に fallback
 //   - null / undefined / 数値・配列等の非文字列もすべて既定値 fallback
@@ -7195,7 +7196,7 @@ function downloadReport(){
     +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+escapeHtml(date)+'</td></tr>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">時間</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+escapeHtml(start)+' 〜 '+escapeHtml(end)+'</td></tr>'
-    +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">場所</td>'
+    +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">会場</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+escapeHtml(place)+'</td></tr>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">担当役員</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;width:80px">正</td>'
@@ -7618,7 +7619,7 @@ function updateReportFieldFromElement(el,eventType){
     if(eventType==='change')el.value=normalizedOrganizer;
   } else if(key==='place'){
     // REPORT-UX-006A: place は trim + 空欄 fallback で正規化。state には純粋な会場名のみを保存。
-    //   ラベル「場所」は downloadReport 側で付与するため state には含めない。
+    //   ラベル「会場」は downloadReport 側で付与するため state には含めない（REPORT-UX-008-1 改名）。
     //   IME-safe: title / organizer と同じく、DOM 書き戻しは change イベント時のみに限定。
     //   input 時は state 更新と save のみ（日本語 IME composing 中のカーソル位置を壊さない）。
     var normalizedPlace=normalizeReportPlace(el.value);
