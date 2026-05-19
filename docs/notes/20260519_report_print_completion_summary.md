@@ -178,7 +178,7 @@
 | 結果記入欄付き対局カード | **Hold** | 紙とアプリのどちらを正とするかの整理が先 |
 | 過去ラウンド再印刷 | **Hold** | 需要が出たら別モード |
 | 全ラウンド一括印刷 | **Hold** | 需要が出たら別モード |
-| 現在表示中クラスのみ印刷 | **Skip** | 全クラス印刷で十分（不要なクラスは skip 条件で自動除外） |
+| 現在表示中クラスのみ印刷 | **Hold** | 現時点では全クラス現在ラウンド印刷を採用（不要なクラスは skip 条件で自動除外）。多クラス大会で「片方のクラスだけ印刷したい」需要が顕在化したら後続候補として検討 |
 | HTML ファイル直接保存 | **Hold** | 「印刷ダイアログ → PDF として保存」で代替可。需要が出たら別タスク |
 | 既存 `.pairing-card` DOM の大改修 | **Skip** | 印刷専用 HTML を別途生成する方針で代替 |
 | print helper の共通化 | **Hold** | `downloadReport()` / `printResults()` / `printPairings()` の重複は後続候補。今回は独立性優先 |
@@ -249,7 +249,7 @@
 - **共有リスク**: Web Share API / メール / LINE 共有を実装する場合、誤送信・個人情報漏洩リスクへの設計対応（送信先確認 UI、同意フロー）が必要
 - **PDF 直接生成**: jsPDF + 日本語フォント (IPA ~5MB) でオフライン bundle が膨らむ。`docs/specs/_business_model.md:42` の「ネットワーク:会場 Wi-Fi 不安定前提 → 完全オフライン動作」と相性悪い
 - **依存追加**: `package.json` の runtime 依存はゼロを維持推奨。`devDependencies` は @playwright/test + html-validate のみ
-- **CI の linux VRT baseline**: GitHub Actions の ubuntu-latest と darwin で font rendering が微妙に異なる。新 UI 追加時は **CI artifact 由来で linux baseline を更新** する手順を REPORT-UX-007A / 007B-1 / REPORT-UX-008-1 / REPORT-PRINT-003 で確立済
+- **CI の linux VRT baseline**: GitHub Actions の ubuntu-latest と darwin で font rendering が微妙に異なる。新 UI 追加時は **CI artifact 由来で linux baseline を更新** する手順を REPORT-UX-007A / 007B-1 / REPORT-PRINT-003 で確立済（REPORT-UX-008-1 はラベル文字のみの変更で `maxDiffPixelRatio: 0.05` 閾値内に収まり baseline 更新自体が不要だったため、本手順の実例には含めない）
 - **印刷ダイアログの E2E**: Playwright で `window.print()` の検証は基本的にサポートされない。生成 HTML の **unit test** と **実機確認手順 docs** で補完する
 - **iOS Safari の `window.open` 制約**: ユーザージェスチャー直結でないとブロックされやすい。現状はすべて button click 直結のためほぼ OK だが、将来的に間接呼出しを追加する場合は要注意
 
