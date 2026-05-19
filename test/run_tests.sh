@@ -904,6 +904,22 @@ else
 fi
 
 # ============================================
+# REPORT-UX-007B footer 2行目 会計提出文 state-as-SoT / IME-safe 単体テスト
+# ============================================
+echo ""
+echo "【REPORT-UX-007B footer 2行目 会計提出文 state-as-SoT / IME-safe】"
+if [ -f "$SCRIPT_DIR/test_report_ux_007b.js" ]; then
+  if node "$SCRIPT_DIR/test_report_ux_007b.js" "$TARGET" > /tmp/report_ux_007b_out.log 2>&1; then
+    ok "REPORT-UX-007B テスト 全PASS ($(tail -1 /tmp/report_ux_007b_out.log))"
+  else
+    ng "REPORT-UX-007B テスト 失敗"
+    cat /tmp/report_ux_007b_out.log
+  fi
+else
+  warn "test_report_ux_007b.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
