@@ -174,6 +174,14 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
     </div>
   </div>
   <div id="pane-tournament" style="display:none">
+    <!-- REPORT-PRINT-003: 全クラスの現ラウンド組み合わせを印刷するボタン。
+         no-print: 印刷時はボタン自体を隠す（クリックはブラウザ印刷経路ではなく専用 HTML 経路）。
+         配置: pane-tournament-grid のクラス別 action bar（リセット / 再生成）と物理的に離すため
+         tournament pane の上部に独立 row として配置する。文言は printResults / downloadReport と
+         整合: 「現在の組み合わせを印刷 / PDF保存」。 -->
+    <div style="margin-bottom:12px;text-align:right" class="no-print">
+      <button type="button" class="btn-primary" onclick="printPairings()">現在の組み合わせを印刷 / PDF保存</button>
+    </div>
     <!-- ROUND-CLASS-START-005 (spec §15.1 / inventory §3.4): pane-{classId} は
          state.classes 駆動で ensureClassPaneDomNodes() が動的補完する。
          A/B は既存互換のため静的に保持。grid2 コンテナに id を付与し、
@@ -7046,6 +7054,116 @@ function printResults(){
   if(!win){URL.revokeObjectURL(url);alert('ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。');return;}
   win.focus();
   // B05: setTimeout(800) → load イベント、B08: 印刷後に afterprint で win.close()
+  win.addEventListener('load',function(){
+    win.addEventListener('afterprint',function(){win.close();});
+    win.print();
+  });
+  setTimeout(function(){URL.revokeObjectURL(url);},60000);
+}
+
+// REPORT-PRINT-003: 全クラスの現ラウンド組み合わせを印刷専用 HTML として出力する。
+//   downloadReport() / printResults() と同じ Blob + window.open + win.print() 方式を踏襲。
+//   state-as-SoT: 画面 DOM (.pairing-card) は読まず、state.pairings / state.players /
+//   state.results / state.classes から印刷用 HTML を組み立てる（DOM 直読み禁止）。
+//   classes-driven: getRegistrationClassList() で全クラスを走査し、A/B 固定 literal を避ける。
+//   印刷対象クラスの条件: isClassStarted(cls) かつ done でなく state.pairings[cls].length>0。
+//   全クラスに印刷対象がない場合は alert で通知して return（空 HTML を開かない）。
+//   出力内容: 大会名 / 日付 / クラス名 / ラウンド番号 / 第 N 卓 / entry_no｜氏名 / vs。
+//   含めないもの: 勝敗入力 / 変更 / ▲勝 / submit/repair ボタン / class-action-bar /
+//     暫定成績 / 対戦履歴 / 過去結果 / 結果記入欄 / 市町村など個人情報。
+function printPairings(){
+  var classes=(typeof getRegistrationClassList==='function')?getRegistrationClassList():[];
+  // 印刷対象のクラスとそのペア配列を事前収集（state.pairings / state.results を参照）。
+  //   - 未開始 (isClassStarted=false) → skip（開始前に印刷物を出す価値なし）
+  //   - 全ラウンド消化済 (results.length >= rounds) → skip（done の class は新規ペアなし）
+  //   - 現ラウンドペア無し (pairings[cls].length===0) → skip
+  var printable=[];
+  for(var pci=0;pci<classes.length;pci++){
+    var pcc=classes[pci];
+    if(!pcc||(typeof isSafeClassId==='function'&&!isSafeClassId(pcc.id)))continue;
+    var pccid=pcc.id;
+    if(typeof isClassStarted==='function'&&!isClassStarted(pccid))continue;
+    var pccResults=(state.results&&Array.isArray(state.results[pccid]))?state.results[pccid]:[];
+    var pccRounds=Number(state.rounds)||0;
+    if(pccRounds>0&&pccResults.length>=pccRounds)continue;
+    var pccPairings=(state.pairings&&Array.isArray(state.pairings[pccid]))?state.pairings[pccid]:[];
+    if(pccPairings.length===0)continue;
+    printable.push({id:pccid,name:pcc.name||(pccid+'クラス'),roundNum:pccResults.length+1,pairs:pccPairings});
+  }
+  if(printable.length===0){
+    alert('現在印刷できる組み合わせがありません。\n大会を開始し、組み合わせが生成されてから実行してください。');
+    return;
+  }
+
+  // 大会名 / 日付は state.report SoT 経由で取得（normalize helper を必ず通す）。
+  //   日付は YYYY-MM-DD → 「YYYY年M月D日」表記に変換、未入力時は空文字で扱う。
+  var reportTitle=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):'沼津支部月例将棋大会';
+  var dateRaw=(typeof normalizeReportDateForInput==='function')?normalizeReportDateForInput(state.report&&state.report.date):'';
+  var dateDisplay=dateRaw&&typeof formatJapaneseDateFromYmd==='function'?formatJapaneseDateFromYmd(dateRaw):'';
+
+  // ファイル名用日付（YYYYMMDD、未入力時は空）と <title> 用文字列。
+  var dateNumForFile=dateRaw?dateRaw.split('-').join(''):'';
+  var fileTitleName=dateNumForFile
+    ?(reportTitle+'_'+dateNumForFile+'_現在の組み合わせ')
+    :(reportTitle+'_現在の組み合わせ');
+
+  // 各クラスごとに section を組み立て、class 間に page-break を入れる（複数クラスでも 1 クラス=1 ページ目安）。
+  //   card は CSS grid で 1 ページ複数カード、page-break-inside:avoid でカード途中での改ページを避ける。
+  function buildClassSection(cl){
+    var sec='<section class="cls-section">'
+      +'<h2 class="cls-h">'+escapeHtml(cl.name)+' — '+cl.roundNum+'回戦</h2>'
+      +'<div class="cards">';
+    for(var i=0;i<cl.pairs.length;i++){
+      var m=cl.pairs[i];
+      var n1=(typeof getNameWithNo==='function')?getNameWithNo(m.p1,cl.id):'';
+      var n2=(typeof getNameWithNo==='function')?getNameWithNo(m.p2,cl.id):'';
+      sec+='<div class="card">'
+        +'<div class="card-no">第 '+(i+1)+' 卓</div>'
+        +'<div class="card-body">'
+        +'<div class="card-player">'+escapeHtml(n1)+'</div>'
+        +'<div class="card-vs">vs</div>'
+        +'<div class="card-player">'+escapeHtml(n2)+'</div>'
+        +'</div>'
+        +'</div>';
+    }
+    sec+='</div></section>';
+    return sec;
+  }
+  var sectionsHtml=printable.map(buildClassSection).join('<div class="cls-pagebreak"></div>');
+
+  var headerLeft=escapeHtml(reportTitle);
+  var headerRight=dateDisplay?escapeHtml(dateDisplay):'';
+  var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
+    +'<title>'+escapeHtml(fileTitleName)+'</title>'
+    +'<style>@page{size:A4;margin:10mm}'
+    +'body{font-family:sans-serif;font-size:13px;padding:16px;color:#222}'
+    +'.doc-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #1F3864;padding-bottom:6px;margin-bottom:12px}'
+    +'.doc-title{font-size:18px;font-weight:bold;color:#1F3864}'
+    +'.doc-date{font-size:13px;color:#444}'
+    +'.doc-sub{font-size:14px;color:#444;margin-bottom:12px}'
+    +'.cls-section{margin-bottom:16px}'
+    +'.cls-h{font-size:15px;font-weight:bold;color:#1F3864;border-left:4px solid #1F3864;padding-left:10px;margin:0 0 8px}'
+    +'.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}'
+    +'.card{border:1px solid #888;border-radius:6px;padding:10px 12px;page-break-inside:avoid;break-inside:avoid;position:relative}'
+    +'.card-no{position:absolute;top:6px;left:6px;background:#1F3864;color:#fff;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:4px}'
+    +'.card-body{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:22px}'
+    +'.card-player{font-size:14px;font-weight:bold;color:#222;text-align:center;flex:1;word-break:break-word}'
+    +'.card-vs{font-size:12px;color:#888;font-weight:500}'
+    +'.cls-pagebreak{page-break-before:always;break-before:page}'
+    +'@media print{body{padding:0}}</style></head><body>'
+    +'<div class="doc-head"><div class="doc-title">'+headerLeft+'</div>'
+    +(headerRight?'<div class="doc-date">'+headerRight+'</div>':'')
+    +'</div>'
+    +'<div class="doc-sub">現在の組み合わせ</div>'
+    +sectionsHtml
+    +'</body></html>';
+
+  var blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var win=window.open(url,'_blank');
+  if(!win){URL.revokeObjectURL(url);alert('ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。');return;}
+  win.focus();
+  // downloadReport/printResults と同じ load → print → afterprint→close パターン。
   win.addEventListener('load',function(){
     win.addEventListener('afterprint',function(){win.close();});
     win.print();
