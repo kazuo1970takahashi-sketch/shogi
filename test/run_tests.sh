@@ -936,6 +936,22 @@ else
 fi
 
 # ============================================
+# REPORT-PRINT-006-1 printResults title/date state.report 連動テスト
+# ============================================
+echo ""
+echo "【REPORT-PRINT-006-1 printResults title/date state.report 連動】"
+if [ -f "$SCRIPT_DIR/test_report_print_006.js" ]; then
+  if node "$SCRIPT_DIR/test_report_print_006.js" "$TARGET" > /tmp/report_print_006_out.log 2>&1; then
+    ok "REPORT-PRINT-006-1 テスト 全PASS ($(tail -1 /tmp/report_print_006_out.log))"
+  else
+    ng "REPORT-PRINT-006-1 テスト 失敗"
+    cat /tmp/report_print_006_out.log
+  fi
+else
+  warn "test_report_print_006.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""

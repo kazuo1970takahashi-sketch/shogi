@@ -7031,8 +7031,32 @@ function printResults(){
   var pageBreakHtml='<div style="page-break-before:always"></div>';
   var tablesHtml=tables.join(pageBreakHtml);
 
+  // REPORT-PRINT-006-1: <title> / PDF 保存時のデフォルトファイル名を state.report.title /
+  //   state.report.date 連動にする（downloadReport / printPairings と命名規約を統一）。
+  //   旧仕様: '沼津支部月例将棋大会 対戦成績' + '沼津支部_<y>年<m>月度_月例将棋大会結果' の固定 literal
+  //   旧仕様の日付は実行日 new Date() ベースで、state.report.date と無関係 → 大会後に別日印刷すると
+  //   大会日ではなく印刷日がファイル名に入る運用バグがあった。
+  //   新仕様: '<reportTitle>_<YYYYMMDD>_対戦成績' を escapeHtml して <title> に直接代入（1 段階）。
+  //   - reportTitle = normalizeReportTitle(state.report.title)（default '沼津支部月例将棋大会'）
+  //   - dateNum: state.report.date が有効なら YYYYMMDD、空 / 不正なら実行日 fallback（既存挙動温存）
+  //   h2 '<h2>スイス式トーナメント　対戦成績</h2>' は今回スコープ外として変更しない
+  //   （帳票本文への大会名 / 日付追加は別タスク後続候補、test_rank_print_001 の 4-2-a も維持）。
+  var reportTitle=normalizeReportTitle(state.report&&state.report.title);
+  var reportDateRaw=normalizeReportDateForInput(state.report&&state.report.date);
+  var dateNum;
+  if(reportDateRaw){
+    dateNum=reportDateRaw.split('-').join('');
+  } else {
+    var now=new Date();
+    var y=now.getFullYear();
+    var m=('0'+(now.getMonth()+1)).slice(-2);
+    var d=('0'+now.getDate()).slice(-2);
+    dateNum=String(y)+m+d;
+  }
+  var fileTitleName=reportTitle+'_'+dateNum+'_対戦成績';
+
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
-    +'<title>沼津支部月例将棋大会 対戦成績</title>'
+    +'<title>'+escapeHtml(fileTitleName)+'</title>'
     +'<style>@page{size:A4;margin:10mm}'
     +'body{font-family:sans-serif;font-size:13px;padding:16px}'
     +'h2{font-size:16px;color:#1F3864;border-left:4px solid #1F3864;padding-left:10px;margin-bottom:8px}'
@@ -7043,11 +7067,6 @@ function printResults(){
     +tablesHtml
     +'</body></html>';
 
-  var now=new Date();
-  var y=now.getFullYear();
-  var m=('0'+(now.getMonth()+1)).slice(-2);
-  var title='沼津支部_'+y+'年'+m+'月度_月例将棋大会結果';
-  html=html.replace('<title>沼津支部月例将棋大会 対戦成績</title>','<title>'+title+'</title>');
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob);
   var win=window.open(url,'_blank');
