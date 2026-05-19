@@ -54,8 +54,9 @@
 - `URL.createObjectURL(blob)` で blob URL を発行
 - `window.open(blobUrl, '_blank')` で新規タブを開く
 - 新規タブ側で `win.print()` を呼ぶ
-- 新規タブ側で `afterprint` をハンドルし `URL.revokeObjectURL` + `window.close()`
-- popup blocked（`window.open` が null）/ 印刷対象なし時は alert + return
+- 新規タブ側で `afterprint` をハンドルし `win.close()`（タブを閉じる）
+- Blob URL は popup blocked 時（`window.open` が null）に **即時 `URL.revokeObjectURL`**、通常時は親側の **`setTimeout(60000)` で 60 秒後に `URL.revokeObjectURL`** される
+- popup blocked / 印刷対象なし時は alert + return
 
 ---
 
@@ -125,10 +126,10 @@
 - [ ] 自動で出ない場合、ブラウザメニューから手動で印刷 / PDF 保存できるか
 - [ ] 「PDF として保存」/「ファイルに保存」/「Books に追加」が選べるか
 - [ ] iOS Safari の共有ボタン経由でも PDF として保存できるか
-- [ ] PDF タイトル / 保存ファイル名候補が期待通りか
-  - `downloadReport()`: `state.report.title` 連動（接尾辞「報告書」を含む）
+- [ ] PDF タイトル / 保存ファイル名候補が `state.report.title` / `state.report.date` と整合しているか
+  - `downloadReport()`: `state.report.title` 連動（接尾辞「報告書」を含む）+ `state.report.date` 連動
   - `printResults()`: `state.report.title` / `state.report.date` 連動（REPORT-PRINT-006-1）
-  - `printPairings()`: `state.report.title` 連動
+  - `printPairings()`: `state.report.title` 連動 + 日付がある場合は `state.report.date` 由来の `YYYYMMDD` が `<title>` / 保存ファイル名候補に反映される（接尾辞「現在の組み合わせ」付き）
 - [ ] 日本語が文字化けしないか（タイトル / 氏名 / 注釈 / footer）
 - [ ] A4 縦で崩れないか
 - [ ] 余計な操作ボタン（変更 / 確定 / 再生成 / リセット / 暫定成績 / 対戦履歴 / 過去結果 / 勝敗入力）が印刷物に混入していないか
@@ -187,7 +188,7 @@
    - C ポイント
 5. **entry_no が表示されていないこと**（RANK-PRINT-001）
 6. `<title>` / 保存ファイル名候補が `state.report.title` / `state.report.date` 連動であること（REPORT-PRINT-006-1）
-7. 大会日（`state.report.date`）と実機の今日の日付が違う場合でも、印刷物の日付見出しが **大会日ベース** になっていること
+7. 大会日（`state.report.date`）と実機の今日の日付が違う場合でも、`<title>` / PDF 保存時のデフォルト名相当が **大会日（`state.report.date`）ベース** になっていること（本文 h2 は「スイス式トーナメント 対戦成績」固定で、本文側に大会日見出しは出ない前提）
 
 ### 6.3 `printPairings()`（現在の組み合わせ）
 
