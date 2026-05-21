@@ -115,11 +115,33 @@ synthetic 専用 E2E では、以下を確認対象に **しない**（=fixture 
 
 ## 9. CI との関係
 
-- 初回の synthetic 専用 E2E 追加 PR では、**既存 CI discovery により自動実行される** 可能性が高い（`test/e2e/` 配下を拾う設定であれば追加 spec も自動的に検知される想定）。
+- 初回の synthetic 専用 E2E 追加 PR では、**既存 CI discovery により自動実行される** 可能性が高い（`test/e2e/` 配下を拾う設定であれば追加 spec も自動的に検知される想定）。実際の discovery 挙動の確認は 003D-4D-1 実装時に行うが、本設計の前提としては「追加だけで CI 上に新 spec が現れる」想定で進める。
 - ただし、**旧 E2E を外す CI 変更は今回（003D-4D / 4D-1）では行わない**。
 - CI 対象変更は **003D-4E / 003D-4E-1** で別途設計・承認する（情報露出範囲を 003Z §5 Phase 2 note に従って事前定義する）。
 - synthetic 専用 E2E が CI で pass することは **短期 Done 条件の一部**。
 - CI artifact / trace / screenshot / video に **出てよい値は完全架空値に限る**。実データ・実データ由来値・実データ寄りの件数や日付は spec / fixture いずれにも出さない。
+
+### 9.1 安全性保証の範囲（重要）
+
+003D-4D / 003D-4D-1 で安全性を保証する対象は **限定的** である。誤読を避けるため、本節で範囲を明示する。
+
+- **保証する範囲**：
+  - 新規 synthetic 専用 E2E spec **自体の出力**（その spec が生成する artifact / trace / screenshot / video / debug output）が **完全架空値に限定** されること。
+  - 新規 spec が参照する fixture が **完全架空 fixture のみ** であること。
+  - 新規 spec が `data/import/20260412_participants.json` を **参照しない** こと。
+
+- **保証しない範囲**：
+  - **CI 全体** の artifact / trace / screenshot / video の完全な安全化。
+  - 旧 E2E spec (`test/e2e/shogi_phase2_import.spec.js`) は依然として CI 対象に残る可能性があり、旧 spec 由来の artifact / trace / screenshot / video には **実データ由来に見える値** が出続ける可能性がある。
+  - したがって、003D-4D / 003D-4D-1 が完了しただけでは、**CI 全体の旧 E2E 依存解除は達成されない**。
+
+- **役割分担**：
+  - 「**synthetic 専用 E2E の出力安全性**」 ← 003D-4D / 003D-4D-1 のスコープ
+  - 「**CI 全体の旧 E2E 依存解除**」 ← **003D-4E / 003D-4E-1** のスコープ
+  - この 2 つは **別タスク** として扱い、Done 判定も独立。
+  - 旧 E2E の CI 対象除外（および artifact / trace / screenshot / video からの旧 spec 出力消失）は **003D-4E / 003D-4E-1** で diff-safe に扱う。
+
+> 言い換えれば、003D-4D-1 を merge した時点では「**安全な新系統が CI に追加された**」状態にすぎず、「**旧系統が CI から消えた**」状態にはならない。両方が揃って初めて、CI 全体としての旧 E2E 依存解除が成立する。
 
 ## 10. 後続タスク候補
 
