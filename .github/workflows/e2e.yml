@@ -64,8 +64,15 @@ jobs:
         run: npm ci
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - name: Run Playwright tests
-        run: npx playwright test
+      - name: Run Playwright tests (safe-side E2E only)
+        # SHOGI-TOUR-APPHQ-003D-4E-1: temporary safe-side narrowing.
+        # CI E2E is limited to the synthetic-fixture-only Phase 2 import
+        # spec to prevent CI artifacts (logs / traces / screenshots /
+        # videos / failure output) from surfacing operational values
+        # via the real-data dependent legacy spec. Other E2E specs are
+        # intentionally left out of CI for now; safe-side widening is
+        # follow-up scope (see docs/operations/shogi_tour_apphq_003d4e_*).
+        run: npx playwright test test/e2e/shogi_phase2_import_synthetic.spec.js
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
