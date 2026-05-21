@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Fixture User 001",
+    "city": "Dummy City 001",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "fixture_date_001",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. Not derived from real data."
+  },
+  {
+    "name": "Fixture User 002",
+    "city": "Dummy City 002",
+    "grade": "",
+    "last_class": "B",
+    "last_played": "fixture_date_002",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. Not derived from real data."
+  },
+  {
+    "name": "Fixture User 003",
+    "city": "Dummy City 001",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "fixture_date_003",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. Not derived from real data."
+  },
+  {
+    "name": "Fixture User 004",
+    "city": "Dummy City 002",
+    "grade": "",
+    "last_class": "B",
+    "last_played": "fixture_date_004",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. Not derived from real data."
+  }
+]
