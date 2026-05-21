@@ -1,0 +1,89 @@
+name: E2E
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-test:
+    name: Unit (run_tests.sh)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run unit test suite
+        run: |
+          set -o pipefail
+          OUT=$(bash test/run_tests.sh shogi_v4.html | tee /dev/stderr)
+          # FAIL は 0 必須。PASS は今後増えるので "FAIL=0" のみゲート
+          echo "$OUT" | grep -qE "PASS=[0-9]+, FAIL=0" || { echo "::error::run_tests.sh did not report FAIL=0"; exit 1; }
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: npm audit（高・致命的脆弱性のみFAIL）
+        run: npm audit --audit-level=high
+      - name: HTMLバリデーション（index.html / shogi_v4.html）
+        run: npx html-validate index.html shogi_v4.html
+      - name: Secrets検出（APIキー・パスワードのコミット漏れ）
+        uses: trufflesecurity/trufflehog@v3.95.3
+        with:
+          path: ./
+          base: HEAD~1
+          head: HEAD
+          extra_args: --only-verified
+
+  e2e-test:
+    name: E2E (Playwright)
+    needs: [unit-test, security-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright tests (safe-side E2E only)
+        # SHOGI-TOUR-APPHQ-003D-4E-1: temporary safe-side narrowing.
+        # CI E2E is limited to the synthetic-fixture-only Phase 2 import
+        # spec to prevent CI artifacts (logs / traces / screenshots /
+        # videos / failure output) from surfacing operational values
+        # via the real-data dependent legacy spec. Other E2E specs are
+        # intentionally left out of CI for now; safe-side widening is
+        # follow-up scope (see docs/operations/shogi_tour_apphq_003d4e_*).
+        run: npx playwright test test/e2e/shogi_phase2_import_synthetic.spec.js
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+      - name: Upload test-results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          retention-days: 14
