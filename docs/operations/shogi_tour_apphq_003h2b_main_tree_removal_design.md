@@ -94,6 +94,35 @@ orphan branch / clean tree を構築する際の **必須原則**:
 - 新 tree の PR diff にも危険資産本文が出ないよう、**通常比較 PR ではなく、必要に応じて branch 切替 / repo 移行 / orphan 運用** を検討する。
 - GitHub 上の **PR 表示仕様に依存しない**（GitHub が "large diff" 等で折り畳んでも露出を防げないため、構造的に diff に出さない）。
 
+### 6.1 include list は「必要最小構成」の定義（絞り込み観点）
+
+- include list は **安全そうなファイルを一括コピーするための一覧ではなく、clean tree に本当に必要な最小構成を定義するための一覧** とする。
+- 安全資産であっても **無条件に全コピーしない**。
+- 以下は **原則含めない**:
+  - `archive` / `archived` / `backup` 系
+  - generated / build 成果物（`dist/` / `build/` / `node_modules/` / `playwright-report/` / `test-results/` 等）
+  - temporary（`tmp/` / `*.tmp` / `.DS_Store` / OS metadata）
+  - logs / debug output（`*.log` / 開発用ダンプ）
+  - 不要 docs（運用継続に必須でない過去設計の中間版・草稿）
+- docs は「**運用継続に必要なもの**」と「**事故対応記録として repo 外保管でもよいもの**」を分ける。
+- **まず最小公開・最小実行に必要なファイルから作る**。
+- 後から **safe-side widening** で安全確認済みファイルを追加する（003D-4E-2 と同方針）。
+- 必要性が不明なファイルは **デフォルトで含めない**（不確実なものは clean tree に入れない側に倒す）。
+
+### 6.2 clean tree 作成後の denylist 確認（必須）
+
+clean tree 作成直後、main 切替・Pages 復旧・PR 作成へ進む前に、**必ず denylist 確認** を行う。
+
+- **対象 JSON path**（`data/import/20260412_participants.json`）が新 tree に **含まれていない** ことを確認する。
+- **旧 E2E spec path**（`test/e2e/shogi_phase2_import.spec.js`）が新 tree に **含まれていない** ことを確認する。
+- 危険資産カテゴリ（`data/import/` 配下の他資産、旧 spec の関連ファイル）が新 tree に **含まれていない** ことを確認する。
+- 確認は **本文表示なし** で行う:
+  - 許可: `git ls-tree -r <ref> --name-only` / `git ls-files` / `find <path> -type f` / path 一覧の grep
+  - 禁止: `cat` / `head` / `tail` / `git show <ref>:<path>` / `git diff` で危険資産の本文を出すこと
+- **denylist 確認結果は、path hit / no hit のみで報告** する（hit したファイル名は記載してよいが、本文・サイズ推定・件数推定は出さない）。
+- **denylist hit がある場合は、main 切替・Pages 復旧・PR 作成へ進まず停止** する。原因を特定して include list / 構築手順を修正してから再実行する。
+- denylist 確認は 003H-2-C の **必須 Done 項目**（§14.2 参照）。
+
 ## 7. 推奨方式
 
 ### 7.1 短期推奨
@@ -212,10 +241,31 @@ orphan branch / clean tree を構築する際の **必須原則**:
 ### 14.2 003H-2-C の予定 Done
 
 - **実行方式が 1 つに絞られている**
-- **include list 方針** がある
+- **include list 方針** がある（§6.1 の最小構成原則に準拠）
 - **rollback 方針** がある
 - **Level 4 承認文が用意できる**
 - まだ削除・履歴改変は行わない
+
+#### 14.2.1 003H-2-C で確認すること（必須）
+
+- orphan clean branch が **作成できたこと**
+- include list に基づくファイルのみが入っていること
+- **denylist hit がないこと**（§6.2 / 対象 JSON path / 旧 E2E spec path / 危険資産カテゴリ）
+- Unit / synthetic E2E が **実行できる見込み** があること（実行は別承認）
+- **Pages は停止されたまま** であること
+
+#### 14.2.2 003H-2-C でまだ確認しない / 実行しないこと
+
+- main 切替
+- Pages 復旧
+- Git 履歴改変
+- repo 移行
+- 対象 JSON 本文確認
+- 旧 E2E spec 本文確認
+- 対外公開 / アナウンス
+- collaborator への push 通知（必要なら別承認・通知文事前確定）
+
+> **方針**: 003H-2-C は **orphan clean branch 作成と安全性確認（denylist 確認含む）まで** を Done とし、main 切替・Pages 復旧・履歴改変・repo 移行は **行わない**。branch 作成だけで確認すること / まだ確認しないことを **チェックリスト化してから** 実行する。チェックリストの hit / no hit / pass / fail は 003H-2-C 完了報告に必ず含める。
 
 ## 15. Risk Level
 
