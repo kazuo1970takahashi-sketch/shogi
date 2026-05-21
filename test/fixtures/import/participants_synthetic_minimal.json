@@ -4,39 +4,219 @@
     "city": "Dummy City 001",
     "grade": "",
     "last_class": "A",
-    "last_played": "fixture_date_001",
+    "last_played": "2026-04-12",
     "member": "",
     "yomi": "",
-    "_note": "Synthetic fixture record. Not derived from real data."
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
   },
   {
     "name": "Fixture User 002",
     "city": "Dummy City 002",
     "grade": "",
-    "last_class": "B",
-    "last_played": "fixture_date_002",
+    "last_class": "A",
+    "last_played": "2026-04-12",
     "member": "",
     "yomi": "",
-    "_note": "Synthetic fixture record. Not derived from real data."
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
   },
   {
     "name": "Fixture User 003",
-    "city": "Dummy City 001",
+    "city": "Dummy City 003",
     "grade": "",
     "last_class": "A",
-    "last_played": "fixture_date_003",
+    "last_played": "2026-04-12",
     "member": "",
     "yomi": "",
-    "_note": "Synthetic fixture record. Not derived from real data."
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
   },
   {
     "name": "Fixture User 004",
-    "city": "Dummy City 002",
+    "city": "Dummy City 004",
     "grade": "",
-    "last_class": "B",
-    "last_played": "fixture_date_004",
+    "last_class": "A",
+    "last_played": "2026-04-12",
     "member": "",
     "yomi": "",
-    "_note": "Synthetic fixture record. Not derived from real data."
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 005",
+    "city": "Dummy City 005",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 006",
+    "city": "Dummy City 006",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 007",
+    "city": "Dummy City 007",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 008",
+    "city": "Dummy City 008",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 009",
+    "city": "Dummy City 009",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 010",
+    "city": "Dummy City 010",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 011",
+    "city": "Dummy City 011",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 012",
+    "city": "Dummy City 012",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 013",
+    "city": "Dummy City 013",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 014",
+    "city": "Dummy City 014",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 015",
+    "city": "Dummy City 015",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 016",
+    "city": "Dummy City 016",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 017",
+    "city": "Dummy City 017",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 018",
+    "city": "Dummy City 018",
+    "grade": "",
+    "last_class": "A",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 019",
+    "city": "Dummy City 019",
+    "grade": "",
+    "last_class": "B",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 020",
+    "city": "Dummy City 020",
+    "grade": "",
+    "last_class": "B",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 021",
+    "city": "Dummy City 021",
+    "grade": "",
+    "last_class": "B",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
+  },
+  {
+    "name": "Fixture User 022",
+    "city": "Dummy City 022",
+    "grade": "",
+    "last_class": "B",
+    "last_played": "2026-04-12",
+    "member": "",
+    "yomi": "",
+    "_note": "Synthetic fixture record. last_played=2026-04-12 matches PHASE2_EXPECTED_DATE validator constant in shogi_v4.html (not derived from real participant data)."
   }
 ]

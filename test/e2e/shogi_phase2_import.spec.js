@@ -4,8 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
 
-// 取り込み対象データ(本番と同じ JSON ファイルを読み取る)
-const PHASE2_DATA_PATH = path.join(__dirname, '..', '..', 'data', 'import', '20260412_participants.json');
+// 取り込み対象データ: 完全架空 (synthetic) fixture を参照する。
+// 実データ確定 JSON (data/import/20260412_participants.json) は参照しない。
+// fixture は 22 件 / A=18 / B=4 / last_played='2026-04-12' を満たすよう構築済み
+// (shogi_v4.html の PHASE2_EXPECTED_DATE/PHASE2_EXPECTED_TOTAL/A/B 制約に合わせる)。
+const PHASE2_DATA_PATH = path.join(__dirname, '..', 'fixtures', 'import', 'participants_synthetic_minimal.json');
 const PHASE2_DATA = JSON.parse(fs.readFileSync(PHASE2_DATA_PATH, 'utf-8'));
 
 const EMPTY_MASTER = {
@@ -192,8 +195,8 @@ test.describe('Phase 2 §6 #4/#6: 22 名 import 成功 + city 正規化', () => 
     expect(r.total).toBe(22);
     expect(r.countA).toBe(18);
     expect(r.countB).toBe(4);
-    expect(r.first.name).toBe('片山凱翔');
-    expect(r.first.city).toBe('御殿場市');
+    expect(r.first.name).toBe('Fixture User 001');
+    expect(r.first.city).toBe('Dummy City 001');
     expect(r.first.last_class).toBe('A');
     expect(r.first.last_attended).toBe('2026-04-12');
     expect(r.first.first_attended).toBe('2026-04-12');
@@ -346,7 +349,7 @@ test.describe('Phase 2 §6 #7: 過去参加者パネルに 22 名', () => {
 // §6 #8: F7 編集モーダルで 22 名分の yomi/member/grade 編集可能(代表 1 名で確認)
 // ============================================================
 test.describe('Phase 2 §6 #8: F7 編集 22 名対応', () => {
-  test('22 名 import 後、代表 1 名(片山凱翔)で yomi / member / grade / city 編集 → 保存 → 反映', async ({ page }) => {
+  test('22 名 import 後、代表 1 名(Fixture User 001)で yomi / member / grade / city 編集 → 保存 → 反映', async ({ page }) => {
     await setup(page, EMPTY_MASTER);
     await page.evaluate((data) => {
       const master = window.loadBranchMaster();
@@ -354,20 +357,20 @@ test.describe('Phase 2 §6 #8: F7 編集 22 名対応', () => {
       window.saveBranchMaster(result.newMaster);
     }, PHASE2_DATA);
     await page.click('#tab-master');
-    const row = page.locator('#pane-master tbody tr').filter({ hasText: '片山凱翔' });
+    const row = page.locator('#pane-master tbody tr').filter({ hasText: 'Fixture User 001' });
     await row.locator('.master-edit-btn').click();
-    await page.locator('#me-yomi').fill('かたやまがいと');
+    await page.locator('#me-yomi').fill('fixtureuser001yomi');
     await page.check('input[name="me-member"][value="member"]');
     await page.check('input[name="me-grade"][value="ippan"]');
-    await page.locator('#me-city').fill('御殿場市'); // 既存値
+    await page.locator('#me-city').fill('Dummy City 001'); // 既存値
     await page.locator('#me-save').click();
     await expect(page.locator('#master-edit-modal')).toHaveCount(0);
     const after = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')));
-    const m = after.members.find((m) => m.name === '片山凱翔');
-    expect(m.yomi).toBe('かたやまがいと');
+    const m = after.members.find((m) => m.name === 'Fixture User 001');
+    expect(m.yomi).toBe('fixtureuser001yomi');
     expect(m.member).toBe('member');
     expect(m.grade).toBe('ippan');
-    expect(m.city).toBe('御殿場市');
+    expect(m.city).toBe('Dummy City 001');
   });
 });
 
@@ -384,8 +387,8 @@ test.describe('Phase 2 §6 #10: backup → reset → import → restore round-tr
       window.saveBranchMaster(r.newMaster);
       // 1 名だけ手編集してから export
       const m2 = window.loadBranchMaster();
-      const target = m2.members.find((x) => x.name === '片山凱翔');
-      window.applyMasterMemberEdit(target.id, '片山凱翔', 'かたやまがいと', m2, { member: 'member', grade: 'ippan', city: '御殿場市' });
+      const target = m2.members.find((x) => x.name === 'Fixture User 001');
+      window.applyMasterMemberEdit(target.id, 'Fixture User 001', 'fixtureuser001yomi', m2, { member: 'member', grade: 'ippan', city: 'Dummy City 001' });
       window.saveBranchMaster(m2);
       const exportedJson = window.serializeBranchMasterForExport(window.loadBranchMaster());
       const exportedMaster = JSON.parse(exportedJson);
@@ -436,11 +439,11 @@ test.describe('Phase 2 §6 #6 補強: city UI 経由', () => {
       window.saveBranchMaster(result.newMaster);
     }, PHASE2_DATA);
     await page.click('#tab-master');
-    const row = page.locator('#pane-master tbody tr').filter({ hasText: '片山凱翔' });
+    const row = page.locator('#pane-master tbody tr').filter({ hasText: 'Fixture User 001' });
     await row.locator('.master-edit-btn').click();
     await page.locator('#me-city').fill('  長泉町  ');
     await page.locator('#me-save').click();
-    const m = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')).members.find((x) => x.name === '片山凱翔'));
+    const m = await page.evaluate(() => JSON.parse(localStorage.getItem('shogi_branch_master')).members.find((x) => x.name === 'Fixture User 001'));
     expect(m.city).toBe('長泉町');
   });
 });
