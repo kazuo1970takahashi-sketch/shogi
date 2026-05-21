@@ -91,7 +91,11 @@ SHOGI-TOUR-APPHQ-008 は、SHOGI-TOUR の本番環境を維持しながら、安
 
 #### 扱い
 - 原則として架空データのみ
-- 実データを使う場合は人間ローカル限定（AI に送らない）
+- 実データを使う場合は、**SHOGI-TOUR-APPHQ-003 Runbook または別承認で明示された範囲内**に限定する（無条件の例外ではない）
+- 実データ使用時も、人間のローカル環境で必要最小限かつ一時的に行う
+- 実データを AI に投入しない（個人向け・法人向けを問わず原則禁止）
+- 実データを含むスクリーンショット、ログ、JSON export、localStorage 内容を、チャット・PR 本文・レビューコメント・Issue・外部ストレージに貼付しない
+- 実データを Test 環境へコピーしない
 - localStorage の本番 key を汚染しない
 - 同一ブラウザで本番 URL を併用する場合、Origin / key prefix で分離する
 
@@ -158,8 +162,10 @@ SHOGI-TOUR-APPHQ-008 は、SHOGI-TOUR の本番環境を維持しながら、安
   - Production：`shogi_v4`
   - Test：`shogi_v4_test`
   - Development：`shogi_v4_dev`
-- 将来的には、環境変数または URL query / build flag / config object により storage prefix を切り替える。
-- 旧 `shogi_v3` 移行処理がある場合、Test / Development 環境で Production key を読まないよう注意する。
+- 将来的には、storage prefix の切替方式を導入する。後続の **SHOGI-TOUR-APPHQ-008B** では、**whitelist / build flag / config object 方式を優先**して検討する。
+- URL query 方式を採用する場合は、許可された環境名のみ受け付ける **whitelist を必須**とし、未定義値や誤入力時に **Production key へ fallback しない**設計とする（誤操作で Production key を読むリスクを避ける）。
+- **Test / Dev 環境が Production key を読まないこと**を最優先条件として設計する。
+- 旧 `shogi_v3` 移行処理がある場合、Test / Development 環境で Production key を読まないよう注意する。レガシー読み込みも whitelist の影響下に置く。
 - key 分離の実装変更は本文書では行わない。SHOGI-TOUR-APPHQ-008B で別 PR・別承認として扱う。
 
 ---
@@ -172,7 +178,9 @@ SHOGI-TOUR-APPHQ-008 は、SHOGI-TOUR の本番環境を維持しながら、安
 - 架空データは `sample` / `fixtures` / `test` 配下に配置する。
 - 架空データであることをファイル名・コメント・docs に明記する（例：`sample_` / `fixture_` / `_dummy` などの prefix・suffix）。
 - 本番データからの匿名化・仮名化は原則避ける（マスク漏れ・準識別子残存リスクのため）。
-- どうしても本番データ由来の検証が必要な場合は、人間ローカル限定で扱い、AI に渡さない。
+- どうしても本番データ由来の検証が必要な場合は、**SHOGI-TOUR-APPHQ-003 Runbook または別承認で明示された範囲内**に限定し、人間のローカル環境で必要最小限かつ一時的に扱う。AI への投入は禁止する。
+- 実データを含むスクリーンショット、ログ、JSON export、localStorage 内容は、チャット・PR 本文・レビューコメント・Issue・外部ストレージに貼付しない。
+- 実データを Test 環境へコピーしない（人間ローカル例外の場合も Test 環境へ持ち出さない）。
 - 既存の `test/data_*.json` / `test/fixtures/*.json` の架空性は別タスク（SHOGI-TOUR-APPHQ-008C）で確認する。本文書では確認しない。
 
 ---
@@ -222,6 +230,17 @@ SHOGI-TOUR-APPHQ-008 は、SHOGI-TOUR の本番環境を維持しながら、安
   - `gh-pages` branch = 公開
   - release tag = 公開判断
 - ただし、本文書では設定変更しない。分離設計は SHOGI-TOUR-APPHQ-008E で扱う。
+
+### 8.1 本 PR（#166）自体の merge 時の取扱い
+
+- PR #166 自体は docs-only であり、実装・設定変更は含まない。
+- ただし、SHOGI-TOUR では main merge が GitHub Pages 公開に影響し得るため、**PR #166 の merge 時も Production publish 相当の影響確認を人間が明示する**。
+- 具体的には、merge 承認者は以下を明示する。
+  - 本 PR が docs-only であり、公開アプリ（`shogi_v4.html` / `index.html` / `.github/workflows/` 等）の挙動を変更しないこと
+  - GitHub Pages 公開差分が docs のみであり、Production publish 相当のユーザー影響がないこと
+  - rollback 手順（必要なら revert PR）が明確であること
+- CI なしまたは CI 対象外（docs-only による Unit / Security / E2E スキップ等）の場合は、**N/A 扱いを人間が明示**する。CI なしを無条件に安全とは見なさない。
+- 本ルールは Approval Phrase で省略できない（APP-OPS-004 §2.1 precondition 確認の延長として扱う）。
 
 ---
 
@@ -277,7 +296,7 @@ SHOGI-TOUR-APPHQ-008 は、SHOGI-TOUR の本番環境を維持しながら、安
 
 | 作業 | Risk Level | 根拠 |
 |---|---|---|
-| 本 docs-only 設計文書作成 | Level 1 | 設計記述のみ、実データ未表示、設定変更なし |
+| 本 docs-only 設計文書作成 | **Level 3 相当**（docs-only） | 実装変更はないが、Production publish / 個人情報 / 実データ / 環境分離方針に関わるため、APP-OPS-003 の「docs-only でも個人情報 / Production / 権限に関わる場合は Level 3 以上」に従い、レビュー上は Level 3 相当として扱う |
 | localStorage key 分離の設計（docs-only） | Level 2〜3 | アプリ挙動に影響する設計、Production と隣接 |
 | localStorage key 分離の実装 | Level 3 | コード変更、本番データの読み書き境界に影響 |
 | 本番データ移行・退避・削除 | Level 3〜4 | 個人情報、不可逆性 |
