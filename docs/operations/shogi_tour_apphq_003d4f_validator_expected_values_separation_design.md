@@ -92,12 +92,14 @@ synthetic 用 validator が **確認しないこと**：
 - public API / helper を使う場合、E2E artifact に **実値が流れないよう** に設計する（戻り値を boolean / 相対値に限定するなど）。
 - 既存機能への **影響範囲を最小化** する（既存 import フローの挙動を変えない）。
 
+> 注: 上記の注意項目は、案 A / 案 C を採用する後続 PR（例: 003D-4F-2 等）が `shogi_v4.html` に触れる場合の **PR 本文テンプレ / レビューチェックリスト** にもそのまま流用する。Approval Phrase 設計とあわせて再利用することで、`shogi_v4.html` 変更の安全性評価軸を統一する。
+
 ## 7. 実装候補
 
 | 案 | 内容 | 評価 | メリット | デメリット |
 |---|---|---|---|---|
 | **A** | synthetic 専用 validator helper を `shogi_v4.html` に追加 | 候補 | synthetic 専用 E2E から安全に呼べる | アプリ本体変更となるため Level 3。影響確認が必要 |
-| **B** | E2E 側で fixture-driven expected values を計算する | **短期候補** | アプリ本体変更を回避できる。導入が早い | E2E 側ロジックが増える。既存 import 内部挙動の検証は限定的 |
+| **B** | E2E 側で fixture-driven expected values を計算する | **短期候補** | アプリ本体変更を回避できる。導入が早い | E2E 側ロジックが増える。既存 import 内部挙動の検証は限定的。**`shogi_v4.html` 内 validator 内部に残る固定条件そのものは解消しない**（解消には案 A または案 C への移行が必要） |
 | **C** | import 処理を pure helper 化し、validator と import 適用を分離する | 中期候補 | テスト容易性が高い。長期的に最も健全 | 設計・実装範囲が大きい |
 | **D** | 既存 validator を汎用化する | 候補だが注意 | 既存処理に近い | 旧実データ向け固定条件を誤って残すリスク |
 | **E** | synthetic fixture を既存 validator に合わせる | **不可** | （該当なし） | fixture が実データの件数・分布・固定日付へ寄り、003Z / 003D-4D 方針に反する |
@@ -110,6 +112,29 @@ synthetic 用 validator が **確認しないこと**：
 - synthetic 専用 E2E では、`fixture.length` / fixture 由来の class 集計 / 完全架空命名規則 を確認する。
 - 既存旧 E2E spec や実データ JSON には **触らない**。
 - `result.error` 文字列を E2E 側に出さない（003D-4D-1-FIX1 の Must Fix 2 と同方針）。
+
+#### 案 B で扱う範囲（短期で解決すること）
+
+- E2E 側の expected values を **fixture-driven** にする
+- synthetic fixture の値に基づく **相対チェック** を行う
+- `result.error` 文字列を E2E 側に **返さない**
+- 実データ由来に見える **固定期待値を新規追加しない**
+
+#### 案 B で解決しない範囲（短期で残ること）
+
+- `shogi_v4.html` 内部の validator 固定条件そのもの
+- import 処理内に残る実データ寄りの固定条件
+- 旧 E2E spec の安全問題（003D-4E / 003H / 003E / clean tree 検討側）
+- CI 対象から旧 E2E を外す問題（003D-4E / 003D-4E-1）
+
+#### 案 A / 案 C へ進む条件（案 B から escalate する条件）
+
+以下のいずれかに該当した場合、案 A または案 C への移行を検討する。
+
+- synthetic fixture で import **success 側** を検証するには、validator 内部の固定条件を外す必要がある場合
+- E2E 側の fixture-driven expected values だけでは **import 処理の妥当性確認が不足** する場合
+- validator / import 処理を **pure helper 化** した方が安全・保守的な場合
+- error message や helper 出力に **operational な値が残る** 場合（page 境界の内側で扱っても、artifact / trace / failure output に漏れる経路が残ると判断される場合）
 
 ### 中期推奨
 
@@ -161,12 +186,16 @@ synthetic 用 validator が **確認しないこと**：
 
 ### 003D-4F-1 の予定 Done
 
+003D-4F-1 はまず **案 B（E2E 側 fixture-driven）の範囲** を Done スコープとする。validator 内部の固定条件分離（案 A / C）は本タスクの Done に **含めない**（必要になれば §8「案 A / 案 C へ進む条件」に従って 003D-4F-2 等で別 PR・別承認）。
+
 - synthetic 専用 E2E が **fixture-driven expected values** で検証できる
 - 実データ JSON を **参照しない**
 - 既存旧 E2E spec を **変更しない**
 - fixture を実データ固定条件へ **寄せない**
 - `result.error` 文字列を E2E 側へ **出さない**
 - Unit / Security / E2E がすべて pass する
+
+> 注: 003D-4F-1 の Done では、`shogi_v4.html` 内部の validator 固定条件・旧 E2E spec の安全問題・CI 対象から旧 E2E を外す問題は **解決されない**（それぞれ案 A/C・003D-4E / 003H / 003E スコープ）。
 
 ## 13. Risk Level
 
