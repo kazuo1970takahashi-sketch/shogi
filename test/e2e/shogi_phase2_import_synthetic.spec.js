@@ -2,8 +2,8 @@
 // SHOGI-TOUR-APPHQ-003D-4D-1 — synthetic-fixture-only Phase 2 import e2e.
 //
 // This test uses ONLY synthetic fixture data. It is not derived from real
-// data. It does NOT reference data/import/20260412_participants.json and
-// does NOT reuse any literal from the existing import spec.
+// data. It does NOT reference any real-data import asset and does NOT
+// reuse any literal from the existing import spec.
 //
 // Scope (see docs/operations/shogi_tour_apphq_003d4d_synthetic_e2e_addition_design.md):
 //   - Confirms the synthetic fixture is parseable and synthetic-only.
@@ -27,9 +27,15 @@ const SYNTHETIC_FIXTURE_PATH = path.join(
 );
 const SYNTHETIC_FIXTURE = JSON.parse(fs.readFileSync(SYNTHETIC_FIXTURE_PATH, 'utf-8'));
 
+// Synthetic-only branch master seed. updated_at is intentionally a
+// non-date synthetic marker so this spec does not encode any fixed
+// datetime literal (per 003D-4D §7 / 003Z §3.1). normalizeBranchMaster
+// in shogi_v4.html accepts any non-numeric updated_at and falls back
+// safely; nothing in the import code path depends on this value being
+// a real timestamp.
 const EMPTY_MASTER = {
   schema_version: 1,
-  updated_at: '2026-05-08T00:00:00.000Z',
+  updated_at: 'synthetic_updated_at',
   members: []
 };
 
@@ -95,26 +101,32 @@ test.describe('Phase 2 import — synthetic fixture only (003D-4D-1)', () => {
     const r = await page.evaluate((data) => {
       const master = window.loadBranchMaster();
       const result = window.applyPhase2Import(data, master);
-      // Return only success / error / liveCount. We do NOT surface the
-      // validator's error messages here, to keep validator-internal
-      // operational-data constants out of test artifacts.
+      // We deliberately do NOT surface result.error or result.errors[] to
+      // the test process. validator error strings may contain operational
+      // constants; keeping them inside the page boundary avoids leaking
+      // them into Playwright traces / failure messages / artifacts.
       return {
         success: result.success,
-        errorType: result.error || null,
-        liveCount: typeof result.liveCount === 'number' ? result.liveCount : null,
+        hasError: Boolean(result.error),
+        newMemberCount: (result.newMaster && Array.isArray(result.newMaster.members))
+          ? result.newMaster.members.length
+          : null,
       };
     }, SYNTHETIC_FIXTURE);
 
     // Both outcomes confirm the import code path executed on synthetic data:
     //   - success === true: validator constraints already separated
-    //     (post 003D-4F-1). Synthetic input passes end-to-end.
-    //   - success === false with a non-empty error string: the call took a
-    //     deterministic branch (e.g. validation) without throwing. This is
-    //     the expected pre-separation outcome.
+    //     (post 003D-4F-1). Synthetic input passes end-to-end. In that
+    //     case the resulting member count is checked relative to the
+    //     synthetic fixture length (no operational count encoded).
+    //   - success === false with hasError === true: the call took a
+    //     deterministic branch (e.g. validation) without throwing. This
+    //     is the expected pre-separation outcome.
     expect(typeof r.success).toBe('boolean');
-    if (r.success === false) {
-      expect(typeof r.errorType).toBe('string');
-      expect(r.errorType && r.errorType.length).toBeGreaterThan(0);
+    if (r.success === true) {
+      expect(r.newMemberCount).toBe(SYNTHETIC_FIXTURE.length);
+    } else {
+      expect(r.hasError).toBe(true);
     }
   });
 });
