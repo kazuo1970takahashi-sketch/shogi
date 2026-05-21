@@ -68,7 +68,7 @@ SHOGI-TOUR-APPHQ-003H は、main に残存している実データ確定 JSON (`
 | **A** | 通常削除 PR で対象 JSON を削除 | **不可** | （該当なし） | 削除 diff に本文が表示される可能性。PR #169 で No Go 済 |
 | **B** | Git LFS pointer 化で実体を repo 外へ | 原則不可 / 要慎重 | （該当なし） | 履歴・実体・LFS 運用の複雑性増。本文露出リスクが残る可能性 |
 | **C** | clean tree / orphan branch による再構成 | **Level 4 候補** | 危険資産を含まない tree を新たに作れる可能性 | GitHub Pages / branch / history / CI / clone / PR 履歴への影響大 |
-| **D** | GitHub Pages 公開元を危険資産を含まない branch へ切替 | **Level 4 候補** | 公開 tree からの遮断に有効な可能性 | repository 本体には残る。Pages 設定変更を伴う |
+| **D** | GitHub Pages 公開元を危険資産を含まない branch へ切替 | **Level 4 候補（公開遮断策）** | 公開 tree からの遮断に有効な可能性 | repository 本体・main checkout には残る。Pages 設定変更を伴う。**現行 tree 撤去の Done を単独では満たさない** |
 | **E** | repo を新規 clean repo へ移行 | **Level 4 候補** | 履歴ごと危険資産を切り離せる | URL / Issues / PR / Actions / Pages / clone 先 / 運用影響が大きい |
 | **F** | 危険資産を通常 PR で空ファイルに置換 | **不可** | （該当なし） | 置換 diff で旧本文が表示される可能性 |
 | **G** | GitHub Web UI 上で対象ファイルを削除して PR を作る | **不可** | （該当なし） | 通常削除 PR と同じく diff 表示リスク |
@@ -97,6 +97,13 @@ SHOGI-TOUR-APPHQ-003H は、main に残存している実データ確定 JSON (`
 - 通常置換 PR
 - 旧 E2E spec の通常削除・通常編集
 - PR diff に本文が出る方式（案 A / B / F / G）
+
+### 5.4 案 D の位置づけ（公開遮断 ≠ 現行 tree 撤去）
+
+- **案 D は公開 tree からの遮断策** であり、**repository 本体または main checkout から危険資産を撤去する方式ではない**。
+- **案 D 単独では現行 tree 撤去の Done 条件（§13.3）を満たさない**。
+- 案 D を採用する場合でも、**現行 tree 撤去には clean tree / orphan branch / repo 移行（案 C / E）など別方式を併用または別途選定** する必要がある。
+- 003H-2 の Done では **「現行 tree」と「公開 tree」を分けて確認** する（§13.3 参照）。
 
 ## 6. 実行前 precondition
 
@@ -132,6 +139,16 @@ SHOGI-TOUR-APPHQ-003H は、main に残存している実データ確定 JSON (`
 - **rollback 時にも対象 JSON 本文を表示しない**（rollback 経路でも安全条件は同じ）。
 - rollback 用 branch / tag / backup の扱いは、**人間承認のもとで** 行う。
 - **force push を含む場合** は、影響範囲・復旧方法・通知先を **事前に明記** する。
+
+### 8.1 rollback 不能に近い方式の扱い
+
+- **rollback 不能、または rollback が極めて困難な方式は原則採用しない**。
+- 例外的に採用する場合は、**実行前に人間承認で例外化** し、以下を **明文化** する。
+  - 影響範囲（branch / PR / clone / Pages / Actions / collaborators / 外部 URL 等）
+  - 復旧不能リスクの具体内容
+  - 代替策（より rollback 可能な方式が本当に取れないかの検討結果）
+  - 通知先（運用関係者・利用者・上流リポジトリ等）
+- **「やってみて戻す」は不可**。事前に rollback 経路を持たない実行は標準承認では解除できない。
 
 ## 9. GitHub Pages / 公開済み影響確認との関係
 
@@ -193,9 +210,27 @@ SHOGI-TOUR-APPHQ-003H は、main に残存している実データ確定 JSON (`
 - **rollback 手順の有無** が明確
 - **Level 4 承認が必要な場合、その理由が明確**
 
+#### 13.2.1 003H-1 方式選定の必須比較軸
+
+003H-1 では、各候補方式を以下の軸で比較し、**公開遮断と現行 tree 撤去を混同しない** こと。
+
+| 比較軸 | 内容 |
+|---|---|
+| repository checkout から危険資産が消えるか | `git clone` 後の作業 tree から消えるか |
+| main tree から危険資産が消えるか | `origin/main` の tree から消えるか |
+| GitHub Pages 公開 tree から危険資産が消えるか | Pages 経由で配信される tree から消えるか |
+| Git 履歴に危険資産が残るか | 過去 commit 群に残るか |
+| PR diff / PR コメント / CI ログに本文が出ないか | diff-safe 性 |
+| rollback 可能か | 不能・極めて困難・可能の 3 段階 |
+| Level 4 承認が必要か | 標準 Approval Phrase で解除可能か |
+
+> 注: 同じ案でも上記の軸ごとに評価が分かれることがある（例: 案 D は「Pages 公開 tree から消える」が、「repository checkout / main tree から消える」では満たさない）。**単一の総合評価で代替しない**。
+
 ### 13.3 003H-2 の予定 Done
 
 - 選定方式に従って **危険資産が現行 tree / 公開 tree から撤去** される
+  - **現行 tree（repository checkout / main tree）と公開 tree（GitHub Pages 配信 tree）を分けて確認** する。
+  - 案 D（Pages 切替）単独採用時は現行 tree 側は別方式で別途満たす必要がある。
 - **PR diff / コメント / ログに本文が露出しない**
 - **rollback 方法** が確認済み
 - **CI が safe-side で pass** する
