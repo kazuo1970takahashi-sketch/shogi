@@ -210,6 +210,8 @@ APPROVE SHOGI-TOUR PR #<N> READY+MERGE+DELETE
 
 `shogi_v4.html` / `index.html` 等を変更する通常開発 PR。
 
+**参照する共通ブロック**：禁止事項は §17.B（app 実装用）、停止条件は §18.B（app 実装用）。§17.A / §18.A の「強い禁止」をそのまま貼らない（shogi_v4.html / index.html の編集 / synthetic E2E / VRT が止まってしまう）。
+
 ```
 SHOGI-TOUR-APPHQ-<task-id> 実装依頼｜<feature 名>
 
@@ -220,10 +222,15 @@ SHOGI-TOUR-APPHQ-<task-id> 実装依頼｜<feature 名>
 - shogi_v4.html（または index.html）
 - 必要なら synthetic E2E spec / fixture
 
+参照する共通ブロック：
+- 禁止事項：§17.B（app 実装用）
+- 停止条件：§18.B（app 実装用）
+
 test 方針：
 - synthetic spec のみ
 - 対象 JSON 本文は閲覧しない
 - 旧 E2E spec は復活させない
+- synthetic spec / fixture 経由の Playwright 起動 / VRT は承認文の範囲内なら許可
 
 CI：
 - Unit / Security / E2E (synthetic) すべて pass を要求
@@ -234,14 +241,24 @@ production への反映：
 - Pages 公開内容は変化しない（Pages source = production:/ のまま）
 - production 反映は別タスク（release）として承認文に approved main SHA を固定して個別承認で実施
 
-今回やらないこと：
-- production branch を変更しない
+今回やらないこと（§17.B の主要項目を再掲）：
+- production branch を変更しない / 削除しない
 - Pages source を変更しない
 - main 切替 / default branch 変更 / branch protection 変更しない
 - force push / Git 履歴改変 / repo 移行しない
 - release / deploy / publish しない
 - 対象 JSON / 旧 E2E spec の閲覧・変更・削除・移動なし
 - PR #169 / #174 diff 本文表示なし
+- data/import/ への touch なし
+- clean branch / 004C 残置 worktree への操作なし
+
+許可され得る操作（§17.B「許可され得る」の主要項目）：
+- shogi_v4.html / index.html の閲覧・編集
+- synthetic E2E spec / fixture の閲覧・編集・追加
+- bash test/run_tests.sh / synthetic 限定 Playwright 実行
+- isolated worktree での VRT（synthetic 限定）
+- HEAD 確認用 curl -I（必要時のみ）
+- browser / screenshot（承認文範囲内で必要な場合）
 
 作業手順：
 1. precondition 確認（main / origin/main 一致、production / Pages 維持）
@@ -259,6 +276,19 @@ APPROVE SHOGI-TOUR APPHQ-<TASK-ID> <FEATURE NAME> ONLY
 
 ## 9. production release 承認テンプレート（004F Runbook 連動）
 
+### 004F-1 release 実行における SHA 必須入力ルール（Nice to Have 2 反映）
+
+004F-1 系の release 実行タスクでは、以下を **必須入力** とする。欠けている / 形式不正 / 実態と乖離している場合、release を開始しない。
+
+| 必須入力 | 形式 | 検証 |
+|---|---|---|
+| approved main SHA | **full 40-char SHA**（short SHA 不可） | `git rev-parse origin/main` と完全一致を要求。**不一致なら停止**（main が進んだ可能性あり、別承認で再取得） |
+| current production SHA | **full 40-char SHA**（short SHA 不可） | `git rev-parse origin/production` と完全一致を要求。**不一致なら停止**（production が予期せず進んでいる、または rollback 中の可能性あり、別承認で確認） |
+
+short SHA だけ / SHA 欠け / 7-12 char 等の中途半端な SHA は不可。承認文が full 40-char を含んでいない場合、release を **開始しない**。
+
+### テンプレート
+
 ```
 承認：SHOGI-TOUR APPHQ-<task-id> production release
 
@@ -268,14 +298,19 @@ SHOGI-TOUR-APPHQ-<task-id>
 Risk Level：Level 4
 バッチ対象外：READY+MERGE+DELETE 不可
 
-固定項目：
-- approved main SHA：<full 40-char sha>
-- current production SHA：<full 40-char sha>
+固定項目（すべて必須、欠けていれば開始しない）：
+- approved main SHA：<full 40-char sha>（short SHA 不可、`git rev-parse origin/main` と一致必須）
+- current production SHA：<full 40-char sha>（short SHA 不可、`git rev-parse origin/production` と一致必須）
 - release 対象：index.html / shogi_v4.html の 2 件のみ
 - allowlist 変更なし
 - denylist 変更なし
 - Pages source 変更なし（production:/ のまま）
 - Pages source の現状：production:/ built
+
+開始前照合（必須、不一致なら開始しない）：
+- git rev-parse origin/main == approved main SHA
+- git rev-parse origin/production == current production SHA
+- gh api .../pages の source.branch == "production"、status == "built"
 
 反映方法（Runbook §8 案A）：
 - worktree path: ../shogi-release-<task-id>
@@ -509,42 +544,68 @@ APPROVE SHOGI-TOUR APPHQ-<TASK-ID> ALLOWLIST EXTENSION ONLY
 
 ## 14. worktree cleanup テンプレート
 
+### **重要：004C 残置 worktree (`../shogi-004c-production`) の特殊事情（Nice to Have 1 反映）**
+
+- **004C 残置 worktree は `production` branch に attached されている**
+- **cleanup で削除するのは「worktree」のみ、production branch は絶対に削除しない**
+- **remote production branch (`origin/production`) も絶対に削除しない**
+- **`git worktree remove --force` は worktree の物理削除のみ、attached branch の commit / ref には触れない**
+- worktree 削除と branch 削除は **完全に別操作**。承認文を読み違えて branch 削除しないこと
+- 万一 production branch を削除すると Pages 配信が即座に止まる（source=production:/）
+- `rm -rf` は **絶対禁止**（worktree metadata が repo 側 (`.git/worktrees/`) に残り、後で `git worktree prune` が必要）
+
+### テンプレート
+
 ```
 承認：SHOGI-TOUR APPHQ-<task-id> WORKTREE CLEANUP
 
 対象 worktree：../shogi-004c-production（または他の残置 worktree path）
 attached branch：production（または該当 branch）
 
-Risk Level：Level 2〜4（attached branch の重要度による）
+Risk Level：Level 2〜4（attached branch の重要度による。production attached なら Level 4）
 
 方針：
 - `git worktree remove <path>` を最優先
 - untracked / modified が原因で remove が失敗する場合のみ、**`git worktree remove --force <path>`** を個別承認
 - `rm -rf` は禁止（worktree metadata が repo 側に残り、後で `git worktree prune` が必要になる）
 - attached branch は変更しない、削除しない
-- production branch / 保険 branch は削除対象外
+- **production branch / 保険 branch は削除対象外**
+- **`git worktree remove --force` は worktree の物理削除のみ、branch ref には触れない**ことを承認文と実行コマンドで再確認する
 
 事前確認：
 - worktree path が想定と一致
-- attached branch が main / production / gh-pages / release/* / production/* に該当しないか確認
-- もし production が attached なら、production branch 自体は削除しないことを承認文に明記
+- attached branch が main / production / gh-pages / release/* / production/* に該当するか確認
+- **もし production が attached なら**：
+  - **production branch 自体は削除しないことを承認文に明記**
+  - **remote production branch も削除しないことを承認文に明記**
+  - Pages source が `production:/` であることを `gh api .../pages` で確認（worktree 削除前後で無変化を要求）
+  - production branch の SHA を事前記録し、削除後と一致確認
 - repo 本体（/Users/takahashikazuo/projects/shogi）には触らない
 
 手順：
 1. git worktree list で対象を確認
-2. git worktree remove <path>（no force）
-3. 失敗時、untracked が原因なら --force 個別承認で再試行
-4. git worktree prune（不要だが安全）
-5. (test -e <path> && echo STILL EXISTS || echo REMOVED)
-6. attached branch / clean branch / 重要 branch の SHA が無変化であることを確認
+2. 事前 SHA 記録：git rev-parse production / git ls-remote --heads origin production
+3. git worktree remove <path>（no force）
+4. 失敗時、untracked が原因なら --force 個別承認で再試行
+   - **`--force` は worktree の物理削除のみ。branch ref / commit / remote には触れない**
+5. git worktree prune（不要だが安全）
+6. (test -e <path> && echo STILL EXISTS || echo REMOVED)
+7. 事後 SHA 確認：
+   - production local SHA が事前と無変化
+   - production remote SHA が事前と無変化
+   - clean branch / 重要 branch の SHA も無変化
+   - Pages source / status が無変化（gh api .../pages）
 
 禁止：
 - rm -rf
 - git clean -fd
-- production branch / clean branch / main / default branch を削除
+- **production branch 削除（local / remote 共に）**
+- **clean branch 削除**
+- main / default branch / protected branch 削除
 - attached branch の commit / push / 変更
 - Pages 設定変更
 - Git 履歴改変
+- `git branch -D production` のような branch 削除コマンド（worktree 削除コマンドと取り違えない）
 
 Approval Phrase：
 APPROVE SHOGI-TOUR APPHQ-<TASK-ID> WORKTREE CLEANUP ONLY
@@ -570,6 +631,40 @@ APPROVE SHOGI-TOUR APPHQ-<TASK-ID> WORKTREE CLEANUP ONLY
 - merged 済みの `docs/*` / `feature/*` / `chore/*` 等の一時 branch
 - 対象 PR の `headRefName` と削除対象 branch 名が **完全一致** すること（`gh pr view <N> --json headRefName` で確認）
 
+### 内容保持確認（Should Fix 2 反映）
+
+squash merge 由来で `git branch -d` が拒否された場合、`git branch -D` で force 削除する前に **削除対象 PR の変更内容が main に保持されていることを path metadata で確認** する。1 path だけで済ませてよいのは「PR の changed files が 1 件だった場合のみ」。
+
+#### 確認手順
+
+```bash
+# 1. PR の変更ファイル一覧を取得
+PR_FILES=$(gh pr view <N> --json files --jq '.files[] | .path')
+PR_FILE_COUNT=$(gh pr view <N> --json files --jq '.files | length')
+echo "PR #<N> changed files: $PR_FILE_COUNT"
+printf '%s\n' "$PR_FILES"
+
+# 2. 全 changed files が main に存在することを git cat-file -e で確認（本文は開かない）
+for p in $PR_FILES; do
+  if git cat-file -e main:"$p" 2>/dev/null; then
+    echo "  $p: PRESENT on main (OK)"
+  else
+    echo "  $p: MISSING on main — STOP, do not -D"
+    exit 1
+  fi
+done
+
+# 3. PR_FILE_COUNT が想定 diff scope と一致することを確認
+#    - docs-only PR なら docs/operations/... の 1 件
+#    - 複数ファイル PR なら、approval で fixed した expected scope と一致
+#    - scope 外ファイルがある場合は削除せず停止
+```
+
+- **1 path だけ確認で済ませるのは、PR の変更が 1 ファイルである場合に限る**
+- 複数ファイル PR では **全 changed files を main 上で `git cat-file -e` 確認** する（代表 path だけで済ませない）
+- 本文を開かない（`git cat-file -e` は存在確認のみ、`git show` / `cat` / `head` 不可）
+- `gh pr view --json files` は **ファイル一覧 path metadata のみ取得**、`--json files` から `additions` / `deletions` を見るのは可だが、`gh pr diff` 等で diff 本文を取得しない
+
 ### 手順
 
 ```bash
@@ -591,16 +686,22 @@ PR_HEAD=$(gh pr view <N> --json headRefName --jq '.headRefName')
 git push origin --delete "$BR"
 # 6. local 試行
 git branch -d "$BR" || {
-  # squash merge 由来で拒否されたら main に内容保持を確認して -D
-  git cat-file -e main:<expected-path> && git branch -D "$BR"
+  # squash merge 由来で拒否されたら、上記「内容保持確認」を実行してから -D
+  # 全 changed files が main 上に存在することを確認した後でのみ -D 可
+  for p in $(gh pr view <N> --json files --jq '.files[] | .path'); do
+    git cat-file -e main:"$p" 2>/dev/null || { echo "  $p: MISSING on main — STOP"; exit 1; }
+  done
+  git branch -D "$BR"
 }
 ```
 
 ### 禁止
 
-- 上記安全チェックをスキップしての削除
+- 上記安全チェック / 内容保持確認をスキップしての削除
+- 1 path だけの確認で複数ファイル PR の `-D` を行う
 - `--force` の闇雲な使用
 - protected branch / default branch / 保険 branch 削除
+- `gh pr diff` / `git show` / `cat` 等での本文閲覧
 
 ## 16. AI 別役割テンプレート
 
@@ -614,7 +715,22 @@ git branch -d "$BR" || {
 
 承認文は **ChatGPT が作成、ユーザーが確認・発行、Claude Code が実行、Codex が事後レビュー** の流れが標準。
 
-## 17. 禁止事項共通ブロック（コピペ用）
+## 17. 禁止事項共通ブロック（コピペ用、用途別に分離）
+
+Should Fix 1 反映：共通禁止事項は **作業分類により 2 系統に分離** する。app 実装で `shogi_v4.html` / `index.html` を実装 / 編集する PR で「強い禁止事項」をそのまま貼ると、本来許可されるべき編集 / synthetic E2E / VRT が止まってしまう。
+
+**迷った場合：強い禁止事項（17.A）ではなく、作業分類に合うブロックを選ぶ**。
+
+### 17.A docs / release / ops 用（強い禁止、本文非表示重視）
+
+用途：
+- docs-only 設計（§5 〜 §7、§19 など）
+- production release Runbook 実行（§9）
+- rollback 承認（§11）
+- Pages source 変更（§12）
+- branch cleanup（§15）
+- worktree cleanup（§14）
+- Pages 確認 / metadata 検証中心の作業
 
 ```
 - force push / `--force` / `--force-with-lease` 禁止
@@ -631,17 +747,74 @@ git branch -d "$BR" || {
 - 旧 E2E spec（test/e2e/shogi_phase2_import.spec.js）本文表示禁止
 - PR #169 / #174 diff 本文表示禁止
 - 期待値リテラル / 固定値（具体件数 / クラス分布 / 固定日付）の再掲禁止
+- shogi_v4.html / index.html 本文表示は原則禁止（限定確認のみ。例：§10 の `index.html` 参照先限定 grep）
 - browser 表示 / screenshot / Playwright 起動 / browser automation 禁止
 - body 取得 / `curl -L` / `curl -X GET` / `wget` 禁止
 - raw.githubusercontent.com アクセス禁止
-- HTTP GET（HEAD のみ許可、それも必要時のみ）
+- HTTP GET 禁止（HEAD のみ許可、それも必要時のみ）
+- npm test / npm audit / bash test/run_tests.sh / npx playwright test 禁止
 - 他 repo 操作禁止
 - 004C 残置 worktree (`../shogi-004c-production`) への操作禁止（cleanup タスク時のみ別承認）
 - clean branch (`chore/shogi-tour-apphq-003h-2d-orphan-clean-base`) 削除禁止
 - production branch 削除禁止
 ```
 
-## 18. 停止条件共通ブロック（コピペ用）
+### 17.B app 実装用（shogi_v4.html / index.html 編集を許可、production 系のみ厳格）
+
+用途：
+- shogi_v4.html / index.html を **変更する通常開発 PR**（§8）
+- UI 修正 / 機能追加
+- synthetic E2E spec / fixture 追加
+- synthetic E2E / VRT 実行による動作確認
+- main 側での開発作業全般
+
+```
+- force push / `--force` / `--force-with-lease` 禁止
+- Git 履歴改変（amend / rebase / reset --hard / filter-branch / filter-repo）禁止
+- GitHub Pages source 変更禁止（別承認時のみ）
+- GitHub Pages 再有効化 / 設定変更禁止（別承認時のみ）
+- default branch 変更禁止
+- branch protection 変更禁止
+- repo visibility / collaborators / teams 変更禁止
+- release / deploy / publish 禁止（release 承認時のみ。実装 PR では production を変更しない）
+- production branch 変更禁止（本 PR では production に触れない、release は別タスク）
+- production branch 削除禁止
+- clean branch (`chore/shogi-tour-apphq-003h-2d-orphan-clean-base`) 削除禁止
+- 004C 残置 worktree (`../shogi-004c-production`) への操作禁止（cleanup タスク時のみ別承認）
+- `git add .` / `git add -A` / glob 系 git add 禁止（明示 path のみ）
+- `git clean -fd` / `rm -rf` 禁止
+- 対象 JSON（data/import/20260412_participants.json）本文表示禁止
+- 対象 JSON の閲覧・変更・移動・削除禁止
+- 旧 E2E spec（test/e2e/shogi_phase2_import.spec.js）本文表示禁止
+- 旧 E2E spec の復活 / 移動 / 編集禁止
+- PR #169 / #174 diff 本文表示禁止
+- 期待値リテラル / 固定値（具体件数 / クラス分布 / 固定日付）の再掲禁止
+- data/import/ 配下の実データ風ファイルへの touch 禁止
+- 他 repo 操作禁止
+- raw.githubusercontent.com アクセス禁止
+```
+
+### 17.B で **許可され得る**（承認文の範囲内なら）
+
+- shogi_v4.html / index.html の **閲覧・編集**
+- synthetic E2E spec / fixture の **閲覧・編集・追加**
+- `bash test/run_tests.sh` / `npx playwright test test/e2e/shogi_phase2_import_synthetic.spec.js` 等の synthetic 限定実行
+- `npm ci` の実行（依存更新を伴わない範囲）
+- isolated worktree での Playwright 起動 / browser automation / VRT（synthetic spec / synthetic fixture に限る）
+- HEAD 確認用の `curl -I --max-time 20`（Pages URL の動作確認、release 承認の Pages 確認時）
+- screenshot / browser 表示（VRT / 動作検証で必要な範囲、承認文で許可された場合）
+
+ただし上記のいずれでも：
+- 対象 JSON / 旧 E2E spec の本文には絶対に触れない
+- PR #169 / #174 diff 本文 / 期待値リテラル / 固定値は再掲しない
+- production / Pages 設定は変更しない
+- 実データ風ファイルを読まない・移動しない
+
+## 18. 停止条件共通ブロック（コピペ用、用途別に分離）
+
+Should Fix 1 反映：停止条件も用途別に 2 系統に分離する。
+
+### 18.A docs / release / ops 用（強い停止、本文非表示重視）
 
 ```
 以下のいずれかに該当したら即停止し、追加操作なし：
@@ -658,6 +831,36 @@ git branch -d "$BR" || {
 - API mutation（`gh api --method POST/PUT/PATCH/DELETE`）が承認外で必要になる
 - GitHub / git / gh / curl / npm のツールエラー
 - approved main SHA / current production SHA / Pages source の承認文記載と実態が乖離
+- shogi_v4.html / index.html の限定確認（参照 grep 等）を超える本文閲覧が必要になる
+- browser 起動 / Playwright / screenshot / body 取得が必要になる
+- 続行に rollback / 再承認が必要になる
+
+失敗時の対応：
+- 勝手に修正・force push・rollback・branch 削除・Pages 設定変更しない
+- 状態確認のみ行い、報告して停止
+- 人間判断を仰ぐ
+```
+
+### 18.B app 実装用（shogi_v4.html / index.html 編集を許可した上での停止条件）
+
+```
+以下のいずれかに該当したら即停止し、追加操作なし：
+
+- precondition 不一致（main / origin/main、production / origin/production、Pages source / status、clean branch SHA、default branch のいずれか）
+- PR head commit が承認時から変化
+- expected scope 外のファイル変更が出ている（特に production branch / Pages 設定 / workflow / CI / 対象 JSON / 旧 E2E spec への変更）
+- CI failure（Unit / Security / E2E synthetic のいずれかが failure）
+- mergeStateStatus が CLEAN ではない
+- protected branch / default branch / 保険 branch に触れそうになる
+- production / Pages / main 設定に触れそうになる（承認外で。release は別タスクのため、本 PR では絶対 production に触れない）
+- 対象 JSON 本文 / 旧 E2E spec 本文 / PR #169 / #174 diff 本文の表示が必要になる
+- 期待値リテラル / 固定値の再掲が必要になる
+- data/import/ への touch（読み取り含む）が必要になる
+- 旧 E2E spec の復活 / 編集が必要になる
+- production branch 変更 / release / deploy が必要になる（別タスクへ移管）
+- 禁止コマンド（force push / `--force` / `rm -rf` / `git clean -fd` / `git add .` 等）が必要になる
+- API mutation（`gh api --method POST/PUT/PATCH/DELETE`）が承認外で必要になる
+- GitHub / git / gh / npm / npx のツールエラー
 - 続行に rollback / 再承認が必要になる
 
 失敗時の対応：
