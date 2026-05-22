@@ -39,6 +39,20 @@ production release を実行するときに使う **承認文テンプレート*
 | 必須コマンド | `git checkout <approved-main-sha> -- index.html shogi_v4.html` / `git add index.html` / `git add shogi_v4.html`（明示 path のみ） |
 | rollback | 別承認、本テンプレートでは扱わない |
 
+### SHA mismatch handling（Should Fix 1 反映）
+
+承認後に `origin/main` が進行している、または `origin/production` が予期せず変化している場合の方針：
+
+- **不一致なら即停止**：`git rev-parse origin/main` が approved main SHA と一致しない、または `git rev-parse origin/production` が current production SHA と一致しない場合、release を **即停止**
+- **その場で最新 main を使って続行しない**：approved main SHA は承認時点の SHA に固定されたもの。新しい main commit を release 対象に含めるかは人間の判断であり、自動的に取り込まない
+- **AI / Claude Code は approved main SHA を勝手に更新しない**：承認文に書かれた SHA を別の SHA に書き換えて release を続行することは禁止
+- **新しい main を release 対象にする場合**：人間が新しい main の SHA を確認し、**新しい承認文を発行する**（既存承認文を流用しない）
+- **既存承認文のまま release を再開しない**：approval phrase は再開トリガーにならない。新しい release Task ID で別タスクとして起こす
+- **不一致時の報告**：approved main SHA と現在の `origin/main` SHA を **metadata として記載** する。**差分本文は開かない**（path metadata / SHA / commit count のみ）
+  - 例：「approved main SHA = `<sha-A>` / 現在の `origin/main` = `<sha-B>` / 不一致のため停止、新規承認待ち」
+  - `git diff <sha-A>..<sha-B>` の本文出力は禁止、必要なら `git log <sha-A>..<sha-B> --oneline` 程度の commit metadata のみ
+- 同様に `origin/production` が `current production SHA` と一致しない場合：production が予期せず進んだ / rollback 中 / 別の release が並走している可能性。即停止して人間判断
+
 ## 4. release 承認文の必須項目
 
 承認文には以下を **すべて含める**。欠けていれば release を開始しない。
@@ -89,7 +103,8 @@ Risk Level：Level 4
 
 固定項目（すべて必須、欠けていれば開始しない）：
 - approved main SHA：<APPROVED_MAIN_SHA>（full 40-char 必須、short SHA 不可）
-- current production SHA：<CURRENT_PRODUCTION_SHA>（full 40-char 必須、short SHA 不可）
+- current production SHA：<CURRENT_PRODUCTION_SHA>（full 40-char 必須、short SHA 不可、release 開始時点の origin/production と一致）
+  - ※ 承認文時点では「previous production SHA（release 前）」と同義。release 実行後の **new production SHA** は完了報告で記録する別欄であり、承認文には書かない。
 - expected main branch：<EXPECTED_MAIN_BRANCH>（通常 main）
 - expected Pages source：<EXPECTED_PAGES_SOURCE>（通常 production:/）
 - release 対象：index.html / shogi_v4.html の 2 件のみ
@@ -258,6 +273,39 @@ release(app): publish approved main 3a89a61 to production
 - release Task ID（任意、別 trailer として可）
 - Co-Authored-By（任意、Claude Code 実行時の trailer）
 
+### full SHA / short SHA の使い分けルール（Nice to Have 2 反映）
+
+| 場所 / 用途 | full 40-char SHA | short SHA（7-12 char） |
+|---|---|---|
+| **承認文（§5）** | **必須**（approved main SHA / current production SHA） | 不可（検証・照合に不適） |
+| **precondition 照合（§6）** | **必須**（`git rev-parse origin/main == <full-sha>`） | 不可 |
+| **`git checkout` / `git rev-parse` 等の検証コマンド** | **必須** | 不可 |
+| **release 完了報告（§12）** | **必須**（approved main / previous production / new production すべて full 40-char） | 不可 |
+| **release log / docs / `docs/operations/release_logs/`** | **必須**（永続記録は full SHA） | 任意併記可（読みやすさのため） |
+| **commit message subject（§8）** | 任意（長いと subject が読みにくいため short が一般的） | **OK / 推奨**（表示用） |
+| **chat / PR コメントでの概況報告** | 推奨（精度重視） | 表示用なら可（ただし操作判断には full を使う） |
+
+### ルール
+
+- **short SHA は「表示用」のみ**。検証・照合・操作判断には絶対に使わない
+- **`git rev-parse origin/main` と short SHA の比較は禁止**（先頭 7 char 一致でも、別の commit が偶然先頭一致している可能性、または ambiguous prefix で SHA 解決失敗の可能性）
+- **承認文 / precondition / 完了報告 / log は full 40-char SHA を必須**
+- commit message に short SHA を含める場合も、commit message 内に full SHA を **trailer** として併記してよい（例：`Approved-Main-SHA: <full-40-char>` を末尾に置く）
+
+### 推奨：full SHA trailer 併記
+
+```
+release(app): publish approved main <APPROVED_MAIN_SHORT_SHA> to production
+
+Approved-Main-SHA: <APPROVED_MAIN_FULL_SHA>
+Previous-Production-SHA: <PREVIOUS_PRODUCTION_FULL_SHA>
+Release-Task-ID: SHOGI-TOUR-APPHQ-<RELEASE_TASK_ID>
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+short SHA は subject の読みやすさ用、full SHA trailer は永続検証用。trailer は任意推奨だが、release log との照合容易性が上がる。
+
 ## 9. path-based 検査テンプレート
 
 ### allowlist（production tree の正しい状態）
@@ -351,9 +399,26 @@ grep -Eoi '(src|href|action|manifest)=["'\''][^"'\'']+["'\'']|import[[:space:]]+
 - root / `index.html` / `shogi_v4.html` の HEAD 確認
   - `curl -I --max-time 20`
   - **HTTP 200 必須**
-  - body 0 bytes（`% Received` が 0 であること）
 
-### 任意推奨
+### body fetched 記録方針（Should Fix 2 反映）
+
+**主記録（必須）**：
+- `body fetched: no`
+- `response body stored: no`
+
+**body 未取得の根拠（必須）**：
+1. リクエストが **HEAD であること**（`curl -I` を使用、`curl` without `-I` / `-X GET` / `wget` 等は使わない）
+2. **output 保存していないこと**（`> file` / `-o file` / `-O` 等の output redirect / file write をしていない）
+
+この 2 つを根拠として、release 完了報告に「body fetched: no（HEAD request only, no output redirect）」を主記録する。
+
+**補助確認（任意、必須判定条件にしない）**：
+- curl 表示上の `% Received` カラムが 0
+- Content-Length は header にあっても、body 自体は配信されていないこと
+
+curl の進捗表示の `% Received` カラムは便利な補助シグナルだが、curl のバージョン / TTY 環境 / `--silent` の有無で表示が揺れる。**curl 表示の進捗値に依存しすぎない**。本質は「HEAD であること + output 保存していないこと」。
+
+### 任意推奨：etag / last-modified の変化記録
 
 - release 前 baseline と release 後の比較
   - `etag` 変化 → 新 build 配信の強いシグナル
@@ -373,18 +438,30 @@ grep -Eoi '(src|href|action|manifest)=["'\''][^"'\'']+["'\'']|import[[:space:]]+
 
 ## 12. release 完了報告テンプレート
 
+### SHA 欄の意味（Nice to Have 1 反映）
+
+| SHA 欄 | 意味 | 取得元 |
+|---|---|---|
+| **approved main SHA** | 承認文で固定された main の commit。release 取り込み元 | 承認文 §5 の `<APPROVED_MAIN_SHA>`、full 40-char 必須 |
+| **previous production SHA** | release **前** の production HEAD SHA。承認文の `current production SHA` と同義 | 承認文 §5 の `<CURRENT_PRODUCTION_SHA>`、release 開始前の `git rev-parse origin/production` |
+| **new production SHA after release** | release **後** に作成された production の新 commit SHA | release 後の `git rev-parse origin/production`、commit message 直後に取得 |
+
+3 つは別々の SHA で、混同しないこと。承認文時点では `new production SHA` は未定（まだ commit していない）、完了報告で記録する。
+
+### 完了報告テンプレート
+
 ```
 SHOGI-TOUR APPHQ-<RELEASE_TASK_ID> production release 完了報告
 
 1. precondition 確認結果（§6 の 15 項目）
-2. approved main SHA：<sha>
-3. previous production SHA：<sha>
-4. new production SHA：<sha>
+2. approved main SHA：<APPROVED_MAIN_FULL_SHA>（full 40-char、承認文と一致）
+3. previous production SHA：<PREVIOUS_PRODUCTION_FULL_SHA>（full 40-char、承認文の current production SHA と同じ、release 開始前の origin/production と一致）
+4. new production SHA after release：<NEW_PRODUCTION_FULL_SHA>（full 40-char、release 後の origin/production と一致）
 5. release 対象ファイル：index.html, shogi_v4.html
-6. checkout 元が approved main SHA であったこと（`main` symbolic ref 不使用）
+6. checkout 元が approved main SHA であったこと（`main` symbolic ref 不使用、`git checkout <APPROVED_MAIN_FULL_SHA> -- ...` を使った）
 7. staged path 確認結果：index.html / shogi_v4.html の 2 件のみ
-8. commit SHA：<new-production-sha>
-9. push 結果：fast-forward / non-force / `[new branch]` ではない / `[forced update]` ではない
+8. commit SHA（new production SHA と同じ）：<NEW_PRODUCTION_FULL_SHA>
+9. push 結果：fast-forward / non-force、`[forced update]` ではない
 10. production tree allowlist 完全一致：PASS
 11. denylist no hit：PASS（HITS=0）
 12. 危険 path NOT PRESENT：PASS（12 件すべて NOT PRESENT）
@@ -392,20 +469,26 @@ SHOGI-TOUR APPHQ-<RELEASE_TASK_ID> production release 完了報告
 14. Pages metadata：source=production:/, status=built, html_url=<url>
 15. HEAD 確認結果（必須）：root 200 / index.html 200 / shogi_v4.html 200
 16. HEAD 補助記録（任意）：
-    - root: etag pre=<>, etag post=<>, last-modified pre=<>, last-modified post=<>
+    - root: etag pre=<>, etag post=<>, last-modified pre=<>, last-modified post=<>, x-cache=<MISS/HIT>, age=<seconds>
     - index.html: 同上
     - shogi_v4.html: 同上
-17. body fetched: no
-18. screenshot taken: no
-19. browser opened: no
-20. response body stored: no
-21. rollback：未実施
-22. main / default branch / branch protection：無変化
-23. clean branch (`chore/shogi-tour-apphq-003h-2d-orphan-clean-base`)：削除されていない、SHA=7e30119 維持
-24. 実行していないこと（force push / PR 作成 / main 変更 / Pages source 変更 / 履歴改変 / repo 移行 / `git add . -A glob` / `main` symbolic ref / 対象 JSON 閲覧 / 旧 E2E spec 閲覧 / browser / screenshot / Playwright / HTTP GET / body 取得 / 他 repo 操作）
-25. isolated worktree (`../shogi-release-<RELEASE_TASK_ID>`)：削除済み（`git worktree remove`、`--force` 不使用、`rm -rf` 不使用）
-26. 停止位置
+17. body fetched: no（主記録：HEAD request only、output 保存なし）
+18. response body stored: no
+19. screenshot taken: no
+20. browser opened: no
+21. % Received（補助、必須判定条件ではない）：root=0 / index.html=0 / shogi_v4.html=0
+22. rollback：未実施
+23. main / default branch / branch protection：無変化
+    - main / origin/main = <APPROVED_MAIN_FULL_SHA>（release 開始前と同じ、release は main を変更しない）
+24. clean branch (`chore/shogi-tour-apphq-003h-2d-orphan-clean-base`)：削除されていない、SHA=<CLEAN_FULL_SHA> 維持
+25. 実行していないこと（force push / PR 作成 / main 変更 / Pages source 変更 / 履歴改変 / repo 移行 / `git add . -A glob` / `main` symbolic ref / 対象 JSON 閲覧 / 旧 E2E spec 閲覧 / browser / screenshot / Playwright / HTTP GET / body 取得 / 他 repo 操作 / 004C 残置 worktree path への再作成）
+26. isolated worktree (`../shogi-release-<RELEASE_TASK_ID>`)：削除済み（`git worktree remove`、`--force` 不使用、`rm -rf` 不使用）
+27. 停止位置
 ```
+
+### release log との対応（Nice to Have 1 反映）
+
+`docs/operations/release_logs/` への永続記録（004F-2 で template 化予定）でも、上記 3 つの SHA（approved main / previous production / new production after release）を **すべて full 40-char で記録** する。short SHA は表示用、永続記録は full SHA。
 
 ## 13. rollback 境界
 
