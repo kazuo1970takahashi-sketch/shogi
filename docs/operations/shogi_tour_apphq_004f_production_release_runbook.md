@@ -62,34 +62,54 @@ release 開始前に以下を確認する。
 
 ## 6. release 候補確認
 
-main 側で何を production に出すか確認する。
+main 側で何を production に出すか確認する。release 対象は **承認文で固定された approved main SHA**（Should Fix 1 反映）。
 
-- main の `shogi_v4.html` / `index.html` が release 対象
+- **approved main SHA** の `shogi_v4.html` / `index.html` が release 対象（`origin/main` の現在 HEAD ではない）
 - docs / test / data / fixture / workflow は production に出さない
 - release 対象の変更内容確認は必要だが、**個人情報・実データ本文に関わるファイルは開かない**
 - `shogi_v4.html` / `index.html` の差分確認は release 判断上必要な場合のみ許可
-  - `git diff main..production -- index.html shogi_v4.html` などの **限定 diff**
-  - 全文閲覧は不要。必要時は別承認
+
+### 差分確認の向き（Should Fix 2 反映）
+
+- 確認対象は **`index.html` / `shogi_v4.html` の 2 ファイルに限定** する（最重要）
+- 向きを問う場合の基本は `git diff production..<approved-main-sha> -- index.html shogi_v4.html`（production 側を base、approved main 側を target に置き、release で何が来るかを見る向き）
+- ただし重要なのは **向きではなく「対象 2 ファイル以外を見ない・出さない」** こと
+- `git diff <approved-main-sha>..production -- index.html shogi_v4.html`（逆向き）でも、対象 2 ファイル限定であれば許容
+- docs / test / data / workflow / fixture を差分対象に含めない（`-- index.html shogi_v4.html` の path 指定を必ず付ける）
+- 全文閲覧は不要。差分本文を超えた閲覧（前後行つき `--unified=large` / `git show <sha>` 等）が必要なら別承認
 - **対象 JSON / 旧 E2E spec / PR #169 / #174 diff 本文は引き続き表示しない**
 
 ## 7. production 反映方式
 
-### 案A：production worktree で main から allowlist 2 件のみ checkout
+### 案A：production worktree で approved main SHA から allowlist 2 件のみ checkout
 
 ```
+# <approved-main-sha> は release 承認文で固定されたもの。`main` symbolic ref は使わない。
 git worktree add ../shogi-release-<task-id> production
 cd ../shogi-release-<task-id>
-git checkout main -- index.html shogi_v4.html
+git checkout <approved-main-sha> -- index.html shogi_v4.html
 git status --short  # M index.html, M shogi_v4.html のみ
 git add index.html shogi_v4.html  # 明示 path のみ、glob / -A / . 不可
-git commit -m "release(apphq): <release task id> bring index.html and shogi_v4.html from main <main SHA>"
+git commit -m "release(apphq): <release task id> bring index.html and shogi_v4.html from main <approved-main-sha>"
 ```
 
 **評価**：
 - シンプル
 - allowlist 2 件だけを反映しやすい
 - 検査が path metadata 中心で済む
+- approved main SHA を fix することで「release 承認後に main が進んで予期せぬ commit が流入する」事故を防げる
 - **推奨**
+
+### `main` symbolic ref を使わない理由（Should Fix 1 反映）
+
+`git checkout main -- ...` を使うと、release 承認後に `origin/main` が新しい commit へ進んだ場合、その新 commit の `index.html` / `shogi_v4.html` が production に流入する。これは承認境界を破る。
+
+そのため：
+- release 承認文には **approved main SHA を必須で含める**
+- release 作業開始時に `git rev-parse origin/main` と approved main SHA を照合する
+- 不一致の場合（main が進んでいる場合）は **即停止して人間判断を仰ぐ**
+- 進んだ main を反映したいなら、新しい release 承認を取り直す
+- `git checkout main -- ...` ではなく `git checkout <approved-main-sha> -- ...` を **標準手順** とする
 
 ### 案B：orphan branch を作り直す
 
@@ -110,31 +130,58 @@ git commit -m "release(apphq): <release task id> bring index.html and shogi_v4.h
 
 ## 8. release 作業手順
 
+### release 承認文テンプレ固定項目（Nice to Have 1 反映）
+
+release 実行（004F-1 系のタスク）を始める前に、承認文に以下を **すべて明記** すること。欠けていれば release を開始しない。
+
+- **Task ID**: `SHOGI-TOUR-APPHQ-XXXX`（release ごとに固有）
+- **approved main SHA**: `<full 40-char sha>`（release 対象として固定された main の commit）
+- **current production SHA**: `<full 40-char sha>`（release 開始時点の production の commit）
+- **release 対象ファイル**: `index.html` / `shogi_v4.html` のみ（追加・変更禁止）
+- **allowlist 変更**: なし（v1 allowlist 2 件を維持）
+- **denylist 変更**: なし
+- **Pages source 変更**: なし（`production:/` のまま、切替を伴うなら別承認）
+- **Pages source の現状**: `production:/`（変わらないことを承認文に明記）
+- **production branch に反映するファイル**: 2 件のみ（`index.html` / `shogi_v4.html`）
+- **`git add .` / `git add -A` / glob は禁止**（明示 path のみ）
+- **release 実行**: **Level 4 個別承認**（`READY+MERGE+DELETE` バッチ対象外）
+- **rollback**: **別承認**（第一候補 = GitHub Pages 停止）
+- **`main:/` 戻し**: 原則禁止、例外時のみ別承認（業務上の公開継続が必要かつ人間が再承認した場合）
+
+承認文に上記が揃っていない、または approved main SHA が full 40-char でない / production の現在 SHA と矛盾している / Pages の現状記述と実態が乖離している場合、release を開始しない。
+
+### release 手順
+
 1. **precondition 確認**（§5）
-2. **isolated worktree 作成**：`git worktree add ../shogi-release-<task-id> production`
+2. **approved main SHA 照合**：`git rev-parse origin/main` の出力が approved main SHA と完全一致することを確認。不一致なら即停止、人間判断を仰ぐ
+3. **current production SHA 照合**：`git rev-parse origin/production` が承認文の current production SHA と一致することを確認
+4. **isolated worktree 作成**：`git worktree add ../shogi-release-<task-id> production`
    - 既存 path との衝突確認
    - 004C 残置 worktree (`../shogi-004c-production`) は使わない
-3. **production branch を checkout**（worktree 内で自動 attach）
-4. **main から allowlist 2 件のみ取り込む**：`git checkout main -- index.html shogi_v4.html`
-5. **stage path 確認**：`git status --short` で `M index.html` / `M shogi_v4.html` のみであることを確認
+5. **production branch を checkout**（worktree 内で自動 attach）
+6. **approved main SHA から allowlist 2 件のみ取り込む**：`git checkout <approved-main-sha> -- index.html shogi_v4.html`
+   - **`main` symbolic ref は使わない**（承認後 main が進んでいると事故になる）
+7. **stage path 確認**：`git status --short` で `M index.html` / `M shogi_v4.html` のみであることを確認
    - 他の path が現れていたら **即停止**
    - `git add .` / `git add -A` / glob は使わない
-6. **明示 path で stage**：`git add index.html` / `git add shogi_v4.html`
-7. **commit**：`git commit -m "release(apphq): <task id> ..."`
-8. **production tree path 確認**：`git ls-tree -r --name-only HEAD`
-9. **allowlist 完全一致確認**：`/usr/bin/diff` による 2 件完全一致
-10. **denylist no hit 確認**：path-grep のみ、本文 grep 不可（§9）
-11. **危険 path NOT PRESENT 確認**：`git cat-file -e HEAD:<path>` で 12 件
-12. **index.html 参照先確認**（§10）：限定 grep で参照属性のみ抽出
-13. **push**：`git push origin production`（force 不可、`-f` / `--force-with-lease` 不可）
-14. **remote production SHA 確認**：`git ls-remote --heads origin production` で local と一致
-15. **Pages auto-build 確認**：`gh api .../pages` の status を polling、`status=built` まで
-16. **HEAD 確認**：`curl -I --max-time 20` で root / `index.html` / `shogi_v4.html` を HEAD 200 確認
+8. **明示 path で stage**：`git add index.html` / `git add shogi_v4.html`
+9. **commit**：`git commit -m "release(apphq): <task id> bring index.html and shogi_v4.html from main <approved-main-sha>"`
+10. **production tree path 確認**：`git ls-tree -r --name-only HEAD`
+11. **allowlist 完全一致確認**：`/usr/bin/diff` による 2 件完全一致
+12. **denylist no hit 確認**：path-grep のみ、本文 grep 不可（§9）
+13. **危険 path NOT PRESENT 確認**：`git cat-file -e HEAD:<path>` で 12 件
+14. **index.html 参照先確認**（§10）：限定 grep で参照属性のみ抽出
+15. **release 前 HEAD ベースライン記録**（Nice to Have 2 反映、任意推奨）：push 前に root / `index.html` / `shogi_v4.html` の HEAD で `etag` / `last-modified` を記録しておく。release 後との比較に使う
+16. **push**：`git push origin production`（force 不可、`-f` / `--force-with-lease` 不可）
+17. **remote production SHA 確認**：`git ls-remote --heads origin production` で local と一致
+18. **Pages auto-build 確認**：`gh api .../pages` の status を polling、`status=built` まで
+19. **HEAD 確認**：`curl -I --max-time 20` で root / `index.html` / `shogi_v4.html` を **HEAD 200 必須確認**
     - `-L` 不可、body 取得不可、browser 表示不可、screenshot 不可
-17. **release 記録**（§12）
-18. **isolated worktree 削除**：`git worktree remove ../shogi-release-<task-id>`
+    - **任意推奨**：`etag` / `last-modified` が release 前ベースラインと変化していることを記録（Pages 反映確認の補助、絶対条件ではない）
+20. **release 記録**（§12）
+21. **isolated worktree 削除**：`git worktree remove ../shogi-release-<task-id>`
     - `--force` 不可（必要なら個別承認）、`rm -rf` 不可
-19. **停止**
+22. **停止**
 
 ## 9. production path-based 検査
 
@@ -222,15 +269,36 @@ grep -Eoi '(src|href|action|manifest)=["'\''][^"'\'']+["'\'']|import[[:space:]]+
 
 release push 後、Pages source は `production:/` のまま **維持される**。production push により GitHub Pages の auto-build が走る。
 
-### 確認項目
+### 必須確認項目
 
 - Pages metadata（`gh api .../pages`）
 - `source = {"branch": "production", "path": "/"}` を維持
 - `status = built`
 - root / `index.html` / `shogi_v4.html` の HEAD 確認（`curl -I --max-time 20`）
+- **HTTP status 200 を必須確認**
 - body 取得なし、browser 表示なし、screenshot なし
 - `-L` 不可、`curl -X GET` 不可、`wget` 不可
 - response body stored: no
+
+### 任意推奨：etag / last-modified の変化記録（Nice to Have 2 反映）
+
+release 反映が CDN を含めて行き渡ったかの **補助確認** として、`etag` / `last-modified` の変化を記録する。
+
+- release 前のベースライン（手順 §8-15 で記録した値）と release 後の HEAD 出力を比較
+- `etag` が変化していれば、新しい build が配信されている強いシグナル
+- `last-modified` が release commit / build 直後の時刻に更新されていれば、production からの新規 build である強いシグナル
+- ただし：
+  - `etag` / `last-modified` は **GitHub Pages / CDN の挙動に依存** する（cache hit / MISS、varnish age、CDN edge 反映遅延などで揺れる）
+  - **絶対条件にしない**。HTTP 200 が必須、`etag` / `last-modified` 変化は補助
+  - `x-cache: MISS` / `age: 0` も同様に補助シグナルとして記録可
+- 記録形式（release 記録 §12 に取り込む）：
+  ```
+  URL                          | status | etag (post) | etag (pre)  | last-modified (post)
+  /shogi/                      | 200    | <hash>      | <hash>      | <RFC1123>
+  /shogi/index.html            | 200    | <hash>      | <hash>      | <RFC1123>
+  /shogi/shogi_v4.html         | 200    | <hash>      | <hash>      | <RFC1123>
+  ```
+- body 取得 / browser 表示 / screenshot / Playwright での体感確認は **別承認**
 
 ### 注意
 
@@ -244,16 +312,19 @@ release 後、以下を記録する。
 | 項目 | 例 |
 |---|---|
 | release Task ID | SHOGI-TOUR-APPHQ-XXXX |
-| main commit SHA | `<sha>` |
-| production commit SHA (release後) | `<sha>` |
+| **approved main SHA**（承認文で固定） | `<full 40-char sha>` |
+| origin/main SHA（release 開始時点） | `<full 40-char sha>`（approved main SHA と一致したことを記録） |
+| production commit SHA (release 前) | `<sha>` |
+| production commit SHA (release 後) | `<sha>` |
 | release 対象ファイル | `index.html`, `shogi_v4.html` |
-| Pages source | `production:/` |
+| Pages source | `production:/`（変更なし） |
 | Pages status | `built` |
-| HEAD 確認結果 | root: 200, index.html: 200, shogi_v4.html: 200 |
+| HEAD 確認結果（必須） | root: 200, index.html: 200, shogi_v4.html: 200 |
+| HEAD 補助記録（任意推奨） | release 前後の `etag` / `last-modified` / `x-cache` |
 | 承認者 | `<user>` |
 | 実行日時 | `<YYYY-MM-DD HH:MM TZ>` |
 | rollback 方針 | 第一候補：Pages 停止、第二候補：production rollback、例外：main:/ 戻し |
-| 実行していないこと | force push なし / PR なし / main 変更なし / default branch 変更なし / Pages source 変更なし（既に production:/）/ 履歴改変なし / repo 移行なし |
+| 実行していないこと | force push なし / PR なし / main 変更なし / default branch 変更なし / Pages source 変更なし（既に production:/）/ 履歴改変なし / repo 移行なし / `git add .` `-A` glob 不使用 / `main` symbolic ref 不使用（approved main SHA 直接指定） |
 
 ### 記録場所案
 
