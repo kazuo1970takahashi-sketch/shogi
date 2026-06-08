@@ -1372,7 +1372,14 @@ function normalizeBranchMaster(raw){
       if(typeof t2==='string'&&t2&&!seenTid[t2]){seenTid[t2]=true;tournament_ids.push(t2);}
     }
 
-    var memberStatus=(m.member==='other')?'other':'member';
+    // 候補マスタ取込: member は内部表現 'member'/'other'（アプリ native export）に加え、
+    //   外部マスタが使う boolean（true=支部員 / false=一般）も受理する。
+    //   false → 'other'（一般）。未知値・未指定は既存仕様どおり 'member'（支部員）既定。
+    //   native データは常に 'member'/'other' 文字列のため、この追加分岐は無影響（後方互換）。
+    var memberStatus=(m.member===false||m.member==='other')?'other':'member';
+    // grade はアプリ内では会費区分（'ippan'=一般 / 'chu'=中学生以下）。
+    //   外部マスタの段位（例: "二段"）はこの区分とは別概念のため取り込まず、既定 'ippan'。
+    //   段位を残したい場合は外部 JSON の note に入れる運用（note は下で保持）。
     var gradeStatus=(m.grade==='chu')?'chu':'ippan';
 
     members.push({
@@ -3258,7 +3265,8 @@ function processMasterImportText(text,mode,setStatus){
     if(!confirm('現在のマスタをすべて置き換えます。元に戻せません。\n\n続けますか？\n\n読込予定: '+(result.newMaster.members.length)+'名'))return;
     saveBranchMaster(result.newMaster);
     var modalEl=document.getElementById('master-import-modal');if(modalEl)modalEl.remove();
-    if(typeof showMsg==='function')showMsg('マスタを上書きインポートしました（'+result.newMaster.members.length+'名）','ok');
+    // 候補マスタ取込の完了通知: 当日参加者の自動登録ではないことを明示する。
+    if(typeof showMsg==='function')showMsg('参加者マスタを読み込みました（'+result.newMaster.members.length+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
     renderMasterTab();
     return;
   }
@@ -3274,7 +3282,8 @@ function processMasterImportText(text,mode,setStatus){
     }
     saveBranchMaster(mr.newMaster);
     var modalEl2=document.getElementById('master-import-modal');if(modalEl2)modalEl2.remove();
-    if(typeof showMsg==='function')showMsg('マスタにマージしました（新規追加 '+mr.summary.added+'名 / 既存統合 '+mr.summary.merged+'名 / 合計 '+mr.summary.total+'名）','ok');
+    // 候補マスタへのマージ完了通知: 当日参加者の自動登録ではないことを明示する。
+    if(typeof showMsg==='function')showMsg('参加者マスタにマージしました（新規 '+mr.summary.added+'名 / 統合 '+mr.summary.merged+'名 / 合計 '+mr.summary.total+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
     renderMasterTab();
     return;
   }
