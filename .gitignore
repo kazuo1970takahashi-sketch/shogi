@@ -16,6 +16,11 @@ Thumbs.db
 HANDOFF_LOCAL.md
 HANDOFF.md.contaminated.bak
 
+# 実参加者マスタ・実データ（端末ローカル限定 / 絶対にコミットしない）
+#   参加者候補マスタの実 JSON はここに置き、リポジトリには含めない。
+#   テスト用は完全架空の test/fixtures/import/*synthetic*.json のみを使う。
+data/
+
 # ai-requests のうちローカル限定のもの
 ai-requests/local/
 
