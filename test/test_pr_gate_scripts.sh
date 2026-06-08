@@ -53,6 +53,21 @@ else
   echo "  ⚠ shellcheck 未インストール → bash -n のみで代替"
 fi
 
+# Nice-to-Have 1: scripts の「実行コード」で --auto / --delete-branch を使っていないこと。
+#   # コメントや echo/printf/note/cat の説明文字列（"--auto 不使用" 等）は除外し、
+#   実コマンド行だけを対象に静的 grep する。
+code_only() { grep -vE '^[[:space:]]*#' "$1" | grep -vE '^[[:space:]]*(echo|printf|note|cat)[[:space:]]'; }
+if { code_only "$GATE"; code_only "$AMERGE"; } | grep -q -- '--auto'; then
+  ng "実行コードに --auto が含まれる（禁止）"
+else
+  ok "実行コードで --auto を使用していない"
+fi
+if { code_only "$GATE"; code_only "$AMERGE"; } | grep -q -- '--delete-branch'; then
+  ng "実行コードに --delete-branch が含まれる（禁止）"
+else
+  ok "実行コードで --delete-branch を使用していない"
+fi
+
 # -----------------------------------------------------------------------------
 # 1. 純粋関数の単体テスト（gate を source。BASH_SOURCE ガードで main は走らない）
 # -----------------------------------------------------------------------------
@@ -147,8 +162,18 @@ case "\$sub" in
   pr)
     action="\$1"; shift 2>/dev/null || true
     case "\$action" in
-      view)    cat "$MOCK_DIR/pr.json" ;;
-      ready)   exit 0 ;;
+      view)
+        # GH_MOCK_FLIP_AFTER_READY=1 のとき、ready 実行後は pr_after.json を返す
+        # （Ready 化後の再 gate が状態変化で BLOCKED になるケースを模す）。
+        if [ -n "\${GH_MOCK_FLIP_AFTER_READY:-}" ] && [ -f "$MOCK_DIR/ready.flag" ]; then
+          cat "$MOCK_DIR/pr_after.json"
+        else
+          cat "$MOCK_DIR/pr.json"
+        fi
+        ;;
+      ready)
+        [ -n "\${GH_MOCK_FLIP_AFTER_READY:-}" ] && : > "$MOCK_DIR/ready.flag"
+        exit 0 ;;
       merge)   exit 0 ;;
       comment) exit 0 ;;
       *)       exit 0 ;;
@@ -218,6 +243,11 @@ if grep -q -- "--delete-branch" "$GH_MOCK_LOG"; then
 else
   ok "merge(mock): --delete-branch を一切使っていない"
 fi
+if grep -q -- "--auto" "$GH_MOCK_LOG"; then
+  ng "merge(mock): --auto が使われた（絶対禁止）"
+else
+  ok "merge(mock): --auto を一切使っていない"
+fi
 if grep -q "pr ready 999" "$GH_MOCK_LOG"; then
   ok "merge(mock): --execute --yes では Ready 化を実行"
 else
@@ -237,6 +267,72 @@ if grep -q "pr merge" "$GH_MOCK_LOG"; then
 else
   ok "merge(mock): BLOCKED では merge を呼んでいない"
 fi
+
+# -----------------------------------------------------------------------------
+# 4. Should Fix / Nice-to-Have の固定テスト
+# -----------------------------------------------------------------------------
+echo ""
+echo "【4】Should Fix / Nice-to-Have"
+
+# 4-1. Should Fix 1: mergeable=MERGEABLE でも mergeStateStatus!=CLEAN は READY_CANDIDATE にならない
+cat > "$MOCK_DIR/pr.json" <<'JSON'
+{"number":999,"state":"OPEN","isDraft":true,"baseRefName":"production","headRefName":"feat/test-head","mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED","files":[{"path":"shogi_v4.html"}]}
+JSON
+gate_out="$(run_with_mock bash "$GATE" --pr 999 --profile production-minimal --repo owner/repo 2>&1)"
+gate_rc=$?
+expect_rc "$gate_rc" 10 "gate(mock): mergeStateStatus!=CLEAN は NEEDS_REVIEW(10)"
+if printf '%s' "$gate_out" | grep -q "mergeStateStatus=BLOCKED" && printf '%s' "$gate_out" | grep -q "mergeable=MERGEABLE"; then
+  ok "gate(mock): 出力に mergeable と mergeStateStatus を両方明示"
+else
+  ng "gate(mock): mergeable / mergeStateStatus の併記が無い"
+fi
+
+# 4-1b. mergeStateStatus が空/UNKNOWN でも READY_CANDIDATE にならない
+cat > "$MOCK_DIR/pr.json" <<'JSON'
+{"number":999,"state":"OPEN","isDraft":true,"baseRefName":"production","headRefName":"feat/test-head","mergeable":"MERGEABLE","mergeStateStatus":"","files":[{"path":"shogi_v4.html"}]}
+JSON
+run_with_mock bash "$GATE" --pr 999 --profile production-minimal --repo owner/repo >/dev/null 2>&1
+expect_rc $? 10 "gate(mock): mergeStateStatus 空 は NEEDS_REVIEW(10)"
+
+# 4-2. Should Fix 2: docs-only + base=production は BLOCKED
+cat > "$MOCK_DIR/pr.json" <<'JSON'
+{"number":999,"state":"OPEN","isDraft":true,"baseRefName":"production","headRefName":"feat/test-head","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","files":[{"path":"docs/x.md"}]}
+JSON
+run_with_mock bash "$GATE" --pr 999 --profile docs-only --repo owner/repo >/dev/null 2>&1
+expect_rc $? 20 "gate(mock): docs-only + base=production は BLOCKED(20)"
+
+# 4-3. Should Fix 2: test-only + base=production は BLOCKED
+cat > "$MOCK_DIR/pr.json" <<'JSON'
+{"number":999,"state":"OPEN","isDraft":true,"baseRefName":"production","headRefName":"feat/test-head","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","files":[{"path":"test/x.js"}]}
+JSON
+run_with_mock bash "$GATE" --pr 999 --profile test-only --repo owner/repo >/dev/null 2>&1
+expect_rc $? 20 "gate(mock): test-only + base=production は BLOCKED(20)"
+
+# 4-4. Nice-to-Have 2: Ready 化後の再 gate が BLOCKED なら merge しない
+#   before = READY_CANDIDATE(Draft) / after(ready 後) = CONFLICTING → BLOCKED
+rm -f "$MOCK_DIR/ready.flag"
+cat > "$MOCK_DIR/pr.json" <<'JSON'
+{"number":999,"state":"OPEN","isDraft":true,"baseRefName":"production","headRefName":"feat/test-head","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","files":[{"path":"shogi_v4.html"}]}
+JSON
+cat > "$MOCK_DIR/pr_after.json" <<'JSON'
+{"number":999,"state":"OPEN","isDraft":false,"baseRefName":"production","headRefName":"feat/test-head","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","files":[{"path":"shogi_v4.html"}]}
+JSON
+: > "$GH_MOCK_LOG"
+GH_MOCK_FLIP_AFTER_READY=1 PATH="$MOCK_DIR:$PATH" \
+  bash "$AMERGE" --pr 999 --profile production-minimal --repo owner/repo --execute --yes </dev/null >/dev/null 2>&1
+flip_rc=$?
+expect_rc "$flip_rc" 20 "merge(mock): Ready 化後の再 gate BLOCKED で停止(20)"
+if grep -q "pr ready 999" "$GH_MOCK_LOG"; then
+  ok "merge(mock): Ready 化は実行された（再 gate 前）"
+else
+  ng "merge(mock): Ready 化が実行されていない"
+fi
+if grep -q "pr merge" "$GH_MOCK_LOG"; then
+  ng "merge(mock): 再 gate BLOCKED なのに merge が呼ばれた（あってはならない）"
+else
+  ok "merge(mock): 再 gate BLOCKED では merge を呼んでいない"
+fi
+rm -f "$MOCK_DIR/ready.flag"
 
 rm -rf "$MOCK_DIR"
 

@@ -56,7 +56,7 @@ print_usage() {
   --main-branch <名>        main ブランチ名 (default: main)
   -h, --help             この使い方を表示。
 
-安全: --delete-branch / --auto は使用しない。production/main へ直接 push しない。
+安全: branch 削除や自動 merge 予約はしない。production/main へ直接 push しない。
 USAGE
 }
 
@@ -160,13 +160,14 @@ amerge_main() {
   echo "  PR #$PR / profile=$PROFILE / repo=$REPO"
   echo "============================================================"
 
-  # --- PR の base/head/state を取得（read-only。本文は取らない） ---
-  _meta="$(gh pr view "$PR" --repo "$REPO" --json baseRefName,headRefName,state 2>/dev/null)"
+  # --- PR の base/head/state/isDraft を取得（read-only。本文は取らない） ---
+  _meta="$(gh pr view "$PR" --repo "$REPO" --json baseRefName,headRefName,state,isDraft 2>/dev/null)"
   if [ -z "$_meta" ]; then err "PR #$PR ($REPO) のメタデータ取得に失敗しました"; return 3; fi
   PR_BASE="$(json_get "$_meta" 'd.get("baseRefName","")')"
   PR_HEAD="$(json_get "$_meta" 'd.get("headRefName","")')"
   PR_STATE="$(json_get "$_meta" 'd.get("state","")')"
-  echo "  base <- head : $PR_BASE  <-  $PR_HEAD   (state=$PR_STATE)"
+  PR_DRAFT="$(json_get "$_meta" '"true" if d.get("isDraft") else "false"')"
+  echo "  base <- head : $PR_BASE  <-  $PR_HEAD   (state=$PR_STATE, draft=$PR_DRAFT)"
 
   # =========================================================================
   # Step 1: gate（READY_CANDIDATE でなければ停止）
@@ -193,7 +194,7 @@ amerge_main() {
   if [ "$MODE" = "dry-run" ]; then
     echo ""
     echo "----- DRY-RUN: 以下は実行しません（--execute で実行） -----"
-    echo "  1) gh pr ready  $PR --repo $REPO"
+    echo "  1) gh pr ready  $PR --repo $REPO   (Draft の場合のみ。既に Ready ならスキップ)"
     echo "  2) (Ready 化後) gate を再実行し READY_CANDIDATE を再確認"
     echo "  3) gh pr merge  $PR --repo $REPO --squash      # --delete-branch なし / --auto なし"
     echo "  4) $PR_BASE の最新 SHA を表示"
@@ -239,14 +240,20 @@ amerge_main() {
     return 4
   fi
 
-  # --- Step 4: Ready 化 ---
+  # --- Step 4: Ready 化（Nice-to-Have 3） ---
+  #   gh pr ready は「既に Ready」の PR に対しては失敗し得る。冒頭で取得した isDraft を見て、
+  #   Draft のときだけ ready 化し、既に Ready ならスキップする（無用な停止を避ける）。
   echo ""
   echo "----- Step: gh pr ready -----"
-  if ! gh pr ready "$PR" --repo "$REPO"; then
-    err "gh pr ready に失敗しました。merge せず停止します。"
-    return 3
+  if [ "$PR_DRAFT" = "true" ]; then
+    if ! gh pr ready "$PR" --repo "$REPO"; then
+      err "gh pr ready に失敗しました。merge せず停止します。"
+      return 3
+    fi
+    note "Ready 化しました。"
+  else
+    note "PR は既に Ready 状態のため gh pr ready をスキップします（draft=$PR_DRAFT）。"
   fi
-  note "Ready 化しました。"
 
   # --- Step 5: Ready 化後に gate を再実行（READY_CANDIDATE でなければ merge しない） ---
   echo ""

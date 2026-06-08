@@ -337,20 +337,38 @@ PY
       fi
       ;;
     docs-only|test-only)
+      # Should Fix 2: profile 定義上 production 以外が条件。base=production は NG（BLOCKED）。
       if [ "$PR_BASE" = "$PRODUCTION_BRANCH" ]; then
-        gate_warn "base が $PRODUCTION_BRANCH。$PROFILE を production に向けるのは想定外（要確認）"
+        gate_ng "$PROFILE の base が $PRODUCTION_BRANCH（profile 定義上 production 以外が条件 → NG）"
       else
         gate_ok "base は production 以外 ($PR_BASE)"
       fi
       ;;
   esac
 
-  # mergeable 状態
+  # mergeable + mergeStateStatus（Should Fix 1）
+  #   READY_CANDIDATE は mergeable=MERGEABLE かつ mergeStateStatus=CLEAN のときだけ。
+  #   mergeable=MERGEABLE でも mergeStateStatus!=CLEAN（BLOCKED/UNSTABLE/BEHIND/DIRTY/
+  #   空/UNKNOWN 等）は WARN（NEEDS_REVIEW）として approved_merge を停止させる。
+  #   出力には mergeable と mergeStateStatus の両方を必ず明示する。
+  _ms="${PR_MERGESTATE:-}"
   case "${PR_MERGEABLE:-}" in
-    MERGEABLE)   gate_ok "mergeable=MERGEABLE (clean)" ;;
-    CONFLICTING) gate_ng "mergeable=CONFLICTING（コンフリクトあり）" ;;
-    UNKNOWN|"")  gate_warn "mergeable=UNKNOWN（GitHub 算出中。時間をおいて再実行）" ;;
-    *)           gate_warn "mergeable=$PR_MERGEABLE（要確認）" ;;
+    MERGEABLE)
+      case "$_ms" in
+        CLEAN)
+          gate_ok   "mergeable=MERGEABLE / mergeStateStatus=CLEAN" ;;
+        ""|UNKNOWN)
+          gate_warn "mergeable=MERGEABLE / mergeStateStatus=${_ms:-UNKNOWN}（算出中/不明。CLEAN を確認するまで保留）" ;;
+        *)
+          gate_warn "mergeable=MERGEABLE / mergeStateStatus=$_ms（CLEAN でない: BLOCKED/UNSTABLE/BEHIND/DIRTY 等。要確認）" ;;
+      esac
+      ;;
+    CONFLICTING)
+      gate_ng   "mergeable=CONFLICTING / mergeStateStatus=${_ms:-UNKNOWN}（コンフリクトあり）" ;;
+    ""|UNKNOWN)
+      gate_warn "mergeable=${PR_MERGEABLE:-UNKNOWN} / mergeStateStatus=${_ms:-UNKNOWN}（GitHub 算出中。時間をおいて再実行）" ;;
+    *)
+      gate_warn "mergeable=$PR_MERGEABLE / mergeStateStatus=${_ms:-UNKNOWN}（要確認）" ;;
   esac
 
   # 変更ファイル数（production-minimal は空も WARN）
