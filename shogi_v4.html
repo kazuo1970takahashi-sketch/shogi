@@ -3268,6 +3268,11 @@ function processMasterImportText(text,mode,setStatus){
     // 候補マスタ取込の完了通知: 当日参加者の自動登録ではないことを明示する。
     if(typeof showMsg==='function')showMsg('参加者マスタを読み込みました（'+result.newMaster.members.length+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
     renderMasterTab();
+    // MASTER-PROD-001: 取込後に過去参加者パネルを再描画し「過去参加者から選ぶ」を即時表示（reset / Phase2 取込と同じパターン。当日参加者は自動追加しない）。
+    if(typeof renderPastParticipantsPanel==='function'){
+      var ppSearch=document.getElementById('pp-search');
+      renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
+    }
     return;
   }
 
@@ -3285,6 +3290,11 @@ function processMasterImportText(text,mode,setStatus){
     // 候補マスタへのマージ完了通知: 当日参加者の自動登録ではないことを明示する。
     if(typeof showMsg==='function')showMsg('参加者マスタにマージしました（新規 '+mr.summary.added+'名 / 統合 '+mr.summary.merged+'名 / 合計 '+mr.summary.total+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
     renderMasterTab();
+    // MASTER-PROD-001: 取込後に過去参加者パネルを再描画し「過去参加者から選ぶ」を即時表示（reset / Phase2 取込と同じパターン。当日参加者は自動追加しない）。
+    if(typeof renderPastParticipantsPanel==='function'){
+      var ppSearch=document.getElementById('pp-search');
+      renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
+    }
     return;
   }
 }
