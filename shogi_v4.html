@@ -50,6 +50,12 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
    3+ クラス本格 UI レイアウト改善は後続タスク（008 以降）で扱う。 */
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:700px){.grid2{grid-template-columns:1fr}}
+/* Codex Should Fix 2 (根本対処): 対局管理のクラスpane(#pane-tournament-grid 直下のグリッド項目)は
+   既定の min-width:auto だとコンテンツ最小幅でトラックを突き破り、スマホ幅で pane ごと横あふれする
+   （長い氏名の winner-btn / 暫定成績 / 対戦済みリストが原因になり得た）。min-width:0 でトラック幅に
+   収め、内側の .winner-row(flex-wrap) や score-grid を折り返し可能にする。PC では 1fr トラックが十分
+   広く min-width:auto でも破綻しないため、この指定による見た目変化はなく操作性も不変(PC最優先)。 */
+#pane-tournament-grid>div{min-width:0}
 .pairing-card{background:#f8fbff;border:1px solid #d0e4f7;border-radius:10px;padding:12px 12px;margin-bottom:8px}
 /* LIVE-MOBILE-SCOREBOARD-001 §2 対局管理の名前ボックス改善:
    旧実装は width:7em + white-space:nowrap + text-overflow:ellipsis で長い氏名を
@@ -59,6 +65,13 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
    タップ対象の高さを min-height で安定させ、勝敗入力の操作性は維持する。 */
 .winner-btn{padding:9px 10px;border-radius:8px;border:2px solid #ccc;background:#fff;font-size:15px;font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;min-width:7.5em;max-width:13em;min-height:2.9em;line-height:1.35;white-space:normal;word-break:break-word;overflow-wrap:anywhere;text-align:center;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center}
 .winner-btn.selected{background:#1F3864;color:#fff;border-color:#1F3864}
+/* LIVE-MOBILE-SCOREBOARD-001 §2 / Codex Should Fix 2: 対局カードの氏名ボタン親flex(.winner-row)。
+   旧実装は親が nowrap の横並びのままで、長い氏名2名だとスマホ幅で第2対局者ボタンが画面外へ
+   はみ出し、勝敗入力が押しづらかった。入り切らない時だけ折り返す(flex-wrap)ことで横あふれを防ぐ。
+   通常氏名は1行に収まり折り返さないため、PC運営画面の従来挙動・操作性は維持される(PC最優先)。
+   折り返しが起きるスマホ幅では中央寄せ＋行間を少し空けて、上下に並んだ2ボタンを押しやすくする。 */
+.winner-row{flex-wrap:wrap}
+@media(max-width:700px){.winner-row{justify-content:center;row-gap:8px}}
 .score-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:6px;margin-bottom:12px}
 .score-card{background:#f0f4f8;border-radius:8px;padding:8px 6px;text-align:center}
 .score-card .sname{font-weight:500;font-size:12px}
@@ -111,7 +124,7 @@ body.sb-active{overflow:hidden}
 .sb-title{font-size:16px;font-weight:600;line-height:1.3}
 .sb-meta{font-size:12px;opacity:0.92;margin-top:3px;line-height:1.4}
 .sb-note{font-size:11px;opacity:0.8;margin-top:4px}
-.sb-back{flex-shrink:0;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.12);color:#fff;font-size:12px;cursor:pointer;font-family:inherit}
+/* Codex Must Fix 1: 「運営画面へ」戻りボタン(.sb-back)は read-only 徹底のため廃止（CSS も削除）。 */
 .sb-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;background:#dde7f2}
 .sb-tab{padding:6px 14px;border-radius:16px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:13px;cursor:pointer;font-family:inherit}
 .sb-tab.active{background:#2E75B6;color:#fff;font-weight:600}
@@ -6330,7 +6343,7 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       // A-4 §3 MF6-a: 卓番号バッジ（配列 index+1 から算出。永続化なし）
       +'<div style="position:absolute;top:6px;left:6px;padding:2px 8px;border-radius:4px;background:#1F3864;color:#fff;font-size:11px;font-weight:bold">第 '+(i+1)+' 卓</div>'
       +'<button style="position:absolute;top:6px;right:6px;padding:3px 7px;border-radius:5px;border:1px solid #ccc;background:#fff;font-size:11px;color:#888;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
-      +'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:28px">'
+      +'<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:28px">'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
       +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+escapeHtml(n1)+'</button>'
       // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT: formatParticipantLabel による勝敗数併記補助ラベル
@@ -7045,8 +7058,15 @@ function buildTournamentHeldDateLabel(){
 
 // PDF 保存時の推奨ファイル名（拡張子なしの基底名）を種別ごとに生成する。
 //   形式: {YYYY年M月度}{大会名}{種別}  例: 2026年6月度沼津支部月例将棋大会対戦成績
-//   印刷経路（window.open + print）では <title> をファイル名候補として使い、保存時に
-//   ブラウザが「.pdf」を付与する。そのため拡張子なしの基底名を返す。
+//   Codex Must Fix 2（A案 採用）:
+//   現行 PDF 出力は全経路（printResults / printPairings / downloadReport）が
+//   Blob(text/html) + window.open() + win.print() 方式であり、生成物は HTML である。
+//   利用者がブラウザの印刷ダイアログで「PDF に保存」を選ぶと、ブラウザは <title> を
+//   ファイル名候補として提示し、「.pdf」拡張子はブラウザ側のPDF保存動作で付与される。
+//   そのため「.pdf 拡張子」をアプリのコードで保証することはできない（ブラウザ依存）。
+//   本実装のスコープは「保存ダイアログに出る “基底名” を URL 由来でなく大会情報由来に
+//   改善する」ことに限定する。よってここでは拡張子を付けない安全な基底名のみを返す。
+//   （title に '.pdf' を埋めると環境により二重拡張子等になり得るため付与しない。）
 function buildTournamentPdfFilename(kind){
   var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):'沼津支部月例将棋大会';
   return buildSafePdfFilename([buildTournamentTargetMonthLabel(),title,kind]);
@@ -8068,7 +8088,8 @@ function sbClassDisplayName(cls){
 }
 
 // 1 クラス分の星取表 HTML を組み立てる（横スクロール、順位+氏名は sticky 固定）。
-//   各ラウンド列は ○（勝ち）/●（負け）/－（未対局）と対戦相手番号（#NN）を表示する。
+//   各ラウンド列は ○（勝ち）/×（負け）/－（未対局）と対戦相手番号（#NN）を表示する。
+//   Codex Should Fix 1: 現場要望「○×の星取表」に合わせ、負けは ● ではなく × で表示する。
 //   氏名・番号はすべて escapeHtml してから描画する（XSS 安全）。
 function buildScoreboardClassTableHtml(cls){
   var players=(state.players&&state.players[cls])||[];
@@ -8099,7 +8120,7 @@ function buildScoreboardClassTableHtml(cls){
           var oppId=match.p1===f.p.id?match.p2:match.p1;
           var won=match.winner===f.p.id;
           var markCls=(match.winner==null)?'sb-mark-none':(won?'sb-mark-win':'sb-mark-lose');
-          var markStr=(match.winner==null)?'－':(won?'○':'●');
+          var markStr=(match.winner==null)?'－':(won?'○':'×');
           cell='<span class="sb-mark '+markCls+'">'+markStr+'</span><span class="sb-opp">'+escapeHtml('#'+entryNoOf(cls,oppId))+'</span>';
         }
       }
@@ -8112,7 +8133,7 @@ function buildScoreboardClassTableHtml(cls){
     html+='</tr>';
   }
   html+='</tbody></table></div>';
-  html+='<div class="sb-legend">○=勝ち／●=負け／－=未対局　・　#NN=対戦相手の番号　・　勝・負=勝敗数　・　B=対戦相手の勝数合計／C=勝った相手の勝数合計（順位判定の主要指標）</div>';
+  html+='<div class="sb-legend">○=勝ち／×=負け／－=未対局　・　#NN=対戦相手の番号　・　勝・負=勝敗数　・　B=対戦相手の勝数合計／C=勝った相手の勝数合計（順位判定の主要指標）</div>';
   return html+'</div>';
 }
 
@@ -8134,11 +8155,16 @@ function renderScoreboard(){
   var metaParts=[];
   if(monthLabel)metaParts.push('対象月：'+monthLabel);
   if(heldLabel)metaParts.push('開催日：'+heldLabel);
+  // LIVE-MOBILE-SCOREBOARD-001 §1 read-only 徹底（Codex Must Fix 1）:
+  //   閲覧URL（#scoreboard / #viewer / #mobile-standings）には運営画面への戻り導線
+  //   （ボタン / リンク等）を一切置かない。戻り導線があると閲覧者が保存・読込・リセット・
+  //   勝敗入力・編集UIへ到達でき、閲覧専用(read-only)要件に反するため。
+  //   運営者が運営画面へ戻る必要がある場合は「別タブ運用」または「#scoreboard を外した
+  //   運営URLを直接開く」運用とする（閲覧ビュー内には導線を持たせない）。
   var head='<div class="sb-head"><div>'
     +'<div class="sb-title">'+escapeHtml(title)+' 星取表</div>'
     +(metaParts.length?'<div class="sb-meta">'+escapeHtml(metaParts.join('　／　'))+'</div>':'')
-    +'<div class="sb-note">閲覧専用・自動更新（運営画面の保存に追従）</div></div>'
-    +'<button type="button" class="sb-back" id="sbBackBtn">運営画面へ</button></div>';
+    +'<div class="sb-note">閲覧専用・自動更新（運営画面の保存に追従）</div></div></div>';
   // フィルタが現存クラスに無ければ all に戻す。
   if(_sbClassFilter!=='all'&&activeClasses.indexOf(_sbClassFilter)===-1)_sbClassFilter='all';
   var tabs='';
@@ -8161,8 +8187,7 @@ function renderScoreboard(){
   for(var b=0;b<tabBtns.length;b++){
     tabBtns[b].addEventListener('click',function(){_sbClassFilter=this.getAttribute('data-sbcls')||'all';renderScoreboard();});
   }
-  var back=document.getElementById('sbBackBtn');
-  if(back)back.addEventListener('click',exitScoreboardRoute);
+  // Codex Must Fix 1: 「運営画面へ」戻りボタンは廃止。閲覧ビューには運営画面への導線を束縛しない。
 }
 
 // hash に応じて閲覧専用ビューと運営画面を切り替える。
@@ -8187,14 +8212,10 @@ function applyScoreboardRoute(){
   }
 }
 
-// 閲覧専用ビューから運営画面へ戻る（hash クリア）。別タブで開いている場合はタブを閉じてもよい。
-function exitScoreboardRoute(){
-  if(location.hash){
-    if(history&&history.replaceState){history.replaceState(null,'',location.pathname+location.search);}
-    else{location.hash='';}
-  }
-  applyScoreboardRoute();
-}
+// Codex Must Fix 1: 閲覧ビューから運営画面へ戻る exitScoreboardRoute() は廃止した。
+//   閲覧URL（#scoreboard 等）では運営画面への戻り導線をコード上も提供しない（read-only 徹底）。
+//   ※ hash を外した運営URLを直接開いた場合の表示切替は applyScoreboardRoute() が担うが、
+//     これは閲覧ビュー内のUI導線ではなく「運営URLを直接開く」運用に対応するもの。
 
 // 運営画面（現タブ）を維持したまま、閲覧専用ビューを別タブで開く。
 //   同一ブラウザの localStorage(state) を共有し、storage イベントでリアルタイム追従する。

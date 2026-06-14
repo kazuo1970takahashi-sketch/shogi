@@ -33,6 +33,63 @@
 
 ---
 
+## 0.6 Codex レビュー対応（PR #200 No-Go → 修正）
+
+2026-06-14 の Codex レビューで PR #200 は No-Go 判定。以下の Must Fix / Should Fix に対応した
+（いずれも `shogi_v4.html` の表示・CSS・コメントのみ。state 構造／順位計算／保存読込／勝敗入力
+ロジックは不変）。
+
+### Must Fix 1 — 閲覧専用ビューの read-only 徹底（運営画面への戻り導線を撤去）
+
+- 旧実装はスマホ閲覧ビュー(`#scoreboard`)のヘッダに「運営画面へ」ボタン(`.sb-back` / `#sbBackBtn`)
+  があり、押下で hash を外して運営画面（保存・読込・リセット・勝敗入力・編集UI）へ到達できた。
+  → read-only 要件に反するため **ボタン・ハンドラ・CSS・`exitScoreboardRoute()` を全廃**。
+- **設計方針（恒久）**: 閲覧URL（`#scoreboard` / `#viewer` / `#mobile-standings`）には運営画面への
+  戻り導線（ボタン／リンク）を一切置かない。運営者が運営画面へ戻る必要がある場合は
+  「別タブ運用」または「`#scoreboard` を外した運営URLを直接開く」運用とする。
+  hash を外した場合の表示切替は `applyScoreboardRoute()` が担うが、これは閲覧ビュー内の
+  UI導線ではなく「運営URLを直接開く」運用に対応するものである。
+
+### Must Fix 2 — PDF ファイル名と `.pdf` 拡張子（A 案を採用）
+
+- 現行 PDF 出力は全経路（`printResults` / `printPairings` / `downloadReport`）が
+  **`Blob(text/html)` + `window.open()` + `win.print()`** 方式で、生成物は HTML。
+  利用者がブラウザの印刷ダイアログで「PDF に保存」を選ぶと、ブラウザが `<title>` を
+  ファイル名候補として提示し、`.pdf` は**ブラウザ側のPDF保存動作で付与**される。
+- **結論（A 案）**: `.pdf` 拡張子は**アプリのコードで保証できない（ブラウザ依存）**。本実装の
+  スコープは「保存ダイアログに出る “基底名” を URL 由来でなく**大会情報由来**に改善する」ことに
+  限定する。`<title>` には拡張子なしの安全な基底名のみを入れる（`.pdf` を埋めると環境により
+  二重拡張子になり得るため付与しない）。`buildTournamentPdfFilename()` の直前コメントにも明記。
+- 基底名は `sanitizeFilenamePart` で禁止文字／制御文字／空白を除去し、未入力でも `'将棋大会'` に
+  フォールバック。`undefined` / `null` / `NaN` / 危険文字が最終ファイル名へ混入しないことを確認済み。
+
+### Should Fix 1 — 星取表の負け表示を `●` → `×` に変更
+
+- 現場要望「○×の星取表」に合わせ、スマホ星取表ビューの負けマークを `●` から `×` に変更
+  （`buildScoreboardClassTableHtml` / 凡例 `○=勝ち／×=負け／－=未対局`）。勝ち `○` は維持。
+- なお最終結果タブ／印刷帳票の既存表示（`buildResultsRoundCell*Html` / `printResults`）は
+  本 PR スコープ外のため `○/●` のまま据え置き（後続で統一する場合は別タスク）。
+
+### Should Fix 2 — 対局カードの氏名ボタンがスマホ幅で横あふれする件
+
+- `.winner-btn`(`max-width:13em`) の親 `.winner-row` が `nowrap` の横並びのままで、長い氏名2名だと
+  375px 幅で第2対局者ボタンが画面外へはみ出し、勝敗入力が押しづらかった（検証で再現）。
+- **対処**: 親に `.winner-row{flex-wrap:wrap}`（スマホ幅では `justify-content:center;row-gap`）を付与し、
+  入り切らない時だけ折り返す。加えて根本原因であるグリッド項目のブローアウトを
+  `#pane-tournament-grid>div{min-width:0}` で抑止（pane をトラック幅に収める）。
+- **PC 運営画面は不変（最優先）**: 1fr トラックが十分広く `min-width:auto` でも破綻しないため、
+  通常氏名は折り返さず従来通り横並び。1280px で 2 カラム維持・横あふれなしを検証済み。
+
+### Should Fix 3 — PDF の「支部名」について
+
+- 今回の PDF 大会名は **`state.report.title` 由来**（既定 `沼津支部月例将棋大会`）。`buildPdfDocHeaderHtml`
+  / 各帳票見出しは `normalizeReportTitle(state.report.title)` を表題に用いる。
+- **支部名を独立項目として持たせる対応は本スコープでは行わない（後続）**。支部名・主催情報を
+  大会名と分離して持つ恒久対応は本メモ §C（`tournaments` スキーマ）/ §B の参加者マスタ設計に
+  合流させる。現状の「支部名は report.title に含む前提」は暫定運用である旨を明記しておく。
+
+---
+
 ## A. ふりがな ruby 表示 恒久対応
 
 ### A-1. 原則
