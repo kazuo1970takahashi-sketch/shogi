@@ -329,10 +329,13 @@ body.sb-active{overflow:hidden}
         <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">申し送り事項</label>
         <textarea id="rep-note" placeholder="特になし" style="width:100%;height:60px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical"></textarea>
       </div>
-      <!-- REPORT-UX-007A: 報告書 footer 1行目で使う FAX番号 / 事務局名（state.report.fax / officeName）。
-           downloadReport が '※ホームページ掲載の為、当日夜までにFAX（XXX）、メールまたは直接<officeName>まで'
-           で参照する。既定値 '943-9443' / '沼津支部事務局'。空欄/不正値は normalize helper で既定値に
-           fallback、DOM 表示値も change イベント時のみ同期書き戻し（input 時は IME-safe で state 更新のみ）。 -->
+      <!-- REPORT-UX-007A / FAX削除対応（Codex 追加 Must Fix）:
+           FAX番号入力欄（#rep-fax / state.report.fax）は schema・保存読込互換のため残置するが、
+           FAX が実在しないため報告書出力（downloadReport）には一切出力しない（出力で参照しない）。
+           事務局名（#rep-office-name / officeName）は引き続き footer 1行目
+           '※ホームページ掲載の為、当日夜までにメールまたは直接<officeName>まで' で参照する。
+           既定値 '943-9443'(fax・出力未使用) / '沼津支部事務局'(officeName)。空欄/不正値は normalize
+           helper で既定値に fallback、DOM 同期は change イベント時のみ（input 時は IME-safe で state のみ）。 -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
         <div>
           <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">FAX番号</label>
@@ -1132,7 +1135,9 @@ function normalizeReportOrganizer(value){
 }
 
 // REPORT-UX-007A: FAX 番号 正規化 pure helper。
-//   既定値: '943-9443'。報告書 footer 1行目 '※ホームページ掲載の為、…FAX（XXX）、…' で参照される。
+//   FAX削除対応（Codex 追加 Must Fix）: 報告書出力（downloadReport）では FAX を出力しなくなったため、
+//   本 helper の戻り値は報告書 footer では参照されない。state.report.fax / #rep-fax 入力欄の
+//   schema・保存読込互換のために helper 自体は残置する（既定値 '943-9443'）。
 //   - 文字列なら trim する
 //   - 結果が空文字なら（'' / '   ' 等）既定値 '943-9443' に fallback
 //   - null / undefined / 数値・配列等の非文字列もすべて既定値 fallback
@@ -7439,12 +7444,12 @@ function downloadReport(){
   //   escapeHtml は HTML 組立時に通すため、ここでは正規化済の生文字列を保持する。
   var reportOrganizer=normalizeReportOrganizer(state.report&&state.report.organizer);
 
-  // REPORT-UX-007A: footer 1行目の FAX番号 / 事務局名は state.report.fax / officeName から取得。
-  //   既定値は normalizeReportFax / normalizeReportOfficeName 側に集約済み、空欄/不正値は
-  //   各 helper で default fallback。default のままなら footer 1行目の出力文字列は従来固定値の
-  //   帳票と完全一致になる。
+  // REPORT-UX-007A / FAX削除対応: footer 1行目の事務局名は state.report.officeName から取得。
+  //   既定値は normalizeReportOfficeName 側に集約済み、空欄/不正値は helper で default fallback。
   //   escapeHtml は HTML 組立時に通すため、ここでは正規化済の生文字列を保持する。
-  var fax=normalizeReportFax(state.report&&state.report.fax);
+  //   ※ Codex 追加 Must Fix: FAX番号は実在しないため報告書 footer から削除（出力しない）。
+  //     state.report.fax / normalizeReportFax / #rep-fax 入力欄は schema・保存読込互換のため残置するが、
+  //     報告書出力（downloadReport）では一切参照しない。
   var officeName=normalizeReportOfficeName(state.report&&state.report.officeName);
 
   // REPORT-UX-007B-1: footer 2行目（会計提出文）は state.report.accountingNote から取得。
@@ -7505,7 +7510,7 @@ function downloadReport(){
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold;width:120px">申し送り事項</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;height:60px">'+escapeHtml(note).split('\n').join('<br>')+'</td></tr>'
     +'</table>'
-    +'<p style="margin-top:12px;font-size:11px">※ホームページ掲載の為、当日夜までにFAX（'+escapeHtml(fax)+'）、メールまたは直接'+escapeHtml(officeName)+'まで</p>'
+    +'<p style="margin-top:12px;font-size:11px">※ホームページ掲載の為、当日夜までにメールまたは直接'+escapeHtml(officeName)+'まで</p>'
     +'<p style="font-size:11px">'+escapeHtml(accountingNote).split('\n').join('<br>')+'</p>'
     +'</body></html>';
 

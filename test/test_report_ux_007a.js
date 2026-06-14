@@ -126,8 +126,9 @@ assert(/function\s+normalizeReportOfficeName\s*\(/.test(htmlSrc), 'A1-2 normaliz
 {
   const m = htmlSrc.match(/function downloadReport\(\)[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
-  assert(/normalizeReportFax\s*\(\s*state\.report\s*&&\s*state\.report\.fax\s*\)/.test(body),
-    'A5-1 downloadReport が normalizeReportFax(state.report && state.report.fax) を呼ぶ');
+  // FAX削除対応: downloadReport は FAX を一切出力しないため、fax を参照しない。
+  assert(!/normalizeReportFax\s*\(/.test(body),
+    'A5-1 downloadReport は FAX を出力しないため normalizeReportFax() を呼ばない（FAX削除）');
   assert(/normalizeReportOfficeName\s*\(\s*state\.report\s*&&\s*state\.report\.officeName\s*\)/.test(body),
     'A5-2 downloadReport が normalizeReportOfficeName(state.report && state.report.officeName) を呼ぶ');
   // DOM 直読み撤去
@@ -135,9 +136,9 @@ assert(/function\s+normalizeReportOfficeName\s*\(/.test(htmlSrc), 'A1-2 normaliz
     'A5-3 downloadReport が #rep-fax.value を直読みしていない');
   assert(!/getElementById\(['"]rep-office-name['"]\)\.value/.test(body),
     'A5-4 downloadReport が #rep-office-name.value を直読みしていない');
-  // footer 1行目に escapeHtml(fax) / escapeHtml(officeName) を経由
-  assert(/escapeHtml\s*\(\s*fax\s*\)/.test(body),
-    'A5-5 downloadReport が escapeHtml(fax) を使う');
+  // footer 1行目は escapeHtml(officeName) を経由（fax は出力しない）
+  assert(!/escapeHtml\s*\(\s*fax\s*\)/.test(body),
+    'A5-5 downloadReport は footer で escapeHtml(fax) を使わない（FAX削除）');
   assert(/escapeHtml\s*\(\s*officeName\s*\)/.test(body),
     'A5-6 downloadReport が escapeHtml(officeName) を使う');
 }
@@ -553,26 +554,27 @@ function makeBaseState(reportOverrides){
 // SECTION F: downloadReport state-as-SoT
 // ============================================================
 
-// F1: default 出力 - footer 1行目が現行固定値と完全一致
+// F1: default 出力 - footer 1行目は FAX を含まない自然文（Codex 追加 Must Fix: FAX削除）
 {
   const env = loadEnv(targetPath);
   env._setState(makeBaseState({date:'2026-05-18',start:'13:00',end:'17:00'}));
   seedReportDom(env._ctx);
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  assert(html.indexOf('※ホームページ掲載の為、当日夜までにFAX（943-9443）、メールまたは直接沼津支部事務局まで') >= 0,
-    'F1-1 default の場合、footer 1行目は現行と完全一致');
+  assert(html.indexOf('※ホームページ掲載の為、当日夜までにメールまたは直接沼津支部事務局まで') >= 0,
+    'F1-1 default footer 1行目は FAX 抜きの自然文（メール/直接案内）になる');
+  assert(html.indexOf('FAX') < 0, 'F1-2 報告書に FAX 文言が一切出ない（FAX削除）');
 }
 
-// F2: fax を変えると footer に反映される
+// F2: fax を設定しても footer には一切出力されない（FAX削除）
 {
   const env = loadEnv(targetPath);
   env._setState(makeBaseState({date:'2026-05-18',start:'13:00',end:'17:00',fax:'055-111-2222'}));
   seedReportDom(env._ctx);
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  assert(html.indexOf('FAX（055-111-2222）') >= 0, 'F2-1 fax が footer に反映');
-  assert(html.indexOf('FAX（943-9443）') < 0, 'F2-2 旧 default fax が出ない');
+  assert(html.indexOf('FAX') < 0, 'F2-1 fax を設定しても footer に FAX 文言は出ない（FAX削除）');
+  assert(html.indexOf('055-111-2222') < 0, 'F2-2 設定した fax 番号も footer に出ない');
 }
 
 // F3: officeName を変えると footer に反映される
@@ -593,8 +595,8 @@ function makeBaseState(reportOverrides){
   seedReportDom(env._ctx, {date:'2026-05-18',start:'13:00',end:'17:00',fax:'別FAX',officeName:'別事務局',place:'労政会館',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部'});
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  assert(html.indexOf('055-111-2222') >= 0, 'F4-1 state.fax が帳票に出る (state 優先)');
-  assert(html.indexOf('別FAX') < 0, 'F4-2 DOM の "別FAX" は出ない');
+  assert(html.indexOf('055-111-2222') < 0, 'F4-1 state.fax は帳票に出ない（FAX削除・state でも非出力）');
+  assert(html.indexOf('別FAX') < 0, 'F4-2 DOM の "別FAX" も出ない（FAX非出力）');
   assert(html.indexOf('富士支部事務局') >= 0, 'F4-3 state.officeName が帳票に出る');
   assert(html.indexOf('別事務局') < 0, 'F4-4 DOM の "別事務局" は出ない');
 }
@@ -607,7 +609,7 @@ function makeBaseState(reportOverrides){
   env.downloadReport();
   const html = env._getLastBlobSrc();
   assert(html.indexOf('<b>raw-fax</b>') < 0, 'F5-1 fax の <b> は raw として出ない');
-  assert(html.indexOf('&lt;b&gt;raw-fax&lt;/b&gt;') >= 0, 'F5-2 fax は escapeHtml される');
+  assert(html.indexOf('&lt;b&gt;raw-fax&lt;/b&gt;') < 0, 'F5-2 fax は footer に出ないため escape 後の文字列も出ない（FAX削除）');
   assert(html.indexOf('<i>raw-office</i>') < 0, 'F5-3 officeName の <i> は raw として出ない');
   assert(html.indexOf('&lt;i&gt;raw-office&lt;/i&gt;') >= 0, 'F5-4 officeName は escapeHtml される');
 }
@@ -626,8 +628,8 @@ function makeBaseState(reportOverrides){
     'F6-1 footer 1行目に raw <script>(fax 由来) が混入しない');
   assert(footerLine && footerLine[0].indexOf('<script>alert(2)</script>') < 0,
     'F6-2 footer 1行目に raw <script>(officeName 由来) が混入しない');
-  assert(footerLine && /&lt;script&gt;alert\(1\)&lt;\/script&gt;/.test(footerLine[0]),
-    'F6-3 footer 1行目で fax 由来 script は escapeHtml された形で出る');
+  assert(footerLine && !/&lt;script&gt;alert\(1\)&lt;\/script&gt;/.test(footerLine[0]),
+    'F6-3 footer 1行目に fax 由来 script は出ない（FAX削除・escape 形も非出力）');
   assert(footerLine && /&lt;script&gt;alert\(2\)&lt;\/script&gt;/.test(footerLine[0]),
     'F6-4 footer 1行目で officeName 由来 script は escapeHtml された形で出る');
 }

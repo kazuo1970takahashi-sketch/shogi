@@ -615,8 +615,9 @@ function makeBaseState(reportOverrides){
   seedReportDom(env._ctx);
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  assert(html.indexOf('※ホームページ掲載の為、当日夜までにFAX（943-9443）、メールまたは直接沼津支部事務局まで') >= 0,
-    'F7 footer 1行目は変更されない');
+  assert(html.indexOf('※ホームページ掲載の為、当日夜までにメールまたは直接沼津支部事務局まで') >= 0,
+    'F7 footer 1行目は FAX 抜きの自然文（FAX削除後のテンプレート）');
+  assert(html.indexOf('FAX') < 0, 'F7-2 footer に FAX 文言は出ない（FAX削除）');
 }
 
 // ============================================================
@@ -652,7 +653,7 @@ function makeBaseState(reportOverrides){
   assert(html.indexOf('山田') >= 0, 'H1-8 sei (006C) 不変');
   assert(html.indexOf('佐藤') >= 0, 'H1-9 fuku (006C) 不変');
   assert(html.indexOf('メモ') >= 0, 'H1-10 note (006C) 不変');
-  assert(html.indexOf('FAX（055-111-2222）') >= 0, 'H1-11 fax (007A) 不変');
+  assert(html.indexOf('FAX') < 0, 'H1-11 fax は報告書に出ない（FAX削除・state にあっても非出力）');
   assert(html.indexOf('直接富士支部事務局まで') >= 0, 'H1-12 officeName (007A) 不変');
 }
 
@@ -666,15 +667,15 @@ function makeBaseState(reportOverrides){
   assert(/<title>2026年5月度特別大会報告書<\/title>/.test(html), 'H2 ファイル名（新仕様 YYYY年M月度{大会名}{種別}）(004/006B 整合)');
 }
 
-// H3: footer 1行目テンプレート文言は不変（default 値で出力したケース）
+// H3: footer 1行目テンプレート文言（FAX削除後）は不変（default 値で出力したケース）
 {
   const env = loadEnv(targetPath);
   env._setState(makeBaseState({date:'2026-05-18',start:'13:00',end:'17:00'}));
   seedReportDom(env._ctx);
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  assert(html.indexOf('※ホームページ掲載の為、当日夜までにFAX（943-9443）、メールまたは直接沼津支部事務局まで') >= 0,
-    'H3 footer 1行目テンプレート文言は不変');
+  assert(html.indexOf('※ホームページ掲載の為、当日夜までにメールまたは直接沼津支部事務局まで') >= 0,
+    'H3 footer 1行目テンプレート文言（FAX削除後）は不変');
 }
 
 // ============================================================
