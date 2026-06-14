@@ -124,6 +124,8 @@ body.sb-active{overflow:hidden}
 .sb-title{font-size:16px;font-weight:600;line-height:1.3}
 .sb-meta{font-size:12px;opacity:0.92;margin-top:3px;line-height:1.4}
 .sb-note{font-size:11px;opacity:0.8;margin-top:4px}
+/* LIVE-MOBILE-SCOREBOARD-001 §1: 最終更新時刻（閲覧ビューが state を最後に読み込んだ時刻）。 */
+.sb-updated{font-size:11px;opacity:0.92;margin-top:3px;font-variant-numeric:tabular-nums}
 /* Codex Must Fix 1: 「運営画面へ」戻りボタン(.sb-back)は read-only 徹底のため廃止（CSS も削除）。 */
 .sb-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;background:#dde7f2}
 .sb-tab{padding:6px 14px;border-radius:16px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:13px;cursor:pointer;font-family:inherit}
@@ -8076,10 +8078,34 @@ function initApp(){
 // 表示中のクラスフィルタ（'all' または classId）。memory-only、保存しない。
 var _sbClassFilter='all';
 
-// hash が閲覧専用ビューのものか判定する。
+// LIVE-MOBILE-SCOREBOARD-001 §1: 最終更新時刻。
+//   閲覧ビューが state を最後に読み込んだ時刻を保持する（memory-only / 非保存・保存データ構造は不変）。
+//   タブ切替などの単なる再描画では更新せず、データ再読込時（route 突入 / storage / focus）のみ更新する。
+var _sbLastUpdate=null;
+
+// Date を 'YYYY/MM/DD HH:MM:SS'（ゼロ詰め）へ整形する純粋関数。
+//   Date でない/不正値なら '' を返す。表示専用でロジックに影響しない。
+function sbFormatUpdateTime(d){
+  if(!d||typeof d.getFullYear!=='function'||isNaN(d.getTime()))return '';
+  function z(n){return (n<10?'0':'')+n;}
+  return d.getFullYear()+'/'+z(d.getMonth()+1)+'/'+z(d.getDate())
+    +' '+z(d.getHours())+':'+z(d.getMinutes())+':'+z(d.getSeconds());
+}
+
+// 最終更新時刻を現在時刻へ更新する（データ再読込時に呼ぶ）。
+function sbTouchUpdate(){ _sbLastUpdate=new Date(); }
+
+// 現在のURLが閲覧専用ビューのものか判定する。
+//   LIVE-MOBILE-SCOREBOARD-001 §1: 仕様の主経路 ?view=scoreboard に加え、
+//   既存運用の #scoreboard / #viewer / #mobile-standings hash も引き続き受理する（後方互換）。
+//   いずれも scoreboard / viewer / mobile-standings の3トークンを許可する。
 function isScoreboardRoute(){
+  var tokens={scoreboard:1,viewer:1,'mobile-standings':1};
   var h=(location.hash||'').replace(/^#/,'').toLowerCase();
-  return h==='scoreboard'||h==='viewer'||h==='mobile-standings';
+  if(tokens[h])return true;
+  var m=(location.search||'').match(/[?&]view=([^&#]*)/i);
+  var v=m?decodeURIComponent(m[1]).toLowerCase():'';
+  return !!tokens[v];
 }
 
 // クラス表示名（state.classes[*].name 優先、なければ '<id>クラス'）。
@@ -8166,10 +8192,14 @@ function renderScoreboard(){
   //   勝敗入力・編集UIへ到達でき、閲覧専用(read-only)要件に反するため。
   //   運営者が運営画面へ戻る必要がある場合は「別タブ運用」または「#scoreboard を外した
   //   運営URLを直接開く」運用とする（閲覧ビュー内には導線を持たせない）。
+  // 最終更新時刻（仕様の必須表示項目）。_sbLastUpdate 未設定（直接描画）の場合は現在時刻で代替。
+  var updLabel=sbFormatUpdateTime(_sbLastUpdate||new Date());
   var head='<div class="sb-head"><div>'
     +'<div class="sb-title">'+escapeHtml(title)+' 星取表</div>'
     +(metaParts.length?'<div class="sb-meta">'+escapeHtml(metaParts.join('　／　'))+'</div>':'')
-    +'<div class="sb-note">閲覧専用・自動更新（運営画面の保存に追従）</div></div></div>';
+    +'<div class="sb-note">閲覧専用・自動更新（運営画面の保存に追従）</div>'
+    +(updLabel?'<div class="sb-updated">最終更新：'+escapeHtml(updLabel)+'</div>':'')
+    +'</div></div>';
   // フィルタが現存クラスに無ければ all に戻す。
   if(_sbClassFilter!=='all'&&activeClasses.indexOf(_sbClassFilter)===-1)_sbClassFilter='all';
   var tabs='';
@@ -8207,6 +8237,7 @@ function applyScoreboardRoute(){
     view.setAttribute('aria-hidden','false');
     if(header)header.style.display='none';
     if(container)container.style.display='none';
+    sbTouchUpdate();
     renderScoreboard();
   }else{
     document.body.classList.remove('sb-active');
@@ -8244,12 +8275,14 @@ function initScoreboard(){
     if(!isScoreboardRoute())return;
     if(e&&e.key&&e.key!==STORAGE_KEY)return;
     try{load();}catch(err){}
+    sbTouchUpdate();
     renderScoreboard();
   });
   // タブ復帰時にも最新化（storage イベントを取りこぼした場合の保険）。
   window.addEventListener('focus',function(){
     if(!isScoreboardRoute())return;
     try{load();}catch(err){}
+    sbTouchUpdate();
     renderScoreboard();
   });
   applyScoreboardRoute();
