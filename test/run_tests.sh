@@ -952,6 +952,22 @@ else
 fi
 
 # ============================================
+# SHOGI-TOUR-APPHQ-003H-2-D members 形式 参加者候補マスタ読込 単体テスト
+# ============================================
+echo ""
+echo "【003H-2-D members 形式 参加者候補マスタ読込】"
+if [ -f "$SCRIPT_DIR/test_members_candidate_master_import.js" ]; then
+  if node "$SCRIPT_DIR/test_members_candidate_master_import.js" "$TARGET" > /tmp/members_candidate_master_out.log 2>&1; then
+    ok "003H-2-D members 候補マスタ取込テスト 全PASS ($(tail -1 /tmp/members_candidate_master_out.log))"
+  else
+    ng "003H-2-D members 候補マスタ取込テスト 失敗"
+    cat /tmp/members_candidate_master_out.log
+  fi
+else
+  warn "test_members_candidate_master_import.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
