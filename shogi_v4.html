@@ -50,9 +50,28 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
    3+ クラス本格 UI レイアウト改善は後続タスク（008 以降）で扱う。 */
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:700px){.grid2{grid-template-columns:1fr}}
+/* Codex Should Fix 2 (根本対処): 対局管理のクラスpane(#pane-tournament-grid 直下のグリッド項目)は
+   既定の min-width:auto だとコンテンツ最小幅でトラックを突き破り、スマホ幅で pane ごと横あふれする
+   （長い氏名の winner-btn / 暫定成績 / 対戦済みリストが原因になり得た）。min-width:0 でトラック幅に
+   収め、内側の .winner-row(flex-wrap) や score-grid を折り返し可能にする。PC では 1fr トラックが十分
+   広く min-width:auto でも破綻しないため、この指定による見た目変化はなく操作性も不変(PC最優先)。 */
+#pane-tournament-grid>div{min-width:0}
 .pairing-card{background:#f8fbff;border:1px solid #d0e4f7;border-radius:10px;padding:12px 12px;margin-bottom:8px}
-.winner-btn{padding:10px 8px;border-radius:8px;border:2px solid #ccc;background:#fff;font-size:15px;font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;width:7em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* LIVE-MOBILE-SCOREBOARD-001 §2 対局管理の名前ボックス改善:
+   旧実装は width:7em + white-space:nowrap + text-overflow:ellipsis で長い氏名を
+   省略表示していた（「12｜長谷川さく…」のように末尾が切れて読めない）。
+   省略に逃げず、氏名を折り返して全文を読めるようにする。番号プレフィックス（12｜）は
+   getNameWithNo 由来でそのまま保持し、同姓・同姓同名の判別補助とする。
+   タップ対象の高さを min-height で安定させ、勝敗入力の操作性は維持する。 */
+.winner-btn{padding:9px 10px;border-radius:8px;border:2px solid #ccc;background:#fff;font-size:15px;font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;min-width:7.5em;max-width:13em;min-height:2.9em;line-height:1.35;white-space:normal;word-break:break-word;overflow-wrap:anywhere;text-align:center;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center}
 .winner-btn.selected{background:#1F3864;color:#fff;border-color:#1F3864}
+/* LIVE-MOBILE-SCOREBOARD-001 §2 / Codex Should Fix 2: 対局カードの氏名ボタン親flex(.winner-row)。
+   旧実装は親が nowrap の横並びのままで、長い氏名2名だとスマホ幅で第2対局者ボタンが画面外へ
+   はみ出し、勝敗入力が押しづらかった。入り切らない時だけ折り返す(flex-wrap)ことで横あふれを防ぐ。
+   通常氏名は1行に収まり折り返さないため、PC運営画面の従来挙動・操作性は維持される(PC最優先)。
+   折り返しが起きるスマホ幅では中央寄せ＋行間を少し空けて、上下に並んだ2ボタンを押しやすくする。 */
+.winner-row{flex-wrap:wrap}
+@media(max-width:700px){.winner-row{justify-content:center;row-gap:8px}}
 .score-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:6px;margin-bottom:12px}
 .score-card{background:#f0f4f8;border-radius:8px;padding:8px 6px;text-align:center}
 .score-card .sname{font-weight:500;font-size:12px}
@@ -94,6 +113,43 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
 @media screen and (orientation:landscape) and (max-width:900px){
   #rotate-overlay{display:flex!important}
 }
+/* LIVE-MOBILE-SCOREBOARD-001 §1 スマホ閲覧用リアルタイム星取表ビュー:
+   運営画面（.header/.container）とは物理的に分離したフルスクリーンの閲覧専用ビュー。
+   #scoreboard / #viewer / #mobile-standings hash で起動し、操作UI（ボタン/入力/
+   保存/編集）は一切描画しない。順位は既存 calcFinal / computeDisplayRanks / getWins を
+   再利用して算出し、ロジックを複製しない。スマホ縦画面 + 横スクロール、氏名列は sticky 固定。 */
+#scoreboard-view{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#eef2f7;z-index:90000;overflow-y:auto;-webkit-overflow-scrolling:touch;font-family:'Hiragino Kaku Gothic ProN','Yu Gothic',Meiryo,sans-serif}
+body.sb-active{overflow:hidden}
+.sb-head{position:sticky;top:0;z-index:6;background:#1F3864;color:#fff;padding:10px 12px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;box-shadow:0 2px 6px rgba(0,0,0,0.18)}
+.sb-title{font-size:16px;font-weight:600;line-height:1.3}
+.sb-meta{font-size:12px;opacity:0.92;margin-top:3px;line-height:1.4}
+.sb-note{font-size:11px;opacity:0.8;margin-top:4px}
+/* Codex Must Fix 1: 「運営画面へ」戻りボタン(.sb-back)は read-only 徹底のため廃止（CSS も削除）。 */
+.sb-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;background:#dde7f2}
+.sb-tab{padding:6px 14px;border-radius:16px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:13px;cursor:pointer;font-family:inherit}
+.sb-tab.active{background:#2E75B6;color:#fff;font-weight:600}
+.sb-body{padding:8px 0 48px}
+.sb-class{margin-bottom:16px}
+.sb-class-h{font-size:14px;font-weight:600;color:#1F3864;padding:8px 12px 6px}
+.sb-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-top:1px solid #d3dbe5;border-bottom:1px solid #d3dbe5;background:#fff}
+.sb-table{border-collapse:separate;border-spacing:0;font-size:13px;width:auto;min-width:100%}
+.sb-table th,.sb-table td{border-right:1px solid #e0e6ee;border-bottom:1px solid #e0e6ee;padding:5px 7px;text-align:center;white-space:nowrap;vertical-align:middle}
+.sb-table thead th{background:#1F3864;color:#fff;font-weight:500;position:sticky;top:0;z-index:2}
+/* 順位 + 氏名 列を sticky 固定（横スクロールでも誰の行か分かる）。
+   氏名列の left は順位列の固定幅(40px)に一致させる。 */
+.sb-col-rank{position:sticky;left:0;z-index:3;background:#eef3f9;font-weight:700;width:40px;min-width:40px;max-width:40px}
+.sb-col-name{position:sticky;left:40px;z-index:3;background:#fff;text-align:left;font-weight:600;min-width:6.5em;max-width:10.5em;white-space:normal;word-break:break-word;line-height:1.3}
+.sb-table thead .sb-col-rank,.sb-table thead .sb-col-name{background:#15294a;color:#fff;z-index:4}
+.sb-row-1 .sb-col-rank{background:#fde7c4}
+.sb-mark{font-size:16px;font-weight:700;line-height:1.05}
+.sb-mark-win{color:#1b7a2e}
+.sb-mark-lose{color:#b23030}
+.sb-mark-none{color:#bbb}
+.sb-opp{font-size:10px;color:#777;display:block;margin-top:1px}
+.sb-wins{font-weight:700;color:#1F3864;font-size:15px}
+.sb-metric{color:#555;font-size:12px}
+.sb-empty{padding:28px 16px;text-align:center;color:#888;font-size:13px;line-height:1.6}
+.sb-legend{padding:6px 12px 0;font-size:11px;color:#667}
 </style>
 </head>
 <body>
@@ -102,9 +158,18 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
   <div style="font-size:20px;font-weight:500;margin-bottom:12px">縦向きにしてください</div>
   <div style="font-size:14px;opacity:0.8">このアプリは縦向き表示に最適化されています</div>
 </div>
+<!-- LIVE-MOBILE-SCOREBOARD-001 §1: スマホ閲覧用リアルタイム星取表ビュー（閲覧専用）。
+     既定は display:none。#scoreboard / #viewer / #mobile-standings hash 時に renderScoreboard()
+     が中身を生成し、運営画面（.header / .container）を隠して全画面表示する。
+     操作UI（入力/保存/編集ボタン）は一切含めない。 -->
+<div id="scoreboard-view" aria-hidden="true"></div>
 <div class="header">
   <div><h1>沼津支部 月例将棋大会 運営ツール</h1></div>
   <div style="display:flex;gap:8px;align-items:center">
+    <!-- LIVE-MOBILE-SCOREBOARD-001 §1: スマホ閲覧用の星取表ビューを別タブで開く。
+         運営画面（このタブ）はそのまま維持し、閲覧専用ビューは #scoreboard hash で起動する。
+         同一ブラウザの localStorage(state) を参照し、運営タブの保存に追従してリアルタイム更新する。 -->
+    <button type="button" class="btn-sm no-print" id="openScoreboardBtn" style="background:#2E75B6;color:#fff;border-color:#2E75B6">📱 スマホ星取表</button>
     <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">大会データをコピー</button>
     <button type="button" class="btn-sm no-print" id="loadBtn" style="background:#185FA5;color:#fff;border-color:#185FA5">読み込み</button>
     <input type="file" id="loadFile" accept=".json" style="display:none">
@@ -264,10 +329,13 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
         <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">申し送り事項</label>
         <textarea id="rep-note" placeholder="特になし" style="width:100%;height:60px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical"></textarea>
       </div>
-      <!-- REPORT-UX-007A: 報告書 footer 1行目で使う FAX番号 / 事務局名（state.report.fax / officeName）。
-           downloadReport が '※ホームページ掲載の為、当日夜までにFAX（XXX）、メールまたは直接<officeName>まで'
-           で参照する。既定値 '943-9443' / '沼津支部事務局'。空欄/不正値は normalize helper で既定値に
-           fallback、DOM 表示値も change イベント時のみ同期書き戻し（input 時は IME-safe で state 更新のみ）。 -->
+      <!-- REPORT-UX-007A / FAX削除対応（Codex 追加 Must Fix）:
+           FAX番号入力欄（#rep-fax / state.report.fax）は schema・保存読込互換のため残置するが、
+           FAX が実在しないため報告書出力（downloadReport）には一切出力しない（出力で参照しない）。
+           事務局名（#rep-office-name / officeName）は引き続き footer 1行目
+           '※ホームページ掲載の為、当日夜までにメールまたは直接<officeName>まで' で参照する。
+           既定値 '943-9443'(fax・出力未使用) / '沼津支部事務局'(officeName)。空欄/不正値は normalize
+           helper で既定値に fallback、DOM 同期は change イベント時のみ（input 時は IME-safe で state のみ）。 -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
         <div>
           <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">FAX番号</label>
@@ -1067,7 +1135,9 @@ function normalizeReportOrganizer(value){
 }
 
 // REPORT-UX-007A: FAX 番号 正規化 pure helper。
-//   既定値: '943-9443'。報告書 footer 1行目 '※ホームページ掲載の為、…FAX（XXX）、…' で参照される。
+//   FAX削除対応（Codex 追加 Must Fix）: 報告書出力（downloadReport）では FAX を出力しなくなったため、
+//   本 helper の戻り値は報告書 footer では参照されない。state.report.fax / #rep-fax 入力欄の
+//   schema・保存読込互換のために helper 自体は残置する（既定値 '943-9443'）。
 //   - 文字列なら trim する
 //   - 結果が空文字なら（'' / '   ' 等）既定値 '943-9443' に fallback
 //   - null / undefined / 数値・配列等の非文字列もすべて既定値 fallback
@@ -1372,14 +1442,7 @@ function normalizeBranchMaster(raw){
       if(typeof t2==='string'&&t2&&!seenTid[t2]){seenTid[t2]=true;tournament_ids.push(t2);}
     }
 
-    // 候補マスタ取込: member は内部表現 'member'/'other'（アプリ native export）に加え、
-    //   外部マスタが使う boolean（true=支部員 / false=一般）も受理する。
-    //   false → 'other'（一般）。未知値・未指定は既存仕様どおり 'member'（支部員）既定。
-    //   native データは常に 'member'/'other' 文字列のため、この追加分岐は無影響（後方互換）。
-    var memberStatus=(m.member===false||m.member==='other')?'other':'member';
-    // grade はアプリ内では会費区分（'ippan'=一般 / 'chu'=中学生以下）。
-    //   外部マスタの段位（例: "二段"）はこの区分とは別概念のため取り込まず、既定 'ippan'。
-    //   段位を残したい場合は外部 JSON の note に入れる運用（note は下で保持）。
+    var memberStatus=(m.member==='other')?'other':'member';
     var gradeStatus=(m.grade==='chu')?'chu':'ippan';
 
     members.push({
@@ -3265,14 +3328,8 @@ function processMasterImportText(text,mode,setStatus){
     if(!confirm('現在のマスタをすべて置き換えます。元に戻せません。\n\n続けますか？\n\n読込予定: '+(result.newMaster.members.length)+'名'))return;
     saveBranchMaster(result.newMaster);
     var modalEl=document.getElementById('master-import-modal');if(modalEl)modalEl.remove();
-    // 候補マスタ取込の完了通知: 当日参加者の自動登録ではないことを明示する。
-    if(typeof showMsg==='function')showMsg('参加者マスタを読み込みました（'+result.newMaster.members.length+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
+    if(typeof showMsg==='function')showMsg('マスタを上書きインポートしました（'+result.newMaster.members.length+'名）','ok');
     renderMasterTab();
-    // MASTER-PROD-001: 取込後に過去参加者パネルを再描画し「過去参加者から選ぶ」を即時表示（reset / Phase2 取込と同じパターン。当日参加者は自動追加しない）。
-    if(typeof renderPastParticipantsPanel==='function'){
-      var ppSearch=document.getElementById('pp-search');
-      renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
-    }
     return;
   }
 
@@ -3287,14 +3344,8 @@ function processMasterImportText(text,mode,setStatus){
     }
     saveBranchMaster(mr.newMaster);
     var modalEl2=document.getElementById('master-import-modal');if(modalEl2)modalEl2.remove();
-    // 候補マスタへのマージ完了通知: 当日参加者の自動登録ではないことを明示する。
-    if(typeof showMsg==='function')showMsg('参加者マスタにマージしました（新規 '+mr.summary.added+'名 / 統合 '+mr.summary.merged+'名 / 合計 '+mr.summary.total+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
+    if(typeof showMsg==='function')showMsg('マスタにマージしました（新規追加 '+mr.summary.added+'名 / 既存統合 '+mr.summary.merged+'名 / 合計 '+mr.summary.total+'名）','ok');
     renderMasterTab();
-    // MASTER-PROD-001: 取込後に過去参加者パネルを再描画し「過去参加者から選ぶ」を即時表示（reset / Phase2 取込と同じパターン。当日参加者は自動追加しない）。
-    if(typeof renderPastParticipantsPanel==='function'){
-      var ppSearch=document.getElementById('pp-search');
-      renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
-    }
     return;
   }
 }
@@ -6297,7 +6348,7 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       // A-4 §3 MF6-a: 卓番号バッジ（配列 index+1 から算出。永続化なし）
       +'<div style="position:absolute;top:6px;left:6px;padding:2px 8px;border-radius:4px;background:#1F3864;color:#fff;font-size:11px;font-weight:bold">第 '+(i+1)+' 卓</div>'
       +'<button style="position:absolute;top:6px;right:6px;padding:3px 7px;border-radius:5px;border:1px solid #ccc;background:#fff;font-size:11px;color:#888;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
-      +'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:28px">'
+      +'<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:28px">'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
       +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+escapeHtml(n1)+'</button>'
       // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT: formatParticipantLabel による勝敗数併記補助ラベル
@@ -6962,6 +7013,84 @@ function openLoadModal(){
   btn.addEventListener('click',loadFromPaste);
 }
 
+// ============================================================
+// LIVE-MOBILE-SCOREBOARD-001 §3/§4 PDF 出力ファイル名 / PDF 内タイトル共通 helper
+//   各 PDF 出力箇所が個別にファイル名・見出しを組み立てない。state.report を SoT として
+//   「YYYY年M月度{大会名}{種別}」形式の安全なファイル名と、対象月/開催日を含む見出しを生成する。
+//   - 対象月: 今回はデータ構造を増やさず state.report.date（開催日）の年月から導出する。
+//     対象月を独立フィールドとして持つ恒久対応は docs/notes の設計メモ §7 参照。
+//   - 開催日: state.report.date を「YYYY年M月D日」表記に変換する。
+//   - ファイル名に使えない文字は安全に除去/置換する。未入力項目があっても破綻しない。
+// ============================================================
+
+// ファイル名の 1 パーツをサニタイズ: OS でファイル名に使えない文字・制御文字・空白を除去する。
+function sanitizeFilenamePart(value){
+  return String(value==null?'':value)
+    .replace(/[\\/:*?"<>|]/g,'')      // Windows / macOS で禁止される文字
+    .replace(/[\x00-\x1f\x7f]/g,'')    // 制御文字
+    .replace(/[\s　]+/g,'')        // 半角/全角スペースは詰める（配布ファイル名を素直にする）
+    .replace(/^\.+/,'')                // 先頭ドット（隠しファイル化）を防ぐ
+    .trim();
+}
+
+// パーツ配列を結合して拡張子なしの安全なファイル名（基底名）を返す。空パーツはスキップ。
+//   全パーツが空でも壊れないよう既定値 '将棋大会' に fallback する。
+function buildSafePdfFilename(parts){
+  var safe=[];
+  if(Object.prototype.toString.call(parts)==='[object Array]'){
+    for(var i=0;i<parts.length;i++){
+      var p=sanitizeFilenamePart(parts[i]);
+      if(p)safe.push(p);
+    }
+  }
+  var name=safe.join('');
+  return name||'将棋大会';
+}
+
+// 対象月ラベル「YYYY年M月度」。state.report.date（開催日）の年月から導出。日付未入力時は ''。
+function buildTournamentTargetMonthLabel(){
+  var raw=(typeof normalizeReportDateForInput==='function')?normalizeReportDateForInput(state.report&&state.report.date):'';
+  var mm=raw&&raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!mm)return '';
+  return mm[1]+'年'+String(parseInt(mm[2],10))+'月度';
+}
+
+// 開催日ラベル「YYYY年M月D日」。日付未入力時は ''。
+function buildTournamentHeldDateLabel(){
+  var raw=(typeof normalizeReportDateForInput==='function')?normalizeReportDateForInput(state.report&&state.report.date):'';
+  return raw?formatJapaneseDateFromYmd(raw):'';
+}
+
+// PDF 保存時の推奨ファイル名（拡張子なしの基底名）を種別ごとに生成する。
+//   形式: {YYYY年M月度}{大会名}{種別}  例: 2026年6月度沼津支部月例将棋大会対戦成績
+//   Codex Must Fix 2（A案 採用）:
+//   現行 PDF 出力は全経路（printResults / printPairings / downloadReport）が
+//   Blob(text/html) + window.open() + win.print() 方式であり、生成物は HTML である。
+//   利用者がブラウザの印刷ダイアログで「PDF に保存」を選ぶと、ブラウザは <title> を
+//   ファイル名候補として提示し、「.pdf」拡張子はブラウザ側のPDF保存動作で付与される。
+//   そのため「.pdf 拡張子」をアプリのコードで保証することはできない（ブラウザ依存）。
+//   本実装のスコープは「保存ダイアログに出る “基底名” を URL 由来でなく大会情報由来に
+//   改善する」ことに限定する。よってここでは拡張子を付けない安全な基底名のみを返す。
+//   （title に '.pdf' を埋めると環境により二重拡張子等になり得るため付与しない。）
+function buildTournamentPdfFilename(kind){
+  var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):'沼津支部月例将棋大会';
+  return buildSafePdfFilename([buildTournamentTargetMonthLabel(),title,kind]);
+}
+
+// PDF 帳票の見出し HTML（大会名 / 種別 / 対象月 / 開催日）。印刷・配布時に単体で意味が通るようにする。
+//   未入力（対象月・開催日が空）でも崩れないよう、存在する項目だけを表示する。すべて escapeHtml 済み。
+function buildPdfDocHeaderHtml(kindLabel){
+  var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):'沼津支部月例将棋大会';
+  var monthLabel=buildTournamentTargetMonthLabel();
+  var heldLabel=buildTournamentHeldDateLabel();
+  var metaParts=[];
+  if(monthLabel)metaParts.push('対象月：'+monthLabel);
+  if(heldLabel)metaParts.push('開催日：'+heldLabel);
+  var titleLine=title+(kindLabel?('　'+kindLabel):'');
+  var metaHtml=metaParts.length?'<div class="doc-meta">'+escapeHtml(metaParts.join('　／　'))+'</div>':'';
+  return '<header class="doc-header"><div class="doc-title">'+escapeHtml(titleLine)+'</div>'+metaHtml+'</header>';
+}
+
 function printResults(){
   // ROUND-CLASS-START-007 (spec §15.1):
   //   印刷帳票を state.classes 駆動で組み立てる（A/B 固定 literal 解消）。
@@ -7050,38 +7179,29 @@ function printResults(){
   var pageBreakHtml='<div style="page-break-before:always"></div>';
   var tablesHtml=tables.join(pageBreakHtml);
 
-  // REPORT-PRINT-006-1: <title> / PDF 保存時のデフォルトファイル名を state.report.title /
-  //   state.report.date 連動にする（downloadReport / printPairings と命名規約を統一）。
-  //   旧仕様: '沼津支部月例将棋大会 対戦成績' + '沼津支部_<y>年<m>月度_月例将棋大会結果' の固定 literal
-  //   旧仕様の日付は実行日 new Date() ベースで、state.report.date と無関係 → 大会後に別日印刷すると
-  //   大会日ではなく印刷日がファイル名に入る運用バグがあった。
-  //   新仕様: '<reportTitle>_<YYYYMMDD>_対戦成績' を escapeHtml して <title> に直接代入（1 段階）。
-  //   - reportTitle = normalizeReportTitle(state.report.title)（default '沼津支部月例将棋大会'）
-  //   - dateNum: state.report.date が有効なら YYYYMMDD、空 / 不正なら実行日 fallback（既存挙動温存）
-  //   h2 '<h2>スイス式トーナメント　対戦成績</h2>' は今回スコープ外として変更しない
-  //   （帳票本文への大会名 / 日付追加は別タスク後続候補、test_rank_print_001 の 4-2-a も維持）。
-  var reportTitle=normalizeReportTitle(state.report&&state.report.title);
-  var reportDateRaw=normalizeReportDateForInput(state.report&&state.report.date);
-  var dateNum;
-  if(reportDateRaw){
-    dateNum=reportDateRaw.split('-').join('');
-  } else {
-    var now=new Date();
-    var y=now.getFullYear();
-    var m=('0'+(now.getMonth()+1)).slice(-2);
-    var d=('0'+now.getDate()).slice(-2);
-    dateNum=String(y)+m+d;
-  }
-  var fileTitleName=reportTitle+'_'+dateNum+'_対戦成績';
+  // LIVE-MOBILE-SCOREBOARD-001 §3: PDF 保存時のファイル名は共通 helper で
+  //   「YYYY年M月度{大会名}対戦成績」形式に統一する（buildTournamentPdfFilename）。
+  //   旧仕様の '<大会名>_<YYYYMMDD>_対戦成績' はアンダースコア + 8桁日付で URL 由来のように
+  //   見えていたため、配布で意味が通る自然な日本語ファイル名へ改善する。
+  //   <title> をファイル名候補として使う印刷経路のため、拡張子なしの基底名を代入する
+  //   （保存時にブラウザが .pdf を付与）。
+  var fileTitleName=buildTournamentPdfFilename('対戦成績');
 
+  // LIVE-MOBILE-SCOREBOARD-001 §4: 帳票本文に大会名 / 対象月 / 開催日 / 種別の見出しを追加し、
+  //   印刷・配布時に PDF 単体で「いつ・どの大会の・何の帳票か」が分かるようにする。
+  //   buildPdfDocHeaderHtml は未入力項目を安全にスキップする（崩れない）。
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
     +'<title>'+escapeHtml(fileTitleName)+'</title>'
     +'<style>@page{size:A4;margin:10mm}'
     +'body{font-family:sans-serif;font-size:13px;padding:16px}'
     +'h2{font-size:16px;color:#1F3864;border-left:4px solid #1F3864;padding-left:10px;margin-bottom:8px}'
+    +'.doc-header{border-bottom:2px solid #1F3864;padding-bottom:8px;margin-bottom:12px}'
+    +'.doc-header .doc-title{font-size:19px;font-weight:bold;color:#1F3864}'
+    +'.doc-header .doc-meta{font-size:13px;color:#444;margin-top:4px}'
     +'tr,td{page-break-inside:avoid}'
     +'@media print{body{padding:0}.no-print{display:none}}</style>'
     +'</head><body>'
+    +buildPdfDocHeaderHtml('対戦成績')
     +'<h2>スイス式トーナメント　対戦成績</h2>'
     +tablesHtml
     +'</body></html>';
@@ -7139,11 +7259,9 @@ function printPairings(){
   var dateRaw=(typeof normalizeReportDateForInput==='function')?normalizeReportDateForInput(state.report&&state.report.date):'';
   var dateDisplay=dateRaw&&typeof formatJapaneseDateFromYmd==='function'?formatJapaneseDateFromYmd(dateRaw):'';
 
-  // ファイル名用日付（YYYYMMDD、未入力時は空）と <title> 用文字列。
-  var dateNumForFile=dateRaw?dateRaw.split('-').join(''):'';
-  var fileTitleName=dateNumForFile
-    ?(reportTitle+'_'+dateNumForFile+'_現在の組み合わせ')
-    :(reportTitle+'_現在の組み合わせ');
+  // LIVE-MOBILE-SCOREBOARD-001 §3: ファイル名は共通 helper で「YYYY年M月度{大会名}組み合わせ」に統一。
+  //   旧 '<大会名>_<YYYYMMDD>_現在の組み合わせ'（URL 由来のように見える）を自然な日本語名へ改善する。
+  var fileTitleName=buildTournamentPdfFilename('組み合わせ');
 
   // 各クラスごとに section を組み立て、class 間に page-break を入れる（複数クラスでも 1 クラス=1 ページ目安）。
   //   card は CSS grid で 1 ページ複数カード、page-break-inside:avoid でカード途中での改ページを避ける。
@@ -7169,8 +7287,13 @@ function printPairings(){
   }
   var sectionsHtml=printable.map(buildClassSection).join('<div class="cls-pagebreak"></div>');
 
+  // LIVE-MOBILE-SCOREBOARD-001 §4: 見出しに対象月と開催日を併記し、配布時に PDF 単体で意味が通るようにする。
   var headerLeft=escapeHtml(reportTitle);
-  var headerRight=dateDisplay?escapeHtml(dateDisplay):'';
+  var sbMonthLabel=buildTournamentTargetMonthLabel();
+  var headerMetaParts=[];
+  if(sbMonthLabel)headerMetaParts.push('対象月：'+sbMonthLabel);
+  if(dateDisplay)headerMetaParts.push('開催日：'+dateDisplay);
+  var headerRight=headerMetaParts.length?escapeHtml(headerMetaParts.join('　／　')):'';
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
     +'<title>'+escapeHtml(fileTitleName)+'</title>'
     +'<style>@page{size:A4;margin:10mm}'
@@ -7321,12 +7444,12 @@ function downloadReport(){
   //   escapeHtml は HTML 組立時に通すため、ここでは正規化済の生文字列を保持する。
   var reportOrganizer=normalizeReportOrganizer(state.report&&state.report.organizer);
 
-  // REPORT-UX-007A: footer 1行目の FAX番号 / 事務局名は state.report.fax / officeName から取得。
-  //   既定値は normalizeReportFax / normalizeReportOfficeName 側に集約済み、空欄/不正値は
-  //   各 helper で default fallback。default のままなら footer 1行目の出力文字列は従来固定値の
-  //   帳票と完全一致になる。
+  // REPORT-UX-007A / FAX削除対応: footer 1行目の事務局名は state.report.officeName から取得。
+  //   既定値は normalizeReportOfficeName 側に集約済み、空欄/不正値は helper で default fallback。
   //   escapeHtml は HTML 組立時に通すため、ここでは正規化済の生文字列を保持する。
-  var fax=normalizeReportFax(state.report&&state.report.fax);
+  //   ※ Codex 追加 Must Fix: FAX番号は実在しないため報告書 footer から削除（出力しない）。
+  //     state.report.fax / normalizeReportFax / #rep-fax 入力欄は schema・保存読込互換のため残置するが、
+  //     報告書出力（downloadReport）では一切参照しない。
   var officeName=normalizeReportOfficeName(state.report&&state.report.officeName);
 
   // REPORT-UX-007B-1: footer 2行目（会計提出文）は state.report.accountingNote から取得。
@@ -7342,7 +7465,10 @@ function downloadReport(){
     +'table{border-collapse:collapse;width:100%}'
     +'tr,td{page-break-inside:avoid}'
     +'@media print{body{padding:0}}</style></head><body>'
-    +'<h2 style="text-align:center;font-size:16px;margin-bottom:16px">'+escapeHtml(reportTitleWithSuffix)+'</h2>'
+    +'<h2 style="text-align:center;font-size:16px;margin-bottom:6px">'+escapeHtml(reportTitleWithSuffix)+'</h2>'
+    // LIVE-MOBILE-SCOREBOARD-001 §4: 対象月を表題直下に併記（開催日は下の「日付」行に既出）。
+    //   対象月未入力（開催日なし）の場合はこの行ごと省略し、表示を崩さない。
+    +(buildTournamentTargetMonthLabel()?'<div style="text-align:center;font-size:13px;color:#444;margin-bottom:16px">対象月：'+escapeHtml(buildTournamentTargetMonthLabel())+'</div>':'<div style="margin-bottom:10px"></div>')
     +'<table>'
     // REPORT-UX-005: 主催行（旧版で固定文字列だった主催者名を state.report.organizer 由来に置換）。
     //   既存帳票構造の踏襲: 日付行と同じ width:120px / 同 colspan="2" レイアウト。
@@ -7384,7 +7510,7 @@ function downloadReport(){
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold;width:120px">申し送り事項</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;height:60px">'+escapeHtml(note).split('\n').join('<br>')+'</td></tr>'
     +'</table>'
-    +'<p style="margin-top:12px;font-size:11px">※ホームページ掲載の為、当日夜までにFAX（'+escapeHtml(fax)+'）、メールまたは直接'+escapeHtml(officeName)+'まで</p>'
+    +'<p style="margin-top:12px;font-size:11px">※ホームページ掲載の為、当日夜までにメールまたは直接'+escapeHtml(officeName)+'まで</p>'
     +'<p style="font-size:11px">'+escapeHtml(accountingNote).split('\n').join('<br>')+'</p>'
     +'</body></html>';
 
@@ -7393,14 +7519,12 @@ function downloadReport(){
   // REPORT-UX-006B: dateRaw は normalizeReportDateForInput 通過済の YYYY-MM-DD / '' なので、
   //   ハイフン除去のみで YYYYMMDD（不正値時は ''）になる。DOM 直読みをやめ state-as-SoT に統一。
   var dateNum=dateRaw.split('-').join('');
-  // REPORT-UX-004: ファイル名は <reportTitle>_<YYYYMMDD>_報告書 形式。
-  //   旧 '沼津支部_<date>_月例将棋大会報告書' のうち、可変部 '月例将棋大会' を reportTitle
-  //   ('沼津支部月例将棋大会' 等) に置換し、不変部 '報告書' を末尾で付与。
-  //   旧形式 (沼津支部_20260518_月例将棋大会報告書) との互換は state.report.title 既定値
-  //   ('沼津支部月例将棋大会') を使った場合の出力 = '沼津支部月例将棋大会_20260518_報告書' で実現。
-  //   <title> タグは初回組立時に reportTitleWithSuffix 由来で生成済のため、ここでは html.replace で
-  //   ファイル名タイトルへ置換する（既存設計の踏襲）。
-  var fileTitleName=reportTitle+'_'+dateNum+'_報告書';
+  // LIVE-MOBILE-SCOREBOARD-001 §3: ファイル名は共通 helper で「YYYY年M月度{大会名}報告書」に統一。
+  //   旧 '<大会名>_<YYYYMMDD>_報告書'（アンダースコア + 8桁日付で URL 由来のように見える）を
+  //   自然な日本語ファイル名へ改善する。<title> は初回組立時に reportTitleWithSuffix 由来で
+  //   生成済のため、ここでは html.replace でファイル名タイトルへ置換する（既存設計の踏襲）。
+  //   dateNum は本ファイル名では未使用だが、後続の互換用に算出は残す。
+  var fileTitleName=buildTournamentPdfFilename('報告書');
   html=html.replace('<title>'+escapeHtml(reportTitleWithSuffix)+'</title>','<title>'+escapeHtml(fileTitleName)+'</title>');
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob);
@@ -7939,12 +8063,205 @@ function initApp(){
   }
 }
 
+// ============================================================
+// LIVE-MOBILE-SCOREBOARD-001 §1 スマホ閲覧用リアルタイム星取表ビュー
+//   運営画面（.header / .container）とは分離した閲覧専用フルスクリーンビュー。
+//   #scoreboard / #viewer / #mobile-standings hash で起動する。操作UI（入力/保存/編集/
+//   ボタン）は一切描画しない。順位・勝敗は既存 calcFinal / computeDisplayRanks / getWins /
+//   getName / entryNoOf を再利用して算出し、ロジックを複製しない（重複実装を避ける）。
+//   リアルタイム更新: 別タブ（運営画面）の save() による localStorage 変更を storage イベントで
+//   受け取り、閲覧専用ビュー表示中のみ state を再読込して再描画する。
+// ============================================================
+
+// 表示中のクラスフィルタ（'all' または classId）。memory-only、保存しない。
+var _sbClassFilter='all';
+
+// hash が閲覧専用ビューのものか判定する。
+function isScoreboardRoute(){
+  var h=(location.hash||'').replace(/^#/,'').toLowerCase();
+  return h==='scoreboard'||h==='viewer'||h==='mobile-standings';
+}
+
+// クラス表示名（state.classes[*].name 優先、なければ '<id>クラス'）。
+function sbClassDisplayName(cls){
+  if(Array.isArray(state.classes)){
+    for(var i=0;i<state.classes.length;i++){
+      if(state.classes[i]&&state.classes[i].id===cls&&state.classes[i].name)return state.classes[i].name;
+    }
+  }
+  return cls+'クラス';
+}
+
+// 1 クラス分の星取表 HTML を組み立てる（横スクロール、順位+氏名は sticky 固定）。
+//   各ラウンド列は ○（勝ち）/×（負け）/－（未対局）と対戦相手番号（#NN）を表示する。
+//   Codex Should Fix 1: 現場要望「○×の星取表」に合わせ、負けは ● ではなく × で表示する。
+//   氏名・番号はすべて escapeHtml してから描画する（XSS 安全）。
+function buildScoreboardClassTableHtml(cls){
+  var players=(state.players&&state.players[cls])||[];
+  if(players.length===0)return '';
+  var finals=calcFinal(cls);
+  var ranks=computeDisplayRanks(finals,cls);
+  var rounds=Number(state.rounds)||0;
+  var resultsArr=(state.results&&state.results[cls])||[];
+  var done=rounds>0&&resultsArr.length>=rounds;
+  var html='<div class="sb-class">';
+  html+='<div class="sb-class-h">'+escapeHtml(sbClassDisplayName(cls))+'　<span style="font-weight:400;color:#888;font-size:12px">'+(done?'最終結果':'途中経過')+'</span></div>';
+  html+='<div class="sb-scroll"><table class="sb-table"><thead><tr>';
+  html+='<th class="sb-col-rank">順位</th><th class="sb-col-name">氏名</th>';
+  for(var r=1;r<=rounds;r++)html+='<th>'+r+'回戦</th>';
+  html+='<th>勝</th><th>負</th><th>B</th><th>C</th></tr></thead><tbody>';
+  for(var i=0;i<finals.length;i++){
+    var f=finals[i];var rank=ranks[i];
+    html+='<tr'+(rank===1?' class="sb-row-1"':'')+'>';
+    html+='<td class="sb-col-rank">'+rank+'</td>';
+    html+='<td class="sb-col-name">'+escapeHtml(getName(f.p.id,cls))+'<span style="font-size:10px;color:#999;font-weight:400">　'+escapeHtml('No.'+entryNoOf(cls,f.p.id))+'</span></td>';
+    for(var rr=0;rr<rounds;rr++){
+      var round=resultsArr[rr];
+      var cell='<span class="sb-mark sb-mark-none">－</span>';
+      if(round){
+        var match=null;
+        for(var m=0;m<round.length;m++){if(round[m].p1===f.p.id||round[m].p2===f.p.id){match=round[m];break;}}
+        if(match){
+          var oppId=match.p1===f.p.id?match.p2:match.p1;
+          var won=match.winner===f.p.id;
+          var markCls=(match.winner==null)?'sb-mark-none':(won?'sb-mark-win':'sb-mark-lose');
+          var markStr=(match.winner==null)?'－':(won?'○':'×');
+          cell='<span class="sb-mark '+markCls+'">'+markStr+'</span><span class="sb-opp">'+escapeHtml('#'+entryNoOf(cls,oppId))+'</span>';
+        }
+      }
+      html+='<td>'+cell+'</td>';
+    }
+    html+='<td class="sb-wins">'+f.A+'</td>';
+    html+='<td class="sb-metric">'+(f.played-f.A)+'</td>';
+    html+='<td class="sb-metric">'+f.B+'</td>';
+    html+='<td class="sb-metric">'+f.C+'</td>';
+    html+='</tr>';
+  }
+  html+='</tbody></table></div>';
+  html+='<div class="sb-legend">○=勝ち／×=負け／－=未対局　・　#NN=対戦相手の番号　・　勝・負=勝敗数　・　B=対戦相手の勝数合計／C=勝った相手の勝数合計（順位判定の主要指標）</div>';
+  return html+'</div>';
+}
+
+// 閲覧専用ビュー全体を再描画する。state を SoT として参照（DOM 直読みしない）。
+function renderScoreboard(){
+  var view=document.getElementById('scoreboard-view');
+  if(!view)return;
+  var classList=(typeof getRegistrationClassList==='function')?getRegistrationClassList():(state.classes||[]);
+  var activeClasses=[];
+  for(var i=0;i<classList.length;i++){
+    var c=classList[i];
+    if(!c||(typeof isSafeClassId==='function'&&!isSafeClassId(c.id)))continue;
+    var players=(state.players&&state.players[c.id])||[];
+    if(players.length>0)activeClasses.push(c.id);
+  }
+  var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):'沼津支部月例将棋大会';
+  var monthLabel=buildTournamentTargetMonthLabel();
+  var heldLabel=buildTournamentHeldDateLabel();
+  var metaParts=[];
+  if(monthLabel)metaParts.push('対象月：'+monthLabel);
+  if(heldLabel)metaParts.push('開催日：'+heldLabel);
+  // LIVE-MOBILE-SCOREBOARD-001 §1 read-only 徹底（Codex Must Fix 1）:
+  //   閲覧URL（#scoreboard / #viewer / #mobile-standings）には運営画面への戻り導線
+  //   （ボタン / リンク等）を一切置かない。戻り導線があると閲覧者が保存・読込・リセット・
+  //   勝敗入力・編集UIへ到達でき、閲覧専用(read-only)要件に反するため。
+  //   運営者が運営画面へ戻る必要がある場合は「別タブ運用」または「#scoreboard を外した
+  //   運営URLを直接開く」運用とする（閲覧ビュー内には導線を持たせない）。
+  var head='<div class="sb-head"><div>'
+    +'<div class="sb-title">'+escapeHtml(title)+' 星取表</div>'
+    +(metaParts.length?'<div class="sb-meta">'+escapeHtml(metaParts.join('　／　'))+'</div>':'')
+    +'<div class="sb-note">閲覧専用・自動更新（運営画面の保存に追従）</div></div></div>';
+  // フィルタが現存クラスに無ければ all に戻す。
+  if(_sbClassFilter!=='all'&&activeClasses.indexOf(_sbClassFilter)===-1)_sbClassFilter='all';
+  var tabs='';
+  if(activeClasses.length>1){
+    tabs='<div class="sb-tabs"><button type="button" class="sb-tab'+(_sbClassFilter==='all'?' active':'')+'" data-sbcls="all">全クラス</button>';
+    for(var t=0;t<activeClasses.length;t++){
+      tabs+='<button type="button" class="sb-tab'+(_sbClassFilter===activeClasses[t]?' active':'')+'" data-sbcls="'+escapeHtml(activeClasses[t])+'">'+escapeHtml(sbClassDisplayName(activeClasses[t]))+'</button>';
+    }
+    tabs+='</div>';
+  }
+  var bodyHtml='';
+  if(activeClasses.length===0){
+    bodyHtml='<div class="sb-empty">まだ星取表に表示できる対局がありません。<br>運営画面で参加者を登録し、対局を開始すると表示されます。</div>';
+  }else{
+    var shown=(_sbClassFilter==='all')?activeClasses:[_sbClassFilter];
+    for(var s=0;s<shown.length;s++)bodyHtml+=buildScoreboardClassTableHtml(shown[s]);
+  }
+  view.innerHTML=head+tabs+'<div class="sb-body">'+bodyHtml+'</div>';
+  var tabBtns=view.querySelectorAll('.sb-tab');
+  for(var b=0;b<tabBtns.length;b++){
+    tabBtns[b].addEventListener('click',function(){_sbClassFilter=this.getAttribute('data-sbcls')||'all';renderScoreboard();});
+  }
+  // Codex Must Fix 1: 「運営画面へ」戻りボタンは廃止。閲覧ビューには運営画面への導線を束縛しない。
+}
+
+// hash に応じて閲覧専用ビューと運営画面を切り替える。
+function applyScoreboardRoute(){
+  var view=document.getElementById('scoreboard-view');
+  if(!view)return;
+  var header=document.querySelector('.header');
+  var container=document.querySelector('.container');
+  if(isScoreboardRoute()){
+    document.body.classList.add('sb-active');
+    view.style.display='block';
+    view.setAttribute('aria-hidden','false');
+    if(header)header.style.display='none';
+    if(container)container.style.display='none';
+    renderScoreboard();
+  }else{
+    document.body.classList.remove('sb-active');
+    view.style.display='none';
+    view.setAttribute('aria-hidden','true');
+    if(header)header.style.display='';
+    if(container)container.style.display='';
+  }
+}
+
+// Codex Must Fix 1: 閲覧ビューから運営画面へ戻る exitScoreboardRoute() は廃止した。
+//   閲覧URL（#scoreboard 等）では運営画面への戻り導線をコード上も提供しない（read-only 徹底）。
+//   ※ hash を外した運営URLを直接開いた場合の表示切替は applyScoreboardRoute() が担うが、
+//     これは閲覧ビュー内のUI導線ではなく「運営URLを直接開く」運用に対応するもの。
+
+// 運営画面（現タブ）を維持したまま、閲覧専用ビューを別タブで開く。
+//   同一ブラウザの localStorage(state) を共有し、storage イベントでリアルタイム追従する。
+function openScoreboardWindow(){
+  try{
+    var w=window.open(location.pathname+location.search+'#scoreboard','_blank');
+    if(w){w.focus();return;}
+  }catch(e){}
+  // ポップアップがブロックされた場合は運営タブを誤って隠さず、案内のみ出す。
+  alert('別タブでスマホ星取表を開けませんでした。\nブラウザのポップアップ許可を確認するか、このページのURL末尾に「#scoreboard」を付けて開いてください。');
+}
+
+// 閲覧専用ビューの初期化（イベント束縛 + 初回ルート適用）。運営画面の挙動には影響しない。
+function initScoreboard(){
+  var btn=document.getElementById('openScoreboardBtn');
+  if(btn)btn.addEventListener('click',openScoreboardWindow);
+  window.addEventListener('hashchange',applyScoreboardRoute);
+  // リアルタイム更新: 別タブの save() による localStorage 変更を受信して再描画する。
+  //   閲覧専用ビュー表示中のみ load()（運営タブの未保存編集を巻き戻さないため）。
+  window.addEventListener('storage',function(e){
+    if(!isScoreboardRoute())return;
+    if(e&&e.key&&e.key!==STORAGE_KEY)return;
+    try{load();}catch(err){}
+    renderScoreboard();
+  });
+  // タブ復帰時にも最新化（storage イベントを取りこぼした場合の保険）。
+  window.addEventListener('focus',function(){
+    if(!isScoreboardRoute())return;
+    try{load();}catch(err){}
+    renderScoreboard();
+  });
+  applyScoreboardRoute();
+}
+
 document.addEventListener('DOMContentLoaded',function(){
   bindHeaderEvents();
   bindRegistrationEvents();
   bindTabEvents();
   bindReportEvents();
   initApp();
+  initScoreboard();
 });
 </script>
 </body>
