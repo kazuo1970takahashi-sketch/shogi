@@ -1672,6 +1672,63 @@ function buildMasterExportFilename(dateYmd){
 }
 
 // ============================================================
+// PDF-FILENAME-MVP-001: PDF（印刷帳票）保存時の既定ファイル名を安全に組み立てる純粋ヘルパー群。
+//   背景: 印刷帳票（printResults / printPairings / downloadReport）は Blob(text/html) +
+//     window.open() + win.print() 方式のため、PDF保存時の既定ファイル名は出力 HTML の <title>
+//     になる。拡張子 .pdf はブラウザのPDF保存動作で付与され、アプリ側では保証しない。
+//   目的: 開催日 / 大会名 / クラス名 / 帳票種別 を後から識別できる名前にしつつ、OS・ブラウザで
+//     ファイル名に使えない文字を安全に置換し、各パートが未設定でも壊れない名前を生成する。
+//   命名規約: '<YYYYMMDD>_<大会名>_<クラス名(単一クラス時のみ)>_<帳票種別>'（空パートは除外）。
+//   非目的: PDF本文 / レイアウト / state（保存データ）構造は一切変更しない（ファイル名生成のみ）。
+//
+// sanitizeFilenamePart: ファイル名 1 パートを安全化する純粋関数。
+//   - null / undefined / 非文字列 → ''（呼び出し側で空パートとして除外される）
+//   - Windows / macOS で禁止・問題になる文字（\ / : * ? " < > | と制御文字 0x00-0x1F）と
+//     空白類を '_' に置換する
+//   - 連続した '_' を 1 個に畳み込み、先頭・末尾の '_' を除去する
+function sanitizeFilenamePart(value){
+  if(value==null)return '';
+  if(typeof value!=='string'&&typeof value!=='number')return '';
+  var s=String(value);
+  s=s.replace(/[\\/:*?"<>|\u0000-\u001f]/g,'_');
+  s=s.replace(/\s+/g,'_');
+  s=s.replace(/_+/g,'_').replace(/^_+|_+$/g,'');
+  return s;
+}
+
+// buildPdfFilename: パート配列を安全化し、空パートを除外して '_' で連結する純粋関数。
+//   全パートが空になった場合は fallback を安全化して返す（fallback も空なら 'shogi'）。
+//   拡張子は付けない（ブラウザのPDF保存時に .pdf が付与されるため）。
+function buildPdfFilename(parts,fallback){
+  var safe=[];
+  if(Array.isArray(parts)){
+    for(var i=0;i<parts.length;i++){
+      var p=sanitizeFilenamePart(parts[i]);
+      if(p)safe.push(p);
+    }
+  }
+  if(safe.length>0)return safe.join('_');
+  return sanitizeFilenamePart(fallback)||'shogi';
+}
+
+// pickSingleClassLabel: 出力対象クラスの表示名配列を受け取り、実質 1 クラスのときだけその名前を返す。
+//   対戦成績 / 現在の組み合わせ は全クラスを 1 つの PDF にまとめるため、クラスが 1 つに定まる
+//   ときのみファイル名へクラス名を含める（複数クラス時は「どのクラスか」が一意でないため付けない）。
+//   報告書（downloadReport）は大会全体のサマリ帳票のためクラス名を付けない（本ヘルパーを使わない）。
+function pickSingleClassLabel(classNames){
+  if(!Array.isArray(classNames))return '';
+  var uniq=[];
+  for(var i=0;i<classNames.length;i++){
+    var n=classNames[i];
+    if(n==null)continue;
+    n=String(n).trim();
+    if(!n)continue;
+    if(uniq.indexOf(n)===-1)uniq.push(n);
+  }
+  return uniq.length===1?uniq[0]:'';
+}
+
+// ============================================================
 // Phase 2 §5.1: マスタリセット(純粋関数)
 //   members を空にした新マスタを返す(mutate しない、tombstone も全削除)。
 //   呼び出し側で saveBranchMaster を実行する責務。
@@ -7023,10 +7080,13 @@ function printResults(){
   //   隣接 table 間にだけ page-break を挟む（既存 B07 と同じく空白ページを挿入しない）。
   //   A/B 既存挙動（A→B 2 枚で page-break 1 回）は維持される。
   var tables=[];
+  // PDF-FILENAME-MVP-001: 出力した（空でない）クラスの表示名を集める。単一クラスのときだけ
+  //   ファイル名にクラス名を付与する（buildTable の className 解決規則と一致させる）。
+  var printedClassNames=[];
   for(var ti=0;ti<classes.length;ti++){
     var tc=classes[ti]; if(!tc||!isSafeClassId(tc.id))continue;
     var tbl=buildTable(tc.id, winsByClass[tc.id]||{});
-    if(tbl)tables.push(tbl);
+    if(tbl){tables.push(tbl);printedClassNames.push(tc.name?tc.name:(tc.id+'クラス'));}
   }
   var pageBreakHtml='<div style="page-break-before:always"></div>';
   var tablesHtml=tables.join(pageBreakHtml);
@@ -7053,7 +7113,10 @@ function printResults(){
     var d=('0'+now.getDate()).slice(-2);
     dateNum=String(y)+m+d;
   }
-  var fileTitleName=reportTitle+'_'+dateNum+'_対戦成績';
+  // PDF-FILENAME-MVP-001: 既定ファイル名を '<開催日>_<大会名>_<クラス名(単一時)>_対戦成績' に統一。
+  //   不正文字は sanitize、未設定パートは除外（buildPdfFilename）。dateNum は state.report.date が
+  //   空なら実行日 fallback（既存挙動を温存）。クラス名は printedClassNames が単一クラスのときのみ付与。
+  var fileTitleName=buildPdfFilename([dateNum,reportTitle,pickSingleClassLabel(printedClassNames),'対戦成績'],'対戦成績');
 
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
     +'<title>'+escapeHtml(fileTitleName)+'</title>'
@@ -7122,9 +7185,11 @@ function printPairings(){
 
   // ファイル名用日付（YYYYMMDD、未入力時は空）と <title> 用文字列。
   var dateNumForFile=dateRaw?dateRaw.split('-').join(''):'';
-  var fileTitleName=dateNumForFile
-    ?(reportTitle+'_'+dateNumForFile+'_現在の組み合わせ')
-    :(reportTitle+'_現在の組み合わせ');
+  // PDF-FILENAME-MVP-001: 既定ファイル名を '<開催日>_<大会名>_<クラス名(単一時)>_現在の組み合わせ' に統一。
+  //   印刷対象が単一クラスのときのみクラス名を付与（printable は印刷対象クラスのみを保持）。
+  //   不正文字は sanitize、未設定パート（日付・クラス）は除外（buildPdfFilename）。
+  var pairingClassNames=printable.map(function(c){return c.name;});
+  var fileTitleName=buildPdfFilename([dateNumForFile,reportTitle,pickSingleClassLabel(pairingClassNames),'現在の組み合わせ'],'現在の組み合わせ');
 
   // 各クラスごとに section を組み立て、class 間に page-break を入れる（複数クラスでも 1 クラス=1 ページ目安）。
   //   card は CSS grid で 1 ページ複数カード、page-break-inside:avoid でカード途中での改ページを避ける。
@@ -7374,14 +7439,14 @@ function downloadReport(){
   // REPORT-UX-006B: dateRaw は normalizeReportDateForInput 通過済の YYYY-MM-DD / '' なので、
   //   ハイフン除去のみで YYYYMMDD（不正値時は ''）になる。DOM 直読みをやめ state-as-SoT に統一。
   var dateNum=dateRaw.split('-').join('');
-  // REPORT-UX-004: ファイル名は <reportTitle>_<YYYYMMDD>_報告書 形式。
-  //   旧 '沼津支部_<date>_月例将棋大会報告書' のうち、可変部 '月例将棋大会' を reportTitle
-  //   ('沼津支部月例将棋大会' 等) に置換し、不変部 '報告書' を末尾で付与。
-  //   旧形式 (沼津支部_20260518_月例将棋大会報告書) との互換は state.report.title 既定値
-  //   ('沼津支部月例将棋大会') を使った場合の出力 = '沼津支部月例将棋大会_20260518_報告書' で実現。
+  // REPORT-UX-004 → PDF-FILENAME-MVP-001: ファイル名形式は下記 buildPdfFilename の命名規約
+  //   '<開催日>_<大会名>_報告書' に統一済み。state には純大会名のみ保存する（末尾「報告書」除去）方針は不変。
   //   <title> タグは初回組立時に reportTitleWithSuffix 由来で生成済のため、ここでは html.replace で
   //   ファイル名タイトルへ置換する（既存設計の踏襲）。
-  var fileTitleName=reportTitle+'_'+dateNum+'_報告書';
+  // PDF-FILENAME-MVP-001: 既定ファイル名を '<開催日>_<大会名>_報告書' に統一。
+  //   報告書は大会全体のサマリ帳票のためクラス名は付けない。不正文字は sanitize、空の開催日は
+  //   除外する（旧実装の '<大会名>__報告書' のような二重 '_' を回避）。
+  var fileTitleName=buildPdfFilename([dateNum,reportTitle,'報告書'],'報告書');
   html=html.replace('<title>'+escapeHtml(reportTitleWithSuffix)+'</title>','<title>'+escapeHtml(fileTitleName)+'</title>');
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob);

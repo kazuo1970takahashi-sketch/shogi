@@ -952,6 +952,22 @@ else
 fi
 
 # ============================================
+# PDF-FILENAME-MVP-001 PDF（印刷帳票）保存ファイル名 単体/結合テスト
+# ============================================
+echo ""
+echo "【PDF-FILENAME-MVP-001 PDF保存ファイル名 大会名/開催日/クラス/種別】"
+if [ -f "$SCRIPT_DIR/test_pdf_filename_mvp_001.js" ]; then
+  if node "$SCRIPT_DIR/test_pdf_filename_mvp_001.js" "$TARGET" > /tmp/pdf_filename_mvp_001_out.log 2>&1; then
+    ok "PDF-FILENAME-MVP-001 テスト 全PASS ($(tail -1 /tmp/pdf_filename_mvp_001_out.log))"
+  else
+    ng "PDF-FILENAME-MVP-001 テスト 失敗"
+    cat /tmp/pdf_filename_mvp_001_out.log
+  fi
+else
+  warn "test_pdf_filename_mvp_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
