@@ -664,7 +664,7 @@ function makeBaseState(reportOverrides){
   seedReportDom(env._ctx);
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  assert(/<title>2026年5月度特別大会報告書<\/title>/.test(html), 'H2 ファイル名（新仕様 YYYY年M月度{大会名}{種別}）(004/006B 整合)');
+  assert(/<title>20260518_特別大会_報告書<\/title>/.test(html), 'H2 ファイル名（MVP-001 {YYYYMMDD}_{大会名}_{種別}）(004/006B 整合)');
 }
 
 // H3: footer 1行目テンプレート文言（FAX削除後）は不変（default 値で出力したケース）

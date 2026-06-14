@@ -754,7 +754,7 @@ function makeBaseState(reportOverrides){
   assert(html.indexOf('2026年5月18日') >= 0, 'F10-5 date 和暦変換不変 (006B)');
   assert(html.indexOf('13時00分') >= 0, 'F10-6 start 和暦変換不変 (006B)');
   assert(html.indexOf('17時00分') >= 0, 'F10-7 end 和暦変換不変 (006B)');
-  assert(/<title>2026年5月度特別大会報告書<\/title>/.test(html), 'F10-8 ファイル名（新仕様 YYYY年M月度{大会名}{種別}）(004/006B 整合)');
+  assert(/<title>20260518_特別大会_報告書<\/title>/.test(html), 'F10-8 ファイル名（MVP-001 {YYYYMMDD}_{大会名}_{種別}）(004/006B 整合)');
 }
 
 // ============================================================
