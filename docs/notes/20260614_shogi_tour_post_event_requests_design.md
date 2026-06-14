@@ -88,6 +88,29 @@
   大会名と分離して持つ恒久対応は本メモ §C（`tournaments` スキーマ）/ §B の参加者マスタ設計に
   合流させる。現状の「支部名は report.title に含む前提」は暫定運用である旨を明記しておく。
 
+### Must Fix 2（テスト追従） — PDFファイル名固定テストの新仕様更新
+
+- PDFファイル名形式の変更（Must Fix 2）に伴い、ファイル名を固定値で検証していた node テスト
+  **8 件**を新仕様へ追従更新した（旧 No-Go 時点では旧形式を期待して FAIL していた）。
+  - `test/test_report_print_006.js`（`printResults` の `<title>`）
+  - `test/test_report_ux_004.js` / `005.js` / `006.js` / `006b.js` / `006c.js` / `007a.js` / `007b.js`
+    （`downloadReport` の `<title>` ほか）
+- **正とするファイル名仕様**: 旧 `{大会名}_{YYYYMMDD}_{種別}` ではなく、
+  **新仕様 `{YYYY年M月度}{大会名}{種別}`**（`_` 区切り・8桁連続日付を使わない＝URL 由来でない）。
+  **YYYYMMDD 形式へは戻さない。**
+- assertion の意図は維持：URL 由来でない／大会情報由来／種別が分かる／危険文字（OS 禁止文字）除去／
+  日付未入力でも `undefined`/`null`/`NaN` にならず graceful fallback（月度ラベル省略で成立）。
+- XSS 期待の更新：新仕様では `<title>` の基底名は **`sanitizeFilenamePart` が危険文字（`< > / : * ? " < > |` 等）を
+  除去**する方式のため、raw タグも実体参照も `<title>` に残らない（除去方式で XSS 安全）。
+  ※ 選手名など「ファイル名でない」箇所は従来どおり `escapeHtml`（実体参照化）を維持。
+- `printResults` は共通 helper `buildTournamentPdfFilename` / `buildPdfDocHeaderHtml` 経由で
+  `normalizeReportTitle` / `normalizeReportDateForInput` を必ず通すことをテストで担保。
+  `doc-header` 併記に伴う h2 余白などの期待値（`margin-bottom:16px→6px`）は最小限で更新。
+- 結果: `bash test/run_tests.sh shogi_v4.html` が **PASS=95 / FAIL=0 / WARN=0**。
+- **VRT（visual regression）について**: VRT は**必須 CI 対象外**。ローカルで VRT を実行する場合は、
+  対局管理レイアウト変更（`.winner-row` 折返し等）の影響で必要に応じ **`tournament-paired-*` baseline の
+  更新**が要る一方、**`result-finalized-*` は不変**（最終結果タブの構造は本対応で変えていない）。
+
 ---
 
 ## A. ふりがな ruby 表示 恒久対応
