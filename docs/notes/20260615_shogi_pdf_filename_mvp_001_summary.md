@@ -32,12 +32,20 @@ PDF 保存時のファイル名を、後から運営記録・過去大会履歴�
 「既存の PDF 出力種類に応じて分かる名前」を求めている。既存のボタン/見出し文言と一致させる方が
 運用者に分かりやすく、変更も最小になるため、既存トークン（対戦成績 / 組み合わせ / 報告書）を維持した。
 
-## ⚠ PR #204 の決定を意図的に置き換えている点（レビュー要確認）
+## PR #204 の決定を置き換える方針転換 — 運用者（人間）が明示承認済み（2026-06-15）
 PR #204 (LIVE-MOBILE-SCOREBOARD-001) は同じファイル名を `{YYYY年M月度}{大会名}{種別}` 形式へ改善し、
 「アンダースコア区切り＋8桁日付は URL 由来に見える」として**意図的に避けて**いた
 （`test_report_print_006.js` D1-c が `_`・8桁日付の非含有を保証していた）。
-本タスクは運用者の明示要望により、その月度形式を `{YYYYMMDD}_…` 形式へ**置き換える**。
-競合する既存テストの assert は新仕様へ更新済み（他の保証は維持）。
+本タスク（PDF-FILENAME-MVP-001）は運用者の明示要望により、その月度形式を `{YYYYMMDD}_…` 形式へ**置き換える**。
+**この方針転換は 2026-06-15 に運用者（人間）が明示承認済み**。承認理由は「後から見て大会・日付・帳票種別が
+分かること」で、日付先頭の `YYYYMMDD_` 形式を本 MVP の仕様として受容する。競合する既存テストの assert は
+新仕様へ更新済み（他の保証は維持）。
+
+### 正準形式（承認済み仕様）
+- 開催日あり: `{YYYYMMDD}_{大会名}[_{クラス名(単一クラス時のみ)}]_{帳票種別}`
+- 開催日なし: `{大会名}[_{クラス名(単一クラス時のみ)}]_{帳票種別}`（日付トークンを省略）
+- 空トークンは連結前に除去するため、**先頭や途中に不要な二重アンダースコア（`__`）や先頭 `_` は出さない**
+  （helper `buildSafePdfFilename` が空パートを落として `_` 連結。`test_pdf_filename_mvp_001.js` の N1-b / N5-b が保証）。
 
 ## 変更ファイル
 - `shogi_v4.html`
@@ -53,7 +61,28 @@ PR #204 (LIVE-MOBILE-SCOREBOARD-001) は同じファイル名を `{YYYY年M月�
 - `test/run_tests.sh`: 新テストを登録
 
 ## テスト結果
+本PR関連テストは **clean tree でも全 PASS**。ただし `run_tests.sh` の合計 PASS/FAIL/WARN は
+実行環境（作業ツリーに untracked のテスト資産があるか）に依存するため、合計値だけを `97/0/0` とは
+断定しない（旧メモ・旧PR本文の `97/0/0` はこの点で不正確だったため、以下の正確な内訳へ置き換える）。
+
+### clean tree（本ブランチHEADのみ・untracked 資産なし。`git worktree` で測定）
+`bash test/run_tests.sh shogi_v4.html` → **PASS=57 / FAIL=1 / WARN=35**
+
+- **FAIL=1**: `data_*.json` フィクスチャがリポジトリ未追跡のため、`run_tests.sh` の
+  `for f in test/data_*.json` ループでファイル不在 → JSON パース失敗（本PRと無関係の環境要因）。
+- **WARN=35**: 多くの `test_*.js`（オプションの単体テスト群）が未追跡 → 「…が見つからない」WARN（同上）。
+- **本PR関連テストは clean tree でも全 PASS**:
+  - SHOGI-TOUR-PDF-FILENAME-MVP-001: **PASS 36 / FAIL 0**（N0 sanitize 直接テストを移植し 22→36 に増強）
+  - REPORT-PRINT-006-1: PASS 69 / FAIL 0
+  - REPORT-UX-002 / 004 / 005 / 006A / 006B / 006C / 007A / 007B: 全 PASS
+  - LIVE-MOBILE-SCOREBOARD-001: PASS 57 / FAIL 0
+  - 第1層スモーク（JS構文 / 必須関数35 / 必須DOM要素）: 全 PASS
+
+### 開発作業ツリー（untracked のフィクスチャ 5 件＋単体テスト群あり）
 `bash test/run_tests.sh shogi_v4.html` → **PASS=97 / FAIL=0 / WARN=0**
+（旧 `97/0/0` はこの環境での値。clean tree では非再現。FAIL/WARN は untracked 資産の有無に起因し、
+本PRの変更が原因ではない。）
+
 （ファイル名は印刷ダイアログの「PDF に保存」候補として `<title>` に現れる。検証は実 HTML を
 eval して printResults/printPairings/downloadReport を呼び `<title>` を直接 assert する Node 単体テストで実施。）
 

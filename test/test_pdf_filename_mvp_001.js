@@ -6,6 +6,7 @@
 //     運用者の明示要望で意図的に置き換える（既存テストは別途新仕様へ追従済み）。
 //
 // 観点:
+//   N0. helper 単体: sanitizeFilenamePart が OS 禁止文字/制御文字/空白/先頭ドットを「除去」する（'_' 置換しない）
 //   N1. helper 単体: buildSafePdfFilename が空トークンを落とし '_' で連結する / 全空は '将棋大会' fallback
 //   N2. helper 単体: buildTournamentHeldDateCompact が YYYY-MM-DD→YYYYMMDD、未入力/不正は ''
 //   N3. printResults 単一クラス → '{YYYYMMDD}_{大会名}_{クラス名}_対戦成績'（クラス名付与）
@@ -184,6 +185,30 @@ function makeStatePairings(twoClasses,reportOverrides){
     classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:twoClasses}],
     report:makeReportDefaults(reportOverrides||{})
   };
+}
+
+// ============================================================
+// N0: sanitizeFilenamePart 単体（#205 由来カバレッジを移植）
+//     #206 の sanitizeFilenamePart は OS 禁止文字 / 制御文字 / 空白 / 先頭ドットを「除去」する
+//     （#205 が想定した「'_' へ置換」ではない）。期待値は #206 の実挙動へ整合させてある。
+// ============================================================
+{
+  const env = loadEnv(targetPath);
+  const f = env.sanitizeFilenamePart;
+  assertEq(f('沼津支部月例将棋大会'), '沼津支部月例将棋大会', 'N0-a 通常文字列はそのまま');
+  assertEq(f('A/B:大会'), 'AB大会', 'N0-b OS禁止文字 / : は除去（"_" へ置換しない）');
+  assertEq(f('a\\b*c?d"e<f>g|h'), 'abcdefgh', 'N0-c \\ * ? " < > | を除去');
+  assertEq(f('  大会  '), '大会', 'N0-d 前後の半角空白は除去');
+  assertEq(f('A B\tC\nD'), 'ABCD', 'N0-e 半角空白 / タブ / 改行を除去');
+  assertEq(f('大会　名'), '大会名', 'N0-f 全角スペースも除去');
+  assertEq(f('第1-2回'), '第1-2回', 'N0-g ハイフンは有効文字として保持');
+  assertEq(f('...大会'), '大会', 'N0-h 先頭ドットを除去（隠しファイル化を防ぐ）');
+  assertEq(f('///'), '', 'N0-i 禁止文字のみ → 空');
+  assertEq(f(''), '', 'N0-j 空文字 → 空');
+  assertEq(f(null), '', 'N0-k null → 空');
+  assertEq(f(undefined), '', 'N0-l undefined → 空');
+  assertEq(f(20260614), '20260614', 'N0-m 数値は文字列化');
+  assertEq(f('A'+String.fromCharCode(1)+'B'), 'AB', 'N0-n 制御文字 0x01 を除去');
 }
 
 // ============================================================

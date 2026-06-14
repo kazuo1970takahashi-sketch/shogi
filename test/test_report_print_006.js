@@ -373,7 +373,8 @@ function extractTitle(html){
   assert(title.indexOf('20260519') >= 0, 'C2 旧形式 "2026年5月19日" → migrate 経由で <title> に開催日 "20260519"');
 }
 
-// C3: 空 date → 実行日 fallback (YYYYMMDD 8 桁が含まれる)
+// C3: 空 date → 実行日 fallback はしない。日付/月度トークンを省略し 大会名+種別 で graceful に成立させる
+//     （勝手に実行日の YYYYMMDD を埋めない。下の C3-a/b/c がその不在を保証する）
 {
   const env = loadEnv(targetPath);
   setupBasic(env, {date:''});
