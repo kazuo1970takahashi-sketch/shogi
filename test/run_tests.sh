@@ -952,6 +952,22 @@ else
 fi
 
 # ============================================
+# LIVE-MOBILE-SCOREBOARD-001 スマホ閲覧専用ビュー（?view=scoreboard / 最終更新 / read-only）
+# ============================================
+echo ""
+echo "【LIVE-MOBILE-SCOREBOARD-001 スマホ閲覧専用ビュー】"
+if [ -f "$SCRIPT_DIR/test_live_scoreboard_001.js" ]; then
+  if node "$SCRIPT_DIR/test_live_scoreboard_001.js" "$TARGET" > /tmp/live_scoreboard_001_out.log 2>&1; then
+    ok "LIVE-MOBILE-SCOREBOARD-001 テスト 全PASS ($(tail -1 /tmp/live_scoreboard_001_out.log))"
+  else
+    ng "LIVE-MOBILE-SCOREBOARD-001 テスト 失敗"
+    cat /tmp/live_scoreboard_001_out.log
+  fi
+else
+  warn "test_live_scoreboard_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
