@@ -1,0 +1,242 @@
+# 大会後 現場要望 設計メモ（恒久対応） — LIVE-MOBILE-SCOREBOARD-001
+
+- 作成日: 2026-06-14
+- 対象: `shogi_v4.html`（沼津支部 月例将棋大会 運営ツール）
+- 関連実装ブランチ: `feature/shogi-tour-live-mobile-scoreboard-001`
+- 種別: 設計メモ（後続実装用）。本ファイル自体はコードを変更しない。
+
+---
+
+## 0. 背景と本メモの位置づけ
+
+2026-06-14 の月例大会運営後に出た現場要望のうち、**今回（即日対応）で実装した 3 点**は
+別途コミット済み（PDF 本文や星取表の実物は PR を参照）。本メモは、今回スコープ外とした
+**恒久対応 3 点**の設計方針を記録し、後続タスクが「暫定実装に逃げず」着手できるようにする。
+
+### 今回実装した 3 点（要約・本メモの対象外）
+
+| # | 項目 | 実装概要 | 既存データ互換 |
+|---|------|----------|----------------|
+| 1 | スマホ閲覧用リアルタイム星取表ビュー | `#scoreboard` / `#viewer` / `#mobile-standings` hash で起動する閲覧専用フルスクリーンビュー。`calcFinal` / `computeDisplayRanks` / `getWins` を再利用。横スクロール + 氏名列 sticky 固定。別タブの `save()` を `storage` イベントで受けて自動更新。 | 影響なし（読取専用・state 構造不変） |
+| 2 | 対局管理 名前ボックス改善 | `.winner-btn` の `width:7em + ellipsis + nowrap` を撤廃し、折り返し + `min/max-width` + `min-height` で全文表示。番号プレフィックス（`12｜`）は維持。 | 影響なし（CSS のみ） |
+| 3 | PDF ファイル名 / 本文タイトル改善 | `buildSafePdfFilename` / `buildTournamentPdfFilename` / `buildPdfDocHeaderHtml` を追加。ファイル名を「YYYY年M月度{大会名}{種別}」に統一。本文に対象月 / 開催日を併記。 | 影響なし（出力文字列のみ。state 構造不変） |
+
+### 今回あえて持ち越した「データ構造に踏み込む」判断
+
+- **対象月（targetMonth）の独立フィールド化**は今回見送り、PDF では暫定的に
+  `state.report.date`（開催日）の年月から `YYYY年M月度` を導出している
+  （`buildTournamentTargetMonthLabel()`）。
+  → 月例会の「対象月」と「実開催日」が食い違う運用（例: 6月度を 7/2 に順延開催）に
+  正しく対応するには、本メモ §C の `tournaments.targetYear` / `targetMonth` を正本とする。
+- **ふりがな**は今回 1 文字も表示・保存していない。氏名のみ表示の既存挙動を維持した。
+  暫定的に大会参加者へ手入力するのは禁止方針のため、本メモ §A の恒久設計に従う。
+
+---
+
+## A. ふりがな ruby 表示 恒久対応
+
+### A-1. 原則
+
+1. ふりがなは **参加者マスタ（branch master）に正式項目として保持**する。氏名文字列での
+   突き合わせはしない（同姓同名・改姓で破綻するため）。
+2. 紐づけは **`participantMasterId`** を前提にする。
+3. 大会参加者レコードには登録時点の **`nameSnapshot` / `kanaSnapshot`** を保持し、
+   マスタを後日修正しても **過去大会結果の氏名・ふりがな表示が遡って変わらない**ようにする。
+4. ふりがな未登録時は **氏名のみ**を表示する（ルビなし）。空 `<rt>` を出さない。
+
+### A-2. データモデル（最小差分）
+
+既存 `state.players[cls][i]` は `{id, name, entry_no, ...}`。これを破壊せず、以下を追加する。
+
+```jsonc
+// 参加者マスタ側（branch master の 1 レコード）
+{
+  "participantMasterId": "pm_xxxx",   // 不変。ユーザーには出さない / 編集不可
+  "name": "長谷川さくらこ",
+  "kana": "はせがわさくらこ",          // ← ふりがなの正本
+  "branch": "沼津",
+  "updatedAt": "2026-06-14T12:00:00+09:00"
+}
+
+// 大会参加者側（state.players[cls][i] に追加するフィールド）
+{
+  "id": "a1",
+  "entry_no": 1,
+  "participantMasterId": "pm_xxxx",   // マスタ参照（任意。無い旧データも許容）
+  "name": "長谷川さくらこ",            // = nameSnapshot（既存フィールドを踏襲）
+  "kanaSnapshot": "はせがわさくらこ"   // ← 追加。登録/同期時にマスタからコピー
+}
+```
+
+- `kanaSnapshot` が無い旧データは `normalizeState` の schema 既定で `''`（=ルビなし表示）に
+  正規化する。**既存の順位計算 / 対局結果入力 / 保存読込ロジックには一切触れない。**
+- マスタ → 大会参加者への kana コピーは、既存の `syncBranchMasterOnSave()` /
+  `updateBranchMasterFromTournament()` と同じ「保存時のみ同期」タイミングに乗せる。
+
+### A-3. 共通 helper（各画面で個別に ruby HTML を組み立てない）
+
+```js
+// 氏名 + ふりがなを <ruby> でレンダリングする共通 helper。
+//   - name / kana は必ず escape してから DOM に入れる（XSS 対策）。
+//   - kana が空なら氏名のみ（<ruby> を使わない）。
+//   - 可能なら innerHTML ではなく DOM API（createElement('ruby'/'rt')）で生成する。
+function renderPlayerNameWithRuby(name, kana){
+  var safeName = String(name == null ? '' : name);
+  var safeKana = String(kana == null ? '' : kana).trim();
+  var ruby = document.createElement('ruby');
+  ruby.appendChild(document.createTextNode(safeName)); // textContent 経由で自動 escape
+  if (safeKana) {
+    var rt = document.createElement('rt');
+    rt.textContent = safeKana;
+    ruby.appendChild(rt);
+  }
+  return ruby; // 呼び出し側で appendChild。文字列が必要な場合は escapeHtml 済みの ruby HTML を別 helper で。
+}
+```
+
+- 文字列（innerHTML 連結）が必要な経路（PDF 出力 / 既存 `build*Html`）向けには、
+  `escapeHtml(name)` / `escapeHtml(kana)` を通した **escape 済みの ruby 文字列を返す版**を
+  併設する（`renderPlayerNameWithRubyHtml(name, kana)`）。innerHTML には escape 済み文字列のみ。
+
+### A-4. ruby 表示仕様（CSS）
+
+- ふりがなは氏名の**真上**に小さく表示（Word/Excel のルビ相当）。下に別行表示にはしない。
+- `ruby { ruby-position: over; }`、`rt { font-size: 0.5em〜0.6em; }`（氏名の 50〜60%）。
+- スマホ星取表でルビが行高を圧迫しないよう、星取表セルでは `rt` の `line-height` を詰める。
+- PDF 出力でも同じ `<ruby><rt>` を使う。印刷時に潰れる場合のみ `rt` の `font-size` を微調整。
+
+### A-5. 適用対象画面（共通 helper 経由で順次差し替え）
+
+参加者一覧 / 対局管理（`.winner-btn` 等）/ 順位表 / スマホ星取表 / PDF 出力 / 報告書 /
+将来の大会履歴表示。**各画面が独自に `<ruby>` を組まない**。
+
+---
+
+## B. 参加者マスタ スプレッドシート形式 一覧編集
+
+### B-1. 目的
+
+ふりがなは大会当日に正しく整備されないことが多い前提で、**後日まとめて**マスタを
+整備できる一覧（表）編集 UI を用意する。特に**ふりがな未入力者を見つけやすく**する。
+
+### B-2. 要件
+
+1. 参加者マスタを**表形式**で一覧表示し、セル上で直接編集（1 人ずつ詳細を開かない）。
+2. ふりがな未入力者をハイライト / フィルタできる。
+3. 保存前に**変更差分**（どのセルを変えたか）を提示してから確定する。
+4. **保存済み大会結果のスナップショット（`nameSnapshot` / `kanaSnapshot`）は変更しない。**
+   マスタ編集は「今後の大会」にのみ効く。過去結果の表示は遡って変わらない（§A-1-3）。
+5. `participantMasterId` は**編集不可 / 内部管理**。ユーザーが誤って壊せない。
+6. 将来 **CSV インポート / エクスポート**へ発展できる列構成にする。
+
+### B-3. 表示候補列
+
+| 列 | 編集可否 | 備考 |
+|----|----------|------|
+| ID (`participantMasterId`) | 不可（表示も任意） | 内部管理。誤編集防止 |
+| 氏名 (`name`) | 可 | |
+| ふりがな (`kana`) | 可 | 未入力を強調 |
+| 支部 (`branch`) | 可 | |
+| 支部員/一般 | 可 | 会費区分と連動 |
+| 会費区分 | 可 | `getFee` 系と整合 |
+| 備考 | 可 | |
+| 有効/無効 | 可 | 退会者の論理削除 |
+| `updatedAt` | 不可（自動） | 監査用 |
+
+### B-4. 実装上の注意
+
+- 既存 `loadBranchMaster()` / `saveBranchMaster()` を SoT として使い、DOM を SoT にしない。
+- 編集はメモリ上の編集バッファに溜め、「保存」押下時に差分確認 → `saveBranchMaster()`。
+- セル入力は IME-safe（既存 report 入力欄と同様、`input` で state 更新・`change` で確定書戻し）。
+- 破損マスタ（`_loaded_with_corruption`）時は編集を開かず、既存の復旧導線に委ねる。
+
+---
+
+## C. 月例会結果アーカイブ / 大会履歴 DB 化
+
+### C-1. 目的
+
+「過去の対戦成績」= 今大会内の履歴ではなく、**過去の月例会結果の蓄積**。将来的に
+過去対戦成績 / 年間トータル順位 / 年間ポイントへ発展させる土台を作る。
+
+### C-2. スキーマ（正規化）
+
+```jsonc
+// tournaments: 大会 1 件
+{
+  "id": "t_2026_06",
+  "name": "沼津支部月例将棋大会",
+  "branchName": "沼津",
+  "targetYear": 2026,
+  "targetMonth": 6,            // ← 「対象月」の正本（開催日とは独立）
+  "heldDate": "2026-06-14",    // ← 実開催日
+  "type": "monthly",
+  "createdAt": "2026-06-14T..."
+}
+
+// tournamentPlayers: 大会 × 参加者（スナップショット保持）
+{
+  "id": "tp_xxx",
+  "tournamentId": "t_2026_06",
+  "participantMasterId": "pm_xxxx",  // 氏名でなく ID で紐づけ
+  "nameSnapshot": "長谷川さくらこ",
+  "kanaSnapshot": "はせがわさくらこ",
+  "branchSnapshot": "沼津",
+  "className": "Aクラス",
+  "entryNo": 1,
+  "rank": 1,
+  "wins": 3,
+  "points": 0
+}
+
+// games: 1 対局
+{
+  "id": "g_xxx",
+  "tournamentId": "t_2026_06",
+  "roundNo": 1,
+  "className": "Aクラス",
+  "sentePlayerId": "tp_xxx",
+  "gotePlayerId": "tp_yyy",
+  "winnerPlayerId": "tp_xxx",  // null = 未確定 / 引分
+  "result": "sente_win"
+}
+```
+
+### C-3. 設計原則
+
+1. **氏名だけで強引に紐づけない。** 横断集計は `participantMasterId` をキーにする。
+2. **保存済み大会データを壊さない。** 既存 `state`（A/B 固定 dict）はそのまま残し、
+   履歴 DB は「確定済み大会」を別ストア（例: `localStorage['shogi_archive']`）へ
+   **追記**する形にする。現行の `state.players/results/pairings` 構造は不変。
+3. 大会確定（全クラス done）時に、現行 `state` → 上記スキーマへ**変換して 1 大会分を追記**。
+   変換は純関数（`buildTournamentArchiveFromState(state)`）として実装し、既存ロジックに混ぜない。
+4. `targetMonth` を正本化することで、§0 の PDF 対象月（暫定: 開催日由来）を将来
+   `tournaments.targetMonth` 参照に差し替えられる。
+
+### C-4. 将来拡張（DB 化後）
+
+参加者別の過去成績 / 直接対戦成績 / 年間順位 / 年間ポイント / 月例会別順位推移 /
+クラス別成績 / 表彰・昇級降級判断の補助。いずれも上記 3 テーブルの集計で導出可能。
+
+---
+
+## D. 横断的な禁止事項・互換性メモ
+
+- 既存の **順位計算 (`calcFinal` / `computeDisplayRanks`) / 対局結果入力 (`setWinner` /
+  `submitRound`) / クラス別開始 (`startTournamentForClass`) / 保存読込 (`save` / `load` /
+  `normalizeState`)** を不用意に変更しない。§A〜§C は**追加フィールド + 別ストア + 純関数**で
+  実現し、既存経路には触れない方針。
+- すべての新規フィールドは `normalizeState` の schema 既定（空文字 / 既定値）で**旧データを
+  後方互換**にする。旧データを読んでも壊れない・既定表示になる、を必須要件とする。
+- ふりがな・氏名は表示・PDF・innerHTML のいずれでも **escape 必須**。`<ruby>/<rt>` は
+  可能なら DOM API 生成、innerHTML を使う場合は escape 済み文字列のみ。
+
+---
+
+## E. スマホ星取表ビューの今後（参考）
+
+今回は「同一ブラウザ内 state（localStorage）を使った閲覧専用ビュー」までを実装し、
+外部公開 / QR コード生成 / リアルサーバー同期は対象外とした。別端末からの閲覧を恒久対応
+する場合は、§C の履歴 DB / 確定スナップショットを read-only で配信する経路（公開 URL or
+静的書き出し）を別途設計する。星取表のレンダリング (`buildScoreboardClassTableHtml`) は
+state 入力の純粋に近い関数のため、配信形態が変わっても再利用できる。
