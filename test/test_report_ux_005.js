@@ -467,8 +467,8 @@ function makeBaseState(reportOverrides){
   const html = env._getLastBlobSrc();
   assert(html.indexOf('特別大会報告書') >= 0,
     'F1-1 title="特別大会" の h2 / <title> / ファイル名に「特別大会報告書」が出る');
-  assert(/<title>特別大会_20260518_報告書<\/title>/.test(html),
-    'F1-2 title="特別大会" のファイル名は "特別大会_20260518_報告書"（REPORT-UX-004 機能不変）');
+  assert(/<title>2026年5月度特別大会報告書<\/title>/.test(html),
+    'F1-2 title="特別大会" のファイル名は "2026年5月度特別大会報告書"（新仕様 YYYY年M月度{大会名}{種別}・URL由来でない）');
 }
 
 // F2: prize 機能不変

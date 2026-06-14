@@ -123,14 +123,14 @@ assert(/prize\s*=\s*7000/.test(drBody) === false,
   'S7-6 賞金額 prize=7000 ハードコード literal は REPORT-UX-003A で撤去済み');
 assert(/normalizeReportPrize\s*\(/.test(drBody),
   'S7-6b 003A: downloadReport が normalizeReportPrize() を呼ぶ');
-// REPORT-UX-007A で本 defer は解消済み。fax / officeName は state.report 経由に。
+// REPORT-UX-007A で本 defer は解消済み。officeName は state.report 経由に。
 //   旧 002 時点の 'FAX（943-9443）' / '沼津支部事務局' ハードコード literal は撤去された。
-//   default 値同期のため、レンダリング後の HTML には引き続き 'FAX（943-9443）' が現れる
-//   （C3-3 で検証）。本 S7-7 では downloadReport 本体に literal が残っていないことを確認する。
+//   FAX削除対応（Codex 追加 Must Fix）: FAX 番号は実在しないため報告書から削除。
+//   downloadReport 本体に FAX literal も normalizeReportFax 呼出も残っていないことを確認する。
 assert(drBody.indexOf('FAX（943-9443）') === -1,
-  'S7-7 FAX 番号 literal は REPORT-UX-007A で撤去済み（state.report.fax 経由）');
-assert(/normalizeReportFax\s*\(/.test(drBody),
-  'S7-7b 007A: downloadReport が normalizeReportFax() を呼ぶ');
+  'S7-7 FAX 番号 literal は downloadReport 本体に無い（FAX削除）');
+assert(!/normalizeReportFax\s*\(/.test(drBody),
+  'S7-7b downloadReport は FAX を出力しないため normalizeReportFax() を呼ばない（FAX削除）');
 assert(drBody.indexOf("'沼津支部事務局'") === -1 && drBody.indexOf('"沼津支部事務局"') === -1,
   'S7-7c 事務局名 literal は REPORT-UX-007A で撤去済み（state.report.officeName 経由）');
 assert(/normalizeReportOfficeName\s*\(/.test(drBody),
@@ -697,8 +697,8 @@ assert(/function\s+getReportClassLabel\s*\(/.test(htmlSrc),
     'C3-1 タイトル「沼津支部月例将棋大会報告書」は本 PR では維持');
   assert(html.indexOf('▲7,000円') >= 0,
     'C3-2 賞金 7,000 円ハードコードは本 PR では維持');
-  assert(html.indexOf('FAX（943-9443）') >= 0,
-    'C3-3 FAX 番号は本 PR では維持');
+  assert(html.indexOf('FAX') < 0,
+    'C3-3 FAX 文言は報告書に出ない（FAX削除）');
 }
 
 // ============================================================

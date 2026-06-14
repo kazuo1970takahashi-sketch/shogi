@@ -650,8 +650,8 @@ function makeBaseState(reportOverrides){
   seedReportDom(env._ctx, {date:'2025-01-01',start:'13:00',end:'17:00',place:'労政会館',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部'});
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  assert(/<title>沼津支部月例将棋大会_20260518_報告書<\/title>/.test(html),
-    'F7-1 ファイル名 <title> が state.date="2026-05-18" 由来 (state-as-SoT)');
+  assert(/<title>2026年5月度沼津支部月例将棋大会報告書<\/title>/.test(html),
+    'F7-1 ファイル名 <title> が state.date="2026-05-18" 由来（新仕様 YYYY年M月度・state-as-SoT）');
 }
 
 // ============================================================
