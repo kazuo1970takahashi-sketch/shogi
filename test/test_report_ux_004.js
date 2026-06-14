@@ -485,8 +485,8 @@ function makeStateForDownload(title){
   seedReportDom(env._ctx, {date:'2026-05-18',place:'労政会館',start:'13:00',end:'17:00',prize:7000,title:'沼津支部月例将棋大会'});
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  assert(html.indexOf('<h2 style="text-align:center;font-size:16px;margin-bottom:16px">沼津支部月例将棋大会報告書</h2>') >= 0,
-    'E1-1 既定 title: h2 に "沼津支部月例将棋大会報告書"');
+  assert(html.indexOf('<h2 style="text-align:center;font-size:16px;margin-bottom:6px">沼津支部月例将棋大会報告書</h2>') >= 0,
+    'E1-1 既定 title: h2 に "沼津支部月例将棋大会報告書"（§4 doc-header 併記のため margin-bottom:16px→6px）');
 }
 
 // E2: カスタム title
@@ -539,8 +539,8 @@ function makeStateForDownload(title){
   env.downloadReport();
   const html = env._getLastBlobSrc();
   // 最終 html の <title> は filename タイトル（fileTitleName）で上書きされる
-  assert(/<title>沼津支部月例将棋大会_20260518_報告書<\/title>/.test(html),
-    'E5-1 ファイル名 <title> = "沼津支部月例将棋大会_20260518_報告書"');
+  assert(/<title>2026年5月度沼津支部月例将棋大会報告書<\/title>/.test(html),
+    'E5-1 ファイル名 <title> = "2026年5月度沼津支部月例将棋大会報告書"（新仕様 YYYY年M月度{大会名}{種別}）');
 }
 
 // E5b: カスタム title でファイル名
@@ -550,8 +550,8 @@ function makeStateForDownload(title){
   seedReportDom(env._ctx, {date:'2026-05-18',title:'特別大会'});
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  assert(/<title>特別大会_20260518_報告書<\/title>/.test(html),
-    'E5-2 カスタム title "特別大会" でファイル名 "特別大会_20260518_報告書"');
+  assert(/<title>2026年5月度特別大会報告書<\/title>/.test(html),
+    'E5-2 カスタム title "特別大会" でファイル名 "2026年5月度特別大会報告書"（新仕様 YYYY年M月度）');
 }
 
 // ===== E6: Codex Must Fix PR #150 — 「報告書報告書」二重防止 =====
@@ -571,8 +571,8 @@ function makeStateForDownload(title){
   assert(html.indexOf('特別大会報告書報告書') < 0,
     'E6-A3 「特別大会報告書報告書」のような二重表記は出ない');
   // ファイル名にも報告書報告書が出ない
-  assert(/<title>特別大会_20260518_報告書<\/title>/.test(html),
-    'E6-A4 ファイル名は "特別大会_20260518_報告書"（「特別大会報告書_..._報告書」のような二重構造でない）');
+  assert(/<title>2026年5月度特別大会報告書<\/title>/.test(html),
+    'E6-A4 ファイル名は "2026年5月度特別大会報告書"（「特別大会報告書…報告書」のような二重構造でない・新仕様 YYYY年M月度）');
   assert(html.indexOf('特別大会報告書_') < 0,
     'E6-A5 ファイル名側にも 特別大会報告書_ プレフィックスが出ない');
 }
