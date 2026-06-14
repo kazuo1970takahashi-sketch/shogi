@@ -968,6 +968,22 @@ else
 fi
 
 # ============================================
+# SHOGI-TOUR-PDF-FILENAME-MVP-001 PDF ファイル名 {YYYYMMDD}_{大会名}[_{クラス名}]_{種別}
+# ============================================
+echo ""
+echo "【SHOGI-TOUR-PDF-FILENAME-MVP-001 PDF ファイル名】"
+if [ -f "$SCRIPT_DIR/test_pdf_filename_mvp_001.js" ]; then
+  if node "$SCRIPT_DIR/test_pdf_filename_mvp_001.js" "$TARGET" > /tmp/pdf_filename_mvp_001_out.log 2>&1; then
+    ok "SHOGI-TOUR-PDF-FILENAME-MVP-001 テスト 全PASS ($(tail -1 /tmp/pdf_filename_mvp_001_out.log))"
+  else
+    ng "SHOGI-TOUR-PDF-FILENAME-MVP-001 テスト 失敗"
+    cat /tmp/pdf_filename_mvp_001_out.log
+  fi
+else
+  warn "test_pdf_filename_mvp_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""

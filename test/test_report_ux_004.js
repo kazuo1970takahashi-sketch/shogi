@@ -539,8 +539,8 @@ function makeStateForDownload(title){
   env.downloadReport();
   const html = env._getLastBlobSrc();
   // 最終 html の <title> は filename タイトル（fileTitleName）で上書きされる
-  assert(/<title>2026年5月度沼津支部月例将棋大会報告書<\/title>/.test(html),
-    'E5-1 ファイル名 <title> = "2026年5月度沼津支部月例将棋大会報告書"（新仕様 YYYY年M月度{大会名}{種別}）');
+  assert(/<title>20260518_沼津支部月例将棋大会_報告書<\/title>/.test(html),
+    'E5-1 ファイル名 <title> = "20260518_沼津支部月例将棋大会_報告書"（MVP-001 {YYYYMMDD}_{大会名}_{種別}）');
 }
 
 // E5b: カスタム title でファイル名
@@ -550,8 +550,8 @@ function makeStateForDownload(title){
   seedReportDom(env._ctx, {date:'2026-05-18',title:'特別大会'});
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  assert(/<title>2026年5月度特別大会報告書<\/title>/.test(html),
-    'E5-2 カスタム title "特別大会" でファイル名 "2026年5月度特別大会報告書"（新仕様 YYYY年M月度）');
+  assert(/<title>20260518_特別大会_報告書<\/title>/.test(html),
+    'E5-2 カスタム title "特別大会" でファイル名 "20260518_特別大会_報告書"（MVP-001 {YYYYMMDD}_{大会名}_{種別}）');
 }
 
 // ===== E6: Codex Must Fix PR #150 — 「報告書報告書」二重防止 =====
@@ -571,8 +571,8 @@ function makeStateForDownload(title){
   assert(html.indexOf('特別大会報告書報告書') < 0,
     'E6-A3 「特別大会報告書報告書」のような二重表記は出ない');
   // ファイル名にも報告書報告書が出ない
-  assert(/<title>2026年5月度特別大会報告書<\/title>/.test(html),
-    'E6-A4 ファイル名は "2026年5月度特別大会報告書"（「特別大会報告書…報告書」のような二重構造でない・新仕様 YYYY年M月度）');
+  assert(/<title>20260518_特別大会_報告書<\/title>/.test(html),
+    'E6-A4 ファイル名は "20260518_特別大会_報告書"（「特別大会報告書…報告書」のような二重構造でない・MVP-001 {YYYYMMDD}_{大会名}_{種別}）');
   assert(html.indexOf('特別大会報告書_') < 0,
     'E6-A5 ファイル名側にも 特別大会報告書_ プレフィックスが出ない');
 }

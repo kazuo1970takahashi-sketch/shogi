@@ -7037,7 +7037,9 @@ function sanitizeFilenamePart(value){
 
 // パーツ配列を結合して拡張子なしの安全なファイル名（基底名）を返す。空パーツはスキップ。
 //   全パーツが空でも壊れないよう既定値 '将棋大会' に fallback する。
-function buildSafePdfFilename(parts){
+function buildSafePdfFilename(parts,sep){
+  // sep: トークン区切り（既定 '' で後方互換）。SHOGI-TOUR-PDF-FILENAME-MVP-001 では '_' を渡す。
+  var joiner=(typeof sep==='string')?sep:'';
   var safe=[];
   if(Object.prototype.toString.call(parts)==='[object Array]'){
     for(var i=0;i<parts.length;i++){
@@ -7045,7 +7047,7 @@ function buildSafePdfFilename(parts){
       if(p)safe.push(p);
     }
   }
-  var name=safe.join('');
+  var name=safe.join(joiner);
   return name||'将棋大会';
 }
 
@@ -7063,20 +7065,39 @@ function buildTournamentHeldDateLabel(){
   return raw?formatJapaneseDateFromYmd(raw):'';
 }
 
+// SHOGI-TOUR-PDF-FILENAME-MVP-001: 開催日コンパクト表記「YYYYMMDD」。
+//   state.report.date（normalizeReportDateForInput 通過済の YYYY-MM-DD）からハイフンを除去する。
+//   日付未入力／不正値時は '' を返し、ファイル名側で日付トークンを省略できるようにする。
+function buildTournamentHeldDateCompact(){
+  var raw=(typeof normalizeReportDateForInput==='function')?normalizeReportDateForInput(state.report&&state.report.date):'';
+  var mm=raw&&raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!mm)return '';
+  return mm[1]+mm[2]+mm[3];
+}
+
 // PDF 保存時の推奨ファイル名（拡張子なしの基底名）を種別ごとに生成する。
-//   形式: {YYYY年M月度}{大会名}{種別}  例: 2026年6月度沼津支部月例将棋大会対戦成績
-//   Codex Must Fix 2（A案 採用）:
+//   形式: {YYYYMMDD}_{大会名}[_{クラス名}]_{種別}
+//     例: 20260614_沼津支部月例将棋大会_Aクラス_対戦成績 / 20260614_沼津支部月例将棋大会_報告書
+//   SHOGI-TOUR-PDF-FILENAME-MVP-001（運用者の明示要望）:
+//     後から運営記録・過去大会履歴と突き合わせやすいよう、開催日(8桁)・大会名・クラス名・種別を
+//     アンダースコア区切りで並べる。これは LIVE-MOBILE-SCOREBOARD-001(PR #204) の
+//     「{YYYY年M月度}{大会名}{種別}」形式を意図的に置き換えるもの。
 //   現行 PDF 出力は全経路（printResults / printPairings / downloadReport）が
 //   Blob(text/html) + window.open() + win.print() 方式であり、生成物は HTML である。
 //   利用者がブラウザの印刷ダイアログで「PDF に保存」を選ぶと、ブラウザは <title> を
 //   ファイル名候補として提示し、「.pdf」拡張子はブラウザ側のPDF保存動作で付与される。
 //   そのため「.pdf 拡張子」をアプリのコードで保証することはできない（ブラウザ依存）。
-//   本実装のスコープは「保存ダイアログに出る “基底名” を URL 由来でなく大会情報由来に
-//   改善する」ことに限定する。よってここでは拡張子を付けない安全な基底名のみを返す。
-//   （title に '.pdf' を埋めると環境により二重拡張子等になり得るため付与しない。）
-function buildTournamentPdfFilename(kind){
+//   よってここでは拡張子を付けない安全な基底名のみを返す
+//   （title に '.pdf' を埋めると環境により二重拡張子等になり得るため付与しない）。
+//   未設定時の fallback:
+//     - 開催日が空／不正値なら日付トークンを省略（大会名から始まる）。
+//     - className は「出力が単一クラスを特定できる」場合のみ呼び出し側が渡す。多クラス一括出力や
+//       大会全体の帳票（報告書）では省略（undefined）し、クラストークンを付けない。
+//     - 全トークンが空でも buildSafePdfFilename が '将棋大会' に fallback する。
+//   危険文字（OS 禁止文字 / パス区切り / 制御文字 / 前後空白）は sanitizeFilenamePart で除去済み。
+function buildTournamentPdfFilename(kind,className){
   var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):'沼津支部月例将棋大会';
-  return buildSafePdfFilename([buildTournamentTargetMonthLabel(),title,kind]);
+  return buildSafePdfFilename([buildTournamentHeldDateCompact(),title,className,kind],'_');
 }
 
 // PDF 帳票の見出し HTML（大会名 / 種別 / 対象月 / 開催日）。印刷・配布時に単体で意味が通るようにする。
@@ -7173,21 +7194,24 @@ function printResults(){
   //   隣接 table 間にだけ page-break を挟む（既存 B07 と同じく空白ページを挿入しない）。
   //   A/B 既存挙動（A→B 2 枚で page-break 1 回）は維持される。
   var tables=[];
+  var tableClassNames=[];   // 実際に出力された（finals 非空の）クラス表示名。単一クラス時のみファイル名に使う。
   for(var ti=0;ti<classes.length;ti++){
     var tc=classes[ti]; if(!tc||!isSafeClassId(tc.id))continue;
     var tbl=buildTable(tc.id, winsByClass[tc.id]||{});
-    if(tbl)tables.push(tbl);
+    if(tbl){tables.push(tbl);tableClassNames.push(tc.name||(tc.id+'クラス'));}
   }
   var pageBreakHtml='<div style="page-break-before:always"></div>';
   var tablesHtml=tables.join(pageBreakHtml);
 
-  // LIVE-MOBILE-SCOREBOARD-001 §3: PDF 保存時のファイル名は共通 helper で
-  //   「YYYY年M月度{大会名}対戦成績」形式に統一する（buildTournamentPdfFilename）。
-  //   旧仕様の '<大会名>_<YYYYMMDD>_対戦成績' はアンダースコア + 8桁日付で URL 由来のように
-  //   見えていたため、配布で意味が通る自然な日本語ファイル名へ改善する。
+  // SHOGI-TOUR-PDF-FILENAME-MVP-001: PDF 保存時のファイル名は共通 helper で
+  //   「{YYYYMMDD}_{大会名}[_{クラス名}]_対戦成績」形式に統一する（buildTournamentPdfFilename）。
+  //   開催日(8桁)・大会名・種別を基本トークンとし、クラス名は「この出力に 1 クラスだけ含まれる」
+  //   ときのみ付与する（複数クラス一括出力では特定クラス名を付けず 日付+大会名+種別 のみ）。
+  //   これは LIVE-MOBILE-SCOREBOARD-001(PR #204) の月度ベース命名を運用者要望で置き換えるもの。
   //   <title> をファイル名候補として使う印刷経路のため、拡張子なしの基底名を代入する
-  //   （保存時にブラウザが .pdf を付与）。
-  var fileTitleName=buildTournamentPdfFilename('対戦成績');
+  //   （保存時にブラウザが .pdf を付与）。本文・レイアウトは変更しない。
+  var classNameForFile=(tableClassNames.length===1)?tableClassNames[0]:'';
+  var fileTitleName=buildTournamentPdfFilename('対戦成績',classNameForFile);
 
   // LIVE-MOBILE-SCOREBOARD-001 §4: 帳票本文に大会名 / 対象月 / 開催日 / 種別の見出しを追加し、
   //   印刷・配布時に PDF 単体で「いつ・どの大会の・何の帳票か」が分かるようにする。
@@ -7261,9 +7285,12 @@ function printPairings(){
   var dateRaw=(typeof normalizeReportDateForInput==='function')?normalizeReportDateForInput(state.report&&state.report.date):'';
   var dateDisplay=dateRaw&&typeof formatJapaneseDateFromYmd==='function'?formatJapaneseDateFromYmd(dateRaw):'';
 
-  // LIVE-MOBILE-SCOREBOARD-001 §3: ファイル名は共通 helper で「YYYY年M月度{大会名}組み合わせ」に統一。
-  //   旧 '<大会名>_<YYYYMMDD>_現在の組み合わせ'（URL 由来のように見える）を自然な日本語名へ改善する。
-  var fileTitleName=buildTournamentPdfFilename('組み合わせ');
+  // SHOGI-TOUR-PDF-FILENAME-MVP-001: ファイル名は共通 helper で
+  //   「{YYYYMMDD}_{大会名}[_{クラス名}]_組み合わせ」に統一する。
+  //   印刷対象が 1 クラスだけのときはそのクラス名を付与し、複数クラス時は付けない。
+  //   （PR #204 の月度ベース命名を運用者要望で置き換え。本文・レイアウトは不変。）
+  var pairingClassName=(printable.length===1)?printable[0].name:'';
+  var fileTitleName=buildTournamentPdfFilename('組み合わせ',pairingClassName);
 
   // 各クラスごとに section を組み立て、class 間に page-break を入れる（複数クラスでも 1 クラス=1 ページ目安）。
   //   card は CSS grid で 1 ページ複数カード、page-break-inside:avoid でカード途中での改ページを避ける。
@@ -7521,11 +7548,11 @@ function downloadReport(){
   // REPORT-UX-006B: dateRaw は normalizeReportDateForInput 通過済の YYYY-MM-DD / '' なので、
   //   ハイフン除去のみで YYYYMMDD（不正値時は ''）になる。DOM 直読みをやめ state-as-SoT に統一。
   var dateNum=dateRaw.split('-').join('');
-  // LIVE-MOBILE-SCOREBOARD-001 §3: ファイル名は共通 helper で「YYYY年M月度{大会名}報告書」に統一。
-  //   旧 '<大会名>_<YYYYMMDD>_報告書'（アンダースコア + 8桁日付で URL 由来のように見える）を
-  //   自然な日本語ファイル名へ改善する。<title> は初回組立時に reportTitleWithSuffix 由来で
-  //   生成済のため、ここでは html.replace でファイル名タイトルへ置換する（既存設計の踏襲）。
-  //   dateNum は本ファイル名では未使用だが、後続の互換用に算出は残す。
+  // SHOGI-TOUR-PDF-FILENAME-MVP-001: ファイル名は共通 helper で
+  //   「{YYYYMMDD}_{大会名}_報告書」に統一する（報告書は大会全体の帳票なのでクラス名は付けない）。
+  //   <title> は初回組立時に reportTitleWithSuffix 由来で生成済のため、ここでは html.replace で
+  //   ファイル名タイトルへ置換する（既存設計の踏襲）。本文・h2・レイアウトは変更しない。
+  //   （PR #204 の月度ベース命名を運用者要望で置き換え。dateNum は後続互換のため算出を残置。）
   var fileTitleName=buildTournamentPdfFilename('報告書');
   html=html.replace('<title>'+escapeHtml(reportTitleWithSuffix)+'</title>','<title>'+escapeHtml(fileTitleName)+'</title>');
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});

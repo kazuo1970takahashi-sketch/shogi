@@ -20,17 +20,18 @@
 //     B4. title に <script> 等を入れても sanitizeFilenamePart で危険文字を除去し <title> が安全
 //     B5. title 空欄 / 不正値 → default '沼津支部月例将棋大会' に fallback
 //
-//   C. state.report.date 連動（Codex Must Fix 2: 新仕様「YYYY年M月度」月度ラベル）
-//     C1. state.report.date='2026-05-19' → <title> に '2026年5月度' が含まれる（8桁日付は出ない）
+//   C. state.report.date 連動（SHOGI-TOUR-PDF-FILENAME-MVP-001: 開催日 8桁 YYYYMMDD トークン）
+//     C1. state.report.date='2026-05-19' → <title> に '20260519' が含まれ先頭トークンになる
 //     C2. 旧形式 '2026年5月19日' → normalizeReportDateForInput で '2026-05-19' に migrate
-//         → <title> に '2026年5月度' が含まれる
-//     C3. state.report.date 空 → 月度ラベル省略の graceful（大会名+種別で成立、undefined/null/NaN なし）
+//         → <title> に '20260519' が含まれる
+//     C3. state.report.date 空 → 日付トークン省略の graceful（大会名+種別で成立、undefined/null/NaN なし）
 //     C4. state.report.date 不正値 (null / 数値) → 同上 graceful（実行日 fallback はしない）
 //
-//   D. ファイル名構造（Codex Must Fix 2: URL 由来でない月度ベースの基底名）
-//     D1. fileTitleName = '{YYYY年M月度}{大会名}{種別}' 形式（'_' 区切り・8桁日付を使わない）
-//     D2. default state → '2026年5月度沼津支部月例将棋大会対戦成績'
-//     D3. 旧 literal '沼津支部_<y>年<m>月度_月例将棋大会結果' / 旧 '_YYYYMMDD_対戦成績' は出ない
+//   D. ファイル名構造（SHOGI-TOUR-PDF-FILENAME-MVP-001: 開催日先頭・'_' 区切りで運営記録突合しやすく。
+//      PR #204 の月度ベース命名を運用者要望で意図的に置換）
+//     D1. fileTitleName = '{YYYYMMDD}_{大会名}[_{クラス名}]_{種別}' 形式（'_' 区切り＋8桁開催日）
+//     D2. default state（A クラスのみ）→ '20260519_沼津支部月例将棋大会_Aクラス_対戦成績'
+//     D3. <title> は 8桁開催日始まり。旧 PR#204「YYYY年M月度」literal / 旧 '月度_月例将棋大会結果' は出ない
 //
 //   E. 既存互換
 //     E1. h2 「スイス式トーナメント　対戦成績」維持
@@ -358,8 +359,8 @@ function extractTitle(html){
   env.printResults();
   const html = env._getPrintedHtml();
   const title = extractTitle(html);
-  assert(title.indexOf('2026年5月度') >= 0, 'C1 ISO 日付 → <title> に "2026年5月度"');
-  assert(!/\d{8}/.test(title), 'C1-b 旧 YYYYMMDD（8桁連続日付）形式は出ない');
+  assert(title.indexOf('20260519') >= 0, 'C1 ISO 日付 → <title> に開催日 "20260519"（MVP-001: YYYYMMDD）');
+  assert(/^20260519_/.test(title), 'C1-b 開催日(8桁 YYYYMMDD)がファイル名の先頭トークン（MVP-001: PR#204 月度形式を置換）');
 }
 
 // C2: 旧形式日付 migration (normalizeReportDateForInput 経由)
@@ -369,10 +370,11 @@ function extractTitle(html){
   env.printResults();
   const html = env._getPrintedHtml();
   const title = extractTitle(html);
-  assert(title.indexOf('2026年5月度') >= 0, 'C2 旧形式 "2026年5月19日" → migrate 経由で <title> に "2026年5月度"');
+  assert(title.indexOf('20260519') >= 0, 'C2 旧形式 "2026年5月19日" → migrate 経由で <title> に開催日 "20260519"');
 }
 
-// C3: 空 date → 実行日 fallback (YYYYMMDD 8 桁が含まれる)
+// C3: 空 date → 実行日 fallback はしない。日付/月度トークンを省略し 大会名+種別 で graceful に成立させる
+//     （勝手に実行日の YYYYMMDD を埋めない。下の C3-a/b/c がその不在を保証する）
 {
   const env = loadEnv(targetPath);
   setupBasic(env, {date:''});
@@ -418,12 +420,14 @@ function extractTitle(html){
   env.printResults();
   const html = env._getPrintedHtml();
   const title = extractTitle(html);
-  assertEq(title, '2026年5月度沼津支部月例将棋大会対戦成績',
-    'D1/D2 default state → "2026年5月度沼津支部月例将棋大会対戦成績"');
-  // URL 由来でない: 旧 '_' 区切り / 8桁連続日付を含まない
-  assert(title.indexOf('_') < 0 && !/\d{8}/.test(title),
-    'D1-c ファイル名に "_" 区切り・8桁連続日付（URL風）を含まない');
-  // 危険文字（OS 禁止文字 / パス区切り）を含まない
+  // SHOGI-TOUR-PDF-FILENAME-MVP-001: 形式 {YYYYMMDD}_{大会名}[_{クラス名}]_{種別}。
+  //   setupBasic は A クラスのみ（単一クラス出力）なのでクラス名「Aクラス」を含む。
+  assertEq(title, '20260519_沼津支部月例将棋大会_Aクラス_対戦成績',
+    'D1/D2 default state → "20260519_沼津支部月例将棋大会_Aクラス_対戦成績"（MVP-001）');
+  // MVP-001: 運営記録突合のため開催日(8桁)を先頭に置き '_' 区切りで並べる（PR#204 月度形式を意図的に置換）
+  assert(title.indexOf('_') >= 0 && /\d{8}/.test(title),
+    'D1-c ファイル名は "_" 区切り＋開催日(8桁 YYYYMMDD)を含む（MVP-001 仕様）');
+  // 危険文字（OS 禁止文字 / パス区切り）は依然として含まない
   assert(!/[\\/:*?"<>|]/.test(title), 'D1-d ファイル名に OS 禁止文字（\\ / : * ? " < > |）を含まない');
 }
 
@@ -433,8 +437,8 @@ function extractTitle(html){
   env.printResults();
   const html = env._getPrintedHtml();
   const title = extractTitle(html);
-  assertEq(title, '2026年12月度特別大会対戦成績',
-    'D1-b カスタム title + date → "2026年12月度特別大会対戦成績"');
+  assertEq(title, '20261231_特別大会_Aクラス_対戦成績',
+    'D1-b カスタム title + date → "20261231_特別大会_Aクラス_対戦成績"（MVP-001）');
 }
 
 // D3: 旧 literal が出ない
@@ -445,7 +449,11 @@ function extractTitle(html){
   const html = env._getPrintedHtml();
   assert(html.indexOf('沼津支部月例将棋大会 対戦成績') < 0, 'D3-a 旧 <title> literal 出ない');
   assert(html.indexOf('月度_月例将棋大会結果') < 0, 'D3-b 旧 file 名 literal 出ない');
-  assert(!/沼津支部月例将棋大会_\d{8}_対戦成績/.test(html), 'D3-c 旧 "_YYYYMMDD_対戦成績" 形式が出ない');
+  // D3-c (MVP-001): 新形式は「日付(8桁) → 大会名 → [クラス名] → 種別」順。<title> は 8桁開催日始まり。
+  //   ※本文の見出し（buildPdfDocHeaderHtml）には「対象月：YYYY年M月度」が残るため、<title> のみ検査する。
+  const t3 = extractTitle(html);
+  assert(/^\d{8}_/.test(t3), 'D3-c <title> が 8桁開催日トークンで始まる（MVP-001: YYYYMMDD_…）');
+  assert(t3.indexOf('月度') < 0, 'D3-c2 <title> に旧 PR#204「YYYY年M月度」ラベルが出ない');
 }
 
 // ============================================================

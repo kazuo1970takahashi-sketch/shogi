@@ -675,7 +675,7 @@ function makeBaseState(reportOverrides){
   seedReportDom(env._ctx);
   env.downloadReport();
   const html = env._getLastBlobSrc();
-  assert(/<title>2026年5月度特別大会報告書<\/title>/.test(html), 'G2 ファイル名（新仕様 YYYY年M月度{大会名}{種別}）(004/006B 整合)');
+  assert(/<title>20260518_特別大会_報告書<\/title>/.test(html), 'G2 ファイル名（MVP-001 {YYYYMMDD}_{大会名}_{種別}）(004/006B 整合)');
 }
 
 // G3: footer 2行目は変更されない（default fax / officeName でも他値でも）

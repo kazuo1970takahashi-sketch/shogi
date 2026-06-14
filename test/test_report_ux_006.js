@@ -551,9 +551,9 @@ function makeBaseState(reportOverrides){
   env.downloadReport();
   const html = env._getLastBlobSrc();
   assert(html.indexOf('特別大会報告書') >= 0,
-    'F1-1 title="特別大会" の h2 / <title> / ファイル名に「特別大会報告書」が出る');
-  assert(/<title>2026年5月度特別大会報告書<\/title>/.test(html),
-    'F1-2 title="特別大会" のファイル名は "2026年5月度特別大会報告書"（新仕様 YYYY年M月度{大会名}{種別}・URL由来でない）');
+    'F1-1 title="特別大会" の h2（大会報告書見出し）に「特別大会報告書」が出る（出力不変）');
+  assert(/<title>20260518_特別大会_報告書<\/title>/.test(html),
+    'F1-2 title="特別大会" のファイル名は "20260518_特別大会_報告書"（MVP-001 {YYYYMMDD}_{大会名}_{種別}）');
 }
 
 // F2: prize 機能不変
