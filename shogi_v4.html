@@ -40,6 +40,9 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
   .player-row-actions{width:100%;margin-left:0;justify-content:space-between}
 }
 .player-name{font-weight:500;min-width:70px;font-size:14px}
+/* FURIGANA-MVP-001: 受付一覧のふりがなルビ表示（氏名の上に小さく）。MVP では受付一覧のみ。 */
+.player-name ruby{ruby-position:over}
+.player-name rt{font-size:.6em;font-weight:400;color:#555;line-height:1}
 .player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:14px}
 .sel-sm{height:34px;padding:0 6px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff;font-family:inherit}
 /* ROUND-CLASS-START-007 (spec §15.1 .grid2 3+ クラス棚卸し):
@@ -124,6 +127,8 @@ body.sb-active{overflow:hidden}
 .sb-title{font-size:16px;font-weight:600;line-height:1.3}
 .sb-meta{font-size:12px;opacity:0.92;margin-top:3px;line-height:1.4}
 .sb-note{font-size:11px;opacity:0.8;margin-top:4px}
+/* LIVE-MOBILE-SCOREBOARD-001 §1: 最終更新時刻（閲覧ビューが state を最後に読み込んだ時刻）。 */
+.sb-updated{font-size:11px;opacity:0.92;margin-top:3px;font-variant-numeric:tabular-nums}
 /* Codex Must Fix 1: 「運営画面へ」戻りボタン(.sb-back)は read-only 徹底のため廃止（CSS も削除）。 */
 .sb-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;background:#dde7f2}
 .sb-tab{padding:6px 14px;border-radius:16px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:13px;cursor:pointer;font-family:inherit}
@@ -735,6 +740,9 @@ function normalizeState(raw){
       };
       // 支部マスタとの紐付け（F2）。既存JSON（member_id 不在）は従来通り。
       if(p&&typeof p.member_id==='string'&&p.member_id)pp.member_id=p.member_id;
+      // FURIGANA-MVP-001: ふりがな（任意・既定 ''）。既存 player.yomi があれば保持、無ければ '' 補完。
+      //   member_id / city と同じ「読込時 default 補完」パターン。schema_version は新設しない。
+      pp.yomi=(p&&typeof p.yomi==='string')?p.yomi:'';
       // A-5.1 §11.8: entry_no を永続化（欠番維持）。
       //   保存済みの entry_no があればそれを使う。
       //   legacy データ（entry_no 不在）は配列 index+1 で補完。
@@ -2112,6 +2120,8 @@ function addPlayerFromMaster(memberId,cls,master,state){
     member:(member.member==='other')?'other':'member',
     grade:(member.grade==='chu')?'chu':'ippan',
     member_id:member.id,
+    // FURIGANA-MVP-001: master.yomi を当日 player.yomi に snapshot コピー（normalizeYomi 正規化・空は ''）。
+    yomi:normalizeYomi(member.yomi||''),
     // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（欠番維持）
     entry_no:nextEntryNoForClass(cls,state)
   };
@@ -4194,6 +4204,23 @@ function renderRegList(){
   }
 }
 
+// FURIGANA-MVP-001: 氏名 + ふりがなを表す DOM ノードを返す共通 helper（受付一覧のルビ表示用）。
+//   - DOM API（createTextNode / createElement('rt')）で生成し XSS 安全（textContent 経由で自動 escape）。
+//   - ふりがなが空（trim 後）なら <ruby> を使わず氏名テキストノードのみ（空 <rt> を出さない）。
+//   - innerHTML 文字列連結はしない。呼び出し側で appendChild する。
+//   - MVP では受付一覧のみで使用。順位表 / PDF / 星取表 への展開は本タスク対象外（設計メモ §A-5）。
+function renderPlayerNameWithRuby(name,yomi){
+  var safeName=String(name==null?'':name);
+  var safeYomi=String(yomi==null?'':yomi).trim();
+  if(!safeYomi)return document.createTextNode(safeName);
+  var ruby=document.createElement('ruby');
+  ruby.appendChild(document.createTextNode(safeName));
+  var rt=document.createElement('rt');
+  rt.textContent=safeYomi;
+  ruby.appendChild(rt);
+  return ruby;
+}
+
 function makePlayerRow(p,cls,i){
   var div=document.createElement('div');
   div.className='player-row';
@@ -4211,7 +4238,8 @@ function makePlayerRow(p,cls,i){
 
   var name=document.createElement('span');
   name.className='player-name';
-  name.textContent=p.name;
+  // FURIGANA-MVP-001: ふりがながあれば氏名にルビ表示（受付一覧のみ）。空なら従来どおり氏名テキスト。
+  name.appendChild(renderPlayerNameWithRuby(p.name,p.yomi));
   mainDiv.appendChild(name);
 
   var mSel=document.createElement('select');
@@ -4581,7 +4609,9 @@ function addPlayer(){
 
   var name=inpName.value.trim();
   var cls=document.getElementById('inp-class').value;
-  // A-4 §3.1.4: ふりがな欄の値は DOM のみで保持。player.yomi には保存しない。
+  // FURIGANA-MVP-001: ふりがな欄の値は player.yomi に保持する（当日 snapshot・受付一覧 ruby 表示用）。
+  //   旧 A-4 §3.1.4 は「DOM のみ保持・player 非保存」だったが、当日表示要件のため方針変更した。
+  //   マスタ反映（_pendingNewYomi / suggest backfill）は従来どおり別途維持（下記）。
   var yomiRaw=inpYomi?inpYomi.value:'';
   if(!name){showMsg('名前を入力してください','err');return;}
   var all=state.players.A.concat(state.players.B);
@@ -4624,6 +4654,9 @@ function addPlayer(){
   var id='p'+Date.now()+Math.floor(Math.random()*1000);
   var newPlayer={id:id,name:name,cls:cls,member:memberValue,grade:gradeValue};
   if(memberIdValue)newPlayer.member_id=memberIdValue;
+  // FURIGANA-MVP-001: 受付ふりがな欄を player.yomi に保持。空でサジェスト選択時は master.yomi をフォールバック。
+  newPlayer.yomi=normalizeYomi(yomiRaw||'');
+  if(!newPlayer.yomi&&suggestSelected)newPlayer.yomi=normalizeYomi(suggestSelected.yomi||'');
   // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（欠番維持）
   newPlayer.entry_no=nextEntryNoForClass(cls,state);
   state.players[cls].push(newPlayer);
@@ -7035,7 +7068,9 @@ function sanitizeFilenamePart(value){
 
 // パーツ配列を結合して拡張子なしの安全なファイル名（基底名）を返す。空パーツはスキップ。
 //   全パーツが空でも壊れないよう既定値 '将棋大会' に fallback する。
-function buildSafePdfFilename(parts){
+function buildSafePdfFilename(parts,sep){
+  // sep: トークン区切り（既定 '' で後方互換）。SHOGI-TOUR-PDF-FILENAME-MVP-001 では '_' を渡す。
+  var joiner=(typeof sep==='string')?sep:'';
   var safe=[];
   if(Object.prototype.toString.call(parts)==='[object Array]'){
     for(var i=0;i<parts.length;i++){
@@ -7043,7 +7078,7 @@ function buildSafePdfFilename(parts){
       if(p)safe.push(p);
     }
   }
-  var name=safe.join('');
+  var name=safe.join(joiner);
   return name||'将棋大会';
 }
 
@@ -7061,20 +7096,39 @@ function buildTournamentHeldDateLabel(){
   return raw?formatJapaneseDateFromYmd(raw):'';
 }
 
+// SHOGI-TOUR-PDF-FILENAME-MVP-001: 開催日コンパクト表記「YYYYMMDD」。
+//   state.report.date（normalizeReportDateForInput 通過済の YYYY-MM-DD）からハイフンを除去する。
+//   日付未入力／不正値時は '' を返し、ファイル名側で日付トークンを省略できるようにする。
+function buildTournamentHeldDateCompact(){
+  var raw=(typeof normalizeReportDateForInput==='function')?normalizeReportDateForInput(state.report&&state.report.date):'';
+  var mm=raw&&raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!mm)return '';
+  return mm[1]+mm[2]+mm[3];
+}
+
 // PDF 保存時の推奨ファイル名（拡張子なしの基底名）を種別ごとに生成する。
-//   形式: {YYYY年M月度}{大会名}{種別}  例: 2026年6月度沼津支部月例将棋大会対戦成績
-//   Codex Must Fix 2（A案 採用）:
+//   形式: {YYYYMMDD}_{大会名}[_{クラス名}]_{種別}
+//     例: 20260614_沼津支部月例将棋大会_Aクラス_対戦成績 / 20260614_沼津支部月例将棋大会_報告書
+//   SHOGI-TOUR-PDF-FILENAME-MVP-001（運用者の明示要望）:
+//     後から運営記録・過去大会履歴と突き合わせやすいよう、開催日(8桁)・大会名・クラス名・種別を
+//     アンダースコア区切りで並べる。これは LIVE-MOBILE-SCOREBOARD-001(PR #204) の
+//     「{YYYY年M月度}{大会名}{種別}」形式を意図的に置き換えるもの。
 //   現行 PDF 出力は全経路（printResults / printPairings / downloadReport）が
 //   Blob(text/html) + window.open() + win.print() 方式であり、生成物は HTML である。
 //   利用者がブラウザの印刷ダイアログで「PDF に保存」を選ぶと、ブラウザは <title> を
 //   ファイル名候補として提示し、「.pdf」拡張子はブラウザ側のPDF保存動作で付与される。
 //   そのため「.pdf 拡張子」をアプリのコードで保証することはできない（ブラウザ依存）。
-//   本実装のスコープは「保存ダイアログに出る “基底名” を URL 由来でなく大会情報由来に
-//   改善する」ことに限定する。よってここでは拡張子を付けない安全な基底名のみを返す。
-//   （title に '.pdf' を埋めると環境により二重拡張子等になり得るため付与しない。）
-function buildTournamentPdfFilename(kind){
+//   よってここでは拡張子を付けない安全な基底名のみを返す
+//   （title に '.pdf' を埋めると環境により二重拡張子等になり得るため付与しない）。
+//   未設定時の fallback:
+//     - 開催日が空／不正値なら日付トークンを省略（大会名から始まる）。
+//     - className は「出力が単一クラスを特定できる」場合のみ呼び出し側が渡す。多クラス一括出力や
+//       大会全体の帳票（報告書）では省略（undefined）し、クラストークンを付けない。
+//     - 全トークンが空でも buildSafePdfFilename が '将棋大会' に fallback する。
+//   危険文字（OS 禁止文字 / パス区切り / 制御文字 / 前後空白）は sanitizeFilenamePart で除去済み。
+function buildTournamentPdfFilename(kind,className){
   var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):'沼津支部月例将棋大会';
-  return buildSafePdfFilename([buildTournamentTargetMonthLabel(),title,kind]);
+  return buildSafePdfFilename([buildTournamentHeldDateCompact(),title,className,kind],'_');
 }
 
 // PDF 帳票の見出し HTML（大会名 / 種別 / 対象月 / 開催日）。印刷・配布時に単体で意味が通るようにする。
@@ -7171,21 +7225,24 @@ function printResults(){
   //   隣接 table 間にだけ page-break を挟む（既存 B07 と同じく空白ページを挿入しない）。
   //   A/B 既存挙動（A→B 2 枚で page-break 1 回）は維持される。
   var tables=[];
+  var tableClassNames=[];   // 実際に出力された（finals 非空の）クラス表示名。単一クラス時のみファイル名に使う。
   for(var ti=0;ti<classes.length;ti++){
     var tc=classes[ti]; if(!tc||!isSafeClassId(tc.id))continue;
     var tbl=buildTable(tc.id, winsByClass[tc.id]||{});
-    if(tbl)tables.push(tbl);
+    if(tbl){tables.push(tbl);tableClassNames.push(tc.name||(tc.id+'クラス'));}
   }
   var pageBreakHtml='<div style="page-break-before:always"></div>';
   var tablesHtml=tables.join(pageBreakHtml);
 
-  // LIVE-MOBILE-SCOREBOARD-001 §3: PDF 保存時のファイル名は共通 helper で
-  //   「YYYY年M月度{大会名}対戦成績」形式に統一する（buildTournamentPdfFilename）。
-  //   旧仕様の '<大会名>_<YYYYMMDD>_対戦成績' はアンダースコア + 8桁日付で URL 由来のように
-  //   見えていたため、配布で意味が通る自然な日本語ファイル名へ改善する。
+  // SHOGI-TOUR-PDF-FILENAME-MVP-001: PDF 保存時のファイル名は共通 helper で
+  //   「{YYYYMMDD}_{大会名}[_{クラス名}]_対戦成績」形式に統一する（buildTournamentPdfFilename）。
+  //   開催日(8桁)・大会名・種別を基本トークンとし、クラス名は「この出力に 1 クラスだけ含まれる」
+  //   ときのみ付与する（複数クラス一括出力では特定クラス名を付けず 日付+大会名+種別 のみ）。
+  //   これは LIVE-MOBILE-SCOREBOARD-001(PR #204) の月度ベース命名を運用者要望で置き換えるもの。
   //   <title> をファイル名候補として使う印刷経路のため、拡張子なしの基底名を代入する
-  //   （保存時にブラウザが .pdf を付与）。
-  var fileTitleName=buildTournamentPdfFilename('対戦成績');
+  //   （保存時にブラウザが .pdf を付与）。本文・レイアウトは変更しない。
+  var classNameForFile=(tableClassNames.length===1)?tableClassNames[0]:'';
+  var fileTitleName=buildTournamentPdfFilename('対戦成績',classNameForFile);
 
   // LIVE-MOBILE-SCOREBOARD-001 §4: 帳票本文に大会名 / 対象月 / 開催日 / 種別の見出しを追加し、
   //   印刷・配布時に PDF 単体で「いつ・どの大会の・何の帳票か」が分かるようにする。
@@ -7259,9 +7316,12 @@ function printPairings(){
   var dateRaw=(typeof normalizeReportDateForInput==='function')?normalizeReportDateForInput(state.report&&state.report.date):'';
   var dateDisplay=dateRaw&&typeof formatJapaneseDateFromYmd==='function'?formatJapaneseDateFromYmd(dateRaw):'';
 
-  // LIVE-MOBILE-SCOREBOARD-001 §3: ファイル名は共通 helper で「YYYY年M月度{大会名}組み合わせ」に統一。
-  //   旧 '<大会名>_<YYYYMMDD>_現在の組み合わせ'（URL 由来のように見える）を自然な日本語名へ改善する。
-  var fileTitleName=buildTournamentPdfFilename('組み合わせ');
+  // SHOGI-TOUR-PDF-FILENAME-MVP-001: ファイル名は共通 helper で
+  //   「{YYYYMMDD}_{大会名}[_{クラス名}]_組み合わせ」に統一する。
+  //   印刷対象が 1 クラスだけのときはそのクラス名を付与し、複数クラス時は付けない。
+  //   （PR #204 の月度ベース命名を運用者要望で置き換え。本文・レイアウトは不変。）
+  var pairingClassName=(printable.length===1)?printable[0].name:'';
+  var fileTitleName=buildTournamentPdfFilename('組み合わせ',pairingClassName);
 
   // 各クラスごとに section を組み立て、class 間に page-break を入れる（複数クラスでも 1 クラス=1 ページ目安）。
   //   card は CSS grid で 1 ページ複数カード、page-break-inside:avoid でカード途中での改ページを避ける。
@@ -7519,11 +7579,11 @@ function downloadReport(){
   // REPORT-UX-006B: dateRaw は normalizeReportDateForInput 通過済の YYYY-MM-DD / '' なので、
   //   ハイフン除去のみで YYYYMMDD（不正値時は ''）になる。DOM 直読みをやめ state-as-SoT に統一。
   var dateNum=dateRaw.split('-').join('');
-  // LIVE-MOBILE-SCOREBOARD-001 §3: ファイル名は共通 helper で「YYYY年M月度{大会名}報告書」に統一。
-  //   旧 '<大会名>_<YYYYMMDD>_報告書'（アンダースコア + 8桁日付で URL 由来のように見える）を
-  //   自然な日本語ファイル名へ改善する。<title> は初回組立時に reportTitleWithSuffix 由来で
-  //   生成済のため、ここでは html.replace でファイル名タイトルへ置換する（既存設計の踏襲）。
-  //   dateNum は本ファイル名では未使用だが、後続の互換用に算出は残す。
+  // SHOGI-TOUR-PDF-FILENAME-MVP-001: ファイル名は共通 helper で
+  //   「{YYYYMMDD}_{大会名}_報告書」に統一する（報告書は大会全体の帳票なのでクラス名は付けない）。
+  //   <title> は初回組立時に reportTitleWithSuffix 由来で生成済のため、ここでは html.replace で
+  //   ファイル名タイトルへ置換する（既存設計の踏襲）。本文・h2・レイアウトは変更しない。
+  //   （PR #204 の月度ベース命名を運用者要望で置き換え。dateNum は後続互換のため算出を残置。）
   var fileTitleName=buildTournamentPdfFilename('報告書');
   html=html.replace('<title>'+escapeHtml(reportTitleWithSuffix)+'</title>','<title>'+escapeHtml(fileTitleName)+'</title>');
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
@@ -8076,10 +8136,34 @@ function initApp(){
 // 表示中のクラスフィルタ（'all' または classId）。memory-only、保存しない。
 var _sbClassFilter='all';
 
-// hash が閲覧専用ビューのものか判定する。
+// LIVE-MOBILE-SCOREBOARD-001 §1: 最終更新時刻。
+//   閲覧ビューが state を最後に読み込んだ時刻を保持する（memory-only / 非保存・保存データ構造は不変）。
+//   タブ切替などの単なる再描画では更新せず、データ再読込時（route 突入 / storage / focus）のみ更新する。
+var _sbLastUpdate=null;
+
+// Date を 'YYYY/MM/DD HH:MM:SS'（ゼロ詰め）へ整形する純粋関数。
+//   Date でない/不正値なら '' を返す。表示専用でロジックに影響しない。
+function sbFormatUpdateTime(d){
+  if(!d||typeof d.getFullYear!=='function'||isNaN(d.getTime()))return '';
+  function z(n){return (n<10?'0':'')+n;}
+  return d.getFullYear()+'/'+z(d.getMonth()+1)+'/'+z(d.getDate())
+    +' '+z(d.getHours())+':'+z(d.getMinutes())+':'+z(d.getSeconds());
+}
+
+// 最終更新時刻を現在時刻へ更新する（データ再読込時に呼ぶ）。
+function sbTouchUpdate(){ _sbLastUpdate=new Date(); }
+
+// 現在のURLが閲覧専用ビューのものか判定する。
+//   LIVE-MOBILE-SCOREBOARD-001 §1: 仕様の主経路 ?view=scoreboard に加え、
+//   既存運用の #scoreboard / #viewer / #mobile-standings hash も引き続き受理する（後方互換）。
+//   いずれも scoreboard / viewer / mobile-standings の3トークンを許可する。
 function isScoreboardRoute(){
+  var tokens={scoreboard:1,viewer:1,'mobile-standings':1};
   var h=(location.hash||'').replace(/^#/,'').toLowerCase();
-  return h==='scoreboard'||h==='viewer'||h==='mobile-standings';
+  if(tokens[h])return true;
+  var m=(location.search||'').match(/[?&]view=([^&#]*)/i);
+  var v=m?decodeURIComponent(m[1]).toLowerCase():'';
+  return !!tokens[v];
 }
 
 // クラス表示名（state.classes[*].name 優先、なければ '<id>クラス'）。
@@ -8166,10 +8250,14 @@ function renderScoreboard(){
   //   勝敗入力・編集UIへ到達でき、閲覧専用(read-only)要件に反するため。
   //   運営者が運営画面へ戻る必要がある場合は「別タブ運用」または「#scoreboard を外した
   //   運営URLを直接開く」運用とする（閲覧ビュー内には導線を持たせない）。
+  // 最終更新時刻（仕様の必須表示項目）。_sbLastUpdate 未設定（直接描画）の場合は現在時刻で代替。
+  var updLabel=sbFormatUpdateTime(_sbLastUpdate||new Date());
   var head='<div class="sb-head"><div>'
     +'<div class="sb-title">'+escapeHtml(title)+' 星取表</div>'
     +(metaParts.length?'<div class="sb-meta">'+escapeHtml(metaParts.join('　／　'))+'</div>':'')
-    +'<div class="sb-note">閲覧専用・自動更新（運営画面の保存に追従）</div></div></div>';
+    +'<div class="sb-note">閲覧専用・自動更新（運営画面の保存に追従）</div>'
+    +(updLabel?'<div class="sb-updated">最終更新：'+escapeHtml(updLabel)+'</div>':'')
+    +'</div></div>';
   // フィルタが現存クラスに無ければ all に戻す。
   if(_sbClassFilter!=='all'&&activeClasses.indexOf(_sbClassFilter)===-1)_sbClassFilter='all';
   var tabs='';
@@ -8207,6 +8295,7 @@ function applyScoreboardRoute(){
     view.setAttribute('aria-hidden','false');
     if(header)header.style.display='none';
     if(container)container.style.display='none';
+    sbTouchUpdate();
     renderScoreboard();
   }else{
     document.body.classList.remove('sb-active');
@@ -8244,12 +8333,14 @@ function initScoreboard(){
     if(!isScoreboardRoute())return;
     if(e&&e.key&&e.key!==STORAGE_KEY)return;
     try{load();}catch(err){}
+    sbTouchUpdate();
     renderScoreboard();
   });
   // タブ復帰時にも最新化（storage イベントを取りこぼした場合の保険）。
   window.addEventListener('focus',function(){
     if(!isScoreboardRoute())return;
     try{load();}catch(err){}
+    sbTouchUpdate();
     renderScoreboard();
   });
   applyScoreboardRoute();
