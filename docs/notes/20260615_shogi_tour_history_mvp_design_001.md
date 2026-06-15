@@ -7,7 +7,7 @@
 | 対象 | `shogi_v4.html`（沼津支部 月例将棋大会 運営ツール）。**本メモはコードを変更しない** |
 | 種別 | docs-only 設計メモ（後続実装用 MVP 仕様） |
 | ベース branch | `chore/shogi-tour-apphq-003h-2d-orphan-clean-base`（orphan clean base。`main` ではない） |
-| 関連 | [§C 月例会結果アーカイブ](20260614_shogi_tour_post_event_requests_design.md)（フル DB ビジョン）／[live scoreboard 完了メモ](20260614_shogi_live_scoreboard_mvp_001_summary.md)（閲覧ビュー再利用元）／[quota 棚卸し](20260514_shogi_save_ux_quota_inventory.md)（保存経路 / quota） |
+| 関連 | [§C 月例会結果アーカイブ](20260614_shogi_tour_post_event_requests_design.md)（フル DB ビジョン）／[live scoreboard 完了メモ](20260614_shogi_live_scoreboard_mvp_001_summary.md)（閲覧ビュー再利用元） |
 
 ---
 
@@ -49,8 +49,8 @@ JSON バックアップ（`saveData()`）を取って外部保管し、必要な
 
 - **大会 1 回分** = 1 月例会（例: 2026 年 6 月度）。識別子は既存の `state.tournament_id`
   （`t_YYYY_MM_DD` 形式・日付由来・衝突時サフィックス）。
-- **localStorage は 2 キー構成**（[quota 棚卸し §6](20260514_shogi_save_ux_quota_inventory.md)）:
-  - `STORAGE_KEY = 'shogi_v4'` … 当日大会 state（`players` / `pairings` / `results` / `started` / `classes` / `report` / `tournament_id`）。`LEGACY_STORAGE_KEYS = ['shogi_v3']`。
+- **localStorage は 2 キー構成**（現行 `shogi_v4.html` 実装で確認）:
+  - `STORAGE_KEY = 'shogi_v4'` … 当日大会 state（`players` / `pairings` / `results` / `started` / `classes` / `report` / `rounds` / `tournament_id` 等。`var state = {…}` の現行フィールドに準ずる非網羅列挙）。`LEGACY_STORAGE_KEYS = ['shogi_v3']`。
   - `BRANCH_MASTER_KEY = 'shogi_branch_master'` … 参加者マスタ（`members[]`）。
   - 設定保存・sessionStorage・IndexedDB・cookie は**未使用**。`setItem` 経路は `save()` と `saveBranchMaster()` の 2 系統のみ。
 - **同一端末・同一ブラウザ前提**。localStorage はオリジン×ブラウザごとに独立。
@@ -144,8 +144,7 @@ JSON バックアップ（`saveData()`）を取って外部保管し、必要な
 
 ### 4.2 quota（保存容量）への影響 — MVP の必須考慮点
 
-[quota 棚卸し](20260514_shogi_save_ux_quota_inventory.md) より、現在 `setItem` 経路は
-`save()` / `saveBranchMaster()` の 2 系統。履歴保存は **3 つ目の `setItem` 経路**になる。
+現行 `shogi_v4.html` で `setItem` 経路は `save()` / `saveBranchMaster()` の 2 系統のみ（他に書込経路なし）。履歴保存は **3 つ目の `setItem` 経路**になる。
 さらに **snapshot 1 件 ≈ 1 大会分の `state`** なので、N 大会で保存量はおおむね N 倍に増える。
 quota は MVP の第一級の関心事として扱う:
 
@@ -257,6 +256,8 @@ PDF/帳票のファイル名は `buildTournamentPdfFilename(kind, className)` �
 // renderStandings(sourceState)            // 純粋寄り。live=state / history=archive.tournaments[i].snapshot
 ```
 
+**実装条件（MVP 唯一の既存コード改修点）**: この引数化は **後方互換な optional 引数**で行う（例 `renderStandings(sourceState)` / `buildScoreboardClassTableHtml(cls, sourceState)`、`sourceState` 既定 = global `state`）。**引数なし呼び出し＝既存 live 経路の挙動は完全不変**（描画結果も既存の呼び出し側も変えない）を実装条件とする。履歴は `sourceState = archive.tournaments[i].snapshot` を渡すだけ。`save` / `load` / `normalizeState` / 順位計算 / 勝敗入力には触れない（§12）。
+
 ### 8.2 同一端末 localStorage 前提を継承
 
 - live scoreboard は **同一ブラウザの別タブ**で `storage` イベント連動して自動更新する仕組み
@@ -293,7 +294,7 @@ live と同様、ふりがな ruby 表示は MVP に含めない（[§A](2026061
 | | 明示操作「この大会を履歴へ保存」（§11） |
 | | `tournament_id` をキーにした **冪等**保存（既存なら上書き確認・無ければ追記） |
 | | 履歴一覧（identity ベース・新しい順）（§5） |
-| | read-only 閲覧（scoreboard レンダラ流用・編集 UI なし）（§6） |
+| | read-only 閲覧（scoreboard レンダラを**後方互換 optional 引数化**して流用・編集 UI なし。MVP 唯一の既存コード改修点 §8.1/§12）（§6） |
 | | identity（title / heldDate / targetMonthLabel / classes / 人数 / 優勝者）の凍結（§3・§7） |
 | | quota 再利用（`isQuotaExceededError` + `notifySaveWarning` + ロールバック）（§4.2） |
 | | 純関数中心のテスト（架空データ）（§14） |
@@ -337,6 +338,9 @@ live と同様、ふりがな ruby 表示は MVP に含めない（[§A](2026061
 - 既存の `calcFinal` / `computeDisplayRanks` / `setWinner` / `submitRound` /
   `startTournamentForClass` / `save` / `load` / `normalizeState` / `saveBranchMaster` を**変更しない**。
   履歴は **追加関数 + 別キー `shogi_archive` + 純関数**で実現する。
+- **唯一の既存コード改修点** = scoreboard レンダラ（`renderScoreboard` / `buildScoreboardClassTableHtml`）の
+  **後方互換 optional 引数化**（§8.1）。改修は描画層に閉じ、`save` / `load` / `normalizeState` / 順位計算には及ばない。
+  **引数なし呼び出し＝既存 live 経路の挙動は不変**を実装条件とする。
 - `shogi_archive` 不在 = 履歴 0 件として正常動作（後方互換）。
 - 閲覧経路に編集系 UI を出さない（§6.2）。当日 state（`shogi_v4`）は履歴操作で一切変化しない。
 - snapshot に新フィールドを足す場合も `schema_version` 既定で後方互換（旧 snapshot を読んでも壊れない）。
@@ -374,7 +378,7 @@ MVP の snapshot は `state` 形なので、[§C-3-3 の純関数 `buildTourname
   - scoreboard レンダラの **snapshot 入力版** … live と同じ結果を snapshot から再現。
 - 観点: 一覧項目が出る／**編集系 UI が出ない**（read-only）／冪等／quota 時にロールバックして
   当日 state を壊さない（`isQuotaExceededError` 再利用）。
-- **既存テストを壊さない**。`bash test/run_tests.sh shogi_v4.html`（現在 96 件）を維持。
+- **既存テストを壊さない**。`bash test/run_tests.sh shogi_v4.html` を維持（件数は未追跡 fixture/test の有無で**環境依存**するため具体数は固定せず、**実装時に同コマンドで再確認**する）。
   履歴は別キー・別関数なので既存 save/load/normalize テストに影響しないはず。
 - データは**完全架空のみ**（§9）。
 
@@ -407,3 +411,4 @@ MVP の snapshot は `state` 形なので、[§C-3-3 の純関数 `buildTourname
 | 日付 | 内容 |
 |---|---|
 | 2026-06-15 | v0 作成。過去大会履歴の MVP 設計（docs-only）。保存単位＝state スナップショット、別キー `shogi_archive` 追記専用、識別メタ凍結、read-only 閲覧は scoreboard レンダラ流用、復元は MVP 対象外（閲覧のみ）、PDF 命名・スマホ順位表との接続、quota 再利用、§C への移行橋を整理。コードは未変更。 |
+| 2026-06-15 | v0.1 レビュー反映（docs-only）。未追跡の quota 棚卸しメモへの dangling リンクを除去し、§1/§4.2 を実在 helper（`isQuotaExceededError` / `notifySaveWarning`）と方針説明で自己完結化。§1 の state 列挙に `rounds`＋「等」を追加、§14 テスト件数は環境依存のため実装時再確認に変更、§8.1/§10/§12 に「scoreboard レンダラの後方互換 optional 引数化＝唯一の既存コード改修点・live 挙動不変」を明記。コードは未変更。 |
