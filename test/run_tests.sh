@@ -984,6 +984,22 @@ else
 fi
 
 # ============================================
+# SHOGI-TOUR-FURIGANA-MVP-001 参加者ふりがな（player.yomi 保持 + 受付一覧 ruby 表示）
+# ============================================
+echo ""
+echo "【SHOGI-TOUR-FURIGANA-MVP-001 参加者ふりがな（player.yomi / 受付一覧 ruby）】"
+if [ -f "$SCRIPT_DIR/test_furigana_mvp_001.js" ]; then
+  if node "$SCRIPT_DIR/test_furigana_mvp_001.js" "$TARGET" > /tmp/furigana_mvp_001_out.log 2>&1; then
+    ok "SHOGI-TOUR-FURIGANA-MVP-001 テスト 全PASS ($(tail -1 /tmp/furigana_mvp_001_out.log))"
+  else
+    ng "SHOGI-TOUR-FURIGANA-MVP-001 テスト 失敗"
+    cat /tmp/furigana_mvp_001_out.log
+  fi
+else
+  warn "test_furigana_mvp_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
