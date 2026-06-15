@@ -40,6 +40,9 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
   .player-row-actions{width:100%;margin-left:0;justify-content:space-between}
 }
 .player-name{font-weight:500;min-width:70px;font-size:14px}
+/* FURIGANA-MVP-001: 受付一覧のふりがなルビ表示（氏名の上に小さく）。MVP では受付一覧のみ。 */
+.player-name ruby{ruby-position:over}
+.player-name rt{font-size:.6em;font-weight:400;color:#555;line-height:1}
 .player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:14px}
 .sel-sm{height:34px;padding:0 6px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff;font-family:inherit}
 /* ROUND-CLASS-START-007 (spec §15.1 .grid2 3+ クラス棚卸し):
@@ -737,6 +740,9 @@ function normalizeState(raw){
       };
       // 支部マスタとの紐付け（F2）。既存JSON（member_id 不在）は従来通り。
       if(p&&typeof p.member_id==='string'&&p.member_id)pp.member_id=p.member_id;
+      // FURIGANA-MVP-001: ふりがな（任意・既定 ''）。既存 player.yomi があれば保持、無ければ '' 補完。
+      //   member_id / city と同じ「読込時 default 補完」パターン。schema_version は新設しない。
+      pp.yomi=(p&&typeof p.yomi==='string')?p.yomi:'';
       // A-5.1 §11.8: entry_no を永続化（欠番維持）。
       //   保存済みの entry_no があればそれを使う。
       //   legacy データ（entry_no 不在）は配列 index+1 で補完。
@@ -2114,6 +2120,8 @@ function addPlayerFromMaster(memberId,cls,master,state){
     member:(member.member==='other')?'other':'member',
     grade:(member.grade==='chu')?'chu':'ippan',
     member_id:member.id,
+    // FURIGANA-MVP-001: master.yomi を当日 player.yomi に snapshot コピー（normalizeYomi 正規化・空は ''）。
+    yomi:normalizeYomi(member.yomi||''),
     // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（欠番維持）
     entry_no:nextEntryNoForClass(cls,state)
   };
@@ -4196,6 +4204,23 @@ function renderRegList(){
   }
 }
 
+// FURIGANA-MVP-001: 氏名 + ふりがなを表す DOM ノードを返す共通 helper（受付一覧のルビ表示用）。
+//   - DOM API（createTextNode / createElement('rt')）で生成し XSS 安全（textContent 経由で自動 escape）。
+//   - ふりがなが空（trim 後）なら <ruby> を使わず氏名テキストノードのみ（空 <rt> を出さない）。
+//   - innerHTML 文字列連結はしない。呼び出し側で appendChild する。
+//   - MVP では受付一覧のみで使用。順位表 / PDF / 星取表 への展開は本タスク対象外（設計メモ §A-5）。
+function renderPlayerNameWithRuby(name,yomi){
+  var safeName=String(name==null?'':name);
+  var safeYomi=String(yomi==null?'':yomi).trim();
+  if(!safeYomi)return document.createTextNode(safeName);
+  var ruby=document.createElement('ruby');
+  ruby.appendChild(document.createTextNode(safeName));
+  var rt=document.createElement('rt');
+  rt.textContent=safeYomi;
+  ruby.appendChild(rt);
+  return ruby;
+}
+
 function makePlayerRow(p,cls,i){
   var div=document.createElement('div');
   div.className='player-row';
@@ -4213,7 +4238,8 @@ function makePlayerRow(p,cls,i){
 
   var name=document.createElement('span');
   name.className='player-name';
-  name.textContent=p.name;
+  // FURIGANA-MVP-001: ふりがながあれば氏名にルビ表示（受付一覧のみ）。空なら従来どおり氏名テキスト。
+  name.appendChild(renderPlayerNameWithRuby(p.name,p.yomi));
   mainDiv.appendChild(name);
 
   var mSel=document.createElement('select');
@@ -4583,7 +4609,9 @@ function addPlayer(){
 
   var name=inpName.value.trim();
   var cls=document.getElementById('inp-class').value;
-  // A-4 §3.1.4: ふりがな欄の値は DOM のみで保持。player.yomi には保存しない。
+  // FURIGANA-MVP-001: ふりがな欄の値は player.yomi に保持する（当日 snapshot・受付一覧 ruby 表示用）。
+  //   旧 A-4 §3.1.4 は「DOM のみ保持・player 非保存」だったが、当日表示要件のため方針変更した。
+  //   マスタ反映（_pendingNewYomi / suggest backfill）は従来どおり別途維持（下記）。
   var yomiRaw=inpYomi?inpYomi.value:'';
   if(!name){showMsg('名前を入力してください','err');return;}
   var all=state.players.A.concat(state.players.B);
@@ -4626,6 +4654,9 @@ function addPlayer(){
   var id='p'+Date.now()+Math.floor(Math.random()*1000);
   var newPlayer={id:id,name:name,cls:cls,member:memberValue,grade:gradeValue};
   if(memberIdValue)newPlayer.member_id=memberIdValue;
+  // FURIGANA-MVP-001: 受付ふりがな欄を player.yomi に保持。空でサジェスト選択時は master.yomi をフォールバック。
+  newPlayer.yomi=normalizeYomi(yomiRaw||'');
+  if(!newPlayer.yomi&&suggestSelected)newPlayer.yomi=normalizeYomi(suggestSelected.yomi||'');
   // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（欠番維持）
   newPlayer.entry_no=nextEntryNoForClass(cls,state);
   state.players[cls].push(newPlayer);
