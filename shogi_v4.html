@@ -30,6 +30,14 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .alert-warn{background:#faeeda;color:#633806;border:1px solid #EF9F27}
 .save-warn-pill{flex:0 0 auto;align-self:center;padding:4px 10px;border-radius:12px;background:#faeeda;color:#633806;border:1px solid #EF9F27;font-size:12px;font-weight:500}
 .fee-bar{margin-top:12px;padding:10px 14px;background:#e8f0f8;border-radius:8px;font-size:14px}
+/* SHOGI-TOUR-START-001: 受付クラス別「開始 readiness」バッジ（見出し直下・派生表示・保存しない）。
+   色は既存 alert 系の意味色を流用（ready=alert-ok 緑 / warn=alert-warn 黄 / started=primary 紺 / empty=灰）。
+   開始可否の判定は validateStartableClass に一元化（設計メモ §6）。本バッジは表示専用。 */
+.class-readiness{display:inline-block;margin:0 0 8px;padding:4px 10px;border-radius:8px;font-size:12px;font-weight:500;border:1px solid;line-height:1.5}
+.class-readiness-ready{background:#eaf3de;color:#27500A;border-color:#97c459}
+.class-readiness-warn{background:#faeeda;color:#633806;border-color:#EF9F27}
+.class-readiness-started{background:#e8f0f8;color:#1F3864;border-color:#9DB7D5}
+.class-readiness-empty{background:#f2f2f2;color:#808080;border-color:#d9d9d9}
 .separator{border:none;border-top:1px solid #eee;margin:12px 0}
 .player-row{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#f8fbff;border:1px solid #d0e4f7;border-radius:8px;margin-bottom:6px;flex-wrap:wrap}
 .player-row-main{display:flex;flex:1;gap:6px;align-items:center;flex-wrap:wrap;min-width:0}
@@ -230,6 +238,8 @@ body.sb-active{overflow:hidden}
             <h3 style="margin-bottom:0">Aクラス <span id="a-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
             <button type="button" id="bulkEditA" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
           </div>
+          <!-- SHOGI-TOUR-START-001: クラス別 開始 readiness バッジ（renderRegList が validateStartableClass から導出して描画）。初期は非表示。 -->
+          <div id="a-readiness" class="class-readiness" style="display:none"></div>
           <div id="a-list"></div>
         </div>
         <div data-class-id="B">
@@ -237,6 +247,8 @@ body.sb-active{overflow:hidden}
             <h3 style="margin-bottom:0">Bクラス <span id="b-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
             <button type="button" id="bulkEditB" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
           </div>
+          <!-- SHOGI-TOUR-START-001: クラス別 開始 readiness バッジ（renderRegList が validateStartableClass から導出して描画）。初期は非表示。 -->
+          <div id="b-readiness" class="class-readiness" style="display:none"></div>
           <div id="b-list"></div>
         </div>
       </div>
@@ -3875,6 +3887,13 @@ function regClassBulkEditId(classId){
   if(classId==='B')return 'bulkEditB';
   return 'class-bulkedit-'+classId;
 }
+// SHOGI-TOUR-START-001: 受付クラス別 readiness バッジの DOM id。
+//   既存 a-count/b-count と同じ命名規則（A/B 互換 id ＋ C+ は class-readiness-{classId}）。
+function regClassReadinessId(classId){
+  if(classId==='A')return 'a-readiness';
+  if(classId==='B')return 'b-readiness';
+  return 'class-readiness-'+classId;
+}
 
 // ROUND-CLASS-START-006 (spec §11.3 系の reg 版):
 //   reg-class-grid 内に C クラス以降の section を動的補完する。
@@ -3915,6 +3934,13 @@ function ensureClassRegDomNodes(){
     //   bindClassBulkEditHandlers() に集約する。A/B 既存 bind と同経路で統一する。
     header.appendChild(btn);
     section.appendChild(header);
+    // SHOGI-TOUR-START-001: 見出し直下に readiness バッジを生成（A/B 静的 DOM と同位置）。
+    //   初期は非表示。renderRegList が validateStartableClass から導出して描画する。
+    var readiness=document.createElement('div');
+    readiness.id=regClassReadinessId(c.id);
+    readiness.className='class-readiness';
+    if(readiness.style)readiness.style.display='none';
+    section.appendChild(readiness);
     // list
     var list=document.createElement('div');
     list.id=regClassListId(c.id);
@@ -4203,6 +4229,9 @@ function renderRegList(){
         listEl.appendChild(makePlayerRow(players[i],cls,i));
       }
     }
+    // SHOGI-TOUR-START-001: クラス別 開始 readiness バッジ（派生値・保存しない）。
+    //   開始可否は validateStartableClass に委譲（§6）。clsList[ci]={id,name,started} を classInfo として渡す。
+    renderClassReadiness(cls,clsList[ci],players);
   }
   var total=calcTotal();
   var feeEl=document.getElementById('fee-summary');
@@ -5472,6 +5501,49 @@ function validateStartableClass(classInfo,playersForClass){
   if(cnt===1)return {kind:'too-few',message:name+'は参加者が1名のため開始できません'};
   if(cnt%2!==0)return {kind:'odd',message:name+'が奇数です。運営者を追加してください'};
   return {kind:'ok'};
+}
+
+// SHOGI-TOUR-START-001 (設計メモ §4.2 / §6):
+//   受付クラス別「開始 readiness」表示用の純粋マッピング helper。
+//   開始可否の判定（2名以上・偶数・未開始）は validateStartableClass に一元化されており、
+//   この関数は「判定結果(kind)を表示(ラベル/トーン)へ写像するだけ」。独自の開始判定は再実装しない（§6 自己制約）。
+//   - 入力: kind = validateStartableClass(...).kind ／ count = 表示用の実人数（判定には使わない）
+//   - 出力: {tone,label}（保存しない派生値。state を読み書きしない・副作用なし）
+//   - tone は色分け用の区分（ready/warn/started/empty/unknown → .class-readiness-{tone} CSS）
+//   文言は現行バリデータ／開始フローのメッセージと「意味」を揃える（押す前に何が足りないか分かる）:
+//     ok→開始できます ／ odd→奇数（運営者追加で開始可）／ too-few→1名 ／ skip-empty→未受付 ／ skip-already-started→開始済み
+function describeClassReadiness(kind,count){
+  var n=(typeof count==='number'&&count>=0)?count:0;
+  switch(kind){
+    case 'ok':
+      return {tone:'ready',  label:'開始できます（'+n+'名）'};
+    case 'odd':
+      return {tone:'warn',   label:'人数が奇数です（'+n+'名）。運営者を1名追加すると開始できます'};
+    case 'too-few':
+      return {tone:'warn',   label:'参加者が'+n+'名です。2名以上で開始できます'};
+    case 'skip-empty':
+      return {tone:'empty',  label:'参加者がいません（未受付）'};
+    case 'skip-already-started':
+      return {tone:'started',label:'開始済み'};
+    default:
+      return {tone:'unknown',label:''};
+  }
+}
+
+// SHOGI-TOUR-START-001 (設計メモ §4.2):
+//   受付クラス見出し直下の readiness バッジを描画する（表示専用・state 不変・保存しない）。
+//   開始可否は validateStartableClass に委譲し（§6）、文言は describeClassReadiness で写像する。
+//   textContent でテキスト挿入するため innerHTML 連結による XSS 経路を増やさない。
+//   readiness 要素が無い場合は no-op（ensureClassRegDomNodes 未生成 / 破損 DOM でも安全）。
+function renderClassReadiness(classId,classInfo,players){
+  var el=document.getElementById(regClassReadinessId(classId));
+  if(!el)return;
+  var arr=Array.isArray(players)?players:[];
+  var r=validateStartableClass(classInfo,arr);
+  var d=describeClassReadiness(r.kind,arr.length);
+  el.textContent=d.label;
+  el.className='class-readiness class-readiness-'+d.tone;
+  if(el.style)el.style.display=d.label?'inline-block':'none';
 }
 
 // ROUND-CLASS-START-004 (spec §13.2.1):
