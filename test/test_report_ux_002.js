@@ -98,8 +98,8 @@ assert(/function\s+buildClassRankRows\s*\(/.test(drBody),
   const rrBody = rrMatch ? rrMatch[0] : '';
   assert(/escapeHtml\s*\(\s*label\s*\)/.test(rrBody),
     'S6-1 rankRow が label を escapeHtml で escape する（XSS 安全性強化）');
-  assert(/escapeHtml\s*\(\s*name\s*\)/.test(rrBody),
-    'S6-2 rankRow が player name を引き続き escapeHtml で escape する');
+  assert(/playerNameRubyHtml\s*\(\s*name\s*,/.test(rrBody),
+    'S6-2 rankRow が player name を playerNameRubyHtml（内部で escapeHtml）でルビ表示する（FURIGANA-VIEW-002 で escapeHtml(name) 直書きから移行・XSS 安全性は維持）');
 }
 
 // S7: 既存主要構造の温存
