@@ -1000,6 +1000,22 @@ else
 fi
 
 # ============================================
+# SHOGI-TOUR-FURIGANA-VIEW-002 ふりがなルビを 順位表 / 星取表 / 閲覧ビュー / 印刷・PDF へ展開
+# ============================================
+echo ""
+echo "【SHOGI-TOUR-FURIGANA-VIEW-002 ふりがなルビ展開（順位表 / 星取表 / 閲覧ビュー / 印刷PDF）】"
+if [ -f "$SCRIPT_DIR/test_furigana_view_002.js" ]; then
+  if node "$SCRIPT_DIR/test_furigana_view_002.js" "$TARGET" > /tmp/furigana_view_002_out.log 2>&1; then
+    ok "SHOGI-TOUR-FURIGANA-VIEW-002 テスト 全PASS ($(tail -1 /tmp/furigana_view_002_out.log))"
+  else
+    ng "SHOGI-TOUR-FURIGANA-VIEW-002 テスト 失敗"
+    cat /tmp/furigana_view_002_out.log
+  fi
+else
+  warn "test_furigana_view_002.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""

@@ -43,6 +43,10 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 /* FURIGANA-MVP-001: 受付一覧のふりがなルビ表示（氏名の上に小さく）。MVP では受付一覧のみ。 */
 .player-name ruby{ruby-position:over}
 .player-name rt{font-size:.6em;font-weight:400;color:#555;line-height:1}
+/* FURIGANA-VIEW-002: 順位表 / 星取表 / 閲覧ビューへルビ展開（受付一覧と同じ流儀）。
+   rt は氏名より小さく line-height:1 で行の伸びを抑える（設計メモ §A-4）。 */
+.sb-table ruby,#pane-result ruby{ruby-position:over}
+.sb-table rt,#pane-result rt{font-size:.6em;font-weight:400;color:#777;line-height:1}
 .player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:14px}
 .sel-sm{height:34px;padding:0 6px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff;font-family:inherit}
 /* ROUND-CLASS-START-007 (spec §15.1 .grid2 3+ クラス棚卸し):
@@ -4208,7 +4212,8 @@ function renderRegList(){
 //   - DOM API（createTextNode / createElement('rt')）で生成し XSS 安全（textContent 経由で自動 escape）。
 //   - ふりがなが空（trim 後）なら <ruby> を使わず氏名テキストノードのみ（空 <rt> を出さない）。
 //   - innerHTML 文字列連結はしない。呼び出し側で appendChild する。
-//   - MVP では受付一覧のみで使用。順位表 / PDF / 星取表 への展開は本タスク対象外（設計メモ §A-5）。
+//   - FURIGANA-MVP-001 では受付一覧のみ。FURIGANA-VIEW-002 で順位表 / 星取表 / 閲覧ビュー /
+//     印刷・PDF へ展開（string でHTMLを組む経路は併設の playerNameRubyHtml を使う。設計メモ §A-5）。
 function renderPlayerNameWithRuby(name,yomi){
   var safeName=String(name==null?'':name);
   var safeYomi=String(yomi==null?'':yomi).trim();
@@ -4219,6 +4224,31 @@ function renderPlayerNameWithRuby(name,yomi){
   rt.textContent=safeYomi;
   ruby.appendChild(rt);
   return ruby;
+}
+
+// FURIGANA-VIEW-002: renderPlayerNameWithRuby の「escape 済み HTML 文字列」版（設計メモ §A-3 併設版）。
+//   string で HTML を組み立てる経路（順位表 / 星取表 / 閲覧ビュー / 印刷・PDF）でルビを出す共通 helper。
+//   - DOM 版と同じ規則: ふりがなが空（trim 後）なら <ruby> を使わず氏名のみ（空 <rt> を出さない）。
+//   - 氏名・ふりがなは必ず escapeHtml を通す（innerHTML 直挿しによる XSS を増やさない）。
+//   - ルビ組み立ての規則は DOM 版とここ（string 版）に集約し、各呼出側で二重実装しない。
+function playerNameRubyHtml(name,yomi){
+  var safeYomi=String(yomi==null?'':yomi).trim();
+  if(!safeYomi)return escapeHtml(name);
+  return '<ruby>'+escapeHtml(name)+'<rt>'+escapeHtml(safeYomi)+'</rt></ruby>';
+}
+
+// FURIGANA-VIEW-002: 当日 player.yomi を id+cls で引く（getName と対の lookup）。
+//   未登録 / yomi 不在は ''（= ルビなし）。表示専用で順位・対局ロジックには使わない。
+function yomiOf(id,cls){
+  var players=(state.players&&state.players[cls])||[];
+  for(var i=0;i<players.length;i++){if(players[i].id===id)return (typeof players[i].yomi==='string')?players[i].yomi:'';}
+  return '';
+}
+
+// FURIGANA-VIEW-002: getNameWithNo（"entry_no｜氏名"）の HTML 版。番号部は素のテキストのまま、
+//   氏名部だけ playerNameRubyHtml でルビ化する（番号にルビが乗らないようにする）。
+function nameWithNoRubyHtml(id,cls){
+  return escapeHtml(entryNoOf(cls,id)+'｜')+playerNameRubyHtml(getName(id,cls),yomiOf(id,cls));
 }
 
 function makePlayerRow(p,cls,i){
@@ -6765,7 +6795,7 @@ function buildResultsRoundCellMobileHtml(cls, playerId, roundIdx, wins){
   return '<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;overflow:hidden">'
     +'<div style="color:#888;font-size:10px;margin-bottom:2px">'+(roundIdx+1)+'回戦</div>'
     +'<div style="font-weight:bold;color:'+markColor+';font-size:16px;line-height:1">'+markStr+'</div>'
-    +'<div style="color:#555;font-size:10px;margin-top:2px">'+escapeHtml(getNameWithNo(oppId,cls))+'('+oppWins+')</div>'
+    +'<div style="color:#555;font-size:10px;margin-top:2px">'+nameWithNoRubyHtml(oppId,cls)+'('+oppWins+')</div>'
     +'</div>';
 }
 
@@ -6781,7 +6811,7 @@ function buildResultsRoundCellDesktopHtml(cls, playerId, roundIdx, wins){
   var won=match.winner===playerId;
   var markColor=won?'#27500A':'#222';
   var markStr=match.winner===null?'－':(won?'○':'●');
-  return '<td><span style="font-weight:bold;color:'+markColor+'">'+markStr+'</span><br><small style="color:#333">'+escapeHtml(getNameWithNo(oppId,cls))+'('+oppWins+')</small></td>';
+  return '<td><span style="font-weight:bold;color:'+markColor+'">'+markStr+'</span><br><small style="color:#333">'+nameWithNoRubyHtml(oppId,cls)+'('+oppWins+')</small></td>';
 }
 
 // スマホ向け表示全体(カードのリスト)
@@ -6796,7 +6826,7 @@ function buildResultsMobileHtml(cls, finals, wins){
     html+='<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px">';
     html+=badge;
     html+='<div style="display:flex;flex-direction:column;gap:2px">';
-    html+='<span style="font-weight:500;font-size:15px">'+escapeHtml(getNameWithNo(f.p.id,cls))+'</span>';
+    html+='<span style="font-weight:500;font-size:15px">'+nameWithNoRubyHtml(f.p.id,cls)+'</span>';
     // ROUND-CLASS-START-007 (最終結果タブ ラベル統一):
     //   モバイル成績カード内のラベルを 4 項目すべて全角コロン「：」付きで揃える。
     //   表示: 勝：N　負：N　相手：N　勝相手：N
@@ -6823,7 +6853,7 @@ function buildResultsDesktopHtml(cls, finals, wins){
     var f=finals[idx];var rank=displayRanks[idx];
     var rowCls=rank===1?'row-r1':rank===2?'row-r2':rank===3?'row-r3':'';
     var badge=rank===1?'<span class="badge b1">1位</span>':rank===2?'<span class="badge b2">2位</span>':rank===3?'<span class="badge b3">3位</span>':rank+'位';
-    html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+escapeHtml(getNameWithNo(f.p.id,cls))+'</td>';
+    html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+nameWithNoRubyHtml(f.p.id,cls)+'</td>';
     for(var r=0;r<state.rounds;r++){
       html+=buildResultsRoundCellDesktopHtml(cls, f.p.id, r, wins);
     }
@@ -7192,7 +7222,7 @@ function printResults(){
       // RANK-PRINT-001: 印刷/PDF 帳票では entry_no を表示せず氏名のみを出力する。
       //   画面 UI（buildResultsMobileHtml / buildResultsDesktopHtml）や受付・対局カード・
       //   参加者一覧では従来通り getNameWithNo を使用し本変更の影響を受けない。
-      html+='<td style="padding:6px 8px;border:1px solid #ccc;font-weight:bold">'+escapeHtml(getName(f.p.id,cls))+'</td>';
+      html+='<td style="padding:6px 8px;border:1px solid #ccc;font-weight:bold">'+playerNameRubyHtml(getName(f.p.id,cls),yomiOf(f.p.id,cls))+'</td>';
       for(var r=0;r<state.rounds;r++){
         var round=state.results[cls][r];
         if(!round){html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;color:#ccc">-</td>';continue;}
@@ -7206,7 +7236,7 @@ function printResults(){
         var won=match.winner===f.p.id;
         var color=won?'#27500A':'#222';
         var markStr2=match.winner===null?'－':(won?'○':'●');
-        html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center"><span style="font-weight:bold;color:'+color+'">'+markStr2+'</span><br><small style="color:#333">'+escapeHtml(oppName)+'('+oppWins+')</small></td>';
+        html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center"><span style="font-weight:bold;color:'+color+'">'+markStr2+'</span><br><small style="color:#333">'+playerNameRubyHtml(oppName,yomiOf(oppId,cls))+'('+oppWins+')</small></td>';
       }
       html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;font-weight:bold">'+f.A+'</td>';
       html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+(f.played-f.A)+'</td>';
@@ -7256,6 +7286,8 @@ function printResults(){
     +'.doc-header .doc-title{font-size:19px;font-weight:bold;color:#1F3864}'
     +'.doc-header .doc-meta{font-size:13px;color:#444;margin-top:4px}'
     +'tr,td{page-break-inside:avoid}'
+    // FURIGANA-VIEW-002: 印刷時に <rt> が潰れない最小CSS（氏名より小さく行高を詰める）。
+    +'ruby{ruby-position:over}rt{font-size:.6em;font-weight:normal;color:#333;line-height:1}'
     +'@media print{body{padding:0}.no-print{display:none}}</style>'
     +'</head><body>'
     +buildPdfDocHeaderHtml('対戦成績')
@@ -7331,14 +7363,14 @@ function printPairings(){
       +'<div class="cards">';
     for(var i=0;i<cl.pairs.length;i++){
       var m=cl.pairs[i];
-      var n1=(typeof getNameWithNo==='function')?getNameWithNo(m.p1,cl.id):'';
-      var n2=(typeof getNameWithNo==='function')?getNameWithNo(m.p2,cl.id):'';
+      // FURIGANA-VIEW-002: 組み合わせ印刷の氏名にルビ（番号は素のまま・氏名のみルビ）。
+      //   nameWithNoRubyHtml は escape 済み HTML を返すため、ここで再 escape せず直挿しする。
       sec+='<div class="card">'
         +'<div class="card-no">第 '+(i+1)+' 卓</div>'
         +'<div class="card-body">'
-        +'<div class="card-player">'+escapeHtml(n1)+'</div>'
+        +'<div class="card-player">'+nameWithNoRubyHtml(m.p1,cl.id)+'</div>'
         +'<div class="card-vs">vs</div>'
-        +'<div class="card-player">'+escapeHtml(n2)+'</div>'
+        +'<div class="card-player">'+nameWithNoRubyHtml(m.p2,cl.id)+'</div>'
         +'</div>'
         +'</div>';
     }
@@ -7369,6 +7401,8 @@ function printPairings(){
     +'.card-no{position:absolute;top:6px;left:6px;background:#1F3864;color:#fff;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:4px}'
     +'.card-body{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:22px}'
     +'.card-player{font-size:14px;font-weight:bold;color:#222;text-align:center;flex:1;word-break:break-word}'
+    // FURIGANA-VIEW-002: 組み合わせカードの氏名ルビ（印刷時に <rt> が潰れない最小CSS）。
+    +'.card-player ruby{ruby-position:over}.card-player rt{font-size:.55em;font-weight:normal;color:#333;line-height:1}'
     +'.card-vs{font-size:12px;color:#888;font-weight:500}'
     +'.cls-pagebreak{page-break-before:always;break-before:page}'
     +'@media print{body{padding:0}}</style></head><body>'
@@ -7396,7 +7430,8 @@ function getTopPlayers(cls){
   var finals=calcFinal(cls);
   var result=[];
   for(var i=0;i<Math.min(3,finals.length);i++){
-    result.push({rank:i+1,name:finals[i].p.name});
+    // FURIGANA-VIEW-002: 報告書の入賞者ルビ用に yomi も持たせる（空は ''）。rank/name は不変。
+    result.push({rank:i+1,name:finals[i].p.name,yomi:(typeof finals[i].p.yomi==='string')?finals[i].p.yomi:''});
   }
   return result;
 }
@@ -7465,8 +7500,10 @@ function downloadReport(){
   function rankRow(label,players,idx){
     var p=players[idx];
     var name=p?p.name:'';
+    // FURIGANA-VIEW-002: 入賞者氏名にルビ（空 yomi は氏名のみ）。ラベルは従来どおり escapeHtml。
+    var nameHtml=playerNameRubyHtml(name,p?p.yomi:'');
     return '<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">'+escapeHtml(label)+'</td>'
-      +'<td style="padding:6px 10px;border:1px solid #999;">'+escapeHtml(name)+'</td>'
+      +'<td style="padding:6px 10px;border:1px solid #999;">'+nameHtml+'</td>'
       +'<td style="padding:6px 10px;border:1px solid #999;"></td></tr>';
   }
   function buildClassRankRows(classes){
@@ -7524,6 +7561,8 @@ function downloadReport(){
     +'body{font-family:sans-serif;font-size:13px;padding:20px}'
     +'table{border-collapse:collapse;width:100%}'
     +'tr,td{page-break-inside:avoid}'
+    // FURIGANA-VIEW-002: 報告書（入賞者氏名）の印刷ルビが潰れない最小CSS。
+    +'ruby{ruby-position:over}rt{font-size:.6em;font-weight:normal;color:#333;line-height:1}'
     +'@media print{body{padding:0}}</style></head><body>'
     +'<h2 style="text-align:center;font-size:16px;margin-bottom:6px">'+escapeHtml(reportTitleWithSuffix)+'</h2>'
     // LIVE-MOBILE-SCOREBOARD-001 §4: 対象月を表題直下に併記（開催日は下の「日付」行に既出）。
@@ -8198,7 +8237,8 @@ function buildScoreboardClassTableHtml(cls){
     var f=finals[i];var rank=ranks[i];
     html+='<tr'+(rank===1?' class="sb-row-1"':'')+'>';
     html+='<td class="sb-col-rank">'+rank+'</td>';
-    html+='<td class="sb-col-name">'+escapeHtml(getName(f.p.id,cls))+'<span style="font-size:10px;color:#999;font-weight:400">　'+escapeHtml('No.'+entryNoOf(cls,f.p.id))+'</span></td>';
+    // FURIGANA-VIEW-002: 氏名にルビ（空 yomi は氏名のみ）。No.xx 補助表示は従来どおり維持。
+    html+='<td class="sb-col-name">'+playerNameRubyHtml(getName(f.p.id,cls),yomiOf(f.p.id,cls))+'<span style="font-size:10px;color:#999;font-weight:400">　'+escapeHtml('No.'+entryNoOf(cls,f.p.id))+'</span></td>';
     for(var rr=0;rr<rounds;rr++){
       var round=resultsArr[rr];
       var cell='<span class="sb-mark sb-mark-none">－</span>';
