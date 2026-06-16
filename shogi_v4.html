@@ -5536,6 +5536,20 @@ function validateStartableClass(classInfo,playersForClass){
   return {kind:'ok'};
 }
 
+// FRP-IMPL-001 (FRP-DESIGN-001 §5 / §7): 「部分開始」の可否判定（pure・state 非参照・副作用なし）。
+//   validateStartableClass とは別物：偶数を要求しない（来た人だけで1局目を始める前提）。
+//   - 参加者0名         → skip-empty（開始しない）
+//   - 既に開始済み       → skip-already-started（再開始しない）
+//   - それ以外(1名以上・未開始) → ok
+//   既存 validateStartableClass は変更しない（一括開始の判定意味＝2名以上・偶数を保つ）。
+//   unknown class（classInfo が解決できない）の拒否は呼出側 startClassPartial で行う。
+function validatePartialStartableClass(classInfo,playersForClass){
+  var cnt=Array.isArray(playersForClass)?playersForClass.length:0;
+  if(cnt===0)return {kind:'skip-empty'};
+  if(classInfo&&classInfo.started===true)return {kind:'skip-already-started'};
+  return {kind:'ok'};
+}
+
 // SHOGI-TOUR-START-001 (設計メモ §4.2 / §6):
 //   受付クラス別「開始 readiness」表示用の純粋マッピング helper。
 //   開始可否の判定（2名以上・偶数・未開始）は validateStartableClass に一元化されており、
@@ -5923,6 +5937,81 @@ function startTournamentForClass(classId){
   applyStartForCandidates([v.candidateClassId]);
   showTab('tournament');
   verifyStartSavedForCandidates([v.candidateClassId]);
+}
+
+// FRP-IMPL-001 (FRP-DESIGN-001 §6 / §7): 「選んだ人から1局目を開始」＝部分開始。
+//   started=true にし、pairings/results を空配列で初期化するだけ。
+//   - generatePairing(cls) は絶対に呼ばない（全員一括ペアしない）。
+//   - startTournamentForClass / applyStartForCandidates も使わない（偶数前提の全員開始を流用しない）。
+//   未割当者は派生表示（getUnassignedFirstRoundPlayers）。選択者での append 作成は後続 FRP-IMPL-002。
+//   保存検証は SAVE-FRP-001（started / pairings 空 / results 空）。未確認は warn のみ・rollback しない。
+function startClassPartial(cls){
+  if(!state||!Array.isArray(state.classes)){showMsg('クラス情報が初期化されていません','err');return;}
+  var classInfo=null;
+  for(var i=0;i<state.classes.length;i++){
+    if(state.classes[i]&&state.classes[i].id===cls){classInfo=state.classes[i];break;}
+  }
+  if(!classInfo){showMsg('クラスが見つかりません','err');return;}   // unknown class は mutate せず拒否
+  var className=(classInfo.name)?classInfo.name:(cls+'クラス');
+  var players=(state.players&&state.players[cls])||[];
+  var v=validatePartialStartableClass(classInfo,players);
+  if(v.kind!=='ok'){
+    if(v.kind==='skip-already-started'){alert(className+'はすでに開始されています');return;}
+    if(v.kind==='skip-empty'){showMsg(className+'は参加者がいません','warn');return;}
+    showMsg('対局を開始できません','err');
+    return;
+  }
+  if(!state.pairings||typeof state.pairings!=='object')state.pairings={};
+  if(!state.results||typeof state.results!=='object')state.results={};
+  state.pairings[cls]=[];
+  state.results[cls]=[];
+  setClassStarted(cls,true);   // classes[i].started + 互換 state.started を同期（既存 writer）
+  save();
+  // SAVE-FRP-001: 部分開始の保存検証。persisted で started=true / pairings[cls]=[] / results[cls]=[] を確認。
+  //   不一致は「保存未確認」（保存失敗と断定しない）。部分開始は rollback しない・運営は継続する。
+  var persisted=readPersistedState();
+  var okStarted=!!(persisted&&classStartedInPersisted(persisted,cls));
+  var okPairings=!!(persisted&&persisted.pairings&&Array.isArray(persisted.pairings[cls])&&persisted.pairings[cls].length===0);
+  var okResults=!!(persisted&&persisted.results&&Array.isArray(persisted.results[cls])&&persisted.results[cls].length===0);
+  if(!okStarted||!okPairings||!okResults){
+    notifySaveWarning({
+      message:className+'を部分開始しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-FRP-001: startClassPartial の保存が確認できませんでした (cls='+cls+')',
+      callsiteId:'SAVE-FRP-001-startClassPartial',
+      kind:'save-verify',
+      aggregateKey:'save-verify:core',
+      severity:'warn'
+    });
+  }
+  renderTournament(cls);
+}
+
+// FRP-IMPL-001 (FRP-DESIGN-001 §5 / §7): 1局目の未割当参加者を「派生」で返す（state に保存しない）。
+//   - state.results[cls].length >= 1（1局目確定後/2回戦以降）なら空配列（＝この導線の対象外）。
+//   - state.players[cls] のうち、state.pairings[cls] の p1/p2 に含まれない人を entry_no 昇順で返す。
+//   返すのは player オブジェクト（呼出側で氏名/番号を escapeHtml して表示）。
+function getUnassignedFirstRoundPlayers(cls){
+  var players=(state.players&&state.players[cls])||[];
+  var results=(state.results&&state.results[cls])||[];
+  if(results.length>=1)return [];
+  var pairings=(state.pairings&&state.pairings[cls])||[];
+  var assigned={};
+  for(var i=0;i<pairings.length;i++){
+    var m=pairings[i];if(!m)continue;
+    if(m.p1)assigned[m.p1]=true;
+    if(m.p2)assigned[m.p2]=true;
+  }
+  var out=[];
+  for(var j=0;j<players.length;j++){
+    var p=players[j];if(!p)continue;
+    if(!assigned[p.id])out.push(p);
+  }
+  out.sort(function(a,b){
+    var ea=(a&&typeof a.entry_no==='number'&&a.entry_no>0)?a.entry_no:Infinity;
+    var eb=(b&&typeof b.entry_no==='number'&&b.entry_no>0)?b.entry_no:Infinity;
+    return ea-eb;
+  });
+  return out;
 }
 
 // ROUND-CLASS-START-004b (spec §12.1):
@@ -6704,6 +6793,13 @@ function buildClassActionBarHtml(cls){
     html+='<button type="button" class="btn-primary btn-sm" id="startBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'を開始</button>';
     html+='<span style="font-size:12px;color:#888">※このクラスのみ後追い開始します</span>';
   }
+  // FRP-IMPL-001 (FRP-DESIGN-001 §8): 未開始かつ参加者1名以上なら「選んだ人から1局目を開始」(部分開始)を併置。
+  //   既存の一括開始(startBtnClass_)とは別 id・別導線。偶数/奇数を問わず出す（奇数は1人待機を許容）。
+  //   既存 startBtnClass_ / リセットボタンの出力条件・id・文言は一切変更しない（純追加）。
+  if(!classStarted && players.length>=1){
+    html+='<button type="button" class="btn-primary btn-sm" id="startBtnPartial_'+escapeHtml(cls)+'">選んだ人から1局目を開始</button>';
+    html+='<span style="font-size:12px;color:#888">※選んだ人だけで1局目を作ります（残りは後で追加）</span>';
+  }
   html+='</div>';
   return html;
 }
@@ -6720,6 +6816,39 @@ function bindClassActionBarEvents(cls){
   if(resetBtn){
     resetBtn.addEventListener('click',(function(c){return function(){resetClassForClass(c);};})(cls));
   }
+  // FRP-IMPL-001 (FRP-DESIGN-001 §8): 部分開始ボタンの click を startClassPartial に bind（追加のみ）。
+  var partialBtn=document.getElementById('startBtnPartial_'+cls);
+  if(partialBtn){
+    partialBtn.addEventListener('click',(function(c){return function(){startClassPartial(c);};})(cls));
+  }
+}
+
+// FRP-IMPL-001 (FRP-DESIGN-001 §8): 部分開始中クラスの「1局目 未割当参加者」一覧（表示専用・副作用なし）。
+//   started=true かつ results 空 かつ 未割当>0 のときだけ中身を返す（それ以外は ''）。
+//   この PR では選択→append は実装しない。「選択者で1局目に追加」は disabled（次 PR FRP-IMPL-002）。
+//   checkbox は表示のみ（イベント未登録）。氏名/番号は escapeHtml を通す（個人情報・XSS 対策）。
+function buildFirstRoundPartialSectionHtml(cls){
+  if(!isClassStarted(cls))return '';
+  var results=(state.results&&state.results[cls])||[];
+  if(results.length>=1)return '';
+  var unassigned=getUnassignedFirstRoundPlayers(cls);
+  if(unassigned.length===0)return '';
+  var html='<div class="frp-partial-section" data-frp-partial="1" style="margin:12px 0;padding:12px;border:1px solid #d0d7e2;border-radius:8px;background:#f7f9fc">';
+  html+='<h3 style="margin:0 0 4px;font-size:14px;color:#1F3864">1局目 未割当参加者</h3>';
+  html+='<p style="margin:0 0 8px;font-size:12px;color:#666">このクラスは部分開始中です。まだ1局目に入っていない参加者を表示しています。</p>';
+  html+='<div class="frp-unassigned-list">';
+  for(var i=0;i<unassigned.length;i++){
+    var p=unassigned[i];
+    var no=escapeHtml(cls+'-'+entryNoOf(cls,p.id));
+    var nm=escapeHtml(getName(p.id,cls));
+    html+='<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px">'
+      +'<input type="checkbox" class="frp-unassigned-cb" data-frp-pid="'+escapeHtml(p.id)+'" value="'+escapeHtml(p.id)+'">'
+      +'<span>'+no+'｜'+nm+'</span></label>';
+  }
+  html+='</div>';
+  html+='<button type="button" id="frpAddBtn_'+escapeHtml(cls)+'" class="btn-primary btn-sm" disabled title="次のPR（FRP-IMPL-002）で対応します" style="margin-top:8px;opacity:0.6;cursor:not-allowed">選択者で1局目に追加（次PRで対応）</button>';
+  html+='</div>';
+  return html;
 }
 
 function renderTournament(cls){
@@ -6782,6 +6911,9 @@ function renderTournament(cls){
   html+=buildScoreGridHtml(cls, sorted, wins);
   html+=buildPlayedHistoryHtml(cls, sorted, played);
   html+=buildPastResultsHtml(cls);
+  // FRP-IMPL-001 (FRP-DESIGN-001 §6 / §8): 部分開始中(started かつ results 空)のクラスは未割当一覧を表示。
+  //   helper 内部で「started かつ results 空 かつ 未割当>0」のときだけ中身を返す（それ以外は ''）。
+  html+=buildFirstRoundPartialSectionHtml(cls);
   html+=buildCurrentPairingsHtml(cls, roundNum, done);
 
   el.innerHTML=html;

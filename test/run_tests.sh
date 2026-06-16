@@ -1062,6 +1062,20 @@ else
 fi
 
 # ============================================
+echo ""
+echo "【FRP-IMPL-001 1局目部分手合い（部分開始＋未割当一覧）】"
+if [ -f "$SCRIPT_DIR/test_first_round_partial_001.js" ]; then
+  if node "$SCRIPT_DIR/test_first_round_partial_001.js" "$TARGET" > /tmp/frp_001_out.log 2>&1; then
+    ok "FRP-IMPL-001 テスト 全PASS ($(tail -1 /tmp/frp_001_out.log))"
+  else
+    ng "FRP-IMPL-001 テスト 失敗"
+    cat /tmp/frp_001_out.log
+  fi
+else
+  warn "test_first_round_partial_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
