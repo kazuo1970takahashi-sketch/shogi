@@ -43,6 +43,10 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 /* FURIGANA-MVP-001: 受付一覧のふりがなルビ表示（氏名の上に小さく）。MVP では受付一覧のみ。 */
 .player-name ruby{ruby-position:over}
 .player-name rt{font-size:.6em;font-weight:400;color:#555;line-height:1}
+/* FURIGANA-VIEW-002: 順位表 / 星取表 / 閲覧ビューへルビ展開（受付一覧と同じ流儀）。
+   rt は氏名より小さく line-height:1 で行の伸びを抑える（設計メモ §A-4）。 */
+.sb-table ruby,#pane-result ruby{ruby-position:over}
+.sb-table rt,#pane-result rt{font-size:.6em;font-weight:400;color:#777;line-height:1}
 .player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:14px}
 .sel-sm{height:34px;padding:0 6px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff;font-family:inherit}
 /* ROUND-CLASS-START-007 (spec §15.1 .grid2 3+ クラス棚卸し):
@@ -188,6 +192,7 @@ body.sb-active{overflow:hidden}
     <button type="button" class="tab" id="tab-tournament">対局管理</button>
     <button type="button" class="tab" id="tab-result">最終結果</button>
     <button type="button" class="tab" id="tab-master">マスタ</button>
+    <button type="button" class="tab" id="tab-history">大会履歴</button>
     <span id="save-warning-indicator" class="save-warn-pill" hidden></span>
   </div>
   <div id="pane-reg">
@@ -362,6 +367,10 @@ body.sb-active{overflow:hidden}
       </div>
       <button type="button" class="btn-primary" id="downloadReportBtn">報告書を印刷 / PDF保存</button>
     </div>
+  </div>
+  <!-- SHOGI-TOUR-HISTORY-STEP1: 過去大会の履歴一覧 / read-only 閲覧（追加 pane。既存 pane は変更しない） -->
+  <div id="pane-history" style="display:none">
+    <div id="history-content"></div>
   </div>
 </div>
 
@@ -3990,10 +3999,12 @@ function showTab(t){
   document.getElementById('pane-tournament').style.display=t==='tournament'?'block':'none';
   document.getElementById('pane-result').style.display=t==='result'?'block':'none';
   var pm=document.getElementById('pane-master');if(pm)pm.style.display=t==='master'?'block':'none';
+  var ph=document.getElementById('pane-history');if(ph)ph.style.display=t==='history'?'block':'none';
   document.getElementById('tab-reg').className='tab'+(t==='reg'?' active':'');
   document.getElementById('tab-tournament').className='tab'+(t==='tournament'?' active':'');
   document.getElementById('tab-result').className='tab'+(t==='result'?' active':'');
   var tm=document.getElementById('tab-master');if(tm)tm.className='tab'+(t==='master'?' active':'');
+  var th=document.getElementById('tab-history');if(th)th.className='tab'+(t==='history'?' active':'');
   if(t==='result')renderResults();
   // ROUND-CLASS-START-005 (spec §15.1 row 1): tournament タブ表示時は
   //   state.classes を走査して renderTournament(c.id) を呼ぶ（A/B literal 解消）。
@@ -4009,6 +4020,7 @@ function showTab(t){
     }
   }
   if(t==='master')renderMasterTab();
+  if(t==='history'&&typeof renderHistoryList==='function')renderHistoryList();
 }
 
 function showMsg(text,type){
@@ -4208,7 +4220,8 @@ function renderRegList(){
 //   - DOM API（createTextNode / createElement('rt')）で生成し XSS 安全（textContent 経由で自動 escape）。
 //   - ふりがなが空（trim 後）なら <ruby> を使わず氏名テキストノードのみ（空 <rt> を出さない）。
 //   - innerHTML 文字列連結はしない。呼び出し側で appendChild する。
-//   - MVP では受付一覧のみで使用。順位表 / PDF / 星取表 への展開は本タスク対象外（設計メモ §A-5）。
+//   - FURIGANA-MVP-001 では受付一覧のみ。FURIGANA-VIEW-002 で順位表 / 星取表 / 閲覧ビュー /
+//     印刷・PDF へ展開（string でHTMLを組む経路は併設の playerNameRubyHtml を使う。設計メモ §A-5）。
 function renderPlayerNameWithRuby(name,yomi){
   var safeName=String(name==null?'':name);
   var safeYomi=String(yomi==null?'':yomi).trim();
@@ -4219,6 +4232,31 @@ function renderPlayerNameWithRuby(name,yomi){
   rt.textContent=safeYomi;
   ruby.appendChild(rt);
   return ruby;
+}
+
+// FURIGANA-VIEW-002: renderPlayerNameWithRuby の「escape 済み HTML 文字列」版（設計メモ §A-3 併設版）。
+//   string で HTML を組み立てる経路（順位表 / 星取表 / 閲覧ビュー / 印刷・PDF）でルビを出す共通 helper。
+//   - DOM 版と同じ規則: ふりがなが空（trim 後）なら <ruby> を使わず氏名のみ（空 <rt> を出さない）。
+//   - 氏名・ふりがなは必ず escapeHtml を通す（innerHTML 直挿しによる XSS を増やさない）。
+//   - ルビ組み立ての規則は DOM 版とここ（string 版）に集約し、各呼出側で二重実装しない。
+function playerNameRubyHtml(name,yomi){
+  var safeYomi=String(yomi==null?'':yomi).trim();
+  if(!safeYomi)return escapeHtml(name);
+  return '<ruby>'+escapeHtml(name)+'<rt>'+escapeHtml(safeYomi)+'</rt></ruby>';
+}
+
+// FURIGANA-VIEW-002: 当日 player.yomi を id+cls で引く（getName と対の lookup）。
+//   未登録 / yomi 不在は ''（= ルビなし）。表示専用で順位・対局ロジックには使わない。
+function yomiOf(id,cls){
+  var players=(state.players&&state.players[cls])||[];
+  for(var i=0;i<players.length;i++){if(players[i].id===id)return (typeof players[i].yomi==='string')?players[i].yomi:'';}
+  return '';
+}
+
+// FURIGANA-VIEW-002: getNameWithNo（"entry_no｜氏名"）の HTML 版。番号部は素のテキストのまま、
+//   氏名部だけ playerNameRubyHtml でルビ化する（番号にルビが乗らないようにする）。
+function nameWithNoRubyHtml(id,cls){
+  return escapeHtml(entryNoOf(cls,id)+'｜')+playerNameRubyHtml(getName(id,cls),yomiOf(id,cls));
 }
 
 function makePlayerRow(p,cls,i){
@@ -6765,7 +6803,7 @@ function buildResultsRoundCellMobileHtml(cls, playerId, roundIdx, wins){
   return '<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;overflow:hidden">'
     +'<div style="color:#888;font-size:10px;margin-bottom:2px">'+(roundIdx+1)+'回戦</div>'
     +'<div style="font-weight:bold;color:'+markColor+';font-size:16px;line-height:1">'+markStr+'</div>'
-    +'<div style="color:#555;font-size:10px;margin-top:2px">'+escapeHtml(getNameWithNo(oppId,cls))+'('+oppWins+')</div>'
+    +'<div style="color:#555;font-size:10px;margin-top:2px">'+nameWithNoRubyHtml(oppId,cls)+'('+oppWins+')</div>'
     +'</div>';
 }
 
@@ -6781,7 +6819,7 @@ function buildResultsRoundCellDesktopHtml(cls, playerId, roundIdx, wins){
   var won=match.winner===playerId;
   var markColor=won?'#27500A':'#222';
   var markStr=match.winner===null?'－':(won?'○':'●');
-  return '<td><span style="font-weight:bold;color:'+markColor+'">'+markStr+'</span><br><small style="color:#333">'+escapeHtml(getNameWithNo(oppId,cls))+'('+oppWins+')</small></td>';
+  return '<td><span style="font-weight:bold;color:'+markColor+'">'+markStr+'</span><br><small style="color:#333">'+nameWithNoRubyHtml(oppId,cls)+'('+oppWins+')</small></td>';
 }
 
 // スマホ向け表示全体(カードのリスト)
@@ -6796,7 +6834,7 @@ function buildResultsMobileHtml(cls, finals, wins){
     html+='<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px">';
     html+=badge;
     html+='<div style="display:flex;flex-direction:column;gap:2px">';
-    html+='<span style="font-weight:500;font-size:15px">'+escapeHtml(getNameWithNo(f.p.id,cls))+'</span>';
+    html+='<span style="font-weight:500;font-size:15px">'+nameWithNoRubyHtml(f.p.id,cls)+'</span>';
     // ROUND-CLASS-START-007 (最終結果タブ ラベル統一):
     //   モバイル成績カード内のラベルを 4 項目すべて全角コロン「：」付きで揃える。
     //   表示: 勝：N　負：N　相手：N　勝相手：N
@@ -6823,7 +6861,7 @@ function buildResultsDesktopHtml(cls, finals, wins){
     var f=finals[idx];var rank=displayRanks[idx];
     var rowCls=rank===1?'row-r1':rank===2?'row-r2':rank===3?'row-r3':'';
     var badge=rank===1?'<span class="badge b1">1位</span>':rank===2?'<span class="badge b2">2位</span>':rank===3?'<span class="badge b3">3位</span>':rank+'位';
-    html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+escapeHtml(getNameWithNo(f.p.id,cls))+'</td>';
+    html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+nameWithNoRubyHtml(f.p.id,cls)+'</td>';
     for(var r=0;r<state.rounds;r++){
       html+=buildResultsRoundCellDesktopHtml(cls, f.p.id, r, wins);
     }
@@ -7192,7 +7230,7 @@ function printResults(){
       // RANK-PRINT-001: 印刷/PDF 帳票では entry_no を表示せず氏名のみを出力する。
       //   画面 UI（buildResultsMobileHtml / buildResultsDesktopHtml）や受付・対局カード・
       //   参加者一覧では従来通り getNameWithNo を使用し本変更の影響を受けない。
-      html+='<td style="padding:6px 8px;border:1px solid #ccc;font-weight:bold">'+escapeHtml(getName(f.p.id,cls))+'</td>';
+      html+='<td style="padding:6px 8px;border:1px solid #ccc;font-weight:bold">'+playerNameRubyHtml(getName(f.p.id,cls),yomiOf(f.p.id,cls))+'</td>';
       for(var r=0;r<state.rounds;r++){
         var round=state.results[cls][r];
         if(!round){html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;color:#ccc">-</td>';continue;}
@@ -7206,7 +7244,7 @@ function printResults(){
         var won=match.winner===f.p.id;
         var color=won?'#27500A':'#222';
         var markStr2=match.winner===null?'－':(won?'○':'●');
-        html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center"><span style="font-weight:bold;color:'+color+'">'+markStr2+'</span><br><small style="color:#333">'+escapeHtml(oppName)+'('+oppWins+')</small></td>';
+        html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center"><span style="font-weight:bold;color:'+color+'">'+markStr2+'</span><br><small style="color:#333">'+playerNameRubyHtml(oppName,yomiOf(oppId,cls))+'('+oppWins+')</small></td>';
       }
       html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;font-weight:bold">'+f.A+'</td>';
       html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+(f.played-f.A)+'</td>';
@@ -7256,6 +7294,8 @@ function printResults(){
     +'.doc-header .doc-title{font-size:19px;font-weight:bold;color:#1F3864}'
     +'.doc-header .doc-meta{font-size:13px;color:#444;margin-top:4px}'
     +'tr,td{page-break-inside:avoid}'
+    // FURIGANA-VIEW-002: 印刷時に <rt> が潰れない最小CSS（氏名より小さく行高を詰める）。
+    +'ruby{ruby-position:over}rt{font-size:.6em;font-weight:normal;color:#333;line-height:1}'
     +'@media print{body{padding:0}.no-print{display:none}}</style>'
     +'</head><body>'
     +buildPdfDocHeaderHtml('対戦成績')
@@ -7331,14 +7371,14 @@ function printPairings(){
       +'<div class="cards">';
     for(var i=0;i<cl.pairs.length;i++){
       var m=cl.pairs[i];
-      var n1=(typeof getNameWithNo==='function')?getNameWithNo(m.p1,cl.id):'';
-      var n2=(typeof getNameWithNo==='function')?getNameWithNo(m.p2,cl.id):'';
+      // FURIGANA-VIEW-002: 組み合わせ印刷の氏名にルビ（番号は素のまま・氏名のみルビ）。
+      //   nameWithNoRubyHtml は escape 済み HTML を返すため、ここで再 escape せず直挿しする。
       sec+='<div class="card">'
         +'<div class="card-no">第 '+(i+1)+' 卓</div>'
         +'<div class="card-body">'
-        +'<div class="card-player">'+escapeHtml(n1)+'</div>'
+        +'<div class="card-player">'+nameWithNoRubyHtml(m.p1,cl.id)+'</div>'
         +'<div class="card-vs">vs</div>'
-        +'<div class="card-player">'+escapeHtml(n2)+'</div>'
+        +'<div class="card-player">'+nameWithNoRubyHtml(m.p2,cl.id)+'</div>'
         +'</div>'
         +'</div>';
     }
@@ -7369,6 +7409,8 @@ function printPairings(){
     +'.card-no{position:absolute;top:6px;left:6px;background:#1F3864;color:#fff;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:4px}'
     +'.card-body{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:22px}'
     +'.card-player{font-size:14px;font-weight:bold;color:#222;text-align:center;flex:1;word-break:break-word}'
+    // FURIGANA-VIEW-002: 組み合わせカードの氏名ルビ（印刷時に <rt> が潰れない最小CSS）。
+    +'.card-player ruby{ruby-position:over}.card-player rt{font-size:.55em;font-weight:normal;color:#333;line-height:1}'
     +'.card-vs{font-size:12px;color:#888;font-weight:500}'
     +'.cls-pagebreak{page-break-before:always;break-before:page}'
     +'@media print{body{padding:0}}</style></head><body>'
@@ -7396,7 +7438,8 @@ function getTopPlayers(cls){
   var finals=calcFinal(cls);
   var result=[];
   for(var i=0;i<Math.min(3,finals.length);i++){
-    result.push({rank:i+1,name:finals[i].p.name});
+    // FURIGANA-VIEW-002: 報告書の入賞者ルビ用に yomi も持たせる（空は ''）。rank/name は不変。
+    result.push({rank:i+1,name:finals[i].p.name,yomi:(typeof finals[i].p.yomi==='string')?finals[i].p.yomi:''});
   }
   return result;
 }
@@ -7465,8 +7508,10 @@ function downloadReport(){
   function rankRow(label,players,idx){
     var p=players[idx];
     var name=p?p.name:'';
+    // FURIGANA-VIEW-002: 入賞者氏名にルビ（空 yomi は氏名のみ）。ラベルは従来どおり escapeHtml。
+    var nameHtml=playerNameRubyHtml(name,p?p.yomi:'');
     return '<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">'+escapeHtml(label)+'</td>'
-      +'<td style="padding:6px 10px;border:1px solid #999;">'+escapeHtml(name)+'</td>'
+      +'<td style="padding:6px 10px;border:1px solid #999;">'+nameHtml+'</td>'
       +'<td style="padding:6px 10px;border:1px solid #999;"></td></tr>';
   }
   function buildClassRankRows(classes){
@@ -7524,6 +7569,8 @@ function downloadReport(){
     +'body{font-family:sans-serif;font-size:13px;padding:20px}'
     +'table{border-collapse:collapse;width:100%}'
     +'tr,td{page-break-inside:avoid}'
+    // FURIGANA-VIEW-002: 報告書（入賞者氏名）の印刷ルビが潰れない最小CSS。
+    +'ruby{ruby-position:over}rt{font-size:.6em;font-weight:normal;color:#333;line-height:1}'
     +'@media print{body{padding:0}}</style></head><body>'
     +'<h2 style="text-align:center;font-size:16px;margin-bottom:6px">'+escapeHtml(reportTitleWithSuffix)+'</h2>'
     // LIVE-MOBILE-SCOREBOARD-001 §4: 対象月を表題直下に併記（開催日は下の「日付」行に既出）。
@@ -7785,6 +7832,8 @@ function bindTabEvents(){
   document.getElementById('tab-result').addEventListener('click',function(){showTab('result');});
   var tm=document.getElementById('tab-master');
   if(tm)tm.addEventListener('click',function(){showTab('master');});
+  var th=document.getElementById('tab-history');
+  if(th)th.addEventListener('click',function(){showTab('history');});
 }
 
 function populateReportFields(){
@@ -8180,7 +8229,13 @@ function sbClassDisplayName(cls){
 //   各ラウンド列は ○（勝ち）/×（負け）/－（未対局）と対戦相手番号（#NN）を表示する。
 //   Codex Should Fix 1: 現場要望「○×の星取表」に合わせ、負けは ● ではなく × で表示する。
 //   氏名・番号はすべて escapeHtml してから描画する（XSS 安全）。
-function buildScoreboardClassTableHtml(cls){
+function buildScoreboardClassTableHtml(cls,sourceState){
+  // SHOGI-TOUR-HISTORY-STEP1: 後方互換 optional 引数。sourceState 指定時のみ描画データ源を一時的に
+  //   差し替える（withSourceState が global state を退避→finally で必ず復元）。引数なし呼び出し＝live
+  //   経路の挙動は完全に従来どおり（本体不変＝#213 のふりがな ruby 表示もそのまま維持される）。
+  if(sourceState!==undefined&&sourceState!==null&&sourceState!==state){
+    return withSourceState(sourceState,function(){return buildScoreboardClassTableHtml(cls);});
+  }
   var players=(state.players&&state.players[cls])||[];
   if(players.length===0)return '';
   var finals=calcFinal(cls);
@@ -8198,7 +8253,8 @@ function buildScoreboardClassTableHtml(cls){
     var f=finals[i];var rank=ranks[i];
     html+='<tr'+(rank===1?' class="sb-row-1"':'')+'>';
     html+='<td class="sb-col-rank">'+rank+'</td>';
-    html+='<td class="sb-col-name">'+escapeHtml(getName(f.p.id,cls))+'<span style="font-size:10px;color:#999;font-weight:400">　'+escapeHtml('No.'+entryNoOf(cls,f.p.id))+'</span></td>';
+    // FURIGANA-VIEW-002: 氏名にルビ（空 yomi は氏名のみ）。No.xx 補助表示は従来どおり維持。
+    html+='<td class="sb-col-name">'+playerNameRubyHtml(getName(f.p.id,cls),yomiOf(f.p.id,cls))+'<span style="font-size:10px;color:#999;font-weight:400">　'+escapeHtml('No.'+entryNoOf(cls,f.p.id))+'</span></td>';
     for(var rr=0;rr<rounds;rr++){
       var round=resultsArr[rr];
       var cell='<span class="sb-mark sb-mark-none">－</span>';
@@ -8344,6 +8400,342 @@ function initScoreboard(){
     renderScoreboard();
   });
   applyScoreboardRoute();
+}
+
+// ============================================================
+// SHOGI-TOUR-HISTORY-STEP1: 過去大会履歴（保存 / 一覧 / read-only 閲覧）
+//   設計メモ: docs/notes/20260615_shogi_tour_history_mvp_design_001.md
+//   方針: 追記専用キー 'shogi_archive'。既存 'shogi_v4'（当日 state）/ 'shogi_branch_master'（マスタ）と
+//         save/load/normalizeState/saveBranchMaster には一切書き込まない（§4.1）。保存単位＝確定 state の
+//         deep clone スナップショット + 識別メタ（§3）。閲覧は既存 scoreboard レンダラ
+//         buildScoreboardClassTableHtml を sourceState 差し替えで read-only 流用（§6・§8。#213 ruby 維持）。
+//         restore（snapshot→現 state 書き戻し）は MVP では行わない（§11.2。閲覧のみ）。
+// ============================================================
+var ARCHIVE_KEY='shogi_archive';
+var ARCHIVE_SCHEMA_VERSION=1;
+
+// 描画データ源を一時的に sourceState へ差し替えて fn() を実行し、必ず global state を復元する。
+//   scoreboard 系（getName / yomiOf / calcFinal / computeDisplayRanks …）は global state を参照するため、
+//   過去スナップショットを描くにはこの「データ源差し替え」を使う。同期実行限定・finally で必ず復元する。
+//   sourceState 未指定 / 現 state と同一なら差し替えない（live 経路の挙動不変）。
+function withSourceState(sourceState,fn){
+  if(sourceState===undefined||sourceState===null||sourceState===state)return fn();
+  var _prev=state;
+  state=sourceState;
+  try{return fn();}
+  finally{state=_prev;}
+}
+
+function archiveNowIso(){ return new Date().toISOString(); }
+
+function archiveDeepClone(obj){
+  try{ return JSON.parse(JSON.stringify(obj)); }catch(e){ return null; }
+}
+
+// localStorage の raw / object を {schema_version, updated_at, tournaments[]} へ正規化する。
+//   不在・壊れた値は「履歴 0 件」として安全に返す（§4.1 後方互換）。
+function normalizeArchive(raw){
+  var obj=raw;
+  if(typeof raw==='string'){ try{obj=JSON.parse(raw);}catch(e){obj=null;} }
+  if(!obj||typeof obj!=='object'||Object.prototype.toString.call(obj.tournaments)!=='[object Array]'){
+    return {schema_version:ARCHIVE_SCHEMA_VERSION,updated_at:'',tournaments:[]};
+  }
+  return {
+    schema_version:(typeof obj.schema_version==='number')?obj.schema_version:ARCHIVE_SCHEMA_VERSION,
+    updated_at:(typeof obj.updated_at==='string')?obj.updated_at:'',
+    tournaments:obj.tournaments
+  };
+}
+
+function loadArchive(){
+  var raw=null;
+  try{ raw=localStorage.getItem(ARCHIVE_KEY); }catch(e){ raw=null; }
+  return normalizeArchive(raw);
+}
+
+// identity.classes 用: players を持つクラスを {id,name} で列挙（global state 参照＝withSourceState 内で呼ぶ）。
+function buildArchiveIdentityClasses(){
+  var out=[];
+  var classes=Array.isArray(state.classes)?state.classes:[];
+  for(var i=0;i<classes.length;i++){
+    var c=classes[i];
+    if(!c||typeof c.id!=='string'||!c.id)continue;
+    var players=(state.players&&state.players[c.id])||[];
+    if(players.length>0)out.push({id:c.id,name:(typeof c.name==='string'&&c.name)?c.name:(c.id+'クラス')});
+  }
+  if(out.length===0&&state.players&&typeof state.players==='object'){
+    for(var k in state.players){
+      if(!Object.prototype.hasOwnProperty.call(state.players,k))continue;
+      var ps=state.players[k];
+      if(Array.isArray(ps)&&ps.length>0)out.push({id:k,name:k+'クラス'});
+    }
+  }
+  return out;
+}
+
+function countArchiveParticipants(){
+  var n=0;
+  var classes=buildArchiveIdentityClasses();
+  for(var i=0;i<classes.length;i++){
+    var ps=(state.players&&state.players[classes[i].id])||[];
+    n+=ps.length;
+  }
+  return n;
+}
+
+// 各クラスの表示順位 1 位を {classId,name} で凍結（任意項目 §3.2。ranking は既存 calcFinal を流用）。
+function buildArchiveChampions(){
+  var out=[];
+  try{
+    var classes=buildArchiveIdentityClasses();
+    for(var i=0;i<classes.length;i++){
+      var cid=classes[i].id;
+      var finals=calcFinal(cid);
+      if(!finals||!finals.length)continue;
+      var ranks=computeDisplayRanks(finals,cid);
+      for(var j=0;j<finals.length;j++){
+        if(ranks[j]===1)out.push({classId:cid,name:getName(finals[j].p.id,cid)});
+      }
+    }
+  }catch(e){ return out; }
+  return out;
+}
+
+// tournament_id が無い state でも一覧/閲覧キーが要るため、開催日（無ければ保存時刻）から安定 id を合成する。
+//   state は変更しない（ensureTournamentId のような書き戻しはしない）。
+function synthArchiveTid(heldDate,savedAtIso){
+  if(heldDate&&/^\d{4}-\d{2}-\d{2}$/.test(heldDate))return 't_'+heldDate.replace(/-/g,'_');
+  return 'hist_'+String(savedAtIso||'').replace(/[^0-9]/g,'').slice(0,14);
+}
+
+// 確定 state（既定 = 現在の global state）から履歴 1 件を生成する純関数（§3.2）。
+//   sourceState を一時データ源にして識別メタ（title/heldDate/月ラベル/クラス/人数/優勝者）を凍結し、
+//   snapshot は sourceState の deep clone を持つ。global state は呼び出し後に必ず元へ戻る。
+function buildArchiveEntryFromState(sourceState,savedAtIso){
+  var s=sourceState||state;
+  var savedAt=savedAtIso||archiveNowIso();
+  return withSourceState(s,function(){
+    var report=state.report||{};
+    var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(report.title):(typeof report.title==='string'?report.title:'');
+    var heldDate=(typeof normalizeReportDateForInput==='function')?(normalizeReportDateForInput(report.date)||''):(typeof report.date==='string'?report.date:'');
+    var targetMonthLabel=(typeof buildTournamentTargetMonthLabel==='function')?buildTournamentTargetMonthLabel():'';
+    var tid=(typeof state.tournament_id==='string'&&state.tournament_id)?state.tournament_id:synthArchiveTid(heldDate,savedAt);
+    return {
+      schema_version:ARCHIVE_SCHEMA_VERSION,
+      savedAt:savedAt,
+      identity:{
+        tournament_id:tid,
+        title:title,
+        heldDate:heldDate,
+        targetMonthLabel:targetMonthLabel,
+        classes:buildArchiveIdentityClasses(),
+        participantCount:countArchiveParticipants(),
+        champions:buildArchiveChampions()
+      },
+      snapshot:archiveDeepClone(state)
+    };
+  });
+}
+
+// tournament_id をキーに冪等追記する純関数（同 id は上書き・無ければ新しい順で先頭に追加）（§10・§11.1）。
+function appendOrReplaceByTournamentId(archive,entry){
+  var arc=normalizeArchive(archive);
+  var list=arc.tournaments.slice();
+  var tid=entry&&entry.identity&&entry.identity.tournament_id;
+  var idx=-1;
+  if(tid){
+    for(var i=0;i<list.length;i++){
+      var e=list[i];
+      if(e&&e.identity&&e.identity.tournament_id===tid){idx=i;break;}
+    }
+  }
+  if(idx>=0)list[idx]=entry; else list.unshift(entry);
+  return {schema_version:ARCHIVE_SCHEMA_VERSION,updated_at:(entry&&entry.savedAt)||archiveNowIso(),tournaments:list};
+}
+
+function findArchiveEntryByTid(archive,tid){
+  var arc=normalizeArchive(archive);
+  if(!tid)return null;
+  for(var i=0;i<arc.tournaments.length;i++){
+    var e=arc.tournaments[i];
+    if(e&&e.identity&&e.identity.tournament_id===tid)return e;
+  }
+  return null;
+}
+
+// 一覧表示順（§5）: 開催日 desc → 保存日時 desc（新しい大会が上）。heldDate は YYYY-MM-DD で辞書順=日付順。
+function sortArchiveTournaments(list){
+  var arr=(Array.isArray(list)?list:[]).slice();
+  arr.sort(function(a,b){
+    var ha=(a&&a.identity&&a.identity.heldDate)||'';
+    var hb=(b&&b.identity&&b.identity.heldDate)||'';
+    if(ha!==hb)return ha<hb?1:-1;
+    var sa=(a&&a.savedAt)||'';
+    var sb=(b&&b.savedAt)||'';
+    if(sa!==sb)return sa<sb?1:-1;
+    return 0;
+  });
+  return arr;
+}
+
+function formatArchiveSavedAt(iso){
+  if(!iso)return '—';
+  var d=new Date(iso);
+  if(isNaN(d.getTime()))return String(iso);
+  function p2(n){return ('0'+n).slice(-2);}
+  return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes());
+}
+
+function buildArchiveChampionLabel(champions){
+  if(!Array.isArray(champions)||champions.length===0)return '';
+  var parts=[];
+  for(var i=0;i<champions.length;i++){
+    var c=champions[i];
+    if(!c)continue;
+    parts.push(escapeHtml((c.classId||'')+'：'+(c.name||'')));
+  }
+  return parts.join('　');
+}
+
+function deriveArchiveClassesFromSnapshot(snap){
+  var out=[];
+  var classes=(snap&&Array.isArray(snap.classes))?snap.classes:[];
+  for(var i=0;i<classes.length;i++){
+    var c=classes[i];
+    if(c&&typeof c.id==='string'&&c.id)out.push({id:c.id,name:(typeof c.name==='string'&&c.name)?c.name:(c.id+'クラス')});
+  }
+  if(out.length===0&&snap&&snap.players&&typeof snap.players==='object'){
+    for(var k in snap.players){
+      if(Object.prototype.hasOwnProperty.call(snap.players,k))out.push({id:k,name:k+'クラス'});
+    }
+  }
+  return out;
+}
+
+// shogi_archive へ 1 件を永続化する（§4.2）。quota 超過時は既存 helper（isQuotaExceededError /
+//   notifySaveWarning）を再利用して警告し、直前の archive を復元（ロールバック）する。
+//   当日 state（'shogi_v4'）には一切書き込まない＝当日データは無傷。
+function persistArchiveEntry(entry){
+  var archive=loadArchive();
+  var next=appendOrReplaceByTournamentId(archive,entry);
+  var prevRaw=null;
+  try{ prevRaw=localStorage.getItem(ARCHIVE_KEY); }catch(e){ prevRaw=null; }
+  try{
+    localStorage.setItem(ARCHIVE_KEY,JSON.stringify(next));
+    return {ok:true,quota:false};
+  }catch(e){
+    // ロールバック: 直前の shogi_archive を壊さない（当日 state は元々未変更）。
+    try{ if(prevRaw==null)localStorage.removeItem(ARCHIVE_KEY); else localStorage.setItem(ARCHIVE_KEY,prevRaw); }catch(e2){}
+    var quota=(typeof isQuotaExceededError==='function')&&isQuotaExceededError(e);
+    if(typeof notifySaveWarning==='function'){
+      notifySaveWarning({
+        message:quota?'大会履歴を保存できませんでした（ブラウザの保存容量が上限です）。JSONバックアップをご利用ください。当日の大会データは保持されています。':'大会履歴を保存できませんでした。当日の大会データは保持されています。',
+        consoleTag:'[HISTORY-WARN]',
+        callsiteId:quota?'STORAGE-QUOTA:saveArchive':'saveArchive',
+        kind:quota?'storage-quota':undefined,
+        aggregateKey:quota?'storage-quota:global':undefined,
+        severity:'warn',
+        fields:['shogi_archive']
+      });
+    }
+    return {ok:false,quota:quota};
+  }
+}
+
+// 明示保存アクション（§11.1: 自動でなくユーザー操作 + 確認）。冪等は tournament_id をキーに上書き確認。
+function saveCurrentTournamentToArchive(){
+  var entry;
+  try{ entry=buildArchiveEntryFromState(state); }
+  catch(e){ alert('履歴用データの生成に失敗しました。当日の大会データは保持されています。'); return false; }
+  if(!entry||!entry.snapshot){ alert('保存できる大会データがありません。'); return false; }
+  var tid=entry.identity.tournament_id;
+  var archive=loadArchive();
+  var existing=tid?findArchiveEntryByTid(archive,tid):null;
+  var label=entry.identity.targetMonthLabel||entry.identity.title||'この大会';
+  if(existing){ if(!confirm('「'+label+'」は既に履歴にあります。\n現在の内容で上書きしますか？'))return false; }
+  else { if(!confirm('現在の大会（'+label+'）を履歴へ保存しますか？'))return false; }
+  var res=persistArchiveEntry(entry);
+  if(res.ok){ renderHistoryList('✓ 大会を履歴へ保存しました。'); return true; }
+  alert(res.quota
+    ?'大会履歴を保存できませんでした（保存容量の上限）。\nJSONバックアップをご利用ください。\n当日の大会データは保持されています。'
+    :'大会履歴を保存できませんでした。\n当日の大会データは保持されています。');
+  return false;
+}
+
+// 履歴一覧（read-only。§5）。identity だけで描画し snapshot 本体は開かない。各行から閲覧へ遷移。
+function renderHistoryList(flashMessage){
+  var host=document.getElementById('history-content');
+  if(!host)return;
+  var archive=loadArchive();
+  var list=sortArchiveTournaments(archive.tournaments);
+  var html='';
+  if(flashMessage)html+='<div class="alert alert-ok" style="margin-bottom:10px">'+escapeHtml(flashMessage)+'</div>';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">';
+  html+='<h2 style="font-size:16px;margin:0;color:#1F3864">大会履歴</h2>';
+  html+='<button type="button" class="btn-primary" id="history-save-btn">現在の大会を履歴へ保存</button>';
+  html+='</div>';
+  html+='<div style="font-size:12px;color:#888;margin-bottom:12px">過去に保存した大会を閲覧専用で確認できます（このブラウザ内にのみ保存。当日の大会データには影響しません）。</div>';
+  if(list.length===0){
+    html+='<div style="padding:24px;text-align:center;color:#888;background:#f7f7f7;border-radius:8px">保存された大会履歴はありません。<br>当日の大会を「現在の大会を履歴へ保存」で残せます。</div>';
+  }else{
+    for(var i=0;i<list.length;i++){
+      var e=list[i];var id=(e&&e.identity)||{};
+      var month=escapeHtml(id.targetMonthLabel||id.heldDate||'（対象月未設定）');
+      var ttl=escapeHtml(id.title||'（大会名未設定）');
+      var held=escapeHtml(id.heldDate||'—');
+      var clsCount=(id.classes&&id.classes.length)||0;
+      var pcount=(typeof id.participantCount==='number')?id.participantCount:'—';
+      var champ=buildArchiveChampionLabel(id.champions);
+      var saved=escapeHtml(formatArchiveSavedAt(e&&e.savedAt));
+      var tidAttr=escapeHtml(id.tournament_id||'');
+      html+='<button type="button" class="history-row" data-tid="'+tidAttr+'" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid #d3dbe5;border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer">';
+      html+='<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="font-weight:600;color:#1F3864">'+month+'　'+ttl+'</span><span style="font-size:11px;color:#999">保存 '+saved+'</span></div>';
+      html+='<div style="font-size:12px;color:#555;margin-top:4px">開催日 '+held+'　/　'+clsCount+'クラス　/　'+pcount+'名'+(champ?'　/　優勝 '+champ:'')+'</div>';
+      html+='</button>';
+    }
+  }
+  host.innerHTML=html;
+  var saveBtn=document.getElementById('history-save-btn');
+  if(saveBtn)saveBtn.addEventListener('click',saveCurrentTournamentToArchive);
+  var rows=host.querySelectorAll('.history-row');
+  for(var r=0;r<rows.length;r++){
+    rows[r].addEventListener('click',function(){renderHistoryDetail(this.getAttribute('data-tid'));});
+  }
+}
+
+// 過去大会の read-only 閲覧（§6）。既存 scoreboard レンダラを snapshot 入力で流用（編集 UI を一切出さない）。
+//   現行大会へは「履歴一覧へ戻る」＋他タブで戻れる。snapshot 描画は withSourceState で行われ global state は不変。
+function renderHistoryDetail(tid){
+  var host=document.getElementById('history-content');
+  if(!host)return;
+  var archive=loadArchive();
+  var entry=findArchiveEntryByTid(archive,tid);
+  if(!entry){ renderHistoryList(); return; }
+  var id=entry.identity||{};
+  var snap=entry.snapshot||{};
+  var html='';
+  html+='<div style="margin-bottom:10px"><button type="button" class="btn-sm" id="history-back-btn" style="background:#fff;color:#444;font-size:13px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← 履歴一覧へ戻る</button></div>';
+  html+='<div style="background:#fff3cd;border:1px solid #ffe08a;color:#7a5b00;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">閲覧専用：過去の大会です（編集できません）</div>';
+  html+='<div style="margin-bottom:10px">';
+  html+='<div style="font-size:16px;font-weight:700;color:#1F3864">'+escapeHtml(id.title||'（大会名未設定）')+'</div>';
+  var meta=[];
+  if(id.targetMonthLabel)meta.push('対象月：'+id.targetMonthLabel);
+  if(id.heldDate)meta.push('開催日：'+id.heldDate);
+  meta.push('保存日時：'+formatArchiveSavedAt(entry.savedAt));
+  html+='<div style="font-size:12px;color:#666;margin-top:2px">'+escapeHtml(meta.join('　／　'))+'</div>';
+  html+='</div>';
+  var classes=(id.classes&&id.classes.length)?id.classes:deriveArchiveClassesFromSnapshot(snap);
+  var body='';
+  for(var i=0;i<classes.length;i++){
+    var cid=classes[i]&&classes[i].id;
+    if(!cid)continue;
+    body+=buildScoreboardClassTableHtml(cid,snap);
+  }
+  if(!body)body='<div style="padding:20px;text-align:center;color:#888">この大会には表示できる対局データがありません。</div>';
+  html+='<div style="background:#eef2f7;padding:8px;border-radius:8px">'+body+'</div>';
+  host.innerHTML=html;
+  var back=document.getElementById('history-back-btn');
+  if(back)back.addEventListener('click',function(){renderHistoryList();});
 }
 
 document.addEventListener('DOMContentLoaded',function(){
