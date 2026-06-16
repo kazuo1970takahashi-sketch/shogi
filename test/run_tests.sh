@@ -1032,6 +1032,22 @@ else
 fi
 
 # ============================================
+# SHOGI-TOUR-START-001 クラス別「開始 readiness」表示（validateStartableClass 派生・保存しない）
+# ============================================
+echo ""
+echo "【SHOGI-TOUR-START-001 クラス別 開始 readiness 表示】"
+if [ -f "$SCRIPT_DIR/test_start_001.js" ]; then
+  if node "$SCRIPT_DIR/test_start_001.js" "$TARGET" > /tmp/start_001_out.log 2>&1; then
+    ok "SHOGI-TOUR-START-001 テスト 全PASS ($(tail -1 /tmp/start_001_out.log))"
+  else
+    ng "SHOGI-TOUR-START-001 テスト 失敗"
+    cat /tmp/start_001_out.log
+  fi
+else
+  warn "test_start_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
