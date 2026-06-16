@@ -192,6 +192,7 @@ body.sb-active{overflow:hidden}
     <button type="button" class="tab" id="tab-tournament">対局管理</button>
     <button type="button" class="tab" id="tab-result">最終結果</button>
     <button type="button" class="tab" id="tab-master">マスタ</button>
+    <button type="button" class="tab" id="tab-history">大会履歴</button>
     <span id="save-warning-indicator" class="save-warn-pill" hidden></span>
   </div>
   <div id="pane-reg">
@@ -366,6 +367,10 @@ body.sb-active{overflow:hidden}
       </div>
       <button type="button" class="btn-primary" id="downloadReportBtn">報告書を印刷 / PDF保存</button>
     </div>
+  </div>
+  <!-- SHOGI-TOUR-HISTORY-STEP1: 過去大会の履歴一覧 / read-only 閲覧（追加 pane。既存 pane は変更しない） -->
+  <div id="pane-history" style="display:none">
+    <div id="history-content"></div>
   </div>
 </div>
 
@@ -3994,10 +3999,12 @@ function showTab(t){
   document.getElementById('pane-tournament').style.display=t==='tournament'?'block':'none';
   document.getElementById('pane-result').style.display=t==='result'?'block':'none';
   var pm=document.getElementById('pane-master');if(pm)pm.style.display=t==='master'?'block':'none';
+  var ph=document.getElementById('pane-history');if(ph)ph.style.display=t==='history'?'block':'none';
   document.getElementById('tab-reg').className='tab'+(t==='reg'?' active':'');
   document.getElementById('tab-tournament').className='tab'+(t==='tournament'?' active':'');
   document.getElementById('tab-result').className='tab'+(t==='result'?' active':'');
   var tm=document.getElementById('tab-master');if(tm)tm.className='tab'+(t==='master'?' active':'');
+  var th=document.getElementById('tab-history');if(th)th.className='tab'+(t==='history'?' active':'');
   if(t==='result')renderResults();
   // ROUND-CLASS-START-005 (spec §15.1 row 1): tournament タブ表示時は
   //   state.classes を走査して renderTournament(c.id) を呼ぶ（A/B literal 解消）。
@@ -4013,6 +4020,7 @@ function showTab(t){
     }
   }
   if(t==='master')renderMasterTab();
+  if(t==='history'&&typeof renderHistoryList==='function')renderHistoryList();
 }
 
 function showMsg(text,type){
@@ -7824,6 +7832,8 @@ function bindTabEvents(){
   document.getElementById('tab-result').addEventListener('click',function(){showTab('result');});
   var tm=document.getElementById('tab-master');
   if(tm)tm.addEventListener('click',function(){showTab('master');});
+  var th=document.getElementById('tab-history');
+  if(th)th.addEventListener('click',function(){showTab('history');});
 }
 
 function populateReportFields(){
@@ -8219,7 +8229,13 @@ function sbClassDisplayName(cls){
 //   各ラウンド列は ○（勝ち）/×（負け）/－（未対局）と対戦相手番号（#NN）を表示する。
 //   Codex Should Fix 1: 現場要望「○×の星取表」に合わせ、負けは ● ではなく × で表示する。
 //   氏名・番号はすべて escapeHtml してから描画する（XSS 安全）。
-function buildScoreboardClassTableHtml(cls){
+function buildScoreboardClassTableHtml(cls,sourceState){
+  // SHOGI-TOUR-HISTORY-STEP1: 後方互換 optional 引数。sourceState 指定時のみ描画データ源を一時的に
+  //   差し替える（withSourceState が global state を退避→finally で必ず復元）。引数なし呼び出し＝live
+  //   経路の挙動は完全に従来どおり（本体不変＝#213 のふりがな ruby 表示もそのまま維持される）。
+  if(sourceState!==undefined&&sourceState!==null&&sourceState!==state){
+    return withSourceState(sourceState,function(){return buildScoreboardClassTableHtml(cls);});
+  }
   var players=(state.players&&state.players[cls])||[];
   if(players.length===0)return '';
   var finals=calcFinal(cls);
@@ -8384,6 +8400,342 @@ function initScoreboard(){
     renderScoreboard();
   });
   applyScoreboardRoute();
+}
+
+// ============================================================
+// SHOGI-TOUR-HISTORY-STEP1: 過去大会履歴（保存 / 一覧 / read-only 閲覧）
+//   設計メモ: docs/notes/20260615_shogi_tour_history_mvp_design_001.md
+//   方針: 追記専用キー 'shogi_archive'。既存 'shogi_v4'（当日 state）/ 'shogi_branch_master'（マスタ）と
+//         save/load/normalizeState/saveBranchMaster には一切書き込まない（§4.1）。保存単位＝確定 state の
+//         deep clone スナップショット + 識別メタ（§3）。閲覧は既存 scoreboard レンダラ
+//         buildScoreboardClassTableHtml を sourceState 差し替えで read-only 流用（§6・§8。#213 ruby 維持）。
+//         restore（snapshot→現 state 書き戻し）は MVP では行わない（§11.2。閲覧のみ）。
+// ============================================================
+var ARCHIVE_KEY='shogi_archive';
+var ARCHIVE_SCHEMA_VERSION=1;
+
+// 描画データ源を一時的に sourceState へ差し替えて fn() を実行し、必ず global state を復元する。
+//   scoreboard 系（getName / yomiOf / calcFinal / computeDisplayRanks …）は global state を参照するため、
+//   過去スナップショットを描くにはこの「データ源差し替え」を使う。同期実行限定・finally で必ず復元する。
+//   sourceState 未指定 / 現 state と同一なら差し替えない（live 経路の挙動不変）。
+function withSourceState(sourceState,fn){
+  if(sourceState===undefined||sourceState===null||sourceState===state)return fn();
+  var _prev=state;
+  state=sourceState;
+  try{return fn();}
+  finally{state=_prev;}
+}
+
+function archiveNowIso(){ return new Date().toISOString(); }
+
+function archiveDeepClone(obj){
+  try{ return JSON.parse(JSON.stringify(obj)); }catch(e){ return null; }
+}
+
+// localStorage の raw / object を {schema_version, updated_at, tournaments[]} へ正規化する。
+//   不在・壊れた値は「履歴 0 件」として安全に返す（§4.1 後方互換）。
+function normalizeArchive(raw){
+  var obj=raw;
+  if(typeof raw==='string'){ try{obj=JSON.parse(raw);}catch(e){obj=null;} }
+  if(!obj||typeof obj!=='object'||Object.prototype.toString.call(obj.tournaments)!=='[object Array]'){
+    return {schema_version:ARCHIVE_SCHEMA_VERSION,updated_at:'',tournaments:[]};
+  }
+  return {
+    schema_version:(typeof obj.schema_version==='number')?obj.schema_version:ARCHIVE_SCHEMA_VERSION,
+    updated_at:(typeof obj.updated_at==='string')?obj.updated_at:'',
+    tournaments:obj.tournaments
+  };
+}
+
+function loadArchive(){
+  var raw=null;
+  try{ raw=localStorage.getItem(ARCHIVE_KEY); }catch(e){ raw=null; }
+  return normalizeArchive(raw);
+}
+
+// identity.classes 用: players を持つクラスを {id,name} で列挙（global state 参照＝withSourceState 内で呼ぶ）。
+function buildArchiveIdentityClasses(){
+  var out=[];
+  var classes=Array.isArray(state.classes)?state.classes:[];
+  for(var i=0;i<classes.length;i++){
+    var c=classes[i];
+    if(!c||typeof c.id!=='string'||!c.id)continue;
+    var players=(state.players&&state.players[c.id])||[];
+    if(players.length>0)out.push({id:c.id,name:(typeof c.name==='string'&&c.name)?c.name:(c.id+'クラス')});
+  }
+  if(out.length===0&&state.players&&typeof state.players==='object'){
+    for(var k in state.players){
+      if(!Object.prototype.hasOwnProperty.call(state.players,k))continue;
+      var ps=state.players[k];
+      if(Array.isArray(ps)&&ps.length>0)out.push({id:k,name:k+'クラス'});
+    }
+  }
+  return out;
+}
+
+function countArchiveParticipants(){
+  var n=0;
+  var classes=buildArchiveIdentityClasses();
+  for(var i=0;i<classes.length;i++){
+    var ps=(state.players&&state.players[classes[i].id])||[];
+    n+=ps.length;
+  }
+  return n;
+}
+
+// 各クラスの表示順位 1 位を {classId,name} で凍結（任意項目 §3.2。ranking は既存 calcFinal を流用）。
+function buildArchiveChampions(){
+  var out=[];
+  try{
+    var classes=buildArchiveIdentityClasses();
+    for(var i=0;i<classes.length;i++){
+      var cid=classes[i].id;
+      var finals=calcFinal(cid);
+      if(!finals||!finals.length)continue;
+      var ranks=computeDisplayRanks(finals,cid);
+      for(var j=0;j<finals.length;j++){
+        if(ranks[j]===1)out.push({classId:cid,name:getName(finals[j].p.id,cid)});
+      }
+    }
+  }catch(e){ return out; }
+  return out;
+}
+
+// tournament_id が無い state でも一覧/閲覧キーが要るため、開催日（無ければ保存時刻）から安定 id を合成する。
+//   state は変更しない（ensureTournamentId のような書き戻しはしない）。
+function synthArchiveTid(heldDate,savedAtIso){
+  if(heldDate&&/^\d{4}-\d{2}-\d{2}$/.test(heldDate))return 't_'+heldDate.replace(/-/g,'_');
+  return 'hist_'+String(savedAtIso||'').replace(/[^0-9]/g,'').slice(0,14);
+}
+
+// 確定 state（既定 = 現在の global state）から履歴 1 件を生成する純関数（§3.2）。
+//   sourceState を一時データ源にして識別メタ（title/heldDate/月ラベル/クラス/人数/優勝者）を凍結し、
+//   snapshot は sourceState の deep clone を持つ。global state は呼び出し後に必ず元へ戻る。
+function buildArchiveEntryFromState(sourceState,savedAtIso){
+  var s=sourceState||state;
+  var savedAt=savedAtIso||archiveNowIso();
+  return withSourceState(s,function(){
+    var report=state.report||{};
+    var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(report.title):(typeof report.title==='string'?report.title:'');
+    var heldDate=(typeof normalizeReportDateForInput==='function')?(normalizeReportDateForInput(report.date)||''):(typeof report.date==='string'?report.date:'');
+    var targetMonthLabel=(typeof buildTournamentTargetMonthLabel==='function')?buildTournamentTargetMonthLabel():'';
+    var tid=(typeof state.tournament_id==='string'&&state.tournament_id)?state.tournament_id:synthArchiveTid(heldDate,savedAt);
+    return {
+      schema_version:ARCHIVE_SCHEMA_VERSION,
+      savedAt:savedAt,
+      identity:{
+        tournament_id:tid,
+        title:title,
+        heldDate:heldDate,
+        targetMonthLabel:targetMonthLabel,
+        classes:buildArchiveIdentityClasses(),
+        participantCount:countArchiveParticipants(),
+        champions:buildArchiveChampions()
+      },
+      snapshot:archiveDeepClone(state)
+    };
+  });
+}
+
+// tournament_id をキーに冪等追記する純関数（同 id は上書き・無ければ新しい順で先頭に追加）（§10・§11.1）。
+function appendOrReplaceByTournamentId(archive,entry){
+  var arc=normalizeArchive(archive);
+  var list=arc.tournaments.slice();
+  var tid=entry&&entry.identity&&entry.identity.tournament_id;
+  var idx=-1;
+  if(tid){
+    for(var i=0;i<list.length;i++){
+      var e=list[i];
+      if(e&&e.identity&&e.identity.tournament_id===tid){idx=i;break;}
+    }
+  }
+  if(idx>=0)list[idx]=entry; else list.unshift(entry);
+  return {schema_version:ARCHIVE_SCHEMA_VERSION,updated_at:(entry&&entry.savedAt)||archiveNowIso(),tournaments:list};
+}
+
+function findArchiveEntryByTid(archive,tid){
+  var arc=normalizeArchive(archive);
+  if(!tid)return null;
+  for(var i=0;i<arc.tournaments.length;i++){
+    var e=arc.tournaments[i];
+    if(e&&e.identity&&e.identity.tournament_id===tid)return e;
+  }
+  return null;
+}
+
+// 一覧表示順（§5）: 開催日 desc → 保存日時 desc（新しい大会が上）。heldDate は YYYY-MM-DD で辞書順=日付順。
+function sortArchiveTournaments(list){
+  var arr=(Array.isArray(list)?list:[]).slice();
+  arr.sort(function(a,b){
+    var ha=(a&&a.identity&&a.identity.heldDate)||'';
+    var hb=(b&&b.identity&&b.identity.heldDate)||'';
+    if(ha!==hb)return ha<hb?1:-1;
+    var sa=(a&&a.savedAt)||'';
+    var sb=(b&&b.savedAt)||'';
+    if(sa!==sb)return sa<sb?1:-1;
+    return 0;
+  });
+  return arr;
+}
+
+function formatArchiveSavedAt(iso){
+  if(!iso)return '—';
+  var d=new Date(iso);
+  if(isNaN(d.getTime()))return String(iso);
+  function p2(n){return ('0'+n).slice(-2);}
+  return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes());
+}
+
+function buildArchiveChampionLabel(champions){
+  if(!Array.isArray(champions)||champions.length===0)return '';
+  var parts=[];
+  for(var i=0;i<champions.length;i++){
+    var c=champions[i];
+    if(!c)continue;
+    parts.push(escapeHtml((c.classId||'')+'：'+(c.name||'')));
+  }
+  return parts.join('　');
+}
+
+function deriveArchiveClassesFromSnapshot(snap){
+  var out=[];
+  var classes=(snap&&Array.isArray(snap.classes))?snap.classes:[];
+  for(var i=0;i<classes.length;i++){
+    var c=classes[i];
+    if(c&&typeof c.id==='string'&&c.id)out.push({id:c.id,name:(typeof c.name==='string'&&c.name)?c.name:(c.id+'クラス')});
+  }
+  if(out.length===0&&snap&&snap.players&&typeof snap.players==='object'){
+    for(var k in snap.players){
+      if(Object.prototype.hasOwnProperty.call(snap.players,k))out.push({id:k,name:k+'クラス'});
+    }
+  }
+  return out;
+}
+
+// shogi_archive へ 1 件を永続化する（§4.2）。quota 超過時は既存 helper（isQuotaExceededError /
+//   notifySaveWarning）を再利用して警告し、直前の archive を復元（ロールバック）する。
+//   当日 state（'shogi_v4'）には一切書き込まない＝当日データは無傷。
+function persistArchiveEntry(entry){
+  var archive=loadArchive();
+  var next=appendOrReplaceByTournamentId(archive,entry);
+  var prevRaw=null;
+  try{ prevRaw=localStorage.getItem(ARCHIVE_KEY); }catch(e){ prevRaw=null; }
+  try{
+    localStorage.setItem(ARCHIVE_KEY,JSON.stringify(next));
+    return {ok:true,quota:false};
+  }catch(e){
+    // ロールバック: 直前の shogi_archive を壊さない（当日 state は元々未変更）。
+    try{ if(prevRaw==null)localStorage.removeItem(ARCHIVE_KEY); else localStorage.setItem(ARCHIVE_KEY,prevRaw); }catch(e2){}
+    var quota=(typeof isQuotaExceededError==='function')&&isQuotaExceededError(e);
+    if(typeof notifySaveWarning==='function'){
+      notifySaveWarning({
+        message:quota?'大会履歴を保存できませんでした（ブラウザの保存容量が上限です）。JSONバックアップをご利用ください。当日の大会データは保持されています。':'大会履歴を保存できませんでした。当日の大会データは保持されています。',
+        consoleTag:'[HISTORY-WARN]',
+        callsiteId:quota?'STORAGE-QUOTA:saveArchive':'saveArchive',
+        kind:quota?'storage-quota':undefined,
+        aggregateKey:quota?'storage-quota:global':undefined,
+        severity:'warn',
+        fields:['shogi_archive']
+      });
+    }
+    return {ok:false,quota:quota};
+  }
+}
+
+// 明示保存アクション（§11.1: 自動でなくユーザー操作 + 確認）。冪等は tournament_id をキーに上書き確認。
+function saveCurrentTournamentToArchive(){
+  var entry;
+  try{ entry=buildArchiveEntryFromState(state); }
+  catch(e){ alert('履歴用データの生成に失敗しました。当日の大会データは保持されています。'); return false; }
+  if(!entry||!entry.snapshot){ alert('保存できる大会データがありません。'); return false; }
+  var tid=entry.identity.tournament_id;
+  var archive=loadArchive();
+  var existing=tid?findArchiveEntryByTid(archive,tid):null;
+  var label=entry.identity.targetMonthLabel||entry.identity.title||'この大会';
+  if(existing){ if(!confirm('「'+label+'」は既に履歴にあります。\n現在の内容で上書きしますか？'))return false; }
+  else { if(!confirm('現在の大会（'+label+'）を履歴へ保存しますか？'))return false; }
+  var res=persistArchiveEntry(entry);
+  if(res.ok){ renderHistoryList('✓ 大会を履歴へ保存しました。'); return true; }
+  alert(res.quota
+    ?'大会履歴を保存できませんでした（保存容量の上限）。\nJSONバックアップをご利用ください。\n当日の大会データは保持されています。'
+    :'大会履歴を保存できませんでした。\n当日の大会データは保持されています。');
+  return false;
+}
+
+// 履歴一覧（read-only。§5）。identity だけで描画し snapshot 本体は開かない。各行から閲覧へ遷移。
+function renderHistoryList(flashMessage){
+  var host=document.getElementById('history-content');
+  if(!host)return;
+  var archive=loadArchive();
+  var list=sortArchiveTournaments(archive.tournaments);
+  var html='';
+  if(flashMessage)html+='<div class="alert alert-ok" style="margin-bottom:10px">'+escapeHtml(flashMessage)+'</div>';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">';
+  html+='<h2 style="font-size:16px;margin:0;color:#1F3864">大会履歴</h2>';
+  html+='<button type="button" class="btn-primary" id="history-save-btn">現在の大会を履歴へ保存</button>';
+  html+='</div>';
+  html+='<div style="font-size:12px;color:#888;margin-bottom:12px">過去に保存した大会を閲覧専用で確認できます（このブラウザ内にのみ保存。当日の大会データには影響しません）。</div>';
+  if(list.length===0){
+    html+='<div style="padding:24px;text-align:center;color:#888;background:#f7f7f7;border-radius:8px">保存された大会履歴はありません。<br>当日の大会を「現在の大会を履歴へ保存」で残せます。</div>';
+  }else{
+    for(var i=0;i<list.length;i++){
+      var e=list[i];var id=(e&&e.identity)||{};
+      var month=escapeHtml(id.targetMonthLabel||id.heldDate||'（対象月未設定）');
+      var ttl=escapeHtml(id.title||'（大会名未設定）');
+      var held=escapeHtml(id.heldDate||'—');
+      var clsCount=(id.classes&&id.classes.length)||0;
+      var pcount=(typeof id.participantCount==='number')?id.participantCount:'—';
+      var champ=buildArchiveChampionLabel(id.champions);
+      var saved=escapeHtml(formatArchiveSavedAt(e&&e.savedAt));
+      var tidAttr=escapeHtml(id.tournament_id||'');
+      html+='<button type="button" class="history-row" data-tid="'+tidAttr+'" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid #d3dbe5;border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer">';
+      html+='<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="font-weight:600;color:#1F3864">'+month+'　'+ttl+'</span><span style="font-size:11px;color:#999">保存 '+saved+'</span></div>';
+      html+='<div style="font-size:12px;color:#555;margin-top:4px">開催日 '+held+'　/　'+clsCount+'クラス　/　'+pcount+'名'+(champ?'　/　優勝 '+champ:'')+'</div>';
+      html+='</button>';
+    }
+  }
+  host.innerHTML=html;
+  var saveBtn=document.getElementById('history-save-btn');
+  if(saveBtn)saveBtn.addEventListener('click',saveCurrentTournamentToArchive);
+  var rows=host.querySelectorAll('.history-row');
+  for(var r=0;r<rows.length;r++){
+    rows[r].addEventListener('click',function(){renderHistoryDetail(this.getAttribute('data-tid'));});
+  }
+}
+
+// 過去大会の read-only 閲覧（§6）。既存 scoreboard レンダラを snapshot 入力で流用（編集 UI を一切出さない）。
+//   現行大会へは「履歴一覧へ戻る」＋他タブで戻れる。snapshot 描画は withSourceState で行われ global state は不変。
+function renderHistoryDetail(tid){
+  var host=document.getElementById('history-content');
+  if(!host)return;
+  var archive=loadArchive();
+  var entry=findArchiveEntryByTid(archive,tid);
+  if(!entry){ renderHistoryList(); return; }
+  var id=entry.identity||{};
+  var snap=entry.snapshot||{};
+  var html='';
+  html+='<div style="margin-bottom:10px"><button type="button" class="btn-sm" id="history-back-btn" style="background:#fff;color:#444;font-size:13px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← 履歴一覧へ戻る</button></div>';
+  html+='<div style="background:#fff3cd;border:1px solid #ffe08a;color:#7a5b00;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">閲覧専用：過去の大会です（編集できません）</div>';
+  html+='<div style="margin-bottom:10px">';
+  html+='<div style="font-size:16px;font-weight:700;color:#1F3864">'+escapeHtml(id.title||'（大会名未設定）')+'</div>';
+  var meta=[];
+  if(id.targetMonthLabel)meta.push('対象月：'+id.targetMonthLabel);
+  if(id.heldDate)meta.push('開催日：'+id.heldDate);
+  meta.push('保存日時：'+formatArchiveSavedAt(entry.savedAt));
+  html+='<div style="font-size:12px;color:#666;margin-top:2px">'+escapeHtml(meta.join('　／　'))+'</div>';
+  html+='</div>';
+  var classes=(id.classes&&id.classes.length)?id.classes:deriveArchiveClassesFromSnapshot(snap);
+  var body='';
+  for(var i=0;i<classes.length;i++){
+    var cid=classes[i]&&classes[i].id;
+    if(!cid)continue;
+    body+=buildScoreboardClassTableHtml(cid,snap);
+  }
+  if(!body)body='<div style="padding:20px;text-align:center;color:#888">この大会には表示できる対局データがありません。</div>';
+  html+='<div style="background:#eef2f7;padding:8px;border-radius:8px">'+body+'</div>';
+  host.innerHTML=html;
+  var back=document.getElementById('history-back-btn');
+  if(back)back.addEventListener('click',function(){renderHistoryList();});
 }
 
 document.addEventListener('DOMContentLoaded',function(){

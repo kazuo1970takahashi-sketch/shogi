@@ -1016,6 +1016,22 @@ else
 fi
 
 # ============================================
+# SHOGI-TOUR-HISTORY-STEP1 大会履歴（保存 / 一覧 / read-only 閲覧 / scoreboard 流用 / quota rollback）
+# ============================================
+echo ""
+echo "【SHOGI-TOUR-HISTORY-STEP1 大会履歴（保存 / 一覧 / read-only 閲覧）】"
+if [ -f "$SCRIPT_DIR/test_history_step1.js" ]; then
+  if node "$SCRIPT_DIR/test_history_step1.js" "$TARGET" > /tmp/history_step1_out.log 2>&1; then
+    ok "SHOGI-TOUR-HISTORY-STEP1 テスト 全PASS ($(tail -1 /tmp/history_step1_out.log))"
+  else
+    ng "SHOGI-TOUR-HISTORY-STEP1 テスト 失敗"
+    cat /tmp/history_step1_out.log
+  fi
+else
+  warn "test_history_step1.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
