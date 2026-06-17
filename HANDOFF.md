@@ -53,10 +53,13 @@
 - **#223 は引き続き Draft/Open のまま保留**（rebase/adopt/close/Ready化/merge いずれも未実施）。#222 も未変更。
 - **次候補**: **START-UX-CONSOLIDATE-IMPL の review**、または **FRP-IMPL-001（#223）再開判断**（新 UX 前提で rebase / adopt / 作り直し）。
 
-## FRP（1局目部分手合い）ライン: 保留中
+## FRP（1局目部分手合い）ライン: POST-225 棚卸し完了 → 作り直し方針確定
 
-- **FRP-DESIGN-001 / PR #222**: Draft/Open。1局目の未割当者選択・部分手合作成の実装前設計。設計書 = `docs/specs/20260617_frp_design_001_first_round_partial.md`。
-- **FRP-IMPL-001 / PR #223**: Draft/Open のまま **保留**。今すぐ **Ready 化・merge しない**（close もしない）。理由 = #223 は参加者登録タブに旧 `#startBtn` が残った前提で作られており、START-UX 整理前に部分開始導線を増やすと開始系がさらに混乱するため。**START-UX-CONSOLIDATE-IMPL 後に rebase / adopt / 作り直し を判断**する。
+- **PR #225 MERGED**（2026-06-17, squash `67e0b81`）: START-UX-CONSOLIDATE-001 実装完了。受付タブの開始導線撤去・`#startBtn` ナビ専用化・対局管理タブの開始導線強化。orphan HEAD = `67e0b81`。
+- **POST-225-FRP-REBASE-INVENTORY-001（本 PR）**: #225 merge 後の #222/#223 棚卸し文書を追加。docs-only。
+- **PR #222 FRP-DESIGN-001**: Draft/Open のまま **直接続行禁止**（base が `3b86edb` = 2 commits stale / HANDOFF.md conflict）。棚卸し結果: 設計内容 95% 有効。**FRP-DESIGN-002 として新 PR に作り直し推奨**。close は FRP-DESIGN-002 PR 作成後に行う。
+- **PR #223 FRP-IMPL-001**: Draft/Open のまま **直接続行禁止**（`buildClassActionBarHtml` コンテキスト conflict / HANDOFF.md conflict）。棚卸し結果: `validatePartialStartableClass` / `startClassPartial` / `getUnassignedFirstRoundPlayers` / `buildFirstRoundPartialSectionHtml` は再利用可。**FRP-IMPL-002 として新 PR に作り直し推奨**。close は FRP-IMPL-002 PR 作成後に行う。
+- **次候補**: **FRP-DESIGN-002**（`67e0b81` 起点 docs-only 設計書更新）→ **FRP-IMPL-002**（部分開始 + 未割当一覧表示 土台）。詳細は `docs/specs/20260617_post_225_frp_rebase_inventory_001.md`。
 
 ## このターンの変更有無（正確な記録）
 
