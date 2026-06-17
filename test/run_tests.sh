@@ -1065,6 +1065,24 @@ else
 fi
 
 # ============================================
+# FRP-IMPL-002 1局目部分手合いの土台 + 未割当一覧表示（部分開始 / 派生未割当 / append は次スライス）
+#   #225 後の nav-only（受付タブは goToTournamentFromReg のみ）前提。FRP 操作入口は対局管理タブ。
+#   append 作成（選択者で対局作成）は未実装＝frpAddBtn/checkbox は disabled。本テストでその回帰も担保する。
+# ============================================
+echo ""
+echo "【FRP-IMPL-002 部分開始の土台 + 1局目未割当一覧表示（append は次スライス・disabled）】"
+if [ -f "$SCRIPT_DIR/test_frp_impl_002.js" ]; then
+  if node "$SCRIPT_DIR/test_frp_impl_002.js" "$TARGET" > /tmp/frp_impl_002_out.log 2>&1; then
+    ok "FRP-IMPL-002 テスト 全PASS ($(tail -1 /tmp/frp_impl_002_out.log))"
+  else
+    ng "FRP-IMPL-002 テスト 失敗"
+    cat /tmp/frp_impl_002_out.log
+  fi
+else
+  warn "test_frp_impl_002.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
