@@ -79,7 +79,7 @@ PR #225（START-UX-CONSOLIDATE-001）は 2026-06-17 に squash merge（`67e0b81`
 | 要素 | 問題 | 推奨対処 |
 |---|---|---|
 | §2 背景「現アプリ運用」の記述 | #222 執筆時点では受付タブに `#startBtn`（一括開始）+ `reg-class-start`（クラス別開始）が残存していたが、#225 で撤去済み | 新設計書では「#225 で解決済み」として文脈を更新 |
-| `base` 参照（`3b86edb`） | #222 の base は `3b86edb`（#225 前）。現 orphan HEAD は `67e0b81` | 新設計書では `67e0b81` を base として作成 |
+| `base` 参照（`3b86edb`） | #222 の base は `3b86edb`（#225 前）。現 orphan HEAD は `67e0b81` | 新設計書は **#226 merge 後の orphan HEAD** を base として作成する。`67e0b81` は #226 作成時点の HEAD であり、#226 squash merge 後は orphan HEAD が前進するため、次 PR の固定 base として `67e0b81` をそのまま使わない |
 | `buildClassActionBarHtml` の文言参照 | 設計内でボタン文言を例示している箇所に「を開始」等の旧文言が残る可能性 | 新設計書で「全員で1局目を開始」に合わせる |
 | HANDOFF.md | #222 は HANDOFF.md を新規作成する差分を持つ。現 orphan HEAD `67e0b81` にはすでに HANDOFF.md が存在（#225 が追加）。rebase すると conflict | 新 PR では HANDOFF.md を「新規作成」ではなく「追記」として扱う |
 
@@ -106,7 +106,7 @@ PR #225（START-UX-CONSOLIDATE-001）は 2026-06-17 に squash merge（`67e0b81`
 | `validatePartialStartableClass(classInfo, playersForClass)` | **そのまま再利用可** | pure・state 非参照・偶数不要の部分開始判定。#225 の `validateStartableClass` 不変と整合 |
 | `startClassPartial(cls)` | **そのまま再利用可** | `generatePairing` を呼ばない・`SAVE-FRP-001` 保存検証・unknown class 拒否。#225 で触れた関数と衝突しない |
 | `getUnassignedFirstRoundPlayers(cls)` | **そのまま再利用可** | 派生・非保存。`results[cls].length===0` ゲート。entry_no 昇順。#225 では不存在 |
-| `buildFirstRoundPartialSectionHtml(cls)` | **そのまま再利用可** | 表示専用・副作用なし。started かつ results 空 かつ 未割当>0 のときのみ中身を返す。escapeHtml 適用済み |
+| `buildFirstRoundPartialSectionHtml(cls)` | **実装ロジックは再利用可（文言・コメント要更新）** | 表示専用・副作用なし。started かつ results 空 かつ 未割当>0 のときのみ中身を返す。escapeHtml 適用済み。ただし disabled ボタンの `title` / コメントに残る旧 PR 番号参照（「次PR（FRP-IMPL-002）」等）は、新しいスライス体系（FRP-IMPL-003 または「次スライス」等）に合わせて更新必須 |
 | `bindClassActionBarEvents` 追加部分（`startBtnPartial_` bind） | **そのまま再利用可** | `bindClassActionBarEvents` 本体の末尾に追加するだけ。#225 は本体を変更していない |
 | `renderTournament` 追加部分（`buildFirstRoundPartialSectionHtml` 呼び出し） | **そのまま再利用可** | `renderTournament` 本体に1行追加。#225 は `renderTournament` 本体を変更していない |
 | `test/test_first_round_partial_001.js` | **大部分再利用可** | pure 関数（`validatePartialStartableClass` / `getUnassignedFirstRoundPlayers` / `buildFirstRoundPartialSectionHtml`）のテストが主体。#225 で削除された関数を参照していない |
@@ -125,7 +125,7 @@ PR #225（START-UX-CONSOLIDATE-001）は 2026-06-17 に squash merge（`67e0b81`
 |---|---|---|
 | `buildClassActionBarHtml` への `startBtnPartial_` 追加差分 | #223 の git patch は `"を開始"` / `"※このクラスのみ後追い開始します"` というコンテキスト行を参照する。#225 でこれらの文言が変更されたため、**そのまま rebase すると conflict** になる | 新 PR では #225 後の文言（`"全員で1局目を開始"` / `"※このクラス内の全員で開始します"`）を文脈として追加する。コード内容自体は同じ |
 | `HANDOFF.md` 新規作成差分 | #222 と同様。#225 が HANDOFF.md を新規作成済みのため、#223 の「新規作成」差分が conflict | 新 PR では HANDOFF.md を追記として扱う |
-| `test/run_tests.sh` 変更差分 | #225 は `test_start_003.js` を登録解除し `test_start_ux_consolidate_001.js` を登録した（+10/-7）。#223 は `test_first_round_partial_001.js` を追加する（+2行程度）。両方が run_tests.sh を変更するため、#225 後の run_tests.sh を土台にした追加が必要 | 新 PR では `67e0b81` 時点の run_tests.sh（#225 適用済み）に `test_first_round_partial_001.js` を1行追加する |
+| `test/run_tests.sh` 変更差分 | #225 は `test_start_003.js` を登録解除し `test_start_ux_consolidate_001.js` を登録した（+10/-7）。#223 は `test_first_round_partial_001.js` を追加する（+2行程度）。両方が run_tests.sh を変更するため、#225 後の run_tests.sh を土台にした追加が必要 | 新 PR では `67e0b81` 時点の run_tests.sh（#225 適用済み）の構成を確認した上で、該当セクションへ追加する。単純な「1行追加」と決め打ちしない |
 | `docs/notes/20260617_frp_impl_001_result.md` | 結果メモ。内容的に問題ないが、PR 番号・base 参照が #223 のもの | 新 PR では不要（棚卸し文書が代替する）または更新して含める |
 
 ### 3.3 #223 のまま rebase して使うべきか
@@ -139,7 +139,7 @@ PR #225（START-UX-CONSOLIDATE-001）は 2026-06-17 に squash merge（`67e0b81`
 4. `test/test_first_round_partial_001.js` の S 系テスト（`#startBtn` 挙動）を確認・修正するなら、新 PR で clean な状態から作るほうが安全。
 5. #223 は「#225 前の受付タブ開始ボタンが残存する前提」で書かれたコメントが一部残る可能性がある（`buildClassActionBarHtml` 内のコメント等）。
 
-**ただし**、`validatePartialStartableClass` / `startClassPartial` / `getUnassignedFirstRoundPlayers` / `buildFirstRoundPartialSectionHtml` の実装コードはほぼそのままコピーして使える質にある（テスト 40 PASS、構造ガード完備）。
+**ただし**、`validatePartialStartableClass` / `startClassPartial` / `getUnassignedFirstRoundPlayers` の実装コードはそのままコピーして使える質にある（テスト 40 PASS、構造ガード完備）。`buildFirstRoundPartialSectionHtml` は構造・表示ロジックの多くを再利用できるが、disabled ボタンの `title` / コメント内の旧 PR 番号参照は新スライス体系に合わせた更新が必要であり、「そのまま」コピーでは文言が不正確になる。
 
 ---
 
@@ -161,16 +161,20 @@ PR #225（START-UX-CONSOLIDATE-001）は 2026-06-17 に squash merge（`67e0b81`
 
 ### 5.1 PR #222（FRP-DESIGN-001）
 
-**close 推奨**。以下を同時に実施する：
-1. close 時に superseded コメントを投稿（「POST-225-FRP-REBASE-INVENTORY-001 による棚卸しの結果、FRP-DESIGN-002 として作り直しを行う」）。
-2. 設計内容は FRP-DESIGN-002 に引き継ぐ（95% 再利用可）。
+**close 推奨**。以下の手順・条件を守ること：
+1. **#226 merge 直後に即 close しない**。FRP-DESIGN-002 PR を作成してから close する。
+2. close は **人間の明示指示後に実施**する（Claude が自律的に close しない）。
+3. close コメントには **FRP-DESIGN-002 PR のリンクを含める**。後継 PR が存在しない段階では close しない。
+4. 設計内容は FRP-DESIGN-002 に引き継ぐ（95% 再利用可）。
 
 ### 5.2 PR #223（FRP-IMPL-001）
 
-**close 推奨**。以下を同時に実施する：
-1. close 時に superseded コメントを投稿（「POST-225-FRP-REBASE-INVENTORY-001 による棚卸しの結果、FRP-IMPL-002 として新 PR で実装する」）。
-2. `validatePartialStartableClass` / `startClassPartial` / `getUnassignedFirstRoundPlayers` / `buildFirstRoundPartialSectionHtml` の実装はそのまま FRP-IMPL-002 にコピーして利用する。
-3. test_first_round_partial_001.js の V 系・U 系・P 系は再利用。S 系は `#startBtn` の挙動変更に合わせて修正する。
+**close 推奨**。以下の手順・条件を守ること：
+1. **#226 merge 直後に即 close しない**。FRP-IMPL-002 PR を作成してから close する。
+2. close は **人間の明示指示後に実施**する（Claude が自律的に close しない）。
+3. close コメントには **FRP-IMPL-002 PR のリンクを含める**。後継 PR が存在しない段階では close しない。
+4. `validatePartialStartableClass` / `startClassPartial` / `getUnassignedFirstRoundPlayers` の実装はそのまま FRP-IMPL-002 にコピーして利用する。`buildFirstRoundPartialSectionHtml` は構造・ロジックを再利用するが、disabled ボタンの旧 PR 番号参照（`title`・コメント）は新スライス体系に合わせて更新する。
+5. test_first_round_partial_001.js の V 系・U 系・P 系は再利用。S 系は `#startBtn` の挙動変更に合わせて修正する。
 
 ---
 
@@ -180,7 +184,7 @@ PR #225（START-UX-CONSOLIDATE-001）は 2026-06-17 に squash merge（`67e0b81`
 
 ### FRP-DESIGN-002 の最小スコープ
 
-- FRP-DESIGN-001 の設計内容を `67e0b81` 後の状態に更新した設計書
+- FRP-DESIGN-001 の設計内容を **#226 merge 後の orphan HEAD** を起点に更新した設計書（`67e0b81` は #226 作成時点の HEAD。#226 merge 後に orphan HEAD が前進するため、FRP-DESIGN-002 作成時に最新の orphan HEAD を確認する）
 - 差分: §2 背景更新 / base 参照更新 / `buildClassActionBarHtml` 文言更新 / HANDOFF.md 追記
 - 変更ファイル: `docs/specs/20260617_frp_design_002_first_round_partial.md`（新規）+ `HANDOFF.md`（追記）
 
@@ -192,7 +196,7 @@ FRP-DESIGN-001 §13 の「FRP-IMPL-001」相当。**選択者での append（FRP
 - `validatePartialStartableClass(classInfo, playersForClass)` — pure（#223 からコピー）
 - `startClassPartial(cls)` — mutate（#223 からコピー）
 - `getUnassignedFirstRoundPlayers(cls)` — 派生 pure（#223 からコピー）
-- `buildFirstRoundPartialSectionHtml(cls)` — 表示専用（#223 からコピー）
+- `buildFirstRoundPartialSectionHtml(cls)` — 表示専用（#223 から構造・ロジックを再利用。disabled ボタンの `title`・コメント内の旧 PR 番号参照は新スライス体系に合わせて更新する）
 - `buildClassActionBarHtml` に `startBtnPartial_` 追加（#225 後の文脈で追加）
 - `bindClassActionBarEvents` に `startBtnPartial_` bind 追加
 - `renderTournament` に `buildFirstRoundPartialSectionHtml` 挿入
@@ -200,7 +204,7 @@ FRP-DESIGN-001 §13 の「FRP-IMPL-001」相当。**選択者での append（FRP
 変更ファイル：
 - `shogi_v4.html`（純追加、約 +130 行）
 - `test/test_first_round_partial_002.js`（新規、#223 の test_first_round_partial_001.js を S 系修正して使用）
-- `test/run_tests.sh`（1 行追加）
+- `test/run_tests.sh`（#225 後の構成に合わせて、該当セクションへテストを登録する。単純な「1行追加」と決め打ちしない）
 - `HANDOFF.md`（追記）
 
 ### やらないこと（FRP-IMPL-002 スコープ外）
@@ -209,6 +213,14 @@ FRP-DESIGN-001 §13 の「FRP-IMPL-001」相当。**選択者での append（FRP
 - `buildFirstRoundPartialPairs` の実装（同上）
 - `buildCurrentPairingsHtml` の再生成ボタン制御（FRP-IMPL-003 以降）
 - 2 局目以降の逐次手合い
+
+#### 一時 UX について（FRP-IMPL-002 で意図的に許容するスライス状態）
+
+部分開始ボタン（`startBtnPartial_`）を押した直後は `started=true` かつ `pairings[cls]=[]` の状態になる。このとき「1局目 未割当参加者」一覧には全クラス員が表示される（まだ誰も対局に割り当てられていないため）。この一時 UX は FRP-IMPL-002 の意図したスライスであり許容するが、以下の点に注意する：
+
+- 運営者に「全員が未割当の部分開始中」であることが伝わる表示文言が必要
+- 「選択者で1局目に追加」ボタンは FRP-IMPL-002 の段階では disabled のまま（FRP-IMPL-003 で対応）
+- disabled ボタンの文言（「次 PR 対応」等）はリリース時に使用可能なアクションを示す文言へ更新する
 
 ---
 
@@ -221,7 +233,9 @@ FRP-DESIGN-001 §13 の「FRP-IMPL-001」相当。**選択者での append（FRP
   │
   ├── B: FRP-DESIGN-002（docs-only 設計更新）
   │       設計書 docs/specs/20260617_frp_design_002_first_round_partial.md を新規作成
-  │       base = 67e0b81（本 PR merge 後の新 HEAD）
+  │       base = #226 merge 後の orphan HEAD（#226 squash merge で orphan HEAD が前進する）
+  │         ※ 67e0b81 は #226 作成時点の base HEAD。次 PR 作成時に
+  │           `git rev-parse origin/chore/shogi-tour-apphq-003h-2d-orphan-clean-base` で確認する
   │
   └── C: FRP-IMPL-002（部分開始 + 未割当表示 土台）
           shogi_v4.html 純追加
@@ -255,7 +269,7 @@ FRP-DESIGN-001 §13 の「FRP-IMPL-001」相当。**選択者での append（FRP
 **mutate（P 系）**
 - `startClassPartial` 後: `started=true` / `pairings[cls]=[]` / `results[cls]=[]`
 - `startClassPartial` が `generatePairing` を呼ばないこと（started 後も pairings 空のまま）
-- 保存検証 warn が started=false 時に発火すること（stub localStorage で検証）
+- 保存検証 warn が **persisted 側で `started=true` が確認できない場合に発火すること**（初期状態 `started=false` 自体を warn と混同しない。save が成功すれば persisted で `started=true` が確認できるため warn は発火しない。stub localStorage で save が届かない状態を作って検証する）
 - unknown class では mutate しないこと
 
 **表示（D 系）**
@@ -266,10 +280,20 @@ FRP-DESIGN-001 §13 の「FRP-IMPL-001」相当。**選択者での append（FRP
 - 未割当リストの氏名が escapeHtml を通していること（XSS ガード）
 
 **回帰（S 系）: #225 後の挙動に合わせて更新**
-- `#startBtn` の click が `goToTournamentFromReg` を呼ぶこと（旧: `startTournament`）。assert は **`startTournamentForClass` が呼ばれないこと** を検証
-- `startBtnClass_A` の click が `startTournamentForClass('A')` を呼ぶこと（正規の開始導線）
+
+#223 の S 系テストには「旧 `#startBtn` 文言・旧 `startTournament` 経路の構造ガード」が含まれる。以下の方向で置き換える：
+
+- **旧前提（#225 前）**: `#startBtn` → `startTournament()` → `generatePairing()` → round 作成・`started` 更新
+- **新前提（#225 後）**: `#startBtn` → `goToTournamentFromReg()` → `save()` + タブ移動のみ（round 作成なし・`started` 更新なし）
+
+更新後の検証項目：
+- `#startBtn` 押下後、`state.pairings` / `state.results` / `classes[].started` / 互換 `state.started` が **変化しないこと**（開始系 state 不変）
+- `#startBtn` 押下後、`generatePairing()` / `startTournament()` / `startTournamentForClass()` が **呼ばれないこと**
+- `startBtnClass_A` の click が `startTournamentForClass('A')` を呼ぶこと（正規の開始導線は対局管理タブに集約）
 - `submitRound` の missing チェックが不変であること（全員在籍まで次ラウンドへ進めない）
 - `startBtnPartial_` を押しても `generatePairing` が呼ばれないこと
+
+「`goToTournamentFromReg` を呼ぶこと」だけでなく、**参加者登録タブ側で round 作成・`started` 更新が起きないこと**を確認する検証に置き換える。
 
 ### 8.2 再利用可能なテスト（#223 から）
 
@@ -279,8 +303,8 @@ FRP-DESIGN-001 §13 の「FRP-IMPL-001」相当。**選択者での append（FRP
 - P 系の大部分（`startClassPartial` mutate・`generatePairing` 非呼び出し検証）
 
 修正が必要なもの：
-- S 系の `#startBtn` 挙動チェック（`startTournament` 呼び出しの検証 → `goToTournamentFromReg` 呼び出しに変更）
-- `buildClassActionBarHtml` の assert で旧文言（「を開始」等）を参照しているもの → 新文言に更新
+- S 系の `#startBtn` 挙動チェック: 旧「`startTournament` を呼ぶ」→ 新「nav-only / state 不変（`startTournamentForClass` / `generatePairing` を呼ばない・`pairings` / `results` / `started` が変化しない）」の検証へ置換
+- `buildClassActionBarHtml` の assert で旧文言（「を開始」等）を参照しているもの → 新文言（「全員で1局目を開始」等）に更新
 
 ---
 
@@ -325,12 +349,18 @@ FRP 実装時に特に注意が必要な危険箇所を列挙する。
 
 | PR | 推奨処置 | タイミング | コメント文言（案） |
 |---|---|---|---|
-| **#222 FRP-DESIGN-001** | **close** | FRP-DESIGN-002 PR 作成後 | 「POST-225-FRP-REBASE-INVENTORY-001 (#226 相当) による棚卸し結果、#225 merge 後の base `67e0b81` を起点に FRP-DESIGN-002 として新 PR を作成しました。本 PR の設計内容（§3-§14）は 95% 有効で FRP-DESIGN-002 に引き継ぎます。」 |
-| **#223 FRP-IMPL-001** | **close** | FRP-IMPL-002 PR 作成後 | 「POST-225-FRP-REBASE-INVENTORY-001 による棚卸し結果、#225 merge 後の base `67e0b81` を起点に FRP-IMPL-002 として新 PR を作成しました。純粋関数（validatePartialStartableClass/startClassPartial/getUnassignedFirstRoundPlayers/buildFirstRoundPartialSectionHtml）はそのまま再利用します。」 |
+| **#222 FRP-DESIGN-001** | **close** | FRP-DESIGN-002 PR 作成後（後継 PR リンクが確定してから） | 「POST-225-FRP-REBASE-INVENTORY-001（PR #226）による棚卸し結果、#226 merge 後の orphan HEAD を起点に FRP-DESIGN-002 として新 PR を作成しました: [FRP-DESIGN-002 PR リンク]。本 PR の設計内容（§3-§14）は 95% 有効で引き継ぎ済みです。」 |
+| **#223 FRP-IMPL-001** | **close** | FRP-IMPL-002 PR 作成後（後継 PR リンクが確定してから） | 「POST-225-FRP-REBASE-INVENTORY-001（PR #226）による棚卸し結果、#226 merge 後の orphan HEAD を起点に FRP-IMPL-002 として新 PR を作成しました: [FRP-IMPL-002 PR リンク]。validatePartialStartableClass/startClassPartial/getUnassignedFirstRoundPlayers は再利用済み。buildFirstRoundPartialSectionHtml は構造再利用・旧 PR 番号参照を更新済み。」 |
 
 **close を「そのまま」ではなく「superseded コメント付き close」とする理由**：
 - 後から見たとき、なぜ close したかが分かる（design decision の透明性）。
 - FRP-IMPL-002 の PR で「#223 から関数をコピー」と書けるため、知識の継承が明確になる。
+
+**close の前提条件（共通）**：
+- 後継 PR（FRP-DESIGN-002 / FRP-IMPL-002）が実際に存在すること
+- close コメントに後継 PR の番号とリンクを含めること
+- 後継 PR が存在しない段階では close しない（「後で作る予定」では不十分）
+- close は人間の明示指示後に実施する（Claude が自律的に close しない）
 
 ---
 
