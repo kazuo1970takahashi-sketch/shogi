@@ -74,12 +74,29 @@
 - **#223 close** は **FRP-IMPL-002 PR リンク確定後かつ人間の明示指示後**に別タスクで実施（superseded コメント＋後継リンク。本 PR では行わない）。
 - **次候補 = FRP-IMPL-002**（部分開始の土台＋未割当者一覧表示＝表示のみ・append は disabled / nav-only・state 不変の回帰検査。append 作成は FRP-IMPL-003、再生成ボタン制御・保存堅牢化は FRP-IMPL-004）。base = FRP-DESIGN-002 merge 後の新 HEAD。
 
+## 実装: FRP-IMPL-002（1局目部分手合いの土台 + 未割当一覧表示 / append は次スライス）
+
+- **PR #227（FRP-DESIGN-002）merge 完了**（squash `b32720c`、parent `021faa8`=#226）。**orphan HEAD = `b32720cbcb3696b1939370bacbae1f4ea45cea03`**（short `b32720c`）。main `832bc5a` 不変・production `9693a83` 不変。
+- **FRP-IMPL-002 を実装**: #227 merge 後の orphan HEAD `b32720c` を起点に、設計書 `docs/specs/20260617_frp_design_002_post_225_partial_first_round.md` に従い**部分開始の土台＋1局目未割当者一覧の「表示」まで**を実装した。branch = `feature/frp-impl-002-unassigned-list-foundation`（base=orphan `b32720c`）。Draft PR・**未 merge**。
+- **新規 helper（既存関数の本体は無改変）**: `validatePartialStartableClass`（pure・偶数不要）/ `startClassPartial`（started=true・pairings/results 空・`generatePairing`/`startTournamentForClass`/`applyStartForCandidates` 非流用・SAVE-FRP-001 検証・unknown class 拒否）/ `getUnassignedFirstRoundPlayers`（派生・非保存・results 非空で空・entry_no 昇順・削除者非混入）/ `buildFirstRoundPartialSectionHtml`（表示専用・`isClassStarted` かつ results 空 かつ 未割当>0 のみ・escapeHtml）。
+- **既存への純追加**: `buildClassActionBarHtml` に部分開始ボタン `startBtnPartial_{cls}`（#225 偶数ブロックの後ろ・`!classStarted && players.length>=1`・偶数/奇数問わず）／ `bindClassActionBarEvents` で `startBtnPartial_` を `startClassPartial` に bind（`frpAddBtn_` は disabled のため bind しない）／ `renderTournament` に `buildFirstRoundPartialSectionHtml` を 1 行挿入。既存 `startBtnClass_`/リセット/`validateStartableClass`/`generatePairing`/`submitRound` は無改変。
+- **append（選択者で対局作成）は未実装＝次スライス FRP-IMPL-003**: 未割当チェックボックスと「対局の作成」ボタン `frpAddBtn_{cls}` は **disabled**（イベント未登録）。`buildFirstRoundPartialPairs`/`appendFirstRoundPairs` は未定義。
+- **UI 文言（完成形に見せない）**: 部分開始ボタン「このクラスを部分開始（未割当者を表示）」／ 見出し「1局目 未割当参加者」／ 説明「…今回は未割当者の確認のみで、選択して対局を作成する機能は次スライスで対応予定です。」／ 追加ボタン「対局の作成は次スライスで対応予定」(disabled)。**避けた文言**=「選んだ人から1局目を開始」「選択者で対局作成」「次のPR（FRP-IMPL-002）」「FRP-IMPL-001」（実測 0 件）。
+- **#225 後 nav-only / state 不変の回帰**を新テストで担保: `goToTournamentFromReg` は対局管理タブへ移動するだけ（round 作成なし・started 不変・pairings/results 不変・`generatePairing`/`startTournamentForClass`/`startClassPartial` 非呼出）。
+- **テスト**: 新規 `test/test_frp_impl_002.js`（79 assert・架空データのみ）を追加し `run_tests.sh` の START-UX-CONSOLIDATE-001 ブロックの後に登録。`bash test/run_tests.sh shogi_v4.html` = **PASS=63 / FAIL=1 / WARN=35**（baseline `b32720c` = 62/1/35。**+1 PASS・新規 FAIL/WARN 0**。FAIL=1 は既存 `data_*` 環境要因、WARN=35 は未コミット test 群＝環境要因）。`test_start_ux_consolidate_001`(88)/`test_start_001`(41) は無改変 PASS 維持。詳細 = `docs/notes/20260617_frp_impl_002_result.md`。
+- **変更ファイル**: `shogi_v4.html`（+140）/ `test/run_tests.sh`（+18）/ `test/test_frp_impl_002.js`（新規）/ `HANDOFF.md`（追記）/ `docs/notes/20260617_frp_impl_002_result.md`（新規）。`index.html` / `.github`（workflow）/ `package*` は無変更。
+- **PR #223 は一切操作していない**（OPEN/Draft、head `b092b5d` のまま。rebase/merge/close/comment/Ready化なし）。**#222 再 open なし**。**#227 追加修正なし**。
+- **次候補 = FRP-IMPL-003**（選択者だけで append 作成＝`buildFirstRoundPartialPairs`/`appendFirstRoundPairs`・選択チェック＋プレビュー＋確定・disabled 解除）。その後 FRP-IMPL-004（保存復元・結果保護・再生成ボタン制御強化）。base = FRP-IMPL-002 merge 後の新 HEAD。
+
 ## このターンの変更有無（正確な記録）
 
-- **production / main / orphan clean base への直接変更なし**（いずれの HEAD も前進・改変していない。orphan = `021faa8` のまま）。
-- 変更は本 docs-only ブランチ `docs/frp-design-002-post-225-partial-first-round`（base=orphan `021faa8`）上の **2 ファイルのみ**:
-  - `docs/specs/20260617_frp_design_002_post_225_partial_first_round.md`（新規）
+- **production / main / orphan clean base への直接変更なし**（いずれの HEAD も前進・改変していない。orphan = `b32720c` のまま）。
+- 変更は実装ブランチ `feature/frp-impl-002-unassigned-list-foundation`（base=orphan `b32720c`）上の **5 ファイル**:
+  - `shogi_v4.html`（部分開始 helper + 未割当一覧 + action bar 部分開始ボタン・純追加）
+  - `test/run_tests.sh`（FRP-IMPL-002 ブロック追加）
+  - `test/test_frp_impl_002.js`（新規・79 assert）
   - `HANDOFF.md`（本ファイル・追記）
-- このターン: **FRP-DESIGN-002（#225 後の 1局目部分手合い 再設計）を docs-only で追加**。`shogi_v4.html` / `index.html` / `test/` / `.github/`（workflow）/ `package*.json` は無変更。
-- **#222 / #223 は変更していない**（close / comment / rebase / adopt / Ready化 / merge いずれも未実施）。**#226 への追加修正もしていない**。
-- Draft PR。Ready 化 / merge / deploy / publish / release は未実施。branch 削除なし。後続タスク（FRP-IMPL-002）未着手。memory 更新は本ターン外。
+  - `docs/notes/20260617_frp_impl_002_result.md`（新規・実装結果メモ）
+- このターン: **FRP-IMPL-002（部分開始の土台＋1局目未割当一覧表示・append は disabled）を実装**。`index.html` / `.github/`（workflow）/ `package*.json` は無変更。
+- **#222 / #223 は変更していない**（close / comment / rebase / adopt / Ready化 / merge いずれも未実施）。**#227 への追加修正もしていない**。
+- Draft PR。Ready 化 / merge / deploy / publish / release は未実施。branch 削除なし。後続タスク（FRP-IMPL-003 = append 作成）未着手。memory 更新は本ターン外。
