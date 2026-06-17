@@ -20,7 +20,7 @@
 |---|---|
 | production | `9693a83079b3dbc4dec74a8c03b42b34575c221f`（#221 rollback 後。#220 誤実装は revert 済み。#213 ふりがな ruby / #214 大会履歴 Step1 は残存） |
 | main | `832bc5a77c699b198bda64eed3146d03ecf0fa96`（今回対象外） |
-| orphan clean base | `3b86edb2645eddbcc55ade617ed7b6145fa7b1ae`（#218/#219 の START 実装は orphan 側に残存。production からは #221 で revert 済） |
+| orphan clean base | `021faa885f144e3a2de63270f7217541f78a9a3a`（#225 開始導線集約 / #226 FRP 棚卸し merge 後の HEAD。#218/#219 の START 実装は orphan 側に残存・FRP とは別物。production からは #221 で revert 済） |
 
 ## 進行中: START-UX-CONSOLIDATE-001（開始導線集約 — 設計）
 
@@ -62,12 +62,24 @@
 - **次候補**: **FRP-DESIGN-002**（#226 merge 後の orphan HEAD 起点 docs-only 設計書更新）→ **FRP-IMPL-002**（部分開始 + 未割当一覧表示 土台）。詳細は `docs/specs/20260617_post_225_frp_rebase_inventory_001.md`。
 - **#222/#223 close**: 後継 PR（FRP-DESIGN-002 / FRP-IMPL-002）リンク確定後かつ人間の明示指示後に行う。#226 merge 直後に即 close しない。
 
+## FRP-DESIGN-002（1局目部分手合い 設計 — #225 後 再設計 / docs-only）
+
+- **PR #226 merge 完了**（POST-225-FRP-REBASE-INVENTORY-001、squash `021faa8`）。**orphan HEAD = `021faa885f144e3a2de63270f7217541f78a9a3a`**（short `021faa8`、parent `67e0b81`=#225）。main `832bc5a` 不変・production `9693a83` 不変。
+- **FRP-DESIGN-002 を開始**: #226 merge 後の orphan HEAD `021faa8` を起点に、**#225 後の開始 UX（受付タブから開始操作を外し対局管理タブへ集約）を前提とした 1局目部分手合い（FRP: First Round Partial）の新設計書**を docs-only で追加した。設計書 = `docs/specs/20260617_frp_design_002_post_225_partial_first_round.md`。
+- **本書は #222（FRP-DESIGN-001）を supersede する設計**（#225 前提ズレのため作り直し）だが、設計知見は 95% 引き継ぎ。更新点 = base（`3b86edb`→`021faa8`）/ 背景（#225 で受付タブ開始導線撤去済みを反映）/ `buildClassActionBarHtml` 文言（「を開始」→「全員で1局目を開始」）と部分開始ボタンの併置ロジック / HANDOFF.md（新規作成→追記）/ スライス再採番。
+- **FRP 操作入口 = 対局管理タブのクラス別セクション**。受付タブは #225 で nav-only（`goToTournamentFromReg` = save+タブ移動のみ）。FRP は受付タブに round 作成・`started` 更新・pairing 生成を持ち込まない。旧 `#startBtn` 一括開始・旧 START-003 受付ボタン前提は引き継がない。
+- **再利用知見（#223 から）**: `validatePartialStartableClass` / `startClassPartial` / `getUnassignedFirstRoundPlayers` はそのまま再利用可。`buildFirstRoundPartialSectionHtml` は**ロジック再利用可・文言/コメント/PR 番号参照は更新必須**（disabled ボタンの「次のPR（FRP-IMPL-002）」等を新スライス体系=append は FRP-IMPL-003 に更新）。
+- **#222/#223 は #225/#226 前提ズレのため直接続行禁止**（base stale・`buildClassActionBarHtml` 文脈 conflict・HANDOFF.md 新規作成 vs 追記の差）。本 PR では **#222/#223 を一切操作していない**（close / comment / rebase / Ready化 / merge なし）。
+- **#222 close** は **FRP-DESIGN-002 PR リンク確定後かつ人間の明示指示後**に別タスクで実施（superseded コメント＋後継リンク。本 PR では行わない）。
+- **#223 close** は **FRP-IMPL-002 PR リンク確定後かつ人間の明示指示後**に別タスクで実施（superseded コメント＋後継リンク。本 PR では行わない）。
+- **次候補 = FRP-IMPL-002**（部分開始の土台＋未割当者一覧表示＝表示のみ・append は disabled / nav-only・state 不変の回帰検査。append 作成は FRP-IMPL-003、再生成ボタン制御・保存堅牢化は FRP-IMPL-004）。base = FRP-DESIGN-002 merge 後の新 HEAD。
+
 ## このターンの変更有無（正確な記録）
 
-- **production / main / orphan clean base への直接変更なし**（いずれの HEAD も前進・改変していない）。
-- 変更は本 docs-only ブランチ `docs/start-ux-consolidate-001-design`（base=orphan `3b86edb`）上の 2 ファイルのみ:
-  - `HANDOFF.md`（本ファイル）
-  - `docs/specs/20260617_start_ux_consolidate_001_design.md`
-- 直近ターン: PR #224 の **Must Fix 1–5 を docs に追記**（review-only 後）。`shogi_v4.html` / `index.html` / `test/` / `.github/`（workflow）/ `package*.json` は無変更。
-- #222 / #223 は変更していない（#223 の rebase/adopt/close も行っていない）。
-- Draft PR #224。Ready 化 / merge / deploy / publish / release は未実施。branch 削除なし。memory 更新なし。
+- **production / main / orphan clean base への直接変更なし**（いずれの HEAD も前進・改変していない。orphan = `021faa8` のまま）。
+- 変更は本 docs-only ブランチ `docs/frp-design-002-post-225-partial-first-round`（base=orphan `021faa8`）上の **2 ファイルのみ**:
+  - `docs/specs/20260617_frp_design_002_post_225_partial_first_round.md`（新規）
+  - `HANDOFF.md`（本ファイル・追記）
+- このターン: **FRP-DESIGN-002（#225 後の 1局目部分手合い 再設計）を docs-only で追加**。`shogi_v4.html` / `index.html` / `test/` / `.github/`（workflow）/ `package*.json` は無変更。
+- **#222 / #223 は変更していない**（close / comment / rebase / adopt / Ready化 / merge いずれも未実施）。**#226 への追加修正もしていない**。
+- Draft PR。Ready 化 / merge / deploy / publish / release は未実施。branch 削除なし。後続タスク（FRP-IMPL-002）未着手。memory 更新は本ターン外。
