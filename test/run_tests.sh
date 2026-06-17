@@ -1113,6 +1113,25 @@ else
 fi
 
 # ============================================
+# FRP-IMPL-004A FRP append 手合いの保存復元 reload 不変条件
+#   保存スキーマを増やさず、append 済み pairings / leftover 派生 / match-level メタ情報非保存 /
+#   A-B 独立を normalizeState(JSON.parse(saved)) と actual load()/readPersistedState() 経路で固定する。
+#   再生成ボタン gate（004B）/ UI 文言調整（004C）は対象外。
+# ============================================
+echo ""
+echo "【FRP-IMPL-004A 保存復元 reload 不変条件（append・leftover 派生・schema 非拡張）】"
+if [ -f "$SCRIPT_DIR/test_frp_impl_004.js" ]; then
+  if node "$SCRIPT_DIR/test_frp_impl_004.js" "$TARGET" > /tmp/frp_impl_004_out.log 2>&1; then
+    ok "FRP-IMPL-004A テスト 全PASS ($(tail -1 /tmp/frp_impl_004_out.log))"
+  else
+    ng "FRP-IMPL-004A テスト 失敗"
+    cat /tmp/frp_impl_004_out.log
+  fi
+else
+  warn "test_frp_impl_004.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
