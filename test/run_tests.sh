@@ -1048,17 +1048,20 @@ else
 fi
 
 # ============================================
+# SHOGI-TOUR-START-003（受付タブのクラス別「1局目を作成」導線 / reg-class-start）は
+#   START-UX-CONSOLIDATE-001 で撤去したため、test_start_003.js の登録を解除した。
+#   撤去の確認は下記 test_start_ux_consolidate_001.js が担保する。
 echo ""
-echo "【SHOGI-TOUR-START-003 クラス別「1局目を作成」導線】"
-if [ -f "$SCRIPT_DIR/test_start_003.js" ]; then
-  if node "$SCRIPT_DIR/test_start_003.js" "$TARGET" > /tmp/start_003_out.log 2>&1; then
-    ok "SHOGI-TOUR-START-003 テスト 全PASS ($(tail -1 /tmp/start_003_out.log))"
+echo "【START-UX-CONSOLIDATE-001 開始導線の対局管理タブ集約（#startBtn ナビ化 / reg-class-start 撤去）】"
+if [ -f "$SCRIPT_DIR/test_start_ux_consolidate_001.js" ]; then
+  if node "$SCRIPT_DIR/test_start_ux_consolidate_001.js" "$TARGET" > /tmp/start_ux_consolidate_001_out.log 2>&1; then
+    ok "START-UX-CONSOLIDATE-001 テスト 全PASS ($(tail -1 /tmp/start_ux_consolidate_001_out.log))"
   else
-    ng "SHOGI-TOUR-START-003 テスト 失敗"
-    cat /tmp/start_003_out.log
+    ng "START-UX-CONSOLIDATE-001 テスト 失敗"
+    cat /tmp/start_ux_consolidate_001_out.log
   fi
 else
-  warn "test_start_003.js が見つからない"
+  warn "test_start_ux_consolidate_001.js が見つからない"
 fi
 
 # ============================================
