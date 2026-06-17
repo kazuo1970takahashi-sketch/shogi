@@ -38,14 +38,8 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .class-readiness-warn{background:#faeeda;color:#633806;border-color:#EF9F27}
 .class-readiness-started{background:#e8f0f8;color:#1F3864;border-color:#9DB7D5}
 .class-readiness-empty{background:#f2f2f2;color:#808080;border-color:#d9d9d9}
-/* SHOGI-TOUR-START-003: 受付クラス別「1局目を作成」ボタン（readiness バッジの直下）。
-   既存 startTournamentForClass(classId) を呼ぶ薄い導線。開始可否は validateStartableClass に
-   一元化（設計メモ §6）し、本ボタンは表示/活性のみを派生表示する。
-   ok=活性（btn-primary 紺）／odd・too-few=非活性（灰・readiness バッジが理由を示す）／
-   skip-already-started=非活性「開始済み」（紺系・情報表示）／skip-empty=非表示。 */
-.reg-class-start{display:inline-block;margin:0 0 10px}
-.reg-class-start:disabled{background:#e9edf2;color:#9aa3ad;border-color:#cdd4dc;cursor:not-allowed}
-.reg-class-start-started:disabled{background:#e8f0f8;color:#1F3864;border-color:#9DB7D5;cursor:default}
+/* SHOGI-TOUR-START-003 の受付クラス別「1局目を作成」ボタン用 CSS（.reg-class-start*）は
+   START-UX-CONSOLIDATE-001 で撤去した（受付タブから開始導線を外し、開始は対局管理タブへ集約）。 */
 .separator{border:none;border-top:1px solid #eee;margin:12px 0}
 .player-row{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#f8fbff;border:1px solid #d0e4f7;border-radius:8px;margin-bottom:6px;flex-wrap:wrap}
 .player-row-main{display:flex;flex:1;gap:6px;align-items:center;flex-wrap:wrap;min-width:0}
@@ -246,10 +240,9 @@ body.sb-active{overflow:hidden}
             <h3 style="margin-bottom:0">Aクラス <span id="a-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
             <button type="button" id="bulkEditA" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
           </div>
-          <!-- SHOGI-TOUR-START-001: クラス別 開始 readiness バッジ（renderRegList が validateStartableClass から導出して描画）。初期は非表示。 -->
+          <!-- SHOGI-TOUR-START-001: クラス別 開始 readiness バッジ（renderRegList が validateStartableClass から導出して描画・読み取り専用の情報表示）。初期は非表示。 -->
+          <!-- START-UX-CONSOLIDATE-001: 受付タブのクラス別「1局目を作成」ボタン（reg-class-start）は撤去。開始は対局管理タブへ集約。 -->
           <div id="a-readiness" class="class-readiness" style="display:none"></div>
-          <!-- SHOGI-TOUR-START-003: クラス別「1局目を作成」ボタン。renderRegList が validateStartableClass から表示/活性を導出。押下で既存 startTournamentForClass('A')。初期は非表示。 -->
-          <button type="button" id="a-start-btn" class="btn-primary btn-sm reg-class-start" style="display:none"></button>
           <div id="a-list"></div>
         </div>
         <div data-class-id="B">
@@ -257,18 +250,19 @@ body.sb-active{overflow:hidden}
             <h3 style="margin-bottom:0">Bクラス <span id="b-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
             <button type="button" id="bulkEditB" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
           </div>
-          <!-- SHOGI-TOUR-START-001: クラス別 開始 readiness バッジ（renderRegList が validateStartableClass から導出して描画）。初期は非表示。 -->
+          <!-- SHOGI-TOUR-START-001: クラス別 開始 readiness バッジ（renderRegList が validateStartableClass から導出して描画・読み取り専用の情報表示）。初期は非表示。 -->
+          <!-- START-UX-CONSOLIDATE-001: 受付タブのクラス別「1局目を作成」ボタン（reg-class-start）は撤去。開始は対局管理タブへ集約。 -->
           <div id="b-readiness" class="class-readiness" style="display:none"></div>
-          <!-- SHOGI-TOUR-START-003: クラス別「1局目を作成」ボタン。renderRegList が validateStartableClass から表示/活性を導出。押下で既存 startTournamentForClass('B')。初期は非表示。 -->
-          <button type="button" id="b-start-btn" class="btn-primary btn-sm reg-class-start" style="display:none"></button>
           <div id="b-list"></div>
         </div>
       </div>
       <div id="fee-summary" style="margin-top:12px"></div>
       <hr class="separator">
       <div class="flex">
-        <button type="button" class="btn-primary" id="startBtn">登録完了・対局開始</button>
-        <span style="font-size:12px;color:#888">※奇数の場合は運営者を追加してから開始</span>
+        <!-- START-UX-CONSOLIDATE-001 (設計 §5): このボタンは「対局管理へ進むナビゲーション」。開始系の副作用は持たない。
+             id="startBtn" は短期互換のため維持するが、意味は「開始」ではなく「対局管理タブへ移動」。開始は対局管理タブへ集約。 -->
+        <button type="button" class="btn-primary" id="startBtn">登録内容を確認して対局管理へ</button>
+        <span style="font-size:12px;color:#888">※対局の開始は「対局管理」タブで行います</span>
       </div>
     </div>
   </div>
@@ -3906,14 +3900,8 @@ function regClassReadinessId(classId){
   if(classId==='B')return 'b-readiness';
   return 'class-readiness-'+classId;
 }
-// SHOGI-TOUR-START-003: 受付クラス別「1局目を作成」ボタンの DOM id。
-//   A/B は静的 DOM の id（a-start-btn/b-start-btn）を温存、C+ は reg-start-btn-{classId}。
-//   tournament タブの後追い開始ボタン（startBtnClass_{cls}）とは別 id（受付タブ専用・重複 id 回避）。
-function regClassStartBtnId(classId){
-  if(classId==='A')return 'a-start-btn';
-  if(classId==='B')return 'b-start-btn';
-  return 'reg-start-btn-'+classId;
-}
+// START-UX-CONSOLIDATE-001: regClassStartBtnId（受付タブのクラス別開始ボタン id / START-003）は撤去した。
+//   受付タブから開始導線を外し、開始は対局管理タブ（startBtnClass_{cls} → startTournamentForClass(cls)）へ集約。
 
 // ROUND-CLASS-START-006 (spec §11.3 系の reg 版):
 //   reg-class-grid 内に C クラス以降の section を動的補完する。
@@ -3961,14 +3949,9 @@ function ensureClassRegDomNodes(){
     readiness.className='class-readiness';
     if(readiness.style)readiness.style.display='none';
     section.appendChild(readiness);
-    // SHOGI-TOUR-START-003: readiness バッジ直下に「1局目を作成」ボタンを生成（A/B 静的 DOM と同位置）。
-    //   初期は非表示。renderRegList が validateStartableClass から表示/活性を導出して描画する。
-    var startBtn=document.createElement('button');
-    startBtn.type='button';
-    startBtn.id=regClassStartBtnId(c.id);
-    startBtn.className='btn-primary btn-sm reg-class-start';
-    if(startBtn.style)startBtn.style.display='none';
-    section.appendChild(startBtn);
+    // START-UX-CONSOLIDATE-001: 受付タブのクラス別「1局目を作成」ボタン（reg-class-start / START-003）の
+    //   動的生成は撤去した。開始導線は対局管理タブ（startBtnClass_{cls} → startTournamentForClass(cls)）へ集約。
+    //   readiness バッジ（上記）は読み取り専用の情報表示として残置する。
     // list
     var list=document.createElement('div');
     list.id=regClassListId(c.id);
@@ -4242,8 +4225,8 @@ function renderRegList(){
   // ROUND-CLASS-START-007 (Codex Should Fix S3): C+ 動的セクションの bulkEdit ボタンを bind。
   //   A/B 静的ボタンは bindRegistrationEvents 起動時に bind 済（idempotent 設計、重複 bind なし）。
   bindClassBulkEditHandlers();
-  // SHOGI-TOUR-START-003: クラス別「1局目を作成」ボタンの click を bind（idempotent・A/B 静的＋C+ 動的）。
-  bindClassStartHandlers();
+  // START-UX-CONSOLIDATE-001: 受付タブのクラス別開始ボタン bind（bindClassStartHandlers / START-003）は撤去。
+  //   受付タブに開始 handler を残さない（開始は対局管理タブへ集約）。readiness 表示は下記で描画（読み取り専用）。
   var clsList=getRegistrationClassList();
   var allCount=0;
   for(var ci=0;ci<clsList.length;ci++){
@@ -4262,9 +4245,8 @@ function renderRegList(){
     // SHOGI-TOUR-START-001: クラス別 開始 readiness バッジ（派生値・保存しない）。
     //   開始可否は validateStartableClass に委譲（§6）。clsList[ci]={id,name,started} を classInfo として渡す。
     renderClassReadiness(cls,clsList[ci],players);
-    // SHOGI-TOUR-START-003: クラス別「1局目を作成」ボタンの表示/活性（派生値・保存しない）。
-    //   開始可否は同じく validateStartableClass に委譲（§6）。押下で既存 startTournamentForClass(cls)。
-    renderClassStartButton(cls,clsList[ci],players);
+    // START-UX-CONSOLIDATE-001: クラス別「1局目を作成」ボタンの描画（renderClassStartButton / START-003）は撤去。
+    //   受付タブには開始コントロールを置かない。開始は対局管理タブ（startBtnClass_{cls}）に集約。
   }
   var total=calcTotal();
   var feeEl=document.getElementById('fee-summary');
@@ -5579,99 +5561,17 @@ function renderClassReadiness(classId,classInfo,players){
   if(el.style)el.style.display=d.label?'inline-block':'none';
 }
 
-// SHOGI-TOUR-START-003 (設計メモ §4.3 / §6):
-//   受付クラス別「1局目を作成」ボタンの表示/活性を、validateStartableClass の kind から写像する純関数。
-//   開始可否の判定（2名以上・偶数・未開始）は validateStartableClass に一元化されており、
-//   この関数は判定結果(kind)を「ボタンの見せ方」へ写像するだけ（独自の開始判定は再実装しない＝§6 自己制約）。
-//   - 入力: kind = validateStartableClass(...).kind ／ classInfo = {id,name,started}（ラベルのクラス名に使用）
-//   - 出力: {show,enabled,tone,label}（保存しない派生値・副作用なし）
-//     ok→活性「<className>の1局目を作成」／ odd・too-few→非活性（同ラベル・readiness バッジが理由表示）／
-//     skip-already-started→非活性「開始済み」／ skip-empty・未知→非表示（参加者未登録のクラスにボタンを出さない）
-function describeClassStartButton(kind,classInfo){
-  var name=(classInfo&&typeof classInfo.name==='string'&&classInfo.name)?classInfo.name:(classInfo&&classInfo.id?classInfo.id+'クラス':'クラス');
-  switch(kind){
-    case 'ok':
-      return {show:true, enabled:true,  tone:'ready',   label:name+'の1局目を作成'};
-    case 'odd':
-    case 'too-few':
-      return {show:true, enabled:false, tone:'warn',    label:name+'の1局目を作成'};
-    case 'skip-already-started':
-      return {show:true, enabled:false, tone:'started', label:'開始済み'};
-    default: // skip-empty / 未知 kind：参加者がいない/不明 → ボタンを出さない（readiness バッジが状態を示す）
-      return {show:false,enabled:false, tone:'empty',   label:''};
-  }
-}
-
-// SHOGI-TOUR-START-003 (設計メモ §4.4):
-//   クラス別開始前の確認ダイアログ文言を組む純関数（誤開始防止）。クラス名・人数を出して
-//   別クラス/未確定クラスの誤開始を防ぐ。短く現場向け（番号呼称運用 C6 を壊さない）。
-function buildClassStartConfirmMessage(classInfo,count){
-  var name=(classInfo&&typeof classInfo.name==='string'&&classInfo.name)?classInfo.name:(classInfo&&classInfo.id?classInfo.id+'クラス':'クラス');
-  var n=(typeof count==='number'&&count>=0)?count:0;
-  return name+'（'+n+'名）の1局目を作成します。よろしいですか？';
-}
-
-// SHOGI-TOUR-START-003 (設計メモ §4.3):
-//   受付クラス別「1局目を作成」ボタンを描画する（表示専用・state 不変・保存しない）。
-//   開始可否は validateStartableClass に委譲し（§6）、表示/活性は describeClassStartButton で写像する。
-//   textContent でラベルを入れるため innerHTML 連結による XSS 経路を増やさない。
-//   ボタン要素が無い場合は no-op（ensureClassRegDomNodes 未生成 / 破損 DOM でも安全）。
-function renderClassStartButton(classId,classInfo,players){
-  var el=document.getElementById(regClassStartBtnId(classId));
-  if(!el)return;
-  var arr=Array.isArray(players)?players:[];
-  var r=validateStartableClass(classInfo,arr);
-  var d=describeClassStartButton(r.kind,classInfo);
-  if(!d.show){
-    el.textContent='';
-    el.disabled=true;
-    if(el.style)el.style.display='none';
-    return;
-  }
-  el.textContent=d.label;
-  el.disabled=!d.enabled;
-  el.className='btn-primary btn-sm reg-class-start reg-class-start-'+d.tone;
-  if(el.style)el.style.display='inline-block';
-}
-
-// SHOGI-TOUR-START-003 (設計メモ §4.3 / §4.4):
-//   受付クラス別「1局目を作成」ボタンの click ハンドラ。新しい開始ロジックは作らず、
-//   押下前に要約付き確認（buildClassStartConfirmMessage）を出してから既存
-//   startTournamentForClass(classId) を呼ぶだけ。開始可否の判定・エラー表示・保存検証・タブ遷移は
-//   すべて startTournamentForClass 側に委譲する（判定意味を変えない＝§6）。
-//   ボタンは ok のときだけ活性なので通常 ok でのみ発火するが、state が直前に変わった場合（別タブ等）に
-//   備え、ok 以外は確認を出さず startTournamentForClass の既存 guard（showMsg/alert）に委ねる。
-function onClickClassStart(classId){
-  var classInfo=null;
-  if(Array.isArray(state.classes)){
-    for(var i=0;i<state.classes.length;i++){
-      if(state.classes[i]&&state.classes[i].id===classId){classInfo=state.classes[i];break;}
-    }
-  }
-  var players=(state.players&&state.players[classId])||[];
-  var r=validateStartableClass(classInfo,players);
-  if(r.kind!=='ok'){startTournamentForClass(classId);return;} // 既存 guard がメッセージ表示（新しい握りつぶしを作らない）
-  if(!confirm(buildClassStartConfirmMessage(classInfo,players.length)))return;
-  startTournamentForClass(classId);
-}
-
-// SHOGI-TOUR-START-003:
-//   受付クラス別開始ボタンの click ハンドラを classes-driven に bind する。
-//   bindClassBulkEditHandlers と同じ作法（idempotent・data 属性で重複 bind 防止）。
-//   A/B 静的ボタン（a-start-btn/b-start-btn）も C+ 動的ボタン（reg-start-btn-{classId}）も同経路で bind。
-//   呼出契機: renderRegList（ensureClassRegDomNodes が C+ DOM を生成した直後）。
-function bindClassStartHandlers(){
-  var classes=getRegistrationClassList();
-  for(var i=0;i<classes.length;i++){
-    var c=classes[i];
-    if(!c||!isSafeClassId(c.id))continue;
-    var btn=document.getElementById(regClassStartBtnId(c.id));
-    if(!btn)continue;
-    if(btn.getAttribute&&btn.getAttribute('data-regstart-bound')==='true')continue;
-    btn.addEventListener('click',(function(cid){return function(){onClickClassStart(cid);};})(c.id));
-    if(btn.setAttribute)btn.setAttribute('data-regstart-bound','true');
-  }
-}
+// START-UX-CONSOLIDATE-001: 受付タブのクラス別「1局目を作成」ボタン（reg-class-start / START-003）の
+//   helper 群を撤去した:
+//     - describeClassStartButton（kind→ボタン表示/活性の写像）
+//     - buildClassStartConfirmMessage（開始前確認文言）
+//     - renderClassStartButton（受付タブのクラス別開始ボタン描画）
+//     - onClickClassStart（受付タブから startTournamentForClass を呼ぶ click ハンドラ）
+//     - bindClassStartHandlers（受付タブ開始ボタンの click bind）
+//   受付タブには開始コントロール・開始 handler・startTournamentForClass 呼び出しを残さない。
+//   開始は対局管理タブ（startBtnClass_{cls} → startTournamentForClass(cls)）へ集約する（設計 §5.5 / §7）。
+//   読み取り専用の readiness 表示（describeClassReadiness / renderClassReadiness）は残置する。
+//   validateStartableClass の既存判定（2名以上・偶数）は不変・流用しない。
 
 // ROUND-CLASS-START-004 (spec §13.2.1):
 //   bulk で「errors 0 件 + candidates 0 件」のとき、skip 内訳を見て文言を分ける pure helper。
@@ -5853,8 +5753,25 @@ function verifyStartSavedForCandidates(candidates){
   }
 }
 
+// START-UX-CONSOLIDATE-001 (設計 §5):
+//   受付タブのプライマリボタン #startBtn の click ハンドラ。「対局管理へ進むナビゲーション」であり、
+//   開始系の副作用は一切持たない（開始は対局管理タブ §7 に集約）。
+//   - 受付入力（参加者追加・名前編集・A/B クラス振り分け・会費区分）は addPlayer / 各編集ハンドラが
+//     autosave 済みだが、タブ移動で取りこぼさないよう現 state を save() してから対局管理タブへ移動する。
+//     save() は state の JSON 直列化のみで、開始系 state（pairings/results/classes[].started/互換
+//     state.started）を変更しない。
+//   - generatePairing() / startTournament() / startTournamentForClass() は呼ばない（1回戦を作らない）。
+//   - showTab('tournament') は描画専用で開始系 state を mutate しない。
+function goToTournamentFromReg(){
+  save();
+  showTab('tournament');
+}
+
 // ROUND-CLASS-START-004 (spec §6.6):
-//   #startBtn 一括開始の atomic wrapper（bulk atomic）。
+//   全クラス一括開始の atomic wrapper（bulk atomic）。
+//   START-UX-CONSOLIDATE-001 以降、本関数は UI から呼ばれない legacy / deprecated helper。
+//     - 旧 #startBtn の click bind は goToTournamentFromReg（ナビ専用）へ置換済み。
+//     - 物理削除・リネームは後続PRで棚卸しする（設計 §6 / §14）。互換のため温存する。
 //   - 既存の `if(state.started===true)` 全クラス開始済 fast-path / hasOngoing fail-safe は
 //     spec §6.6 / §7.5 に従い温存（B クラス後追い開始は別途 startTournamentForClass を使う）。
 //   - validate phase: collectStartCandidates（pure、state を読むだけ）
@@ -6679,7 +6596,7 @@ function bindTournamentEvents(cls){
 
 // ROUND-CLASS-START-004b (spec §11.3 / §11.4):
 //   pane-{classId} 上部に表示する class action bar を生成する view helper / reader。
-//   - class started=false かつ参加者 >= 2 かつ偶数 → 「<className>を開始」ボタン
+//   - class started=false かつ参加者 >= 2 かつ偶数 → 「<className>全員で1局目を開始」ボタン（§7 正規の開始導線）
 //   - class started=true                                → 「<className>をリセット」ボタン
 //   - 参加者 0 / 1 / 奇数 / 既開始以外でも、validator が拒否する場合は空（誤操作防止）。
 //   classId / className を escapeHtml して出力（XSS 対策）。
@@ -6701,8 +6618,10 @@ function buildClassActionBarHtml(cls){
     html+='<button type="button" class="btn-danger btn-sm" id="resetBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'をリセット</button>';
     html+='<span style="font-size:12px;color:#888">※他クラスのデータは保持されます</span>';
   } else if(players.length>=2 && players.length%2===0){
-    html+='<button type="button" class="btn-primary btn-sm" id="startBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'を開始</button>';
-    html+='<span style="font-size:12px;color:#888">※このクラスのみ後追い開始します</span>';
+    // START-UX-CONSOLIDATE-001 (設計 §7): 正規の開始導線。文言を「<className>全員で1局目を開始」に明確化。
+    //   「全員」は全クラスではなく、そのクラス内全員の意味。startTournamentForClass(cls) は当該クラスのみ開始する。
+    html+='<button type="button" class="btn-primary btn-sm" id="startBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'全員で1局目を開始</button>';
+    html+='<span style="font-size:12px;color:#888">※このクラス内の全員で開始します（他クラスは開始しません）</span>';
   }
   html+='</div>';
   return html;
@@ -7971,7 +7890,9 @@ function bindRegistrationEvents(){
   //   bindClassBulkEditHandlers() で同経路 bind する。重複 bind は data-bulkedit-bound で抑止。
   bindClassBulkEditHandlers();
   document.getElementById('addBtn').addEventListener('click',addPlayer);
-  document.getElementById('startBtn').addEventListener('click',startTournament);
+  // START-UX-CONSOLIDATE-001 (設計 §5): #startBtn は「対局管理へ進むナビゲーション」。
+  //   開始系の副作用を持つ startTournament ではなく goToTournamentFromReg（save()+タブ移動のみ）へ bind。
+  document.getElementById('startBtn').addEventListener('click',goToTournamentFromReg);
 
   // 参加者名入力欄: IME対応 + Enterで追加
   var inpName=document.getElementById('inp-name');
