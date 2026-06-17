@@ -113,3 +113,12 @@
 - **変更ファイル**: `shogi_v4.html` / `test/run_tests.sh` / `test/test_frp_impl_002.js`（更新）/ `test/test_frp_impl_003.js`（新規）/ `HANDOFF.md`（追記）/ `docs/notes/20260617_frp_impl_003_result.md`（新規）。`index.html` / `.github`（workflow）/ `package*` は無変更。
 - **production / main / orphan clean base への直接変更なし**（orphan = `3394e4a` のまま前進させていない）。**#222 / #223（CLOSED/superseded）は一切操作なし**（再 open / comment / rebase なし）。**#227 / #228 への追加修正なし**。
 - Draft PR。Ready化 / merge / deploy / publish / release は未実施。branch 削除なし。**後続タスク = FRP-IMPL-004**（保存復元堅牢化・再生成ボタン制御・bye/任意組み合わせ/手動並び替え）は未着手。memory 更新は本ターン外。
+
+## テストハーネス修正: TEST-HARNESS-001（data_*.json 不在時の常時FAIL解消）
+
+- **PR #229（FRP-IMPL-003）merge 後の orphan HEAD `b33e7b60ed5c0d499e2ac343151f51cc1f1ea548`（short `b33e7b6`）を base** に、`test/run_tests.sh` の既存常時 FAIL=1 を解消した。branch = `test/test-harness-001-skip-missing-data-fixtures`。Draft PR・**未 merge**。**`shogi_v4.html` は無変更**（機能修正ではなくテストハーネス修正）。
+- **FAIL=1 の正体**: 「第3層補足: テストデータでの normalizeState 堅牢性確認」ブロックの `for f in "$SCRIPT_DIR"/data_*.json` が、orphan base（実データ非コミット方針で `data_*.json` を含まない）で**未展開リテラル**を Python に渡し `FileNotFoundError`/`Traceback` → `ng`（FAIL+1）となっていた。FRP とは無関係の既存テストハーネス要因（従来 HANDOFF でも「FAIL=1 は既存 `data_*` 環境要因」と注記）。
+- **修正**: `shopt -s nullglob` で glob を**配列展開**し、**0件なら skip（`ℹ` info 行・FAIL/WARN 非加算）**、**1件以上なら従来どおりの検証ループ**（`json.load` → `ok`/`ng`）を回す。検証ループ本体は無改変＝**fixture 存在時の検証は不変・壊れた fixture は従来どおり FAIL**。取得直後 `shopt -u nullglob` で既定挙動へ復帰。
+- **テスト**（クリーン worktree `b33e7b6` で実測）: **修正前 PASS=64 / FAIL=1 / WARN=35 → 修正後 PASS=64 / FAIL=0 / WARN=35**。before/after 差分は3行のみ（データ行 `✗ Traceback`→`ℹ skip` / サマリ `FAIL=1`→`FAIL=0` / 合否行）。**WARN 35行は byte 一致**（既存 WARN 不変）。`Traceback`/`FileNotFoundError` 出力 0件・exit 0。`FRP-IMPL-002=79 PASS` / `FRP-IMPL-003=64 PASS` 維持。詳細 = `docs/notes/20260617_test_harness_001_result.md`。
+- **変更ファイル**: `test/run_tests.sh`（data_*.json ブロックのみ）/ `HANDOFF.md`（本追記）/ `docs/notes/20260617_test_harness_001_result.md`（新規）。`shogi_v4.html` / `index.html` / `.github`（workflow）/ `package*` は**無変更**。新規登録テストは追加せず PASS 数は 64 のまま据え置き。
+- **production / main / orphan clean base への直接変更なし**（orphan = `b33e7b6` のまま前進させていない）。**#222 / #223 / #229 は一切操作なし**。Draft PR。Ready化 / merge / deploy / publish / release は未実施。branch 削除なし。**FRP-IMPL-004 未着手**。

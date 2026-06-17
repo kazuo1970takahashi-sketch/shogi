@@ -233,19 +233,30 @@ fi
 # ============================================
 echo ""
 echo "【第3層補足】テストデータでのnormalizeState堅牢性確認"
-for f in "$SCRIPT_DIR"/data_*.json; do
-  name=$(basename "$f" .json)
-  output=$(python3 -c "
+# data_*.json fixture は orphan clean base には含まれない（実データ非コミット方針）。
+# glob 不一致時に未展開のリテラルパスを Python へ渡すと FileNotFoundError/Traceback になり
+# 常時 FAIL となるため、nullglob で配列展開し 0 件なら skip（info 表示・FAIL/WARN 非加算）とする。
+# fixture が存在する場合の検証内容（JSONパース可否 → ok/ng）は従来どおり維持する。
+shopt -s nullglob
+data_fixtures=( "$SCRIPT_DIR"/data_*.json )
+shopt -u nullglob
+if [ "${#data_fixtures[@]}" -eq 0 ]; then
+  echo "  ℹ data_*.json fixture が見つからないためスキップ（FAIL/WARN 非加算）"
+else
+  for f in "${data_fixtures[@]}"; do
+    name=$(basename "$f" .json)
+    output=$(python3 -c "
 import json,sys
 with open('$f') as fp: json.load(fp)
 " 2>&1)
-  rc=$?
-  if [ $rc -eq 0 ] && [ -z "$output" ]; then
-    ok "$name: JSONパースOK"
-  else
-    ng "$name: Python例外/エラー → $(echo "$output" | head -1)"
-  fi
-done
+    rc=$?
+    if [ $rc -eq 0 ] && [ -z "$output" ]; then
+      ok "$name: JSONパースOK"
+    else
+      ng "$name: Python例外/エラー → $(echo "$output" | head -1)"
+    fi
+  done
+fi
 
 # ============================================
 # ペアリング性質テスト（P1-2修正検証 + T01 三すくみ）
