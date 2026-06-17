@@ -5,7 +5,7 @@
 | ID | START-UX-CONSOLIDATE-001 |
 | 種別 | 設計（docs-only / 実装前） |
 | 作成日 | 2026-06-17 |
-| ステータス | 設計レビュー待ち（Draft PR） |
+| ステータス | review-only 結果に基づき **Must Fix 1–5 反映済み**（Draft PR・Ready 化前） |
 | base | orphan clean base `chore/shogi-tour-apphq-003h-2d-orphan-clean-base` @ `3b86edb` |
 | 対象ファイル（実装は別PR） | `shogi_v4.html`（START-UX-CONSOLIDATE-IMPL で変更予定） |
 | 関連 | FRP-DESIGN-001（#222, Draft/Open）／FRP-IMPL-001（#223, Draft/Open・**保留**）／START-001/003（#218/#219, orphan 残置・production は #221 で revert 済）／1局目高速化設計（#216） |
@@ -25,7 +25,7 @@
 
 > **開始操作を「参加者登録」タブから外し、「対局管理」タブへ集約する。**
 
-`#startBtn` は副作用を持たない「**対局管理へ進むナビゲーション**」に変更し、正規の開始導線は対局管理タブのクラス別開始（`startBtnClass_{cls}` → `startTournamentForClass(cls)`）に一本化する。これは FRP（1局目部分手合い）を安全に積む前提整理である。
+`#startBtn` は**開始系の副作用を持たない**「**対局管理へ進むナビゲーション**」に変更する（受付タブの未反映入力の保存・反映は行うが、開始系 state は変更しない）。正規の開始導線は対局管理タブのクラス別開始（`startBtnClass_{cls}` → `startTournamentForClass(cls)`）に一本化する。これは FRP（1局目部分手合い）を安全に積む前提整理である。
 
 本書は **docs-only**。実装（`shogi_v4.html` 変更・テスト更新）は後続の **START-UX-CONSOLIDATE-IMPL** で行う。
 
@@ -68,7 +68,7 @@ START-UX を正しく設計するため、現状 base に存在する**開始ま
 | (C) | 参加者登録タブ | readiness 表示（`renderClassReadiness` ／ #218 由来） | 開始可否の派生テキスト表示のみ | なし（読み取り専用） | 表示自体は無害。§5・§9 参照（情報表示は可、ただし開始トリガは置かない） |
 | (D) | 対局管理タブ | `startBtnClass_{cls}`（L6704 / L6715-6717） | `startTournamentForClass(cls)` → 当該クラス一括開始 | あり（pairings 生成） | **正規の開始導線として保持**（§7） |
 
-> 注: (B)(C) は START-001/003（#218/#219）由来で、**production からは #221 で revert 済みだが orphan clean base には残存** している（[`HANDOFF.md`](../../HANDOFF.md) 参照）。production の現状（#221 後）は (A)+(D) のみで (B)(C) は無い。base が orphan のため、本設計と IMPL は **(A) に加えて (B)(C) も受付タブから外す**ことを範囲に含める。これにより「参加者登録タブ＝登録のみ」を base 非依存で達成する。
+> 注: (B)(C) は START-001/003（#218/#219）由来で、**production からは #221 で revert 済みだが orphan clean base には残存** している（[`HANDOFF.md`](../../HANDOFF.md) 参照）。production の現状（#221 後）は (A)+(D) のみで (B)(C) は無い。base が orphan のため、本設計と IMPL は **(A) のナビ化に加えて (B) `reg-class-start` を撤去する**（(C) readiness は読み取り専用なら残置可・§5.5）。これにより「参加者登録タブ＝開始操作を持たない」を base 非依存で達成する。
 
 ---
 
@@ -130,11 +130,15 @@ START-UX を正しく設計するため、現状 base に存在する**開始ま
 
 ### 5.2 動作
 
-押下時は **対局管理タブへ移動するだけ**。タブ遷移以外の副作用を持たない。
+押下は「**開始**」ではなく「**受付タブの登録内容を保存/反映したうえで、対局管理タブへ移動する**」導線である。
 
-### 5.3 禁止される副作用（ナビゲーション以外は一切しない）
+- ナビゲーション前に、必要な入力反映・保存処理（受付タブの未反映入力の state/localStorage への反映）を**行ってよい**。
+- ただしその処理で**開始系 state（`pairings` / `results` / `classes[].started` / 互換 `state.started`）を変更してはならない**。
+- 「すべての state が不変」という意味ではない（受付入力の保存は許容）。不変なのは**開始系 state** である。
 
-押下によって、以下を**いずれも行ってはならない**：
+### 5.3 禁止される副作用（開始系 state は不変・開始処理は呼ばない）
+
+押下によって、以下を**いずれも行ってはならない**（＝開始系の副作用は一切持たない）：
 
 - `state.pairings` を変更しない
 - `state.results` を変更しない
@@ -145,6 +149,18 @@ START-UX を正しく設計するため、現状 base に存在する**開始ま
 - `startTournamentForClass()` を呼ばない
 - 1回戦組み合わせを作らない
 
+> ここで禁止しているのは**開始系の副作用**である。§5.2 のとおり、受付タブの登録内容（参加者追加・名前編集・A/B クラス振り分け・会費区分など）の state/localStorage への保存・反映は**許容**する（むしろ、タブ移動で受付編集が失われないよう行うべき）。許容される保存処理も、上記の開始系 state には触れてはならない。
+
+#### 5.3.1 保存契約（ナビ押下時）
+
+| 区分 | 対象 | ナビ押下時の扱い |
+|---|---|---|
+| 保存・反映してよい（受付入力） | 参加者追加・名前編集・A/B クラス振り分け・会費区分変更 等、受付タブの未反映入力 | state/localStorage へ反映・保存して**よい**（タブ移動で失わないため） |
+| 変更してはならない（開始系） | `pairings` / `results` / `classes[].started` / 互換 `state.started` | **不変**。`generatePairing()` / `startTournament()` / `startTournamentForClass()` も**呼ばない** |
+
+- IMPL 時には、参加者追加・名前編集・クラス変更・会費区分変更が**タブ移動前に保持される**ことを確認する。
+- テスト方針（§9）に「startBtn 押下で**受付編集内容が失われない**」「startBtn 押下で**開始系 state が不変**」の両方を含める。
+
 ### 5.4 id 方針
 
 - **短期は `id="startBtn"` を維持してよい。**
@@ -152,13 +168,23 @@ START-UX を正しく設計するため、現状 base に存在する**開始ま
 - ただし**意味は「開始」から「対局管理へ進む」へ変わる**。テスト名・コメント・ラベルでは「開始ボタン」ではなく「**対局管理へ進む導線（ナビゲーション）**」として扱う。
 - 将来的には `goTournamentBtn` 等への改名を**別PRで**検討する（本PR・IMPLでは行わない）。
 
-### 5.5 (B)(C) 受付タブ class 導線の扱い（base=orphan 固有）
+### 5.5 受付タブの reg-class-start 撤去と readiness 表示の切り分け（base=orphan 固有）
 
-§2 の (B) `reg-class-start`／(C) readiness 表示は **受付タブから外す**。
+§2 の (B) `reg-class-start` 系開始ボタンと (C) readiness 表示は、**役割が異なる**ため明確に切り分ける。
 
-- (B) 開始ボタン：受付タブから撤去する。開始は対局管理タブ (D) に一本化する。
-- (C) readiness 表示：**開始トリガを伴わない純粋な情報表示**であれば受付タブに残してもよい（例：「A クラス：開始可能」のステータス文）。ただし「開始」アクションは受付タブに置かない。実装判断は IMPL で確定（情報表示も対局管理タブへ寄せる選択肢を含めてよい）。
-- この撤去・移設も「タブ移動のみ／開始系 state は不変」の原則（§5.3）を守る。
+**(B) `reg-class-start` 系開始ボタン → 必ず撤去対象**
+
+- 受付タブ上の `reg-class-start` 系開始ボタンは**必ず撤去**する。
+- 受付タブ上に**開始ボタン・開始イベント・開始 handler を残してはならない**（`onClickClassStart` / `bindClassStartHandlers` / `regClassStartBtnId` 等の受付タブ開始導線は除去する）。
+- 開始操作は対局管理タブ (D) に**集約**する。
+
+**(C) readiness 表示 → 読み取り専用なら残置可**
+
+- readiness 表示は「**読み取り専用の情報表示**」であれば受付タブに残してよい（例：「A クラス：開始可能」のステータス文）。
+- ただし readiness 表示を残す場合も、**クリック可能な開始操作・開始 handler・`startTournament()` / `startTournamentForClass()` 呼び出しを含めてはならない**。
+- 受付タブの役割は**登録・確認**であり、**開始操作は対局管理タブに集約**する（情報表示も対局管理タブへ寄せる選択肢を含めてよい。IMPL で確定）。
+
+- この撤去・切り分けも「開始系 state は不変／開始処理は呼ばない」原則（§5.3）を守る。
 
 ---
 
@@ -188,7 +214,7 @@ START-UX-CONSOLIDATE では **削除しない**。
 
 - `startBtnClass_{cls}`（対局管理タブの各クラス開始ボタン）
 - `startTournamentForClass(cls)`
-- `validateStartableClass(cls)`
+- `validateStartableClass` の既存判定（クラス別全員開始用）
 
 文言は後続 IMPL で明確化してよい。例：
 
@@ -199,11 +225,36 @@ START-UX-CONSOLIDATE では **削除しない**。
 
 > FRP（部分開始）は「クラス内の**選んだ人だけ**で1局目」を後から積む別レイヤ（#222/#223）。本設計の「クラス内全員開始」と FRP の「クラス内部分開始」は**対局管理タブ内で共存**する（受付タブには出さない）。
 
+### 7.1 `validateStartableClass` の扱い（既存判定の保持・流用禁止）
+
+設計書内の `validateStartableClass` の表記は、**新規引数追加やシグネチャ変更を意味しない**。本設計では次のとおり扱う。
+
+- **既存の `validateStartableClass` はクラス別全員開始用の判定として保持する。**
+- **既存シグネチャ・既存条件を変更しない**（引数を増やさない）。
+- **2名以上・偶数条件を緩めない。**
+- **部分開始用に流用しない。**
+- 部分開始の判定は**別経路 `validatePartialStartableClass`**（FRP 側・#222/#223）で扱う。`validateStartableClass` と `validatePartialStartableClass` は**別関数**として分離する。
+
 ---
 
 ## 8. class status の扱い（派生ステータス案）
 
 **保存 schema は今回増やさない。** まずは既存 state から**派生**する（保存しない）。
+
+### 8.1 `isClassStarted(cls)` の定義（派生 status の前提）
+
+派生 class status の前提として、`isClassStarted(cls)` の意味を固定する。
+
+`isClassStarted(cls)` は、そのクラスが「**1局目開始状態に入っているか**」を表す述語である。次の**両方**で `true` になる：
+
+1. **クラス別全員開始** — `startTournamentForClass(cls)` により、そのクラス内全員で1局目組み合わせが作成された状態。
+2. **将来の部分開始** — `startClassPartial(cls)`（FRP）により、そのクラスが部分開始状態に入り、まだ全員が1局目に割り当てられていない状態。
+
+つまり `isClassStarted(cls) === true` は「**全員開始済み**」だけを意味しない。「**そのクラスで1局目の運用を開始した**」ことを意味する。
+
+> **IMPL 注意**：`isClassStarted(cls)` を「**`pairings[cls]` が1件以上あるか**」だけで定義してはならない。部分開始直後は `pairings[cls]` が空でも `isClassStarted(cls) === true` になり得るため（開始フラグは pairings の有無とは独立に保持する）。
+
+### 8.2 派生ステータス
 
 | ステータス | 導出条件 |
 |---|---|
@@ -234,8 +285,13 @@ START-UX-CONSOLIDATE では **削除しない**。
 | 8 | `#startBtn` 押下で `startTournamentForClass()` が呼ばれない |
 | 9 | 既存の「`#startBtn` で1回戦が生成される」前提のテストは、**赤/skip 放置せず、新仕様（ナビのみ）に更新**する |
 | 10 | `startTournamentForClass('A')` は A だけ開始し、B を破壊しない |
-| 11 | `validateStartableClass` の **2名以上・偶数条件を緩めない**（既存ガード維持） |
+| 11 | `validateStartableClass` の**既存判定**（2名以上・偶数条件）を緩めない・**部分開始用に流用しない**（既存シグネチャ/ガード維持） |
 | 12 | 既存保存データを開いても、ナビゲーションボタン押下で状態を壊さない |
+| 13 | `#startBtn` 押下で**受付編集内容が保持される**（参加者追加・名前編集・クラス変更・会費区分変更がタブ移動で失われない） |
+| 14 | `#startBtn` 押下で**開始系 state が不変**である（`pairings`/`results`/`classes[].started`/互換 `state.started` のいずれも変化しない。row 2–5 と併せて担保） |
+| 15 | 受付タブに**開始コントロール（開始ボタン・開始イベント・開始 handler）が存在しない** |
+| 16 | readiness 表示を残す場合、それが**読み取り専用**である（クリック可能な開始操作・開始 handler・`startTournament()`/`startTournamentForClass()` 呼び出しを含まない） |
+| 17 | `reg-class-start` 系の **DOM・event bind・helper・旧テスト期待値が残存していない**ことを確認する |
 
 > 追加（base=orphan 固有・§5.5）：受付タブから (B)`reg-class-start` を撤去した後、対局管理タブの (D)`startBtnClass_{cls}` でクラス別開始が従来どおり機能することを確認する。
 
@@ -247,7 +303,7 @@ START-UX-CONSOLIDATE では **削除しない**。
 
 - 参加者追加・名前編集・クラス変更・会費区分変更が **autosave されているか** を IMPL 前に確認する。
 - タブ移動で**未確定入力が失われない**こと。
-- 必要なら、ナビゲーション前に既存の保存処理または入力反映処理を呼ぶ。**ただし開始系 state（pairings/results/started）は変更しない。**
+- 必要なら、ナビゲーション前に既存の保存処理または入力反映処理を呼ぶ（§5.3.1 の保存契約に従う）。**ただし開始系 state（`pairings` / `results` / `classes[].started` / 互換 `state.started`）は変更しない。**
 
 ---
 
@@ -290,7 +346,7 @@ FRP-IMPL-001 / **PR #223 は今すぐ Ready 化・merge しない**。
 | 順 | PR | 内容 | 種別 |
 |---|---|---|---|
 | 1 | **START-UX-CONSOLIDATE-DESIGN**（本PR） | 画面責務・開始導線・副作用禁止・テスト方針を確定 | docs-only |
-| 2 | **START-UX-CONSOLIDATE-IMPL** | `#startBtn` をナビ専用化／開始副作用除去／(B)(C) 受付撤去／テスト更新／`startTournamentForClass` 維持 | 実装 |
+| 2 | **START-UX-CONSOLIDATE-IMPL** | `#startBtn` をナビ専用化／開始副作用除去／受付タブの `reg-class-start` 撤去（readiness は読み取り専用なら残置可・§5.5）／テスト更新／`startTournamentForClass` 維持 | 実装 |
 | 3 | **FRP-IMPL-001 再開** | #223 を新 UX 前提に rebase / adopt / 作り直し判断。部分開始 + 未割当一覧 | 実装 |
 | 4 | **FRP-IMPL-002** | 選択者で append 作成／未割当者を1局目に追加 | 実装 |
 
@@ -306,12 +362,23 @@ FRP-IMPL-001 / **PR #223 は今すぐ Ready 化・merge しない**。
 
 ---
 
-## 15. このターンの変更有無（正確な記録）
+## 15. #224 の merge 先・系譜（確認記録）
+
+- 本 PR #224 は **orphan `3b86edb` を base とする docs-only 設計 PR** である。
+- この PR は **production / main へ直接入れるものではない**。
+- START-UX / FRP 系の作業は、現在の SHOGI-TOUR 運用上、**orphan 系譜の作業台**に積み、**後続の production release PR**（base=production）で本番反映を管理する。
+- したがって **#224 の merge 先は orphan 系譜であり、`main` ではない**。
+- production / main / orphan の HEAD は**直接変更しない**。**Ready 化・merge は人間の明示承認後**に行う。
+- orphan base には production #221 で rollback 済みの **#218/#219 由来 `reg-class-start` 系が残存**しているため、START-UX-CONSOLIDATE-IMPL ではこれを**撤去対象**として扱う（§5.5）。
+
+---
+
+## 16. このターンの変更有無（正確な記録）
 
 - **production / main / orphan clean base への直接変更なし**（いずれの HEAD も前進・改変していない）。
 - 変更は本 docs-only ブランチ `docs/start-ux-consolidate-001-design`（base=orphan `3b86edb`）上の 2 ファイルのみ：
   - `HANDOFF.md`（orphan は HANDOFF.md を追跡していないため新規作成）
-  - `docs/specs/20260617_start_ux_consolidate_001_design.md`（本書・新規）
+  - `docs/specs/20260617_start_ux_consolidate_001_design.md`（本書）
 - `shogi_v4.html` / `index.html` / `test/` / `.github/`（workflow）/ `package*.json` は**無変更**。
-- #222 / #223 は**変更していない**（#223 の rebase/adopt も行っていない）。
-- Draft PR として作成。**Ready 化 / merge / deploy / publish / release は未実施**。branch 削除なし。
+- #222 / #223 は**変更していない**（#223 の rebase/adopt/close も行っていない）。
+- 今回のターンは **review-only 結果に基づく Must Fix 1–5 の docs 追記**（実装は触れていない）。**Ready 化 / merge / deploy / publish / release は未実施**。branch 削除なし。memory 更新なし。
