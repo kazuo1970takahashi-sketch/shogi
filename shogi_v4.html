@@ -5933,6 +5933,204 @@ function getUnassignedFirstRoundPlayers(cls){
   return out;
 }
 
+// FRP-IMPL-003 (FRP-DESIGN-002 §7 / §9): 選択者から1局目の候補ペアを作る pure helper（state 非参照・副作用なし）。
+//   - 入力 selected = player オブジェクト配列（呼出側で「現在の未割当者」に再検証済みのものを渡す）。
+//   - entry_no 昇順に整列。entry_no 欠損/不正(非正の数・非 number)は末尾へ回し、同値は id 昇順で安定 tie-break。
+//   - (0,1),(2,3),… の順でペア化。3人以上の奇数なら末尾1人を leftover として返す（＝未割当のまま待機）。
+//   - 0/1名なら pairs は空（1名は leftover に、0名は null）。ランダム・任意組み合わせ・手動並び替えは入れない。
+//   - 返り値: { pairs:[{p1,p2,winner:null,lastModifiedBy:'auto'}], leftover: playerObjectOrNull }。
+//     1局目は results 空のため勝数差・再戦が構造的に発生せず、entry_no 順で十分かつ安全
+//     （generatePairing のバックトラッキング流用は不要・過剰）。leftover は state に保存しない
+//     （getUnassignedFirstRoundPlayers の派生により append 後も未割当一覧に自動的に残る）。
+function buildFirstRoundPartialPairs(selected){
+  var list=Array.isArray(selected)?selected.slice():[];
+  list.sort(function(a,b){
+    var ea=(a&&typeof a.entry_no==='number'&&a.entry_no>0)?a.entry_no:Infinity;
+    var eb=(b&&typeof b.entry_no==='number'&&b.entry_no>0)?b.entry_no:Infinity;
+    if(ea!==eb)return ea-eb;
+    var ia=(a&&a.id!=null)?String(a.id):'';
+    var ib=(b&&b.id!=null)?String(b.id):'';
+    if(ia<ib)return -1;
+    if(ia>ib)return 1;
+    return 0;
+  });
+  var pairs=[];
+  var i=0;
+  for(;i+1<list.length;i+=2){
+    pairs.push({p1:list[i].id,p2:list[i+1].id,winner:null,lastModifiedBy:'auto'});
+  }
+  var leftover=(i<list.length)?list[i]:null;   // 奇数なら末尾1人、偶数なら null
+  return {pairs:pairs,leftover:leftover};
+}
+
+// FRP-IMPL-003 (FRP-DESIGN-002 §6.3 / §8.4): native confirm 用の確認文（純粋・state からの氏名解決のみ）。
+//   「Mペア / N名を追加」「各対局の氏名」「奇数なら待機（未割当のまま残す）1名」を要約する。
+//   完成形・一括開始と混同しない文言にし、既存対局・結果が不変であることを明記する。
+function buildFrpAppendConfirmMessage(cls,pairs,leftover){
+  // 文言は native confirm() のプレーンテキスト（innerHTML ではないため escapeHtml 不要・適用すると &lt; 等が見えてしまう）。
+  //   氏名は一旦ローカルに解決してから連結する（HTML 流入用の未エスケープ検査ヒューリスティクスを踏まないため）。
+  var lines=[];
+  lines.push((pairs.length)+'組（'+(pairs.length*2)+'名）を1局目に追加します。');
+  for(var i=0;i<pairs.length;i++){
+    var m=pairs[i];
+    var pa=getName(m.p1,cls);
+    var pb=getName(m.p2,cls);
+    lines.push('　・'+pa+' vs '+pb);
+  }
+  if(leftover){
+    var lo=getName(leftover.id,cls);
+    lines.push('待機（未割当のまま残します）：'+lo+' 1名');
+  }
+  lines.push('');
+  lines.push('作成済みの対局・結果は変更されません。よろしいですか？');
+  return lines.join('\n');
+}
+
+// FRP-IMPL-003 (FRP-DESIGN-002 §8.3 / §10): pane-{cls} 内の未割当チェックボックスから
+//   「現在チェックされている」pid を集める（disabled は除外）。実行時に
+//   getUnassignedFirstRoundPlayers で再検証するため、ここでは pane スコープで素朴に集めるだけ。
+//   pane スコープに限定することで他クラスの選択が構造的に混入しない（同一クラス保証の一次防御）。
+function collectCheckedUnassignedPids(cls){
+  var out=[];
+  var scope=document.getElementById('pane-'+cls);
+  var boxes=(scope&&typeof scope.querySelectorAll==='function')?scope.querySelectorAll('.frp-unassigned-cb'):[];
+  var n=(boxes&&typeof boxes.length==='number')?boxes.length:0;
+  for(var i=0;i<n;i++){
+    var cb=boxes[i];
+    if(!cb||cb.disabled||!cb.checked)continue;
+    var pid=(typeof cb.getAttribute==='function'&&cb.getAttribute('data-frp-pid'))||cb.value;
+    if(pid&&out.indexOf(pid)<0)out.push(pid);
+  }
+  return out;
+}
+
+// FRP-IMPL-003 (FRP-DESIGN-002 §6.3 / §7 / §10): 選択者の候補ペアを state.pairings[cls] に append する mutate。
+//   既存1局目対局・既存 winner は一切変更しない（末尾 concat のみ）。2局目以降・順位計算・結果確定には触れない。
+//   startTournamentForClass / generatePairing / applyStartForCandidates は呼ばない（全員上書き経路を流用しない）。
+//   guard（すべて満たすときのみ append。UI のチェック状態を信用せず実行時に再検証する §8）:
+//     - state/classes 健全・cls 実在 / isClassStarted(cls)===true（部分開始済み）
+//     - results[cls].length===0（1局目確定後/2回戦以降は全面ブロック §6）
+//     - pairs が非空配列 / 各 p1≠p2 / p1・p2 が players[cls] 在籍 / 現 pairings[cls] に未在籍 / pairs 内 id 重複なし
+//   post-check: duplicate player 不在・既存対局が件数/p1/p2/winner で保持されている。崩れていれば rollback し save しない。
+//   save 後 SAVE-FRP-002 検証（snapshot 一致）。不一致は warn（保存未確認・保存失敗と断定しない）・rollback しない・運営継続。
+function appendFirstRoundPairs(cls,pairs){
+  if(!state||!Array.isArray(state.classes)){showMsg('クラス情報が初期化されていません','err');return false;}
+  var classInfo=null;
+  for(var ci=0;ci<state.classes.length;ci++){
+    if(state.classes[ci]&&state.classes[ci].id===cls){classInfo=state.classes[ci];break;}
+  }
+  if(!classInfo){showMsg('クラスが見つかりません','err');return false;}
+  if(!isClassStarted(cls)){showMsg('部分開始していないクラスには追加できません','warn');return false;}
+  if(!state.results||!Array.isArray(state.results[cls])){showMsg('クラス情報が初期化されていません','err');return false;}
+  // results 非空（1局目確定済み/2回戦以降）は全面ブロック。「pairings 内の winner 入力済み」とは分けて扱う（§6）。
+  if(state.results[cls].length>=1){showMsg('1局目が確定済みのクラスには追加できません','warn');return false;}
+  if(!Array.isArray(pairs)||pairs.length===0){showMsg('2人以上を選択してください','warn');return false;}
+  if(!state.pairings||!Array.isArray(state.pairings[cls])){showMsg('クラス情報が初期化されていません','err');return false;}
+  // 実行時再検証（UI のチェック状態でなく state を真実とする §8）
+  var players=(state.players&&state.players[cls])||[];
+  var inClass={};
+  for(var pi=0;pi<players.length;pi++){if(players[pi])inClass[players[pi].id]=true;}
+  var assigned={};
+  var existing=state.pairings[cls];
+  for(var ei=0;ei<existing.length;ei++){
+    var em=existing[ei];if(!em)continue;
+    if(em.p1)assigned[em.p1]=true;
+    if(em.p2)assigned[em.p2]=true;
+  }
+  var seen={};
+  for(var k=0;k<pairs.length;k++){
+    var m=pairs[k];
+    if(!m||!m.p1||!m.p2){showMsg('追加する対局の組み合わせが不正です','err');return false;}
+    if(m.p1===m.p2){showMsg('同じ参加者同士の対局は作成できません','err');return false;}
+    var ids=[m.p1,m.p2];
+    for(var t=0;t<2;t++){
+      var pid=ids[t];
+      if(!inClass[pid]){showMsg('このクラスに登録されていない参加者が含まれています','err');return false;}
+      if(assigned[pid]){showMsg('すでに1局目の対局がある参加者が含まれています','err');return false;}
+      if(seen[pid]){showMsg('同じ参加者が複数の対局に含まれています','err');return false;}
+      seen[pid]=true;
+    }
+  }
+  // append（末尾追加のみ。既存 match オブジェクトには触れない）。backup は rollback 用に既存参照を保持。
+  var backup=existing.slice();
+  var expected=existing.concat(pairs);
+  state.pairings[cls]=expected;
+  // post-check 1: 同一選手が複数対局に出ていないか（duplicate）。出ていれば rollback。
+  if(getDuplicatePlayersInPairings(cls).length>0){
+    state.pairings[cls]=backup;
+    showMsg('対局の追加で重複が発生したため中止しました','err');
+    return false;
+  }
+  // post-check 2: 既存対局が件数・p1/p2/winner で保持されているか（消滅・改変が無いか）。崩れていれば rollback。
+  var preserved=(state.pairings[cls].length===backup.length+pairs.length);
+  if(preserved){
+    for(var b=0;b<backup.length;b++){
+      var o=backup[b],n=state.pairings[cls][b];
+      if(!o||!n||o.p1!==n.p1||o.p2!==n.p2||(o.winner||null)!==(n.winner||null)){preserved=false;break;}
+    }
+  }
+  if(!preserved){
+    state.pairings[cls]=backup;
+    showMsg('既存の対局が保持できなかったため追加を中止しました','err');
+    return false;
+  }
+  save();
+  // SAVE-FRP-002: append の保存検証。persisted.pairings[cls] が expected snapshot（p1/p2/winner/lastModifiedBy 全要素）と
+  //   一致するか pairingsMatchSnapshot で照合。length 一致だけでは stale を見逃すため snapshot 比較を使う。
+  //   不一致は「保存未確認」（保存失敗と断定しない）。rollback しない・運営は継続する（SAVE-FRP-001 と同型）。
+  var className=(classInfo.name)?classInfo.name:(cls+'クラス');
+  var persisted=readPersistedState();
+  var okSnap=!!(persisted&&persisted.pairings&&pairingsMatchSnapshot(persisted.pairings[cls],state.pairings[cls]));
+  if(!okSnap){
+    notifySaveWarning({
+      message:className+'に対局を追加しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-FRP-002: appendFirstRoundPairs の保存が確認できませんでした (cls='+cls+')',
+      callsiteId:'SAVE-FRP-002-appendFirstRoundPairs',
+      kind:'save-verify',
+      aggregateKey:'save-verify:core',
+      severity:'warn'
+    });
+  }
+  renderTournament(cls);
+  return true;
+}
+
+// FRP-IMPL-003 (FRP-DESIGN-002 §6 / §8): 「選択した参加者で1局目を追加作成」ボタンの click handler。
+//   再入防止（confirm 中の二重発火・double-click 対策）→ 実行時再検証 → 候補ペア生成 → confirm → append。
+//   appendFirstRoundPairs 内でも再検証するため二重に安全（UI のチェック状態を信用しない §8）。
+var frpAppendInFlight=false;
+function onClickAppendFirstRound(cls){
+  if(frpAppendInFlight)return;   // 再入防止: confirm 中/連打中の二重 append を弾く
+  frpAppendInFlight=true;
+  try{
+    if(!isClassStarted(cls)){showMsg('部分開始していないクラスには追加できません','warn');return;}
+    var results=(state.results&&state.results[cls])||[];
+    if(results.length>=1){showMsg('1局目が確定済みのクラスには追加できません','warn');return;}
+    // 実行時再検証: UI のチェック状態でなく「現在の未割当者」に含まれる選択 pid のみ採用（同一クラス・既割当排除・重複排除）。
+    var checkedPids=collectCheckedUnassignedPids(cls);
+    var unassigned=getUnassignedFirstRoundPlayers(cls);
+    var byId={};
+    for(var u=0;u<unassigned.length;u++)byId[unassigned[u].id]=unassigned[u];
+    var selected=[];
+    var picked={};
+    for(var c=0;c<checkedPids.length;c++){
+      var pid=checkedPids[c];
+      if(picked[pid])continue;
+      picked[pid]=true;
+      if(byId[pid])selected.push(byId[pid]);
+    }
+    if(selected.length<2){showMsg('2人以上を選択してください','warn');return;}
+    var built=buildFirstRoundPartialPairs(selected);
+    if(!built.pairs.length){showMsg('2人以上を選択してください','warn');return;}
+    if(typeof confirm==='function'){
+      if(!confirm(buildFrpAppendConfirmMessage(cls,built.pairs,built.leftover)))return;
+    }
+    appendFirstRoundPairs(cls,built.pairs);
+  }finally{
+    frpAppendInFlight=false;
+  }
+}
+
 // ROUND-CLASS-START-004b (spec §12.1):
 //   指定 classId の進行データのみリセット。他クラスの pairings / results / started は保持。
 //   class atomic で動作（他クラス state を破壊しない）。
@@ -6714,15 +6912,14 @@ function buildClassActionBarHtml(cls){
     html+='<button type="button" class="btn-primary btn-sm" id="startBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'全員で1局目を開始</button>';
     html+='<span style="font-size:12px;color:#888">※このクラス内の全員で開始します（他クラスは開始しません）</span>';
   }
-  // FRP-IMPL-002 (FRP-DESIGN-002 §2.3 / §8): 未開始かつ参加者1名以上なら「部分開始」導線を併置。
+  // FRP-IMPL-002/003 (FRP-DESIGN-002 §2.3 / §8): 未開始かつ参加者1名以上なら「部分開始」導線を併置。
   //   既存の一括開始(startBtnClass_「全員で1局目を開始」)とは別 id・別導線（偶数/奇数を問わず出す＝奇数でも来た人から開始可）。
-  //   このスライスでは startClassPartial（started=true にし未割当一覧を表示）まで実装する。選択者を選んで
-  //   対局を append 作成する処理は FRP-IMPL-003（次スライス）。文言は「全員で1局目を開始」と対比し、
-  //   完成形（選択して対局作成まで終わる）に見えない表現にする。
+  //   startClassPartial で started=true にし未割当一覧を表示する。FRP-IMPL-003 で、その一覧から選んで
+  //   選択者だけの1局目対局を append 作成できる（onClickAppendFirstRound）。文言は「全員で1局目を開始」と対比する。
   //   既存 startBtnClass_ / リセットボタンの出力条件・id・文言は一切変更しない（純追加）。
   if(!classStarted && players.length>=1){
     html+='<button type="button" class="btn-primary btn-sm" id="startBtnPartial_'+escapeHtml(cls)+'">このクラスを部分開始（未割当者を表示）</button>';
-    html+='<span style="font-size:12px;color:#888">※部分開始にして1局目の未割当者を一覧表示します（選択して対局を作成する機能は次スライスで対応予定）</span>';
+    html+='<span style="font-size:12px;color:#888">※部分開始にすると、1局目の未割当者から選んで対局を追加作成できます（既存の対局は変更しません）</span>';
   }
   html+='</div>';
   return html;
@@ -6741,19 +6938,24 @@ function bindClassActionBarEvents(cls){
     resetBtn.addEventListener('click',(function(c){return function(){resetClassForClass(c);};})(cls));
   }
   // FRP-IMPL-002 (FRP-DESIGN-002 §7 / §8): 部分開始ボタンの click を startClassPartial に bind（追加のみ）。
-  //   未割当一覧内の「対局の作成」ボタン(frpAddBtn_)は disabled のため、ここでは bind しない（append は FRP-IMPL-003）。
   var partialBtn=document.getElementById('startBtnPartial_'+cls);
   if(partialBtn){
     partialBtn.addEventListener('click',(function(c){return function(){startClassPartial(c);};})(cls));
   }
+  // FRP-IMPL-003 (FRP-DESIGN-002 §7 / §8): 未割当一覧の「選択した参加者で1局目を追加作成」ボタンを
+  //   onClickAppendFirstRound に bind。再入防止と実行時再検証は handler 側。pane innerHTML 設定後に呼ばれる。
+  var addBtn=document.getElementById('frpAddBtn_'+cls);
+  if(addBtn){
+    addBtn.addEventListener('click',(function(c){return function(){onClickAppendFirstRound(c);};})(cls));
+  }
 }
 
-// FRP-IMPL-002 (FRP-DESIGN-002 §8 / §8.5): 部分開始中クラスの「1局目 未割当参加者」一覧（表示専用・副作用なし）。
-//   started=true かつ results 空 かつ 未割当>0 のときだけ中身を返す（それ以外は ''）。
-//   このスライスは「未割当者の確認のみ」。選択者を選んで対局を append 作成する処理は実装しない（FRP-IMPL-003）。
-//   そのため checkbox と「対局の作成」ボタンは disabled（イベント未登録）にし、「次スライスで対応予定」と明記して
-//   運営者が「押せる／このスライスで対局を作れる」と誤解しないようにする。
-//   氏名/番号は escapeHtml を通す（個人情報・XSS 対策）。
+// FRP-IMPL-002/003 (FRP-DESIGN-002 §8 / §8.3): 部分開始中クラスの「1局目 未割当参加者」一覧（選択 → append 作成）。
+//   started=true かつ results 空 かつ 未割当>0 のときだけ中身を返す（それ以外は ''）。表示専用 helper（mutate しない）。
+//   未割当者をチェックして「選択した参加者で1局目を追加作成」を押すと、既存対局を変更せず選択者だけの対局を末尾追加する。
+//   既に1局目対局がある参加者は派生で除外され一覧に出ない（getUnassignedFirstRoundPlayers §5.3）。
+//   氏名/番号は escapeHtml を通す（個人情報・XSS 対策）。チェック集約と append の bind は bindClassActionBarEvents 側
+//   （frpAddBtn_ → onClickAppendFirstRound）で行い、表示と bind を分離する（この helper は addEventListener を持たない）。
 function buildFirstRoundPartialSectionHtml(cls){
   if(!isClassStarted(cls))return '';
   var results=(state.results&&state.results[cls])||[];
@@ -6762,18 +6964,19 @@ function buildFirstRoundPartialSectionHtml(cls){
   if(unassigned.length===0)return '';
   var html='<div class="frp-partial-section" data-frp-partial="1" style="margin:12px 0;padding:12px;border:1px solid #d0d7e2;border-radius:8px;background:#f7f9fc">';
   html+='<h3 style="margin:0 0 4px;font-size:14px;color:#1F3864">1局目 未割当参加者</h3>';
-  html+='<p style="margin:0 0 8px;font-size:12px;color:#666">このクラスは部分開始中です。まだ1局目に入っていない参加者を表示しています。今回は未割当者の確認のみで、選択して対局を作成する機能は次スライスで対応予定です。</p>';
+  html+='<p style="margin:0 0 8px;font-size:12px;color:#666">このクラスは部分開始中です。まだ1局目に入っていない参加者から選んで「選択した参加者で1局目を追加作成」を押すと、既存の対局を変更せず選択者だけの対局を追加します（2人以上を選択。偶数は全員、奇数は末尾1人が未割当のまま残ります）。既に1局目対局がある参加者は表示されません。</p>';
   html+='<div class="frp-unassigned-list">';
   for(var i=0;i<unassigned.length;i++){
     var p=unassigned[i];
     var no=escapeHtml(cls+'-'+entryNoOf(cls,p.id));
     var nm=escapeHtml(getName(p.id,cls));
-    html+='<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:#999">'
-      +'<input type="checkbox" class="frp-unassigned-cb" data-frp-pid="'+escapeHtml(p.id)+'" value="'+escapeHtml(p.id)+'" disabled>'
+    html+='<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:#333;cursor:pointer">'
+      +'<input type="checkbox" class="frp-unassigned-cb" data-frp-pid="'+escapeHtml(p.id)+'" value="'+escapeHtml(p.id)+'">'
       +'<span>'+no+'｜'+nm+'</span></label>';
   }
   html+='</div>';
-  html+='<button type="button" id="frpAddBtn_'+escapeHtml(cls)+'" class="btn-primary btn-sm" disabled title="（準備中）選んだ未割当者から1局目の対局を作成する機能は、次のスライス（FRP-IMPL-003）で対応予定です" style="margin-top:8px;opacity:0.6;cursor:not-allowed">対局の作成は次スライスで対応予定</button>';
+  html+='<button type="button" id="frpAddBtn_'+escapeHtml(cls)+'" class="btn-primary btn-sm" title="選んだ未割当者だけで1局目の対局を作成します（既存の対局・結果は変更しません）" style="margin-top:8px">選択した参加者で1局目を追加作成</button>';
+  html+='<p style="margin:6px 0 0;font-size:11px;color:#888">※2人以上を選択してください。作成済みの対局・結果は変更されません。</p>';
   html+='</div>';
   return html;
 }
