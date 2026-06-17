@@ -100,3 +100,16 @@
 - このターン: **FRP-IMPL-002（部分開始の土台＋1局目未割当一覧表示・append は disabled）を実装**。`index.html` / `.github/`（workflow）/ `package*.json` は無変更。
 - **#222 / #223 は変更していない**（close / comment / rebase / adopt / Ready化 / merge いずれも未実施）。**#227 への追加修正もしていない**。
 - Draft PR。Ready 化 / merge / deploy / publish / release は未実施。branch 削除なし。後続タスク（FRP-IMPL-003 = append 作成）未着手。memory 更新は本ターン外。
+
+## 実装: FRP-IMPL-003（選択者だけで1局目対局を append 作成）
+
+- **PR #228（FRP-IMPL-002）merge 完了**（squash `3394e4a`、parent `b32720c`=#227）。**orphan HEAD = `3394e4a28a7ceb83a6c5a1989701690243c29dc2`**（short `3394e4a`）。main `832bc5a` 不変・production `9693a83` 不変。
+- **FRP-IMPL-003 を実装**: #228 merge 後の orphan HEAD `3394e4a` を起点に、設計書 `docs/specs/20260617_frp_design_002_post_225_partial_first_round.md`（§6/§7/§9）に従い **FRP-IMPL-002 で表示まで実装した未割当一覧から、選択者だけで1局目対局を append 作成**する処理を実装した。branch = `feature/frp-impl-003-append-selected-first-round`（base=orphan `3394e4a`）。Draft PR・**未 merge**。
+- **新規 helper（既存関数の本体は無改変）**: `buildFirstRoundPartialPairs(selected)`（pure・entry_no 昇順/欠損は末尾/同値は id 昇順・偶数全員/奇数末尾1人 leftover・0/1名は空 pairs・`{pairs:[{p1,p2,winner:null,lastModifiedBy:'auto'}],leftover}`）／ `appendFirstRoundPairs(cls,pairs)`（末尾 append のみ・実行時再検証 + backup/rollback post-check・SAVE-FRP-002・`startTournamentForClass`/`generatePairing`/`applyStartForCandidates` 非呼出）／ `collectCheckedUnassignedPids(cls)`（pane スコープのチェック集約）／ `buildFrpAppendConfirmMessage`（confirm 用プレーンテキスト・escape 不要）／ `onClickAppendFirstRound(cls)`（再入防止 + 実行時再検証 + confirm + append）。
+- **既存への変更（純追加）**: `buildFirstRoundPartialSectionHtml` の checkbox / `frpAddBtn_` を **有効化**し文言を「選択した参加者で1局目を追加作成」へ置換（helper は表示専用のまま）／ `bindClassActionBarEvents` で `frpAddBtn_` を `onClickAppendFirstRound` に bind／ `buildClassActionBarHtml` の部分開始ヘルプから暫定文言を撤去。既存 `startBtnClass_`/リセット/`validateStartableClass`/`generatePairing`/`submitRound`/`startTournamentForClass`/`applyStartForCandidates` は無改変。
+- **仕様の核**: 奇数3人以上は末尾1人を **leftover として未割当のまま残す**（state 非保存・派生で残置）／ 0人・1人は **作成不可**／ `results[cls].length>=1` は **全面ブロック**、`pairings[cls]` 内に winner 入力済み match があっても **results 空なら既存 winner を変更せず append 許可**（results 確定と pairings 内 winner を分離）。
+- **保存検証 SAVE-FRP-002**: save 後 `pairingsMatchSnapshot(persisted.pairings[cls], expected)`（p1/p2/winner/lastModifiedBy 全要素）。不一致は `notifySaveWarning`（`SAVE-FRP-002-appendFirstRoundPairs`・warn・**rollback しない・運営継続**）。
+- **テスト**: 新規 `test/test_frp_impl_003.js`（64 assert・架空データのみ）を追加し `run_tests.sh` の FRP-IMPL-002 ブロックの後に登録。`test/test_frp_impl_002.js` は append 実装に伴い「未実装ガード」assert を現実へ追従（OFF→WIRED・79 assert で PASS 維持）。`bash test/run_tests.sh shogi_v4.html` = **PASS=64 / FAIL=1 / WARN=35**（baseline `3394e4a` = 63/1/35。**+1 PASS・新規 FAIL/WARN 0**。FAIL=1 は既存 `data_*` 環境要因。未エスケープ 0 件）。詳細 = `docs/notes/20260617_frp_impl_003_result.md`。
+- **変更ファイル**: `shogi_v4.html` / `test/run_tests.sh` / `test/test_frp_impl_002.js`（更新）/ `test/test_frp_impl_003.js`（新規）/ `HANDOFF.md`（追記）/ `docs/notes/20260617_frp_impl_003_result.md`（新規）。`index.html` / `.github`（workflow）/ `package*` は無変更。
+- **production / main / orphan clean base への直接変更なし**（orphan = `3394e4a` のまま前進させていない）。**#222 / #223（CLOSED/superseded）は一切操作なし**（再 open / comment / rebase なし）。**#227 / #228 への追加修正なし**。
+- Draft PR。Ready化 / merge / deploy / publish / release は未実施。branch 削除なし。**後続タスク = FRP-IMPL-004**（保存復元堅牢化・再生成ボタン制御・bye/任意組み合わせ/手動並び替え）は未着手。memory 更新は本ターン外。

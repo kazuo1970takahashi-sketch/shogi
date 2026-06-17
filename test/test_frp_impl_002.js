@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // FRP-IMPL-002: 1局目部分手合いの「土台 + 1局目未割当一覧表示」単体テスト。
 //   設計: docs/specs/20260617_frp_design_002_post_225_partial_first_round.md（FRP-DESIGN-002）
-//   本スライスの範囲: 部分開始（startClassPartial）と未割当一覧の「表示」まで。
-//     選択者を選んで対局を append 作成する処理は実装しない（次スライス FRP-IMPL-003）。
-//     append ボタン・チェックボックスは disabled（イベント未登録・「次スライスで対応予定」明記）。
+//   本スライスの範囲: 部分開始（startClassPartial）と未割当一覧の「表示」。
+//     ※ append 作成（buildFirstRoundPartialPairs / appendFirstRoundPairs / frpAddBtn 有効化）は後続 FRP-IMPL-003 で実装済み。
+//       その詳細挙動・guard・SAVE-FRP-002 は test_frp_impl_003.js が担保する。本テストは 002 の土台が 003 実装後も
+//       壊れていないことの回帰確認（下記 WIRED ブロックで「未実装ガードが現実に追従」していることを最小確認する）。
 //   観点（タスク test 要件）:
 //     V.  validatePartialStartableClass: 未開始1名以上で ok / 偶数を要求しない / 開始済み・0名は拒否（pure）。
 //     U.  getUnassignedFirstRoundPlayers: pairings 在籍者を除外 / results 非空で空 / entry_no 昇順 / 削除者非混入。
@@ -11,9 +12,9 @@
 //     SAVE. SAVE-FRP-001: 保存成功時は warn 発火しない（初期 started=false を warn と混同しない）/
 //           保存未確認（localStorage 書込不能）のときだけ warn 発火・rollback しない。
 //     D.  表示: 未開始 pane に部分開始ボタン / started+results空 pane に未割当一覧 / 0・1・2人以上 /
-//           A/B 独立 / 奇数でも表示 / checkbox・追加ボタンは disabled+準備中文言 / 受付タブに新導線を出さない。
-//     OFF. append 作成は未実装: append helper（buildFirstRoundPartialPairs/appendFirstRoundPairs）は undefined /
-//           frpAddBtn・checkbox に click/change を bind しない（押せない）。
+//           A/B 独立 / 奇数でも表示 / checkbox・追加ボタンは有効（FRP-IMPL-003）/ 受付タブに新導線を出さない。
+//     WIRED. append 作成は FRP-IMPL-003 で実装済み: append helper が実在し frpAddBtn を bind する
+//           （押せる。暫定文言「次スライスで対応予定」は撤去）。詳細挙動は test_frp_impl_003.js。
 //     NAV. 受付タブ nav-only / state 不変回帰（#225 後の最重要前提）:
 //           goToTournamentFromReg は対局管理タブへ移動するだけ。round 作成なし・started 不変・
 //           pairings/results 不変・generatePairing/startTournamentForClass/startClassPartial を呼ばない。
@@ -289,7 +290,7 @@ function fnBody(name){
   e2.startClassPartial('A');
   const secA = e2.buildFirstRoundPartialSectionHtml('A');
   assert(secA.indexOf('1局目 未割当参加者')>=0, 'D-sec1 未割当セクション見出し「1局目 未割当参加者」');
-  assert(secA.indexOf('今回は未割当者の確認のみ')>=0, 'D-sec1b 説明文に「今回は未割当者の確認のみ」（完成形に見せない）');
+  assert(secA.indexOf('選択した参加者で1局目を追加作成')>=0, 'D-sec1b 説明文/ボタンに「選択した参加者で1局目を追加作成」（FRP-IMPL-003 で append 実装済み）');
   assert(secA.indexOf('架空太郎')>=0 && secA.indexOf('架空四郎')>=0, 'D-sec2 2人以上: 未割当の全4名が一覧に出る');
   // render 経路でも pane に出る
   assert(e2._ctx._elements['pane-A'] && e2._ctx._elements['pane-A'].innerHTML.indexOf('1局目 未割当参加者')>=0, 'D-sec2b renderTournament 経路でも pane-A に未割当一覧が描画される');
@@ -313,11 +314,11 @@ function fnBody(name){
   eR._setState(sR);
   assert(eR.buildFirstRoundPartialSectionHtml('A')==='', 'D-sec5 results 非空（1局目確定後/2回戦以降）では未割当セクションを出さない');
 
-  // checkbox・追加ボタンは disabled + 準備中文言（押せると誤解させない）
-  assert(/frp-unassigned-cb[^>]*disabled/.test(secA), 'D-dis1 未割当チェックボックスは disabled（このスライスでは選択操作不可）');
-  assert(/frpAddBtn_A[^>]*disabled/.test(secA), 'D-dis2 「対局の作成」ボタンは disabled（append は次スライス）');
-  assert(secA.indexOf('次スライスで対応予定')>=0, 'D-dis3 追加ボタン周りに「次スライスで対応予定」の準備中文言');
-  assert(secA.indexOf('選択者で対局作成')<0, 'D-dis4 完成形に見える旧文言「選択者で対局作成」は使わない');
+  // checkbox・追加ボタンは有効（FRP-IMPL-003 で append 実装済み）。暫定文言は撤去。
+  assert(!/frp-unassigned-cb[^>]*disabled/.test(secA), 'D-dis1 未割当チェックボックスは有効（FRP-IMPL-003 で選択可能）');
+  assert(!/frpAddBtn_A[^>]*disabled/.test(secA), 'D-dis2 「選択した参加者で1局目を追加作成」ボタンは有効（FRP-IMPL-003）');
+  assert(secA.indexOf('次スライスで対応予定')<0 && secA.indexOf('選択した参加者で1局目を追加作成')>=0, 'D-dis3 暫定文言「次スライスで対応予定」は撤去され実ボタン文言に置換');
+  assert(secA.indexOf('選択者で対局作成')<0, 'D-dis4 完成形と紛らわしい旧文言「選択者で対局作成」は使わない（文言規律を維持）');
 
   // 受付タブ（renderRegList）に新しい手合作成導線を出さない（受付タブは nav-only / 無変更）
   const eReg = loadEnv(); eReg._setState(eReg.normalizeState(fxState()));
@@ -349,24 +350,25 @@ function fnBody(name){
 }
 
 // ============================================================
-// OFF. append 作成は未実装（helper 不在 / frpAddBtn・checkbox に bind しない＝押せない）
+// WIRED. append 作成は FRP-IMPL-003 で実装済み（helper 実在 / frpAddBtn を bind）。
+//   詳細な append 挙動・guard・SAVE-FRP-002 は test_frp_impl_003.js が担保する。本ブロックは
+//   「002 が前提とした未実装ガードが、003 実装後の現実に追従している」ことの最小確認（回帰防止）。
 // ============================================================
 {
   const env = loadEnv();
-  // append helper はまだ存在しない（FRP-IMPL-003 で実装）
-  assert(env.appendTypeofs.buildFirstRoundPartialPairs==='undefined', 'OFF1 buildFirstRoundPartialPairs は未実装（undefined・FRP-IMPL-003）');
-  assert(env.appendTypeofs.appendFirstRoundPairs==='undefined', 'OFF2 appendFirstRoundPairs は未実装（undefined・FRP-IMPL-003）');
-  // bindClassActionBarEvents は frpAddBtn / checkbox を bind しない（append を起動できない）
+  // append helper は FRP-IMPL-003 で実装済み（function）
+  assert(env.appendTypeofs.buildFirstRoundPartialPairs==='function', 'OFF1 buildFirstRoundPartialPairs は実装済み（function・FRP-IMPL-003）');
+  assert(env.appendTypeofs.appendFirstRoundPairs==='function', 'OFF2 appendFirstRoundPairs は実装済み（function・FRP-IMPL-003）');
+  // bindClassActionBarEvents は frpAddBtn を取得して onClickAppendFirstRound を bind する（押せる）
   const bindBody = fnBody('bindClassActionBarEvents');
-  // frpAddBtn を getElementById で取得して click を張る記述が無い＝押しても何も起きない（コメント言及は許容）。
-  assert(bindBody.indexOf("getElementById('frpAddBtn")<0, 'OFF3 bindClassActionBarEvents は frpAddBtn を取得して bind しない（押しても何も起きない）');
-  assert(bindBody.indexOf('startBtnPartial_')>=0, 'OFF3b bindClassActionBarEvents は部分開始ボタンのみ bind（startClassPartial）');
-  // ソース全体で frpAddBtn を getElementById で取得して bind することはない（押しても何も起きない）
-  assert(RAW.indexOf("getElementById('frpAddBtn")<0, 'OFF3c ソース全体で frpAddBtn を getElementById で取得しない（click を bind しない）');
+  assert(bindBody.indexOf("getElementById('frpAddBtn")>=0, 'OFF3 bindClassActionBarEvents は frpAddBtn を取得して append handler を bind する（FRP-IMPL-003）');
+  assert(bindBody.indexOf('startBtnPartial_')>=0, 'OFF3b bindClassActionBarEvents は部分開始ボタンも bind（startClassPartial）');
+  // ソース全体で frpAddBtn を getElementById で取得し click を bind する（押せる）
+  assert(RAW.indexOf("getElementById('frpAddBtn")>=0, 'OFF3c ソース全体で frpAddBtn を getElementById で取得し click を bind する（FRP-IMPL-003）');
   const secBody = fnBody('buildFirstRoundPartialSectionHtml');
-  assert(secBody.indexOf('addEventListener')<0, 'OFF4 未割当セクション生成に addEventListener を含まない（表示専用）');
-  // append 作成を示す state mutate（concat/push to pairings からの append）を未割当セクション helper が持たない
-  assert(secBody.indexOf('.concat(')<0 && secBody.indexOf('state.pairings')<0, 'OFF5 未割当セクション helper は pairings を mutate しない（表示専用）');
+  assert(secBody.indexOf('addEventListener')<0, 'OFF4 未割当セクション生成に addEventListener を含まない（表示と bind を分離・bind は bindClassActionBarEvents）');
+  // 未割当セクション helper 自体は pairings を mutate しない（append は appendFirstRoundPairs に分離）
+  assert(secBody.indexOf('.concat(')<0 && secBody.indexOf('state.pairings')<0, 'OFF5 未割当セクション helper は pairings を mutate しない（表示専用・append は別関数）');
 }
 
 // ============================================================
