@@ -148,7 +148,7 @@ PR #225（START-UX-CONSOLIDATE-001）は 2026-06-17 に squash merge（`67e0b81`
 | 選択肢 | 評価 |
 |---|---|
 | **A: rebase して再利用** | 各 conflict（HANDOFF.md・buildClassActionBarHtml・run_tests.sh）は解消可能だが、rebase 後の PR が「#225 前提のコメント混入」リスクを持つ。orphan 系統の clean な線形履歴を保つためには推奨しない |
-| **B: close → 新 PR で作り直し（推奨）** | #222 の設計知見・#223 の実装コードをそれぞれ新 PR にコピー・更新して使う。clean base `67e0b81` から始まる新しい系譜になり、TOCTOU・conflict リスクが消える |
+| **B: close → 新 PR で作り直し（推奨）** | #222 の設計知見・#223 の実装コードをそれぞれ新 PR にコピー・更新して使う。**#226 merge 後の orphan HEAD** から始まる新しい系譜になり、TOCTOU・conflict リスクが消える（`67e0b81` は #226 作成時点の base HEAD であり次 PR の固定起点ではない） |
 | **C: superseded コメントのみ・Draft 放置** | 後から見たとき混乱する（「この PR は使えるのか」が不明）。推奨しない |
 | **D: close しない・保留継続** | 現在の状態。棚卸し結果が出た後も保留を続けることは「作り直し判断を先送りにしているだけ」になる |
 | **E: そのまま Ready化・merge** | base が stale・conflict あり・前提ズレのため、そのまま merge は **禁止** |

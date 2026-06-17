@@ -59,7 +59,8 @@
 - **POST-225-FRP-REBASE-INVENTORY-001（本 PR）**: #225 merge 後の #222/#223 棚卸し文書を追加。docs-only。
 - **PR #222 FRP-DESIGN-001**: Draft/Open のまま **直接続行禁止**（base が `3b86edb` = 2 commits stale / HANDOFF.md conflict）。棚卸し結果: 設計内容 95% 有効。**FRP-DESIGN-002 として新 PR に作り直し推奨**。close は FRP-DESIGN-002 PR 作成後に行う。
 - **PR #223 FRP-IMPL-001**: Draft/Open のまま **直接続行禁止**（`buildClassActionBarHtml` コンテキスト conflict / HANDOFF.md conflict）。棚卸し結果: `validatePartialStartableClass` / `startClassPartial` / `getUnassignedFirstRoundPlayers` / `buildFirstRoundPartialSectionHtml` は再利用可。**FRP-IMPL-002 として新 PR に作り直し推奨**。close は FRP-IMPL-002 PR 作成後に行う。
-- **次候補**: **FRP-DESIGN-002**（`67e0b81` 起点 docs-only 設計書更新）→ **FRP-IMPL-002**（部分開始 + 未割当一覧表示 土台）。詳細は `docs/specs/20260617_post_225_frp_rebase_inventory_001.md`。
+- **次候補**: **FRP-DESIGN-002**（#226 merge 後の orphan HEAD 起点 docs-only 設計書更新）→ **FRP-IMPL-002**（部分開始 + 未割当一覧表示 土台）。詳細は `docs/specs/20260617_post_225_frp_rebase_inventory_001.md`。
+- **#222/#223 close**: 後継 PR（FRP-DESIGN-002 / FRP-IMPL-002）リンク確定後かつ人間の明示指示後に行う。#226 merge 直後に即 close しない。
 
 ## このターンの変更有無（正確な記録）
 
