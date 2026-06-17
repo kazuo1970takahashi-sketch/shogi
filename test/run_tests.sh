@@ -1132,6 +1132,25 @@ else
 fi
 
 # ============================================
+# FRP-IMPL-004B 再生成ボタン gate
+#   初回 round の部分手合い組成中（started・results 空・未割当>0）に repairBtn_ を出力しない
+#   shouldShowRegenerateButton(cls) の predicate / buildCurrentPairingsHtml 出力 gate / DOM bind 対象の有無 /
+#   強化 confirm（最小限）/ A-B 独立 / generatePairing 本体不変 を固定する。UI 文言調整（004C）は対象外。
+# ============================================
+echo ""
+echo "【FRP-IMPL-004B 再生成ボタン gate（部分手合い組成中は repairBtn_ 非表示・confirm 強化・generatePairing 不変）】"
+if [ -f "$SCRIPT_DIR/test_frp_impl_004b.js" ]; then
+  if node "$SCRIPT_DIR/test_frp_impl_004b.js" "$TARGET" > /tmp/frp_impl_004b_out.log 2>&1; then
+    ok "FRP-IMPL-004B テスト 全PASS ($(tail -1 /tmp/frp_impl_004b_out.log))"
+  else
+    ng "FRP-IMPL-004B テスト 失敗"
+    cat /tmp/frp_impl_004b_out.log
+  fi
+else
+  warn "test_frp_impl_004b.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""

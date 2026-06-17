@@ -5933,6 +5933,26 @@ function getUnassignedFirstRoundPlayers(cls){
   return out;
 }
 
+// FRP-IMPL-004B (設計 §5.4 / §5.4.1 / §5.4.2): 「組み合わせを再生成」(repairBtn_) を出力してよいかを判定する reader。
+//   以下4条件すべてが真のときだけ false（＝部分手合い組成中で未割当が残る初回 round）を返し、それ以外は true。
+//     - isClassStarted(cls)
+//     - state.results[cls].length === 0
+//     - state.pairings[cls].length > 0
+//     - getUnassignedFirstRoundPlayers(cls).length > 0
+//   未割当0 は「部分手合い・未割当0」と「通常開始 round1・未割当0」を現行 state では識別できない
+//   （start source / generatedBy / match-level source 等の保存メタ情報を持たない＝§3.2）ため、
+//   由来を問わず非表示条件に含めない＝true（表示してよい）。generatePairing 本体は不変で、制御は
+//   この出力 gate（UI 層）に閉じる。reader・副作用なし（global state 依存）。
+function shouldShowRegenerateButton(cls){
+  if(!isClassStarted(cls))return true;
+  var results=(state&&state.results&&state.results[cls])||[];
+  if(results.length!==0)return true;
+  var pairings=(state&&state.pairings&&state.pairings[cls])||[];
+  if(pairings.length===0)return true;
+  if(getUnassignedFirstRoundPlayers(cls).length===0)return true;
+  return false;
+}
+
 // FRP-IMPL-003 (FRP-DESIGN-002 §7 / §9): 選択者から1局目の候補ペアを作る pure helper（state 非参照・副作用なし）。
 //   - 入力 selected = player オブジェクト配列（呼出側で「現在の未割当者」に再検証済みのものを渡す）。
 //   - entry_no 昇順に整列。entry_no 欠損/不正(非正の数・非 number)は末尾へ回し、同値は id 昇順で安定 tie-break。
@@ -6845,7 +6865,11 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
   }
   html+='<div style="display:flex;gap:8px;margin-top:8px">'
     +'<button class="btn-success" id="submitBtn_'+cls+'">'+roundNum+'回戦 確定して次へ</button>'
-    +'<button style="padding:8px 16px;border-radius:8px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:14px;cursor:pointer" id="repairBtn_'+cls+'">組み合わせを再生成</button>'
+    // FRP-IMPL-004B (設計 §5.4 / §5.4.2): 部分手合い組成中（started・results 空・未割当>0）は
+    //   再生成ボタンを出力しない（HTML に出さない＝bind 対象も存在しない）。未割当0 は由来を問わず従来どおり出力。
+    +(shouldShowRegenerateButton(cls)
+      ?'<button style="padding:8px 16px;border-radius:8px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:14px;cursor:pointer" id="repairBtn_'+cls+'">組み合わせを再生成</button>'
+      :'')
     +'</div>';
   return html;
 }
@@ -6866,9 +6890,14 @@ function bindTournamentEvents(cls){
   if(sb)sb.addEventListener('click',function(){submitRound(cls);});
   var rb=document.getElementById('repairBtn_'+cls);
   if(rb)rb.addEventListener('click',function(){
-    var hasWinner=state.pairings[cls].some(function(m){return m.winner;});
+    var pairings=state.pairings[cls]||[];
+    var hasWinner=pairings.some(function(m){return m&&m.winner;});
     if(hasWinner){
       if(!confirm('入力済みの勝敗があります。組み合わせを再生成すると勝敗が消えます。続けますか？'))return;
+    }else if(((state.results&&state.results[cls])||[]).length===0&&pairings.length>0){
+      // FRP-IMPL-004B (設計 §5.4.1): 結果未確定の初回 round の再生成は「今の手合いを作り直す」破壊操作。
+      //   部分手合い・未割当0 と通常開始 round1・未割当0 は state で識別できないため由来を問わず同じ確認を出す。
+      if(!confirm('現在の組み合わせをすべて作り直します。今ある手合いは破棄され、全員をペアし直します。よろしいですか？'))return;
     }
     generatePairing(cls);renderTournament(cls);
   });
