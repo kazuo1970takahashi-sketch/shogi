@@ -135,6 +135,16 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
   .tab{font-size:12px;padding:10px 2px}
   .header h1{font-size:13px}
 }
+/* MOBILE-TAB-001: 320px 級の極小幅で active タブ「参加者登録」(5文字) が2行に折り返す件の改善。
+   .tab は flex:1 の等幅配分のため最長ラベルが基準になる。font-size を 11px に下げ、tab-bar の
+   gap/余白と .tab の横パディングを詰めて1行に収める。横パディング 0 でも等幅 flex + 中央寄せで
+   左右の視覚的余白は確保され、縦 10px は維持するためタップ高さ・タブ幅(タップ領域)は不変。
+   CJK 全角は約 1em 幅で端末差が小さく、約 2.6px の余白で収まる。white-space:nowrap には
+   あえて頼らず、想定外でも折り返しに留めて横スクロールは発生させない。361px 以上は従来表示のまま。 */
+@media(max-width:360px){
+  .tab-bar{gap:2px;padding:3px}
+  .tab{font-size:11px;padding:10px 0}
+}
 /* ROUND-CLASS-START-007 (spec §15.1):
    #result-B 固定の page-break を .result-section + .result-section に汎用化。
    隣接する .result-section 間で改ページ（最初の section は改ページしない）。
