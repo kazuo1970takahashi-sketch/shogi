@@ -21,6 +21,11 @@
 #     不一致なら merge せず停止する（早期検出）。
 #   - orphan-dev profile / --orphan-base-branch に対応（gate へ委譲）。
 #
+# [AI-DEV-GATES-V1-FOLLOWUP-001] post-merge 検証（Step7/8）の gh api 非依存化:
+#   - Step7（base 最新 SHA）/ Step8（head branch 残存確認）は `gh api` を使わず、
+#     `git ls-remote --heads origin <branch>` で照会する。当環境で gh api が deny でも
+#     --execute 経路の事後検証が劣化しない。head-CAS / --delete-branch 不使用 / dry-run 既定は不変。
+#
 # 使い方:
 #   ./scripts/shogi_tour_approved_merge.sh --pr <番号> --profile <profile> --dry-run
 #   ./scripts/shogi_tour_approved_merge.sh --pr <番号> --profile <profile> --execute [--yes] [--post-comment]
@@ -33,7 +38,8 @@
 #   10 gate=NEEDS_REVIEW のため停止
 #   20 gate=BLOCKED のため停止
 #
-# 依存: bash 3.2+, gh (認証済み), python3
+# 依存: bash 3.2+, gh (認証済み), git, python3
+#   （Step7/8 の post-merge 検証は git ls-remote のみ。gh api は不使用＝[FOLLOWUP-001]）
 # =============================================================================
 
 PROG_NAME="$(basename "${BASH_SOURCE[0]}")"
@@ -306,22 +312,23 @@ amerge_main() {
   fi
   note "squash merge を実行しました（head SHA $_merge_head に固定 / branch は削除していません）。"
 
-  # --- Step 7: base 最新 SHA ---
+  # --- Step 7: base 最新 SHA（[AI-DEV-GATES-V1-FOLLOWUP-001] gh api 非依存：git ls-remote） ---
+  #   origin remote の refs/heads/$PR_BASE を直接照会する（当環境 deny の gh api を使わない）。
+  #   ls-remote 出力は "<SHA>\t<ref>"。ref 完全一致で先頭の SHA を取り出す（suffix 誤マッチ回避）。
   echo ""
   echo "----- Step: $PR_BASE の最新 SHA -----"
-  _base_blob="$(gh api "repos/$REPO/branches/$PR_BASE" 2>/dev/null)"
-  _base_sha="$(json_get "$_base_blob" 'd.get("commit",{}).get("sha","")')"
-  if [ -z "$_base_sha" ]; then _base_sha="(取得できず。gh api repos/$REPO/branches/$PR_BASE を手動確認)"; fi
+  _base_sha="$(git ls-remote --heads origin "$PR_BASE" 2>/dev/null | awk -v ref="refs/heads/$PR_BASE" '$2==ref {print $1; exit}')"
+  if [ -z "$_base_sha" ]; then _base_sha="(取得できず。git ls-remote --heads origin $PR_BASE を手動確認)"; fi
   note "  $PR_BASE head SHA: $_base_sha"
 
-  # --- Step 8: head branch が remote に残存しているか確認 ---
+  # --- Step 8: head branch が remote に残存しているか確認（[AI-DEV-GATES-V1-FOLLOWUP-001] gh api 非依存：git ls-remote） ---
+  #   origin remote に refs/heads/$PR_HEAD が在るかを照会する（--delete-branch 不使用方針の事後確認）。
   echo ""
   echo "----- Step: head branch '$PR_HEAD' の残存確認 -----"
-  _head_blob="$(gh api "repos/$REPO/branches/$PR_HEAD" 2>/dev/null)"
-  _head_name="$(json_get "$_head_blob" 'd.get("name","")')"
-  if [ -n "$_head_name" ]; then
-    _head_state="保持されています（remote に '$PR_HEAD' が存在。削除していません）"
-    note "  OK: head branch '$PR_HEAD' は remote に残存しています。"
+  _head_sha="$(git ls-remote --heads origin "$PR_HEAD" 2>/dev/null | awk -v ref="refs/heads/$PR_HEAD" '$2==ref {print $1; exit}')"
+  if [ -n "$_head_sha" ]; then
+    _head_state="保持されています（remote に '$PR_HEAD' が存在。削除していません） [SHA $_head_sha]"
+    note "  OK: head branch '$PR_HEAD' は remote に残存しています（SHA $_head_sha）。"
   else
     _head_state="!! remote に '$PR_HEAD' が見つかりません（本スクリプトは削除していません。リポジトリの自動削除設定や手動操作を確認してください）"
     note "  WARN: head branch '$PR_HEAD' が見つかりません。"
