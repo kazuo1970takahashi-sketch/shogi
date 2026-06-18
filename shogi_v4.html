@@ -4370,6 +4370,15 @@ function makePlayerRow(p,cls,i){
   editBtn.addEventListener('click',(function(pid,c){return function(){editPlayer(pid,c);};})(p.id,cls));
   buttonsDiv.appendChild(editBtn);
 
+  // START-FRP-UX-001: 参加者一覧から ふりがな（player.yomi）を登録後でも編集できる導線。
+  //   名前編集（editPlayer / 会員マスタ同期）とは独立した別ボタン。空欄でルビなしに戻せる。
+  //   click は addEventListener（innerHTML 連結しない＝未エスケープ検査ヒューリスティクスを踏まない）。
+  var yomiBtn=document.createElement('button');
+  yomiBtn.className='btn-sm';
+  yomiBtn.textContent='ふりがな';
+  yomiBtn.addEventListener('click',(function(pid,c){return function(){editPlayerYomi(pid,c);};})(p.id,cls));
+  buttonsDiv.appendChild(yomiBtn);
+
   var delBtn=document.createElement('button');
   delBtn.className='btn-sm btn-danger';
   delBtn.textContent='削除';
@@ -5502,6 +5511,29 @@ function editPlayer(id,cls){
   }
   // MASTER-001: 会員マスタ反映の分岐確認モーダルを開く。
   openMemberMasterSyncDialog(p,newName);
+}
+
+// START-FRP-UX-001: 参加者一覧の「ふりがな」を登録後でも編集・保存できるようにする（編集導線）。
+//   - 当日 state の player.yomi のみ更新する。受付一覧のルビ表示（makePlayerRow / renderPlayerNameWithRuby）が
+//     読む値はこの player.yomi なので、ここを更新すれば一覧のルビが即時に変わる。
+//   - 空欄で確定するとルビなし（氏名のみ表示）に戻せる（normalizeYomi('')===''）。既存データに yomi が無くても壊れない。
+//   - キャンセル（prompt が null）/ 変更なしは no-op（無駄な save・再描画を避ける）。
+//   - 保存・保存未確認 warn・renderRegList 再描画は updateField(field='yomi') に委譲（既存の保存検証経路 SAVE-003b を流用）。
+//   - 氏名編集（editPlayer / MASTER-001 会員マスタ同期）とは独立。名前/マスタ同期ロジックには触れない。
+//     会員マスタ側 yomi への反映は本スライス対象外（参加者一覧のルビ表示が目的）。
+function editPlayerYomi(id,cls){
+  var players=(state.players&&state.players[cls])||[];
+  var p=null;
+  for(var i=0;i<players.length;i++){if(players[i]&&players[i].id===id){p=players[i];break;}}
+  if(!p)return;
+  var displayName=getName(id,cls);
+  var cur=(typeof p.yomi==='string')?p.yomi:'';
+  var input=prompt(displayName+' のふりがなを入力してください（空欄にするとルビなしに戻ります）',cur);
+  if(input===null)return;                 // キャンセルは変更しない
+  var normalized=normalizeYomi(input);
+  if(normalized===cur)return;             // 変更なしは保存しない
+  updateField(id,cls,'yomi',normalized);  // save() + 保存検証(SAVE-003b) + renderRegList は updateField 側に委譲
+  showMsg(displayName+' のふりがなを更新しました','ok');
 }
 
 // ROUND-CLASS-START-004 (spec §6.3.2):
@@ -6931,14 +6963,22 @@ function buildClassActionBarHtml(cls){
   var className=(classInfo&&classInfo.name)?classInfo.name:(cls+'クラス');
   var players=(state.players&&state.players[cls])||[];
   var classStarted=isClassStarted(cls);
-  var html='<div class="class-action-bar" style="display:flex;gap:8px;margin-bottom:12px;align-items:center">';
+  // START-FRP-UX-001 (Feature 1): クラス別「開始」を主導線として目立たせ、「リセットだけが目立つ」状態を解消する。
+  //   - 未開始: 「<className>全員で1局目を開始」を full-size btn-primary（主導線）にする（btn-sm を外す）。
+  //   - 開始済み: 先頭に「✓ <className> 開始済み」の状態ラベルを置き、破壊的なリセットボタンを相対的に控えめにする
+  //     （リセットは btn-danger btn-sm のまま据え置き＝誤操作防止・既存挙動不変）。
+  //   id / 文言 / 未開始・開始済みの分岐は START-UX-CONSOLIDATE-001 / FRP-IMPL-002 のテスト pin を保持する
+  //   （本変更は CSS クラスと状態ラベルの追加のみ。startBtnClass_/startBtnPartial_/resetBtnClass_ の id・文言は不変）。
+  var html='<div class="class-action-bar" style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">';
   if(classStarted){
+    html+='<span class="class-status-started" style="font-size:13px;color:#1F3864;font-weight:bold">✓ '+escapeHtml(className)+' 開始済み</span>';
     html+='<button type="button" class="btn-danger btn-sm" id="resetBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'をリセット</button>';
     html+='<span style="font-size:12px;color:#888">※他クラスのデータは保持されます</span>';
   } else if(players.length>=2 && players.length%2===0){
     // START-UX-CONSOLIDATE-001 (設計 §7): 正規の開始導線。文言を「<className>全員で1局目を開始」に明確化。
     //   「全員」は全クラスではなく、そのクラス内全員の意味。startTournamentForClass(cls) は当該クラスのみ開始する。
-    html+='<button type="button" class="btn-primary btn-sm" id="startBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'全員で1局目を開始</button>';
+    //   START-FRP-UX-001: 主導線として full-size btn-primary にする（btn-sm を外す）。
+    html+='<button type="button" class="btn-primary" id="startBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'全員で1局目を開始</button>';
     html+='<span style="font-size:12px;color:#888">※このクラス内の全員で開始します（他クラスは開始しません）</span>';
   }
   // FRP-IMPL-002/003 (FRP-DESIGN-002 §2.3 / §8): 未開始かつ参加者1名以上なら「部分開始」導線を併置。
