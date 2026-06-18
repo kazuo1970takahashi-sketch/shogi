@@ -44,10 +44,24 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .player-row{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#f8fbff;border:1px solid #d0e4f7;border-radius:8px;margin-bottom:6px;flex-wrap:wrap}
 .player-row-main{display:flex;flex:1;gap:6px;align-items:center;flex-wrap:wrap;min-width:0}
 .player-row-actions{display:flex;gap:6px;align-items:center;margin-left:auto}
-.player-row-buttons{display:flex;gap:6px;align-items:center}
+/* MOBILE-HEADER-001 (PR #235 繰越): 受付一覧の操作ボタン群（名前編集 / ふりがな / 削除）は
+   .player-row-actions(スマホで width:100% + space-between) の右側に置かれる。最狭幅で 3 ボタンが
+   1 行に収まらないと横あふれしていた。flex-wrap:wrap で入り切らない分だけ折り返す（PC 幅は
+   十分広く 1 行に収まるため折り返さず従来どおり＝見た目不変）。class-action-bar(#235) と同じ流儀。 */
+.player-row-buttons{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 @media(max-width:600px){
   .player-row-main{width:100%;flex:unset}
   .player-row-actions{width:100%;margin-left:0;justify-content:space-between}
+  /* MOBILE-HEADER-001: スマホ幅で上部ヘッダーを「タイトル行」と「操作ボタン行」に段組みする。
+     .header は title(div) と操作ボタン群(div) の 2 子を持つ flex(space-between)。狭幅で 1 行に
+     詰めるとボタン群が圧縮され、長い日本語ラベル（例「大会データを全リセット」）が 1 文字ずつ
+     縦に割れていた。ヘッダー自体を flex-wrap で折り返し、ボタン群(:last-child=操作側)を全幅・
+     折返し可にして 1 行強制を解く。各ボタンは white-space:nowrap で文字の縦割れを防止する。
+     危険操作ボタン（全リセット / 進行リセット）は btn-sm サイズのまま維持し縮小しない。
+     PC 幅はこの @media 外なので従来の 1 行レイアウトのまま不変。 */
+  .header{flex-wrap:wrap;gap:8px}
+  .header>div:last-child{width:100%;flex-wrap:wrap}
+  .header button{white-space:nowrap}
 }
 .player-name{font-weight:500;min-width:70px;font-size:14px}
 /* FURIGANA-MVP-001: 受付一覧のふりがなルビ表示（氏名の上に小さく）。MVP では受付一覧のみ。 */
