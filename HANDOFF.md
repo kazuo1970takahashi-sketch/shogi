@@ -156,3 +156,10 @@
 - **検証**: `node test/test_frp_impl_004b.js shogi_v4.html` = **PASS 29 / FAIL 0**。回帰 `test_frp_impl_004.js`=**34/0**・`test_frp_impl_002.js`=**79/0**・`test_frp_impl_003.js`=**64/0**。`bash test/run_tests.sh shogi_v4.html` = **PASS=66 / FAIL=0 / WARN=35**（004A baseline 65→66＝004B ブロック +1 PASS・**新規 WARN なし**）。
 - **変更ファイル**: `shogi_v4.html`（reader 追加 + 出力 gate + confirm 強化）/ `test/test_frp_impl_004b.js`（新規）/ `test/run_tests.sh`（004B 登録）/ `HANDOFF.md`（本追記）。`index.html` / `package*` / `.github` は**無変更**。match スキーマ拡張・leftover 保存・`round`/`table`/`source`/`generatedBy` 保存追加なし・bye/任意組み合わせ/手動並び替え/複数 round 生成なし・**004C 補助文増量なし**。
 - **production / main / orphan clean base への直接変更なし**。**他 PR（#222/#223/#229/#230/#231/#232）は一切操作なし**。Draft PR・Ready化 / merge / deploy / publish / release は未実施。branch 削除なし。
+
+## Docs: FRP-IMPL-004 完了レビュー / 手動確認メモ
+
+- **FRP-IMPL-004A/B 完了レビューを docs-only で追加**: #231（設計）/#232（保存復元 reload テスト）/#233（再生成ボタン gate）merge 後の orphan HEAD `efdfa29c74d0ec2ea47fcbdf80c9d329acd85e6d` を base に、`docs/notes/20260618_frp_impl_004_completion_review_manual_check.md` を追加した。branch = `docs/frp-impl-004-completion-review-manual-check`。
+- **メモ内容**: 004 の目的、004A で固定した保存復元不変条件、004B の `shouldShowRegenerateButton(cls)` predicate、未割当0を非表示条件に含めない理由、`generatePairing` 本体不変、UI gate は通常操作保護で直接呼出は上書きされ得ること、手動確認シナリオ A-E、残 Nice to Have を整理。
+- **次候補**: まず手動確認後に判断。必要なら **004C**（UI 文言の最小補足）のみを小さく実施する。
+- **production 反映は未実施**。`main` / `production` への影響なし。`shogi_v4.html` / `test/` / `test/run_tests.sh` / `index.html` / `package*` / `.github` は無変更。Ready化 / merge / deploy / publish / release / branch 削除なし。
