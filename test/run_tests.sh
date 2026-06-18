@@ -1151,6 +1151,25 @@ else
 fi
 
 # ============================================
+# START-FRP-UX-001 幹事向け統合 UX（クラス別開始 / 1回戦中だけの途中参加 / 参加者一覧ルビ + ふりがな編集）受入テスト
+#   8 受入条件（A/B 別開始・A/B 別リセット・1回戦途中参加・2回戦以降ブロック・勝敗保護優先・
+#   ルビ未入力で非破壊・ルビ入力で一覧表示・save/reload 維持）を横断で固定する。
+#   本 PR 純追加分: editPlayerYomi（参加者一覧の ふりがな編集）/ buildClassActionBarHtml 主導線化。
+# ============================================
+echo ""
+echo "【START-FRP-UX-001 クラス別開始 / 途中参加 / 参加者一覧ルビ + ふりがな編集】"
+if [ -f "$SCRIPT_DIR/test_start_frp_ux_001.js" ]; then
+  if node "$SCRIPT_DIR/test_start_frp_ux_001.js" "$TARGET" > /tmp/start_frp_ux_001_out.log 2>&1; then
+    ok "START-FRP-UX-001 テスト 全PASS ($(tail -1 /tmp/start_frp_ux_001_out.log))"
+  else
+    ng "START-FRP-UX-001 テスト 失敗"
+    cat /tmp/start_frp_ux_001_out.log
+  fi
+else
+  warn "test_start_frp_ux_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
