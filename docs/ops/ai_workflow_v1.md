@@ -48,4 +48,4 @@ read-only 判定（merge しない。0=READY_CANDIDATE / 10=NEEDS_REVIEW / 20=BL
 ## 既存資産との関係（重複を作っていない）
 - 本 gate スクリプトは AUTO-001（PR #196/#197・main 系統）の `shogi_tour_pr_gate.sh` / `shogi_tour_approved_merge.sh` を **orphan base へバイト同一で再利用**し、`orphan-dev` profile と `--match-head-commit` head-CAS のみ追記したもの（`[AI-DEV-GATES-V1]` マーカー）。新規重複実装はしていない。
 - companion test（main の `test/test_pr_gate_scripts.sh`）の orphan base への移植＋`orphan-dev` / CAS 追加分のテストは **follow-up**（本 v1 は scope=docs/ops + scripts に限定し test/ を触らない）。
-- 既知の follow-up: `approved_merge.sh` の Step7/8 が `gh api`（当環境 deny 対象）使用 → `gh pr view` / `gh api` 不使用形への置換を別途検討（本 v1 は `--execute` を回さないため未着手）。
+- 解消済み follow-up（**AI-DEV-GATES-V1-FOLLOWUP-001**）: `approved_merge.sh` の Step7/8 が使っていた `gh api`（当環境 deny 対象）を撤去し、base 最新 SHA 取得・head branch 残存確認を `git ls-remote --heads origin <branch>` に置換した。これにより **`--execute` 経路の post-merge 検証が gh api 非依存**となり、当環境でも劣化しない。head-CAS（`--match-head-commit`）/ `--delete-branch` 不使用 / dry-run 既定の挙動は不変。
