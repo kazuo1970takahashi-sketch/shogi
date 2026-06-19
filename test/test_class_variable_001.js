@@ -109,6 +109,7 @@ function loadEnv(opts){
        addClass:addClass, renameClass:renameClass, removeClass:removeClass,
        canDeleteClass:canDeleteClass, nextClassId:nextClassId, classHasPlayers:classHasPlayers,
        allRegisteredPlayers:allRegisteredPlayers, getRegistrationClassList:getRegistrationClassList,
+       addPlayerFromMaster:addPlayerFromMaster,
        populateClassSelect:populateClassSelect, renderClassManager:renderClassManager,
        regClassNameId:regClassNameId, renderRegList:renderRegList,
        addPlayer:addPlayer, isClassStarted:isClassStarted, setClassStarted:setClassStarted,
@@ -467,6 +468,81 @@ function fxMemberIds(){
   env.save();
   assert(env.verifyStatePersisted('a1','架空太郎')===true, 'G10-8 [P2-2] A 参加者の保存確認は従来どおり true（後方互換）');
   assert(env.verifyStatePersisted('zzz','架空太郎')===false, 'G10-9 [P2-2] 存在しない id は false');
+}
+
+// ============================================================
+// G11. CV-1 Codex BLOCK 対応（P1）: 過去参加者パネル / addPlayerFromMaster の既登録判定を全クラス横断化
+//   症状＝C に member_id 付き or 同名で登録済みでも A/B しか見ず未登録扱いになり A/B へ二重登録できた。
+//   - addPlayerFromMaster の duplicate_member / duplicate_name 判定が C 在籍も検知（member_id 経路・同名経路）。
+//   - 一括追加（finalizeAddPastParticipants）の既登録集約は allRegisteredPlayers() ベース＝C も重複スキップ対象。
+//   - A/B のみ時は従来と同一結果（後方互換）。追加先ボタンは A/B のまま（非A/B hard reject 維持）。
+// ============================================================
+
+// マスタ：C 在籍の m-c1（架空三郎）含む実在会員 + 同名別 member_id の m-dup + 未登録 m-new。
+function fxMasterForDup(){
+  return {schema_version:1, members:[
+    {id:'m-a1',name:'架空太郎',yomi:'',member:'member',grade:'ippan'},
+    {id:'m-b1',name:'架空花子',yomi:'',member:'member',grade:'ippan'},
+    {id:'m-c1',name:'架空三郎',yomi:'',member:'member',grade:'ippan'},
+    {id:'m-dup',name:'架空三郎',yomi:'',member:'member',grade:'ippan'}, // C の c1 と同名・別 member_id
+    {id:'m-new',name:'架空新人',yomi:'',member:'member',grade:'ippan'}
+  ]};
+}
+
+// P1 member_id 経路: C 登録済み会員を A へ追加しようとすると duplicate_member（過去参加者パネルの A ボタン相当）
+{
+  const env = loadEnv();
+  env._setState(env.normalizeState(fxMemberIds()));
+  const st = env._getState();
+  const r = env.addPlayerFromMaster('m-c1','A',fxMasterForDup(),st);
+  assert(r && r.success===false && r.error==='duplicate_member', 'G11-1 [P1] C 登録済み会員(member_id)は A へ二重追加できない（duplicate_member・class 横断）');
+  assert(st.players.A.length===2, 'G11-2 [P1] 二重追加が阻止され A の人数は不変（2名のまま）');
+}
+
+// P1 同名経路: C にいる氏名と同名の別 member_id 会員を B へ追加しようとすると duplicate_name
+{
+  const env = loadEnv();
+  env._setState(env.normalizeState(fxMemberIds()));
+  const st = env._getState();
+  const r = env.addPlayerFromMaster('m-dup','B',fxMasterForDup(),st); // m-dup.name=架空三郎=C の c1 と同名
+  assert(r && r.success===false && r.error==='duplicate_name', 'G11-3 [P1] C にいる氏名と同名の別人は B へ追加できない（duplicate_name・class 横断）');
+  assert(st.players.B.length===1, 'G11-4 [P1] 二重追加が阻止され B の人数は不変（1名のまま）');
+}
+
+// P1 後方互換①: どのクラスにも未登録なら従来どおり成功し追加先クラス（A）に入る
+{
+  const env = loadEnv();
+  env._setState(env.normalizeState(fxMemberIds()));
+  const st = env._getState();
+  const r = env.addPlayerFromMaster('m-new','A',fxMasterForDup(),st);
+  assert(r && r.success===true && r.player && r.player.member_id==='m-new', 'G11-5 [P1] 未登録会員は従来どおり A へ追加できる（成功）');
+  assert(st.players.A.length===3 && st.players.A[st.players.A.length-1].member_id==='m-new', 'G11-6 [P1] 追加先クラス A に入る（人数+1）');
+}
+
+// P1 後方互換②: A/B のみ時の重複検知は従来と同一（A 在籍を B へ＝従来から duplicate_member / 未登録は成功）
+{
+  const env = loadEnv();
+  const fx = fxMemberIds();
+  delete fx.players.C; delete fx.pairings.C; delete fx.results.C;
+  fx.classes = fx.classes.filter(function(c){return c.id!=='C';});
+  env._setState(env.normalizeState(fx));
+  const st = env._getState();
+  const r = env.addPlayerFromMaster('m-a1','B',fxMasterForDup(),st);
+  assert(r && r.success===false && r.error==='duplicate_member', 'G11-7 [P1] A/B のみ時：A 在籍を B へ追加は従来どおり duplicate_member（後方互換）');
+  const r2 = env.addPlayerFromMaster('m-new','A',fxMasterForDup(),st);
+  assert(r2 && r2.success===true, 'G11-8 [P1] A/B のみ時：未登録は従来どおり成功（後方互換）');
+}
+
+// P1 一括追加の既登録集約: allRegisteredPlayers() ベースで C 在籍の member_id/氏名も既登録に含む
+//   （finalizeAddPastParticipants は existingMids/existingNames を allRegisteredPlayers() から組むため C もスキップ対象）
+{
+  const env = loadEnv();
+  env._setState(env.normalizeState(fxMemberIds()));
+  const all = env.allRegisteredPlayers();
+  const mids = {}, names = {};
+  for(var i=0;i<all.length;i++){ if(all[i].member_id)mids[all[i].member_id]=true; if(all[i].name)names[all[i].name]=true; }
+  assert(mids['m-c1']===true, 'G11-9 [P1] 一括追加の既登録 member_id 集約に C 在籍(m-c1)が含まれる（二重スキップされる）');
+  assert(names['架空三郎']===true, 'G11-10 [P1] 一括追加の既登録氏名集約に C 在籍(架空三郎)が含まれる');
 }
 
 console.log('');

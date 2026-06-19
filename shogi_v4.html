@@ -2162,8 +2162,16 @@ function addPlayerFromMaster(memberId,cls,master,state){
   if(!member)return {success:false,error:'not_found'};
   if(member.deleted===true)return {success:false,error:'deleted'};
   // 重複チェック：member_id 一致を最優先（duplicate_member）。なければ normalizePersonName 同名（duplicate_name）。
+  // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定 concat をやめ、渡された state の全クラスを横断して重複判定する。
+  //   純粋関数のため global の allRegisteredPlayers() ではなく引数 state.players を走査する（A/B のみなら従来同一）。
+  //   追加先クラス自体は上の hard reject で A/B に限定済み（非A/B への追加は CV-2 まで不可）。
   var memberNameNorm=normalizePersonName(member.name||'');
-  var all=state.players.A.concat(state.players.B);
+  var all=[];
+  var dupClsKeys=Object.keys(state.players);
+  for(var dk=0;dk<dupClsKeys.length;dk++){
+    var dupArr=state.players[dupClsKeys[dk]];
+    if(Array.isArray(dupArr))all=all.concat(dupArr);
+  }
   for(var pi=0;pi<all.length;pi++){
     var p=all[pi];
     if(!p)continue;
@@ -2482,7 +2490,8 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   // A-4.3 §2.1 / A-4.5 §2.1: state.players ベースで現在登録中クラスを判定し、3 セクション(A 済 / B 済 / 未エントリー)に分割
   var currentRegMap={};
   if(state&&state.players){
-    var regClasses=['A','B'];
+    // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定をやめ全クラス横断で既登録クラスを判定（C 在籍も既登録扱い）。A/B のみなら従来同一。
+    var regClasses=Object.keys(state.players);
     for(var rci=0;rci<regClasses.length;rci++){
       var rArr=state.players[regClasses[rci]]||[];
       for(var rpi=0;rpi<rArr.length;rpi++){
@@ -2633,8 +2642,10 @@ function handlePastParticipantClassAdd(memberId,cls){
   if(member.deleted===true){showMsg('この参加者は削除済みのため追加できません','err');return;}
   var memberName=member.name||'';
   // 現在の登録クラスを取得
+  // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定をやめ全クラス横断で現登録クラスを判定（C 在籍も検知）。A/B のみなら従来同一。
+  //   C 在籍者が A/B ボタンを押すと別クラス登録済み扱いになる。クラス変更自体は changePlayerClass が A/B 限定（CV-2）。
   var existingCls=null;
-  var existClasses=['A','B'];
+  var existClasses=Object.keys(state.players);
   for(var eci=0;eci<existClasses.length;eci++){
     var eArr=state.players[existClasses[eci]]||[];
     for(var epi=0;epi<eArr.length;epi++){
@@ -2848,7 +2859,8 @@ function addSelectedPastParticipants(){
 function finalizeAddPastParticipants(picked,master,allEmptyYomi){
   var existingNames={};
   var existingMids={};
-  var allCurrent=state.players.A.concat(state.players.B);
+  // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定 concat をやめ allRegisteredPlayers() で全クラス横断に既登録を集約（C 在籍も重複スキップ対象）。A/B のみなら従来同一。
+  var allCurrent=allRegisteredPlayers();
   for(var k=0;k<allCurrent.length;k++){
     if(allCurrent[k].name)existingNames[allCurrent[k].name]=true;
     if(allCurrent[k].member_id)existingMids[allCurrent[k].member_id]=true;
