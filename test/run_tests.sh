@@ -1188,6 +1188,25 @@ else
 fi
 
 # ============================================
+# CLASS-VARIABLE-001 (CV-1) クラス管理UI + 登録プルダウンの class 駆動化 受入テスト
+#   完全架空 state で クラス追加/改名/削除・削除ガード（A/B builtin/開始済み/在籍者あり）・
+#   inp-class の class 駆動化（選択保持・名前反映）・3クラス目(C)への参加者登録・
+#   後方互換（A/B 既定 / 重複名 class 横断）・save/reload 維持 を固定する。
+# ============================================
+echo ""
+echo "【CLASS-VARIABLE-001 クラス管理UI（追加/改名/削除）+ inp-class クラス駆動化 / Cへ登録】"
+if [ -f "$SCRIPT_DIR/test_class_variable_001.js" ]; then
+  if node "$SCRIPT_DIR/test_class_variable_001.js" "$TARGET" > /tmp/class_variable_001_out.log 2>&1; then
+    ok "CLASS-VARIABLE-001 テスト 全PASS ($(tail -1 /tmp/class_variable_001_out.log))"
+  else
+    ng "CLASS-VARIABLE-001 テスト 失敗"
+    cat /tmp/class_variable_001_out.log
+  fi
+else
+  warn "test_class_variable_001.js が見つからない"
+fi
+
+# ============================================
 # AUTO001-GATE-TEST-PORT-002 gate スクリプト（pr_gate / approved_merge）の shell テスト
 #   orphan-dev profile / head-CAS(--match-head-commit) / git ls-remote stub / gh api 非依存 /
 #   dry-run 既定 / --delete-branch・--auto 不使用 を mock gh + git stub で固定する。

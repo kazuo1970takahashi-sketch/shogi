@@ -237,6 +237,19 @@ body.sb-active{overflow:hidden}
       </div>
       <div id="ppPanel" style="display:none"></div>
     </div>
+    <!-- CLASS-VARIABLE-001 (CV-1): クラス管理UI。state.classes を runtime で追加/改名/削除する。
+         A/B はアプリ既定クラス（normalizeClasses が読込毎に必ず補完するため）削除不可。
+         renderClassManager() が #class-manager-list を描画し、追加は #addClassBtn / #inp-new-class。
+         登録プルダウン inp-class は populateClassSelect() が state.classes 駆動で生成する。 -->
+    <div class="section" id="class-manager-section">
+      <h2>クラスを管理する</h2>
+      <div id="class-manager-list" style="margin-bottom:8px"></div>
+      <div class="flex">
+        <input type="text" id="inp-new-class" placeholder="クラス名（例: Cクラス）" style="width:200px" autocomplete="off" maxlength="20">
+        <button type="button" class="btn-sm" id="addClassBtn" style="border-color:#2E75B6;color:#2E75B6">クラスを追加</button>
+      </div>
+      <div style="font-size:11px;color:#888;margin-top:4px">A・Bクラスは削除できません。開始済み・参加者がいるクラスは削除できません。</div>
+    </div>
     <div class="section">
       <h2>参加者を登録する</h2>
       <div class="flex">
@@ -261,7 +274,7 @@ body.sb-active{overflow:hidden}
       <div class="grid2" id="reg-class-grid" style="margin-top:12px">
         <div data-class-id="A">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <h3 style="margin-bottom:0">Aクラス <span id="a-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
+            <h3 style="margin-bottom:0"><span id="a-name">Aクラス</span> <span id="a-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
             <button type="button" id="bulkEditA" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
           </div>
           <!-- SHOGI-TOUR-START-001: クラス別 開始 readiness バッジ（renderRegList が validateStartableClass から導出して描画・読み取り専用の情報表示）。初期は非表示。 -->
@@ -271,7 +284,7 @@ body.sb-active{overflow:hidden}
         </div>
         <div data-class-id="B">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <h3 style="margin-bottom:0">Bクラス <span id="b-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
+            <h3 style="margin-bottom:0"><span id="b-name">Bクラス</span> <span id="b-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
             <button type="button" id="bulkEditB" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
           </div>
           <!-- SHOGI-TOUR-START-001: クラス別 開始 readiness バッジ（renderRegList が validateStartableClass から導出して描画・読み取り専用の情報表示）。初期は非表示。 -->
@@ -2149,8 +2162,16 @@ function addPlayerFromMaster(memberId,cls,master,state){
   if(!member)return {success:false,error:'not_found'};
   if(member.deleted===true)return {success:false,error:'deleted'};
   // 重複チェック：member_id 一致を最優先（duplicate_member）。なければ normalizePersonName 同名（duplicate_name）。
+  // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定 concat をやめ、渡された state の全クラスを横断して重複判定する。
+  //   純粋関数のため global の allRegisteredPlayers() ではなく引数 state.players を走査する（A/B のみなら従来同一）。
+  //   追加先クラス自体は上の hard reject で A/B に限定済み（非A/B への追加は CV-2 まで不可）。
   var memberNameNorm=normalizePersonName(member.name||'');
-  var all=state.players.A.concat(state.players.B);
+  var all=[];
+  var dupClsKeys=Object.keys(state.players);
+  for(var dk=0;dk<dupClsKeys.length;dk++){
+    var dupArr=state.players[dupClsKeys[dk]];
+    if(Array.isArray(dupArr))all=all.concat(dupArr);
+  }
   for(var pi=0;pi<all.length;pi++){
     var p=all[pi];
     if(!p)continue;
@@ -2469,7 +2490,8 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   // A-4.3 §2.1 / A-4.5 §2.1: state.players ベースで現在登録中クラスを判定し、3 セクション(A 済 / B 済 / 未エントリー)に分割
   var currentRegMap={};
   if(state&&state.players){
-    var regClasses=['A','B'];
+    // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定をやめ全クラス横断で既登録クラスを判定（C 在籍も既登録扱い）。A/B のみなら従来同一。
+    var regClasses=Object.keys(state.players);
     for(var rci=0;rci<regClasses.length;rci++){
       var rArr=state.players[regClasses[rci]]||[];
       for(var rpi=0;rpi<rArr.length;rpi++){
@@ -2620,8 +2642,10 @@ function handlePastParticipantClassAdd(memberId,cls){
   if(member.deleted===true){showMsg('この参加者は削除済みのため追加できません','err');return;}
   var memberName=member.name||'';
   // 現在の登録クラスを取得
+  // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定をやめ全クラス横断で現登録クラスを判定（C 在籍も検知）。A/B のみなら従来同一。
+  //   C 在籍者が A/B ボタンを押すと別クラス登録済み扱いになる。クラス変更自体は changePlayerClass が A/B 限定（CV-2）。
   var existingCls=null;
-  var existClasses=['A','B'];
+  var existClasses=Object.keys(state.players);
   for(var eci=0;eci<existClasses.length;eci++){
     var eArr=state.players[existClasses[eci]]||[];
     for(var epi=0;epi<eArr.length;epi++){
@@ -2835,7 +2859,8 @@ function addSelectedPastParticipants(){
 function finalizeAddPastParticipants(picked,master,allEmptyYomi){
   var existingNames={};
   var existingMids={};
-  var allCurrent=state.players.A.concat(state.players.B);
+  // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定 concat をやめ allRegisteredPlayers() で全クラス横断に既登録を集約（C 在籍も重複スキップ対象）。A/B のみなら従来同一。
+  var allCurrent=allRegisteredPlayers();
   for(var k=0;k<allCurrent.length;k++){
     if(allCurrent[k].name)existingNames[allCurrent[k].name]=true;
     if(allCurrent[k].member_id)existingMids[allCurrent[k].member_id]=true;
@@ -3932,6 +3957,14 @@ function regClassReadinessId(classId){
   if(classId==='B')return 'b-readiness';
   return 'class-readiness-'+classId;
 }
+// CLASS-VARIABLE-001 (CV-1): 受付クラス別見出しの「クラス名」span の DOM id。
+//   既存 a-count/b-count と同じ命名規則（A/B 互換 id a-name/b-name ＋ C+ は class-name-{classId}）。
+//   renderRegList が改名時に textContent を更新し、A/B 静的見出しと C+ 動的見出しを同経路で扱う。
+function regClassNameId(classId){
+  if(classId==='A')return 'a-name';
+  if(classId==='B')return 'b-name';
+  return 'class-name-'+classId;
+}
 // START-UX-CONSOLIDATE-001: regClassStartBtnId（受付タブのクラス別開始ボタン id / START-003）は撤去した。
 //   受付タブから開始導線を外し、開始は対局管理タブ（startBtnClass_{cls} → startTournamentForClass(cls)）へ集約。
 
@@ -3957,7 +3990,13 @@ function ensureClassRegDomNodes(){
     header.style.cssText='display:flex;align-items:center;justify-content:space-between;margin-bottom:8px';
     var h3=document.createElement('h3');
     h3.style.marginBottom='0';
-    h3.textContent=(c.name||c.id+'クラス')+' ';
+    // CLASS-VARIABLE-001: クラス名は専用 span（regClassNameId）に入れ、renderRegList が
+    //   改名時に textContent を更新できるようにする（A/B 静的 DOM の a-name/b-name span と同構造）。
+    var nameSpan=document.createElement('span');
+    nameSpan.id=regClassNameId(c.id);
+    nameSpan.textContent=(c.name||c.id+'クラス');
+    h3.appendChild(nameSpan);
+    h3.appendChild(document.createTextNode(' '));
     var cnt=document.createElement('span');
     cnt.id=regClassCountId(c.id);
     cnt.style.cssText='color:#888;font-size:12px;font-weight:400';
@@ -4035,6 +4074,244 @@ function getRegistrationClassList(){
     {id:'A',name:'Aクラス',started:false},
     {id:'B',name:'Bクラス',started:false}
   ];
+}
+
+// ============================================================
+// CLASS-VARIABLE-001 (CV-1): クラス管理（追加 / 改名 / 削除）+ inp-class の class 駆動化
+//   「A/B 固定をやめ 3 クラス以上に増やせる」ための UI 層。データモデル（normalizeState /
+//   normalizeClasses / emptyClassDict）・保存復元・ペアリング・集計・印刷は既に class 駆動で
+//   完成済みのため、本スライスは state.classes を runtime で mutate する導線だけを足す。
+//   - A/B はアプリ既定クラス：normalizeClasses が読込毎に必ず A/B を補完するため、削除しても
+//     再読込で復活する → 混乱回避のため A/B は削除不可（builtin 保護）。改名は state に残るため永続。
+//   - 追加クラスの classId は英大文字 C..Z を順に採番（尽きたら CLS1, CLS2…）。isSafeClassId 準拠の ASCII。
+//   - dict（players/pairings/results）は追加時に空配列で初期化、削除時に delete する。
+// ============================================================
+
+// 全クラスの参加者を 1 配列に集約する（同名重複チェック用の class 駆動版）。
+//   A/B 固定の state.players.A.concat(state.players.B) を置換。A/B のみなら従来と同一結果。
+//   C 以降があれば全クラス横断で重複検知し、C 登録時も A/B と同じ重複保護を効かせる。
+function allRegisteredPlayers(){
+  var out=[];
+  var clsList=getRegistrationClassList();
+  for(var i=0;i<clsList.length;i++){
+    var arr=state&&state.players&&state.players[clsList[i].id];
+    if(Array.isArray(arr))out=out.concat(arr);
+  }
+  return out;
+}
+
+// 次に使える classId を返す（C..Z を順に、尽きたら CLS1, CLS2…）。state は読むが mutate しない。
+function nextClassId(){
+  var used={};
+  if(state&&Array.isArray(state.classes)){
+    for(var i=0;i<state.classes.length;i++){
+      if(state.classes[i]&&typeof state.classes[i].id==='string')used[state.classes[i].id]=true;
+    }
+  }
+  for(var c=67;c<=90;c++){ // 'C'(67)..'Z'(90)：A/B は既定なので C から探す
+    var letter=String.fromCharCode(c);
+    if(!used[letter])return letter;
+  }
+  var n=1;
+  while(used['CLS'+n])n++;
+  return 'CLS'+n;
+}
+
+// クラスに在籍者（state.players[classId]）が 1 名以上いるか。
+function classHasPlayers(classId){
+  return !!(state&&state.players&&Array.isArray(state.players[classId])&&state.players[classId].length>0);
+}
+
+// クラス削除の可否判定（pure）。{ok:true,reason:null} か {ok:false,reason}。
+//   builtin（A/B）→不可 / started→不可 / hasPlayers→不可。
+function canDeleteClass(classId){
+  if(classId==='A'||classId==='B')return {ok:false,reason:'builtin'};
+  if(isClassStarted(classId))return {ok:false,reason:'started'};
+  if(classHasPlayers(classId))return {ok:false,reason:'hasPlayers'};
+  return {ok:true,reason:null};
+}
+
+// 削除不可理由のユーザー向け文言。
+function deleteGuardMessage(reason){
+  if(reason==='builtin')return 'A・Bクラスはアプリの既定クラスのため削除できません。';
+  if(reason==='started')return '開始済みのクラスは削除できません。';
+  if(reason==='hasPlayers')return '参加者が登録されているクラスは削除できません。先に参加者を削除してください。';
+  return 'このクラスは削除できません。';
+}
+
+// クラスを追加する。rawName は表示名（空なら "{id}クラス"）。成功時 classId、失敗時 null。
+//   state.classes へ push し players/pairings/results dict を空配列で初期化する。
+function addClass(rawName){
+  if(!state)return null;
+  if(!Array.isArray(state.classes))state.classes=[];
+  var id=nextClassId();
+  if(!isSafeClassId(id))return null;
+  var name=(typeof rawName==='string')?rawName.trim():'';
+  if(!name)name=id+'クラス';
+  state.classes.push({id:id,name:name,started:false});
+  if(!state.players||typeof state.players!=='object')state.players={};
+  if(!Array.isArray(state.players[id]))state.players[id]=[];
+  if(!state.pairings||typeof state.pairings!=='object')state.pairings={};
+  if(!Array.isArray(state.pairings[id]))state.pairings[id]=[];
+  if(!state.results||typeof state.results!=='object')state.results={};
+  if(!Array.isArray(state.results[id]))state.results[id]=[];
+  renderRegList();
+  save();
+  return id;
+}
+
+// クラスを改名する。空名は拒否。成功 true / 失敗 false。
+function renameClass(classId,rawName){
+  if(!state||!Array.isArray(state.classes))return false;
+  var name=(typeof rawName==='string')?rawName.trim():'';
+  if(!name)return false;
+  for(var i=0;i<state.classes.length;i++){
+    if(state.classes[i]&&state.classes[i].id===classId){
+      state.classes[i].name=name;
+      renderRegList();
+      save();
+      return true;
+    }
+  }
+  return false;
+}
+
+// 削除されたクラスの DOM ノード（受付 section / 対局 pane / 結果 section）を除去する。
+//   ensure*DomNodes は追加のみのため、削除はここで明示的に行う（parentNode から removeChild、なければ no-op）。
+function removeClassDomNodes(classId){
+  var listEl=document.getElementById(regClassListId(classId));
+  // listEl.parentNode は data-class-id section、その親が reg-class-grid
+  if(listEl&&listEl.parentNode&&listEl.parentNode.parentNode){
+    listEl.parentNode.parentNode.removeChild(listEl.parentNode);
+  }
+  var pane=document.getElementById('pane-'+classId);
+  if(pane&&pane.parentNode)pane.parentNode.removeChild(pane);
+  var res=document.getElementById('result-'+classId);
+  if(res&&res.parentNode)res.parentNode.removeChild(res);
+}
+
+// クラスを削除する（canDeleteClass が ok のときのみ）。成功 true / 失敗 false。
+//   state.classes から splice、players/pairings/results dict を delete、DOM を除去する。
+function removeClass(classId){
+  if(!canDeleteClass(classId).ok)return false;
+  if(!state||!Array.isArray(state.classes))return false;
+  var idx=-1;
+  for(var i=0;i<state.classes.length;i++){
+    if(state.classes[i]&&state.classes[i].id===classId){idx=i;break;}
+  }
+  if(idx<0)return false;
+  state.classes.splice(idx,1);
+  if(state.players)delete state.players[classId];
+  if(state.pairings)delete state.pairings[classId];
+  if(state.results)delete state.results[classId];
+  removeClassDomNodes(classId);
+  syncGlobalStartedFromClasses();
+  renderRegList();
+  save();
+  return true;
+}
+
+// 登録プルダウン inp-class の option を state.classes から動的生成する（CV-1 最優先）。
+//   現在の選択値が有効なら維持、無効/未設定なら先頭クラスへ。idempotent。
+//   静的 HTML の A/B option は no-JS フォールバックとして残し、ここで毎回作り直す。
+function populateClassSelect(){
+  var sel=document.getElementById('inp-class');
+  if(!sel)return;
+  var clsList=getRegistrationClassList();
+  var prev=sel.value;
+  sel.innerHTML='';
+  var hasPrev=false;
+  for(var i=0;i<clsList.length;i++){
+    var opt=document.createElement('option');
+    opt.value=clsList[i].id;
+    opt.textContent=clsList[i].name||(clsList[i].id+'クラス');
+    sel.appendChild(opt);
+    if(clsList[i].id===prev)hasPrev=true;
+  }
+  if(hasPrev)sel.value=prev;
+  else if(clsList.length>0)sel.value=clsList[0].id;
+}
+
+// クラス管理リスト（#class-manager-list）を描画する。各行＝クラス名 + 状態 + 「改名」「削除」ボタン。
+//   削除ボタンは canDeleteClass で disabled 化し理由を title 表示（XSS 安全：textContent / addEventListener）。
+function renderClassManager(){
+  var host=document.getElementById('class-manager-list');
+  if(!host)return;
+  var clsList=getRegistrationClassList();
+  host.innerHTML='';
+  for(var i=0;i<clsList.length;i++){
+    (function(c){
+      var row=document.createElement('div');
+      row.className='class-manager-row';
+      row.style.cssText='display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #eee';
+      var nameSpan=document.createElement('span');
+      nameSpan.textContent=c.name||(c.id+'クラス');
+      nameSpan.style.cssText='flex:1;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      row.appendChild(nameSpan);
+      var statusSpan=document.createElement('span');
+      statusSpan.style.cssText='font-size:12px;color:#888;white-space:nowrap';
+      var n=(state&&state.players&&Array.isArray(state.players[c.id]))?state.players[c.id].length:0;
+      statusSpan.textContent='('+n+'名'+(isClassStarted(c.id)?'・開始済み':'')+')';
+      row.appendChild(statusSpan);
+      var renameBtn=document.createElement('button');
+      renameBtn.type='button';
+      renameBtn.className='btn-sm';
+      renameBtn.textContent='改名';
+      renameBtn.addEventListener('click',function(){onClickRenameClass(c.id);});
+      row.appendChild(renameBtn);
+      var delBtn=document.createElement('button');
+      delBtn.type='button';
+      delBtn.textContent='削除';
+      var guard=canDeleteClass(c.id);
+      if(!guard.ok){
+        delBtn.className='btn-sm';
+        delBtn.disabled=true;
+        if(delBtn.setAttribute)delBtn.setAttribute('title',deleteGuardMessage(guard.reason));
+        delBtn.style.cssText='opacity:0.5;cursor:not-allowed';
+      }else{
+        delBtn.className='btn-sm btn-danger';
+      }
+      delBtn.addEventListener('click',function(){onClickRemoveClass(c.id);});
+      row.appendChild(delBtn);
+      host.appendChild(row);
+    })(clsList[i]);
+  }
+}
+
+// 「クラスを追加」ボタンのハンドラ。#inp-new-class の値を名前として addClass する。
+function onClickAddClass(){
+  var inp=document.getElementById('inp-new-class');
+  var name=inp?inp.value:'';
+  var id=addClass(name);
+  if(inp)inp.value='';
+  if(id){
+    var label=(name&&name.trim())?name.trim():(id+'クラス');
+    showMsg(label+'を追加しました','ok');
+  }
+}
+
+// 「改名」ボタンのハンドラ。prompt で新名を取得し renameClass する。
+function onClickRenameClass(classId){
+  var cur='';
+  var clsList=getRegistrationClassList();
+  for(var i=0;i<clsList.length;i++){if(clsList[i].id===classId){cur=clsList[i].name;break;}}
+  var input=prompt('新しいクラス名を入力してください',cur);
+  if(input===null)return;                 // キャンセル
+  var name=input.trim();
+  if(!name){alert('クラス名を入力してください');return;}
+  if(name===cur)return;                    // 変更なし
+  renameClass(classId,name);
+}
+
+// 「削除」ボタンのハンドラ。canDeleteClass を確認し confirm の上で removeClass する。
+function onClickRemoveClass(classId){
+  var guard=canDeleteClass(classId);
+  if(!guard.ok){alert(deleteGuardMessage(guard.reason));return;}
+  var cur=classId;
+  var clsList=getRegistrationClassList();
+  for(var i=0;i<clsList.length;i++){if(clsList[i].id===classId){cur=clsList[i].name;break;}}
+  if(!confirm('「'+cur+'」を削除しますか？この操作は取り消せません。'))return;
+  removeClass(classId);
 }
 
 // ROUND-CLASS-START-005 (spec §11 / §15.1):
@@ -4259,6 +4536,10 @@ function renderRegList(){
   bindClassBulkEditHandlers();
   // START-UX-CONSOLIDATE-001: 受付タブのクラス別開始ボタン bind（bindClassStartHandlers / START-003）は撤去。
   //   受付タブに開始 handler を残さない（開始は対局管理タブへ集約）。readiness 表示は下記で描画（読み取り専用）。
+  // CLASS-VARIABLE-001 (CV-1): 登録プルダウン inp-class とクラス管理リストを state.classes 駆動で再描画。
+  //   populateClassSelect は現在の選択値を保持するため、登録途中の再描画でも選択が飛ばない。
+  populateClassSelect();
+  renderClassManager();
   var clsList=getRegistrationClassList();
   var allCount=0;
   for(var ci=0;ci<clsList.length;ci++){
@@ -4268,6 +4549,9 @@ function renderRegList(){
     var countEl=document.getElementById(regClassCountId(cls));
     var listEl=document.getElementById(regClassListId(cls));
     if(countEl)countEl.textContent='('+players.length+'名)';
+    // CLASS-VARIABLE-001 (CV-1): 改名を受付見出しへ反映（A/B 静的 a-name/b-name span ＋ C+ 動的 span を同経路で更新）。
+    var nameEl=document.getElementById(regClassNameId(cls));
+    if(nameEl)nameEl.textContent=clsList[ci].name||(cls+'クラス');
     if(listEl){
       listEl.innerHTML='';
       for(var i=0;i<players.length;i++){
@@ -4461,13 +4745,13 @@ var _yomiManuallyEdited=false;
 function getCurrentlyRegisteredMemberIds(){
   var ids=[];
   if(!state||!state.players)return ids;
-  var classes=['A','B'];
-  for(var ci=0;ci<classes.length;ci++){
-    var arr=state.players[classes[ci]]||[];
-    for(var pi=0;pi<arr.length;pi++){
-      var p=arr[pi];
-      if(p&&typeof p.member_id==='string'&&p.member_id)ids.push(p.member_id);
-    }
+  // CLASS-VARIABLE-001 (CV-1 Codex P2): A/B 固定をやめ allRegisteredPlayers() で全クラス横断に収集。
+  //   A/B のみなら従来と同一結果。C+ 登録済み会員の member_id も updateSuggestList / addPlayer の
+  //   重複チェック対象になる（C 登録解禁後の member_id 重複見落としを解消）。
+  var all=allRegisteredPlayers();
+  for(var pi=0;pi<all.length;pi++){
+    var p=all[pi];
+    if(p&&typeof p.member_id==='string'&&p.member_id)ids.push(p.member_id);
   }
   return ids;
 }
@@ -4737,7 +5021,8 @@ function addPlayer(){
   //   マスタ反映（_pendingNewYomi / suggest backfill）は従来どおり別途維持（下記）。
   var yomiRaw=inpYomi?inpYomi.value:'';
   if(!name){showMsg('名前を入力してください','err');return;}
-  var all=state.players.A.concat(state.players.B);
+  // CLASS-VARIABLE-001 (CV-1): 重複名チェックを全クラス横断に汎用化（A/B のみなら従来と同一結果・C+ も保護）。
+  var all=allRegisteredPlayers();
   for(var i=0;i<all.length;i++){if(all[i].name===name){showMsg('同じ名前の参加者がいます','err');return;}}
 
   // サジェスト選択中かつ氏名が選択時の正規化名と一致 → マスタから member_id / member / grade を引き継ぐ
@@ -4944,7 +5229,8 @@ function bindBulkEditModalEvents(cls, players){
   });
 
   document.getElementById('bulk-save').addEventListener('click',function(){
-    var all=state.players.A.concat(state.players.B);
+    // CLASS-VARIABLE-001 (CV-1): 重複名チェックを全クラス横断に汎用化（A/B のみなら従来と同一結果・C+ も保護）。
+    var all=allRegisteredPlayers();
     var hasError=false;
     var newNames={};
 
@@ -5155,7 +5441,10 @@ function verifyStatePersisted(playerId,expectedName){
     if(typeof raw!=='string'||!raw)return false;
     var parsed=JSON.parse(raw);
     if(!parsed||!parsed.players)return false;
-    var classes=['A','B'];
+    // CLASS-VARIABLE-001 (CV-1 Codex P2): A/B 固定をやめ persisted players の全 classId を横断。
+    //   A/B のみなら従来と同一結果（player.id は全クラス一意のため探索順は無関係）。C+ 参加者の
+    //   名前編集 / 一括編集の保存確認が false negative（誤「保存未確認」警告）にならない。
+    var classes=Object.keys(parsed.players);
     for(var ci=0;ci<classes.length;ci++){
       var arr=parsed.players[classes[ci]];
       if(!Array.isArray(arr))continue;
@@ -5534,7 +5823,8 @@ function editPlayer(id,cls){
   var newName=prompt('名前を変更してください',p.name);
   if(!newName||!newName.trim())return;
   newName=newName.trim();
-  var all=state.players.A.concat(state.players.B);
+  // CLASS-VARIABLE-001 (CV-1): 重複名チェックを全クラス横断に汎用化（A/B のみなら従来と同一結果・C+ も保護）。
+  var all=allRegisteredPlayers();
   for(var i=0;i<all.length;i++){if(all[i].name===newName&&all[i].id!==id){alert('同じ名前がいます');return;}}
   // MASTER-001: normalize 後に変更なしならモーダルを開かず、旧フローと同じく参加者名のみ更新。
   if(normalizePersonName(p.name)===normalizePersonName(newName)){
@@ -8357,6 +8647,18 @@ function bindRegistrationEvents(){
   // START-UX-CONSOLIDATE-001 (設計 §5): #startBtn は「対局管理へ進むナビゲーション」。
   //   開始系の副作用を持つ startTournament ではなく goToTournamentFromReg（save()+タブ移動のみ）へ bind。
   document.getElementById('startBtn').addEventListener('click',goToTournamentFromReg);
+
+  // CLASS-VARIABLE-001 (CV-1): クラス追加ボタン / 新規クラス名入力欄（Enter で追加）を bind。
+  //   改名 / 削除ボタンは renderClassManager 内で各行生成時に addEventListener する（動的 DOM）。
+  var addClassBtn=document.getElementById('addClassBtn');
+  if(addClassBtn)addClassBtn.addEventListener('click',onClickAddClass);
+  var inpNewClass=document.getElementById('inp-new-class');
+  if(inpNewClass){
+    var newClassComposing=false;
+    inpNewClass.addEventListener('compositionstart',function(){newClassComposing=true;});
+    inpNewClass.addEventListener('compositionend',function(){newClassComposing=false;});
+    inpNewClass.addEventListener('keypress',function(e){if(e.key==='Enter'&&!newClassComposing)onClickAddClass();});
+  }
 
   // 参加者名入力欄: IME対応 + Enterで追加
   var inpName=document.getElementById('inp-name');
