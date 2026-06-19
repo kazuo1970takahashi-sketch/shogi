@@ -1188,6 +1188,26 @@ else
 fi
 
 # ============================================
+# AUTO001-GATE-TEST-PORT-002 gate スクリプト（pr_gate / approved_merge）の shell テスト
+#   orphan-dev profile / head-CAS(--match-head-commit) / git ls-remote stub / gh api 非依存 /
+#   dry-run 既定 / --delete-branch・--auto 不使用 を mock gh + git stub で固定する。
+#   ※ 対象は scripts/（shogi_v4.html ではない）。gh/git を PATH stub 化し実 GitHub/origin に触れない。
+#   ※ #243 の Bash 3.2/UTF-8 bracing fix 後の base へ recut（C / UTF-8 ロケールとも PASS）。
+# ============================================
+echo ""
+echo "【AUTO001-GATE-TEST-PORT-002 gate スクリプト（orphan-dev / head-CAS / git ls-remote stub / gh api 非依存）】"
+if [ -f "$SCRIPT_DIR/test_pr_gate_scripts.sh" ]; then
+  if bash "$SCRIPT_DIR/test_pr_gate_scripts.sh" > /tmp/pr_gate_scripts_out.log 2>&1; then
+    ok "AUTO001-GATE-TEST-PORT-002 テスト 全PASS ($(tail -1 /tmp/pr_gate_scripts_out.log))"
+  else
+    ng "AUTO001-GATE-TEST-PORT-002 テスト 失敗"
+    cat /tmp/pr_gate_scripts_out.log
+  fi
+else
+  warn "test_pr_gate_scripts.sh が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
