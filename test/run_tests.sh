@@ -1170,6 +1170,24 @@ else
 fi
 
 # ============================================
+# MEMBERS-CANDIDATE-MASTER-RECUT-001 members 形式 参加者候補マスタ読込（#194 価値分の再切り）
+#   完全架空 fixture で member 真偽値後方互換 / 禁止項目 whitelist 除外 / deleted 墓石除外 /
+#   大会state(shogi_v4)不変 / 候補マスタ(shogi_branch_master)保存 を固定する。
+# ============================================
+echo ""
+echo "【MEMBERS-CANDIDATE-MASTER-RECUT-001 members 形式候補マスタ読込（member 真偽値後方互換 / whitelist / deleted 除外 / 大会state不変）】"
+if [ -f "$SCRIPT_DIR/test_members_candidate_master_recut_001.js" ]; then
+  if node "$SCRIPT_DIR/test_members_candidate_master_recut_001.js" "$TARGET" > /tmp/members_candidate_master_recut_001_out.log 2>&1; then
+    ok "MEMBERS-CANDIDATE-MASTER-RECUT-001 テスト 全PASS ($(tail -1 /tmp/members_candidate_master_recut_001_out.log))"
+  else
+    ng "MEMBERS-CANDIDATE-MASTER-RECUT-001 テスト 失敗"
+    cat /tmp/members_candidate_master_recut_001_out.log
+  fi
+else
+  warn "test_members_candidate_master_recut_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""

@@ -1,0 +1,92 @@
+{
+  "_comment": "MEMBERS-CANDIDATE-MASTER-RECUT-001 synthetic candidate-master fixture. 100% fictional / 完全架空. NOT derived from any real participant, master, or person. All names use 架空(=fictional); ids/cities/dates are dummy; the injected forbidden fields (address/phone/email/birthday/paymentHistory/pastResults and JP variants) are dummy values that exist ONLY to assert the import whitelist strips them. No real PII / secret / 対応表.",
+  "schema_version": 1,
+  "updated_at": "synthetic_updated_at",
+  "members": [
+    {
+      "id": "synthetic-001",
+      "name": "架空 一郎",
+      "yomi": "かくう いちろう",
+      "last_class": "A",
+      "member": true,
+      "grade": "",
+      "city": "架空市",
+      "note": "",
+      "deleted": false
+    },
+    {
+      "id": "synthetic-002",
+      "name": "架空 二郎",
+      "yomi": "かくう じろう",
+      "last_class": "B",
+      "member": false,
+      "grade": "",
+      "city": "テスト町",
+      "note": "",
+      "deleted": false
+    },
+    {
+      "id": "synthetic-003",
+      "name": "架空 三郎",
+      "yomi": "かくう さぶろう",
+      "last_class": "A",
+      "member": true,
+      "grade": "二段",
+      "city": "架空市",
+      "note": "架空メモ",
+      "deleted": false,
+      "attendance_count": 99,
+      "tournament_ids": ["synthetic-t1", "synthetic-t2"]
+    },
+    {
+      "id": "synthetic-004",
+      "name": "架空 四郎",
+      "yomi": "かくう しろう",
+      "last_class": "B",
+      "member": true,
+      "grade": "",
+      "city": "架空市",
+      "note": "",
+      "deleted": true,
+      "deleted_at": "2026-01-01"
+    },
+    {
+      "id": "synthetic-005",
+      "name": "架空 五郎",
+      "yomi": "かくう ごろう",
+      "last_class": "A",
+      "member": false,
+      "grade": "",
+      "city": "架空市",
+      "note": "",
+      "deleted": false,
+      "tournament_ids": ["synthetic-t3"],
+      "address": "架空県架空市架空町0-0-0",
+      "住所": "架空県架空市架空町0-0-0",
+      "phone": "000-0000-0000",
+      "tel": "000-0000-0000",
+      "電話番号": "000-0000-0000",
+      "email": "synthetic@example.invalid",
+      "mail": "synthetic@example.invalid",
+      "メール": "synthetic@example.invalid",
+      "birthday": "2000-01-01",
+      "birthdate": "2000-01-01",
+      "生年月日": "2000-01-01",
+      "paymentHistory": ["synthetic-dummy"],
+      "支払履歴": ["synthetic-dummy"],
+      "pastResults": ["synthetic-dummy"],
+      "過去成績": ["synthetic-dummy"]
+    },
+    {
+      "id": "synthetic-006",
+      "name": "架空 六郎",
+      "yomi": "かくう ろくろう",
+      "last_class": "B",
+      "member": "other",
+      "grade": "ippan",
+      "city": "架空市",
+      "note": "",
+      "deleted": false
+    }
+  ]
+}

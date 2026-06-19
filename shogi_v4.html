@@ -1501,7 +1501,12 @@ function normalizeBranchMaster(raw){
       if(typeof t2==='string'&&t2&&!seenTid[t2]){seenTid[t2]=true;tournament_ids.push(t2);}
     }
 
-    var memberStatus=(m.member==='other')?'other':'member';
+    // MEMBERS-CANDIDATE-MASTER-RECUT-001: 外部の members 形式候補マスタは member を boolean で持つ
+    //   （true=支部員 / false=一般）。false → 'other'(一般) を受理する。アプリ native export は
+    //   'member'/'other' 文字列のため、この追加分岐は無影響（後方互換）。未知値・未指定は既存どおり
+    //   'member'(支部員) 既定。grade はアプリ内では会費区分（'chu'=中学生以下 / それ以外='ippan'）で、
+    //   外部マスタの段位（例 "二段"）は別概念のため取り込まず既定 'ippan'（既存正規化のまま）。
+    var memberStatus=(m.member===false||m.member==='other')?'other':'member';
     var gradeStatus=(m.grade==='chu')?'chu':'ippan';
 
     members.push({
@@ -3389,7 +3394,9 @@ function processMasterImportText(text,mode,setStatus){
     if(!confirm('現在のマスタをすべて置き換えます。元に戻せません。\n\n続けますか？\n\n読込予定: '+(result.newMaster.members.length)+'名'))return;
     saveBranchMaster(result.newMaster);
     var modalEl=document.getElementById('master-import-modal');if(modalEl)modalEl.remove();
-    if(typeof showMsg==='function')showMsg('マスタを上書きインポートしました（'+result.newMaster.members.length+'名）','ok');
+    // MEMBERS-CANDIDATE-MASTER-RECUT-001: 候補マスタ取込の完了通知。当日参加者の自動登録ではなく、
+    //   受付で「過去参加者から選ぶ」を通じて当日参加者を選択する候補であることを明示する。
+    if(typeof showMsg==='function')showMsg('参加者マスタを読み込みました（'+result.newMaster.members.length+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
     renderMasterTab();
     return;
   }
@@ -3405,7 +3412,8 @@ function processMasterImportText(text,mode,setStatus){
     }
     saveBranchMaster(mr.newMaster);
     var modalEl2=document.getElementById('master-import-modal');if(modalEl2)modalEl2.remove();
-    if(typeof showMsg==='function')showMsg('マスタにマージしました（新規追加 '+mr.summary.added+'名 / 既存統合 '+mr.summary.merged+'名 / 合計 '+mr.summary.total+'名）','ok');
+    // MEMBERS-CANDIDATE-MASTER-RECUT-001: 候補マスタへのマージ完了通知（上記と同趣旨）。
+    if(typeof showMsg==='function')showMsg('参加者マスタにマージしました（新規 '+mr.summary.added+'名 / 統合 '+mr.summary.merged+'名 / 合計 '+mr.summary.total+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
     renderMasterTab();
     return;
   }
