@@ -16,6 +16,9 @@ Thumbs.db
 HANDOFF_LOCAL.md
 HANDOFF.md.contaminated.bak
 
+# 実データ・ローカル投入データ（実参加者マスタ等）は repo に含めない（端末ローカル限定 / 先頭スラッシュで repo 直下のみ）
+/data/
+
 # ai-requests のうちローカル限定のもの
 ai-requests/local/
 
