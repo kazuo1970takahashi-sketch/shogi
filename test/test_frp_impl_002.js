@@ -290,6 +290,7 @@ function fnBody(name){
   e2.startClassPartial('A');
   const secA = e2.buildFirstRoundPartialSectionHtml('A');
   assert(secA.indexOf('1局目 未割当参加者')>=0, 'D-sec1 未割当セクション見出し「1局目 未割当参加者」');
+  assert(secA.indexOf('1局目 未割当参加者（4名）')>=0, 'D-sec1c 見出しに未割当人数（4名）を併記（FRP-UNASSIGNED-COUNT-001）');
   assert(secA.indexOf('選択した参加者で1局目を追加作成')>=0, 'D-sec1b 説明文/ボタンに「選択した参加者で1局目を追加作成」（FRP-IMPL-003 で append 実装済み）');
   assert(secA.indexOf('架空太郎')>=0 && secA.indexOf('架空四郎')>=0, 'D-sec2 2人以上: 未割当の全4名が一覧に出る');
   // render 経路でも pane に出る
@@ -301,6 +302,7 @@ function fnBody(name){
   e1._setState(s1);
   const secB = e1.buildFirstRoundPartialSectionHtml('B');
   assert(secB.indexOf('架空梅子')>=0 && secB.indexOf('架空花子')<0 && secB.indexOf('架空桃子')<0, 'D-sec3 1人: 未割当(b3=架空梅子)のみ表示・在籍者(b1,b2)は出ない（奇数の待機1人を表示）');
+  assert(secB.indexOf('1局目 未割当参加者（1名）')>=0, 'D-sec3b 見出しの未割当人数は実数を反映（1名・FRP-UNASSIGNED-COUNT-001）');
 
   // 0人の未割当表示：A(4名) 全員 pairings に → セクション非表示（'')
   const e0 = loadEnv(); const s0 = e0.normalizeState(fxState());
