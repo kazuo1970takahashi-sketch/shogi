@@ -112,6 +112,7 @@ function loadEnv(opts){
        populateClassSelect:populateClassSelect, renderClassManager:renderClassManager,
        regClassNameId:regClassNameId, renderRegList:renderRegList,
        addPlayer:addPlayer, isClassStarted:isClassStarted, setClassStarted:setClassStarted,
+       getCurrentlyRegisteredMemberIds:getCurrentlyRegisteredMemberIds, verifyStatePersisted:verifyStatePersisted,
        _setState:function(s){state=s;},
        _getState:function(){return state;}
      };`
@@ -400,6 +401,72 @@ function optionPairs(selNode){
   env._getState().players.C.push({id:'c1',name:'架空九郎',cls:'C',member:'member',grade:'ippan',entry_no:1});
   env.renderClassManager();
   assert(delBtnOf(env._ctx.document.getElementById('class-manager-list').childNodes[2]).disabled===true, 'G9-5 在籍者ありの C は削除ボタンが disabled になる');
+}
+
+// ============================================================
+// G10. CV-1 Codex BLOCK 対応（P2×2）: C 登録解禁後の class 横断
+//   P2-1 getCurrentlyRegisteredMemberIds（member_id 重複を全クラスで検知）
+//   P2-2 verifyStatePersisted（C 参加者の名前編集/一括編集の保存確認が false negative にならない）
+//   いずれも A/B のみ時は従来と同一結果（後方互換）。
+// ============================================================
+
+// 架空 state：A=2名(うち a1 のみ member_id)・B=1名(member_id)・C=1名(member_id)。
+function fxMemberIds(){
+  return {
+    players:{A:[
+      {id:'a1',name:'架空太郎',cls:'A',member:'member',grade:'ippan',entry_no:1,yomi:'',member_id:'m-a1'},
+      {id:'a2',name:'架空次郎',cls:'A',member:'member',grade:'ippan',entry_no:2,yomi:''}
+    ],B:[
+      {id:'b1',name:'架空花子',cls:'B',member:'member',grade:'ippan',entry_no:1,yomi:'',member_id:'m-b1'}
+    ],C:[
+      {id:'c1',name:'架空三郎',cls:'C',member:'member',grade:'ippan',entry_no:1,yomi:'',member_id:'m-c1'}
+    ]},
+    rounds:4, pairings:{A:[],B:[],C:[]}, results:{A:[],B:[],C:[]}, started:false,
+    classes:[{id:'A',name:'Aクラス',started:false},{id:'B',name:'Bクラス',started:false},{id:'C',name:'Cクラス',started:false}],
+    report:{}
+  };
+}
+
+// P2-1: member_id 収集が全クラス横断
+{
+  const env = loadEnv();
+  env._setState(env.normalizeState(fxMemberIds()));
+  const st = env._getState();
+  assert(st.players.C && st.players.C.length===1 && st.players.C[0].member_id==='m-c1', 'G10-0 前提：C 参加者と member_id が維持される');
+  const ids = env.getCurrentlyRegisteredMemberIds();
+  assert(ids.indexOf('m-c1')>=0, 'G10-1 [P2-1] C 登録済み会員の member_id が収集される（重複見落とし解消）');
+  assert(ids.indexOf('m-a1')>=0 && ids.indexOf('m-b1')>=0, 'G10-2 [P2-1] A・B の member_id も収集される');
+  assert(ids.length===3, 'G10-3 [P2-1] member_id 未保持(a2)は含めない＝計3件');
+}
+
+// P2-1 後方互換: A/B のみなら従来 concat(A,B) と同一結果・順序
+{
+  const env = loadEnv();
+  const fx = fxMemberIds();
+  delete fx.players.C; delete fx.pairings.C; delete fx.results.C;
+  fx.classes = fx.classes.filter(function(c){return c.id!=='C';});
+  env._setState(env.normalizeState(fx));
+  const ids = env.getCurrentlyRegisteredMemberIds();
+  assert(ids.length===2 && ids[0]==='m-a1' && ids[1]==='m-b1', 'G10-4 [P2-1] A/B のみ時は従来同一（[m-a1,m-b1] の順）');
+}
+
+// P2-2: C 参加者の保存確認が成功（false negative にならない）
+{
+  const env = loadEnv();
+  env._setState(env.normalizeState(fxMemberIds()));
+  env.save();
+  assert(!!env._ctx.localStorage.getItem(env.STORAGE_KEY), 'G10-5 前提：state が localStorage に保存される');
+  assert(env.verifyStatePersisted('c1','架空三郎')===true, 'G10-6 [P2-2] C 参加者の保存確認が true（誤「保存未確認」警告が出ない）');
+  assert(env.verifyStatePersisted('c1','別の名前')===false, 'G10-7 [P2-2] 名前不一致は従来どおり false');
+}
+
+// P2-2 後方互換: A 参加者の保存確認は従来どおり true・不在 id は false
+{
+  const env = loadEnv();
+  env._setState(env.normalizeState(fxMemberIds()));
+  env.save();
+  assert(env.verifyStatePersisted('a1','架空太郎')===true, 'G10-8 [P2-2] A 参加者の保存確認は従来どおり true（後方互換）');
+  assert(env.verifyStatePersisted('zzz','架空太郎')===false, 'G10-9 [P2-2] 存在しない id は false');
 }
 
 console.log('');

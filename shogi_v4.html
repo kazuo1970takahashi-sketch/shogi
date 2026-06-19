@@ -4733,13 +4733,13 @@ var _yomiManuallyEdited=false;
 function getCurrentlyRegisteredMemberIds(){
   var ids=[];
   if(!state||!state.players)return ids;
-  var classes=['A','B'];
-  for(var ci=0;ci<classes.length;ci++){
-    var arr=state.players[classes[ci]]||[];
-    for(var pi=0;pi<arr.length;pi++){
-      var p=arr[pi];
-      if(p&&typeof p.member_id==='string'&&p.member_id)ids.push(p.member_id);
-    }
+  // CLASS-VARIABLE-001 (CV-1 Codex P2): A/B 固定をやめ allRegisteredPlayers() で全クラス横断に収集。
+  //   A/B のみなら従来と同一結果。C+ 登録済み会員の member_id も updateSuggestList / addPlayer の
+  //   重複チェック対象になる（C 登録解禁後の member_id 重複見落としを解消）。
+  var all=allRegisteredPlayers();
+  for(var pi=0;pi<all.length;pi++){
+    var p=all[pi];
+    if(p&&typeof p.member_id==='string'&&p.member_id)ids.push(p.member_id);
   }
   return ids;
 }
@@ -5429,7 +5429,10 @@ function verifyStatePersisted(playerId,expectedName){
     if(typeof raw!=='string'||!raw)return false;
     var parsed=JSON.parse(raw);
     if(!parsed||!parsed.players)return false;
-    var classes=['A','B'];
+    // CLASS-VARIABLE-001 (CV-1 Codex P2): A/B 固定をやめ persisted players の全 classId を横断。
+    //   A/B のみなら従来と同一結果（player.id は全クラス一意のため探索順は無関係）。C+ 参加者の
+    //   名前編集 / 一括編集の保存確認が false negative（誤「保存未確認」警告）にならない。
+    var classes=Object.keys(parsed.players);
     for(var ci=0;ci<classes.length;ci++){
       var arr=parsed.players[classes[ci]];
       if(!Array.isArray(arr))continue;
