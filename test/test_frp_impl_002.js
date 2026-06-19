@@ -291,6 +291,10 @@ function fnBody(name){
   const secA = e2.buildFirstRoundPartialSectionHtml('A');
   assert(secA.indexOf('1局目 未割当参加者')>=0, 'D-sec1 未割当セクション見出し「1局目 未割当参加者」');
   assert(secA.indexOf('1局目 未割当参加者（4名）')>=0, 'D-sec1c 見出しに未割当人数（4名）を併記（FRP-UNASSIGNED-COUNT-001）');
+  // FRP-SMALL-UX-001: 未割当人数からの組成見込み（全員選択時に作れる組数・待機の有無）を派生表示
+  assert(secA.indexOf('frp-pairing-projection')>=0, 'D-sec1d 組成見込み行（frp-pairing-projection）を表示（FRP-SMALL-UX-001）');
+  assert(secA.indexOf('全員（4名）を選ぶと、2組')>=0, 'D-sec1e 偶数4名: 「全員（4名）を選ぶと、2組…追加できます」と具体化（FRP-SMALL-UX-001）');
+  assert(secA.indexOf('1名が未割当のまま残ります')<0, 'D-sec1f 偶数4名: 割り切れるので待機（1名残る）注記は出さない');
   assert(secA.indexOf('選択した参加者で1局目を追加作成')>=0, 'D-sec1b 説明文/ボタンに「選択した参加者で1局目を追加作成」（FRP-IMPL-003 で append 実装済み）');
   assert(secA.indexOf('架空太郎')>=0 && secA.indexOf('架空四郎')>=0, 'D-sec2 2人以上: 未割当の全4名が一覧に出る');
   // render 経路でも pane に出る
@@ -303,6 +307,18 @@ function fnBody(name){
   const secB = e1.buildFirstRoundPartialSectionHtml('B');
   assert(secB.indexOf('架空梅子')>=0 && secB.indexOf('架空花子')<0 && secB.indexOf('架空桃子')<0, 'D-sec3 1人: 未割当(b3=架空梅子)のみ表示・在籍者(b1,b2)は出ない（奇数の待機1人を表示）');
   assert(secB.indexOf('1局目 未割当参加者（1名）')>=0, 'D-sec3b 見出しの未割当人数は実数を反映（1名・FRP-UNASSIGNED-COUNT-001）');
+  // FRP-SMALL-UX-001: 1名のみは対局を作れないため「あと1名以上」の受付待ち案内に切替（組成見込みの特殊分岐）
+  assert(secB.indexOf('現在の未割当は1名です')>=0 && secB.indexOf('あと1名以上')>=0, 'D-sec3c 1名のみ: 「あと1名以上の受付をお待ちください」と案内（FRP-SMALL-UX-001）');
+  assert(secB.indexOf('を選ぶと、')<0, 'D-sec3d 1名のみ: 作れないので「全員を選ぶと…組」の組数案内は出さない（FRP-SMALL-UX-001）');
+
+  // FRP-SMALL-UX-001: 奇数（3名・全員未割当）→ 1組できて1名が待機する見込みを明示（奇数分岐）
+  const eOdd = loadEnv(); const sOdd = eOdd.normalizeState(fxState());
+  sOdd.classes[1].started=true; // B を部分開始（pairings 空 → b1,b2,b3 の3名すべて未割当）
+  eOdd._setState(sOdd);
+  const secOdd = eOdd.buildFirstRoundPartialSectionHtml('B');
+  assert(secOdd.indexOf('1局目 未割当参加者（3名）')>=0, 'D-sec6a 奇数3名: 見出し人数（3名・FRP-UNASSIGNED-COUNT-001）');
+  assert(secOdd.indexOf('全員（3名）を選ぶと、1組')>=0, 'D-sec6b 奇数3名: 「全員（3名）を選ぶと、1組…」と具体化（FRP-SMALL-UX-001）');
+  assert(secOdd.indexOf('1名が未割当のまま残ります（奇数）')>=0, 'D-sec6c 奇数3名: 「1名が未割当のまま残ります（奇数）」を明示（FRP-SMALL-UX-001）');
 
   // 0人の未割当表示：A(4名) 全員 pairings に → セクション非表示（'')
   const e0 = loadEnv(); const s0 = e0.normalizeState(fxState());

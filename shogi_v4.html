@@ -7068,6 +7068,23 @@ function buildFirstRoundPartialSectionHtml(cls){
   //   1局目待ちか」を一目で把握できるようにする派生表示（unassigned.length は上で算出済み・state 非保存）。
   //   append で人数が減ると再描画で自動更新される。既存テスト pin は部分一致（'1局目 未割当参加者'）で後方互換。
   html+='<h3 style="margin:0 0 4px;font-size:14px;color:#1F3864">1局目 未割当参加者（'+unassigned.length+'名）</h3>';
+  // FRP-SMALL-UX-001 (post FRP-UNASSIGNED-COUNT-001 / #245): 未割当人数から「全員を1局目に入れると
+  //   何組できて誰が待つか」を派生表示する1行。#245 の見出し人数を、運営が次に取る操作の結果（作れる
+  //   組数・待機の有無）まで一目で分かるよう具体化する。表示専用＝state 非保存・mutate しない・listener
+  //   を持たない（unassigned.length は上で算出済み）。奇数/1名のときは待機が生じる注意として色を強める。
+  var frpMaxPairs=Math.floor(unassigned.length/2);   // 全員を選んだときに作れる最大組数
+  var frpProjection, frpProjectionColor;
+  if(unassigned.length===1){
+    frpProjection='現在の未割当は1名です。対局を作るには、あと1名以上の受付をお待ちください。';
+    frpProjectionColor='#9a3412';
+  }else if(unassigned.length%2===1){
+    frpProjection='いま未割当の全員（'+unassigned.length+'名）を選ぶと、'+frpMaxPairs+'組の対局を追加でき、1名が未割当のまま残ります（奇数）。';
+    frpProjectionColor='#9a3412';
+  }else{
+    frpProjection='いま未割当の全員（'+unassigned.length+'名）を選ぶと、'+frpMaxPairs+'組の対局を1局目に追加できます。';
+    frpProjectionColor='#1F3864';
+  }
+  html+='<p class="frp-pairing-projection" style="margin:0 0 8px;font-size:12px;font-weight:600;color:'+frpProjectionColor+'">'+frpProjection+'</p>';
   html+='<p style="margin:0 0 8px;font-size:12px;color:#666">このクラスは部分開始中です。まだ1局目に入っていない参加者から選んで「選択した参加者で1局目を追加作成」を押すと、既存の対局を変更せず選択者だけの対局を追加します（2人以上を選択。偶数は全員、奇数は末尾1人が未割当のまま残ります）。既に1局目対局がある参加者は表示されません。</p>';
   html+='<div class="frp-unassigned-list">';
   for(var i=0;i<unassigned.length;i++){
