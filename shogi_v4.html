@@ -7064,7 +7064,10 @@ function buildFirstRoundPartialSectionHtml(cls){
   var unassigned=getUnassignedFirstRoundPlayers(cls);
   if(unassigned.length===0)return '';
   var html='<div class="frp-partial-section" data-frp-partial="1" style="margin:12px 0;padding:12px;border:1px solid #d0d7e2;border-radius:8px;background:#f7f9fc">';
-  html+='<h3 style="margin:0 0 4px;font-size:14px;color:#1F3864">1局目 未割当参加者</h3>';
+  // FRP-UNASSIGNED-COUNT-001: 見出しに現在の未割当（1局目待機）人数を併記する。運営が「あと何人が
+  //   1局目待ちか」を一目で把握できるようにする派生表示（unassigned.length は上で算出済み・state 非保存）。
+  //   append で人数が減ると再描画で自動更新される。既存テスト pin は部分一致（'1局目 未割当参加者'）で後方互換。
+  html+='<h3 style="margin:0 0 4px;font-size:14px;color:#1F3864">1局目 未割当参加者（'+unassigned.length+'名）</h3>';
   html+='<p style="margin:0 0 8px;font-size:12px;color:#666">このクラスは部分開始中です。まだ1局目に入っていない参加者から選んで「選択した参加者で1局目を追加作成」を押すと、既存の対局を変更せず選択者だけの対局を追加します（2人以上を選択。偶数は全員、奇数は末尾1人が未割当のまま残ります）。既に1局目対局がある参加者は表示されません。</p>';
   html+='<div class="frp-unassigned-list">';
   for(var i=0;i<unassigned.length;i++){
