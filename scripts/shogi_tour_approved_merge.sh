@@ -275,7 +275,7 @@ amerge_main() {
     fi
     note "Ready 化しました。"
   else
-    note "PR は既に Ready 状態のため gh pr ready をスキップします（draft=$PR_DRAFT）。"
+    note "PR は既に Ready 状態のため gh pr ready をスキップします（draft=${PR_DRAFT}）。"
   fi
 
   # --- Step 5: Ready 化後に gate を再実行（READY_CANDIDATE でなければ merge しない） ---
@@ -328,7 +328,7 @@ amerge_main() {
   _head_sha="$(git ls-remote --heads origin "$PR_HEAD" 2>/dev/null | awk -v ref="refs/heads/$PR_HEAD" '$2==ref {print $1; exit}')"
   if [ -n "$_head_sha" ]; then
     _head_state="保持されています（remote に '$PR_HEAD' が存在。削除していません） [SHA $_head_sha]"
-    note "  OK: head branch '$PR_HEAD' は remote に残存しています（SHA $_head_sha）。"
+    note "  OK: head branch '$PR_HEAD' は remote に残存しています（SHA ${_head_sha}）。"
   else
     _head_state="!! remote に '$PR_HEAD' が見つかりません（本スクリプトは削除していません。リポジトリの自動削除設定や手動操作を確認してください）"
     note "  WARN: head branch '$PR_HEAD' が見つかりません。"

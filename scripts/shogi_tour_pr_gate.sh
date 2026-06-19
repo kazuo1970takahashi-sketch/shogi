@@ -355,7 +355,7 @@ PY
       if [ "$PR_BASE" = "$MAIN_BRANCH" ]; then
         gate_ok "base が $MAIN_BRANCH"
       elif [ "$PR_BASE" = "$PRODUCTION_BRANCH" ]; then
-        gate_ng "main-dev なのに base が $PRODUCTION_BRANCH（production を触る PR）"
+        gate_ng "main-dev なのに base が ${PRODUCTION_BRANCH}（production を触る PR）"
       else
         gate_ng "base が $MAIN_BRANCH ではない (base=$PR_BASE)"
       fi
@@ -365,7 +365,7 @@ PY
       if [ "$PR_BASE" = "$ORPHAN_BASE_BRANCH" ]; then
         gate_ok "base が orphan base ($ORPHAN_BASE_BRANCH)"
       elif [ "$PR_BASE" = "$PRODUCTION_BRANCH" ] || [ "$PR_BASE" = "$MAIN_BRANCH" ]; then
-        gate_ng "orphan-dev なのに base が $PR_BASE（production/main を直接触る PR）"
+        gate_ng "orphan-dev なのに base が ${PR_BASE}（production/main を直接触る PR）"
       else
         gate_ng "base が orphan base ($ORPHAN_BASE_BRANCH) ではない (base=$PR_BASE)"
       fi
@@ -373,7 +373,7 @@ PY
     docs-only|test-only)
       # Should Fix 2: profile 定義上 production 以外が条件。base=production は NG（BLOCKED）。
       if [ "$PR_BASE" = "$PRODUCTION_BRANCH" ]; then
-        gate_ng "$PROFILE の base が $PRODUCTION_BRANCH（profile 定義上 production 以外が条件 → NG）"
+        gate_ng "$PROFILE の base が ${PRODUCTION_BRANCH}（profile 定義上 production 以外が条件 → NG）"
       else
         gate_ok "base は production 以外 ($PR_BASE)"
       fi
@@ -394,7 +394,7 @@ PY
         ""|UNKNOWN)
           gate_warn "mergeable=MERGEABLE / mergeStateStatus=${_ms:-UNKNOWN}（算出中/不明。CLEAN を確認するまで保留）" ;;
         *)
-          gate_warn "mergeable=MERGEABLE / mergeStateStatus=$_ms（CLEAN でない: BLOCKED/UNSTABLE/BEHIND/DIRTY 等。要確認）" ;;
+          gate_warn "mergeable=MERGEABLE / mergeStateStatus=${_ms}（CLEAN でない: BLOCKED/UNSTABLE/BEHIND/DIRTY 等。要確認）" ;;
       esac
       ;;
     CONFLICTING)
