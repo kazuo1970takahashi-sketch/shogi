@@ -109,6 +109,8 @@ create table if not exists public.players (
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
   unique (club_id, member_id),
+  -- entries の複合 FK 参照先（club 越境参照を防ぐため (club_id, id) を一意に固定）。
+  unique (club_id, id),
   foreign key (club_id, member_id)
     references public.members(club_id, member_id) on delete cascade
 );
@@ -136,7 +138,9 @@ create table if not exists public.tournaments (
                   check (source in ('manual','json_import','app_sync')),
   confirmed_at  timestamptz,
   created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now()
+  updated_at    timestamptz not null default now(),
+  -- entries の複合 FK 参照先（club 越境参照を防ぐため (club_id, id) を一意に固定）。
+  unique (club_id, id)
 );
 
 create index if not exists idx_tournaments_club on public.tournaments(club_id);
@@ -165,7 +169,15 @@ create table if not exists public.entries (
   participated   boolean not null default true,
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
-  unique (tournament_id, player_id)
+  unique (tournament_id, player_id),
+  -- club 越境参照の防止（多テナント分離の要）。
+  --   単独 FK（tournament_id / player_id）だけだと club_id=A のまま別 club(B) の
+  --   tournament/player UUID を参照する entry を作れてしまう（RLS の WITH CHECK は
+  --   entries.club_id しか見ないため素通り）。複合 FK で「参照先も同一 club」を強制する。
+  foreign key (club_id, tournament_id)
+    references public.tournaments(club_id, id) on delete cascade,
+  foreign key (club_id, player_id)
+    references public.players(club_id, id) on delete cascade
 );
 
 create index if not exists idx_entries_club on public.entries(club_id);
