@@ -138,6 +138,10 @@ TA_ID=$(psql -X -A -t -d "$DB" -c "select id from public.tournaments where club_
 TB_ID=$(psql -X -A -t -d "$DB" -c "select id from public.tournaments where club_id='$CB' limit 1" 2>/dev/null | tail -n1)
 PA_ID=$(psql -X -A -t -d "$DB" -c "select id from public.players where club_id='$CA' limit 1" 2>/dev/null | tail -n1)
 PB_ID=$(psql -X -A -t -d "$DB" -c "select id from public.players where club_id='$CB' limit 1" 2>/dev/null | tail -n1)
+# viewer の entries UPDATE deny 用に、club A の「もう1人」の player を取得（PA_ID と別個体）。
+#   committed entry を (TA_ID, PA2_ID) で作ると unique(tournament_id, player_id) が
+#   P1-② の (TA_ID, PA_ID) と衝突しない。
+PA2_ID=$(psql -X -A -t -d "$DB" -c "select id from public.players where club_id='$CA' and id<>'$PA_ID' limit 1" 2>/dev/null | tail -n1)
 
 echo "  --- RLS 判定（実 PostgreSQL）---"
 # 1. 未ログイン（anon）は何も読めない。特に members（氏名）。
@@ -219,6 +223,14 @@ assert_eq "$(probe_rows authenticated "$U_VIEWER" "update public.members set yom
 assert_eq "$(probe_rows authenticated "$U_VIEWER" "update public.players set branch_code='vx' where club_id='$CA'")"     "0" "viewer(A): players UPDATE は0行（書込不可）"
 assert_eq "$(probe_rows authenticated "$U_VIEWER" "update public.tournaments set venue_code='vx' where club_id='$CA'")"  "0" "viewer(A): tournaments UPDATE は0行（書込不可）"
 assert_eq "$(probe_rows authenticated "$U_ORG"    "update public.tournaments set venue_code='vx' where club_id='$CA'")"  "1" "organizer(A): tournaments UPDATE は1行（対照・書込可）"
+# entries も viewer は UPDATE できない（成績の改ざん不可）。INSERT deny だけでなく UPDATE deny も実証する。
+#   委託先 RLS は entries_update を app_is_active_organizer に付け替え済み（rank>=1 が条件）。
+#   probe_rows は USING で実際に作用した行数を返すため、committed entry を1件用意して
+#   viewer=0 行 / organizer=1 行 の対照で deny の有意性（red/green）を担保する。
+#   行は (TA_ID, PA2_ID) で作り、P1-② の (TA_ID, PA_ID) と unique 衝突しないようにする。
+psql -X -q -d "$DB" -c "insert into public.entries(club_id,tournament_id,player_id,class) values ('$CA','$TA_ID','$PA2_ID','A')" >/dev/null 2>&1
+assert_eq "$(probe_rows authenticated "$U_VIEWER" "update public.entries set wins=1 where club_id='$CA'")"               "0" "viewer(A): entries UPDATE は0行（成績を書けない）"
+assert_eq "$(probe_rows authenticated "$U_ORG"    "update public.entries set wins=1 where club_id='$CA'")"               "1" "organizer(A): entries UPDATE は1行（対照・書込可）"
 
 # =============================================================================
 # P1-② entries の club 越境参照ガード（複合 FK）。club_id=A のまま別 club(B) の
