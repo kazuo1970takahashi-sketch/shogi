@@ -1,5 +1,11 @@
 # SHOGI-TOUR 引き継ぎ書
 
+> **🔴 実装着手前に必読 — AI 開発パイプライン正本（PMO-OPS v2.1-final）**
+> 工程・状態機械・結果書き戻しプロトコル・凍結マーカー = [`docs/ai-ops/AI-DEV-PIPELINE.md`](docs/ai-ops/AI-DEV-PIPELINE.md)。
+> 役割・職務分離（SoD G1〜G6 / L0–L4） = [`docs/ai-ops/AGENT-ROLES-AND-SOD.md`](docs/ai-ops/AGENT-ROLES-AND-SOD.md)。
+> Codex / レビュー結果書き戻し = [`docs/ai-ops/CODEX-RESULT-PROTOCOL.md`](docs/ai-ops/CODEX-RESULT-PROTOCOL.md)。
+> 各工程の完了は **GitHub に定型コメント＋凍結マーカー1ブロックを書き戻すまでが1工程**（自分のチャットで終わりは未完了）。
+
 > 別チャットで作業を再開するための最小コンテキスト。詳細設計は `docs/specs/` および `docs/notes/` を参照。
 
 ## プロジェクト概要
