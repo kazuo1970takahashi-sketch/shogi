@@ -1263,6 +1263,19 @@ else
   warn "test_progressive_pairing_p1.js が見つからない"
 fi
 
+echo ""
+echo "【DATA-PERSISTENCE-PHASE2-STAGE-A Supabase スキーマ/RLS 静的検証（テーブル/club_id/RLS/ポリシー/ガード/secret非混入）】"
+if [ -f "$SCRIPT_DIR/test_supabase_stagea_schema.js" ]; then
+  if node "$SCRIPT_DIR/test_supabase_stagea_schema.js" "$TARGET" > /tmp/supabase_stagea_out.log 2>&1; then
+    ok "DATA-PERSISTENCE-PHASE2-STAGE-A 静的検証 全PASS ($(tail -1 /tmp/supabase_stagea_out.log))"
+  else
+    ng "DATA-PERSISTENCE-PHASE2-STAGE-A 静的検証 失敗"
+    cat /tmp/supabase_stagea_out.log
+  fi
+else
+  warn "test_supabase_stagea_schema.js が見つからない"
+fi
+
 # ============================================
 # 最終結果
 # ============================================

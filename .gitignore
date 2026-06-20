@@ -19,6 +19,13 @@ HANDOFF.md.contaminated.bak
 # 実データ・ローカル投入データ（実参加者マスタ等）は repo に含めない（端末ローカル限定 / 先頭スラッシュで repo 直下のみ）
 /data/
 
+# Supabase の鍵・ローカル接続設定は repo に置かない（secret 厳禁・publishable も既定はローカル設定経由）
+# A3 runtime（マジックリンク・ログイン）導入時の置き場所を先行して保護する（*.example のみコミット）
+supabase/.env
+supabase/.env.*
+cloud/supabase-config.local.js
+**/supabase-config.local.js
+
 # ai-requests のうちローカル限定のもの
 ai-requests/local/
 
