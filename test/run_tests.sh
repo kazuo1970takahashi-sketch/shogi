@@ -963,6 +963,22 @@ else
 fi
 
 # ============================================
+# REPORT-PERSIST-VERIFY-001 報告書 13 フィールドの保存・復元 回帰テスト（Issue #261）
+# ============================================
+echo ""
+echo "【REPORT-PERSIST-VERIFY-001 報告書13フィールドの保存・復元（save→load 往復）】"
+if [ -f "$SCRIPT_DIR/test_report_persist_verify_001.js" ]; then
+  if node "$SCRIPT_DIR/test_report_persist_verify_001.js" "$TARGET" > /tmp/report_persist_verify_001_out.log 2>&1; then
+    ok "REPORT-PERSIST-VERIFY-001 テスト 全PASS ($(tail -1 /tmp/report_persist_verify_001_out.log))"
+  else
+    ng "REPORT-PERSIST-VERIFY-001 テスト 失敗"
+    cat /tmp/report_persist_verify_001_out.log
+  fi
+else
+  warn "test_report_persist_verify_001.js が見つからない"
+fi
+
+# ============================================
 # LIVE-MOBILE-SCOREBOARD-001 スマホ閲覧専用ビュー（?view=scoreboard / 最終更新 / read-only）
 # ============================================
 echo ""
