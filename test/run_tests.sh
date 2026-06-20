@@ -1295,6 +1295,19 @@ else
   warn "test_save_branch_master_failure_signal.js が見つからない"
 fi
 
+echo ""
+echo "【SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2-A/P2-B) マイグレ失敗時の誤誘導是正 ＋ yomi バックフィル保存失敗の握り潰し是正】"
+if [ -f "$SCRIPT_DIR/test_save_ux_nonquota_notify_002.js" ]; then
+  if node "$SCRIPT_DIR/test_save_ux_nonquota_notify_002.js" "$TARGET" > /tmp/save_ux_nonquota_notify_002_out.log 2>&1; then
+    ok "SAVE-UX-NONQUOTA-NOTIFY-001 P2追補 テスト 全PASS ($(tail -1 /tmp/save_ux_nonquota_notify_002_out.log))"
+  else
+    ng "SAVE-UX-NONQUOTA-NOTIFY-001 P2追補 テスト 失敗"
+    cat /tmp/save_ux_nonquota_notify_002_out.log
+  fi
+else
+  warn "test_save_ux_nonquota_notify_002.js が見つからない"
+fi
+
 # ============================================
 # 最終結果
 # ============================================
