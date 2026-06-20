@@ -1227,6 +1227,26 @@ else
 fi
 
 # ============================================
+# PROGRESSIVE-PAIRING-IMPL-P1 1局目逐次手合「クラス別『1卓追加』（受付順の先頭2名）」
+#   部分開始中クラスの未手合い（受付順）先頭2名で round=1 の1卓を append する onClickAddOneTable と
+#   その導線ボタン/bind/disabled を検証する。生成は buildFirstRoundPartialPairs、append は
+#   appendFirstRoundPairs に委譲（追加のみ）。待機（奇数末尾1人）は派生 getUnassignedFirstRoundPlayers
+#   に残し state へ二重保存しない。generatePairing（全員一括）は無改変＝既存一括非回帰を固定する。
+# ============================================
+echo ""
+echo "【PROGRESSIVE-PAIRING-IMPL-P1 1局目逐次手合「1卓追加」（受付順・奇数待機・重複防止・reload・一括非回帰）】"
+if [ -f "$SCRIPT_DIR/test_progressive_pairing_p1.js" ]; then
+  if node "$SCRIPT_DIR/test_progressive_pairing_p1.js" "$TARGET" > /tmp/progressive_pairing_p1_out.log 2>&1; then
+    ok "PROGRESSIVE-PAIRING-IMPL-P1 テスト 全PASS ($(tail -1 /tmp/progressive_pairing_p1_out.log))"
+  else
+    ng "PROGRESSIVE-PAIRING-IMPL-P1 テスト 失敗"
+    cat /tmp/progressive_pairing_p1_out.log
+  fi
+else
+  warn "test_progressive_pairing_p1.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""

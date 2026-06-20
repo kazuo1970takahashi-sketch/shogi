@@ -6505,6 +6505,38 @@ function onClickAppendFirstRound(cls){
   }
 }
 
+// PROGRESSIVE-PAIRING-IMPL-P1 (CONFIRMED spec §2 / §3 / 受入1-7): クラス別「1卓追加」ボタンの click handler。
+//   部分開始中クラスの未手合い（getUnassignedFirstRoundPlayers＝受付順＝entry_no 昇順）の「先頭2名」で
+//   round=1 の対局を1卓だけ append する。選択式の onClickAppendFirstRound（チェックして選ぶ）とは別導線で、
+//   「来た人から2人ずつ」という逐次手合いの主導線（押すたびに次の先頭2名で1卓）を担う。
+//   - 未手合い2人未満では何もしない（ボタン自体も buildFirstRoundPartialSectionHtml 側で disabled）。
+//   - 生成は既存 buildFirstRoundPartialPairs（先頭2名 → 1ペア・leftover なし）＋ append は既存
+//     appendFirstRoundPairs に委譲（実行時再検証・既存対局保持・重複拒否・SAVE-FRP-002・save／復元）。
+//     新しい保存スキーマや状態は持たない（待機は派生 getUnassignedFirstRoundPlayers に自動的に残る）。
+//   - confirm 文は既存 buildFrpAppendConfirmMessage を再利用（1組2名・氏名・非破壊を明記）。
+//   - onClickAppendFirstRound と同型の再入防止 in-flight guard（confirm 中の二重発火・連打対策）を持つ。
+//   - 全員一括の開始経路（旧 start 系・全員上書き）は流用しない＝append 経由のみ（NOCALL はテストで固定）。
+var addOneTableInFlight=false;
+function onClickAddOneTable(cls){
+  if(addOneTableInFlight)return;   // 再入防止: confirm 中/連打中の二重 append を弾く
+  addOneTableInFlight=true;
+  try{
+    if(!isClassStarted(cls)){showMsg('部分開始していないクラスには追加できません','warn');return;}
+    var results=(state.results&&state.results[cls])||[];
+    if(results.length>=1){showMsg('1局目が確定済みのクラスには追加できません','warn');return;}
+    var unassigned=getUnassignedFirstRoundPlayers(cls);   // 受付順（entry_no 昇順）の未手合い
+    if(unassigned.length<2){showMsg('未手合いが2人未満のため1卓を作成できません','warn');return;}
+    var built=buildFirstRoundPartialPairs(unassigned.slice(0,2));   // 先頭2名 → 1ペア・leftover なし
+    if(!built.pairs.length){showMsg('未手合いが2人未満のため1卓を作成できません','warn');return;}
+    if(typeof confirm==='function'){
+      if(!confirm(buildFrpAppendConfirmMessage(cls,built.pairs,built.leftover)))return;
+    }
+    appendFirstRoundPairs(cls,built.pairs);   // 既存対局を変更せず末尾に1卓を append
+  }finally{
+    addOneTableInFlight=false;
+  }
+}
+
 // ROUND-CLASS-START-004b (spec §12.1):
 //   指定 classId の進行データのみリセット。他クラスの pairings / results / started は保持。
 //   class atomic で動作（他クラス state を破壊しない）。
@@ -7339,6 +7371,11 @@ function bindClassActionBarEvents(cls){
   if(addBtn){
     addBtn.addEventListener('click',(function(c){return function(){onClickAppendFirstRound(c);};})(cls));
   }
+  // PROGRESSIVE-PAIRING-IMPL-P1 (CONFIRMED spec §2): 「1卓追加」(受付順の先頭2名) を onClickAddOneTable に bind（追加のみ）。
+  var addTableBtn=document.getElementById('addTableBtn_'+cls);
+  if(addTableBtn){
+    addTableBtn.addEventListener('click',(function(c){return function(){onClickAddOneTable(c);};})(cls));
+  }
 }
 
 // FRP-IMPL-002/003 (FRP-DESIGN-002 §8 / §8.3): 部分開始中クラスの「1局目 未割当参加者」一覧（選択 → append 作成）。
@@ -7375,6 +7412,16 @@ function buildFirstRoundPartialSectionHtml(cls){
     frpProjectionColor='#1F3864';
   }
   html+='<p class="frp-pairing-projection" style="margin:0 0 8px;font-size:12px;font-weight:600;color:'+frpProjectionColor+'">'+frpProjection+'</p>';
+  // PROGRESSIVE-PAIRING-IMPL-P1 (CONFIRMED spec §1 / §2 / 受入1-4): 逐次手合いの主導線「1卓追加」。
+  //   未手合い（受付順＝entry_no 昇順）の先頭2名で round=1 の1卓を作成する（押すたびに次の2名で1卓）。
+  //   未手合いが2人未満（このセクションは未割当0 で '' を返すので実質「1名」）では disabled にする。
+  //   選択式の frpAddBtn_「選択した参加者で1局目を追加作成」とは別 id・別導線で併置（純追加）。click の登録は
+  //   onClickAddOneTable へ bindClassActionBarEvents 側で行う。この helper は表示専用（イベント登録は持たない）。
+  var canAddOneTable=unassigned.length>=2;
+  html+='<div class="frp-add-one-table" style="margin:0 0 10px">';
+  html+='<button type="button" id="addTableBtn_'+escapeHtml(cls)+'" class="btn-primary"'+(canAddOneTable?'':' disabled')+' title="未手合いの先頭2名（受付順）で1局目の1卓を作成します。押すたびに次の2名で1卓を作成します。既存の対局・結果は変更しません。">1卓追加（受付順の先頭2名で1局目を作成）</button>';
+  html+='<p style="margin:6px 0 0;font-size:11px;color:#888">※受付順（参加者追加順）の先頭2名で1卓を作成します。押すたびに次の1卓。未手合いが1名のときは、次の参加者が来るまで待機します（不戦勝にはなりません）。</p>';
+  html+='</div>';
   html+='<p style="margin:0 0 8px;font-size:12px;color:#666">このクラスは部分開始中です。まだ1局目に入っていない参加者から選んで「選択した参加者で1局目を追加作成」を押すと、既存の対局を変更せず選択者だけの対局を追加します（2人以上を選択。偶数は全員、奇数は末尾1人が未割当のまま残ります）。既に1局目対局がある参加者は表示されません。</p>';
   html+='<div class="frp-unassigned-list">';
   for(var i=0;i<unassigned.length;i++){
