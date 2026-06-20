@@ -1282,6 +1282,19 @@ else
   warn "test_save_ux_nonquota_notify_001.js が見つからない"
 fi
 
+echo ""
+echo "【SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2) saveBranchMaster 失敗シグナル return ＋ 呼出側の成功バナー抑止 ＋ master 誘導文言】"
+if [ -f "$SCRIPT_DIR/test_save_branch_master_failure_signal.js" ]; then
+  if node "$SCRIPT_DIR/test_save_branch_master_failure_signal.js" "$TARGET" > /tmp/save_branch_master_failure_signal_out.log 2>&1; then
+    ok "SAVE-BRANCH-MASTER-FAILURE-SIGNAL テスト 全PASS ($(tail -1 /tmp/save_branch_master_failure_signal_out.log))"
+  else
+    ng "SAVE-BRANCH-MASTER-FAILURE-SIGNAL テスト 失敗"
+    cat /tmp/save_branch_master_failure_signal_out.log
+  fi
+else
+  warn "test_save_branch_master_failure_signal.js が見つからない"
+fi
+
 # ============================================
 # 最終結果
 # ============================================

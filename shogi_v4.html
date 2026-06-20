@@ -1572,12 +1572,17 @@ function saveBranchMaster(master){
     };
     master.updated_at=clone.updated_at;
     localStorage.setItem(BRANCH_MASTER_KEY,JSON.stringify(clone));
+    // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存成功を呼び出し側へ通知する。呼び出し側
+    //   （reset / import / delete / restore / migration）はこの戻り値で成功バナー
+    //   （showMsg(...,'ok')）を出すか抑止するかを判断する（save-verify 経路と同じく失敗を上書きしない）。
+    return true;
   }catch(e){
     // SAVE-UX-QUOTA-HANDLING-IMPL / SAVE-UX-NONQUOTA-NOTIFY-001 (Issue #260):
     //   quota / 非quota いずれの保存失敗も Level 1 化（notifySaveWarning が showMsg('warn') /
     //   console.warn / indicator count +1 を 1 経路で担当）。非quota も握り潰さずユーザー可視にする
     //   （「失敗を隠さない」原則を維持）。重複 console.warn を避けるため catch 内で console.warn 単独
     //   呼出はしない（notifySaveWarning が内部で総括 console.warn を 1 回出力する）。
+    //   quota / 非quota いずれの失敗分岐も false を返し、呼び出し側が成功バナーを抑止できるようにする（Codex P2）。
     if(isQuotaExceededError(e)){
       notifySaveWarning({
         message:'保存容量の上限に達しました。データ整理が必要です。',
@@ -1587,18 +1592,21 @@ function saveBranchMaster(master){
         aggregateKey:'storage-quota:global',
         severity:'warn'
       });
-      return;
+      return false;
     }
     // SAVE-UX-NONQUOTA-NOTIFY-001: 非quota（SecurityError / プライベートブラウズ等）の保存失敗も
     //   quota と同じ notifySaveWarning 経路でユーザー可視化する。kind:'storage-error' は
     //   SAVE_WARN_AGGREGATABLE_KINDS 非対象＝showMsg('warn')＋console.warn＋indicator +1 が確実に発火。
+    //   誘導先は失敗対象（支部マスタ＝BRANCH_MASTER_KEY）に合わせ「マスタをエクスポート」での
+    //   バックアップとする（旧「大会データをコピー」は state 本体の経路で誤誘導だった / Codex P2）。
     notifySaveWarning({
-      message:'支部マスタの保存に失敗しました。大会データをコピー（バックアップ）してください。',
+      message:'支部マスタの保存に失敗しました。「マスタをエクスポート」でマスタをバックアップしてください。',
       consoleTag:'[STORAGE-ERROR] saveBranchMaster() setItem failed (name='+(e&&e.name)+', code='+(e&&e.code)+')',
       callsiteId:'STORAGE-ERROR:saveBranchMaster',
       kind:'storage-error',
       severity:'warn'
     });
+    return false;
   }
 }
 
@@ -3213,9 +3221,11 @@ function bindMasterResetModalEvents(){
       if(statusEl)statusEl.textContent='リセットに失敗しました';
       return;
     }
-    saveBranchMaster(result.newMaster);
+    // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない
+    //   （saveBranchMaster が既に warn を表示済。成功 showMsg で上書きしない）。
+    var saved=saveBranchMaster(result.newMaster);
     var modalEl=document.getElementById('master-reset-modal');if(modalEl)modalEl.remove();
-    if(typeof showMsg==='function')showMsg('マスタをリセットしました(全 member 消去)','ok');
+    if(saved&&typeof showMsg==='function')showMsg('マスタをリセットしました(全 member 消去)','ok');
     renderMasterTab();
     // 過去参加者パネルも再描画(参加者登録タブが非表示でも内部 DOM 更新)
     if(typeof renderPastParticipantsPanel==='function'){
@@ -3360,9 +3370,10 @@ function bindPhase2ImportModalEvents(){
       }
       return;
     }
-    saveBranchMaster(result.newMaster);
+    // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
+    var saved=saveBranchMaster(result.newMaster);
     var modalEl=document.getElementById('phase2-import-modal');if(modalEl)modalEl.remove();
-    if(typeof showMsg==='function')showMsg(result.summary.total+'名(A '+result.summary.classA+' / B '+result.summary.classB+')を取り込みました。「過去参加者から選ぶ」を展開してご確認ください','ok');
+    if(saved&&typeof showMsg==='function')showMsg(result.summary.total+'名(A '+result.summary.classA+' / B '+result.summary.classB+')を取り込みました。「過去参加者から選ぶ」を展開してご確認ください','ok');
     renderMasterTab();
     if(typeof renderPastParticipantsPanel==='function'){
       var ppSearch=document.getElementById('pp-search');
@@ -3428,11 +3439,12 @@ function processMasterImportText(text,mode,setStatus){
       return;
     }
     if(!confirm('現在のマスタをすべて置き換えます。元に戻せません。\n\n続けますか？\n\n読込予定: '+(result.newMaster.members.length)+'名'))return;
-    saveBranchMaster(result.newMaster);
+    // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
+    var saved=saveBranchMaster(result.newMaster);
     var modalEl=document.getElementById('master-import-modal');if(modalEl)modalEl.remove();
     // MEMBERS-CANDIDATE-MASTER-RECUT-001: 候補マスタ取込の完了通知。当日参加者の自動登録ではなく、
     //   受付で「過去参加者から選ぶ」を通じて当日参加者を選択する候補であることを明示する。
-    if(typeof showMsg==='function')showMsg('参加者マスタを読み込みました（'+result.newMaster.members.length+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
+    if(saved&&typeof showMsg==='function')showMsg('参加者マスタを読み込みました（'+result.newMaster.members.length+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
     renderMasterTab();
     return;
   }
@@ -3446,10 +3458,11 @@ function processMasterImportText(text,mode,setStatus){
       else setStatus('インポートに失敗しました');
       return;
     }
-    saveBranchMaster(mr.newMaster);
+    // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
+    var saved=saveBranchMaster(mr.newMaster);
     var modalEl2=document.getElementById('master-import-modal');if(modalEl2)modalEl2.remove();
     // MEMBERS-CANDIDATE-MASTER-RECUT-001: 候補マスタへのマージ完了通知（上記と同趣旨）。
-    if(typeof showMsg==='function')showMsg('参加者マスタにマージしました（新規 '+mr.summary.added+'名 / 統合 '+mr.summary.merged+'名 / 合計 '+mr.summary.total+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
+    if(saved&&typeof showMsg==='function')showMsg('参加者マスタにマージしました（新規 '+mr.summary.added+'名 / 統合 '+mr.summary.merged+'名 / 合計 '+mr.summary.total+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
     renderMasterTab();
     return;
   }
@@ -3672,8 +3685,9 @@ function bindMasterTabEvents(){
           }
           return;
         }
-        saveBranchMaster(master);
-        if(typeof showMsg==='function')showMsg('「'+memberName+'」を削除しました','ok');
+        // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
+        var saved=saveBranchMaster(master);
+        if(saved&&typeof showMsg==='function')showMsg('「'+memberName+'」を削除しました','ok');
         renderMasterTab();
       });
     }
@@ -3703,8 +3717,9 @@ function bindMasterTabEvents(){
           }
           return;
         }
-        saveBranchMaster(master);
-        if(typeof showMsg==='function')showMsg('「'+memberName+'」を復元しました','ok');
+        // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
+        var saved=saveBranchMaster(master);
+        if(saved&&typeof showMsg==='function')showMsg('「'+memberName+'」を復元しました','ok');
         renderMasterTab();
         // A-4 §3.4.3: 復元後の再反映 — 過去参加者パネルも更新
         if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
@@ -3776,10 +3791,16 @@ function bindMigrationModalEvents(){
     try{
       var master=loadBranchMaster();
       var summary=mergeTournamentParticipantsIntoMaster(tournaments,master);
-      saveBranchMaster(master);
-      var msg=summary.tournaments+'大会を読込：新規追加 '+summary.added+'名 / 既存統合 '+summary.matched+'件 / スキップ '+summary.skipped+'件';
-      if(errors.length>0)msg+='（'+errors.length+'件は形式エラーで失敗）';
-      if(statusEl)statusEl.textContent=msg;
+      // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功サマリを出さない
+      //   （saveBranchMaster が既に warn を表示済。statusEl も失敗を明示してバックアップへ誘導する）。
+      var saved=saveBranchMaster(master);
+      if(saved){
+        var msg=summary.tournaments+'大会を読込：新規追加 '+summary.added+'名 / 既存統合 '+summary.matched+'件 / スキップ '+summary.skipped+'件';
+        if(errors.length>0)msg+='（'+errors.length+'件は形式エラーで失敗）';
+        if(statusEl)statusEl.textContent=msg;
+      }else if(statusEl){
+        statusEl.textContent='統合しましたが支部マスタの保存に失敗しました。「マスタをエクスポート」でバックアップしてください';
+      }
       renderMasterTab();
       renderPastParticipantsPanel();
     }catch(err){
