@@ -1207,6 +1207,23 @@ else
 fi
 
 # ============================================
+# DATA-PERSISTENCE Phase 1（JSON エクスポート/インポート: schema_version 検証 / local↔anonymous 分離 /
+#   往復復元は既存 normalizeState 経路を再利用 / 既存 save/load 非回帰）。対象は shogi_v4.html。
+# ============================================
+echo ""
+echo "【DATA-PERSISTENCE Phase 1 バックアップ（JSON export/import・schema検証・匿名分離・往復復元）】"
+if [ -f "$SCRIPT_DIR/test_data_persistence_phase1.js" ]; then
+  if node "$SCRIPT_DIR/test_data_persistence_phase1.js" "$TARGET" > /tmp/data_persistence_phase1_out.log 2>&1; then
+    ok "DATA-PERSISTENCE Phase 1 テスト 全PASS ($(tail -1 /tmp/data_persistence_phase1_out.log))"
+  else
+    ng "DATA-PERSISTENCE Phase 1 テスト 失敗"
+    cat /tmp/data_persistence_phase1_out.log
+  fi
+else
+  warn "test_data_persistence_phase1.js が見つからない"
+fi
+
+# ============================================
 # AUTO001-GATE-TEST-PORT-002 gate スクリプト（pr_gate / approved_merge）の shell テスト
 #   orphan-dev profile / head-CAS(--match-head-commit) / git ls-remote stub / gh api 非依存 /
 #   dry-run 既定 / --delete-branch・--auto 不使用 を mock gh + git stub で固定する。
