@@ -162,7 +162,11 @@ assert_eq "$(probe authenticated "$U_OWNER" 'select count(*) from public.tournam
 
 # 3. active organizer（club A・admin でない）は氏名を読めるが organizers を追加できない。
 assert_eq "$(probe authenticated "$U_ORG" 'select count(*) from public.members')" "2" "organizer(A): members 氏名を読める（active organizer 以上）"
-assert_eq "$(probe_err authenticated "$U_ORG" "insert into public.organizers(club_id,user_id,role) values ('$CA','$U_OWNER','organizer')")" "ERR" "organizer(A): organizers を追加できない（owner/admin 限定）"
+# P2-④: organizer-deny を「制約違反」ではなく「RLS 拒否」で実証する。
+#   旧テストは email 列欠落（NOT NULL）＋既存 (club_id,user_id)=(CA,U_OWNER) 再利用で
+#   RLS が緩くても制約違反 ERR になり owner/admin 限定を実証できていなかった。
+#   有効・一意な行（email あり・(CA,U_STRANGER) 未使用）を使い、ERR は RLS のみが原因にする。
+assert_eq "$(probe_err authenticated "$U_ORG" "insert into public.organizers(club_id,user_id,email,role,status) values ('$CA','$U_STRANGER','orgdeny@example.test','organizer','active')")" "ERR" "organizer(A): organizers を追加できない（owner/admin 限定・RLS が拒否／制約違反でない）"
 
 # 4. active admin（club A）は organizers を追加できる。
 assert_eq "$(probe_err authenticated "$U_ADMIN" "insert into public.organizers(club_id,user_id,email,role,status) values ('$CA','$U_BOWNER','adminadd@example.test','organizer','active')")" "OK" "admin(A): organizers を追加できる（owner/admin）"
@@ -258,6 +262,65 @@ assert_eq "$(probe_err_su "update public.organizers set club_id='$CA' where club
 assert_eq "$(psql -X -A -t -d "$DB" -c "select count(*) from public.organizers where club_id='$CB' and status='active' and role in ('owner','admin')" 2>/dev/null | tail -n1)" "1" "club B の active owner/admin は1人のまま（移動が拒否された）"
 # 対照: club A は owner+admin の2人 → admin を別 club へ移しても旧 club A に owner が残る → 許可。
 assert_eq "$(probe_err_su "update public.organizers set club_id='$CB' where club_id='$CA' and user_id='$U_ADMIN'")" "OK" "club A の admin を別 club へ移せる（旧 club A に owner が残る・対照）"
+
+# =============================================================================
+# P2-① viewer は organizers（email/role/status/user_id＝連絡先・認証情報）を読めない。
+#   組織者名簿は organizer 以上(rank>=1)に限定し、招待 viewer(rank0) に漏らさない。
+#   （旧: organizers_select=app_is_active_member は rank0 を含み viewer が全取得できた）
+# =============================================================================
+echo "  --- P2-①: viewer は organizers を読めない（organizer 以上に限定）---"
+ORG_CNT_SU=$(psql -X -A -t -d "$DB" -c "select count(*) from public.organizers where club_id='$CA'" 2>/dev/null | tail -n1)
+assert_eq "$(probe authenticated "$U_VIEWER" 'select count(*) from public.organizers')" "0"            "viewer(A): organizers を読めない（連絡先/認証情報を漏らさない）"
+assert_eq "$(probe authenticated "$U_ORG"    'select count(*) from public.organizers')" "$ORG_CNT_SU"  "organizer(A): organizers を読める（rank>=1・対照）"
+assert_eq "$(probe authenticated "$U_ADMIN"  'select count(*) from public.organizers')" "$ORG_CNT_SU"  "admin(A): organizers を読める（rank>=1・対照）"
+
+# =============================================================================
+# P2-② 最後の admin ガードの user_id 経路。最後の認証可能(claim済)owner/admin の
+#   user_id を NULL 化／別人へ挿げ替えると「active admin のまま・認証実体は消失」に
+#   なり得るため、これらを「除去」とみなして拒否する（残数は user_id 非NULL のみ数える）。
+# =============================================================================
+echo "  --- P2-②: 最後の admin の user_id を NULL 化／挿げ替えできない ---"
+# club B は claim 済 owner 1人のみ。その user_id を外す/挿げ替えると認証可能 admin が0人 → 拒否。
+assert_eq "$(probe_err_su "update public.organizers set user_id=null where club_id='$CB' and user_id='$U_BOWNER'")"        "ERR" "最後の owner(B) の user_id を NULL 化できない（認証実体の喪失）"
+assert_eq "$(probe_err_su "update public.organizers set user_id='$U_STRANGER' where club_id='$CB' and user_id='$U_BOWNER'")" "ERR" "最後の owner(B) の user_id を別人へ挿げ替えできない（認証実体の喪失）"
+# 対照: club A は owner+admin の2人 → 片方の user_id を外す/挿げ替えても、もう片方が残る → 許可。
+assert_eq "$(probe_err_su "update public.organizers set user_id=null where club_id='$CA' and user_id='$U_OWNER'")"          "OK"  "club A の owner の user_id は NULL 化可（admin が残る・対照／過剰ブロックでない）"
+assert_eq "$(probe_err_su "update public.organizers set user_id='$U_STRANGER' where club_id='$CA' and user_id='$U_OWNER'")"  "OK"  "club A の owner の user_id は挿げ替え可（admin が残る・対照）"
+
+# =============================================================================
+# P2-③ 同時実行レース。残存 admin カウントは per-club advisory lock で直列化する。
+#   2 トランザクションが同 club の別 admin を同時に退任させても、両方が「1人残る」と
+#   誤認して 0 admin になることを防ぐ。テストは「2件目が同 club ロック待ちで止まる」を実証。
+# =============================================================================
+echo "  --- P2-③: 同 club の最後の admin 判定は直列化（per-club ロック）---"
+# 専用 club C に claim 済 active admin を2人だけ用意（既存 club の状態に依存しない）。
+CC='cccccccc-0000-0000-0000-000000000003'
+U_CC1='44444444-0000-0000-0000-000000000001'
+U_CC2='44444444-0000-0000-0000-000000000002'
+psql -X -q -d "$DB" >/dev/null 2>&1 <<SQL
+insert into auth.users(id,email) values ('$U_CC1','cc1@example.test'),('$U_CC2','cc2@example.test');
+insert into public.clubs(id,name) values ('$CC','架空将棋クラブC');
+insert into public.organizers(club_id,user_id,email,role,status,display_name) values
+ ('$CC','$U_CC1','cc1@example.test','owner','active','架空C1'),
+ ('$CC','$U_CC2','cc2@example.test','admin','active','架空C2');
+SQL
+# TX1: CC1 を退任（トリガが club C の advisory lock を取得）→ 3 秒保持したまま rollback。
+( psql -X -q -v ON_ERROR_STOP=1 -d "$DB" >/dev/null 2>&1 <<SQL
+begin;
+update public.organizers set status='retired' where club_id='$CC' and user_id='$U_CC1';
+select pg_sleep(3);
+rollback;
+SQL
+) &
+LOCK_PID=$!
+sleep 0.8   # TX1 が UPDATE を実行＝advisory lock を握るまで待つ（スクリプト内 sleep）。
+# TX2: 別 admin(CC2) を同時退任。fix では同 club ロック待ち→ statement_timeout で中断（=直列化）。
+#   buggy（ロック無し）では即時成功（両方が「1人残る」と誤認＝レース）。statement_timeout は
+#   advisory lock 待ちも確実に中断するため lc_messages 非依存で blocked を判定できる。
+if psql -X -A -t -v ON_ERROR_STOP=1 -d "$DB" -c "set statement_timeout='1200ms'; update public.organizers set status='retired' where club_id='$CC' and user_id='$U_CC2';" >/dev/null 2>&1; then
+  RACE_BLOCKED="NOTBLOCKED"; else RACE_BLOCKED="BLOCKED"; fi
+wait "$LOCK_PID" 2>/dev/null
+assert_eq "$RACE_BLOCKED" "BLOCKED" "同 club の2件目の退任は per-club ロック待ちで直列化される（同時 0 admin を防止）"
 
 echo "  Stage A RLS pgtest: PASS=$pass FAIL=$fail"
 [ "$fail" -eq 0 ] || exit 1

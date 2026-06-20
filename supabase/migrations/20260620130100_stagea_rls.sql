@@ -18,7 +18,9 @@
 --       app_is_active_organizer(club) … rank>=organizer(owner/admin/organizer)→ 氏名 read・各種 write。
 --       app_is_admin(club)            … rank>=admin(owner/admin)→ organizers 追加変更・各種 delete。
 --     SECURITY DEFINER は内部クエリで RLS を回避 → organizers を参照しても再帰しない。
---   - 「最後の active owner/admin を残す」ガードはトリガで実装（停止/退任/降格/削除を防ぐ）。
+--   - 「最後の認証可能(claim済) active owner/admin を残す」ガードはトリガで実装
+--     （停止/退任/降格/削除/別 club 移動に加え user_id の NULL 化・挿げ替えも防ぎ、
+--      残数判定は per-club advisory lock で直列化して同時実行レースを防ぐ）。
 --   - anon（publishable key・未認証）には SELECT 権限を付与した上で RLS で全拒否する
 --     ＝「権限不足」ではなく「RLS が拒否する」ことをテストで実証できるようにする。
 -- =============================================================================
@@ -77,8 +79,10 @@ as $$
 $$;
 
 -- -----------------------------------------------------------------------------
--- 「最後の active owner/admin」を必ず1人以上残すガード
---   （停止/退任/降格/削除に加え、別 club への club_id 移動でも旧 club を 0 admin にしない）。
+-- 「認証可能な active owner/admin」を club ごとに必ず1人以上残すガード。
+--   停止/退任/降格/削除/別 club への移動に加え、user_id の NULL 化・別人への挿げ替え
+--   （＝ログイン可能な実体の喪失）も「除去」とみなす。残数判定は per-club advisory lock で
+--   直列化し、2 トランザクションが別の admin を同時に外して両方通り 0 admin になるレースを防ぐ。
 -- -----------------------------------------------------------------------------
 create or replace function public.prevent_last_admin_removal()
 returns trigger
@@ -91,32 +95,49 @@ declare
   still_admin boolean;
   remaining   integer;
 begin
-  was_admin := (old.status = 'active' and old.role in ('owner','admin'));
+  -- 保護対象は「認証可能な（claim 済み = user_id 非NULL）active owner/admin」だけ。
+  --   未claim招待（user_id NULL）の除去/変更は認証可能 admin 数を減らさないので無関係。
+  --   claim（user_id NULL→非NULL）も old.user_id is null で was_admin=false となり常に通る
+  --   （＝認証可能 admin を増やすだけ）。
+  was_admin := (old.status = 'active'
+                and old.role in ('owner','admin')
+                and old.user_id is not null);
   if not was_admin then
-    return case when tg_op = 'DELETE' then old else new end;  -- 元々 admin でなければ無関係
+    return case when tg_op = 'DELETE' then old else new end;  -- 保護対象でなければ無関係
   end if;
 
   if tg_op = 'UPDATE' then
-    -- club を移すと「旧 club の admin を失う」事象になる → club 変更時は still_admin にしない
-    -- （new.club_id <> old.club_id のときは下の残数チェックで旧 club を 0 admin から守る）。
+    -- この行が「認証可能な active admin のまま・同 club」か。status/role/club_id に加え、
+    --   user_id が非NULLかつ不変であること。user_id を NULL 化／別人へ挿げ替える操作は
+    --   「認証可能 admin の喪失」とみなし still_admin にしない（下の残数チェックへ回す）。
     still_admin := (new.status = 'active'
                     and new.role in ('owner','admin')
-                    and new.club_id = old.club_id);
+                    and new.club_id = old.club_id
+                    and new.user_id is not null
+                    and new.user_id = old.user_id);
     if still_admin then
-      return new;  -- 同 club の admin のまま → 問題なし
+      return new;  -- 認証可能 admin のまま → 残数は減らない
     end if;
   end if;
 
-  -- この行を除いた、同 club の active owner/admin の残数。
+  -- 同 club の最後の admin 判定を直列化する。ロックが無いと、active admin が2人のとき
+  --   2 トランザクションが別行を同時に退任/降格/削除/挿げ替えして各々「1人残る」と誤認し、
+  --   両方コミットで 0 admin になり得る。トランザクション終了で自動解放される
+  --   per-club advisory lock を取り、残数の読取→判定を直列化する。
+  perform pg_advisory_xact_lock(
+    hashtextextended('organizers_last_admin:' || old.club_id::text, 0));
+
+  -- この行を除いた、同 club の「認証可能な（user_id 非NULL）」active owner/admin の残数。
   select count(*) into remaining
   from public.organizers o
   where o.club_id = old.club_id
     and o.id <> old.id
     and o.status = 'active'
-    and o.role in ('owner','admin');
+    and o.role in ('owner','admin')
+    and o.user_id is not null;
 
   if remaining < 1 then
-    raise exception 'club % の active owner/admin が0人になる操作は禁止です（最後の1人は残してください）', old.club_id
+    raise exception 'club % の認証可能な active owner/admin が0人になる操作は禁止です（最後の1人は残してください）', old.club_id
       using errcode = 'check_violation';
   end if;
 
@@ -178,9 +199,13 @@ create policy clubs_update on public.clubs
 -- INSERT/DELETE は無し（既定拒否）。clubs の作成はブートストラップ（service role）で行う。
 
 -- ---- organizers ----
+-- organizers には email / user_id（連絡先・認証情報）が入る。viewer(rank0) に名簿を
+-- 開示しないため SELECT は organizer 以上(rank>=1)に限定する（招待 viewer 経由の漏洩を防ぐ）。
+-- 自分の role/status は claim_organizer_seat()（SECURITY DEFINER・RLS 回避）で取得するため
+-- viewer が自席を直接 SELECT できなくてもログイン UX は壊れない。
 drop policy if exists organizers_select on public.organizers;
 create policy organizers_select on public.organizers
-  for select using (public.app_is_active_member(club_id));
+  for select using (public.app_is_active_organizer(club_id));
 
 drop policy if exists organizers_insert on public.organizers;
 create policy organizers_insert on public.organizers
