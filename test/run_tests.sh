@@ -1263,6 +1263,19 @@ else
   warn "test_progressive_pairing_p1.js が見つからない"
 fi
 
+echo ""
+echo "【PROGRESSIVE-PAIRING-IMPL-P2 1局目逐次手合「未手合いをまとめて1局目作成」（受付順・奇数待機・P1併用重複防止・reload・既存非回帰）】"
+if [ -f "$SCRIPT_DIR/test_progressive_pairing_p2.js" ]; then
+  if node "$SCRIPT_DIR/test_progressive_pairing_p2.js" "$TARGET" > /tmp/progressive_pairing_p2_out.log 2>&1; then
+    ok "PROGRESSIVE-PAIRING-IMPL-P2 テスト 全PASS ($(tail -1 /tmp/progressive_pairing_p2_out.log))"
+  else
+    ng "PROGRESSIVE-PAIRING-IMPL-P2 テスト 失敗"
+    cat /tmp/progressive_pairing_p2_out.log
+  fi
+else
+  warn "test_progressive_pairing_p2.js が見つからない"
+fi
+
 # ============================================
 # 最終結果
 # ============================================
