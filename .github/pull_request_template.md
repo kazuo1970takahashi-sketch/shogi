@@ -37,13 +37,13 @@
 `stage:intake → triage → design → design-review → implementing → code-review → ready-for-merge → done`（差し戻し `needs-fix` / 保留 `blocked`・`on-hold`）。フラグ（直交）: `flag:consult-chatgpt` / `flag:human-decision` / `flag:secret-risk` / `flag:aging` / `flag:sod-violation`。終了理由: `closed:done` / `closed:duplicate` / `closed:superseded` / `closed:not-planned`。
 
 ### 凍結マーカー雛形（[`§3-1`](../docs/ai-ops/AI-DEV-PIPELINE.md)・末尾に1ブロック）
+実装完了（`## 実装完了`）は**判定工程ではない**ため `verdict` 行は付けない:
 ```yaml
 cowork-status: implement-done   # 固定列挙: triage | design-done | design-review | implement-done | code-review-result | hold
-verdict: go                     # 固定列挙（小文字ASCII）: go | conditional-go | block （判定工程 design-review/code-review のみ）
 reviewer: claude-code           # vendor/agent id（マーカーを出した素性。SoD 自己レビュー検知用）
 task: 0                          # 対象 Issue 番号
 ```
-- `verdict` は**小文字** `go | conditional-go | block` のみ（`GO`/`Conditional GO`/`CONDITIONAL_GO` 禁止）。判定が無い工程では `verdict` 行を省略。
+- `verdict:` 行は**判定工程（design-review / code-review）のみ**に付け、値は**小文字** `go | conditional-go | block`（`GO`/`Conditional GO`/`CONDITIONAL_GO` 禁止）。実装完了・トリアージ・保留など判定の無い工程では `verdict` 行を省略する。
 - **1コメント＝マーカー1ブロック・最新コメント優先**。
 
 ### レビュー結果欄（レビュアーが記入・SoD G1〜G6）

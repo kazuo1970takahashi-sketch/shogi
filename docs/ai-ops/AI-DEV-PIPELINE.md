@@ -35,6 +35,8 @@
 
 補助フラグ（stage と直交・複数可）: `flag:consult-chatgpt` / `flag:human-decision`（人間判断待ち）/ `flag:secret-risk` / `flag:aging`（SLA 超過・reconciler 自動付与）/ `flag:sod-violation`（自己レビュー検知・reconciler 自動付与 → SoD §3）。
 
+**L0–2 のレビュー bypass（低リスクは review 工程を飛ばす）**: triage で記録した Review Level が **L0–L1 は design-review / code-review を省略可**・**L2 は任意**（[`AGENT-ROLES-AND-SOD.md §2-1`](./AGENT-ROLES-AND-SOD.md)）。該当タスクでは reconciler が `## 設計完了` / `## 実装完了` マーカーを検知した時点で、レビュー工程の `verdict` を待たずに次工程（design→implementing / implementing→ready-for-merge）へ前進させる（§4「L0–2 bypass」）。**L3 以上は独立レビュー必須で bypass しない**。
+
 ## 3. 前進プロトコル（全工程共通・書き戻し必須）
 各工程の担当は、完了時に**対象 Issue（実装系は PR）に定型ヘッダ付きコメントを1件**投稿する。フォーマット:
 - **先頭行**を上表の**完了ヘッダ**で始める（`## トリアージ` / `## 設計完了` / `## 設計レビュー結果` / `## 実装完了` / `## Codexレビュー結果` / `## 保留`）。これは**人間可読の見出し**。
@@ -57,19 +59,20 @@ task: 264                           # 対象 Issue 番号
 - `cowork-status` の値は固定列挙: `triage` / `design-done` / `design-review` / `implement-done` / `code-review-result` / `hold`。
 - `verdict` の値は**小文字 ASCII** `go` / `conditional-go` / `block` の**いずれか1つのみ**。`GO` / `Conditional GO` / `CONDITIONAL_GO` / `BLOCK` 等の**表記ゆれは禁止**（旧表記。人間可読として併記する場合も機械判定には使わない）。判定工程（3 design-review・5 code-review）でのみ必須、それ以外では省略。
 - `reviewer` は素性 ID（例: `codex` / `claude-code` / `chatgpt`）。判定工程ではレビュアー素性、その他工程ではマーカーを出したアクター素性。
-- **1コメント＝マーカー1ブロック**。同一 Issue/PR では**最新コメントのマーカーを優先**（latest-wins）。
+- **1コメント＝マーカー1ブロック**。**1タスクの Issue とその紐付く PR を横断して最新コメントのマーカーを優先**（latest-wins）。実装系マーカー（`## 実装完了` / `## Codexレビュー結果`）は PR に、トリアージ・設計・保留は Issue に付くため、reconciler は**両方を読んで時刻最新を採用**する（§4）。
 
 ## 4. ラベルを書くのは reconciler だけ（単一ライター原則）
 - 人間/エージェントは**コメント＋マーカーを置くだけ**。`stage:` ラベルの付け替えは**定期タスク（reconciler）が唯一の書き手**＝**scheduled actor**（→ §8-3 条件4）。
 - これにより二重書き込み・競合・Issue↔PR ラベルずれ（v1 の #254/#255 ドリフト）が原理的に起きない。
 - reconciler（既存 `cowork-dispatch-refresh` を拡張）の毎回の処理:
-  1. 全 `[req]`/`[cowork-dispatch]` Issue と PR を取得し、1タスク=1 Issue / Issue↔PR を対応付け。
-  2. 各 Issue の**最新の機械可読マーカー**を読み、`stage:` を1段前進（verdict go/conditional-go/block で分岐）。
-  3. PR が merged なら `stage:done` ＋ Issue close。
-  4. **整合性チェック（drift detector）** を実行し、異常をボードの「⚠️ 要注意」へ。
-  5. 各タスクの「現工程の滞留時間」を計算し SLA 超過に `flag:aging`。
-  6. **レビュアー素性 ≠ 実装者素性**を検証し、自己レビューを検知したら前進せず `flag:sod-violation`（→ SoD §3）。
-  7. マトリクスボードを再生成。
+  1. 全 `[req]`/`[cowork-dispatch]` Issue と PR を取得し、1タスク=1 Issue / Issue↔PR を対応付け（`related_pr` 等の構造化フィールドで紐付け）。
+  2. 各タスクの**最新の機械可読マーカーを Issue とその紐付く PR の両方から**読む（実装系 `## 実装完了` / `## Codexレビュー結果` は PR に付くため、**Issue・PR 横断で時刻最新のマーカー**を採用＝latest-wins）。読んだマーカーの **`cowork-status`（どの工程の判定か）＋`verdict`** で `stage:` を1段前進する。**遷移先は `cowork-status` で分岐**（design-review の go は `stage:implementing`、code-review の go は `stage:ready-for-merge` ＝ go だけでは行き先が一意に決まらない → [`CODEX-RESULT-PROTOCOL.md` 自動前進](./CODEX-RESULT-PROTOCOL.md)）。
+  3. **L0–2 bypass**: triage で記録された Review Level が **L0–1**（または L2 でレビュアー未割当）の場合、design-review / code-review の `verdict` を待たず、`## 設計完了` / `## 実装完了` マーカー検知だけで次工程（implementing / ready-for-merge）へ前進してよい（低リスクの全件独立レビューは 200-300 並行の詰まり要因＝§6・[`SoD §2-1`](./AGENT-ROLES-AND-SOD.md)）。**L3 以上は bypass せず独立レビューの verdict 必須**。
+  4. PR が merged なら `stage:done` ＋ Issue close。
+  5. **整合性チェック（drift detector）** を実行し、異常をボードの「⚠️ 要注意」へ。
+  6. 各タスクの「現工程の滞留時間」を計算し SLA 超過に `flag:aging`。
+  7. **レビュアー素性 ≠ その工程の作者素性**（design-review は設計者、code-review は実装者＝**SoD は stage 別**）を検証し、自己レビューを検知したら前進せず `flag:sod-violation`（→ SoD §3・§4）。
+  8. マトリクスボードを再生成。
 - **2段階化（dry-run→proposed→apply）**: 各 run はまず *proposed-actions* を出すだけ。ポリシー内の安全アクションのみ *apply*。危険/曖昧は提案止まりで decision queue へ（誤前進を構造的に防ぐ）。
 - **監査ログ**: stage ラベル更新は必ず監査ログ（actor=reconciler / 時刻 / 旧→新 / 根拠コメントID）を残す（追跡・巻き戻し可能に）。
 

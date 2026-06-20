@@ -34,3 +34,14 @@ AI 開発パイプラインの合意（PMO-OPS v2.1-final）を**実装ライン
 
 ## 制約（遵守）
 追加/最小改変中心・`shogi_v4.html` 当日運営は無改変・**Draft PR で停止**（Ready化/merge/squash/branch削除/production は人間の明示承認まで未実施）・secret/実データ不使用。
+
+## P2 修正ラウンド（#269 レビュー指摘 6件・docs/テンプレのみ / 2026-06-20 追補）
+PR #269 のレビューで挙がった P2（軽微・整合性）6 件を **docs/テンプレのみ**で解消（`shogi_v4.html`/`index.html`/テスト/ラベルは不変）:
+1. **design-review routing**: reconciler の自動前進を `cowork-status`（どの工程の判定か）で分岐と明記。design-review の go/conditional-go→`stage:implementing`・block→`stage:design`、code-review の go/conditional-go→`stage:ready-for-merge`・block→`stage:needs-fix`（`CODEX-RESULT-PROTOCOL.md` 自動前進・`AI-DEV-PIPELINE.md §4`）。`verdict` だけでは go の行き先が一意に決まらない問題を解消。
+2. **reconciler が PR marker も読む**: 実装系マーカー（`## 実装完了` / `## Codexレビュー結果`）は PR に付くため、reconciler は **Issue とその紐付く PR を横断**して時刻最新のマーカーを採用（`AI-DEV-PIPELINE.md §3-1・§4`）。
+3. **SoD を stage 別**: 自己レビュー検知の照合相手を工程別に明確化（design-review は**設計者素性**、code-review は**実装者素性**と突き合わせ）。同一素性が design と implement を兼ねるのは可（禁止は各工程の self-review のみ）（`AGENT-ROLES-AND-SOD.md §3・§4`・`AI-DEV-PIPELINE.md §4`）。
+4. **L0–2 bypass**: 低リスク（L0–1 省略可 / L2 任意）は reconciler が `verdict` を待たず `## 設計完了`/`## 実装完了` 検知だけで次工程へ前進。L3+ は bypass しない（`AI-DEV-PIPELINE.md §2・§4`・`CODEX-RESULT-PROTOCOL.md`）。
+5. **triage marker から verdict 削除**: 判定工程でない triage / implement-done のマーカー雛形例から `verdict` 行を除去（テンプレ自身の注記「判定工程のみ」と例の不一致を解消）（`.github/ISSUE_TEMPLATE/cowork-dispatch.md`・`.github/pull_request_template.md`）。
+6. **fence**: `CODEX-RESULT-PROTOCOL.md` の「貼り付け用ブロック」外側 fence を 4 バッククォート化し、内側の YAML ブロック（3 バッククォート）が正しく入れ子になるよう修正（GitHub で本文が途切れて見える不具合の解消）。
+
+検証: `bash test/run_tests.sh shogi_v4.html` … **PASS=73 / FAIL=0 / WARN=0**（docs/テンプレのみの変更・回帰なし）。`shogi_v4.html`/`index.html` 無改変。

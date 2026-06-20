@@ -46,9 +46,11 @@ Codex の GitHub コードレビューは**上記 YAML を書かない**。実�
 - 人間 / Claude Code が判定を貼る場合は**凍結 YAML マーカー**を使う。**Codex ネイティブ形式はこの1点のみ例外**。
 
 ## 自動前進（reconciler が担当・レビュアーはラベルを触らない）
-reconciler（scheduled actor。既存 `cowork-dispatch-refresh` を拡張）が最新の判定（YAML or Codex ネイティブ）を検知し、対象 Issue のラベルを前進させる:
-- `verdict: go` / `conditional-go` → `stage:code-review` を外し **`stage:ready-for-merge`**（人間 merge 待ち）。
-- `verdict: block` → **`stage:needs-fix`**（実装差し戻し）。
+reconciler（scheduled actor。既存 `cowork-dispatch-refresh` を拡張）が最新の判定（YAML or Codex ネイティブ）を検知し、対象 Issue のラベルを前進させる。**遷移先はマーカーの `cowork-status`（どの工程の判定か）で分岐**する（`verdict` だけでは行き先が一意に決まらない＝design-review と code-review で go の行き先が異なる）:
+
+- **design-review**（`cowork-status: design-review`）: `verdict: go` / `conditional-go` → **`stage:implementing`**（実装へ）／ `verdict: block` → **`stage:design`**（設計やり直し）。
+- **code-review**（`cowork-status: code-review-result`）: `verdict: go` / `conditional-go` → **`stage:ready-for-merge`**（人間 merge 待ち）／ `verdict: block` → **`stage:needs-fix`**（実装差し戻し）。
+- **L0–2 bypass**: Review Level L0–1（L2 はレビュアー未割当時）は design-review / code-review を省略可。reconciler は `verdict` を待たず `## 設計完了` / `## 実装完了` 検知だけで次工程へ前進（[`AI-DEV-PIPELINE.md §2・§4`](./AI-DEV-PIPELINE.md)）。L3+ は bypass しない。
 - **cut over 前の暫定運用**: reconciler 稼働前は cowork が**既存ラベル**（`needs-codex`→`ready-for-human-merge`/`needs-fix`）で手動 reconcile（[`AI-DEV-PIPELINE.md §7`](./AI-DEV-PIPELINE.md)）。
 
 → **レビュアー自身はラベル付替を行わない**（PAT/権限事情に依存せず、コメント投稿1アクションで完結）。merge / Ready化 / squash / branch削除 / production は人間の明示承認まで誰も行わない。
@@ -60,7 +62,7 @@ L3+/L4 を Codex 一者に依存して停止しないよう、**review SLA 超�
 レビュー依頼を発行するときは、本プロトコルの「必須フォーマット」節を**依頼文に必ず同梱**する。「結果の書き戻し先＝ローカル RESULT.md のみ」と書かない（GitHub PR コメントが第一・PAT 対象外 repo のみ RESULT.md 併用）。
 
 ## 貼り付け用ブロック（依頼にコピペ）
-```
+````
 ## 結果記録プロトコル（必須・reconciler 連携）
 レビュー完了後、対象 PR（無ければ Issue）に**コメントを1件**投稿すること。フォーマット厳守:
 - 先頭行を人間可読見出し `## Codexレビュー結果` で始める。
@@ -74,7 +76,7 @@ L3+/L4 を Codex 一者に依存して停止しないよう、**review SLA 超�
   ```
 - merge / Ready化 / squash / branch削除 / production は実行しない（read-only 所見のみ）。
 チャット返信で終えず、必ず GitHub コメントとして書き戻すこと（書き戻しが無い限り前進しない）。
-```
+````
 
 ---
 正本（repo 版）。パイプライン＝[`AI-DEV-PIPELINE.md`](./AI-DEV-PIPELINE.md) / 役割・SoD＝[`AGENT-ROLES-AND-SOD.md`](./AGENT-ROLES-AND-SOD.md)。

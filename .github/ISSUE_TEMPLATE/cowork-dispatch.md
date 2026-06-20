@@ -40,13 +40,13 @@ labels: []
 `stage:intake → triage → design → design-review → implementing → code-review → ready-for-merge → done`（差し戻し `needs-fix` / 保留 `blocked`・`on-hold`）。フラグ: `flag:consult-chatgpt` / `flag:human-decision` / `flag:secret-risk` / `flag:aging` / `flag:sod-violation`。終了理由: `closed:done` / `closed:duplicate` / `closed:superseded` / `closed:not-planned`。
 
 ### 凍結マーカー雛形（末尾に1ブロック）
+トリアージは**判定工程ではない**ため `verdict` 行は付けない（`verdict` は design-review / code-review のみ）:
 ```yaml
 cowork-status: triage           # 固定列挙: triage | design-done | design-review | implement-done | code-review-result | hold
-verdict: go                     # 固定列挙（小文字ASCII）: go | conditional-go | block （判定工程 design-review/code-review のみ）
 reviewer: cowork                # vendor/agent id（マーカーを出した素性）
 task: 0                         # 対象 Issue 番号
 ```
-- `verdict` は**小文字** `go | conditional-go | block` のみ（`GO`/`Conditional GO`/`CONDITIONAL_GO` 禁止）。判定が無い工程では `verdict` 行を省略。
+- 判定工程（design-review / code-review）でのみ `verdict:` 行を**小文字** `go | conditional-go | block` で付ける（`GO`/`Conditional GO`/`CONDITIONAL_GO` 禁止）。それ以外の工程（triage / design-done / implement-done / hold）は `verdict` 行を省略する。
 - **1コメント＝マーカー1ブロック・最新コメント優先**。
 
 🤖 PMO-OPS v2.1-final / cowork PMO dispatch

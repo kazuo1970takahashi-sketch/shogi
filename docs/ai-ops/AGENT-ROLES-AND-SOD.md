@@ -36,11 +36,14 @@
 ## 3. v2 パイプラインとの対応（誰がどの前進を書くか）
 - `## 設計完了`＋マーカー `cowork-status: design-done`＝Claude Code（design）→ design-review は**別素性レビュアー**が `## 設計レビュー結果`＋マーカー `cowork-status: design-review` / `verdict:`。
 - `## 実装完了`＋マーカー `cowork-status: implement-done`＝Claude Code（implementing）→ code-review は**別素性レビュアー（L3+=Codex）**が `## Codexレビュー結果`＋マーカー `cowork-status: code-review-result` / `verdict:`。
-- ラベル前進は reconciler のみ（単一ライター）。reconciler は前進時に**レビュアー素性 ≠ 実装者素性**を検証し、自己レビューを検知したら前進を拒否して `flag:sod-violation` を立てる。
+- ラベル前進は reconciler のみ（単一ライター）。reconciler は前進時に**レビュアー素性 ≠ その工程の作者素性**（design-review は設計者、code-review は実装者＝**stage 別**）を検証し、自己レビューを検知したら前進を拒否して `flag:sod-violation` を立てる（詳細 §4）。
 
 ## 4. 独立性の検証（自己レビューを機械検知）
 - 各レビュー書き戻しコメントは、機械可読マーカーの **`reviewer:` フィールドに素性 ID** を記す（[`AI-DEV-PIPELINE.md §3-1`](./AI-DEV-PIPELINE.md)）。人間可読の併記として末尾に **`レビュアー素性: <vendor/agent id>`** 欄も置く（テンプレ常設）。
-- reconciler は code-review/design-review 前進時に、その素性が同タスクの実装者素性（`## 実装完了` マーカーの `reviewer:` ＝ actor）と一致しないかをチェック。一致＝SoD 違反として前進せず人間に上げる（`flag:sod-violation`）。
+- reconciler は前進時に、**工程ごとに照合相手を変えて**自己レビューを機械検知する（**SoD は stage 別＝G1**）:
+  - **design-review**: レビュアー素性（`## 設計レビュー結果` マーカーの `reviewer:`）≠ **設計者素性**（`## 設計完了` マーカーの `reviewer:` ＝ design actor）。
+  - **code-review**: レビュアー素性（`## Codexレビュー結果` マーカーの `reviewer:`）≠ **実装者素性**（`## 実装完了` マーカーの `reviewer:` ＝ implement actor）。
+  - いずれも一致＝SoD 違反（G1）として前進せず人間に上げる（`flag:sod-violation`）。※ 同一素性が design と implement を兼ねるのは可（禁止は各工程の self-**review** のみ）。
 - 識別子の付与・チェックの実装は #264 系で repo に反映済（`.github/pull_request_template.md` に「レビュアー素性」欄・構造化フィールド・凍結マーカー雛形を常設）。
 
 ## 5. 各エージェントの実測 capability（仮定しない・台帳化）— **役割境界（v2.1-final 条件4）**
