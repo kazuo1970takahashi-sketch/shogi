@@ -1573,10 +1573,11 @@ function saveBranchMaster(master){
     master.updated_at=clone.updated_at;
     localStorage.setItem(BRANCH_MASTER_KEY,JSON.stringify(clone));
   }catch(e){
-    // SAVE-UX-QUOTA-HANDLING-IMPL: quota の場合のみ Level 1 化（notifySaveWarning が
-    //   showMsg / console.warn / indicator count +1 を担当）。quota 以外は従来通り
-    //   console.warn のみで、汎用例外の Level 1 化は別タスクへ持ち越し。
-    //   quota 時の重複 console.warn を避けるため既存 console.warn は quota 以外でのみ呼ぶ。
+    // SAVE-UX-QUOTA-HANDLING-IMPL / SAVE-UX-NONQUOTA-NOTIFY-001 (Issue #260):
+    //   quota / 非quota いずれの保存失敗も Level 1 化（notifySaveWarning が showMsg('warn') /
+    //   console.warn / indicator count +1 を 1 経路で担当）。非quota も握り潰さずユーザー可視にする
+    //   （「失敗を隠さない」原則を維持）。重複 console.warn を避けるため catch 内で console.warn 単独
+    //   呼出はしない（notifySaveWarning が内部で総括 console.warn を 1 回出力する）。
     if(isQuotaExceededError(e)){
       notifySaveWarning({
         message:'保存容量の上限に達しました。データ整理が必要です。',
@@ -1588,7 +1589,16 @@ function saveBranchMaster(master){
       });
       return;
     }
-    if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタの保存に失敗。',e);
+    // SAVE-UX-NONQUOTA-NOTIFY-001: 非quota（SecurityError / プライベートブラウズ等）の保存失敗も
+    //   quota と同じ notifySaveWarning 経路でユーザー可視化する。kind:'storage-error' は
+    //   SAVE_WARN_AGGREGATABLE_KINDS 非対象＝showMsg('warn')＋console.warn＋indicator +1 が確実に発火。
+    notifySaveWarning({
+      message:'支部マスタの保存に失敗しました。大会データをコピー（バックアップ）してください。',
+      consoleTag:'[STORAGE-ERROR] saveBranchMaster() setItem failed (name='+(e&&e.name)+', code='+(e&&e.code)+')',
+      callsiteId:'STORAGE-ERROR:saveBranchMaster',
+      kind:'storage-error',
+      severity:'warn'
+    });
   }
 }
 

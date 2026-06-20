@@ -1264,6 +1264,25 @@ else
 fi
 
 # ============================================
+# SAVE-UX-NONQUOTA-NOTIFY-001 (Issue #260): saveBranchMaster() の「quota 以外」保存失敗を
+#   サイレント握り潰し（console.warn 単独）から notifySaveWarning 経由のユーザー通知
+#   （showMsg('warn')＋indicator +1）へ格上げしたことを検証する。quota パス・正常保存パスの
+#   非回帰、console.warn の非二重化（ちょうど 1 回）も併せて固定する。
+# ============================================
+echo ""
+echo "【SAVE-UX-NONQUOTA-NOTIFY-001 支部マスタ保存の非quota失敗をユーザー通知（showMsg＋indicator）】"
+if [ -f "$SCRIPT_DIR/test_save_ux_nonquota_notify_001.js" ]; then
+  if node "$SCRIPT_DIR/test_save_ux_nonquota_notify_001.js" "$TARGET" > /tmp/save_ux_nonquota_notify_001_out.log 2>&1; then
+    ok "SAVE-UX-NONQUOTA-NOTIFY-001 テスト 全PASS ($(tail -1 /tmp/save_ux_nonquota_notify_001_out.log))"
+  else
+    ng "SAVE-UX-NONQUOTA-NOTIFY-001 テスト 失敗"
+    cat /tmp/save_ux_nonquota_notify_001_out.log
+  fi
+else
+  warn "test_save_ux_nonquota_notify_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
