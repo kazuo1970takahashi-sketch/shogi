@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow">
+  <title>沼津支部 幹事ログイン（クラウド）</title>
+  <style>
+    :root { --fg:#222; --muted:#777; --line:#ddd; --primary:#2b6cb0; --bg:#f6f7f9; --card:#fff; }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:16px; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+           color:var(--fg); background:var(--bg); line-height:1.6; }
+    #app-root { max-width:520px; margin:0 auto; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; margin:0 0 16px; }
+    h1 { font-size:20px; margin:0 0 10px; }
+    h2 { font-size:16px; margin:14px 0 8px; }
+    .muted { color:var(--muted); font-size:13px; }
+    label { display:block; font-size:13px; margin:10px 0 4px; }
+    input[type="email"], select { width:100%; padding:10px; font-size:16px; border:1px solid var(--line); border-radius:8px; }
+    button { margin-top:10px; padding:10px 14px; font-size:15px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; }
+    button.primary { background:var(--primary); color:#fff; border-color:var(--primary); width:100%; }
+    button[disabled] { opacity:.5; cursor:not-allowed; }
+    .msg { min-height:1.2em; font-size:13px; color:var(--primary); }
+    .org-list { list-style:none; padding:0; margin:10px 0 0; }
+    .org-row { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
+    .org-who { font-weight:600; }
+    .org-meta { color:var(--muted); font-size:12px; }
+    .org-actions { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
+    .org-actions button { margin-top:0; padding:6px 10px; font-size:13px; }
+    #inviteForm { display:flex; flex-wrap:wrap; gap:8px; align-items:end; }
+    #inviteForm input { flex:1 1 180px; }
+    #inviteForm select, #inviteForm button { flex:0 0 auto; margin-top:0; }
+  </style>
+</head>
+<body>
+  <main id="app-root">
+    <section class="card"><h1>読み込み中…</h1><p class="muted">クラウド設定を確認しています。</p></section>
+  </main>
+
+  <!-- 実値は app/config.js（.gitignore 済・非コミット）に置く。未配置なら設定エラーを表示。 -->
+  <script src="config.js" onerror="window.__SHOGI_CONFIG_MISSING=true"></script>
+  <!-- Supabase JS（UMD・global `supabase` を生やす）。publishable key + URL のみ使用。 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="auth.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      try { window.ShogiAuth.boot(); }
+      catch (e) {
+        document.getElementById('app-root').innerHTML =
+          '<section class="card"><h1>起動エラー</h1><p>' + String(e && e.message || e) + '</p></section>';
+      }
+    });
+  </script>
+</body>
+</html>

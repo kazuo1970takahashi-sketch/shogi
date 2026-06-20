@@ -16,6 +16,10 @@ Thumbs.db
 HANDOFF_LOCAL.md
 HANDOFF.md.contaminated.bak
 
+# Stage A クラウド設定の実値（Supabase URL / publishable key）。public repo に載せない。
+# ひな形 app/config.example.js のみコミットし、実値は app/config.js（非コミット）に置く。
+app/config.js
+
 # 実データ・ローカル投入データ（実参加者マスタ等）は repo に含めない（端末ローカル限定 / 先頭スラッシュで repo 直下のみ）
 /data/
 

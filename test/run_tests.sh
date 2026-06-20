@@ -743,6 +743,38 @@ else
 fi
 
 # ============================================
+# DATA-PERSISTENCE-PHASE2 / Stage A — Supabase スキーマ + RLS + マジックリンク・ログイン
+#   (1) test_stagea_login.js : app/auth.js（runtime）のログイン/claim/幹事管理ロジックを mock client で検証。
+#   (2) stagea_rls_pgtest.sh : supabase/migrations を実 PostgreSQL に適用し RLS の deny/allow を実証
+#       （psql 不在・サーバ未起動なら SKIP=PASS 扱い）。当日運営(shogi_v4.html)には触れない別レイヤー。
+# ============================================
+echo ""
+echo "【DATA-PERSISTENCE-PHASE2 Stage A — ログイン/幹事管理 runtime（app/auth.js・パスワードレス/claim/最後のadminガード）】"
+if [ -f "$SCRIPT_DIR/test_stagea_login.js" ]; then
+  if node "$SCRIPT_DIR/test_stagea_login.js" "$TARGET" > /tmp/stagea_login_out.log 2>&1; then
+    ok "Stage A login テスト 全PASS ($(tail -1 /tmp/stagea_login_out.log))"
+  else
+    ng "Stage A login テスト 失敗"
+    cat /tmp/stagea_login_out.log
+  fi
+else
+  warn "test_stagea_login.js が見つからない"
+fi
+
+echo ""
+echo "【DATA-PERSISTENCE-PHASE2 Stage A — RLS 実 PostgreSQL 検証（stagea_rls_pgtest.sh / psql 無ければ SKIP）】"
+if [ -f "$SCRIPT_DIR/stagea_rls_pgtest.sh" ]; then
+  if bash "$SCRIPT_DIR/stagea_rls_pgtest.sh" > /tmp/stagea_rls_out.log 2>&1; then
+    ok "Stage A RLS pgtest OK/SKIP ($(tail -1 /tmp/stagea_rls_out.log))"
+  else
+    ng "Stage A RLS pgtest 失敗"
+    cat /tmp/stagea_rls_out.log
+  fi
+else
+  warn "stagea_rls_pgtest.sh が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
