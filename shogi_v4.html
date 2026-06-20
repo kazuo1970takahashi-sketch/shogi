@@ -216,6 +216,7 @@ body.sb-active{overflow:hidden}
     <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">大会データをコピー</button>
     <button type="button" class="btn-sm no-print" id="loadBtn" style="background:#185FA5;color:#fff;border-color:#185FA5">読み込み</button>
     <input type="file" id="loadFile" accept=".json" style="display:none">
+    <button type="button" class="btn-sm no-print" id="backupBtn" style="background:#5B6770;color:#fff;border-color:#5B6770">バックアップ</button>
     <button type="button" class="btn-danger btn-sm no-print" id="resetBtn">大会データを全リセット</button>
     <button type="button" class="btn-danger btn-sm no-print" id="resetProgressBtn">大会進行データをリセット</button>
   </div>
@@ -7957,6 +7958,211 @@ function openLoadModal(){
 }
 
 // ============================================================
+// DATA-PERSISTENCE Phase 1: 大会データのバックアップ（JSON エクスポート / インポート）
+//   正本仕様: ai-requests/2026-06-20_data-persistence-CONFIRMED-spec.md §5 Phase 1。
+//   位置づけ: 自動バックアップ・将来の Supabase 移行の土台（引き継ぎの主役ではない）。
+//   絶対ルール（HANDOFF.md / impl-phase1）:
+//     - 追加のみ。既存 saveData()/loadData()/applyLoadedJson()/normalizeState()/save()/load() は変更しない。
+//     - エクスポート JSON は schema_version を持ち、import 時に検証して不一致/不正は安全に拒否する。
+//     - 構造を「氏名等を含むローカル運営データ(local)」と「member_id＋成績の匿名データ(anonymous)」に分離する
+//       （Phase 2 のクラウド同期 payload を anonymous 側から生成できるように。anonymous には氏名を入れない）。
+//     - 対局情報（pairings/results）は local.state にそのまま含まれ、anonymous.matches にも匿名形で投影する。
+//     - 復元は必ず既存 applyLoadedJson()（= normalizeState 経路）を再利用する（独自の正規化を作らない）。
+//   build/bind/coordinator パターン維持。pure builder は global state を参照しない（テスト容易・副作用なし）。
+// ============================================================
+var BACKUP_SCHEMA_VERSION=1;
+var BACKUP_KIND='shogi_tour_backup';
+
+// 匿名投影（pure）: 引数 state s から「氏名を含まない」member_id＋成績データを派生する。
+//   global state は参照しない。氏名は一切含めない（player_ref=非PIIなローカル id のみ）。
+function buildBackupAnonymous(s){
+  var out={classes:[],entries:[],matches:[]};
+  if(!s||typeof s!=='object')return out;
+  var classes=(Object.prototype.toString.call(s.classes)==='[object Array]')?s.classes:[];
+  for(var ci=0;ci<classes.length;ci++){
+    var c=classes[ci];
+    if(!c||typeof c.id!=='string'||!c.id)continue;
+    var cls=c.id;
+    out.classes.push(cls);
+    var players=(s.players&&Object.prototype.toString.call(s.players[cls])==='[object Array]')?s.players[cls]:[];
+    // player.id -> member_id|null の対応表（氏名は引かない）。
+    var memberIdOf={};
+    for(var pi=0;pi<players.length;pi++){
+      var pp=players[pi];
+      if(pp&&pp.id)memberIdOf[pp.id]=(typeof pp.member_id==='string'&&pp.member_id)?pp.member_id:null;
+    }
+    var results=(s.results&&Object.prototype.toString.call(s.results[cls])==='[object Array]')?s.results[cls]:[];
+    // 勝数・対局数を results から集計（getWins と同等のロジックを pure に inline）。
+    var wins={}, games={};
+    for(var ri=0;ri<results.length;ri++){
+      var round=(Object.prototype.toString.call(results[ri])==='[object Array]')?results[ri]:[];
+      for(var mi=0;mi<round.length;mi++){
+        var m=round[mi];
+        if(!m||!m.p1||!m.p2)continue;
+        games[m.p1]=(games[m.p1]||0)+1;
+        games[m.p2]=(games[m.p2]||0)+1;
+        if(m.winner)wins[m.winner]=(wins[m.winner]||0)+1;
+        // 匿名 match（氏名なし。round は 1 始まり）。
+        out.matches.push({
+          cls:cls, round:ri+1,
+          p1_ref:m.p1, p2_ref:m.p2,
+          p1_member_id:(m.p1 in memberIdOf)?memberIdOf[m.p1]:null,
+          p2_member_id:(m.p2 in memberIdOf)?memberIdOf[m.p2]:null,
+          winner_ref:m.winner||null
+        });
+      }
+    }
+    for(var ei=0;ei<players.length;ei++){
+      var p=players[ei];
+      if(!p||!p.id)continue;
+      out.entries.push({
+        cls:cls,
+        member_id:(typeof p.member_id==='string'&&p.member_id)?p.member_id:null,
+        player_ref:p.id,
+        entry_no:(typeof p.entry_no==='number')?p.entry_no:(ei+1),
+        wins:wins[p.id]||0,
+        games:games[p.id]||0
+      });
+    }
+  }
+  return out;
+}
+
+// エクスポート構造（pure）: schema_version 付きの backup オブジェクトを組み立てる。
+//   local.state = 復元の正本（氏名を含むフル state）。anonymous = 派生・匿名（氏名なし）。
+//   nowIso は呼び出し側が new Date().toISOString() で渡す（pure 化のため引数注入）。
+function buildTournamentBackupObject(s,nowIso){
+  return {
+    schema_version:BACKUP_SCHEMA_VERSION,
+    kind:BACKUP_KIND,
+    app:'shogi_v4',
+    exported_at:(typeof nowIso==='string')?nowIso:'',
+    local:{ state:s },
+    anonymous:buildBackupAnonymous(s)
+  };
+}
+
+// エクスポート JSON 文字列（pure）。
+function serializeTournamentBackup(s,nowIso){
+  return JSON.stringify(buildTournamentBackupObject(s,nowIso),null,2);
+}
+
+// インポート検証（pure）: text を parse・検証し {ok:true,state} か {ok:false,reason,message} を返す。
+//   不正 JSON / 種別不一致 / schema_version 不一致 / state 欠落 を安全に拒否しメッセージを返す。
+function parseTournamentBackup(text){
+  var parsed;
+  try{ parsed=JSON.parse(text); }
+  catch(e){ return {ok:false,reason:'invalid_json',message:'ファイルを読み取れませんでした（JSON として不正です）。'}; }
+  if(!parsed||typeof parsed!=='object'||Object.prototype.toString.call(parsed)==='[object Array]'){
+    return {ok:false,reason:'not_object',message:'バックアップ形式ではありません。'};
+  }
+  if(parsed.kind!==BACKUP_KIND){
+    return {ok:false,reason:'wrong_kind',message:'このファイルは大会バックアップではありません。通常の「読み込み」からお試しください。'};
+  }
+  if(parsed.schema_version!==BACKUP_SCHEMA_VERSION){
+    return {ok:false,reason:'schema_mismatch',message:'バックアップのバージョンが一致しません（ファイル: '+String(parsed.schema_version)+' / 対応: '+BACKUP_SCHEMA_VERSION+'）。'};
+  }
+  var st=parsed.local&&parsed.local.state;
+  if(!st||typeof st!=='object'||Object.prototype.toString.call(st)==='[object Array]'){
+    return {ok:false,reason:'no_state',message:'バックアップに大会データが含まれていません。'};
+  }
+  return {ok:true,state:st};
+}
+
+// coordinator: 現在の state を backup JSON としてダウンロードする（saveDataAsFile を踏襲）。
+function exportTournamentBackup(){
+  try{
+    var now=new Date();
+    var json=serializeTournamentBackup(state,now.toISOString());
+    var y=now.getFullYear();
+    var mo=('0'+(now.getMonth()+1)).slice(-2);
+    var d=('0'+now.getDate()).slice(-2);
+    var hh=('0'+now.getHours()).slice(-2);
+    var mm=('0'+now.getMinutes()).slice(-2);
+    var filename='shogi_backup_'+y+mo+d+'_'+hh+mm+'.json';
+    var blob=new Blob([json],{type:'application/json'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    alert(filename+' にバックアップを保存しました（端末のダウンロードフォルダ）');
+    return true;
+  }catch(e){
+    alert('バックアップの保存に失敗しました');
+    return false;
+  }
+}
+
+// coordinator: backup テキストを検証 → 確認 → 既存 applyLoadedJson（normalizeState 経路）で復元する。
+//   既存 state を上書きするため confirm ガードを必ず通す（誤操作でのデータ消失防止）。
+function importTournamentBackupFromText(text){
+  var res=parseTournamentBackup(text);
+  if(!res.ok){ alert(res.message); return false; }
+  if(!confirm('現在の大会データを上書きしてバックアップを復元しますか？この操作は元に戻せません。'))return false;
+  try{
+    // 復元は独自正規化を作らず、既存 applyLoadedJson（state=normalizeState(...)→save→再描画）を再利用する。
+    applyLoadedJson(JSON.stringify(res.state));
+    alert('バックアップを復元しました');
+    return true;
+  }catch(err){
+    alert('復元に失敗しました。正しいバックアップファイルか確認してください');
+    return false;
+  }
+}
+
+// coordinator: ファイル選択 input(change) から backup を取り込む。
+function importTournamentBackupFile(e){
+  var file=e&&e.target&&e.target.files&&e.target.files[0];
+  if(!file)return;
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    importTournamentBackupFromText(ev.target.result);
+    if(e.target)e.target.value='';
+    var bm=document.getElementById('backup-modal');if(bm)bm.remove();
+  };
+  reader.readAsText(file);
+}
+
+// build: バックアップ modal の HTML（pure 文字列・動的なユーザ入力を埋め込まない）。
+function buildBackupModalHtml(){
+  return '<div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:360px;max-height:90vh;overflow-y:auto">'
+    +'<h3 style="margin-bottom:6px;font-size:16px;font-weight:500;color:#1F3864">バックアップ</h3>'
+    +'<p style="margin:0 0 12px;color:#888;font-size:12px;line-height:1.5">大会データを 1 つの JSON ファイルとして保存／復元します（自動バックアップ用）。</p>'
+    +'<button id="backup-export" class="btn-primary" style="width:100%;padding:12px;border-radius:8px;border:none;background:#27500A;color:#fff;font-size:14px;cursor:pointer">バックアップを保存（ダウンロード）</button>'
+    +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:12px">─ または ─</div>'
+    +'<button id="backup-import-pick" style="width:100%;padding:12px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:14px;cursor:pointer">バックアップから復元（ファイル選択）</button>'
+    +'<input type="file" id="backup-import-file" accept=".json,application/json" style="display:none">'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
+    +'<button id="backup-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">閉じる</button>'
+    +'</div></div>';
+}
+
+// bind: バックアップ modal のイベント登録。
+function bindBackupModalEvents(modal){
+  var exportBtn=document.getElementById('backup-export');
+  if(exportBtn)exportBtn.addEventListener('click',function(){ exportTournamentBackup(); });
+  var pick=document.getElementById('backup-import-pick');
+  var fileInput=document.getElementById('backup-import-file');
+  if(pick&&fileInput)pick.addEventListener('click',function(){ fileInput.click(); });
+  if(fileInput)fileInput.addEventListener('change',importTournamentBackupFile);
+  var cancel=document.getElementById('backup-cancel');
+  if(cancel)cancel.addEventListener('click',function(){ if(modal)modal.remove(); });
+}
+
+// coordinator: バックアップ modal を開く（既存 openLoadModal と同方針）。
+function openBackupModal(){
+  var existing=document.getElementById('backup-modal');
+  if(existing)existing.remove();
+  var modal=document.createElement('div');
+  modal.id='backup-modal';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=buildBackupModalHtml();
+  document.body.appendChild(modal);
+  bindBackupModalEvents(modal);
+}
+
+// ============================================================
 // LIVE-MOBILE-SCOREBOARD-001 §3/§4 PDF 出力ファイル名 / PDF 内タイトル共通 helper
 //   各 PDF 出力箇所が個別にファイル名・見出しを組み立てない。state.report を SoT として
 //   「YYYY年M月度{大会名}{種別}」形式の安全なファイル名と、対象月/開催日を含む見出しを生成する。
@@ -8632,6 +8838,9 @@ function bindHeaderEvents(){
   document.getElementById('saveBtn').addEventListener('click',saveData);
   document.getElementById('loadBtn').addEventListener('click',openLoadModal);
   document.getElementById('loadFile').addEventListener('change',loadData);
+  // DATA-PERSISTENCE Phase 1: バックアップ（JSON エクスポート/インポート）modal を開く。
+  var backupBtn=document.getElementById('backupBtn');
+  if(backupBtn)backupBtn.addEventListener('click',openBackupModal);
   document.getElementById('resetBtn').addEventListener('click',resetAll);
   // RESET-UX-PARTIAL-RESET-IMPL-LIGHT: 参加者を残す部分リセット
   var resetProgressBtn=document.getElementById('resetProgressBtn');
