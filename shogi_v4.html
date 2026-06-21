@@ -2295,6 +2295,34 @@ function createMemberFromParticipant(p,master,date){
   };
 }
 
+// Issue #273: 支部マスタ同期/統合のクラス列挙を「全クラス対応」にするための純関数。
+//   旧実装は updateBranchMasterFromTournament / mergeTournamentParticipantsIntoMaster の双方で
+//   var classes=['A','B'] とハードコードしており、addClass()/nextClassId() で追加できる C 以降の
+//   クラス参加者がマスタ同期（「大会データをコピー」）・過去大会統合（「マスタ」タブ）の両経路から
+//   黙って取りこぼされていた。state.classes（normalizeState が常に整える権威リスト・A/B を必ず含む）
+//   の id を主とし、保存揺れに備えて Object.keys(state.players) も union する（重複除外・順序は
+//   classes 優先 → players のみに存在する id を後置）。A/B のみの state では ['A','B'] と同順・同一
+//   結果＝既存挙動不変（行順・件数を保つ）。state-like を読むだけ（global state 非依存・副作用なし）。
+//   空/不正入力は [] を返す。
+function listClassIdsForMasterSync(st){
+  var ids=[];
+  var seen={};
+  if(st&&Array.isArray(st.classes)){
+    for(var i=0;i<st.classes.length;i++){
+      var c=st.classes[i];
+      if(c&&typeof c.id==='string'&&c.id&&!seen[c.id]){seen[c.id]=true;ids.push(c.id);}
+    }
+  }
+  if(st&&st.players&&typeof st.players==='object'){
+    var keys=Object.keys(st.players);
+    for(var k=0;k<keys.length;k++){
+      var key=keys[k];
+      if(key&&!seen[key]&&Array.isArray(st.players[key])){seen[key]=true;ids.push(key);}
+    }
+  }
+  return ids;
+}
+
 function updateBranchMasterFromTournament(state,master,tournamentMeta){
   if(!state||!master||!Array.isArray(master.members))return master;
   if(!tournamentMeta||!tournamentMeta.tournament_id)return master;
@@ -2305,7 +2333,9 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
 
   var affected={};
   var pendingSkippedNames=[];
-  var classes=['A','B'];
+  // Issue #273: A/B 固定をやめ全クラス（state.classes / Object.keys(state.players)）を走査し、
+  //   C 以降のクラス参加者がマスタ同期から取りこぼされる問題を解消する。A/B のみの大会は同順・不変。
+  var classes=listClassIdsForMasterSync(state);
   for(var ci=0;ci<classes.length;ci++){
     var cls=classes[ci];
     var players=(state.players&&Array.isArray(state.players[cls]))?state.players[cls]:[];
@@ -2357,11 +2387,17 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
         }
       }
       addTournamentIdOnce(member,tid);
+      // Issue #273 / Codex P1: last_class は「最新出席の所属クラス」を表す（A/B→その文字・C 以降→null）。
+      //   この大会が member の最新出席になるとき（既存 last_attended 以降、または初出席）だけ last_class を
+      //   上書きし、より古い大会で新しいクラスを潰さない。C 以降は A/B/null 不変条件を保つため null に揃える。
+      //   旧実装は A/B のときだけ上書きし、C 以降の参加では過去の stale な "A"/"B" が残って「前回:A/B」を
+      //   誤表示し、サジェスト・過去参加者追加が古いクラスを優先してしまっていた（最新出席で必ず是正する）。
+      var isLatestAttendance273=isValidYmd(date)&&(!member.last_attended||date>=member.last_attended);
       if(isValidYmd(date)){
         if(!member.last_attended||date>=member.last_attended)member.last_attended=date;
         if(!member.first_attended||date<member.first_attended)member.first_attended=date;
       }
-      if(p.cls==='A'||p.cls==='B')member.last_class=p.cls;
+      if(isLatestAttendance273)member.last_class=(p.cls==='A'||p.cls==='B')?p.cls:null;
       // A-3: 支部員区分・中学生以下区分の前回値を記録（次回サジェスト引き継ぎ用）
       if(p.member==='member'||p.member==='other')member.member=p.member;
       if(p.grade==='ippan'||p.grade==='chu')member.grade=p.grade;
@@ -3901,7 +3937,9 @@ function mergeTournamentParticipantsIntoMaster(tournaments,master){
     if(!raw||typeof raw!=='object'){skipped++;continue;}
     var tempState=normalizeState(raw);
     var meta=deriveTournamentMetaForMigration(raw,entry.filename||'',master);
-    var classes=['A','B'];
+    // Issue #273: A/B 固定をやめ、各大会の tempState の全クラス（state.classes / players キー）を走査し、
+    //   C 以降のクラス参加者が過去大会統合から取りこぼされる問題を解消する。A/B のみの大会は同順・不変。
+    var classes=listClassIdsForMasterSync(tempState);
     for(var ci=0;ci<classes.length;ci++){
       var cls=classes[ci];
       var players=tempState.players[cls]||[];
@@ -3929,11 +3967,16 @@ function mergeTournamentParticipantsIntoMaster(tournaments,master){
           matched++;
         }
         addTournamentIdOnce(member,meta.tournament_id);
+        // Issue #273 / Codex P1: 統合経路も同様に last_class を「最新出席のクラス」に揃える。
+        //   この大会が member の最新出席（既存 last_attended 以降、または初出席）になるときだけ上書きし、
+        //   古い大会で新しいクラスを潰さない。C 以降は A/B/null 不変条件を保つため null に揃える
+        //   （旧実装は A/B のみ上書きし、C 以降の統合で stale な "A"/"B" が残って C→null 不変条件を破っていた）。
+        var isLatestAttendance273=isValidYmd(meta.tournament_date)&&(!member.last_attended||meta.tournament_date>=member.last_attended);
         if(isValidYmd(meta.tournament_date)){
           if(!member.last_attended||meta.tournament_date>=member.last_attended)member.last_attended=meta.tournament_date;
           if(!member.first_attended||meta.tournament_date<member.first_attended)member.first_attended=meta.tournament_date;
         }
-        if(p.cls==='A'||p.cls==='B')member.last_class=p.cls;
+        if(isLatestAttendance273)member.last_class=(p.cls==='A'||p.cls==='B')?p.cls:null;
         recalcMemberAttendance(member);
       }
     }
