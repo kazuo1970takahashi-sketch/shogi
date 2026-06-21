@@ -7948,38 +7948,48 @@ function computeDisplayRanks(finals,cls){
 //   renderResults: A/B両クラスを取りまとめてDOMに反映
 // ============================================================
 
-// 1ラウンド分のセル(スマホ用カード形式)
-function buildResultsRoundCellMobileHtml(cls, playerId, roundIdx, wins){
+// 結果表セルの共通コア(PHASE-B-2 / #287): Mobile/Desktop 双子の「中身」を1か所へ集約する。
+//   対戦相手取得・勝敗判定・対戦相手勝数/マーク文字の算出を行い、結果をオブジェクトで返す。
+//   該当ラウンドが無い / そのプレイヤーの対局がそのラウンドに無い場合は null を返す
+//   （呼び出し側 variant が「空セル」HTML を返す）。タグ(div / td)と敗北色だけが
+//   Mobile/Desktop で異なるため、それらはラッパー側で差し込む（生成 HTML は従来と完全同一）。
+function _buildResultsRoundCellCore(cls, playerId, roundIdx, wins){
   var round=state.results[cls][roundIdx];
-  if(!round)return '<div style="background:#f8f8f8;border:1px solid #eee;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;color:#ccc"><div style="font-size:10px">'+(roundIdx+1)+'回戦</div><div>-</div></div>';
+  if(!round)return null;
   var match=null;
   for(var m=0;m<round.length;m++){if(round[m].p1===playerId||round[m].p2===playerId){match=round[m];break;}}
-  if(!match)return '<div style="background:#f8f8f8;border:1px solid #eee;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;color:#ccc"><div style="font-size:10px">'+(roundIdx+1)+'回戦</div><div>-</div></div>';
+  if(!match)return null;
   var oppId=match.p1===playerId?match.p2:match.p1;
   var oppWins=wins[oppId]||0;
   var won=match.winner===playerId;
-  var markColor=won?'#27500A':'#A32D2D';
   var markStr=match.winner===null?'－':(won?'○':'●');
+  return {oppId:oppId, oppWins:oppWins, won:won, markStr:markStr};
+}
+
+// 順位バッジ(PHASE-B-2 / #287): 1〜3 位は色付きバッジ・その他は「N位」。
+//   結果表 Mobile/Desktop で同一だった三項式を共通化（返り値は従来と完全同一の文字列）。
+function _resultsRankBadgeHtml(rank){
+  return rank===1?'<span class="badge b1">1位</span>':rank===2?'<span class="badge b2">2位</span>':rank===3?'<span class="badge b3">3位</span>':rank+'位';
+}
+
+// 1ラウンド分のセル(スマホ用カード形式)
+function buildResultsRoundCellMobileHtml(cls, playerId, roundIdx, wins){
+  var core=_buildResultsRoundCellCore(cls, playerId, roundIdx, wins);
+  if(!core)return '<div style="background:#f8f8f8;border:1px solid #eee;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;color:#ccc"><div style="font-size:10px">'+(roundIdx+1)+'回戦</div><div>-</div></div>';
+  var markColor=core.won?'#27500A':'#A32D2D';
   return '<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;overflow:hidden">'
     +'<div style="color:#888;font-size:10px;margin-bottom:2px">'+(roundIdx+1)+'回戦</div>'
-    +'<div style="font-weight:bold;color:'+markColor+';font-size:16px;line-height:1">'+markStr+'</div>'
-    +'<div style="color:#555;font-size:10px;margin-top:2px">'+nameWithNoRubyHtml(oppId,cls)+'('+oppWins+')</div>'
+    +'<div style="font-weight:bold;color:'+markColor+';font-size:16px;line-height:1">'+core.markStr+'</div>'
+    +'<div style="color:#555;font-size:10px;margin-top:2px">'+nameWithNoRubyHtml(core.oppId,cls)+'('+core.oppWins+')</div>'
     +'</div>';
 }
 
 // 1ラウンド分のセル(PC用テーブル td)
 function buildResultsRoundCellDesktopHtml(cls, playerId, roundIdx, wins){
-  var round=state.results[cls][roundIdx];
-  if(!round)return '<td style="color:#ccc">-</td>';
-  var match=null;
-  for(var m=0;m<round.length;m++){if(round[m].p1===playerId||round[m].p2===playerId){match=round[m];break;}}
-  if(!match)return '<td style="color:#ccc">-</td>';
-  var oppId=match.p1===playerId?match.p2:match.p1;
-  var oppWins=wins[oppId]||0;
-  var won=match.winner===playerId;
-  var markColor=won?'#27500A':'#222';
-  var markStr=match.winner===null?'－':(won?'○':'●');
-  return '<td><span style="font-weight:bold;color:'+markColor+'">'+markStr+'</span><br><small style="color:#333">'+nameWithNoRubyHtml(oppId,cls)+'('+oppWins+')</small></td>';
+  var core=_buildResultsRoundCellCore(cls, playerId, roundIdx, wins);
+  if(!core)return '<td style="color:#ccc">-</td>';
+  var markColor=core.won?'#27500A':'#222';
+  return '<td><span style="font-weight:bold;color:'+markColor+'">'+core.markStr+'</span><br><small style="color:#333">'+nameWithNoRubyHtml(core.oppId,cls)+'('+core.oppWins+')</small></td>';
 }
 
 // スマホ向け表示全体(カードのリスト)
@@ -7989,7 +7999,7 @@ function buildResultsMobileHtml(cls, finals, wins){
   for(var idx=0;idx<finals.length;idx++){
     var f=finals[idx];var rank=displayRanks[idx];
     var rowColor=rank===1?'#fef8e7':rank===2?'#f5f5f5':rank===3?'#eaf3fb':'#fff';
-    var badge=rank===1?'<span class="badge b1">1位</span>':rank===2?'<span class="badge b2">2位</span>':rank===3?'<span class="badge b3">3位</span>':rank+'位';
+    var badge=_resultsRankBadgeHtml(rank);
     html+='<div style="background:'+rowColor+';border:1px solid #e0e0e0;border-radius:8px;padding:10px 12px;margin-bottom:8px">';
     html+='<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px">';
     html+=badge;
@@ -8020,7 +8030,7 @@ function buildResultsDesktopHtml(cls, finals, wins){
   for(var idx=0;idx<finals.length;idx++){
     var f=finals[idx];var rank=displayRanks[idx];
     var rowCls=rank===1?'row-r1':rank===2?'row-r2':rank===3?'row-r3':'';
-    var badge=rank===1?'<span class="badge b1">1位</span>':rank===2?'<span class="badge b2">2位</span>':rank===3?'<span class="badge b3">3位</span>':rank+'位';
+    var badge=_resultsRankBadgeHtml(rank);
     html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+nameWithNoRubyHtml(f.p.id,cls)+'</td>';
     for(var r=0;r<state.rounds;r++){
       html+=buildResultsRoundCellDesktopHtml(cls, f.p.id, r, wins);
