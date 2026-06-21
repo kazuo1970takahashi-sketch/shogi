@@ -462,10 +462,33 @@ function escapeHtml(value){
     .replace(/'/g,'&#39;');
 }
 
-function getName(id,cls){
+// PHASE-B-3 (#289): 参加者の「id+クラス → 表示フィールド」を1回の走査で解決する単一窓口。
+//   getName / getNameWithNo / nameWithNoRubyHtml が個別に state.players[cls] を走査していた
+//   重複を集約する（生成文字列は完全同値）。
+//   - 走査は state.players[cls] を直接参照（getName / entryNoOf と同じ非防御＝クラス不在なら throw）。
+//   - entryNo: entry_no>0 なら 2 桁ゼロ埋め、未付与なら index+1 を 2 桁ゼロ埋め（entryNoOf と同一規則）。
+//   - name : 見つかれば player.name、なければ '(削除)'（getName と同一）。
+//   - yomi : 見つかれば string の yomi、なければ ''（yomiOf と同一）。
+//   - not-found: {found:false,name:'(削除)',entryNo:'--',yomi:''}（各既存関数の not-found と同一）。
+function _resolvePlayerDisplay(id,cls){
   var players=state.players[cls];
-  for(var i=0;i<players.length;i++){if(players[i].id===id)return players[i].name;}
-  return '(削除)';
+  for(var i=0;i<players.length;i++){
+    if(players[i].id===id){
+      var p=players[i];
+      var en=p.entry_no;
+      return {
+        found:true,
+        name:p.name,
+        entryNo:(typeof en==='number'&&en>0)?('00'+en).slice(-2):('00'+(i+1)).slice(-2),
+        yomi:(typeof p.yomi==='string')?p.yomi:''
+      };
+    }
+  }
+  return {found:false,name:'(削除)',entryNo:'--',yomi:''};
+}
+
+function getName(id,cls){
+  return _resolvePlayerDisplay(id,cls).name;
 }
 
 // A-5.1 §11.8 (欠番維持): entry_no を player に永続化する。
@@ -508,8 +531,10 @@ function nextEntryNoForClass(cls,stateObj){
 }
 
 // A-4 §2: 「番号｜名前」の表示フォーマット。プレフィックス幅2桁ゼロ埋め。
+// PHASE-B-3 (#289): entryNoOf+getName の二重走査を _resolvePlayerDisplay の単一走査へ集約（出力同値）。
 function getNameWithNo(id,cls){
-  return entryNoOf(cls,id)+'｜'+getName(id,cls);
+  var d=_resolvePlayerDisplay(id,cls);
+  return d.entryNo+'｜'+d.name;
 }
 
 // PAIRING-UX-DISPLAY-HELPER-IMPL-LIGHT (PR #101 §10.1):
@@ -4645,14 +4670,22 @@ function renderRegList(){
 //   - innerHTML 文字列連結はしない。呼び出し側で appendChild する。
 //   - FURIGANA-MVP-001 では受付一覧のみ。FURIGANA-VIEW-002 で順位表 / 星取表 / 閲覧ビュー /
 //     印刷・PDF へ展開（string でHTMLを組む経路は併設の playerNameRubyHtml を使う。設計メモ §A-5）。
+// PHASE-B-3 (#289): ルビ生成の「氏名・ふりがな正規化」を1か所に集約する単一窓口。
+//   DOM 版（renderPlayerNameWithRuby）と string 版（playerNameRubyHtml）が同じ規則
+//   「氏名は null→'' で文字列化／ふりがなは null→'' で文字列化し trim、空ならルビ無し」を
+//   個別実装していたのを集約する（生成結果は完全同値）。
+//   返り値: { name: 文字列化した氏名, yomi: trim 済みふりがな（空ならルビ無しの合図） }。
+function _resolveNameRuby(name,yomi){
+  return { name:String(name==null?'':name), yomi:String(yomi==null?'':yomi).trim() };
+}
+
 function renderPlayerNameWithRuby(name,yomi){
-  var safeName=String(name==null?'':name);
-  var safeYomi=String(yomi==null?'':yomi).trim();
-  if(!safeYomi)return document.createTextNode(safeName);
+  var parts=_resolveNameRuby(name,yomi);
+  if(!parts.yomi)return document.createTextNode(parts.name);
   var ruby=document.createElement('ruby');
-  ruby.appendChild(document.createTextNode(safeName));
+  ruby.appendChild(document.createTextNode(parts.name));
   var rt=document.createElement('rt');
-  rt.textContent=safeYomi;
+  rt.textContent=parts.yomi;
   ruby.appendChild(rt);
   return ruby;
 }
@@ -4663,9 +4696,9 @@ function renderPlayerNameWithRuby(name,yomi){
 //   - 氏名・ふりがなは必ず escapeHtml を通す（innerHTML 直挿しによる XSS を増やさない）。
 //   - ルビ組み立ての規則は DOM 版とここ（string 版）に集約し、各呼出側で二重実装しない。
 function playerNameRubyHtml(name,yomi){
-  var safeYomi=String(yomi==null?'':yomi).trim();
-  if(!safeYomi)return escapeHtml(name);
-  return '<ruby>'+escapeHtml(name)+'<rt>'+escapeHtml(safeYomi)+'</rt></ruby>';
+  var parts=_resolveNameRuby(name,yomi);
+  if(!parts.yomi)return escapeHtml(name);
+  return '<ruby>'+escapeHtml(name)+'<rt>'+escapeHtml(parts.yomi)+'</rt></ruby>';
 }
 
 // FURIGANA-VIEW-002: 当日 player.yomi を id+cls で引く（getName と対の lookup）。
@@ -4678,8 +4711,10 @@ function yomiOf(id,cls){
 
 // FURIGANA-VIEW-002: getNameWithNo（"entry_no｜氏名"）の HTML 版。番号部は素のテキストのまま、
 //   氏名部だけ playerNameRubyHtml でルビ化する（番号にルビが乗らないようにする）。
+// PHASE-B-3 (#289): entryNoOf+getName+yomiOf の三重走査を _resolvePlayerDisplay の単一走査へ集約（出力同値）。
 function nameWithNoRubyHtml(id,cls){
-  return escapeHtml(entryNoOf(cls,id)+'｜')+playerNameRubyHtml(getName(id,cls),yomiOf(id,cls));
+  var d=_resolvePlayerDisplay(id,cls);
+  return escapeHtml(d.entryNo+'｜')+playerNameRubyHtml(d.name,d.yomi);
 }
 
 function makePlayerRow(p,cls,i){
