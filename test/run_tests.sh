@@ -859,6 +859,75 @@ else
 fi
 
 # ============================================
+# PHASE-A-TEST-SAFETY-NET (Issue #283): ゴールデンマスター土台 + 薄い領域の characterization
+#   shogi_v4.html 無改変。段階リファクタ（Phase B 以降）の挙動完全不変を機械的に担保する安全網。
+# ============================================
+echo ""
+echo "【GOLDEN-MASTER-001 純関数 / build* 系の現状出力スナップショット（バイト/構造一致の番人）】"
+if [ -f "$SCRIPT_DIR/test_golden_master_001.js" ]; then
+  if node "$SCRIPT_DIR/test_golden_master_001.js" "$TARGET" > /tmp/golden_master_001_out.log 2>&1; then
+    ok "GOLDEN-MASTER-001 テスト 全PASS ($(tail -1 /tmp/golden_master_001_out.log))"
+  else
+    ng "GOLDEN-MASTER-001 テスト 失敗（出力差分の可能性。意図的更新は UPDATE_GOLDEN=1 で再採取）"
+    cat /tmp/golden_master_001_out.log
+  fi
+else
+  warn "test_golden_master_001.js が見つからない"
+fi
+
+echo ""
+echo "【CHAR evaluatePairingQuality ペアリング品質評価の詳細分岐（characterization）】"
+if [ -f "$SCRIPT_DIR/test_char_pairing_quality_001.js" ]; then
+  if node "$SCRIPT_DIR/test_char_pairing_quality_001.js" "$TARGET" > /tmp/char_pairing_quality_001_out.log 2>&1; then
+    ok "CHAR pairing-quality テスト 全PASS ($(tail -1 /tmp/char_pairing_quality_001_out.log))"
+  else
+    ng "CHAR pairing-quality テスト 失敗"
+    cat /tmp/char_pairing_quality_001_out.log
+  fi
+else
+  warn "test_char_pairing_quality_001.js が見つからない"
+fi
+
+echo ""
+echo "【CHAR normalizeClasses クラス配列正規化・互換補完（characterization）】"
+if [ -f "$SCRIPT_DIR/test_char_normalize_classes_001.js" ]; then
+  if node "$SCRIPT_DIR/test_char_normalize_classes_001.js" "$TARGET" > /tmp/char_normalize_classes_001_out.log 2>&1; then
+    ok "CHAR normalize-classes テスト 全PASS ($(tail -1 /tmp/char_normalize_classes_001_out.log))"
+  else
+    ng "CHAR normalize-classes テスト 失敗"
+    cat /tmp/char_normalize_classes_001_out.log
+  fi
+else
+  warn "test_char_normalize_classes_001.js が見つからない"
+fi
+
+echo ""
+echo "【CHAR 支部マスタ同期 updateBranchMasterFromTournament / mergeTournamentParticipantsIntoMaster（characterization）】"
+if [ -f "$SCRIPT_DIR/test_char_branch_master_sync_001.js" ]; then
+  if node "$SCRIPT_DIR/test_char_branch_master_sync_001.js" "$TARGET" > /tmp/char_branch_master_sync_001_out.log 2>&1; then
+    ok "CHAR branch-master-sync テスト 全PASS ($(tail -1 /tmp/char_branch_master_sync_001_out.log))"
+  else
+    ng "CHAR branch-master-sync テスト 失敗"
+    cat /tmp/char_branch_master_sync_001_out.log
+  fi
+else
+  warn "test_char_branch_master_sync_001.js が見つからない"
+fi
+
+echo ""
+echo "【CHAR 過去参加者パネル buildPastParticipantsPanelHtml / matchesPastParticipantQuery（characterization）】"
+if [ -f "$SCRIPT_DIR/test_char_past_participants_001.js" ]; then
+  if node "$SCRIPT_DIR/test_char_past_participants_001.js" "$TARGET" > /tmp/char_past_participants_001_out.log 2>&1; then
+    ok "CHAR past-participants テスト 全PASS ($(tail -1 /tmp/char_past_participants_001_out.log))"
+  else
+    ng "CHAR past-participants テスト 失敗"
+    cat /tmp/char_past_participants_001_out.log
+  fi
+else
+  warn "test_char_past_participants_001.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
