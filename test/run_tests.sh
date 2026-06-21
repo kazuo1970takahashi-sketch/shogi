@@ -820,6 +820,26 @@ else
 fi
 
 # ============================================
+# ISSUE-272 PAIRING-ODD-LEFTOVER 2回戦以降の奇数で 0 卓に潰れる進行不能バグの修正
+#   generatePairing(奇数→floor(N/2)卓+末尾1人待機・0卓に潰さない・不戦勝にしない) /
+#   submitRound(2回戦以降の待機1名のみ許容＝進行できる・1回戦/偶数は従来どおり) /
+#   addPlayer(開始済み2回戦以降は confirm 通知ガード) / getRoundLeftoverPlayers(待機派生表示) /
+#   buildCurrentPairingsHtml(待機者明示) / reload 往復・match スキーマ不変 を固定する。
+# ============================================
+echo ""
+echo "【ISSUE-272 2回戦以降の奇数ペアリング（floor(N/2)卓+待機・進行可能・偶数不変・通知ガード）】"
+if [ -f "$SCRIPT_DIR/test_pairing_odd_leftover_272.js" ]; then
+  if node "$SCRIPT_DIR/test_pairing_odd_leftover_272.js" "$TARGET" > /tmp/pairing_odd_leftover_272_out.log 2>&1; then
+    ok "ISSUE-272 テスト 全PASS ($(tail -1 /tmp/pairing_odd_leftover_272_out.log))"
+  else
+    ng "ISSUE-272 テスト 失敗"
+    cat /tmp/pairing_odd_leftover_272_out.log
+  fi
+else
+  warn "test_pairing_odd_leftover_272.js が見つからない"
+fi
+
+# ============================================
 # ISSUE-273 BRANCH-MASTER-ALL-CLASSES C 以降クラスの支部マスタ同期/過去大会統合への反映
 #   updateBranchMasterFromTournament（同期）/ mergeTournamentParticipantsIntoMaster（統合）の
 #   クラス列挙を ['A','B'] 固定から listClassIdsForMasterSync（state.classes / players キー駆動）へ。
