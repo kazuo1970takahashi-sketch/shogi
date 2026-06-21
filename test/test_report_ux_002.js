@@ -49,26 +49,37 @@ function assertEq(a,b,msg){
   else ng(msg+': expected '+JSON.stringify(b)+' got '+JSON.stringify(a));
 }
 
-// downloadReport 関数本体を抽出
+// downloadReport / buildReportHtml 関数本体を抽出
+//   REFACTOR B-5b (#300): downloadReport の HTML 生成部は buildReportHtml() へ逐語抽出され、
+//   downloadReport はそれを呼ぶ薄い wrapper（Blob/open/print/revoke）になった。
+//   HTML 組立内容（A/B 固定 literal 解消・normalize 系委譲・rankRow ルビ等）の構造検査は
+//   生成本体 buildReportHtml(brBody) を対象に行い、副作用構造（Blob/window.open）は
+//   wrapper(downloadReport / drBody) を対象に行う（検査の意図は不変）。
 const drMatch = htmlSrc.match(/function downloadReport\(\)[\s\S]*?\n\}\n/);
 assert(drMatch !== null, 'S0 downloadReport 関数本体を抽出できる');
 const drBody = drMatch ? drMatch[0] : '';
+const brMatch = htmlSrc.match(/function buildReportHtml\(\)[\s\S]*?\n\}\n/);
+assert(brMatch !== null, 'S0b buildReportHtml 生成本体を抽出できる');
+const brBody = brMatch ? brMatch[0] : '';
+// S0c: downloadReport は HTML 生成を buildReportHtml() へ委譲する薄い wrapper（B-5b 抽出）
+assert(/buildReportHtml\s*\(/.test(drBody),
+  'S0c downloadReport が buildReportHtml() へ委譲している（B-5b 抽出）');
 
 // ============================================================
 // SECTION S: 構造検査 — A/B 固定 literal が解消されている
 // ============================================================
 
 // S1: allCount A/B 固定合計
-assert(drBody.indexOf('state.players.A.length+state.players.B.length') === -1,
-  'S1-1 downloadReport 本体に state.players.A.length+state.players.B.length 固定が無い');
-assert(drBody.indexOf('state.players.A.length + state.players.B.length') === -1,
-  'S1-2 downloadReport 本体に同 literal (空白あり) が無い');
+assert(brBody.indexOf('state.players.A.length+state.players.B.length') === -1,
+  'S1-1 buildReportHtml 本体に state.players.A.length+state.players.B.length 固定が無い');
+assert(brBody.indexOf('state.players.A.length + state.players.B.length') === -1,
+  'S1-2 buildReportHtml 本体に同 literal (空白あり) が無い');
 
 // S2: getTopPlayers('A') / ('B') 固定呼出
-assert(drBody.indexOf("getTopPlayers('A')") === -1,
-  "S2-1 downloadReport 本体に getTopPlayers('A') 固定呼出が無い");
-assert(drBody.indexOf("getTopPlayers('B')") === -1,
-  "S2-2 downloadReport 本体に getTopPlayers('B') 固定呼出が無い");
+assert(brBody.indexOf("getTopPlayers('A')") === -1,
+  "S2-1 buildReportHtml 本体に getTopPlayers('A') 固定呼出が無い");
+assert(brBody.indexOf("getTopPlayers('B')") === -1,
+  "S2-2 buildReportHtml 本体に getTopPlayers('B') 固定呼出が無い");
 
 // S3: A級/B級 固定 6 行
 [
@@ -79,21 +90,21 @@ assert(drBody.indexOf("getTopPlayers('B')") === -1,
   "rankRow('B級準優勝'",
   "rankRow('B級3位'",
 ].forEach(function(pat){
-  assert(drBody.indexOf(pat) === -1,
+  assert(brBody.indexOf(pat) === -1,
     'S3 固定 rankRow 呼出 ' + pat + ' が残っていない');
 });
 
 // S4: getRegistrationClassList 呼出
-assert(/getRegistrationClassList\s*\(\s*\)/.test(drBody),
-  'S4 downloadReport が getRegistrationClassList() を呼ぶ');
+assert(/getRegistrationClassList\s*\(\s*\)/.test(brBody),
+  'S4 buildReportHtml が getRegistrationClassList() を呼ぶ');
 
 // S5: buildClassRankRows helper
-assert(/function\s+buildClassRankRows\s*\(/.test(drBody),
-  'S5 downloadReport 内に buildClassRankRows() helper が定義されている');
+assert(/function\s+buildClassRankRows\s*\(/.test(brBody),
+  'S5 buildReportHtml 内に buildClassRankRows() helper が定義されている');
 
 // S6: rankRow() の label に escapeHtml
 {
-  const rrMatch = drBody.match(/function rankRow\([\s\S]*?\n  \}/);
+  const rrMatch = brBody.match(/function rankRow\([\s\S]*?\n  \}/);
   assert(rrMatch !== null, 'S6-0 rankRow 関数本体を抽出できる');
   const rrBody = rrMatch ? rrMatch[0] : '';
   assert(/escapeHtml\s*\(\s*label\s*\)/.test(rrBody),
@@ -103,9 +114,11 @@ assert(/function\s+buildClassRankRows\s*\(/.test(drBody),
 }
 
 // S7: 既存主要構造の温存
-assert(drBody.indexOf('formatJapaneseDateFromYmd') >= 0,
+//   S7-1/2/5/5b/6/6b/7/7b/7c/7d は HTML 生成内容なので brBody（buildReportHtml）を対象に検査。
+//   S7-3/7-4 は副作用構造なので drBody（downloadReport wrapper）を対象に検査（B-5b 抽出後）。
+assert(brBody.indexOf('formatJapaneseDateFromYmd') >= 0,
   'S7-1 REPORT-UX-001 の formatJapaneseDateFromYmd 呼出が残っている');
-assert(drBody.indexOf('formatJapaneseTimeFromHhmm') >= 0,
+assert(brBody.indexOf('formatJapaneseTimeFromHhmm') >= 0,
   'S7-2 REPORT-UX-001 の formatJapaneseTimeFromHhmm 呼出が残っている');
 assert(drBody.indexOf('new Blob([html]') >= 0,
   'S7-3 Blob 経由の別ウィンドウ open が残っている');
@@ -113,28 +126,28 @@ assert(drBody.indexOf('window.open(url') >= 0,
   'S7-4 window.open(url, _blank) が残っている');
 // REPORT-UX-004 で本 defer は解消済み。title は state.report.title / normalizeReportTitle 経由に。
 //   旧 002 時点の '沼津支部月例将棋大会報告書' ハードコード literal は撤去された。
-assert(drBody.indexOf("'沼津支部月例将棋大会報告書'")=== -1 && drBody.indexOf('"沼津支部月例将棋大会報告書"') === -1,
+assert(brBody.indexOf("'沼津支部月例将棋大会報告書'")=== -1 && brBody.indexOf('"沼津支部月例将棋大会報告書"') === -1,
   'S7-5 報告書タイトル literal は REPORT-UX-004 で撤去済み（state.report.title 経由）');
-assert(/normalizeReportTitle\s*\(/.test(drBody),
-  'S7-5b 004: downloadReport が normalizeReportTitle() を呼ぶ');
+assert(/normalizeReportTitle\s*\(/.test(brBody),
+  'S7-5b 004: buildReportHtml が normalizeReportTitle() を呼ぶ');
 // REPORT-UX-003A で本 defer は解消済み。prize は state.report.prize / normalizeReportPrize 経由に。
 //   旧 002 時点の `var prize=7000` ハードコード literal は撤去された。
-assert(/prize\s*=\s*7000/.test(drBody) === false,
+assert(/prize\s*=\s*7000/.test(brBody) === false,
   'S7-6 賞金額 prize=7000 ハードコード literal は REPORT-UX-003A で撤去済み');
-assert(/normalizeReportPrize\s*\(/.test(drBody),
-  'S7-6b 003A: downloadReport が normalizeReportPrize() を呼ぶ');
+assert(/normalizeReportPrize\s*\(/.test(brBody),
+  'S7-6b 003A: buildReportHtml が normalizeReportPrize() を呼ぶ');
 // REPORT-UX-007A で本 defer は解消済み。officeName は state.report 経由に。
 //   旧 002 時点の 'FAX（943-9443）' / '沼津支部事務局' ハードコード literal は撤去された。
 //   FAX削除対応（Codex 追加 Must Fix）: FAX 番号は実在しないため報告書から削除。
-//   downloadReport 本体に FAX literal も normalizeReportFax 呼出も残っていないことを確認する。
-assert(drBody.indexOf('FAX（943-9443）') === -1,
-  'S7-7 FAX 番号 literal は downloadReport 本体に無い（FAX削除）');
-assert(!/normalizeReportFax\s*\(/.test(drBody),
-  'S7-7b downloadReport は FAX を出力しないため normalizeReportFax() を呼ばない（FAX削除）');
-assert(drBody.indexOf("'沼津支部事務局'") === -1 && drBody.indexOf('"沼津支部事務局"') === -1,
+//   buildReportHtml 本体に FAX literal も normalizeReportFax 呼出も残っていないことを確認する。
+assert(brBody.indexOf('FAX（943-9443）') === -1,
+  'S7-7 FAX 番号 literal は buildReportHtml 本体に無い（FAX削除）');
+assert(!/normalizeReportFax\s*\(/.test(brBody),
+  'S7-7b buildReportHtml は FAX を出力しないため normalizeReportFax() を呼ばない（FAX削除）');
+assert(brBody.indexOf("'沼津支部事務局'") === -1 && brBody.indexOf('"沼津支部事務局"') === -1,
   'S7-7c 事務局名 literal は REPORT-UX-007A で撤去済み（state.report.officeName 経由）');
-assert(/normalizeReportOfficeName\s*\(/.test(drBody),
-  'S7-7d 007A: downloadReport が normalizeReportOfficeName() を呼ぶ');
+assert(/normalizeReportOfficeName\s*\(/.test(brBody),
+  'S7-7d 007A: buildReportHtml が normalizeReportOfficeName() を呼ぶ');
 
 // ============================================================
 // SECTION B: 振る舞いテスト (loadEnv 経由)

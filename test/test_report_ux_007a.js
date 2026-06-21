@@ -124,7 +124,9 @@ assert(/function\s+normalizeReportOfficeName\s*\(/.test(htmlSrc), 'A1-2 normaliz
 
 // A5
 {
-  const m = htmlSrc.match(/function downloadReport\(\)[\s\S]*?\n\}\n/);
+  // B-5b (#300): HTML 生成部は buildReportHtml() へ抽出。生成本体を対象に検査する
+  //   （assert ラベルの downloadReport は報告書生成フローの歴史的表記として保持）。
+  const m = htmlSrc.match(/function buildReportHtml\(\)[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
   // FAX削除対応: downloadReport は FAX を一切出力しないため、fax を参照しない。
   assert(!/normalizeReportFax\s*\(/.test(body),

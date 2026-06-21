@@ -905,6 +905,19 @@ else
 fi
 
 echo ""
+echo "【DOWNLOAD-REPORT-CHAR-001 downloadReport の HTML payload を Blob-stub で捕捉（B-5b 抽出の byte 一致番人）】"
+if [ -f "$SCRIPT_DIR/test_download_report_characterization_001.js" ]; then
+  if node "$SCRIPT_DIR/test_download_report_characterization_001.js" "$TARGET" > /tmp/download_report_char_001_out.log 2>&1; then
+    ok "DOWNLOAD-REPORT-CHAR-001 テスト 全PASS ($(tail -1 /tmp/download_report_char_001_out.log))"
+  else
+    ng "DOWNLOAD-REPORT-CHAR-001 テスト 失敗（payload 差分の可能性。意図的更新は UPDATE_GOLDEN=1 で再採取）"
+    cat /tmp/download_report_char_001_out.log
+  fi
+else
+  warn "test_download_report_characterization_001.js が見つからない"
+fi
+
+echo ""
 echo "【CHAR evaluatePairingQuality ペアリング品質評価の詳細分岐（characterization）】"
 if [ -f "$SCRIPT_DIR/test_char_pairing_quality_001.js" ]; then
   if node "$SCRIPT_DIR/test_char_pairing_quality_001.js" "$TARGET" > /tmp/char_pairing_quality_001_out.log 2>&1; then
