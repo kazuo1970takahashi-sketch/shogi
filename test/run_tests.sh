@@ -429,6 +429,22 @@ else
 fi
 
 # ============================================
+# NORMALIZE-REPORT-FIELD-001 normalizeReport* 集約（normalizeReportField + 設定テーブル）/ #285
+# ============================================
+echo ""
+echo "【NORMALIZE-REPORT-FIELD-001 report 正規化ヘルパー集約（汎用関数＋ラッパー委譲恒等性）】"
+if [ -f "$SCRIPT_DIR/test_normalize_report_field_001.js" ]; then
+  if node "$SCRIPT_DIR/test_normalize_report_field_001.js" "$TARGET" > /tmp/normalize_report_field_001_out.log 2>&1; then
+    ok "NORMALIZE-REPORT-FIELD-001 テスト 全PASS ($(tail -1 /tmp/normalize_report_field_001_out.log))"
+  else
+    ng "NORMALIZE-REPORT-FIELD-001 テスト 失敗"
+    cat /tmp/normalize_report_field_001_out.log
+  fi
+else
+  warn "test_normalize_report_field_001.js が見つからない"
+fi
+
+# ============================================
 # LIVE-MOBILE-SCOREBOARD-001 スマホ閲覧専用ビュー（?view=scoreboard / 最終更新 / read-only）
 # ============================================
 echo ""
