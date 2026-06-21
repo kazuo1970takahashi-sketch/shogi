@@ -5095,6 +5095,17 @@ function addPlayer(){
     }
   }
 
+  // Issue #272(b): 開始済みクラスの「2回戦以降（確定済み回戦あり）」への参加者追加は、すでに生成済みの
+  //   現回戦の組み合わせに含まれず待機になる上、人数を奇数化して以降の組み合わせに影響しうる。誤操作で
+  //   進行中の大会に紛れ込むのを防ぐため、運営に確認する（最低限の通知ガード。1回戦の途中受付＝results
+  //   が空のクラスは対象外で従来どおり追加できる）。キャンセル時は追加しない。
+  if(isClassStarted(cls)&&state.results&&Array.isArray(state.results[cls])&&state.results[cls].length>=1){
+    var roundsDone272=state.results[cls].length;
+    if(!confirm(cls+'クラスはすでに'+roundsDone272+'回戦まで進行しています。\nいま追加すると、この参加者は現在の組み合わせには入らず、'+(roundsDone272+1)+'回戦以降の対象になります（人数が奇数の回戦では1名が待機になります）。\n\n追加してよろしいですか？')){
+      return;
+    }
+  }
+
   var id='p'+Date.now()+Math.floor(Math.random()*1000);
   var newPlayer={id:id,name:name,cls:cls,member:memberValue,grade:gradeValue};
   if(memberIdValue)newPlayer.member_id=memberIdValue;
@@ -6344,6 +6355,31 @@ function getUnassignedFirstRoundPlayers(cls){
   return out;
 }
 
+// Issue #272: 2回戦以降に人数が奇数のとき generatePairing が「待機(leftover)」として現回戦の
+//   組み合わせから外した1名を派生で返す（state に保存しない・副作用なし）。運営に「誰が待機か」を
+//   明示するための表示専用 reader。1回戦(results 空)の未割当は getUnassignedFirstRoundPlayers が
+//   担うため対象外。pairings が空（未生成/全局終了）も対象外。待機者は不戦勝にしない＝勝数・
+//   SOS/SODOS に影響しない（getWins は results のみ集計）。配列順（players の登録順）を保つ。
+function getRoundLeftoverPlayers(cls){
+  var players=(state&&state.players&&state.players[cls])||[];
+  var results=(state&&state.results&&state.results[cls])||[];
+  if(results.length===0)return [];
+  var pairings=(state&&state.pairings&&state.pairings[cls])||[];
+  if(pairings.length===0)return [];
+  var assigned={};
+  for(var i=0;i<pairings.length;i++){
+    var m=pairings[i];if(!m)continue;
+    if(m.p1)assigned[m.p1]=true;
+    if(m.p2)assigned[m.p2]=true;
+  }
+  var out=[];
+  for(var j=0;j<players.length;j++){
+    var p=players[j];if(!p)continue;
+    if(!assigned[p.id])out.push(p);
+  }
+  return out;
+}
+
 // FRP-IMPL-004B (設計 §5.4 / §5.4.1 / §5.4.2): 「組み合わせを再生成」(repairBtn_) を出力してよいかを判定する reader。
 //   以下4条件すべてが真のときだけ false（＝部分手合い組成中で未割当が残る初回 round）を返し、それ以外は true。
 //     - isClassStarted(cls)
@@ -6884,9 +6920,27 @@ function generatePairing(cls){
     return false;
   }
 
+  // Issue #272: 2回戦以降に人数が奇数になると、従来の backtrack は「完全マッチング」を要求して
+  //   解なし(false)となり pairs が空のまま返り、state.pairings[cls] が 0 卓に潰れていた（警告も
+  //   出ず空回戦が表示され進行不能）。buildFirstRoundPartialPairs と同じ「末尾1人を待機(leftover)
+  //   として組み合わせから外す」方針に揃え、残り偶数人で floor(N/2) 卓を生成する。待機者は
+  //   不戦勝にしない（勝数・SOS/SODOS に一切影響させない＝getWins は results のみ集計）。state には
+  //   保存せず、現回戦の pairings に含めないだけで派生表示 getRoundLeftoverPlayers が運営へ明示する。
+  //   submitRound は 2回戦以降に限りこの待機1名を許容して回戦を確定できる。偶数 N は leftover を
+  //   作らないため backtrack はそのまま走り従来挙動と完全一致（N=6/8 不変）。待機者は sorted の末尾
+  //   ＝最少勝ち数の1名（同勝数内は既存 Fisher-Yates シャッフル順）。
+  if(sorted.length%2===1){
+    pairedArr[sorted.length-1]=true;   // 末尾1人を待機にして残り偶数人をペアリング対象にする
+  }
   if(!backtrack(0,false))backtrack(0,true);
 
   state.pairings[cls]=pairs;
+  // Issue #272 (c): 2名以上いるのに 0 卓になった場合（奇数対応後は通常発生しない安全網）は、空回戦の
+  //   まま黙って進行不能になるのを避け、運営へ警告する。
+  if(pairs.length===0&&players.length>=2){
+    if(typeof showMsg==='function')showMsg('組み合わせを生成できませんでした（'+cls+'クラス）。参加者数をご確認ください','warn');
+    if(typeof console!=='undefined'&&console.warn)console.warn('Issue #272: generatePairing produced 0 tables (cls='+cls+', players='+players.length+')');
+  }
   save();
   // A-5.1-SAVE-003 / SAVE-004: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
   // false は「保存未確認」（保存失敗と断定しない）。組合せ生成は rollback しない・運営は継続する。
@@ -7137,7 +7191,13 @@ function submitRound(cls){
     var p=state.players[cls][i];
     if(!usedIds[p.id])missing.push(p.name);
   }
-  if(missing.length>0){
+  // Issue #272: 2回戦以降に人数が奇数のとき generatePairing は末尾1人を待機(leftover)として
+  //   組み合わせから外す（不戦勝にしない）。その1名は当回戦の pairings に入らないため、ここで全員
+  //   割当を必須にすると確定できず進行不能になる。よって「2回戦以降(results>=1)」かつ「奇数(N%2===1)」
+  //   のときに限り未割当1名までを許容する（待機者は次回戦で組み合わせに戻る）。1回戦(results===0)は
+  //   従来どおり全員割当必須（FRP の未割当は別経路で扱う）。偶数 N は許容0＝従来挙動と完全一致。
+  var allowedMissing=(state.results[cls].length>=1)?(state.players[cls].length%2):0;
+  if(missing.length>allowedMissing){
     alert('次の参加者が対局に登録されていません：\n'+missing.join('、')+'\n\n「対戦相手変更」または「組み合わせを再生成」で全員を対局に入れてください。');return;
   }
   state.results[cls].push(JSON.parse(JSON.stringify(state.pairings[cls])));
@@ -7243,6 +7303,13 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
   html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3>'+roundNum+'回戦 組み合わせ</h3><span style="background:#2E75B6;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px">'+roundNum+' / '+state.rounds+'回戦</span></div>';
   if(duplicatePlayers.length>0){
     html+='<div class="alert alert-err">同じ選手が複数の対局に入っています：'+escapeHtml(duplicatePlayers.map(function(pid){return getName(pid,cls);}).join('、'))+'</div>';
+  }
+
+  // Issue #272: 待機者（2回戦以降の奇数で組み合わせから外れた1名）を運営に明示する（表示のみ・ブロックしない）。
+  var leftoverPlayers=getRoundLeftoverPlayers(cls);
+  if(leftoverPlayers.length>0){
+    var leftoverNames=leftoverPlayers.map(function(p){return getName(p.id,cls);}).join('、');
+    html+='<div class="alert alert-warn" style="margin-bottom:12px">⚠ 人数が奇数のため、今回戦は次の参加者が待機です（不戦勝にはなりません）：'+escapeHtml(leftoverNames)+'<div style="font-size:11px;color:#666;margin-top:4px">※ 待機者は勝敗に影響しません。確定すると次の回戦で組み合わせに戻ります。</div></div>';
   }
 
   // A-4 §1, §6: ペアリング品質評価 → 警告バナー（表示のみ・ブロックしない）
