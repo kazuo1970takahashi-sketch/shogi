@@ -171,6 +171,34 @@ function mkMaster(){
   };
 }
 
+// B-4a（#293）: 過去参加者パネルの comparator 分岐を byte 固定するための架空マスタ群。
+// 「他」タブ（_ppCompareOtherRow）: ふりがな空2名（→空が先・氏名昇順）＋ other 行1名（ゔ始まり）。
+function mkPpOtherRowMaster(){
+  return { schema_version:1, members:[
+    {id:'o-empty-wo',name:'を員乙',yomi:'',last_class:'A',last_attended:'2026-03-03',first_attended:'2025-01-01',attendance_count:1,tournament_ids:['t'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''},
+    {id:'o-empty-a',name:'あ員甲',yomi:'',last_class:'A',last_attended:'2026-02-02',first_attended:'2025-01-01',attendance_count:1,tournament_ids:['t'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''},
+    {id:'o-other-vu',name:'ゔ員丙',yomi:'ゔあ',last_class:'A',last_attended:'2026-01-01',first_attended:'2025-01-01',attendance_count:1,tournament_ids:['t'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''}
+  ]};
+}
+// within_3mo（FixedDate todayYmd=2024-06-14・UTC 機では 06-13）を TZ 非依存にする架空マスタ。
+//   採用 last_attended は threshold(≈2024-03-15/16)と today(2024-06-13/14)の両境界から十分離す:
+//   2024-05-01・2024-04-10 は ±1 日の境界揺れでも常に窓内、2024-01-01 は常に窓外。
+//   → スナップショット出力（窓内2名・降順）はローカル TZ に依存しない。
+function mkWithin3moMaster(){
+  return { schema_version:1, members:[
+    {id:'w-in-1',name:'近員甲',yomi:'',last_class:'A',last_attended:'2024-05-01',first_attended:'2024-01-01',attendance_count:1,tournament_ids:['t'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''},
+    {id:'w-in-2',name:'近員乙',yomi:'',last_class:'A',last_attended:'2024-04-10',first_attended:'2024-01-01',attendance_count:1,tournament_ids:['t'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''},
+    {id:'w-out',name:'遠員丙',yomi:'',last_class:'A',last_attended:'2024-01-01',first_attended:'2023-01-01',attendance_count:1,tournament_ids:['t'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''}
+  ]};
+}
+// 同 last_attended・同 name・id のみ相違（_ppCompareAllRow の「同値→1」境界＝2要素で入力順保持）。
+function mkPpTieMaster(){
+  return { schema_version:1, members:[
+    {id:'tie-1',name:'同名一致',yomi:'',last_class:'A',last_attended:'2026-05-10',first_attended:'2025-01-01',attendance_count:1,tournament_ids:['t'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''},
+    {id:'tie-2',name:'同名一致',yomi:'',last_class:'A',last_attended:'2026-05-10',first_attended:'2025-01-01',attendance_count:1,tournament_ids:['t'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''}
+  ]};
+}
+
 // ============================================================
 // スナップショット採取
 // ============================================================
@@ -230,6 +258,16 @@ function buildSnapshot(env){
   // --- 過去参加者パネル（quickFilter=null＝今日非依存。state は注入済み）---
   cap('buildPastParticipantsPanelHtml__all', function(){ return env.buildPastParticipantsPanelHtml(mkMaster(), '', 'all', null); });
   cap('buildPastParticipantsPanelHtml__search', function(){ return env.buildPastParticipantsPanelHtml(mkMaster(), '架空', 'all', null); });
+
+  // --- 過去参加者パネル B-4a（#293）: comparator 分岐 + 日付フィルタ + tie-break を FixedDate 下で byte 固定。---
+  //   state.players 空（全 member→未エントリー）で comparator/フィルタ出力に集中。
+  //   recent_last は todayStr 非依存（最終参加日の最大値）/ within_3mo は境界回避 fixture で TZ 非依存。
+  env._setState({players:{A:[],B:[]}});
+  cap('buildPastParticipantsPanelHtml__other_row', function(){ return env.buildPastParticipantsPanelHtml(mkPpOtherRowMaster(), '', 'other', null); });
+  cap('buildPastParticipantsPanelHtml__yomi_row_ka', function(){ return env.buildPastParticipantsPanelHtml(mkMaster(), '', 'ka', null); });
+  cap('buildPastParticipantsPanelHtml__quick_recent_last', function(){ return env.buildPastParticipantsPanelHtml(mkMaster(), '', 'all', 'recent_last'); });
+  cap('buildPastParticipantsPanelHtml__quick_within_3mo', function(){ return env.buildPastParticipantsPanelHtml(mkWithin3moMaster(), '', 'all', 'within_3mo'); });
+  cap('buildPastParticipantsPanelHtml__sort_tie_all', function(){ return env.buildPastParticipantsPanelHtml(mkPpTieMaster(), '', 'all', null); });
 
   // --- 支部マスタ同期（valid tournament_date＝今日非依存。返り値 master を pin）---
   cap('updateBranchMasterFromTournament__existing_and_new', function(){

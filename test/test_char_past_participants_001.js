@@ -8,8 +8,11 @@
 //     - buildPastParticipantsPanelHtml(master, filter, yomiRow, quickFilter): 過去参加者一覧 HTML。
 //         deleted 除外・検索/50音タブ/クイックフィルタ・グローバル state.players による
 //         A済/B済/未エントリーの3セクション分割・XSS エスケープ。
-//   quickFilter は今日非依存の no_yomi のみ検証（recent_last/within_3mo は todayYmd 依存のため不採用）。
-//   入力は完全架空。shogi_v4.html は一切変更しない。
+//   quickFilter は今日非依存の no_yomi / 不正値のみ検証（recent_last/within_3mo は todayYmd 依存のため
+//   本ファイルでは不採用＝FixedDate を持つ test_golden_master_001.js 側で byte 固定する）。
+//   B-4a（#293）追加: 50音「他」/特定行のフィルタ・並び順（最終参加日降順）・不正 quickFilter・
+//   検索 value と member id の XSS エスケープ・C 以降クラス在籍の現状 section（「C 落ち」＝未修正仕様）・
+//   last_attended 空・全角空白検索。すべて今日非依存・完全架空。shogi_v4.html は一切変更しない。
 
 const fs = require('fs');
 
@@ -172,6 +175,85 @@ function mkMaster(){
   var html = env.buildPastParticipantsPanelHtml(master, '', 'all', null);
   assert(has(html,'&lt;b&gt;架空&lt;/b&gt;'), 'PB10-1 氏名の <b> はエスケープされて出力');
   assert(!has(html,'<b>架空</b>'), 'PB10-2 生の <b>架空</b> は出力されない（XSS 安全）');
+})();
+
+// ---- PB11: 50音「他」タブ（yomiRow='other'）→ ふりがな空 + other 行のみ・active マークアップ ----
+(function(){
+  env._setState({players:{A:[],B:[]}});
+  var html = env.buildPastParticipantsPanelHtml(mkMaster(), '', 'other', null);
+  assert(has(html,'pp-yomi-tab active" data-row="other"'), 'PB11-1 yomiRow=other で「他」タブが active');
+  assert(has(html,'架空二郎'), 'PB11-2 ふりがな空（架空二郎）は「他」に含まれる');
+  assert(!has(html,'架空一郎') && !has(html,'架空三郎'), 'PB11-3 か行（かく…）の架空一郎/三郎は「他」に出ない');
+})();
+
+// ---- PB12: 50音「か」タブ → か行（かく…）の member のみ ----
+(function(){
+  env._setState({players:{A:[],B:[]}});
+  var html = env.buildPastParticipantsPanelHtml(mkMaster(), '', 'ka', null);
+  assert(has(html,'pp-yomi-tab active" data-row="ka"'), 'PB12-1 yomiRow=ka で「か」タブが active');
+  assert(has(html,'架空一郎') && has(html,'架空三郎'), 'PB12-2 か行の架空一郎/三郎が表示される');
+  assert(!has(html,'架空二郎'), 'PB12-3 ふりがな空の架空二郎は「か」タブに出ない');
+})();
+
+// ---- PB13: 並び順（「全」タブ＝最終参加日 降順。section 分割前のソートを特性化）----
+(function(){
+  env._setState({players:{A:[],B:[]}});
+  var html = env.buildPastParticipantsPanelHtml(mkMaster(), '', 'all', null);
+  var i3=html.indexOf('架空三郎'), i1=html.indexOf('架空一郎'), i2=html.indexOf('架空二郎');
+  assert(i3>=0&&i1>=0&&i2>=0&&i3<i1&&i1<i2, 'PB13-1 全タブは最終参加日 降順（三郎2026-06-01→一郎2026-05-10→二郎2026-04-10）');
+})();
+
+// ---- PB14: 不正な quickFilter 値 → フィルタ無効化（null 同等・どのボタンも active にならない）----
+(function(){
+  env._setState({players:{A:[],B:[]}});
+  var html = env.buildPastParticipantsPanelHtml(mkMaster(), '', 'all', 'BOGUS_KEY');
+  assert(!has(html,'pp-quick-filter-btn active'), 'PB14-1 不正 quickFilter ではどのクイックフィルタも active にならない');
+  assert(has(html,'架空一郎')&&has(html,'架空二郎')&&has(html,'架空三郎'), 'PB14-2 不正 quickFilter は全件表示（フィルタ無効）');
+})();
+
+// ---- PB15: 検索 value の quote / & / apostrophe エスケープ ----
+(function(){
+  env._setState({players:{A:[],B:[]}});
+  var html = env.buildPastParticipantsPanelHtml(mkMaster(), '"&\'', 'all', null);
+  assert(has(html,'value="&quot;&amp;&#39;"'), 'PB15-1 検索 value の " & \' は &quot;&amp;&#39; にエスケープ');
+})();
+
+// ---- PB16: メンバー id の XSS エスケープ（data-mid）----
+(function(){
+  env._setState({players:{A:[],B:[]}});
+  var master = {schema_version:1,members:[
+    {id:'"><img>',name:'攻撃太郎',yomi:'',last_class:'A',last_attended:'2026-01-01',first_attended:'2025-01-01',attendance_count:1,tournament_ids:['t1'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''}
+  ]};
+  var html = env.buildPastParticipantsPanelHtml(master, '', 'all', null);
+  assert(has(html,'data-mid="&quot;&gt;&lt;img&gt;"'), 'PB16-1 メンバー id はエスケープされて data-mid に出る');
+  assert(!has(html,'"><img>'), 'PB16-2 生の "><img> は出力されない（XSS 安全）');
+})();
+
+// ---- PB17: C 以降クラス在籍 member の現状（未エントリーに集計・A/B active 無し）----
+//   ※「C 落ち」は現状仕様。B-4a では修正しない（修正＝挙動変更＝別 Issue）。現状を固定する番人。
+(function(){
+  env._setState({players:{A:[],B:[],C:[{id:'rpc',name:'架空一郎',member_id:'m-001'}]}});
+  var html = env.buildPastParticipantsPanelHtml(mkMaster(), '', 'all', null);
+  assert(has(html,'未エントリー (3名)'), 'PB17-1 C 在籍 member も現状は「未エントリー」に集計（3名）');
+  assert(has(html,'Aクラスエントリー済 (0名)')&&has(html,'Bクラスエントリー済 (0名)'), 'PB17-2 A済/B済 はいずれも 0名');
+  assert(!has(html,'pp-add-btn-active'), 'PB17-3 C 在籍では A/B ボタンの active 強調は付かない（現状仕様）');
+})();
+
+// ---- PB18: last_attended='' の member（表示はされる・メタ行に日付なし）----
+(function(){
+  env._setState({players:{A:[],B:[]}});
+  var master = {schema_version:1,members:[
+    {id:'noatt',name:'無記録',yomi:'',last_class:'',last_attended:'',first_attended:'',attendance_count:0,tournament_ids:[],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''}
+  ]};
+  var html = env.buildPastParticipantsPanelHtml(master, '', 'all', null);
+  assert(has(html,'無記録'), 'PB18-1 last_attended 空でも member は一覧に表示される');
+})();
+
+// ---- PB19: 全角空白のみの検索 → 正規化で非マッチ・ヒット0（現状挙動）----
+(function(){
+  env._setState({players:{A:[],B:[]}});
+  var html = env.buildPastParticipantsPanelHtml(mkMaster(), '　', 'all', null);
+  assert(has(html,'該当する参加者がいません'), 'PB19-1 全角空白検索は現状ヒット0（「該当する参加者がいません」）');
 })();
 
 console.log('  過去参加者パネル characterization テスト: PASS '+pass+'件 / FAIL '+fail+'件');
