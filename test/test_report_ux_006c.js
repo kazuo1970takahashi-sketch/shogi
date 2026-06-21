@@ -145,7 +145,9 @@ assert(/function\s+normalizeReportNote\s*\(/.test(htmlSrc), 'A1-3 normalizeRepor
 
 // A5
 {
-  const m = htmlSrc.match(/function downloadReport\(\)[\s\S]*?\n\}\n/);
+  // B-5b (#300): HTML 生成部は buildReportHtml() へ抽出。生成本体を対象に検査する
+  //   （assert ラベルの downloadReport は報告書生成フローの歴史的表記として保持）。
+  const m = htmlSrc.match(/function buildReportHtml\(\)[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
   assert(/normalizeReportSei\s*\(\s*state\.report\s*&&\s*state\.report\.sei\s*\)/.test(body),
     'A5-1 downloadReport が normalizeReportSei(state.report && state.report.sei) を呼ぶ');
@@ -164,7 +166,9 @@ assert(/function\s+normalizeReportNote\s*\(/.test(htmlSrc), 'A1-3 normalizeRepor
 
 // A6: note 表示 fallback は state には保存せず downloadReport 内
 {
-  const m = htmlSrc.match(/function downloadReport\(\)[\s\S]*?\n\}\n/);
+  // B-5b (#300): HTML 生成部は buildReportHtml() へ抽出。生成本体を対象に検査する
+  //   （assert ラベルの downloadReport は報告書生成フローの歴史的表記として保持）。
+  const m = htmlSrc.match(/function buildReportHtml\(\)[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
   // noteRaw||'特になし' の形で表示時 fallback がある
   assert(/noteRaw\s*\|\|\s*['"]特になし['"]/.test(body),

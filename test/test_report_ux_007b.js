@@ -120,7 +120,9 @@ assert(/function\s+normalizeReportAccountingNote\s*\(/.test(htmlSrc),
 
 // A5
 {
-  const m = htmlSrc.match(/function downloadReport\(\)[\s\S]*?\n\}\n/);
+  // B-5b (#300): HTML 生成部は buildReportHtml() へ抽出。生成本体を対象に検査する
+  //   （assert ラベルの downloadReport は報告書生成フローの歴史的表記として保持）。
+  const m = htmlSrc.match(/function buildReportHtml\(\)[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
   assert(/normalizeReportAccountingNote\s*\(\s*state\.report\s*&&\s*state\.report\.accountingNote\s*\)/.test(body),
     'A5-1 downloadReport が normalizeReportAccountingNote(state.report && state.report.accountingNote) を呼ぶ');

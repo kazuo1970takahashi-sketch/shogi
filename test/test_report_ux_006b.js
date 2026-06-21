@@ -141,7 +141,9 @@ function assertEq(a,b,msg){
 
 // A5: downloadReport が state を SoT として使う
 {
-  const m = htmlSrc.match(/function downloadReport\(\)[\s\S]*?\n\}\n/);
+  // B-5b (#300): HTML 生成部は buildReportHtml() へ抽出。生成本体を対象に検査する
+  //   （assert ラベルの downloadReport は報告書生成フローの歴史的表記として保持）。
+  const m = htmlSrc.match(/function buildReportHtml\(\)[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
   assert(/normalizeReportDateForInput\s*\(\s*state\.report\s*&&\s*state\.report\.date\s*\)/.test(body),
     'A5-1 downloadReport が normalizeReportDateForInput(state.report && state.report.date) を呼ぶ');
@@ -160,7 +162,9 @@ function assertEq(a,b,msg){
 
 // A6: ファイル名 dateNum も state 経由
 {
-  const m = htmlSrc.match(/function downloadReport\(\)[\s\S]*?\n\}\n/);
+  // B-5b (#300): HTML 生成部は buildReportHtml() へ抽出。生成本体を対象に検査する
+  //   （assert ラベルの downloadReport は報告書生成フローの歴史的表記として保持）。
+  const m = htmlSrc.match(/function buildReportHtml\(\)[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
   // var dateNum=dateRaw.split('-').join(''); 形式（state 経由の dateRaw を再利用）
   assert(/var\s+dateNum\s*=\s*dateRaw\.split\(['"]-['"]\)\.join\(['"]['"]\)/.test(body),

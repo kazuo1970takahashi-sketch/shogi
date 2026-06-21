@@ -132,7 +132,9 @@ assert(/function\s+normalizeReportPlace\s*\(/.test(htmlSrc),
 
 // A8
 {
-  const m = htmlSrc.match(/function downloadReport\(\)[\s\S]*?\n\}\n/);
+  // B-5b (#300): HTML 生成部は buildReportHtml() へ抽出。生成本体を対象に検査する
+  //   （assert ラベルの downloadReport は報告書生成フローの歴史的表記として保持）。
+  const m = htmlSrc.match(/function buildReportHtml\(\)[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
   assert(/normalizeReportPlace\s*\(/.test(body),
     'A8-1 downloadReport が normalizeReportPlace() を呼ぶ');
