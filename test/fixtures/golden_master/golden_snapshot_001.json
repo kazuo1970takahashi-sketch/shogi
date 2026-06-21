@@ -465,6 +465,72 @@
       "tournament_id": "gt_2026_06_14"
     }
   },
+  "participantDisplay__getNameWithNo_entry_no_fallback": "03｜<b>強</b>",
+  "participantDisplay__getNameWithNo_entry_no_present": "01｜山田太郎",
+  "participantDisplay__getNameWithNo_not_found": "--｜(削除)",
+  "participantDisplay__getName_found": "山田太郎",
+  "participantDisplay__getName_not_found": "(削除)",
+  "participantDisplay__label_compact": "A-12 山田太郎",
+  "participantDisplay__label_compact_record": "A-12 山田太郎（2勝0敗）",
+  "participantDisplay__label_html_name_unescaped": "A-01 <b>x</b>",
+  "participantDisplay__label_no_entry_no": "A--- 匿名",
+  "participantDisplay__label_no_name": "A-05",
+  "participantDisplay__label_null": "",
+  "participantDisplay__label_standard_cat_record": "B-03 佐藤（他 / 1勝2敗）",
+  "participantDisplay__label_standard_category": "A-01 山田（沼津支部員）",
+  "participantDisplay__nameWithNoRubyHtml_furigana": "01｜<ruby>山田太郎<rt>やまだたろう</rt></ruby>",
+  "participantDisplay__nameWithNoRubyHtml_html_name_fallback": "03｜&lt;b&gt;強&lt;/b&gt;",
+  "participantDisplay__nameWithNoRubyHtml_no_furigana": "02｜佐藤花子",
+  "participantDisplay__nameWithNoRubyHtml_not_found": "--｜(削除)",
+  "participantDisplay__nameWithNoRubyHtml_zenkaku_space_yomi": "10｜A&amp;B&quot;C&#39;D",
+  "participantDisplay__renderRuby_empty_yomi": {
+    "nodeType": 3,
+    "textContent": "山田太郎"
+  },
+  "participantDisplay__renderRuby_html_in_name": {
+    "childNodes": [
+      {
+        "nodeType": 3,
+        "textContent": "<b>強</b>"
+      },
+      {
+        "nodeType": 1,
+        "tagName": "rt",
+        "textContent": "つよし"
+      }
+    ],
+    "nodeType": 1,
+    "tagName": "ruby"
+  },
+  "participantDisplay__renderRuby_null_args": {
+    "nodeType": 3,
+    "textContent": ""
+  },
+  "participantDisplay__renderRuby_with_yomi": {
+    "childNodes": [
+      {
+        "nodeType": 3,
+        "textContent": "山田太郎"
+      },
+      {
+        "nodeType": 1,
+        "tagName": "rt",
+        "textContent": "やまだたろう"
+      }
+    ],
+    "nodeType": 1,
+    "tagName": "ruby"
+  },
+  "participantDisplay__renderRuby_zenkaku_space_yomi": {
+    "nodeType": 3,
+    "textContent": "山田太郎"
+  },
+  "participantDisplay__rubyHtml_empty_yomi": "山田太郎",
+  "participantDisplay__rubyHtml_html_escape": "<ruby>&lt;b&gt;強&lt;/b&gt;<rt>&lt;i&gt;つよし&lt;/i&gt;</rt></ruby>",
+  "participantDisplay__rubyHtml_null_args": "",
+  "participantDisplay__rubyHtml_quotes_amp": "A&amp;B&quot;C&#39;D",
+  "participantDisplay__rubyHtml_with_yomi": "<ruby>山田太郎<rt>やまだたろう</rt></ruby>",
+  "participantDisplay__rubyHtml_zenkaku_space_yomi": "山田太郎",
   "updateBranchMasterFromTournament__existing_and_new": {
     "members": [
       {
