@@ -2295,6 +2295,34 @@ function createMemberFromParticipant(p,master,date){
   };
 }
 
+// Issue #273: 支部マスタ同期/統合のクラス列挙を「全クラス対応」にするための純関数。
+//   旧実装は updateBranchMasterFromTournament / mergeTournamentParticipantsIntoMaster の双方で
+//   var classes=['A','B'] とハードコードしており、addClass()/nextClassId() で追加できる C 以降の
+//   クラス参加者がマスタ同期（「大会データをコピー」）・過去大会統合（「マスタ」タブ）の両経路から
+//   黙って取りこぼされていた。state.classes（normalizeState が常に整える権威リスト・A/B を必ず含む）
+//   の id を主とし、保存揺れに備えて Object.keys(state.players) も union する（重複除外・順序は
+//   classes 優先 → players のみに存在する id を後置）。A/B のみの state では ['A','B'] と同順・同一
+//   結果＝既存挙動不変（行順・件数を保つ）。state-like を読むだけ（global state 非依存・副作用なし）。
+//   空/不正入力は [] を返す。
+function listClassIdsForMasterSync(st){
+  var ids=[];
+  var seen={};
+  if(st&&Array.isArray(st.classes)){
+    for(var i=0;i<st.classes.length;i++){
+      var c=st.classes[i];
+      if(c&&typeof c.id==='string'&&c.id&&!seen[c.id]){seen[c.id]=true;ids.push(c.id);}
+    }
+  }
+  if(st&&st.players&&typeof st.players==='object'){
+    var keys=Object.keys(st.players);
+    for(var k=0;k<keys.length;k++){
+      var key=keys[k];
+      if(key&&!seen[key]&&Array.isArray(st.players[key])){seen[key]=true;ids.push(key);}
+    }
+  }
+  return ids;
+}
+
 function updateBranchMasterFromTournament(state,master,tournamentMeta){
   if(!state||!master||!Array.isArray(master.members))return master;
   if(!tournamentMeta||!tournamentMeta.tournament_id)return master;
@@ -2305,7 +2333,9 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
 
   var affected={};
   var pendingSkippedNames=[];
-  var classes=['A','B'];
+  // Issue #273: A/B 固定をやめ全クラス（state.classes / Object.keys(state.players)）を走査し、
+  //   C 以降のクラス参加者がマスタ同期から取りこぼされる問題を解消する。A/B のみの大会は同順・不変。
+  var classes=listClassIdsForMasterSync(state);
   for(var ci=0;ci<classes.length;ci++){
     var cls=classes[ci];
     var players=(state.players&&Array.isArray(state.players[cls]))?state.players[cls]:[];
@@ -3901,7 +3931,9 @@ function mergeTournamentParticipantsIntoMaster(tournaments,master){
     if(!raw||typeof raw!=='object'){skipped++;continue;}
     var tempState=normalizeState(raw);
     var meta=deriveTournamentMetaForMigration(raw,entry.filename||'',master);
-    var classes=['A','B'];
+    // Issue #273: A/B 固定をやめ、各大会の tempState の全クラス（state.classes / players キー）を走査し、
+    //   C 以降のクラス参加者が過去大会統合から取りこぼされる問題を解消する。A/B のみの大会は同順・不変。
+    var classes=listClassIdsForMasterSync(tempState);
     for(var ci=0;ci<classes.length;ci++){
       var cls=classes[ci];
       var players=tempState.players[cls]||[];

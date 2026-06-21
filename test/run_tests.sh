@@ -820,6 +820,25 @@ else
 fi
 
 # ============================================
+# ISSUE-273 BRANCH-MASTER-ALL-CLASSES C 以降クラスの支部マスタ同期/過去大会統合への反映
+#   updateBranchMasterFromTournament（同期）/ mergeTournamentParticipantsIntoMaster（統合）の
+#   クラス列挙を ['A','B'] 固定から listClassIdsForMasterSync（state.classes / players キー駆動）へ。
+#   C 以降の取りこぼし解消・A/B のみは件数/行順不変・last_class は A/B/null 不変条件を温存 を固定する。
+# ============================================
+echo ""
+echo "【ISSUE-273 C 以降クラスの支部マスタ同期/統合反映（全クラス列挙・A/B 不変・last_class 不変条件）】"
+if [ -f "$SCRIPT_DIR/test_branch_master_all_classes_273.js" ]; then
+  if node "$SCRIPT_DIR/test_branch_master_all_classes_273.js" "$TARGET" > /tmp/branch_master_all_classes_273_out.log 2>&1; then
+    ok "ISSUE-273 テスト 全PASS ($(tail -1 /tmp/branch_master_all_classes_273_out.log))"
+  else
+    ng "ISSUE-273 テスト 失敗"
+    cat /tmp/branch_master_all_classes_273_out.log
+  fi
+else
+  warn "test_branch_master_all_classes_273.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
