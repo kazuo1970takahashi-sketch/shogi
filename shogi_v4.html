@@ -2529,6 +2529,40 @@ function _buildPpControlsHtml(filter,row,qf){
   return html;
 }
 
+// B-4b（#295）: 過去参加者パネルの「現在登録クラス判定（currentRegMap）」を純ビルダーへ抽出。
+//   現行ロジックの逐語移植: state.players を全クラス横断で走査し currentRegMap[member_id]=classId。
+//   CV-1 由来で C 在籍も map には 'C' で入る（「C 落ち」は partition 側の現状仕様）。state/state.players
+//   不在ガードも現行どおり。renderPpRow がクロージャ参照する currentRegMap は呼び出し側ローカルに保持する。
+function _buildPpCurrentRegMap(state){
+  var currentRegMap={};
+  if(state&&state.players){
+    // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定をやめ全クラス横断で既登録クラスを判定（C 在籍も既登録扱い）。A/B のみなら従来同一。
+    var regClasses=Object.keys(state.players);
+    for(var rci=0;rci<regClasses.length;rci++){
+      var rArr=state.players[regClasses[rci]]||[];
+      for(var rpi=0;rpi<rArr.length;rpi++){
+        var rp=rArr[rpi];
+        if(rp&&typeof rp.member_id==='string'&&rp.member_id)currentRegMap[rp.member_id]=regClasses[rci];
+      }
+    }
+  }
+  return currentRegMap;
+}
+// B-4b（#295）: 過去参加者パネルの「3 セクション分割」を純ビルダーへ抽出（現行ロジックの逐語移植）。
+//   cur==='A'→a / cur==='B'→b / それ以外（C 含む）→notEnrolled。「C 落ち」は現状仕様として保持（修正＝別 Issue）。
+function _partitionPpMembersByRegistration(filtered,currentRegMap){
+  var aEnrolledFiltered=[];
+  var bEnrolledFiltered=[];
+  var notEnrolledFiltered=[];
+  for(var fi=0;fi<filtered.length;fi++){
+    var cur=currentRegMap[filtered[fi].id];
+    if(cur==='A')aEnrolledFiltered.push(filtered[fi]);
+    else if(cur==='B')bEnrolledFiltered.push(filtered[fi]);
+    else notEnrolledFiltered.push(filtered[fi]);
+  }
+  return {a:aEnrolledFiltered,b:bEnrolledFiltered,notEnrolled:notEnrolledFiltered};
+}
+
 function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
   var query=filter||'';
@@ -2571,27 +2605,13 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   html+='<div id="pp-hint" style="font-size:11px;color:#888;margin-bottom:4px">追加先を選択（A/Bボタンで指定クラスへ追加）</div>';
   html+='<div style="max-height:280px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;padding:6px;margin-bottom:8px">';
   // A-4.3 §2.1 / A-4.5 §2.1: state.players ベースで現在登録中クラスを判定し、3 セクション(A 済 / B 済 / 未エントリー)に分割
-  var currentRegMap={};
-  if(state&&state.players){
-    // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定をやめ全クラス横断で既登録クラスを判定（C 在籍も既登録扱い）。A/B のみなら従来同一。
-    var regClasses=Object.keys(state.players);
-    for(var rci=0;rci<regClasses.length;rci++){
-      var rArr=state.players[regClasses[rci]]||[];
-      for(var rpi=0;rpi<rArr.length;rpi++){
-        var rp=rArr[rpi];
-        if(rp&&typeof rp.member_id==='string'&&rp.member_id)currentRegMap[rp.member_id]=regClasses[rci];
-      }
-    }
-  }
-  var aEnrolledFiltered=[];
-  var bEnrolledFiltered=[];
-  var notEnrolledFiltered=[];
-  for(var fi=0;fi<filtered.length;fi++){
-    var cur=currentRegMap[filtered[fi].id];
-    if(cur==='A')aEnrolledFiltered.push(filtered[fi]);
-    else if(cur==='B')bEnrolledFiltered.push(filtered[fi]);
-    else notEnrolledFiltered.push(filtered[fi]);
-  }
+  // B-4b（#295）: currentRegMap 構築と section 分割を純ビルダーへ抽出（挙動完全同値）。
+  //   currentRegMap は下の renderPpRow がクロージャ参照するため、同一ローカルスコープに保持する。
+  var currentRegMap=_buildPpCurrentRegMap(state);
+  var ppSections=_partitionPpMembersByRegistration(filtered,currentRegMap);
+  var aEnrolledFiltered=ppSections.a;
+  var bEnrolledFiltered=ppSections.b;
+  var notEnrolledFiltered=ppSections.notEnrolled;
   // A-4.5 §2.2 + §4 #6 / A-4.6 §2.1: 行描画 helper。
   // 行内要素は A-4.3 と同じ + 2 段レイアウト維持(行構造は A-4.5 と完全同一、A-4.4 失敗の轍を踏まない)。
   // A-4.6: 現クラス active の **ボタン style のみ** 色強調復活(背景色 + ✓ + bold + pp-add-btn-active クラス)。
