@@ -2387,11 +2387,17 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
         }
       }
       addTournamentIdOnce(member,tid);
+      // Issue #273 / Codex P1: last_class は「最新出席の所属クラス」を表す（A/B→その文字・C 以降→null）。
+      //   この大会が member の最新出席になるとき（既存 last_attended 以降、または初出席）だけ last_class を
+      //   上書きし、より古い大会で新しいクラスを潰さない。C 以降は A/B/null 不変条件を保つため null に揃える。
+      //   旧実装は A/B のときだけ上書きし、C 以降の参加では過去の stale な "A"/"B" が残って「前回:A/B」を
+      //   誤表示し、サジェスト・過去参加者追加が古いクラスを優先してしまっていた（最新出席で必ず是正する）。
+      var isLatestAttendance273=isValidYmd(date)&&(!member.last_attended||date>=member.last_attended);
       if(isValidYmd(date)){
         if(!member.last_attended||date>=member.last_attended)member.last_attended=date;
         if(!member.first_attended||date<member.first_attended)member.first_attended=date;
       }
-      if(p.cls==='A'||p.cls==='B')member.last_class=p.cls;
+      if(isLatestAttendance273)member.last_class=(p.cls==='A'||p.cls==='B')?p.cls:null;
       // A-3: 支部員区分・中学生以下区分の前回値を記録（次回サジェスト引き継ぎ用）
       if(p.member==='member'||p.member==='other')member.member=p.member;
       if(p.grade==='ippan'||p.grade==='chu')member.grade=p.grade;
@@ -3961,11 +3967,16 @@ function mergeTournamentParticipantsIntoMaster(tournaments,master){
           matched++;
         }
         addTournamentIdOnce(member,meta.tournament_id);
+        // Issue #273 / Codex P1: 統合経路も同様に last_class を「最新出席のクラス」に揃える。
+        //   この大会が member の最新出席（既存 last_attended 以降、または初出席）になるときだけ上書きし、
+        //   古い大会で新しいクラスを潰さない。C 以降は A/B/null 不変条件を保つため null に揃える
+        //   （旧実装は A/B のみ上書きし、C 以降の統合で stale な "A"/"B" が残って C→null 不変条件を破っていた）。
+        var isLatestAttendance273=isValidYmd(meta.tournament_date)&&(!member.last_attended||meta.tournament_date>=member.last_attended);
         if(isValidYmd(meta.tournament_date)){
           if(!member.last_attended||meta.tournament_date>=member.last_attended)member.last_attended=meta.tournament_date;
           if(!member.first_attended||meta.tournament_date<member.first_attended)member.first_attended=meta.tournament_date;
         }
-        if(p.cls==='A'||p.cls==='B')member.last_class=p.cls;
+        if(isLatestAttendance273)member.last_class=(p.cls==='A'||p.cls==='B')?p.cls:null;
         recalcMemberAttendance(member);
       }
     }

@@ -10,6 +10,8 @@
 //     SYNC    A2+B2+C2 → master 6 名（C 以降が同期に反映・member_id でリンク）。
 //     SYNCAB  A/B のみは件数・行順（A→B・各クラス内 players 順）が不変。
 //     LASTCLS 同期後 A→last_class='A' / C→last_class=null（A/B/null 不変条件を破らない）。
+//     LASTCLS-STALE Codex P1: 既存 member の stale last_class を最新出席のクラスで是正（C 最新→null /
+//                   古い大会の同期・統合は新しい last_class を潰さない）。
 //     MERGE   過去大会統合で A+B+C → master 3 名（C 以降が統合に反映）。A/B のみは不変。
 //     HELPER  listClassIdsForMasterSync の union/dedup/順序/空入力。
 //   完全架空データのみ（架空 …）。runtime（shogi_v4.html）以外は無改変。
@@ -143,6 +145,56 @@ function memberById(master,id){ for(var i=0;i<master.members.length;i++){ if(mas
   assert(aMem&&aMem.last_class==='A','LASTCLS-1 A 参加者の last_class は "A"（従来どおり）');
   assert(bMem&&bMem.last_class==='B','LASTCLS-2 B 参加者の last_class は "B"（従来どおり）');
   assert(cMem&&cMem.last_class===null,'LASTCLS-3 C 参加者の last_class は null（A/B/null 不変条件を破らず同期）');
+}
+
+// ============================================================
+// LASTCLS-STALE. Codex P1: 既存 member の stale last_class を「最新出席のクラス」で是正する。
+//   - C 以降が最新出席になると A/B の stale last_class を null へクリア（前回:A/B 誤表示・古いクラス優先を防ぐ）。
+//   - より古い大会の同期/統合では新しい last_class を潰さない（最新出席のときだけ上書き）。
+// ============================================================
+{
+  // 同期: 既存 member(last_class='A', 旧 last_attended) が今回 C で最新出席 → null へクリア
+  var env=loadEnv();
+  var s=buildState(env,{C:['架空シー再来']});
+  s.players.C[0].member_id='m_stale_sync';
+  var master={version:2,members:[{
+    id:'m_stale_sync',name:'架空シー再来',yomi:'',last_class:'A',
+    last_attended:'2026-01-01',first_attended:'2026-01-01',attendance_count:1,
+    tournament_ids:['t_old'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''
+  }]};
+  env.updateBranchMasterFromTournament(s,master,{tournament_id:'t_new',tournament_date:'2026-06-21'});
+  var m1=memberById(master,'m_stale_sync');
+  assert(m1&&m1.last_class===null,'LASTCLS-STALE-1 同期: C で最新出席になった既存 member の stale last_class("A") を null にクリア');
+  assert(m1&&m1.last_attended==='2026-06-21','LASTCLS-STALE-2 同期: last_attended が今回の最新日に更新される');
+
+  // 同期: 既存 member(last_class=null, 新しい last_attended) を「過去日」の A で同期 → null のまま（潰さない）
+  var env2=loadEnv();
+  var s2=buildState(env2,{A:['架空エー古参']});
+  s2.players.A[0].member_id='m_keep_sync';
+  var master2={version:2,members:[{
+    id:'m_keep_sync',name:'架空エー古参',yomi:'',last_class:null,
+    last_attended:'2026-12-01',first_attended:'2026-01-01',attendance_count:2,
+    tournament_ids:['t_recent'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''
+  }]};
+  env2.updateBranchMasterFromTournament(s2,master2,{tournament_id:'t_older',tournament_date:'2026-03-01'});
+  var m2=memberById(master2,'m_keep_sync');
+  assert(m2&&m2.last_class===null,'LASTCLS-STALE-3 同期: 過去日の A 同期は最新の last_class(null) を潰さない（最新出席時のみ上書き）');
+  assert(m2&&m2.last_attended==='2026-12-01','LASTCLS-STALE-4 同期: 過去日同期では last_attended も不変（最新を保持）');
+
+  // 統合: 既存 member(last_class='B') を C の大会で最新統合 → null へクリア（C→null 不変条件）
+  var env3=loadEnv();
+  var master3={version:2,members:[{
+    id:'m_stale_merge',name:'架空シー統合済',yomi:'',last_class:'B',
+    last_attended:'2026-01-01',first_attended:'2026-01-01',attendance_count:1,
+    tournament_ids:['t_old_b'],deleted:false,deleted_at:null,note:'',member:'member',grade:'ippan',city:''
+  }]};
+  var raw3={rounds:4,started:true,
+    classes:[{id:'C',name:'Cクラス',started:true}],
+    players:{C:[{id:'c1',name:'架空シー統合済',cls:'C',member:'member',grade:'ippan',entry_no:1,member_id:'m_stale_merge'}]},
+    pairings:{},results:{},tournament_id:'t_merge_c_latest',tournament_date:'2026-06-21',report:{date:'2026年6月21日'}};
+  env3.mergeTournamentParticipantsIntoMaster([{raw:raw3,filename:'20260621_merge.json'}],master3);
+  var m3=memberById(master3,'m_stale_merge');
+  assert(m3&&m3.last_class===null,'LASTCLS-STALE-5 統合: C の最新統合で既存 member の stale last_class("B") を null にクリア');
 }
 
 // ============================================================
