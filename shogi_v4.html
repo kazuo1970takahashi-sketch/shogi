@@ -9042,6 +9042,21 @@ function buildReportHtml(){
   //   escapeHtml(...).split('\n').join('<br>') で XSS 安全 + 改行表示に変換する（note と同パターン）。
   var accountingNote=normalizeReportAccountingNote(state.report&&state.report.accountingNote);
 
+  // REPORT-REFACTOR-B5C: 報告書 footer（申し送り事項 table ＋ 事務局名/会計提出文の <p>2行）を
+  //   buildReportHtml 内のネスト関数として抽出（引数なし・note/officeName/accountingNote を
+  //   クロージャ参照＝既存 rankRow / buildClassRankRows と同じスタイル）。下の巨大 concat から
+  //   該当範囲（申し送り table 〜 footer <p>2つ）をそのまま移動しただけで出力は byte 同値。
+  //   escape 位置（escapeHtml(note).split('\n').join('<br>') / escapeHtml(officeName) /
+  //   escapeHtml(accountingNote).split('\n').join('<br>')）は不変。top-level helper は追加しない。
+  function buildReportFooterHtml(){
+    return '<table>'
+      +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold;width:120px">申し送り事項</td>'
+      +'<td style="padding:6px 10px;border:1px solid #999;height:60px">'+escapeHtml(note).split('\n').join('<br>')+'</td></tr>'
+      +'</table>'
+      +'<p style="margin-top:12px;font-size:11px">※ホームページ掲載の為、当日夜までにメールまたは直接'+escapeHtml(officeName)+'まで</p>'
+      +'<p style="font-size:11px">'+escapeHtml(accountingNote).split('\n').join('<br>')+'</p>';
+  }
+
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
     +'<title>'+escapeHtml(reportTitleWithSuffix)+'</title>'
     +'<style>@page{size:A4;margin:10mm}'
@@ -9092,12 +9107,8 @@ function buildReportHtml(){
     +rankRowsHtml
     +'</table>'
     +'<br>'
-    +'<table>'
-    +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold;width:120px">申し送り事項</td>'
-    +'<td style="padding:6px 10px;border:1px solid #999;height:60px">'+escapeHtml(note).split('\n').join('<br>')+'</td></tr>'
-    +'</table>'
-    +'<p style="margin-top:12px;font-size:11px">※ホームページ掲載の為、当日夜までにメールまたは直接'+escapeHtml(officeName)+'まで</p>'
-    +'<p style="font-size:11px">'+escapeHtml(accountingNote).split('\n').join('<br>')+'</p>'
+    // REPORT-REFACTOR-B5C: 申し送り table 〜 footer <p>2つ を buildReportFooterHtml() へ移動（byte 同値）。
+    +buildReportFooterHtml()
     +'</body></html>';
 
   // REPORT-UX-001: ファイル名用の日付文字列。新 type="date" の YYYY-MM-DD / 旧テキストの
