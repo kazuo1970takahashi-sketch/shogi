@@ -12,11 +12,14 @@
 //     ODD     N=5/7/9 の2回戦: floor(N/2) 卓 + 余り1名待機・二重登録なし・0 卓にならない・進行できる。
 //     EVEN    N=6/8 の2回戦: N/2 卓・待機0・従来挙動不変。
 //     BYE     待機者は不戦勝にしない（勝数・results に勝ちが入らない）。
-//     SUBMIT  round1 奇数は従来どおりブロック / round2 偶数の未割当はブロック / round2 奇数の余り>1 はブロック。
+//     SUBMIT  round1 は未割当をブロック / round2 以降は待機者数でブロックしない（複数の途中追加も確定可・
+//             Codex P1）/ round2 以降の0卓（参加者あり）は退行的空回戦としてガード。
 //     LEFTOVER getRoundLeftoverPlayers が pairings 由来で正しく1名を返す（round1/未生成は []）。
 //     DISPLAY buildCurrentPairingsHtml が待機者を明示（奇数）/ 出さない（偶数）。
 //     ADD     未開始/1回戦中は confirm なし追加 / 2回戦以降は confirm（true で追加・false で中止）。
 //     RELOAD  奇数2回戦の append 済み pairings が normalizeState 往復で復元・待機は派生で再計算。
+//     F2      待機ローテーション: 過去回戦で不在(sitOut 大)の選手は待機に選ばれず対局に入る（Codex P1）。
+//     F3      再戦回避: 待機を固定せず候補を試し、回避可能な再戦(a1対a2)を強制しない（Codex P1）。
 //   完全架空データのみ（架空 …）。既存スキーマ不変（match は {p1,p2,winner,lastModifiedBy}）。
 
 const fs = require('fs');
@@ -203,19 +206,28 @@ function assignedSet(pairings){
   assert(env1._getState().results.A.length===0, 'SUBMIT-1 1回戦は未割当1名でも確定をブロック（待機を許容しない）');
   assert(env1._alerts.length>=1 && env1._alerts.join('\n').indexOf('対局に登録されていません')>=0, 'SUBMIT-2 1回戦ブロック時に未割当アラート');
 
-  // round2 偶数（N=6）で2名未割当 → ブロック（偶数は許容0）
+  // Codex P1: round2 偶数（N=6）で組み合わせ外の待機2名（途中追加相当）→ ブロックせず確定できる。
+  //   旧挙動（偶数は許容0でブロック）は複数の途中追加を進行不能にしたため改める。
   var env2=loadEnv(); stateRound2(env2,'A',6);
   var s2=env2._getState();
-  s2.pairings.A=[{p1:'a1',p2:'a2',winner:'a1',lastModifiedBy:'auto'},{p1:'a3',p2:'a4',winner:'a3',lastModifiedBy:'auto'}]; // a5,a6 未割当
+  s2.pairings.A=[{p1:'a1',p2:'a2',winner:'a1',lastModifiedBy:'auto'},{p1:'a3',p2:'a4',winner:'a3',lastModifiedBy:'auto'}]; // a5,a6 待機
+  assert(env2.getRoundLeftoverPlayers('A').length===2, 'SUBMIT-3 2回戦・偶数でも組み合わせ外の待機者(2名)を検出（待機バナー対象）');
   env2.submitRound('A');
-  assert(env2._getState().results.A.length===1, 'SUBMIT-3 2回戦・偶数の未割当(2名)は従来どおりブロック（許容0）');
+  assert(env2._getState().results.A.length===2, 'SUBMIT-3b 2回戦・偶数で待機2名でも確定できる（複数の途中追加を進行不能にしない＝Codex P1）');
 
-  // round2 奇数（N=7）で3名未割当 → ブロック（許容は1名まで）
+  // round2 奇数（N=7）で待機3名 → 2回戦以降は待機者数でブロックしない（確定できる）
   var env3=loadEnv(); stateRound2(env3,'A',7);
   var s3=env3._getState();
-  s3.pairings.A=[{p1:'a1',p2:'a2',winner:'a1',lastModifiedBy:'auto'},{p1:'a3',p2:'a4',winner:'a3',lastModifiedBy:'auto'}]; // a5,a6,a7 未割当(3)
+  s3.pairings.A=[{p1:'a1',p2:'a2',winner:'a1',lastModifiedBy:'auto'},{p1:'a3',p2:'a4',winner:'a3',lastModifiedBy:'auto'}]; // a5,a6,a7 待機(3)
   env3.submitRound('A');
-  assert(env3._getState().results.A.length===1, 'SUBMIT-4 2回戦・奇数でも未割当が2名以上(3名)ならブロック（許容は1名のみ）');
+  assert(env3._getState().results.A.length===2, 'SUBMIT-4 2回戦・奇数で待機3名でも確定できる（待機者数でブロックしない）');
+
+  // round2 で 0卓（pairings 空）かつ参加者あり → 退行的な空回戦をガードして確定しない
+  var env4=loadEnv(); stateRound2(env4,'A',6);
+  env4._getState().pairings.A=[];
+  env4.submitRound('A');
+  assert(env4._getState().results.A.length===1, 'SUBMIT-5 2回戦で0卓（参加者あり）は空回戦をガードして確定しない');
+  assert(env4._alerts.join('\n').indexOf('組み合わせがありません')>=0, 'SUBMIT-6 0卓ガード時は再生成を促すアラート');
 }
 
 // ============================================================
@@ -319,6 +331,63 @@ function assignedSet(pairings){
   var reEnv=loadEnv(); reEnv._setState(reloaded);
   var glp=reEnv.getRoundLeftoverPlayers('B');
   assert(glp.length===1 && glp[0].id===leftBefore, 'RELOAD-5 待機者は保存されず派生で同じ1名が再計算される');
+}
+
+// ============================================================
+// F2 (Codex P1). 待機ローテーション: 過去回戦で不在(sitOut 大)の選手は待機に選ばれず対局に入る。
+//   2名クラス(a1 が a2 に勝利)へ a3 を途中追加した想定。a3 は1回戦不在＝sitOut=1 なので、
+//   待機候補順(sitOut 昇順→勝ち数昇順)では最後尾になり、何度試行しても待機に選ばれない。
+// ============================================================
+{
+  var env=loadEnv();
+  var s=env.normalizeState({rounds:5,started:true,
+    classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:true}],
+    players:{A:[
+      {id:'a1',name:'架空甲',cls:'A',member:'member',grade:'ippan',entry_no:1,yomi:''},
+      {id:'a2',name:'架空乙',cls:'A',member:'member',grade:'ippan',entry_no:2,yomi:''},
+      {id:'a3',name:'架空丙',cls:'A',member:'member',grade:'ippan',entry_no:3,yomi:''}
+    ],B:[]},pairings:{A:[],B:[]},results:{A:[],B:[]}});
+  s.results.A=[[{p1:'a1',p2:'a2',winner:'a1',lastModifiedBy:'auto'}]];   // 1回戦は a1,a2 のみ・a3 不在(sitOut=1)
+  env._setState(s);
+  var a3Waited=false;
+  for(var tF2=0;tF2<24;tF2++){
+    env.generatePairing('A');
+    var loF2=env.getRoundLeftoverPlayers('A');
+    if(loF2.length===1&&loF2[0].id==='a3')a3Waited=true;
+    env._getState().pairings.A=[];   // 次試行のため pairings をクリア（results は不変）
+  }
+  assert(!a3Waited,'F2-1 過去回戦で不在(sitOut=1)の選手は24回試行しても待機に選ばれない（連続待機の固定を防ぐ）');
+}
+
+// ============================================================
+// F3 (Codex P1). 再戦回避: 待機を固定せず候補を試し、回避可能な再戦(a1対a2)を強制しない。
+//   a1 が a2 に勝った後 a3 を加えた3名。a1対a2 を再戦させず a3 を絡めれば再戦を回避できるので、
+//   待機を a1/a2 のいずれかにして a?-a3 を組む（a1対a2 の卓は作らない）。
+// ============================================================
+{
+  var env=loadEnv();
+  var s=env.normalizeState({rounds:5,started:true,
+    classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:true}],
+    players:{A:[
+      {id:'a1',name:'架空甲',cls:'A',member:'member',grade:'ippan',entry_no:1,yomi:''},
+      {id:'a2',name:'架空乙',cls:'A',member:'member',grade:'ippan',entry_no:2,yomi:''},
+      {id:'a3',name:'架空丙',cls:'A',member:'member',grade:'ippan',entry_no:3,yomi:''}
+    ],B:[]},pairings:{A:[],B:[]},results:{A:[],B:[]}});
+  s.results.A=[[{p1:'a1',p2:'a2',winner:'a1',lastModifiedBy:'auto'}]];   // a1対a2 は対局済み（再戦回避対象）
+  env._setState(s);
+  var rematch=false,allOneTable=true;
+  for(var tF3=0;tF3<24;tF3++){
+    env.generatePairing('A');
+    var prF3=env._getState().pairings.A;
+    if(prF3.length!==1)allOneTable=false;
+    for(var iF3=0;iF3<prF3.length;iF3++){
+      var mF3=prF3[iF3];
+      if((mF3.p1==='a1'&&mF3.p2==='a2')||(mF3.p1==='a2'&&mF3.p2==='a1'))rematch=true;
+    }
+    env._getState().pairings.A=[];
+  }
+  assert(allOneTable,'F3-1 3名は毎回 1卓+待機1名（0卓に潰れない）');
+  assert(!rematch,'F3-2 24回試行しても a1対a2 の再戦を強制しない（待機候補を試して再戦回避を優先）');
 }
 
 console.log('');
