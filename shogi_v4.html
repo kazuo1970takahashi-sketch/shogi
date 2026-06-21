@@ -8640,7 +8640,13 @@ function buildPdfDocHeaderHtml(kindLabel){
   return '<header class="doc-header"><div class="doc-title">'+escapeHtml(titleLine)+'</div>'+metaHtml+'</header>';
 }
 
-function printResults(){
+// REFACTOR B-5a (#298): printResults の HTML 生成部を副作用なしの builder として抽出。
+//   旧 printResults の「var html 完成まで」を逐語移動し return html。printResults 側は
+//   builder 呼出＋Blob/open/print の薄い wrapper に縮約（挙動完全同値）。builder は現行どおり
+//   global state / 既存 helper（calcFinal/computeDisplayRanks/buildPdfDocHeaderHtml/
+//   buildTournamentPdfFilename 等）を直読みする（side-effect-free だが厳密 pure ではない）。
+//   出力 byte 一致は test/test_print_results_characterization_001.js が固定する。
+function buildPrintResultsHtml(){
   // ROUND-CLASS-START-007 (spec §15.1):
   //   印刷帳票を state.classes 駆動で組み立てる（A/B 固定 literal 解消）。
   //   getRegistrationClassList() を使い、renderRegList / calcTotal と同じ source of truth に揃える。
@@ -8759,7 +8765,14 @@ function printResults(){
     +'<h2>スイス式トーナメント　対戦成績</h2>'
     +tablesHtml
     +'</body></html>';
+  return html;
+}
 
+// printResults: buildPrintResultsHtml() の出力を Blob 化し別タブで開いて印刷する薄い wrapper。
+//   副作用のみ（MIME text/html;charset=utf-8 / window.open(url,'_blank') / load→afterprint→print
+//   の登録順 / win.print() / revokeObjectURL のタイミング / alert 文言）は現行どおり不変。
+function printResults(){
+  var html=buildPrintResultsHtml();
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob);
   var win=window.open(url,'_blank');

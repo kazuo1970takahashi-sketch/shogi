@@ -892,6 +892,19 @@ else
 fi
 
 echo ""
+echo "【PRINT-RESULTS-CHAR-001 printResults の HTML payload を Blob-stub で捕捉（B-5a 抽出の byte 一致番人）】"
+if [ -f "$SCRIPT_DIR/test_print_results_characterization_001.js" ]; then
+  if node "$SCRIPT_DIR/test_print_results_characterization_001.js" "$TARGET" > /tmp/print_results_char_001_out.log 2>&1; then
+    ok "PRINT-RESULTS-CHAR-001 テスト 全PASS ($(tail -1 /tmp/print_results_char_001_out.log))"
+  else
+    ng "PRINT-RESULTS-CHAR-001 テスト 失敗（payload 差分の可能性。意図的更新は UPDATE_GOLDEN=1 で再採取）"
+    cat /tmp/print_results_char_001_out.log
+  fi
+else
+  warn "test_print_results_characterization_001.js が見つからない"
+fi
+
+echo ""
 echo "【CHAR evaluatePairingQuality ペアリング品質評価の詳細分岐（characterization）】"
 if [ -f "$SCRIPT_DIR/test_char_pairing_quality_001.js" ]; then
   if node "$SCRIPT_DIR/test_char_pairing_quality_001.js" "$TARGET" > /tmp/char_pairing_quality_001_out.log 2>&1; then

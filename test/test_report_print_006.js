@@ -7,11 +7,12 @@
 //     A1. printResults() 関数定義あり
 //     A2. h2 「スイス式トーナメント　対戦成績」が維持されている
 //     A3. UI ボタン文言「対戦成績を印刷 / PDF保存」が維持されている
-//     A4. printResults 本体が共通 helper(buildTournamentPdfFilename / buildPdfDocHeaderHtml)経由で
-//         ファイル名/見出しを生成し、その helper が normalize 系を必ず通す（正規化の意図は不変）
+//     A4. 帳票生成本体(B-5a で buildPrintResultsHtml へ抽出)が共通 helper(buildTournamentPdfFilename /
+//         buildPdfDocHeaderHtml)経由でファイル名/見出しを生成し、その helper が normalize 系を必ず
+//         通す（正規化の意図は不変）。A4-e: printResults は builder へ委譲する薄い wrapper。
 //     A5. 旧 literal 「沼津支部月例将棋大会 対戦成績」「沼津支部_<y>年<m>月度_月例将棋大会結果」
-//         が printResults 本体から撤去されている
-//     A6. printResults 本体に escapeHtml 経由の <title> 生成あり
+//         が帳票生成本体(buildPrintResultsHtml)から撤去されている
+//     A6. 帳票生成本体(buildPrintResultsHtml)に escapeHtml 経由の <title> 生成あり
 //
 //   B. state.report.title 連動
 //     B1. state.report.title='特別大会' → 生成 HTML <title> に '特別大会' が含まれる
@@ -215,45 +216,55 @@ assert(htmlSrc.indexOf("<h2>スイス式トーナメント　対戦成績</h2>")
 assert(/onclick="printResults\(\)"[^>]*>対戦成績を印刷 \/ PDF保存</.test(htmlSrc),
   'A3 UI ボタン文言「対戦成績を印刷 / PDF保存」が維持されている');
 
-// A4 / A5 / A6: printResults 本体 inspection
+// A4 / A5 / A6: 帳票 HTML 生成部の構造検査
+//   REFACTOR B-5a (#298): printResults の HTML 生成部は buildPrintResultsHtml() へ抽出され、
+//   printResults はそれを呼ぶ薄い wrapper になった。帳票生成の構造検査（helper 委譲・旧 literal
+//   撤去・escapeHtml 経由 <title>）は生成本体である buildPrintResultsHtml を対象に行う（意図は不変）。
 {
-  const m = htmlSrc.match(/function printResults\(\)[\s\S]*?\n\}\n/);
-  const body = m ? m[0] : '';
-  assert(body.length > 0, 'A4-pre printResults 本体を抽出できる');
+  const mp = htmlSrc.match(/function printResults\(\)[\s\S]*?\n\}\n/);
+  const wrapper = mp ? mp[0] : '';
+  const mb = htmlSrc.match(/function buildPrintResultsHtml\(\)[\s\S]*?\n\}\n/);
+  const body = mb ? mb[0] : '';
+  assert(wrapper.length > 0, 'A4-pre printResults wrapper を抽出できる');
+  assert(body.length > 0, 'A4-pre2 buildPrintResultsHtml 本体を抽出できる');
 
-  // A4 (Codex Must Fix 2): printResults 本体はファイル名/見出しを共通 helper に委譲する。
+  // A4-e (B-5a): printResults は HTML 生成を buildPrintResultsHtml() へ委譲する薄い wrapper。
+  assert(/buildPrintResultsHtml\s*\(/.test(wrapper),
+    'A4-e printResults が buildPrintResultsHtml() へ委譲している（B-5a 抽出）');
+
+  // A4 (Codex Must Fix 2): 帳票生成本体はファイル名/見出しを共通 helper に委譲する。
   //   委譲先 (buildTournamentPdfFilename / buildPdfDocHeaderHtml) が内部で normalizeReportTitle /
-  //   normalizeReportDateForInput を必ず通すため、printResults からの直接参照ではなく
+  //   normalizeReportDateForInput を必ず通すため、直接参照ではなく
   //   「helper 経由で正規化済みの大会情報由来になっている」ことを検査する（意図は不変）。
   assert(/buildTournamentPdfFilename\s*\(/.test(body),
-    'A4-a printResults 本体が buildTournamentPdfFilename() 経由でファイル名を生成（正規化済み大会名由来）');
+    'A4-a buildPrintResultsHtml 本体が buildTournamentPdfFilename() 経由でファイル名を生成（正規化済み大会名由来）');
   assert(/buildPdfDocHeaderHtml\s*\(/.test(body),
-    'A4-b printResults 本体が buildPdfDocHeaderHtml() 経由で見出しを生成（正規化済み日付/大会名由来）');
+    'A4-b buildPrintResultsHtml 本体が buildPdfDocHeaderHtml() 経由で見出しを生成（正規化済み日付/大会名由来）');
   // A4-c/A4-d: 委譲先 helper が normalize helper を必ず通すこと（正規化の意図を担保）
   assert(/function buildTournamentPdfFilename[\s\S]*?normalizeReportTitle\s*\(/.test(htmlSrc),
     'A4-c buildTournamentPdfFilename() が normalizeReportTitle() を通す');
   assert(/function buildTournamentTargetMonthLabel[\s\S]*?normalizeReportDateForInput\s*\(/.test(htmlSrc),
     'A4-d 月度ラベル生成 buildTournamentTargetMonthLabel() が normalizeReportDateForInput() を通す');
 
-  // A5: 旧 literal が printResults 本体の **アクティブコード** から撤去されている
+  // A5: 旧 literal が帳票生成本体の **アクティブコード** から撤去されている
   //   （コメント中の歴史的記述には残るが、それは migration 説明として許容する。
   //    アクティブな string literal 形式 / template 形式のみを禁止する。）
   // A5-a: 旧 <title> literal '<title>沼津支部月例将棋大会 対戦成績</title>' （HTML 形式）が出ない
   assert(body.indexOf('<title>沼津支部月例将棋大会 対戦成績</title>') < 0,
-    'A5-a printResults 本体に旧 <title> literal 「<title>沼津支部月例将棋大会 対戦成績</title>」が残っていない');
+    'A5-a buildPrintResultsHtml 本体に旧 <title> literal 「<title>沼津支部月例将棋大会 対戦成績</title>」が残っていない');
   // A5-b: 旧 file 名 template `+y+'年'+m+'月度_月例将棋大会結果'` が出ない
   assert(!/\+y\+'年'\+m\+'月度_月例将棋大会結果'/.test(body),
-    'A5-b printResults 本体に旧 file 名 template 「+y+\'年\'+m+\'月度_月例将棋大会結果\'」が残っていない');
+    'A5-b buildPrintResultsHtml 本体に旧 file 名 template 「+y+\'年\'+m+\'月度_月例将棋大会結果\'」が残っていない');
   // A5-c: 旧 接頭辞 literal '沼津支部_' (single-quoted) が出ない
   assert(body.indexOf("'沼津支部_'") < 0,
-    'A5-c printResults 本体に旧 literal 接頭辞 "沼津支部_" が残っていない');
+    'A5-c buildPrintResultsHtml 本体に旧 literal 接頭辞 "沼津支部_" が残っていない');
   // A5-d: 旧 二段階置換 (html.replace) が撤去されている
   assert(body.indexOf('html.replace') < 0,
-    'A5-d printResults 本体で <title> の二段階置換 (html.replace) が撤去されている');
+    'A5-d buildPrintResultsHtml 本体で <title> の二段階置換 (html.replace) が撤去されている');
 
   // A6: escapeHtml 経由 <title>
   assert(/<title>'\+escapeHtml\(/.test(body) || /<title>['"]\s*\+\s*escapeHtml\s*\(/.test(body),
-    'A6 printResults 本体で <title> に escapeHtml 経由の値が入る');
+    'A6 buildPrintResultsHtml 本体で <title> に escapeHtml 経由の値が入る');
 }
 
 // ============================================================
