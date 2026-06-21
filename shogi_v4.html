@@ -1166,6 +1166,61 @@ function formatJapaneseTimeFromHhmm(hm){
   return String(parseInt(m[1],10))+'時'+m[2]+'分';
 }
 
+// ============================================================
+// REPORT-FIELD-NORMALIZE (Phase B-1 集約 / #285):
+//   下の normalizeReportTitle / Organizer / Fax / OfficeName / AccountingNote /
+//   Place / Sei / Fuku / Note / Prize は、いずれも「文字列を trim し、空なら既定値へ
+//   fallback」（title は末尾「報告書」除去、prize は数値 0 以上のみ採用）という同型処理。
+//   これを 1 つの汎用関数 normalizeReportField(value, key) ＋ 設定テーブル
+//   REPORT_FIELD_SPECS に集約する。各 normalizeReportX(value) は本テーブルを引く薄い
+//   ラッパーへ退避し、入力・出力は従来と 1 バイトも変わらない（動作を変えない純リファクタ）。
+//   各フィールド個別の詳細仕様は、従来どおり各ラッパー直前のコメントを参照。
+//
+//   spec のキー:
+//     def        … 既定値（fallback）。
+//     stripSuffix… title 専用。trim 後に末尾「報告書」を 1 回だけ除去し、trailing 空白を再 trim。
+//     numeric    … prize 専用。0 以上の有限数のみ採用し、他（NaN/Infinity/負数/非数値）は def(=7000)。
+//   string フィールド共通: 文字列なら trim し、結果が非空ならそれを、空 / 非文字列は def を返す。
+//   （帳票表示は呼出側 downloadReport 等で escapeHtml されるため本 helper では sanitize しない）
+// ============================================================
+var REPORT_FIELD_SPECS={
+  title:{def:'沼津支部月例将棋大会', stripSuffix:true},
+  organizer:{def:'日本将棋連盟沼津支部'},
+  fax:{def:'943-9443'},
+  officeName:{def:'沼津支部事務局'},
+  accountingNote:{def:'※役員会で会計長へ収支報告書として提出ください。'},
+  place:{def:'労政会館'},
+  sei:{def:''},
+  fuku:{def:''},
+  note:{def:''},
+  prize:{def:7000, numeric:true}
+};
+function normalizeReportField(value, key){
+  var spec=REPORT_FIELD_SPECS[key]||{def:''};
+  if(spec.numeric){
+    // prize: 0 以上の有限数値のみ採用（0 は有効値・Number(value)||def は使わない）。
+    if(typeof value==='number'){
+      if(isFinite(value)&&value>=0)return value;
+      return spec.def;
+    }
+    if(typeof value==='string'){
+      var nt=value.trim();
+      if(nt==='')return spec.def;
+      var n=Number(nt);
+      if(isFinite(n)&&n>=0)return n;
+    }
+    return spec.def;
+  }
+  if(typeof value==='string'){
+    var trimmed=value.trim();
+    if(spec.stripSuffix&&trimmed.length>=3&&trimmed.slice(-3)==='報告書'){
+      trimmed=trimmed.slice(0,-3).replace(/[\s　]+$/,'');
+    }
+    if(trimmed!=='')return trimmed;
+  }
+  return spec.def;
+}
+
 // REPORT-UX-004: 大会名（タイトル）正規化 pure helper。
 //   既定値: '沼津支部月例将棋大会'（'報告書' 接尾辞は downloadReport 側で付与）。
 //   - 文字列なら trim する
@@ -1177,18 +1232,7 @@ function formatJapaneseTimeFromHhmm(hm){
 //   - null / undefined / 数値・配列等の非文字列もすべて既定値 fallback
 //   既存帳票互換: state.report.title が無い旧データは normalizeState の schema 既定で
 //   '沼津支部月例将棋大会' になる。
-function normalizeReportTitle(value){
-  if(typeof value==='string'){
-    var trimmed=value.trim();
-    // Codex Must Fix (PR #150): 末尾の '報告書' を 1 回除去して「大会名のみ」に正規化。
-    //   既存帳票では downloadReport が再度 '報告書' を付与するため、入力に含めると二重になる。
-    if(trimmed.length>=3&&trimmed.slice(-3)==='報告書'){
-      trimmed=trimmed.slice(0,-3).replace(/[\s　]+$/,'');
-    }
-    if(trimmed!=='')return trimmed;
-  }
-  return '沼津支部月例将棋大会';
-}
+function normalizeReportTitle(value){ return normalizeReportField(value,'title'); }
 
 // REPORT-UX-005: 主催者名 正規化 pure helper。
 //   既定値: '日本将棋連盟沼津支部'。「主催：」などのラベル文言は state に含めない（純粋な主催者名のみ）。
@@ -1199,13 +1243,7 @@ function normalizeReportTitle(value){
 //     （帳票表示時は downloadReport 側で escapeHtml されるため XSS 安全）
 //   既存帳票互換: state.report.organizer が無い旧データは normalizeState の schema 既定で
 //   '日本将棋連盟沼津支部' になる。
-function normalizeReportOrganizer(value){
-  if(typeof value==='string'){
-    var trimmed=value.trim();
-    if(trimmed!=='')return trimmed;
-  }
-  return '日本将棋連盟沼津支部';
-}
+function normalizeReportOrganizer(value){ return normalizeReportField(value,'organizer'); }
 
 // REPORT-UX-007A: FAX 番号 正規化 pure helper。
 //   FAX削除対応（Codex 追加 Must Fix）: 報告書出力（downloadReport）では FAX を出力しなくなったため、
@@ -1218,13 +1256,7 @@ function normalizeReportOrganizer(value){
 //     （帳票表示時は downloadReport 側で escapeHtml されるため XSS 安全）
 //   既存帳票互換: state.report.fax が無い旧データは normalizeState の schema 既定で
 //   '943-9443' になる。
-function normalizeReportFax(value){
-  if(typeof value==='string'){
-    var trimmed=value.trim();
-    if(trimmed!=='')return trimmed;
-  }
-  return '943-9443';
-}
+function normalizeReportFax(value){ return normalizeReportField(value,'fax'); }
 
 // REPORT-UX-007A: 事務局名 正規化 pure helper。
 //   既定値: '沼津支部事務局'。報告書 footer 1行目 '…直接<officeName>まで' で参照される。
@@ -1235,13 +1267,7 @@ function normalizeReportFax(value){
 //     （帳票表示時は downloadReport 側で escapeHtml されるため XSS 安全）
 //   既存帳票互換: state.report.officeName が無い旧データは normalizeState の schema 既定で
 //   '沼津支部事務局' になる。
-function normalizeReportOfficeName(value){
-  if(typeof value==='string'){
-    var trimmed=value.trim();
-    if(trimmed!=='')return trimmed;
-  }
-  return '沼津支部事務局';
-}
+function normalizeReportOfficeName(value){ return normalizeReportField(value,'officeName'); }
 
 // REPORT-UX-007B-1: 会計提出文（footer 2行目）正規化 pure helper。
 //   既定値: '※役員会で会計長へ収支報告書として提出ください。'
@@ -1254,13 +1280,7 @@ function normalizeReportOfficeName(value){
 //     （帳票表示時は downloadReport 側で escapeHtml されるため XSS 安全）
 //   既存帳票互換: state.report.accountingNote が無い旧データは normalizeState の schema 既定で
 //   '※役員会で会計長へ収支報告書として提出ください。' になり、default 出力は従来と完全一致。
-function normalizeReportAccountingNote(value){
-  if(typeof value==='string'){
-    var trimmed=value.trim();
-    if(trimmed!=='')return trimmed;
-  }
-  return '※役員会で会計長へ収支報告書として提出ください。';
-}
+function normalizeReportAccountingNote(value){ return normalizeReportField(value,'accountingNote'); }
 
 // REPORT-UX-006A: 会場 正規化 pure helper。
 //   既定値: '労政会館'。ラベル「会場」は downloadReport 側で付与し、state には純粋な会場名のみを保存する。
@@ -1272,13 +1292,7 @@ function normalizeReportAccountingNote(value){
 //     （帳票表示時は downloadReport 側で escapeHtml されるため XSS 安全）
 //   既存帳票互換: state.report.place が無い旧データは normalizeState の schema 既定で
 //   '労政会館' になる。
-function normalizeReportPlace(value){
-  if(typeof value==='string'){
-    var trimmed=value.trim();
-    if(trimmed!=='')return trimmed;
-  }
-  return '労政会館';
-}
+function normalizeReportPlace(value){ return normalizeReportField(value,'place'); }
 
 // REPORT-UX-006C: 担当役員（正）正規化 pure helper。
 //   既定値: '' (空欄許容)。氏名フィールドのため空文字を有効値として扱い、specific な default 氏名は持たない。
@@ -1287,23 +1301,11 @@ function normalizeReportPlace(value){
 //   - null / undefined / 数値・配列等の非文字列 → ''
 //   - 長さ制限・特殊文字 sanitization は本タスクでは作り込まない
 //     （帳票表示時は downloadReport 側で escapeHtml されるため XSS 安全）
-function normalizeReportSei(value){
-  if(typeof value==='string'){
-    var trimmed=value.trim();
-    if(trimmed!=='')return trimmed;
-  }
-  return '';
-}
+function normalizeReportSei(value){ return normalizeReportField(value,'sei'); }
 
 // REPORT-UX-006C: 担当役員（副）正規化 pure helper。
 //   仕様は normalizeReportSei と同等（空欄許容、trim、非文字列は ''）。
-function normalizeReportFuku(value){
-  if(typeof value==='string'){
-    var trimmed=value.trim();
-    if(trimmed!=='')return trimmed;
-  }
-  return '';
-}
+function normalizeReportFuku(value){ return normalizeReportField(value,'fuku'); }
 
 // REPORT-UX-006C: 申し送り事項（自由記述）正規化 pure helper。
 //   既定値: '' (空欄許容)。'特になし' fallback は state に保存せず、downloadReport 側で
@@ -1313,32 +1315,14 @@ function normalizeReportFuku(value){
 //   - null / undefined / 数値・配列等の非文字列 → ''
 //   - 改行保持: ' 1行目\n2行目 ' → '1行目\n2行目'
 //   - 帳票表示は downloadReport 側で escapeHtml(note).split('\n').join('<br>') される（XSS 安全 + 改行表示）。
-function normalizeReportNote(value){
-  if(typeof value==='string'){
-    var trimmed=value.trim();
-    if(trimmed!=='')return trimmed;
-  }
-  return '';
-}
+function normalizeReportNote(value){ return normalizeReportField(value,'note'); }
 
 // REPORT-UX-003A: 賞金額（円）正規化 pure helper。
 //   有効値: 0 以上の有限数値（0 を含む）。例: 0, 100, 5000, 7000
 //   不正値: null / undefined / '' / NaN / Infinity / 負数 / 数値化不能文字列 → 既定 7000 fallback
 //   注意: `Number(value) || 7000` は **使わない**（0 が falsy 扱いで 7000 に戻ってしまう）。
 //   数値文字列 ('5000' 等) は明示的に Number(string) で復元する。
-function normalizeReportPrize(value){
-  if(typeof value==='number'){
-    if(isFinite(value)&&value>=0)return value;
-    return 7000;
-  }
-  if(typeof value==='string'){
-    var trimmed=value.trim();
-    if(trimmed==='')return 7000;
-    var n=Number(trimmed);
-    if(isFinite(n)&&n>=0)return n;
-  }
-  return 7000;
-}
+function normalizeReportPrize(value){ return normalizeReportField(value,'prize'); }
 
 // REPORT-UX-002 (Codex Should Fix):
 //   報告書帳票用のクラス表示ラベルを返す pure helper。state.classes[*].name を尊重しつつ、
