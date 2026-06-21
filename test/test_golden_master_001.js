@@ -105,6 +105,12 @@ function loadEnv(){
        calcFinal:calcFinal,
        getWins:getWins,
        getTopPlayers:getTopPlayers,
+       getName:getName,
+       getNameWithNo:getNameWithNo,
+       formatParticipantLabel:formatParticipantLabel,
+       renderPlayerNameWithRuby:renderPlayerNameWithRuby,
+       playerNameRubyHtml:playerNameRubyHtml,
+       nameWithNoRubyHtml:nameWithNoRubyHtml,
        _setState:function(s){ state=s; },
        _getState:function(){ return state; }
      };`
@@ -246,6 +252,68 @@ function buildSnapshot(env){
     var summary = env.mergeTournamentParticipantsIntoMaster(tournaments, master);
     return { summary: summary, memberCount: master.members.length };
   });
+
+  // ============================================================
+  // PHASE B-3 characterization: 参加者表示ヘルパーの現状出力を pin する。
+  //   対象: getName / getNameWithNo / nameWithNoRubyHtml / renderPlayerNameWithRuby /
+  //         playerNameRubyHtml / formatParticipantLabel（Issue #289 のリファクタ対象）。
+  //   網羅: ふりがな有/無・番号有/無(欠落→index+1 fallback)・HTML を含む名前のエスケープ現状・
+  //         not-found（(削除)/--）・全角空白ふりがな（trim→空）・引数 null。
+  //   注意: クラス不在で throw する経路は採取しない（golden は throw を FAIL 扱いするため）。
+  //         本ケースは現行（未リファクタ）コードで採取＝現状の挙動（バグごと）を固定し、
+  //         リファクタ後は snapshot 非更新の byte 一致で挙動不変を証明する。
+  // ============================================================
+  function serializeNode(n){
+    if(n==null)return null;
+    if(typeof n!=='object')return n;
+    var o={nodeType:n.nodeType};
+    if(n.nodeType===1)o.tagName=n.tagName;
+    if(('textContent' in n)&&(n.nodeType===3||!(n.childNodes&&n.childNodes.length)))o.textContent=n.textContent;
+    if(n.childNodes&&n.childNodes.length)o.childNodes=n.childNodes.map(serializeNode);
+    return o;
+  }
+  // id→player を引く関数群（getName/getNameWithNo/nameWithNoRubyHtml）用の架空 state。
+  //   b3p1: 番号有・ふりがな有 / b3p2: 番号有・ふりがな無 / b3p3: 番号欠落(→index+1)・名前に HTML・ふりがな無 /
+  //   b3p4: 番号有(10)・名前に &"' ・ふりがな全角空白(trim→空)。
+  env._setState({players:{A:[
+    {id:'b3p1',name:'山田太郎',cls:'A',member:'member',grade:'ippan',entry_no:1,yomi:'やまだたろう'},
+    {id:'b3p2',name:'佐藤花子',cls:'A',member:'other',grade:'chu',entry_no:2,yomi:''},
+    {id:'b3p3',name:'<b>強</b>',cls:'A',member:'member',grade:'ippan'},
+    {id:'b3p4',name:'A&B"C\'D',cls:'A',member:'member',grade:'ippan',entry_no:10,yomi:'　'}
+  ],B:[]}});
+  cap('participantDisplay__getName_found', function(){ return env.getName('b3p1','A'); });
+  cap('participantDisplay__getName_not_found', function(){ return env.getName('zzz','A'); });
+  cap('participantDisplay__getNameWithNo_entry_no_present', function(){ return env.getNameWithNo('b3p1','A'); });
+  cap('participantDisplay__getNameWithNo_entry_no_fallback', function(){ return env.getNameWithNo('b3p3','A'); });
+  cap('participantDisplay__getNameWithNo_not_found', function(){ return env.getNameWithNo('zzz','A'); });
+  cap('participantDisplay__nameWithNoRubyHtml_furigana', function(){ return env.nameWithNoRubyHtml('b3p1','A'); });
+  cap('participantDisplay__nameWithNoRubyHtml_no_furigana', function(){ return env.nameWithNoRubyHtml('b3p2','A'); });
+  cap('participantDisplay__nameWithNoRubyHtml_html_name_fallback', function(){ return env.nameWithNoRubyHtml('b3p3','A'); });
+  cap('participantDisplay__nameWithNoRubyHtml_zenkaku_space_yomi', function(){ return env.nameWithNoRubyHtml('b3p4','A'); });
+  cap('participantDisplay__nameWithNoRubyHtml_not_found', function(){ return env.nameWithNoRubyHtml('zzz','A'); });
+
+  // ルビ生成（DOM 版 / string 版・引数直渡し。state 非依存）。
+  cap('participantDisplay__renderRuby_with_yomi', function(){ return serializeNode(env.renderPlayerNameWithRuby('山田太郎','やまだたろう')); });
+  cap('participantDisplay__renderRuby_empty_yomi', function(){ return serializeNode(env.renderPlayerNameWithRuby('山田太郎','')); });
+  cap('participantDisplay__renderRuby_zenkaku_space_yomi', function(){ return serializeNode(env.renderPlayerNameWithRuby('山田太郎','　')); });
+  cap('participantDisplay__renderRuby_html_in_name', function(){ return serializeNode(env.renderPlayerNameWithRuby('<b>強</b>','つよし')); });
+  cap('participantDisplay__renderRuby_null_args', function(){ return serializeNode(env.renderPlayerNameWithRuby(null,null)); });
+  cap('participantDisplay__rubyHtml_with_yomi', function(){ return env.playerNameRubyHtml('山田太郎','やまだたろう'); });
+  cap('participantDisplay__rubyHtml_empty_yomi', function(){ return env.playerNameRubyHtml('山田太郎',''); });
+  cap('participantDisplay__rubyHtml_zenkaku_space_yomi', function(){ return env.playerNameRubyHtml('山田太郎','　'); });
+  cap('participantDisplay__rubyHtml_html_escape', function(){ return env.playerNameRubyHtml('<b>強</b>','<i>つよし</i>'); });
+  cap('participantDisplay__rubyHtml_quotes_amp', function(){ return env.playerNameRubyHtml('A&B"C\'D',''); });
+  cap('participantDisplay__rubyHtml_null_args', function(){ return env.playerNameRubyHtml(null,null); });
+
+  // formatParticipantLabel（player オブジェクト→ラベル。#289 では無改変だが現状を pin）。
+  cap('participantDisplay__label_compact', function(){ return env.formatParticipantLabel({cls:'A',entry_no:12,name:'山田太郎'},{}); });
+  cap('participantDisplay__label_compact_record', function(){ return env.formatParticipantLabel({cls:'A',entry_no:12,name:'山田太郎'},{includeRecord:true,record:{wins:2,losses:0}}); });
+  cap('participantDisplay__label_standard_category', function(){ return env.formatParticipantLabel({cls:'A',entry_no:1,name:'山田',member:'member'},{mode:'standard',includeCategory:true}); });
+  cap('participantDisplay__label_standard_cat_record', function(){ return env.formatParticipantLabel({cls:'B',entry_no:3,name:'佐藤',member:'other'},{mode:'standard',includeCategory:true,includeRecord:true,record:{wins:1,losses:2}}); });
+  cap('participantDisplay__label_no_name', function(){ return env.formatParticipantLabel({cls:'A',entry_no:5},{}); });
+  cap('participantDisplay__label_no_entry_no', function(){ return env.formatParticipantLabel({cls:'A',name:'匿名'},{}); });
+  cap('participantDisplay__label_null', function(){ return env.formatParticipantLabel(null,{}); });
+  cap('participantDisplay__label_html_name_unescaped', function(){ return env.formatParticipantLabel({cls:'A',entry_no:1,name:'<b>x</b>'},{}); });
 
   return snap;
 }
