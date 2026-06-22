@@ -132,8 +132,9 @@ function loadEnv(openReturnsNull){
 // ============================================================
 var REPORT = {date:'2026-06-14',place:'架空会館',start:'10:00',end:'16:00',sei:'架空一郎',fuku:'架空四郎',note:'架空メモ',prize:7000,title:'架空将棋大会',organizer:'架空支部'};
 
-// (1) 空 finals 全クラス: players が両クラス空 → calcFinal=[] → 全 buildTable='' →
-//     tables=[] でも HTML 文書を作って開く現行挙動を固定する。
+// (1) 空 finals 全クラス: players が両クラス空 → calcFinal=[] → 全 buildTable=''。
+//     QA D-03（#279）以降は printResults が空帳票を開かず alert+return する（payload golden では
+//     なく後段の d03EmptyGuard で固定）。buildPrintResultsHtml 本体は空でも html を返す（不変）。
 function mkStateAllEmpty(){
   return {
     rounds:2, started:true,
@@ -190,8 +191,10 @@ function mkStateMultiClass(){
   return s;
 }
 
+// QA D-03（#279）: all_empty は printResults が html を開かなくなったため payload 採取対象から外し、
+//   後段の d03EmptyGuard で「開かず alert」を固定する。one_class / multi_class（finals 非空）は
+//   従来どおり payload を byte 固定し、buildPrintResultsHtml() 抽出後も不変であることを要求する。
 var FIXTURES = [
-  {name:'all_empty',     mk:mkStateAllEmpty},
   {name:'one_class',     mk:mkStateOneClass},
   {name:'multi_class',   mk:mkStateMultiClass}
 ];
@@ -287,6 +290,24 @@ if(result.hasBuilder){
   var htmlSame = captured && captured[0] === committed['one_class'].html;
   if(htmlSame && openCalls===1 && alertCalls===1){ pass++; if(process.env.VERBOSE) console.log('  ✓ smoke_open_null'); }
   else{ fail++; console.error('  ✗ smoke(open→null): htmlSame='+htmlSame+' openCalls='+openCalls+' alertCalls='+alertCalls); }
+})();
+
+// ---- QA D-03（#279）: 全クラス finals 0（印刷対象なし）→ 空帳票を開かず alert して return ----
+//   B-5a で「空でも開く」を意図的に保持していた挙動を、本 PR で意図的バグ修正として変更した分の固定。
+(function d03EmptyGuard(){
+  const env = loadEnv(false);
+  env._setState(env.normalizeState(mkStateAllEmpty()));
+  resetCapture();
+  env.printResults();
+  if(openCalls===0 && alertCalls===1 && captured===null){ pass++; if(process.env.VERBOSE) console.log('  ✓ d03_empty_guard(開かず alert)'); }
+  else{ fail++; console.error('  ✗ D-03(全クラス空): openCalls='+openCalls+' alertCalls='+alertCalls+' captured='+(captured===null?'null':'有')); }
+  // builder 本体は空でも html を返す（printResults だけがガード・buildPrintResultsHtml は不変）。
+  if(env.buildPrintResultsHtml){
+    env._setState(env.normalizeState(mkStateAllEmpty()));
+    var emptyHtml = env.buildPrintResultsHtml();
+    if(typeof emptyHtml==='string' && emptyHtml.indexOf('対戦成績')>=0){ pass++; if(process.env.VERBOSE) console.log('  ✓ d03_builder_unchanged'); }
+    else{ fail++; console.error('  ✗ D-03(builder): buildPrintResultsHtml が空ケースで html を返さない'); }
+  }
 })();
 
 console.log('  PRINT-RESULTS-CHAR テスト: PASS ' + pass + '件 / FAIL ' + fail + '件');

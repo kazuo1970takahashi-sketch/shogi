@@ -1060,6 +1060,19 @@ else
   warn "test_state_normalize_guard_312.js が見つからない"
 fi
 
+echo ""
+echo "【QA-MISC-279 (#279) P3 軽微バグ 5 件 D-01/D-03/A-07/A-08/D-02 の意図的修正】"
+if [ -f "$SCRIPT_DIR/test_qa_misc_279.js" ]; then
+  if node "$SCRIPT_DIR/test_qa_misc_279.js" "$TARGET" > /tmp/qa_misc_279_out.log 2>&1; then
+    ok "QA-MISC-279 テスト 全PASS ($(tail -1 /tmp/qa_misc_279_out.log))"
+  else
+    ng "QA-MISC-279 テスト 失敗"
+    cat /tmp/qa_misc_279_out.log
+  fi
+else
+  warn "test_qa_misc_279.js が見つからない"
+fi
+
 # ============================================
 # 最終結果
 # ============================================
