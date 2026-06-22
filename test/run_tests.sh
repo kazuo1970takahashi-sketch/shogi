@@ -894,6 +894,25 @@ else
 fi
 
 # ============================================
+# ISSUE-275 BRANCH-MASTER-SCHEMA-GUARD 支部マスタ schema_version 不一致の無警告破棄を是正
+#   normalizeBranchMaster（未知 schema_version → 空+_loaded_with_corruption で保存スキップ保護）/
+#   loadBranchMaster（読込経路も同様）/ syncBranchMasterOnSave（フラグ由来の空は保存スキップ＝stored 温存）/
+#   正常 v1・schema_version 不在・parse 失敗 catch の非回帰 を固定する。
+# ============================================
+echo ""
+echo "【ISSUE-275 支部マスタ schema_version 不一致の無警告破棄是正（未知版→空+corruptionフラグ→保存スキップ・stored 温存・非回帰）】"
+if [ -f "$SCRIPT_DIR/test_branch_master_schema_guard_275.js" ]; then
+  if node "$SCRIPT_DIR/test_branch_master_schema_guard_275.js" "$TARGET" > /tmp/branch_master_schema_guard_275_out.log 2>&1; then
+    ok "ISSUE-275 テスト 全PASS ($(tail -1 /tmp/branch_master_schema_guard_275_out.log))"
+  else
+    ng "ISSUE-275 テスト 失敗"
+    cat /tmp/branch_master_schema_guard_275_out.log
+  fi
+else
+  warn "test_branch_master_schema_guard_275.js が見つからない"
+fi
+
+# ============================================
 # PHASE-A-TEST-SAFETY-NET (Issue #283): ゴールデンマスター土台 + 薄い領域の characterization
 #   shogi_v4.html 無改変。段階リファクタ（Phase B 以降）の挙動完全不変を機械的に担保する安全網。
 # ============================================

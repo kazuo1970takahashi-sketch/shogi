@@ -1495,7 +1495,15 @@ function normalizeBranchMaster(raw){
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return createEmptyBranchMaster();
   var schema_version=Number(raw.schema_version);
   if(!schema_version||isNaN(schema_version))schema_version=BRANCH_MASTER_SCHEMA_VERSION;
-  if(schema_version!==BRANCH_MASTER_SCHEMA_VERSION)return createEmptyBranchMaster();
+  if(schema_version!==BRANCH_MASTER_SCHEMA_VERSION){
+    // Issue #275 / 仕様書 §3.5: 未知の schema_version（例 2＝新しい版・端末間の版差）は
+    // 読めないが、空マスタを破損フラグ付きで返すことで既存 localStorage の自動上書きを防ぐ
+    // （loadBranchMaster の parse 失敗 catch と同じ保全パターン）。前方互換の移行は行わない。
+    if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタの schema_version が非対応のため空マスタで継続。既存 localStorage は保持。',schema_version);
+    var emptyUnknown=createEmptyBranchMaster();
+    emptyUnknown._loaded_with_corruption=true;
+    return emptyUnknown;
+  }
 
   var membersRaw=Array.isArray(raw.members)?raw.members:[];
   var seenIds={};
