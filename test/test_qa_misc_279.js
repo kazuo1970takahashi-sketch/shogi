@@ -141,6 +141,26 @@ function mkStateGhost(){
     tournament_id:'gt_qa279_ghost'
   };
 }
+// D-02 (Codex P1): 有効な対局1局 + stale 行1局（相手 id が players 不在・winner は有効 player）を
+//   混在させた latent state。fixed では stale 行を wins/played/opponents すべてスキップ（A・played 整合）、
+//   未修正 head（d97a9d2）では getWins が winner-only で stale 勝ちを過剰加算し played-A が負値になる。
+function mkStateGhostWins(){
+  return {
+    rounds:2, started:true,
+    classes:[{id:'A',name:'Aクラス',started:true}],
+    players:{A:[
+      {id:'p1',name:'架空一郎',cls:'A',member:'member',grade:'ippan',entry_no:1},
+      {id:'p2',name:'架空二郎',cls:'A',member:'member',grade:'ippan',entry_no:2}
+    ]},
+    pairings:{A:[]},
+    results:{A:[
+      [{p1:'p1',p2:'p2',winner:'p1'}],            // 有効: p1 が p2 に勝ち（集計対象）
+      [{p1:'p1',p2:'ghost-removed',winner:'p1'}]  // stale: 相手が players 不在（集計対象外）
+    ]},
+    report:{date:'2026-06-14'},
+    tournament_id:'gt_qa279_ghostwins'
+  };
+}
 
 // ============================================================
 let pass=0, fail=0;
@@ -210,6 +230,25 @@ const env = loadEnv();
   try{ finals = env.calcFinal('A'); }catch(e){ threw=true; }
   assert(!threw, 'D-02 players 不在 id を含む results でも calcFinal が throw しない');
   assert(Array.isArray(finals) && finals.length===2, 'D-02 calcFinal は登録 2 名分の結果配列を返す');
+})();
+
+// ---- D-02 (Codex P1): stale 行で勝ち星が過剰加算されない・played 整合・負け数（played-A）非負 ----
+//   未修正 head（d97a9d2）では getWins が stale 勝ちを加算（A=2）し played は増えない（=1）ため
+//   played-A=-1 になる。これらの assert がネガティブコントロールとして head で FAIL する。
+(function d02_codexP1(){
+  env._setState(mkStateGhostWins()); // normalizeState を通さない（latent 経路再現）
+  var finals = env.calcFinal('A');
+  function rowOf(id){ for(var i=0;i<finals.length;i++){ if(finals[i].p.id===id) return finals[i]; } return null; }
+  var r1 = rowOf('p1'), r2 = rowOf('p2');
+  assert(!!r1 && !!r2, 'D-02-P1 p1/p2 双方の結果行が存在する');
+  // 勝ち星は有効な対局（p1 vs p2）のみ。stale 行（p1 vs ghost）を加算しない。
+  assert(!!r1 && r1.A===1, 'D-02-P1 stale 行の勝ち星を加算しない（A=有効1局=1。未修正 head は 2）');
+  assert(!!r1 && r1.played===1, 'D-02-P1 played は有効1局のみ（=1）で wins と整合');
+  // 負け数 = played - A は常に非負（未修正 head は 1-2=-1 で負値）。
+  assert(!!r1 && (r1.played - r1.A) >= 0, 'D-02-P1 負け数（played-A）が非負（未修正 head は -1）');
+  assert(!!r1 && (r1.played - r1.A) === 0, 'D-02-P1 p1 は 1勝0敗（有効1局を勝ち・敗北なし）');
+  // 相手側 p2 も played=1・0勝1敗で整合（stale 行は p2 に影響しない）。
+  assert(!!r2 && r2.A===0 && r2.played===1 && (r2.played - r2.A)===1, 'D-02-P1 p2 は 0勝1敗（played=1）で整合');
 })();
 
 console.log('  QA-MISC-279 (#279) テスト: PASS ' + pass + '件 / FAIL ' + fail + '件');

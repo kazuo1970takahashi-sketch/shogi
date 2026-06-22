@@ -8042,10 +8042,16 @@ function editPastResult(cls,roundIdx,matchIdx){
 
 function calcFinal(cls){
   var players=state.players[cls];
-  var wins=getWins(cls);
+  // QA D-02（#279 / Codex P1 follow-up）: 勝ち星(wins)を getWins(cls) で別走査せず、下の
+  //   results ループ内で played/opponents と「同一の stale 行スキップ判定・同一タイミング」で数える。
+  //   getWins は p1/p2 を検証せず winner を加算するため、players から消えた id を含む stale 行で
+  //   wins だけ過剰加算され played と乖離していた（順位が変わる／負け数 played-A が負値で印刷）。
+  //   wins も同じガードの内側で集計し A・played・opponents を整合させる（正常データでは getWins と同値）。
+  var wins={};
   var opponents={};
   var played={};
   for(var i=0;i<players.length;i++){
+    wins[players[i].id]=0;
     opponents[players[i].id]=[];
     played[players[i].id]=0;
   }
@@ -8056,7 +8062,9 @@ function calcFinal(cls){
         // QA D-02（#279）: results に players から消えた id が残った場合の防御。通常 UI からは
         //   removePlayer の削除ガード（started && pastMatches>0）+ normalizeState の sanitizeMatch で
         //   非到達の latent だが、保険として未登録 id を含む行は集計対象外にして TypeError を防ぐ。
+        //   wins もこのガードの内側で加算し、winner-only 集計が stale 行を過剰加算する不整合（Codex P1）を防ぐ。
         if(!opponents[match.p1]||!opponents[match.p2])continue;
+        if(Object.prototype.hasOwnProperty.call(wins,match.winner))wins[match.winner]++;
         opponents[match.p1].push({opp:match.p2,won:match.winner===match.p1});
         opponents[match.p2].push({opp:match.p1,won:match.winner===match.p2});
         played[match.p1]++;
