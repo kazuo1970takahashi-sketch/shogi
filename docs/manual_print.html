@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>月例将棋大会 当日運営マニュアル</title>
+<style>
+  @media print {
+    body { margin: 0; }
+    .no-print { display: none; }
+  }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+    font-size: 13px;
+    margin: 16px 20px;
+    color: #111;
+    max-width: 720px;
+  }
+  h1 {
+    font-size: 16px;
+    border-bottom: 2px solid #27500A;
+    padding-bottom: 4px;
+    margin-bottom: 12px;
+  }
+  h2 {
+    font-size: 13px;
+    background: #27500A;
+    color: #fff;
+    padding: 4px 8px;
+    margin: 12px 0 6px;
+    border-radius: 3px;
+  }
+  h2.trouble {
+    background: #c0392b;
+  }
+  ul {
+    margin: 0 0 6px 0;
+    padding-left: 20px;
+    line-height: 1.8;
+  }
+  li { margin-bottom: 2px; }
+  .check { list-style: none; padding-left: 4px; }
+  .check li::before { content: "□ "; font-size: 14px; }
+  .note {
+    background: #fff8e1;
+    border-left: 3px solid #f39c12;
+    padding: 5px 8px;
+    margin: 6px 0;
+    font-size: 12px;
+  }
+  .intro {
+    background: #f0f4ea;
+    border-left: 3px solid #27500A;
+    padding: 5px 8px;
+    margin: 0 0 10px;
+    font-size: 12px;
+  }
+  .url {
+    font-family: monospace;
+    background: #f5f5f5;
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin: 6px 0;
+  }
+  td, th {
+    border: 1px solid #ccc;
+    padding: 4px 8px;
+    vertical-align: top;
+  }
+  th { background: #f0f0f0; }
+  td:first-child { width: 26%; font-weight: bold; }
+  .footer {
+    margin-top: 16px;
+    font-size: 11px;
+    color: #666;
+    border-top: 1px solid #ccc;
+    padding-top: 6px;
+  }
+  button.no-print {
+    margin-bottom: 12px;
+    padding: 6px 14px;
+    background: #27500A;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<button type="button" class="no-print" onclick="window.print()">印刷する</button>
+
+<h1>沼津支部 月例将棋大会 当日運営マニュアル</h1>
+
+<div class="intro">
+  このマニュアルは<strong>事前準備・全体像・困ったときの指針</strong>です。細かなボタン操作は画面内のヘルプ（？）や確認メッセージに従ってください。記載の例はすべて架空です。
+</div>
+
+<h2>1. 大会開始前</h2>
+<ul class="check">
+  <li>アプリを開く：<span class="url">https://kazuo1970takahashi-sketch.github.io/shogi/</span></li>
+  <li>参加者を登録する（名前・支部員区分・学年）</li>
+  <li><strong>「JSONバックアップ保存」を押す</strong>（ファイル名を確認してダウンロード完了を確認）</li>
+  <li>「大会開始」を押す</li>
+</ul>
+
+<h2>2. 各ラウンド（毎回繰り返す）</h2>
+<ul class="check">
+  <li>「ペアリング生成」を押して組み合わせを確認</li>
+  <li>対局を実施する</li>
+  <li>勝者をアプリに入力する</li>
+  <li>「ラウンド確定」を押す</li>
+  <li><strong>「JSONバックアップ保存」を押す</strong>（毎ラウンド必須）</li>
+</ul>
+
+<div class="note">
+  ⚠️ 保存を忘れると、ブラウザを閉じたときにデータが消えます。<br>
+  保存すると「shogi_YYYYMMDD_HHMM.json」というファイルがダウンロードされます。
+</div>
+
+<h2>3. 大会終了後</h2>
+<ul class="check">
+  <li>「成績」タブで順位を確認</li>
+  <li><strong>「JSONバックアップ保存」を押す</strong>（最終バックアップ）</li>
+  <li>必要に応じて「印刷」または「報告書ダウンロード」を実行</li>
+</ul>
+
+<div class="note">
+  ℹ️ 報告書・印刷を出したら、<strong>日時／各対局の勝敗／参加人数</strong>が正しいか目視で確認してください。
+</div>
+
+<h2>4. 知っておくと困らない運用の考え方</h2>
+<p style="font-size:12px;margin:4px 0">細かい操作より「原則」を押さえておくと、当日の判断に迷いません。</p>
+<table>
+  <tbody>
+  <tr>
+    <th>項目</th>
+    <th>考え方・原則</th>
+  </tr>
+  <tr>
+    <td>来た人だけで始める（部分開始・逐次手合）</td>
+    <td>全員そろわなくても1局目を始められます。受付順に2人ずつ「1卓追加」、または今いる人を一気に「まとめて1局目作成」。後から来た人も同じ操作で足せて、<strong>すでにある対局・結果は変わりません</strong>。手合いがまだの人は「未割当」として表示されます。</td>
+  </tr>
+  <tr>
+    <td>奇数のときの待機</td>
+    <td>人数が奇数だと1名が待機になります（対局には入らず次を待つだけ）。<strong>待機は不戦勝ではありません</strong>（勝ち点は付きません）。次のラウンドで対局に戻ります。1回戦はできるだけ偶数になるよう受付・手合いを調整するとスムーズです。</td>
+  </tr>
+  <tr>
+    <td>クラスを増やす（C 以降）</td>
+    <td>A・B 以外の組（C…）を必要に応じて追加・改名できます。<strong>A・B は削除できません</strong>。開始済み・参加者がいるクラスも削除できません（混乱防止）。</td>
+  </tr>
+  <tr>
+    <td>ふりがな</td>
+    <td>氏名にふりがなを表示でき、同姓や読みづらい名前の取り違えを防げます。登録後でも編集でき、空にするとふりがな表示は消えます。</td>
+  </tr>
+  <tr>
+    <td>支部マスタ・過去大会の統合</td>
+    <td>会員の元データです。当日は大きくいじらず、参加者登録の素材として使います。万一データが壊れても当日の大会運営は止まらない設計で、元データは保全されます。</td>
+  </tr>
+  <tr>
+    <td>履歴</td>
+    <td>過去大会の記録は「履歴」で閲覧できます。<strong>いま進行中の大会とは別もの</strong>です。履歴を見ても今の大会は変わりません。</td>
+  </tr>
+  </tbody>
+</table>
+
+<h2 class="trouble">5. トラブル時の復旧手順</h2>
+
+<table>
+  <tbody>
+  <tr>
+    <th>状況</th>
+    <th>対処</th>
+  </tr>
+  <tr>
+    <td>ブラウザが落ちた・誤ってリセットした</td>
+    <td>「読み込み」ボタン → 直前に保存した JSON ファイルを選択</td>
+  </tr>
+  <tr>
+    <td>端末が壊れた・バッテリー切れ</td>
+    <td>別の端末でアプリを開き、同じ JSON ファイルを「読み込み」で復元</td>
+  </tr>
+  <tr>
+    <td>JSON ファイルが見当たらない</td>
+    <td>端末のダウンロードフォルダを確認（shogi_で始まるファイル）</td>
+  </tr>
+  </tbody>
+</table>
+
+<div class="note">
+  ℹ️ 連絡先は別途ご確認ください。
+</div>
+
+<div class="footer">
+  沼津将棋支部 月例大会運営ツール — docs/manual_print.html
+</div>
+
+</body>
+</html>
