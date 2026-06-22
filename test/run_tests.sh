@@ -652,6 +652,25 @@ else
 fi
 
 # ============================================
+# HELP-UX-001 (#308) 対局画面の迷子防止 in-app ヘルプ 受入テスト
+#   完全架空 state で HELP_TEXTS レジストリ / buildHelpModalHtml（ヘルプ文 present・閉じる・escape 経由）/
+#   openHelpModal の open-close DOM フロー / 「？ ヘルプ」ボタンの配置・bind 結線 / 主要ボタン title= /
+#   submitRound アラート文言（pin 部分文字列維持＋原因/行動）を固定する。
+# ============================================
+echo ""
+echo "【HELP-UX-001 (#308) 対局画面 in-app ヘルプ（HELP_TEXTS / モーダル open-close / ？ボタン結線 / title / アラート文言）】"
+if [ -f "$SCRIPT_DIR/test_help_001.js" ]; then
+  if node "$SCRIPT_DIR/test_help_001.js" "$TARGET" > /tmp/help_001_out.log 2>&1; then
+    ok "HELP-UX-001 テスト 全PASS ($(tail -1 /tmp/help_001_out.log))"
+  else
+    ng "HELP-UX-001 テスト 失敗"
+    cat /tmp/help_001_out.log
+  fi
+else
+  warn "test_help_001.js が見つからない"
+fi
+
+# ============================================
 # MEMBERS-CANDIDATE-MASTER-RECUT-001 members 形式 参加者候補マスタ読込（#194 価値分の再切り）
 #   完全架空 fixture で member 真偽値後方互換 / 禁止項目 whitelist 除外 / deleted 墓石除外 /
 #   大会state(shogi_v4)不変 / 候補マスタ(shogi_branch_master)保存 を固定する。

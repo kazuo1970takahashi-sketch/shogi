@@ -7340,7 +7340,10 @@ function submitRound(cls){
   //   退行的な空回戦だけをガードする。
   if(state.results[cls].length===0){
     if(missing.length>0){
-      alert('次の参加者が対局に登録されていません：\n'+missing.join('、')+'\n\n「対戦相手変更」または「組み合わせを再生成」で全員を対局に入れてください。');return;
+      // HELP-UX-001 (#308 (1)): 原因（奇数なら待機が出る）と次の行動を出す文言へ。未割当者名は残す。
+      //   テスト pin（run_tests.sh / test_frp_impl_002.js / test_pairing_odd_leftover_272.js）は
+      //   「次の参加者が対局に登録されていません」の部分文字列で維持＝同期更新不要。
+      alert('次の参加者が対局に登録されていません：\n'+missing.join('、')+'\n\n参加人数が奇数の場合は、人数を偶数にするか、1名を待機にして開始できます。割り当てるには「対戦相手変更」または「組み合わせを再生成」を使ってください。');return;
     }
   }else if(state.pairings[cls].length===0&&state.players[cls].length>=2){
     alert('この回戦の組み合わせがありません。「組み合わせを再生成」で対局を作成してください。');return;
@@ -7644,7 +7647,7 @@ function buildClassActionBarHtml(cls){
   //   選択者だけの1局目対局を append 作成できる（onClickAppendFirstRound）。文言は「全員で1局目を開始」と対比する。
   //   既存 startBtnClass_ / リセットボタンの出力条件・id・文言は一切変更しない（純追加）。
   if(!classStarted && players.length>=1){
-    html+='<button type="button" class="btn-primary btn-sm" id="startBtnPartial_'+escapeHtml(cls)+'">このクラスを部分開始（未割当者を表示）</button>';
+    html+='<button type="button" class="btn-primary btn-sm" id="startBtnPartial_'+escapeHtml(cls)+'" title="来ている人だけで先に始めます。未到着者は未割当として残ります。">このクラスを部分開始（未割当者を表示）</button>';
     html+='<span style="font-size:12px;color:#888">※部分開始にすると、1局目の未割当者から選んで対局を追加作成できます（既存の対局は変更しません）</span>';
   }
   html+='</div>';
@@ -7684,6 +7687,69 @@ function bindClassActionBarEvents(cls){
   if(addAllTablesBtn){
     addAllTablesBtn.addEventListener('click',(function(c){return function(){onClickAddAllTables(c);};})(cls));
   }
+  // HELP-UX-001 (#308 (2)): 「？ ヘルプ」ボタンの click を openHelpModal('first-round') に bind（追加のみ・表示のみ）。
+  var helpBtn=document.getElementById('helpBtnFirstRound_'+cls);
+  if(helpBtn){
+    helpBtn.addEventListener('click',function(){openHelpModal('first-round');});
+  }
+}
+
+// HELP-UX-001 (#308 (2)): 対局画面の迷子防止 in-app ヘルプ（モーダル1つ）。既存モーダル三層
+//   （build*ModalHtml / open*Modal / bind*ModalEvents ＋ fixed overlay）を踏襲した純追加。
+//   ヘルプ本文は固定文字列レジストリ HELP_TEXTS に1箇所集約し、build 時に escapeHtml を通して
+//   埋め込む（＝innerHTML に自由文を流さない・textContent 相当の安全表示。XSS 流入を増やさない）。
+//   保存スキーマ・既存ロジックには触れない（表示のみ）。topic 別に拡張できる。
+var HELP_TEXTS={
+  'first-round':{
+    title:'1局目の作り方ヘルプ',
+    lines:[
+      '「1卓追加」：受付順の先頭2名で1卓ずつ作成します。少しずつ始めたいときに使います。',
+      '「未手合いをまとめて1局目作成」：いま未割当の全員を2人ずつ一気に組みます。受付が一段落したときに便利です。',
+      '待機（leftover）：今回は対局に入らず、次の作成対象として残る人です。',
+      '参加人数が奇数のときは、1人が待機になります（不戦勝にはなりません）。次の参加者が来たら組めます。',
+      '勝敗を入力済みの対局は、組み合わせを不用意に再生成しないでください（入力済みの結果が失われることがあります）。'
+    ]
+  }
+};
+
+function buildHelpModalHtml(topic){
+  var t=HELP_TEXTS[topic];
+  var title=(t&&t.title)?t.title:'ヘルプ';
+  var lines=(t&&t.lines)?t.lines:[];
+  var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto">';
+  html+='<h3 style="margin:0 0 12px;font-size:16px;font-weight:500;color:#1F3864">'+escapeHtml(title)+'</h3>';
+  html+='<ul style="margin:0 0 16px;padding-left:1.2em;font-size:13px;color:#444;line-height:1.7">';
+  for(var i=0;i<lines.length;i++){
+    html+='<li style="margin-bottom:6px">'+escapeHtml(lines[i])+'</li>';
+  }
+  html+='</ul>';
+  html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
+  html+='<button type="button" id="help-modal-close" class="btn-sm" style="background:#fff">閉じる</button>';
+  html+='</div></div>';
+  return html;
+}
+
+function openHelpModal(topic){
+  var existing=document.getElementById('help-modal');
+  if(existing&&existing.remove)existing.remove();
+  var modal=document.createElement('div');
+  modal.id='help-modal';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=buildHelpModalHtml(topic);
+  document.body.appendChild(modal);
+  bindHelpModalEvents();
+}
+
+function bindHelpModalEvents(){
+  var closeBtn=document.getElementById('help-modal-close');
+  if(closeBtn)closeBtn.addEventListener('click',function(){
+    var m=document.getElementById('help-modal');if(m&&m.remove)m.remove();
+  });
+  // overlay（背景）クリックでも閉じる。カード内クリックでは閉じない（e.target===modalEl のときだけ）。
+  var modalEl=document.getElementById('help-modal');
+  if(modalEl)modalEl.addEventListener('click',function(e){
+    if(e&&e.target===modalEl){var m=document.getElementById('help-modal');if(m&&m.remove)m.remove();}
+  });
 }
 
 // FRP-IMPL-002/003 (FRP-DESIGN-002 §8 / §8.3): 部分開始中クラスの「1局目 未割当参加者」一覧（選択 → append 作成）。
@@ -7702,7 +7768,13 @@ function buildFirstRoundPartialSectionHtml(cls){
   // FRP-UNASSIGNED-COUNT-001: 見出しに現在の未割当（1局目待機）人数を併記する。運営が「あと何人が
   //   1局目待ちか」を一目で把握できるようにする派生表示（unassigned.length は上で算出済み・state 非保存）。
   //   append で人数が減ると再描画で自動更新される。既存テスト pin は部分一致（'1局目 未割当参加者'）で後方互換。
-  html+='<h3 style="margin:0 0 4px;font-size:14px;color:#1F3864">1局目 未割当参加者（'+unassigned.length+'名）</h3>';
+  // HELP-UX-001 (#308 (2)): 見出し脇に「？ ヘルプ」ボタンを1つ置く（対局画面の迷子防止 in-app ヘルプ導線）。
+  //   click は build/bind 分離のため bindClassActionBarEvents 側で openHelpModal('first-round') へ結線する。
+  //   既存テスト pin '1局目 未割当参加者' は前方一致で維持（見出し本文は不変・flex で横並びにするだけ）。
+  html+='<div style="display:flex;align-items:center;gap:8px;margin:0 0 4px">';
+  html+='<h3 style="margin:0;font-size:14px;color:#1F3864">1局目 未割当参加者（'+unassigned.length+'名）</h3>';
+  html+='<button type="button" id="helpBtnFirstRound_'+escapeHtml(cls)+'" class="btn-sm" title="1局目の作り方をヘルプで表示します" aria-label="1局目の作り方ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>';
+  html+='</div>';
   // FRP-SMALL-UX-001 (post FRP-UNASSIGNED-COUNT-001 / #245): 未割当人数から「全員を1局目に入れると
   //   何組できて誰が待つか」を派生表示する1行。#245 の見出し人数を、運営が次に取る操作の結果（作れる
   //   組数・待機の有無）まで一目で分かるよう具体化する。表示専用＝state 非保存・mutate しない・listener
@@ -7727,14 +7799,14 @@ function buildFirstRoundPartialSectionHtml(cls){
   //   onClickAddOneTable へ bindClassActionBarEvents 側で行う。この helper は表示専用（イベント登録は持たない）。
   var canAddOneTable=unassigned.length>=2;
   html+='<div class="frp-add-one-table" style="margin:0 0 10px">';
-  html+='<button type="button" id="addTableBtn_'+escapeHtml(cls)+'" class="btn-primary"'+(canAddOneTable?'':' disabled')+' title="未手合いの先頭2名（受付順）で1局目の1卓を作成します。押すたびに次の2名で1卓を作成します。既存の対局・結果は変更しません。">1卓追加（受付順の先頭2名で1局目を作成）</button>';
+  html+='<button type="button" id="addTableBtn_'+escapeHtml(cls)+'" class="btn-primary"'+(canAddOneTable?'':' disabled')+' title="今すぐ始める対局だけを1卓ずつ追加します。あとから残りを追加できます。">1卓追加（受付順の先頭2名で1局目を作成）</button>';
   html+='<p style="margin:6px 0 0;font-size:11px;color:#888">※受付順（参加者追加順）の先頭2名で1卓を作成します。押すたびに次の1卓。未手合いが1名のときは、次の参加者が来るまで待機します（不戦勝にはなりません）。</p>';
   // PROGRESSIVE-PAIRING-IMPL-P2 (CONFIRMED spec §P2 / 受入 Phase P2): まとめて導線「未手合いをまとめて1局目作成」。
   //   未手合い（受付順＝entry_no 昇順）の全員を 2人ずつペア化して round=1 の卓をまとめて作成する（偶数=全員・
   //   奇数=末尾1人待機）。P1「1卓追加」(addTableBtn_・先頭2名で1卓) と同じ未割当が対象で、両方を併置（純追加）。
   //   disabled 条件は P1 と同じ「未手合い2人未満」(canAddOneTable)。click の登録は onClickAddAllTables へ
   //   bindClassActionBarEvents 側で行う（この helper は表示専用・イベント登録を持たない）。
-  html+='<button type="button" id="addAllTablesBtn_'+escapeHtml(cls)+'" class="btn-primary"'+(canAddOneTable?'':' disabled')+' style="margin-top:6px" title="いま未手合いの全員（受付順）を2人ずつ組んで1局目の卓をまとめて作成します。奇数なら末尾1人は待機（不戦勝にはなりません）。既存の対局・結果は変更しません。">未手合いをまとめて1局目作成</button>';
+  html+='<button type="button" id="addAllTablesBtn_'+escapeHtml(cls)+'" class="btn-primary"'+(canAddOneTable?'':' disabled')+' style="margin-top:6px" title="未割当の参加者から、作れる対局をまとめて作成します。">未手合いをまとめて1局目作成</button>';
   html+='<p style="margin:6px 0 0;font-size:11px;color:#888">※いま未手合いの全員を受付順で2人ずつまとめて卓にします（受付が一段落したときに便利）。奇数なら末尾1人は次の参加者が来るまで待機します（不戦勝にはなりません）。既存の対局・結果は変更しません。</p>';
   html+='</div>';
   html+='<p style="margin:0 0 8px;font-size:12px;color:#666">このクラスは部分開始中です。まだ1局目に入っていない参加者から選んで「選択した参加者で1局目を追加作成」を押すと、既存の対局を変更せず選択者だけの対局を追加します（2人以上を選択。偶数は全員、奇数は末尾1人が未割当のまま残ります）。既に1局目対局がある参加者は表示されません。</p>';
