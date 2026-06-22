@@ -1043,7 +1043,10 @@ function save(){
       });
       return;
     }
-    notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります。大会データをコピー（バックアップ）してください。');
+    // SAVE-NONQUOTA-ALERT (Issue #278): 非quota の保存失敗（循環参照による JSON.stringify の TypeError /
+    //   SecurityError / プライベートブラウズ等）はデータ消失に直結するため、登録タブ表示中でも blocking alert を
+    //   確実に出す（quota 分岐と認知強度を揃える）。banner（showMsg）と dedup は notifyError が担当（二重 alert なし）。
+    notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります。大会データをコピー（バックアップ）してください。',true);
   }
 }
 function load(){
@@ -4510,14 +4513,17 @@ function showMsg(text,type){
 }
 
 // 致命的エラーは登録タブが見えていない可能性があるため alert で通知（重複連発を避けるため直近メッセージで抑止）
+// SAVE-NONQUOTA-ALERT (Issue #278): alwaysAlert=true のときは表示中タブに関わらず alert を出す。
+//   保存失敗（データ消失に直結）は登録タブ表示中でも blocking alert で確実に認知させるため、save() が true を渡す。
+//   alert は dedup（直近メッセージ抑止）の内側にあるので、true でも 3 秒以内の連発では二重に出ない。
 var _lastErr={text:'',at:0};
-function notifyError(text){
+function notifyError(text,alwaysAlert){
   showMsg(text,'err');
   var now=Date.now();
   if(_lastErr.text===text&&now-_lastErr.at<3000)return;
   _lastErr={text:text,at:now};
   var regVisible=document.getElementById('pane-reg').style.display!=='none';
-  if(!regVisible)alert(text);
+  if(alwaysAlert||!regVisible)alert(text);
 }
 
 // SAVE-UX-STATUS-INDICATOR: Level 2 indicator 用の memory-only state。
