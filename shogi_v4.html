@@ -509,25 +509,50 @@ function entryNoOf(cls,id){
   return '--';
 }
 
+// A-5.1 §11.8 + #276: 同一クラス内の entry_no を「正の整数で一意」に正規化する単一窓口。
+//   不変条件: クラス内 entry_no は正の整数で一意。明示の有効・一意な entry_no は保持し、
+//   不在/無効（非数値・非正・非整数）/重複 の player のみ max(existing)+1 から一意採番する
+//   （重複は配列内で後発側＝2件目以降を再採番）。削除で生まれた欠番は再利用しない。
+//   旧実装は欠番補完に配列 index+1 を使い、別レコードの明示値と衝突（重複）し得た（#276）。
+//   players を in-place で正規化し、次に採番すべき番号（一意化後の max+1）を返す。冪等。
+function reconcileEntryNos(players){
+  var list=players||[];
+  var claimed={};
+  var maxNo=0;
+  var i,en,p;
+  // 第1パス: 明示の有効・一意値（正の整数・初出）を確定。それ以外は後段の再採番対象へ回す。
+  for(i=0;i<list.length;i++){
+    p=list[i];
+    if(!p)continue;
+    en=p.entry_no;
+    if(typeof en==='number'&&en>0&&Math.floor(en)===en&&!claimed[en]){
+      claimed[en]=true;
+      if(en>maxNo)maxNo=en;
+    }else{
+      p.entry_no=null;
+    }
+  }
+  // 第2パス: 不在/無効/重複（後発）を max+1 から配列順に一意採番（欠番は再利用しない）。
+  var next=maxNo+1;
+  for(i=0;i<list.length;i++){
+    p=list[i];
+    if(!p)continue;
+    if(p.entry_no===null){
+      p.entry_no=next;
+      next++;
+    }
+  }
+  return next;
+}
+
 // A-5.1 §11.8: 同一クラス内で次に採番すべき entry_no を返す。
+//   #276: 衝突回避の一意採番（reconcileEntryNos）に揃える。欠番補完の index+1 が
+//   別レコードの明示値と衝突するバグを解消し、既存重複も検知して後発を再採番する。
 //   max(entry_no)+1 を採用し、削除発生で生まれた欠番は再利用しない。
-//   entry_no 未付与の legacy player があれば、その場で配列 index+1 を
-//   backfill する（既存表示と整合）。
 function nextEntryNoForClass(cls,stateObj){
   var s=stateObj||state;
   var players=(s&&s.players&&s.players[cls])||[];
-  var maxEntryNo=0;
-  for(var i=0;i<players.length;i++){
-    var p=players[i];
-    if(!p)continue;
-    var en=p.entry_no;
-    if(typeof en!=='number'||en<=0){
-      p.entry_no=i+1;
-      en=i+1;
-    }
-    if(en>maxEntryNo)maxEntryNo=en;
-  }
-  return maxEntryNo+1;
+  return reconcileEntryNos(players);
 }
 
 // A-4 §2: 「番号｜名前」の表示フォーマット。プレフィックス幅2桁ゼロ埋め。
@@ -808,9 +833,13 @@ function normalizeState(raw){
   //   4. 互換フィールド state.started を classes から同期書き込み / 5. return base
   //   helper はグローバル state を参照しない（pure）。
   var classes=normalizeClasses(s);
+  // #277: rounds は正の整数にクランプ。旧 Number(s.rounds)||4 は負数(-3)・小数(2.7)を
+  //   素通りさせ、0 を 4 に化けさせていた。floor して 1 未満（負数/0/NaN/未設定/空文字）は
+  //   既定 4、小数は floor、正の整数はそのまま。上限クランプは設けない（既知の上限概念なし）。
+  var rn=Math.floor(Number(s.rounds));
   var base={
     players:emptyClassDict(classes,function(){return [];}),
-    rounds:Number(s.rounds)||4,
+    rounds:(isNaN(rn)||rn<1)?4:rn,
     pairings:emptyClassDict(classes,function(){return [];}),
     results:emptyClassDict(classes,function(){return [];}),
     started:false,
@@ -833,16 +862,20 @@ function normalizeState(raw){
       // FURIGANA-MVP-001: ふりがな（任意・既定 ''）。既存 player.yomi があれば保持、無ければ '' 補完。
       //   member_id / city と同じ「読込時 default 補完」パターン。schema_version は新設しない。
       pp.yomi=(p&&typeof p.yomi==='string')?p.yomi:'';
-      // A-5.1 §11.8: entry_no を永続化（欠番維持）。
-      //   保存済みの entry_no があればそれを使う。
-      //   legacy データ（entry_no 不在）は配列 index+1 で補完。
+      // A-5.1 §11.8 + #276: entry_no を永続化（欠番維持・衝突回避）。
+      //   明示の有効値（正の整数）は一旦そのまま取り込み、不在/無効は null として
+      //   後段の reconcileEntryNos でクラス単位に「正の整数・一意」へ正規化する。
+      //   旧実装の index+1 補完は別レコードの明示値と衝突＝重複し得た（#276）。
       if(p&&typeof p.entry_no==='number'&&p.entry_no>0){
         pp.entry_no=p.entry_no;
       } else {
-        pp.entry_no=idx+1;
+        pp.entry_no=null;
       }
       return pp;
     }).filter(function(p){return p.name;});
+    // #276: クラス内 entry_no を「正の整数・一意」に正規化。明示の有効・一意値は保持し、
+    //   不在/無効/重複（後発）は max(existing)+1 から一意採番（欠番は再利用しない）。
+    reconcileEntryNos(base.players[cls]);
 
     // 実在 player id のみ許可。p1/p2 が未登録なら除去、winner が p1/p2 と一致しないなら null 化
     var validIds={};

@@ -1028,6 +1028,26 @@ else
 fi
 
 # ============================================
+# STATE-NORMALIZE-GUARD (#312) normalizeState 近辺の正規化バグ2件 batch 修正
+#   #277 rounds: 負数/小数の素通り・rounds=0 化けを正の整数クランプで是正（floor・1未満→4・上限なし）。
+#   #276 entry_no: 不在を index+1 補完→明示値と衝突＝重複していたのを衝突回避の一意採番
+#     （reconcileEntryNos: 明示一意値は保持・不在/無効/重複は max+1 採番・欠番非再利用）へ。
+#     normalizeState 補完と nextEntryNoForClass を一意採番に揃える。
+# ============================================
+echo ""
+echo "【STATE-NORMALIZE-GUARD #312 rounds 正の整数クランプ / entry_no 衝突回避一意採番】"
+if [ -f "$SCRIPT_DIR/test_state_normalize_guard_312.js" ]; then
+  if node "$SCRIPT_DIR/test_state_normalize_guard_312.js" "$TARGET" > /tmp/state_normalize_guard_312_out.log 2>&1; then
+    ok "STATE-NORMALIZE-GUARD #312 テスト 全PASS ($(tail -1 /tmp/state_normalize_guard_312_out.log))"
+  else
+    ng "STATE-NORMALIZE-GUARD #312 テスト 失敗"
+    cat /tmp/state_normalize_guard_312_out.log
+  fi
+else
+  warn "test_state_normalize_guard_312.js が見つからない"
+fi
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
