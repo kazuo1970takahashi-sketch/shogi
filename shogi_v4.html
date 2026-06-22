@@ -6710,13 +6710,21 @@ function appendFirstRoundPairs(cls,pairs){
   return true;
 }
 
+// #274: 1局目 append の共有 in-flight フラグ。選択式 append（onClickAppendFirstRound）/ P1「1卓追加」
+//   （onClickAddOneTable）/ P2「まとめて作成」（onClickAddAllTables）は、いずれも「同じクラスの1局目に対局を
+//   append する」同一操作なので、再入防止フラグを **ハンドラ横断の単一フラグ** に統一する。ハンドラ毎に独立
+//   フラグだと、片方の confirm 表示中にもう片方を発火させるとクロス再入を防げず、後発 append が
+//   appendFirstRoundPairs の正規の二重割当ガード（'すでに1局目の対局がある参加者が含まれています'）を踏んで
+//   「データは正常なのに誤った赤エラー」を表示してしまう（QA P2）。共有フラグなら 1 操作の処理中は他導線を
+//   弾く＝クロス再入が起きない。appendFirstRoundPairs 側の二重割当ガードは本物の異常検知として **維持** する。
+var firstRoundAppendInFlight=false;
+
 // FRP-IMPL-003 (FRP-DESIGN-002 §6 / §8): 「選択した参加者で1局目を追加作成」ボタンの click handler。
 //   再入防止（confirm 中の二重発火・double-click 対策）→ 実行時再検証 → 候補ペア生成 → confirm → append。
 //   appendFirstRoundPairs 内でも再検証するため二重に安全（UI のチェック状態を信用しない §8）。
-var frpAppendInFlight=false;
 function onClickAppendFirstRound(cls){
-  if(frpAppendInFlight)return;   // 再入防止: confirm 中/連打中の二重 append を弾く
-  frpAppendInFlight=true;
+  if(firstRoundAppendInFlight)return;   // 再入防止: 共有フラグ（#274・クロス再入も弾く）
+  firstRoundAppendInFlight=true;
   try{
     if(!isClassStarted(cls)){showMsg('部分開始していないクラスには追加できません','warn');return;}
     var results=(state.results&&state.results[cls])||[];
@@ -6742,7 +6750,7 @@ function onClickAppendFirstRound(cls){
     }
     appendFirstRoundPairs(cls,built.pairs);
   }finally{
-    frpAppendInFlight=false;
+    firstRoundAppendInFlight=false;
   }
 }
 
@@ -6755,12 +6763,12 @@ function onClickAppendFirstRound(cls){
 //     appendFirstRoundPairs に委譲（実行時再検証・既存対局保持・重複拒否・SAVE-FRP-002・save／復元）。
 //     新しい保存スキーマや状態は持たない（待機は派生 getUnassignedFirstRoundPlayers に自動的に残る）。
 //   - confirm 文は既存 buildFrpAppendConfirmMessage を再利用（1組2名・氏名・非破壊を明記）。
-//   - onClickAppendFirstRound と同型の再入防止 in-flight guard（confirm 中の二重発火・連打対策）を持つ。
+//   - 再入防止は onClickAppendFirstRound / onClickAddAllTables と **共有** の単一フラグ
+//     firstRoundAppendInFlight（#274・confirm 中の二重発火・連打・他導線とのクロス再入を弾く）。
 //   - 全員一括の開始経路（旧 start 系・全員上書き）は流用しない＝append 経由のみ（NOCALL はテストで固定）。
-var addOneTableInFlight=false;
 function onClickAddOneTable(cls){
-  if(addOneTableInFlight)return;   // 再入防止: confirm 中/連打中の二重 append を弾く
-  addOneTableInFlight=true;
+  if(firstRoundAppendInFlight)return;   // 再入防止: 共有フラグ（#274・クロス再入も弾く）
+  firstRoundAppendInFlight=true;
   try{
     if(!isClassStarted(cls)){showMsg('部分開始していないクラスには追加できません','warn');return;}
     var results=(state.results&&state.results[cls])||[];
@@ -6774,7 +6782,7 @@ function onClickAddOneTable(cls){
     }
     appendFirstRoundPairs(cls,built.pairs);   // 既存対局を変更せず末尾に1卓を append
   }finally{
-    addOneTableInFlight=false;
+    firstRoundAppendInFlight=false;
   }
 }
 
@@ -6787,12 +6795,12 @@ function onClickAddOneTable(cls){
 //     appendFirstRoundPairs に委譲（実行時再検証・既存対局保持・重複拒否・SAVE-FRP-002・save／復元）。
 //     新しい保存スキーマや状態は持たない（待機＝奇数末尾1人は派生 getUnassignedFirstRoundPlayers に自動的に残る）。
 //   - confirm 文は既存 buildFrpAppendConfirmMessage を再利用（全組の氏名・奇数末尾の待機者・非破壊を明記）。
-//   - onClickAddOneTable / onClickAppendFirstRound と同型の再入防止 in-flight guard（confirm 中の二重発火・連打対策）。
+//   - 再入防止は onClickAddOneTable / onClickAppendFirstRound と **共有** の単一フラグ
+//     firstRoundAppendInFlight（#274・confirm 中の二重発火・連打・他導線とのクロス再入を弾く）。
 //   - 全員一括の開始経路（旧 start 系・全員上書き）は流用しない＝append 経由のみ（既存逐次卓・選択式 append と無干渉）。
-var addAllTablesInFlight=false;
 function onClickAddAllTables(cls){
-  if(addAllTablesInFlight)return;   // 再入防止: confirm 中/連打中の二重 append を弾く
-  addAllTablesInFlight=true;
+  if(firstRoundAppendInFlight)return;   // 再入防止: 共有フラグ（#274・クロス再入も弾く）
+  firstRoundAppendInFlight=true;
   try{
     if(!isClassStarted(cls)){showMsg('部分開始していないクラスには追加できません','warn');return;}
     var results=(state.results&&state.results[cls])||[];
@@ -6806,7 +6814,7 @@ function onClickAddAllTables(cls){
     }
     appendFirstRoundPairs(cls,built.pairs);   // 既存対局を変更せず末尾に全卓をまとめて append
   }finally{
-    addAllTablesInFlight=false;
+    firstRoundAppendInFlight=false;
   }
 }
 

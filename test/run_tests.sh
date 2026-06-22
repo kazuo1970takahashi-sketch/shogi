@@ -777,6 +777,19 @@ else
   warn "test_progressive_pairing_p2.js が見つからない"
 fi
 
+echo ""
+echo "【ISSUE #274 [QA][P2] 1局目 append クロス再入の誤った赤エラー回帰（P1/P2/選択式の共有 in-flight フラグ・正規の二重割当ガード維持）】"
+if [ -f "$SCRIPT_DIR/test_cross_reentry_274.js" ]; then
+  if node "$SCRIPT_DIR/test_cross_reentry_274.js" "$TARGET" > /tmp/cross_reentry_274_out.log 2>&1; then
+    ok "ISSUE #274 クロス再入テスト 全PASS ($(tail -1 /tmp/cross_reentry_274_out.log))"
+  else
+    ng "ISSUE #274 クロス再入テスト 失敗"
+    cat /tmp/cross_reentry_274_out.log
+  fi
+else
+  warn "test_cross_reentry_274.js が見つからない"
+fi
+
 # ============================================
 # DATA-PERSISTENCE-PHASE2 / Stage A — Supabase スキーマ + RLS + マジックリンク・ログイン
 #   (1) test_stagea_login.js : app/auth.js（runtime）のログイン/claim/幹事管理ロジックを mock client で検証。
