@@ -855,6 +855,26 @@ else
 fi
 
 # ============================================
+# SAVE-NONQUOTA-ALERT-001 (Issue #278): save() の非quota 保存失敗（循環参照による JSON.stringify
+#   TypeError / SecurityError / プライベートブラウズ等）が、登録タブ表示中だと画面内バナーのみで
+#   blocking alert が出ず保存失敗が静かに見逃される問題を是正。notifyError に alwaysAlert を追加し
+#   save() が true を渡すことで、表示中タブに関わらず alert を 1 回出す。quota 回帰・二重 alert なし・
+#   _lastErr dedup 維持・notifyError 後方互換を併せて固定する。
+# ============================================
+echo ""
+echo "【SAVE-NONQUOTA-ALERT-001 save() 非quota保存失敗を登録タブ表示中でも alert（quotaと認知強度を揃える）】"
+if [ -f "$SCRIPT_DIR/test_save_nonquota_alert_278.js" ]; then
+  if node "$SCRIPT_DIR/test_save_nonquota_alert_278.js" "$TARGET" > /tmp/save_nonquota_alert_278_out.log 2>&1; then
+    ok "SAVE-NONQUOTA-ALERT-001 テスト 全PASS ($(tail -1 /tmp/save_nonquota_alert_278_out.log))"
+  else
+    ng "SAVE-NONQUOTA-ALERT-001 テスト 失敗"
+    cat /tmp/save_nonquota_alert_278_out.log
+  fi
+else
+  warn "test_save_nonquota_alert_278.js が見つからない"
+fi
+
+# ============================================
 # ISSUE-272 PAIRING-ODD-LEFTOVER 2回戦以降の奇数で 0 卓に潰れる進行不能バグの修正
 #   generatePairing(奇数→floor(N/2)卓+末尾1人待機・0卓に潰さない・不戦勝にしない) /
 #   submitRound(2回戦以降の待機1名のみ許容＝進行できる・1回戦/偶数は従来どおり) /
