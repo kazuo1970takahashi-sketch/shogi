@@ -1760,10 +1760,12 @@ function applyQuickFilter(members,filterKey,todayStr){
 // 入力 JSON の形式を判定: 'branch_master' | 'tournament' | 'unknown'
 function detectImportFormat(parsed){
   if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return 'unknown';
+  // QA A-08（#279）: branch master は members（配列）を持つ。players と members を併存する JSON
+  //   （他システム由来のエクスポート等）でも members があれば branch_master を優先し master 取込を
+  //   可能にする。アプリ native の大会データは players のみで members を持たないため誤判定しない。
+  if(Array.isArray(parsed.members))return 'branch_master';
   // 大会データは players（オブジェクト）を持つ → F8 では扱わない
   if(parsed.players&&typeof parsed.players==='object'&&!Array.isArray(parsed.players))return 'tournament';
-  // branch master は members（配列）を持つ
-  if(Array.isArray(parsed.members))return 'branch_master';
   return 'unknown';
 }
 
@@ -1843,13 +1845,17 @@ function applyMergeImport(parsed,currentMaster){
     ex.attendance_count=ac;
 
     // tombstone は安全側ルール（OR）: 既存 OR インポートのどちらかが deleted=true なら true 維持。
-    // ・既存 deleted=true → そのまま維持（変更なし、deleted_at も既存維持）
+    // ・既存 deleted=true → deleted は維持（変更なし）。deleted_at は既存にあれば温存し、
+    //   欠落時のみ import 側の有効値を採用（QA A-07 / #279）。
     // ・既存 deleted=false + imported deleted=true → deleted=true、deleted_at はインポート側採用
     //   （existing 側に元々 deleted_at は無いため）
     // 一度削除と判定された member を OR ルールで保護する（誤復元防止）。
     if(ex.deleted!==true&&imp.deleted===true){
       ex.deleted=true;
       ex.deleted_at=(typeof imp.deleted_at==='string'&&imp.deleted_at)?imp.deleted_at:todayYmd();
+    }else if(ex.deleted===true&&!ex.deleted_at&&typeof imp.deleted_at==='string'&&imp.deleted_at){
+      // 既存が削除済みで deleted_at 欠落（normalize で null 可）＋ import に有効値 → 取りこぼさず採用。
+      ex.deleted_at=imp.deleted_at;
     }
 
     // name / yomi / member / grade / last_class / note は既存維持（変更しない）
@@ -8036,10 +8042,16 @@ function editPastResult(cls,roundIdx,matchIdx){
 
 function calcFinal(cls){
   var players=state.players[cls];
-  var wins=getWins(cls);
+  // QA D-02（#279 / Codex P1 follow-up）: 勝ち星(wins)を getWins(cls) で別走査せず、下の
+  //   results ループ内で played/opponents と「同一の stale 行スキップ判定・同一タイミング」で数える。
+  //   getWins は p1/p2 を検証せず winner を加算するため、players から消えた id を含む stale 行で
+  //   wins だけ過剰加算され played と乖離していた（順位が変わる／負け数 played-A が負値で印刷）。
+  //   wins も同じガードの内側で集計し A・played・opponents を整合させる（正常データでは getWins と同値）。
+  var wins={};
   var opponents={};
   var played={};
   for(var i=0;i<players.length;i++){
+    wins[players[i].id]=0;
     opponents[players[i].id]=[];
     played[players[i].id]=0;
   }
@@ -8047,6 +8059,12 @@ function calcFinal(cls){
     for(var m=0;m<state.results[cls][r].length;m++){
       var match=state.results[cls][r][m];
       if(match.winner){
+        // QA D-02（#279）: results に players から消えた id が残った場合の防御。通常 UI からは
+        //   removePlayer の削除ガード（started && pastMatches>0）+ normalizeState の sanitizeMatch で
+        //   非到達の latent だが、保険として未登録 id を含む行は集計対象外にして TypeError を防ぐ。
+        //   wins もこのガードの内側で加算し、winner-only 集計が stale 行を過剰加算する不整合（Codex P1）を防ぐ。
+        if(!opponents[match.p1]||!opponents[match.p2])continue;
+        if(Object.prototype.hasOwnProperty.call(wins,match.winner))wins[match.winner]++;
         opponents[match.p1].push({opp:match.p2,won:match.winner===match.p1});
         opponents[match.p2].push({opp:match.p1,won:match.winner===match.p2});
         played[match.p1]++;
@@ -8899,6 +8917,20 @@ function buildPrintResultsHtml(){
 //   副作用のみ（MIME text/html;charset=utf-8 / window.open(url,'_blank') / load→afterprint→print
 //   の登録順 / win.print() / revokeObjectURL のタイミング / alert 文言）は現行どおり不変。
 function printResults(){
+  // QA D-03（#279）: 印刷対象（finals 非空のクラス）が 0 件のときは空帳票を開かず alert して return。
+  //   従来は全クラス空でもヘッダのみの空 HTML を window.open していた（printPairings は alert 済で非一貫）。
+  //   判定は buildPrintResultsHtml の buildTable と同じ calcFinal(cls).length>0 を用いる（state-as-SoT）。
+  var prClasses=(typeof getRegistrationClassList==='function')?getRegistrationClassList():[];
+  var prHasPrintable=false;
+  for(var pri=0;pri<prClasses.length;pri++){
+    var prc=prClasses[pri];
+    if(!prc||(typeof isSafeClassId==='function'&&!isSafeClassId(prc.id)))continue;
+    if(calcFinal(prc.id).length>0){prHasPrintable=true;break;}
+  }
+  if(!prHasPrintable){
+    alert('印刷できる対戦成績がありません。\n参加者を登録し、大会を開始してから実行してください。');
+    return;
+  }
   var html=buildPrintResultsHtml();
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob);
@@ -9101,8 +9133,9 @@ function buildReportHtml(){
   var balanceStr=(balance<0?'▲':'')+Math.abs(balance).toLocaleString()+'円';
   // 賞金表示も prize に同期。旧の固定内訳文字列（賞金額が固定 7000 円であった前提のテンプレ）は
   //   prize 可変化と相性が悪いため単純表示に置換。内訳テンプレ可変化は後続 task で扱う。
-  //   会計報告の慣習に合わせ控除を表す ▲ 接頭辞を維持（賞金は会場収支から差し引く支出）。
-  var prizeDisplay='▲'+prize.toLocaleString()+'円';
+  //   会計報告の慣習に合わせ控除を表す ▲ 接頭辞を付すが、QA D-01（#279）: 賞金>0 のときのみとし、
+  //   賞金 0 円（賞金なし大会・有効値 0）には ▲ を付けない（隣の balanceStr と同じ符号判定パターン）。
+  var prizeDisplay=(prize>0?'▲':'')+prize.toLocaleString()+'円';
 
   // REPORT-UX-002 (M2 / M3): クラス別 top 3 を state.classes 駆動で集計する。
   //   旧 getTopPlayers の cls 固定呼出と、級優勝 / 級準優勝 / 級3位 の固定 6 行

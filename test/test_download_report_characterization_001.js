@@ -197,7 +197,8 @@ function mkStatePlaceholder(){
 
 // (3) surplus: 賞金 0（賞金なし大会・有効値 0）→ 収支 balance>=0 で ▲ が付かない経路を固定する
 //     （full_multi/placeholder は赤字側 ▲ を踏むため、ここで黒字側 (balance<0?'▲':'') の false を覆う）。
-//     prizeDisplay は常に '▲'+prize なので 賞金行は ▲0円。note 空 → '特になし'。単一クラス（A 少人数）。
+//     QA D-01（#279）以降は prizeDisplay も (prize>0?'▲':'') なので 賞金 0 → 賞金行は「0円」（▲なし）。
+//     note 空 → '特になし'。単一クラス（A 少人数）。
 function mkStateSurplus(){
   return {
     rounds:1, started:true,
