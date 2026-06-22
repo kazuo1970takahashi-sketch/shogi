@@ -509,25 +509,50 @@ function entryNoOf(cls,id){
   return '--';
 }
 
+// A-5.1 §11.8 + #276: 同一クラス内の entry_no を「正の整数で一意」に正規化する単一窓口。
+//   不変条件: クラス内 entry_no は正の整数で一意。明示の有効・一意な entry_no は保持し、
+//   不在/無効（非数値・非正・非整数）/重複 の player のみ max(existing)+1 から一意採番する
+//   （重複は配列内で後発側＝2件目以降を再採番）。削除で生まれた欠番は再利用しない。
+//   旧実装は欠番補完に配列 index+1 を使い、別レコードの明示値と衝突（重複）し得た（#276）。
+//   players を in-place で正規化し、次に採番すべき番号（一意化後の max+1）を返す。冪等。
+function reconcileEntryNos(players){
+  var list=players||[];
+  var claimed={};
+  var maxNo=0;
+  var i,en,p;
+  // 第1パス: 明示の有効・一意値（正の整数・初出）を確定。それ以外は後段の再採番対象へ回す。
+  for(i=0;i<list.length;i++){
+    p=list[i];
+    if(!p)continue;
+    en=p.entry_no;
+    if(typeof en==='number'&&en>0&&Math.floor(en)===en&&!claimed[en]){
+      claimed[en]=true;
+      if(en>maxNo)maxNo=en;
+    }else{
+      p.entry_no=null;
+    }
+  }
+  // 第2パス: 不在/無効/重複（後発）を max+1 から配列順に一意採番（欠番は再利用しない）。
+  var next=maxNo+1;
+  for(i=0;i<list.length;i++){
+    p=list[i];
+    if(!p)continue;
+    if(p.entry_no===null){
+      p.entry_no=next;
+      next++;
+    }
+  }
+  return next;
+}
+
 // A-5.1 §11.8: 同一クラス内で次に採番すべき entry_no を返す。
+//   #276: 衝突回避の一意採番（reconcileEntryNos）に揃える。欠番補完の index+1 が
+//   別レコードの明示値と衝突するバグを解消し、既存重複も検知して後発を再採番する。
 //   max(entry_no)+1 を採用し、削除発生で生まれた欠番は再利用しない。
-//   entry_no 未付与の legacy player があれば、その場で配列 index+1 を
-//   backfill する（既存表示と整合）。
 function nextEntryNoForClass(cls,stateObj){
   var s=stateObj||state;
   var players=(s&&s.players&&s.players[cls])||[];
-  var maxEntryNo=0;
-  for(var i=0;i<players.length;i++){
-    var p=players[i];
-    if(!p)continue;
-    var en=p.entry_no;
-    if(typeof en!=='number'||en<=0){
-      p.entry_no=i+1;
-      en=i+1;
-    }
-    if(en>maxEntryNo)maxEntryNo=en;
-  }
-  return maxEntryNo+1;
+  return reconcileEntryNos(players);
 }
 
 // A-4 §2: 「番号｜名前」の表示フォーマット。プレフィックス幅2桁ゼロ埋め。
@@ -808,9 +833,13 @@ function normalizeState(raw){
   //   4. 互換フィールド state.started を classes から同期書き込み / 5. return base
   //   helper はグローバル state を参照しない（pure）。
   var classes=normalizeClasses(s);
+  // #277: rounds は正の整数にクランプ。旧 Number(s.rounds)||4 は負数(-3)・小数(2.7)を
+  //   素通りさせ、0 を 4 に化けさせていた。floor して 1 未満（負数/0/NaN/未設定/空文字）は
+  //   既定 4、小数は floor、正の整数はそのまま。上限クランプは設けない（既知の上限概念なし）。
+  var rn=Math.floor(Number(s.rounds));
   var base={
     players:emptyClassDict(classes,function(){return [];}),
-    rounds:Number(s.rounds)||4,
+    rounds:(isNaN(rn)||rn<1)?4:rn,
     pairings:emptyClassDict(classes,function(){return [];}),
     results:emptyClassDict(classes,function(){return [];}),
     started:false,
@@ -833,16 +862,20 @@ function normalizeState(raw){
       // FURIGANA-MVP-001: ふりがな（任意・既定 ''）。既存 player.yomi があれば保持、無ければ '' 補完。
       //   member_id / city と同じ「読込時 default 補完」パターン。schema_version は新設しない。
       pp.yomi=(p&&typeof p.yomi==='string')?p.yomi:'';
-      // A-5.1 §11.8: entry_no を永続化（欠番維持）。
-      //   保存済みの entry_no があればそれを使う。
-      //   legacy データ（entry_no 不在）は配列 index+1 で補完。
+      // A-5.1 §11.8 + #276: entry_no を永続化（欠番維持・衝突回避）。
+      //   明示の有効値（正の整数）は一旦そのまま取り込み、不在/無効は null として
+      //   後段の reconcileEntryNos でクラス単位に「正の整数・一意」へ正規化する。
+      //   旧実装の index+1 補完は別レコードの明示値と衝突＝重複し得た（#276）。
       if(p&&typeof p.entry_no==='number'&&p.entry_no>0){
         pp.entry_no=p.entry_no;
       } else {
-        pp.entry_no=idx+1;
+        pp.entry_no=null;
       }
       return pp;
     }).filter(function(p){return p.name;});
+    // #276: クラス内 entry_no を「正の整数・一意」に正規化。明示の有効・一意値は保持し、
+    //   不在/無効/重複（後発）は max(existing)+1 から一意採番（欠番は再利用しない）。
+    reconcileEntryNos(base.players[cls]);
 
     // 実在 player id のみ許可。p1/p2 が未登録なら除去、winner が p1/p2 と一致しないなら null 化
     var validIds={};
@@ -1043,7 +1076,10 @@ function save(){
       });
       return;
     }
-    notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります。大会データをコピー（バックアップ）してください。');
+    // SAVE-NONQUOTA-ALERT (Issue #278): 非quota の保存失敗（循環参照による JSON.stringify の TypeError /
+    //   SecurityError / プライベートブラウズ等）はデータ消失に直結するため、登録タブ表示中でも blocking alert を
+    //   確実に出す（quota 分岐と認知強度を揃える）。banner（showMsg）と dedup は notifyError が担当（二重 alert なし）。
+    notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります。大会データをコピー（バックアップ）してください。',true);
   }
 }
 function load(){
@@ -1495,7 +1531,15 @@ function normalizeBranchMaster(raw){
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return createEmptyBranchMaster();
   var schema_version=Number(raw.schema_version);
   if(!schema_version||isNaN(schema_version))schema_version=BRANCH_MASTER_SCHEMA_VERSION;
-  if(schema_version!==BRANCH_MASTER_SCHEMA_VERSION)return createEmptyBranchMaster();
+  if(schema_version!==BRANCH_MASTER_SCHEMA_VERSION){
+    // Issue #275 / 仕様書 §3.5: 未知の schema_version（例 2＝新しい版・端末間の版差）は
+    // 読めないが、空マスタを破損フラグ付きで返すことで既存 localStorage の自動上書きを防ぐ
+    // （loadBranchMaster の parse 失敗 catch と同じ保全パターン）。前方互換の移行は行わない。
+    if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタの schema_version が非対応のため空マスタで継続。既存 localStorage は保持。',schema_version);
+    var emptyUnknown=createEmptyBranchMaster();
+    emptyUnknown._loaded_with_corruption=true;
+    return emptyUnknown;
+  }
 
   var membersRaw=Array.isArray(raw.members)?raw.members:[];
   var seenIds={};
@@ -1716,10 +1760,12 @@ function applyQuickFilter(members,filterKey,todayStr){
 // 入力 JSON の形式を判定: 'branch_master' | 'tournament' | 'unknown'
 function detectImportFormat(parsed){
   if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return 'unknown';
+  // QA A-08（#279）: branch master は members（配列）を持つ。players と members を併存する JSON
+  //   （他システム由来のエクスポート等）でも members があれば branch_master を優先し master 取込を
+  //   可能にする。アプリ native の大会データは players のみで members を持たないため誤判定しない。
+  if(Array.isArray(parsed.members))return 'branch_master';
   // 大会データは players（オブジェクト）を持つ → F8 では扱わない
   if(parsed.players&&typeof parsed.players==='object'&&!Array.isArray(parsed.players))return 'tournament';
-  // branch master は members（配列）を持つ
-  if(Array.isArray(parsed.members))return 'branch_master';
   return 'unknown';
 }
 
@@ -1799,13 +1845,17 @@ function applyMergeImport(parsed,currentMaster){
     ex.attendance_count=ac;
 
     // tombstone は安全側ルール（OR）: 既存 OR インポートのどちらかが deleted=true なら true 維持。
-    // ・既存 deleted=true → そのまま維持（変更なし、deleted_at も既存維持）
+    // ・既存 deleted=true → deleted は維持（変更なし）。deleted_at は既存にあれば温存し、
+    //   欠落時のみ import 側の有効値を採用（QA A-07 / #279）。
     // ・既存 deleted=false + imported deleted=true → deleted=true、deleted_at はインポート側採用
     //   （existing 側に元々 deleted_at は無いため）
     // 一度削除と判定された member を OR ルールで保護する（誤復元防止）。
     if(ex.deleted!==true&&imp.deleted===true){
       ex.deleted=true;
       ex.deleted_at=(typeof imp.deleted_at==='string'&&imp.deleted_at)?imp.deleted_at:todayYmd();
+    }else if(ex.deleted===true&&!ex.deleted_at&&typeof imp.deleted_at==='string'&&imp.deleted_at){
+      // 既存が削除済みで deleted_at 欠落（normalize で null 可）＋ import に有効値 → 取りこぼさず採用。
+      ex.deleted_at=imp.deleted_at;
     }
 
     // name / yomi / member / grade / last_class / note は既存維持（変更しない）
@@ -4502,14 +4552,17 @@ function showMsg(text,type){
 }
 
 // 致命的エラーは登録タブが見えていない可能性があるため alert で通知（重複連発を避けるため直近メッセージで抑止）
+// SAVE-NONQUOTA-ALERT (Issue #278): alwaysAlert=true のときは表示中タブに関わらず alert を出す。
+//   保存失敗（データ消失に直結）は登録タブ表示中でも blocking alert で確実に認知させるため、save() が true を渡す。
+//   alert は dedup（直近メッセージ抑止）の内側にあるので、true でも 3 秒以内の連発では二重に出ない。
 var _lastErr={text:'',at:0};
-function notifyError(text){
+function notifyError(text,alwaysAlert){
   showMsg(text,'err');
   var now=Date.now();
   if(_lastErr.text===text&&now-_lastErr.at<3000)return;
   _lastErr={text:text,at:now};
   var regVisible=document.getElementById('pane-reg').style.display!=='none';
-  if(!regVisible)alert(text);
+  if(alwaysAlert||!regVisible)alert(text);
 }
 
 // SAVE-UX-STATUS-INDICATOR: Level 2 indicator 用の memory-only state。
@@ -6663,13 +6716,21 @@ function appendFirstRoundPairs(cls,pairs){
   return true;
 }
 
+// #274: 1局目 append の共有 in-flight フラグ。選択式 append（onClickAppendFirstRound）/ P1「1卓追加」
+//   （onClickAddOneTable）/ P2「まとめて作成」（onClickAddAllTables）は、いずれも「同じクラスの1局目に対局を
+//   append する」同一操作なので、再入防止フラグを **ハンドラ横断の単一フラグ** に統一する。ハンドラ毎に独立
+//   フラグだと、片方の confirm 表示中にもう片方を発火させるとクロス再入を防げず、後発 append が
+//   appendFirstRoundPairs の正規の二重割当ガード（'すでに1局目の対局がある参加者が含まれています'）を踏んで
+//   「データは正常なのに誤った赤エラー」を表示してしまう（QA P2）。共有フラグなら 1 操作の処理中は他導線を
+//   弾く＝クロス再入が起きない。appendFirstRoundPairs 側の二重割当ガードは本物の異常検知として **維持** する。
+var firstRoundAppendInFlight=false;
+
 // FRP-IMPL-003 (FRP-DESIGN-002 §6 / §8): 「選択した参加者で1局目を追加作成」ボタンの click handler。
 //   再入防止（confirm 中の二重発火・double-click 対策）→ 実行時再検証 → 候補ペア生成 → confirm → append。
 //   appendFirstRoundPairs 内でも再検証するため二重に安全（UI のチェック状態を信用しない §8）。
-var frpAppendInFlight=false;
 function onClickAppendFirstRound(cls){
-  if(frpAppendInFlight)return;   // 再入防止: confirm 中/連打中の二重 append を弾く
-  frpAppendInFlight=true;
+  if(firstRoundAppendInFlight)return;   // 再入防止: 共有フラグ（#274・クロス再入も弾く）
+  firstRoundAppendInFlight=true;
   try{
     if(!isClassStarted(cls)){showMsg('部分開始していないクラスには追加できません','warn');return;}
     var results=(state.results&&state.results[cls])||[];
@@ -6695,7 +6756,7 @@ function onClickAppendFirstRound(cls){
     }
     appendFirstRoundPairs(cls,built.pairs);
   }finally{
-    frpAppendInFlight=false;
+    firstRoundAppendInFlight=false;
   }
 }
 
@@ -6708,12 +6769,12 @@ function onClickAppendFirstRound(cls){
 //     appendFirstRoundPairs に委譲（実行時再検証・既存対局保持・重複拒否・SAVE-FRP-002・save／復元）。
 //     新しい保存スキーマや状態は持たない（待機は派生 getUnassignedFirstRoundPlayers に自動的に残る）。
 //   - confirm 文は既存 buildFrpAppendConfirmMessage を再利用（1組2名・氏名・非破壊を明記）。
-//   - onClickAppendFirstRound と同型の再入防止 in-flight guard（confirm 中の二重発火・連打対策）を持つ。
+//   - 再入防止は onClickAppendFirstRound / onClickAddAllTables と **共有** の単一フラグ
+//     firstRoundAppendInFlight（#274・confirm 中の二重発火・連打・他導線とのクロス再入を弾く）。
 //   - 全員一括の開始経路（旧 start 系・全員上書き）は流用しない＝append 経由のみ（NOCALL はテストで固定）。
-var addOneTableInFlight=false;
 function onClickAddOneTable(cls){
-  if(addOneTableInFlight)return;   // 再入防止: confirm 中/連打中の二重 append を弾く
-  addOneTableInFlight=true;
+  if(firstRoundAppendInFlight)return;   // 再入防止: 共有フラグ（#274・クロス再入も弾く）
+  firstRoundAppendInFlight=true;
   try{
     if(!isClassStarted(cls)){showMsg('部分開始していないクラスには追加できません','warn');return;}
     var results=(state.results&&state.results[cls])||[];
@@ -6727,7 +6788,7 @@ function onClickAddOneTable(cls){
     }
     appendFirstRoundPairs(cls,built.pairs);   // 既存対局を変更せず末尾に1卓を append
   }finally{
-    addOneTableInFlight=false;
+    firstRoundAppendInFlight=false;
   }
 }
 
@@ -6740,12 +6801,12 @@ function onClickAddOneTable(cls){
 //     appendFirstRoundPairs に委譲（実行時再検証・既存対局保持・重複拒否・SAVE-FRP-002・save／復元）。
 //     新しい保存スキーマや状態は持たない（待機＝奇数末尾1人は派生 getUnassignedFirstRoundPlayers に自動的に残る）。
 //   - confirm 文は既存 buildFrpAppendConfirmMessage を再利用（全組の氏名・奇数末尾の待機者・非破壊を明記）。
-//   - onClickAddOneTable / onClickAppendFirstRound と同型の再入防止 in-flight guard（confirm 中の二重発火・連打対策）。
+//   - 再入防止は onClickAddOneTable / onClickAppendFirstRound と **共有** の単一フラグ
+//     firstRoundAppendInFlight（#274・confirm 中の二重発火・連打・他導線とのクロス再入を弾く）。
 //   - 全員一括の開始経路（旧 start 系・全員上書き）は流用しない＝append 経由のみ（既存逐次卓・選択式 append と無干渉）。
-var addAllTablesInFlight=false;
 function onClickAddAllTables(cls){
-  if(addAllTablesInFlight)return;   // 再入防止: confirm 中/連打中の二重 append を弾く
-  addAllTablesInFlight=true;
+  if(firstRoundAppendInFlight)return;   // 再入防止: 共有フラグ（#274・クロス再入も弾く）
+  firstRoundAppendInFlight=true;
   try{
     if(!isClassStarted(cls)){showMsg('部分開始していないクラスには追加できません','warn');return;}
     var results=(state.results&&state.results[cls])||[];
@@ -6759,7 +6820,7 @@ function onClickAddAllTables(cls){
     }
     appendFirstRoundPairs(cls,built.pairs);   // 既存対局を変更せず末尾に全卓をまとめて append
   }finally{
-    addAllTablesInFlight=false;
+    firstRoundAppendInFlight=false;
   }
 }
 
@@ -7340,7 +7401,10 @@ function submitRound(cls){
   //   退行的な空回戦だけをガードする。
   if(state.results[cls].length===0){
     if(missing.length>0){
-      alert('次の参加者が対局に登録されていません：\n'+missing.join('、')+'\n\n「対戦相手変更」または「組み合わせを再生成」で全員を対局に入れてください。');return;
+      // HELP-UX-001 (#308 (1)): 原因（奇数なら待機が出る）と次の行動を出す文言へ。未割当者名は残す。
+      //   テスト pin（run_tests.sh / test_frp_impl_002.js / test_pairing_odd_leftover_272.js）は
+      //   「次の参加者が対局に登録されていません」の部分文字列で維持＝同期更新不要。
+      alert('次の参加者が対局に登録されていません：\n'+missing.join('、')+'\n\n参加人数が奇数の場合は、人数を偶数にするか、1名を待機にして開始できます。割り当てるには「対戦相手変更」または「組み合わせを再生成」を使ってください。');return;
     }
   }else if(state.pairings[cls].length===0&&state.players[cls].length>=2){
     alert('この回戦の組み合わせがありません。「組み合わせを再生成」で対局を作成してください。');return;
@@ -7644,7 +7708,7 @@ function buildClassActionBarHtml(cls){
   //   選択者だけの1局目対局を append 作成できる（onClickAppendFirstRound）。文言は「全員で1局目を開始」と対比する。
   //   既存 startBtnClass_ / リセットボタンの出力条件・id・文言は一切変更しない（純追加）。
   if(!classStarted && players.length>=1){
-    html+='<button type="button" class="btn-primary btn-sm" id="startBtnPartial_'+escapeHtml(cls)+'">このクラスを部分開始（未割当者を表示）</button>';
+    html+='<button type="button" class="btn-primary btn-sm" id="startBtnPartial_'+escapeHtml(cls)+'" title="来ている人だけで先に始めます。未到着者は未割当として残ります。">このクラスを部分開始（未割当者を表示）</button>';
     html+='<span style="font-size:12px;color:#888">※部分開始にすると、1局目の未割当者から選んで対局を追加作成できます（既存の対局は変更しません）</span>';
   }
   html+='</div>';
@@ -7684,6 +7748,69 @@ function bindClassActionBarEvents(cls){
   if(addAllTablesBtn){
     addAllTablesBtn.addEventListener('click',(function(c){return function(){onClickAddAllTables(c);};})(cls));
   }
+  // HELP-UX-001 (#308 (2)): 「？ ヘルプ」ボタンの click を openHelpModal('first-round') に bind（追加のみ・表示のみ）。
+  var helpBtn=document.getElementById('helpBtnFirstRound_'+cls);
+  if(helpBtn){
+    helpBtn.addEventListener('click',function(){openHelpModal('first-round');});
+  }
+}
+
+// HELP-UX-001 (#308 (2)): 対局画面の迷子防止 in-app ヘルプ（モーダル1つ）。既存モーダル三層
+//   （build*ModalHtml / open*Modal / bind*ModalEvents ＋ fixed overlay）を踏襲した純追加。
+//   ヘルプ本文は固定文字列レジストリ HELP_TEXTS に1箇所集約し、build 時に escapeHtml を通して
+//   埋め込む（＝innerHTML に自由文を流さない・textContent 相当の安全表示。XSS 流入を増やさない）。
+//   保存スキーマ・既存ロジックには触れない（表示のみ）。topic 別に拡張できる。
+var HELP_TEXTS={
+  'first-round':{
+    title:'1局目の作り方ヘルプ',
+    lines:[
+      '「1卓追加」：受付順の先頭2名で1卓ずつ作成します。少しずつ始めたいときに使います。',
+      '「未手合いをまとめて1局目作成」：いま未割当の全員を2人ずつ一気に組みます。受付が一段落したときに便利です。',
+      '待機（leftover）：今回は対局に入らず、次の作成対象として残る人です。',
+      '参加人数が奇数のときは、1人が待機になります（不戦勝にはなりません）。次の参加者が来たら組めます。',
+      '勝敗を入力済みの対局は、組み合わせを不用意に再生成しないでください（入力済みの結果が失われることがあります）。'
+    ]
+  }
+};
+
+function buildHelpModalHtml(topic){
+  var t=HELP_TEXTS[topic];
+  var title=(t&&t.title)?t.title:'ヘルプ';
+  var lines=(t&&t.lines)?t.lines:[];
+  var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto">';
+  html+='<h3 style="margin:0 0 12px;font-size:16px;font-weight:500;color:#1F3864">'+escapeHtml(title)+'</h3>';
+  html+='<ul style="margin:0 0 16px;padding-left:1.2em;font-size:13px;color:#444;line-height:1.7">';
+  for(var i=0;i<lines.length;i++){
+    html+='<li style="margin-bottom:6px">'+escapeHtml(lines[i])+'</li>';
+  }
+  html+='</ul>';
+  html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
+  html+='<button type="button" id="help-modal-close" class="btn-sm" style="background:#fff">閉じる</button>';
+  html+='</div></div>';
+  return html;
+}
+
+function openHelpModal(topic){
+  var existing=document.getElementById('help-modal');
+  if(existing&&existing.remove)existing.remove();
+  var modal=document.createElement('div');
+  modal.id='help-modal';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=buildHelpModalHtml(topic);
+  document.body.appendChild(modal);
+  bindHelpModalEvents();
+}
+
+function bindHelpModalEvents(){
+  var closeBtn=document.getElementById('help-modal-close');
+  if(closeBtn)closeBtn.addEventListener('click',function(){
+    var m=document.getElementById('help-modal');if(m&&m.remove)m.remove();
+  });
+  // overlay（背景）クリックでも閉じる。カード内クリックでは閉じない（e.target===modalEl のときだけ）。
+  var modalEl=document.getElementById('help-modal');
+  if(modalEl)modalEl.addEventListener('click',function(e){
+    if(e&&e.target===modalEl){var m=document.getElementById('help-modal');if(m&&m.remove)m.remove();}
+  });
 }
 
 // FRP-IMPL-002/003 (FRP-DESIGN-002 §8 / §8.3): 部分開始中クラスの「1局目 未割当参加者」一覧（選択 → append 作成）。
@@ -7702,7 +7829,13 @@ function buildFirstRoundPartialSectionHtml(cls){
   // FRP-UNASSIGNED-COUNT-001: 見出しに現在の未割当（1局目待機）人数を併記する。運営が「あと何人が
   //   1局目待ちか」を一目で把握できるようにする派生表示（unassigned.length は上で算出済み・state 非保存）。
   //   append で人数が減ると再描画で自動更新される。既存テスト pin は部分一致（'1局目 未割当参加者'）で後方互換。
-  html+='<h3 style="margin:0 0 4px;font-size:14px;color:#1F3864">1局目 未割当参加者（'+unassigned.length+'名）</h3>';
+  // HELP-UX-001 (#308 (2)): 見出し脇に「？ ヘルプ」ボタンを1つ置く（対局画面の迷子防止 in-app ヘルプ導線）。
+  //   click は build/bind 分離のため bindClassActionBarEvents 側で openHelpModal('first-round') へ結線する。
+  //   既存テスト pin '1局目 未割当参加者' は前方一致で維持（見出し本文は不変・flex で横並びにするだけ）。
+  html+='<div style="display:flex;align-items:center;gap:8px;margin:0 0 4px">';
+  html+='<h3 style="margin:0;font-size:14px;color:#1F3864">1局目 未割当参加者（'+unassigned.length+'名）</h3>';
+  html+='<button type="button" id="helpBtnFirstRound_'+escapeHtml(cls)+'" class="btn-sm" title="1局目の作り方をヘルプで表示します" aria-label="1局目の作り方ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>';
+  html+='</div>';
   // FRP-SMALL-UX-001 (post FRP-UNASSIGNED-COUNT-001 / #245): 未割当人数から「全員を1局目に入れると
   //   何組できて誰が待つか」を派生表示する1行。#245 の見出し人数を、運営が次に取る操作の結果（作れる
   //   組数・待機の有無）まで一目で分かるよう具体化する。表示専用＝state 非保存・mutate しない・listener
@@ -7727,14 +7860,14 @@ function buildFirstRoundPartialSectionHtml(cls){
   //   onClickAddOneTable へ bindClassActionBarEvents 側で行う。この helper は表示専用（イベント登録は持たない）。
   var canAddOneTable=unassigned.length>=2;
   html+='<div class="frp-add-one-table" style="margin:0 0 10px">';
-  html+='<button type="button" id="addTableBtn_'+escapeHtml(cls)+'" class="btn-primary"'+(canAddOneTable?'':' disabled')+' title="未手合いの先頭2名（受付順）で1局目の1卓を作成します。押すたびに次の2名で1卓を作成します。既存の対局・結果は変更しません。">1卓追加（受付順の先頭2名で1局目を作成）</button>';
+  html+='<button type="button" id="addTableBtn_'+escapeHtml(cls)+'" class="btn-primary"'+(canAddOneTable?'':' disabled')+' title="今すぐ始める対局だけを1卓ずつ追加します。あとから残りを追加できます。">1卓追加（受付順の先頭2名で1局目を作成）</button>';
   html+='<p style="margin:6px 0 0;font-size:11px;color:#888">※受付順（参加者追加順）の先頭2名で1卓を作成します。押すたびに次の1卓。未手合いが1名のときは、次の参加者が来るまで待機します（不戦勝にはなりません）。</p>';
   // PROGRESSIVE-PAIRING-IMPL-P2 (CONFIRMED spec §P2 / 受入 Phase P2): まとめて導線「未手合いをまとめて1局目作成」。
   //   未手合い（受付順＝entry_no 昇順）の全員を 2人ずつペア化して round=1 の卓をまとめて作成する（偶数=全員・
   //   奇数=末尾1人待機）。P1「1卓追加」(addTableBtn_・先頭2名で1卓) と同じ未割当が対象で、両方を併置（純追加）。
   //   disabled 条件は P1 と同じ「未手合い2人未満」(canAddOneTable)。click の登録は onClickAddAllTables へ
   //   bindClassActionBarEvents 側で行う（この helper は表示専用・イベント登録を持たない）。
-  html+='<button type="button" id="addAllTablesBtn_'+escapeHtml(cls)+'" class="btn-primary"'+(canAddOneTable?'':' disabled')+' style="margin-top:6px" title="いま未手合いの全員（受付順）を2人ずつ組んで1局目の卓をまとめて作成します。奇数なら末尾1人は待機（不戦勝にはなりません）。既存の対局・結果は変更しません。">未手合いをまとめて1局目作成</button>';
+  html+='<button type="button" id="addAllTablesBtn_'+escapeHtml(cls)+'" class="btn-primary"'+(canAddOneTable?'':' disabled')+' style="margin-top:6px" title="未割当の参加者から、作れる対局をまとめて作成します。">未手合いをまとめて1局目作成</button>';
   html+='<p style="margin:6px 0 0;font-size:11px;color:#888">※いま未手合いの全員を受付順で2人ずつまとめて卓にします（受付が一段落したときに便利）。奇数なら末尾1人は次の参加者が来るまで待機します（不戦勝にはなりません）。既存の対局・結果は変更しません。</p>';
   html+='</div>';
   html+='<p style="margin:0 0 8px;font-size:12px;color:#666">このクラスは部分開始中です。まだ1局目に入っていない参加者から選んで「選択した参加者で1局目を追加作成」を押すと、既存の対局を変更せず選択者だけの対局を追加します（2人以上を選択。偶数は全員、奇数は末尾1人が未割当のまま残ります）。既に1局目対局がある参加者は表示されません。</p>';
@@ -7909,10 +8042,16 @@ function editPastResult(cls,roundIdx,matchIdx){
 
 function calcFinal(cls){
   var players=state.players[cls];
-  var wins=getWins(cls);
+  // QA D-02（#279 / Codex P1 follow-up）: 勝ち星(wins)を getWins(cls) で別走査せず、下の
+  //   results ループ内で played/opponents と「同一の stale 行スキップ判定・同一タイミング」で数える。
+  //   getWins は p1/p2 を検証せず winner を加算するため、players から消えた id を含む stale 行で
+  //   wins だけ過剰加算され played と乖離していた（順位が変わる／負け数 played-A が負値で印刷）。
+  //   wins も同じガードの内側で集計し A・played・opponents を整合させる（正常データでは getWins と同値）。
+  var wins={};
   var opponents={};
   var played={};
   for(var i=0;i<players.length;i++){
+    wins[players[i].id]=0;
     opponents[players[i].id]=[];
     played[players[i].id]=0;
   }
@@ -7920,6 +8059,12 @@ function calcFinal(cls){
     for(var m=0;m<state.results[cls][r].length;m++){
       var match=state.results[cls][r][m];
       if(match.winner){
+        // QA D-02（#279）: results に players から消えた id が残った場合の防御。通常 UI からは
+        //   removePlayer の削除ガード（started && pastMatches>0）+ normalizeState の sanitizeMatch で
+        //   非到達の latent だが、保険として未登録 id を含む行は集計対象外にして TypeError を防ぐ。
+        //   wins もこのガードの内側で加算し、winner-only 集計が stale 行を過剰加算する不整合（Codex P1）を防ぐ。
+        if(!opponents[match.p1]||!opponents[match.p2])continue;
+        if(Object.prototype.hasOwnProperty.call(wins,match.winner))wins[match.winner]++;
         opponents[match.p1].push({opp:match.p2,won:match.winner===match.p1});
         opponents[match.p2].push({opp:match.p1,won:match.winner===match.p2});
         played[match.p1]++;
@@ -8772,6 +8917,20 @@ function buildPrintResultsHtml(){
 //   副作用のみ（MIME text/html;charset=utf-8 / window.open(url,'_blank') / load→afterprint→print
 //   の登録順 / win.print() / revokeObjectURL のタイミング / alert 文言）は現行どおり不変。
 function printResults(){
+  // QA D-03（#279）: 印刷対象（finals 非空のクラス）が 0 件のときは空帳票を開かず alert して return。
+  //   従来は全クラス空でもヘッダのみの空 HTML を window.open していた（printPairings は alert 済で非一貫）。
+  //   判定は buildPrintResultsHtml の buildTable と同じ calcFinal(cls).length>0 を用いる（state-as-SoT）。
+  var prClasses=(typeof getRegistrationClassList==='function')?getRegistrationClassList():[];
+  var prHasPrintable=false;
+  for(var pri=0;pri<prClasses.length;pri++){
+    var prc=prClasses[pri];
+    if(!prc||(typeof isSafeClassId==='function'&&!isSafeClassId(prc.id)))continue;
+    if(calcFinal(prc.id).length>0){prHasPrintable=true;break;}
+  }
+  if(!prHasPrintable){
+    alert('印刷できる対戦成績がありません。\n参加者を登録し、大会を開始してから実行してください。');
+    return;
+  }
   var html=buildPrintResultsHtml();
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob);
@@ -8974,8 +9133,9 @@ function buildReportHtml(){
   var balanceStr=(balance<0?'▲':'')+Math.abs(balance).toLocaleString()+'円';
   // 賞金表示も prize に同期。旧の固定内訳文字列（賞金額が固定 7000 円であった前提のテンプレ）は
   //   prize 可変化と相性が悪いため単純表示に置換。内訳テンプレ可変化は後続 task で扱う。
-  //   会計報告の慣習に合わせ控除を表す ▲ 接頭辞を維持（賞金は会場収支から差し引く支出）。
-  var prizeDisplay='▲'+prize.toLocaleString()+'円';
+  //   会計報告の慣習に合わせ控除を表す ▲ 接頭辞を付すが、QA D-01（#279）: 賞金>0 のときのみとし、
+  //   賞金 0 円（賞金なし大会・有効値 0）には ▲ を付けない（隣の balanceStr と同じ符号判定パターン）。
+  var prizeDisplay=(prize>0?'▲':'')+prize.toLocaleString()+'円';
 
   // REPORT-UX-002 (M2 / M3): クラス別 top 3 を state.classes 駆動で集計する。
   //   旧 getTopPlayers の cls 固定呼出と、級優勝 / 級準優勝 / 級3位 の固定 6 行
