@@ -671,6 +671,26 @@ else
 fi
 
 # ============================================
+# HELP-UX-002 (#322) 大会報告書画面の迷子防止 in-app ヘルプ 受入テスト（#309 機構流用・第2スライス）
+#   完全架空で HELP_TEXTS['report'] レジストリ（承認 title＋本文6行）/ buildHelpModalHtml（ヘルプ文 present・
+#   閉じる・escape 経由）/ openHelpModal('report') の open-close DOM フロー / XSS（生タグ非流入）/
+#   大会報告書 見出し脇「？ ヘルプ」ボタン(helpBtnReport)配置 / bindReportEvents の openHelpModal('report')
+#   結線（build/bind 分離）を固定する。
+# ============================================
+echo ""
+echo "【HELP-UX-002 (#322) 大会報告書 in-app ヘルプ（HELP_TEXTS['report'] / モーダル open-close / XSS / ？ボタン結線）】"
+if [ -f "$SCRIPT_DIR/test_help_002.js" ]; then
+  if node "$SCRIPT_DIR/test_help_002.js" "$TARGET" > /tmp/help_002_out.log 2>&1; then
+    ok "HELP-UX-002 テスト 全PASS ($(tail -1 /tmp/help_002_out.log))"
+  else
+    ng "HELP-UX-002 テスト 失敗"
+    cat /tmp/help_002_out.log
+  fi
+else
+  warn "test_help_002.js が見つからない"
+fi
+
+# ============================================
 # MEMBERS-CANDIDATE-MASTER-RECUT-001 members 形式 参加者候補マスタ読込（#194 価値分の再切り）
 #   完全架空 fixture で member 真偽値後方互換 / 禁止項目 whitelist 除外 / deleted 墓石除外 /
 #   大会state(shogi_v4)不変 / 候補マスタ(shogi_branch_master)保存 を固定する。

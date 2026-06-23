@@ -337,7 +337,13 @@ body.sb-active{overflow:hidden}
       <button type="button" class="btn-primary" onclick="printResults()">対戦成績を印刷 / PDF保存</button>
     </div>
     <div class="section no-print" style="margin-top:16px">
-      <h2>大会報告書</h2>
+      <!-- HELP-UX-002 (#322): 見出し脇に「？ ヘルプ」ボタンを1つ置く（報告書画面の迷子防止 in-app ヘルプ導線）。
+           #309 の「1局目 未割当参加者」見出し（flex 横並び・btn-sm＋inline）と同型。click は build/bind 分離のため
+           bindReportEvents 側で openHelpModal('report') へ結線する。本文は HELP_TEXTS['report'] に集約し escapeHtml 経由。 -->
+      <div style="display:flex;align-items:center;gap:8px">
+        <h2 style="margin:0">大会報告書</h2>
+        <button type="button" id="helpBtnReport" class="btn-sm" title="報告書の作り方をヘルプで表示します" aria-label="報告書の作り方ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
+      </div>
       <!-- REPORT-UX-004: 大会名（state.report.title）。downloadReport の <title> / h2 / ファイル名
            で参照される。既定値 '沼津支部月例将棋大会'。「報告書」接尾辞は downloadReport 側で付与。
            空欄/不正値は normalizeReportTitle で既定値に fallback、DOM 表示値も同期される。 -->
@@ -7770,6 +7776,21 @@ var HELP_TEXTS={
       '参加人数が奇数のときは、1人が待機になります（不戦勝にはなりません）。次の参加者が来たら組めます。',
       '勝敗を入力済みの対局は、組み合わせを不用意に再生成しないでください（入力済みの結果が失われることがあります）。'
     ]
+  },
+  // HELP-UX-002 (#322): 大会報告書画面の迷子防止ヘルプ（#309 HELP-UX-001 のモーダル三層を流用・topic 追加のみ）。
+  //   報告書画面は項目が多く既定値・自動「報告書」付与・賞金連動など迷いどころが多いため topic を1つ足す。
+  //   本文は buildHelpModalHtml で escapeHtml 経由（innerHTML への自由文流入を増やさない＝#309 と同じ XSS 安全方針）。
+  //   文言は issue #322 の承認文言（人間=作者承認後に確定）。保存スキーマ不変・script-global 固定文字列。
+  'report':{
+    title:'報告書の作り方ヘルプ',
+    lines:[
+      '各項目は空欄でも既定値で出力されます（大会名・主催者・会場・時間・事務局名など）。とりあえず空欄でも報告書は作れます。',
+      '大会名は出力時に自動で「報告書」が付きます。自分で「報告書」と入れると二重になります。',
+      '賞金額は会場の収支計算に使われます。賞金を出さない大会は 0 と入れてください。',
+      '担当役員・申し送り事項は、その日の運営記録として残したいことを書く欄です（なければ空欄でOK）。',
+      '「報告書を印刷 / PDF保存」を押すと印刷用ページが開きます。プリンタの代わりに「PDFとして保存」を選べばファイルになります。',
+      '出力したら、日時・参加人数・収支が合っているか必ず目で確認してください。'
+    ]
   }
 };
 
@@ -9805,6 +9826,11 @@ function bindReportEvents(){
   }
   var btn=document.getElementById('downloadReportBtn');
   if(btn)btn.addEventListener('click',downloadReport);
+  // HELP-UX-002 (#322): 見出し脇「？ ヘルプ」ボタン（静的 HTML・id=helpBtnReport）の click を
+  //   openHelpModal('report') に bind（追加のみ・表示のみ）。build/bind 分離のため結線はここで行う
+  //   （#309 の helpBtnFirstRound_ → bindClassActionBarEvents と同型）。
+  var helpBtnReport=document.getElementById('helpBtnReport');
+  if(helpBtnReport)helpBtnReport.addEventListener('click',function(){openHelpModal('report');});
 }
 
 // 全体として大会が完了しているか(参加者のいるクラスが全て全ラウンド消化済みか)
