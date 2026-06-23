@@ -521,6 +521,12 @@ function entryNoOf(cls,id){
 //   （重複は配列内で後発側＝2件目以降を再採番）。削除で生まれた欠番は再利用しない。
 //   旧実装は欠番補完に配列 index+1 を使い、別レコードの明示値と衝突（重複）し得た（#276）。
 //   players を in-place で正規化し、次に採番すべき番号（一意化後の max+1）を返す。冪等。
+// #330: entry_no の有効値判定（正の安全整数のみ）。Infinity/1e21(非安全整数)/NaN/負/小数を除外。
+//   ES5: Number.isFinite/isSafeInteger を使わず global isFinite + MAX_SAFE_INTEGER 上限で表現。
+//   #276 のガード（typeof number && >0 && floor===self）の取りこぼし（Infinity/1e21 素通り）を是正。
+function isValidEntryNo(en){
+  return typeof en==='number'&&isFinite(en)&&en>0&&Math.floor(en)===en&&en<=9007199254740991;
+}
 function reconcileEntryNos(players){
   var list=players||[];
   var claimed={};
@@ -531,7 +537,7 @@ function reconcileEntryNos(players){
     p=list[i];
     if(!p)continue;
     en=p.entry_no;
-    if(typeof en==='number'&&en>0&&Math.floor(en)===en&&!claimed[en]){
+    if(isValidEntryNo(en)&&!claimed[en]){
       claimed[en]=true;
       if(en>maxNo)maxNo=en;
     }else{
@@ -614,8 +620,10 @@ function formatParticipantLabel(player, options){
   return base+'（'+extras.join(' / ')+'）';
 }
 
+// FEE-JOSEI-001 (#325): 会費区分 grade は 'ippan'(一般) / 'chu'(中学生以下) / 'josei'(女性) の3値。
+//   女性(josei) は中学生以下(chu) と完全に同額（支部員=0円 / 支部員以外=500円）。
 function getFee(member,grade){
-  if(grade==='chu')return member==='member'?0:500;
+  if(grade==='chu'||grade==='josei')return member==='member'?0:500;
   return member==='member'?500:1000;
 }
 
@@ -861,7 +869,7 @@ function normalizeState(raw){
         name:p&&p.name?String(p.name):'',
         cls:cls,
         member:p&&p.member==='other'?'other':'member',
-        grade:p&&p.grade==='chu'?'chu':'ippan'
+        grade:p&&(p.grade==='chu'||p.grade==='josei')?p.grade:'ippan'
       };
       // 支部マスタとの紐付け（F2）。既存JSON（member_id 不在）は従来通り。
       if(p&&typeof p.member_id==='string'&&p.member_id)pp.member_id=p.member_id;
@@ -872,7 +880,7 @@ function normalizeState(raw){
       //   明示の有効値（正の整数）は一旦そのまま取り込み、不在/無効は null として
       //   後段の reconcileEntryNos でクラス単位に「正の整数・一意」へ正規化する。
       //   旧実装の index+1 補完は別レコードの明示値と衝突＝重複し得た（#276）。
-      if(p&&typeof p.entry_no==='number'&&p.entry_no>0){
+      if(p&&isValidEntryNo(p.entry_no)){
         pp.entry_no=p.entry_no;
       } else {
         pp.entry_no=null;
@@ -1577,10 +1585,11 @@ function normalizeBranchMaster(raw){
     // MEMBERS-CANDIDATE-MASTER-RECUT-001: 外部の members 形式候補マスタは member を boolean で持つ
     //   （true=支部員 / false=一般）。false → 'other'(一般) を受理する。アプリ native export は
     //   'member'/'other' 文字列のため、この追加分岐は無影響（後方互換）。未知値・未指定は既存どおり
-    //   'member'(支部員) 既定。grade はアプリ内では会費区分（'chu'=中学生以下 / それ以外='ippan'）で、
-    //   外部マスタの段位（例 "二段"）は別概念のため取り込まず既定 'ippan'（既存正規化のまま）。
+    //   'member'(支部員) 既定。grade はアプリ内では会費区分（'chu'=中学生以下 / 'josei'=女性 / それ以外='ippan'）で、
+    //   FEE-JOSEI-001 (#325): アプリ native の master 往復では 'chu'/'josei' を保持する（3値）。
+    //   外部マスタの段位（例 "二段"）は 'chu'/'josei' いずれでもないため別概念として取り込まず既定 'ippan'（既存方針のまま）。
     var memberStatus=(m.member===false||m.member==='other')?'other':'member';
-    var gradeStatus=(m.grade==='chu')?'chu':'ippan';
+    var gradeStatus=(m.grade==='chu'||m.grade==='josei')?m.grade:'ippan';
 
     members.push({
       id:id,
@@ -1988,7 +1997,7 @@ function convertPhase2ParticipantsToMembers(parsed,master){
       var p=parsed[i];
       var newId=generateMemberId(working);
       var memberStatus=(p.member==='other')?'other':'member';
-      var gradeStatus=(p.grade==='chu')?'chu':'ippan';
+      var gradeStatus=(p.grade==='chu'||p.grade==='josei')?p.grade:'ippan';
       var nameNorm=normalizePersonName(typeof p.name==='string'?p.name:'');
       var yomiNorm=normalizeYomi(typeof p.yomi==='string'?p.yomi:'');
       var cityNorm=normalizeCity(p.city);
@@ -2105,7 +2114,7 @@ function applyMasterMemberRestore(memberId,master){
 //     applyMasterMemberEdit(memberId, newName, newYomi, master, options)
 //     - options 省略時: member/grade は変更しない（既存挙動維持・A3-S2-edit-01〜29 互換）
 //     - options.member: 'member' | 'other' のみ許容（不正値で invalid_member_value）
-//     - options.grade : 'ippan'  | 'chu'   のみ許容（不正値で invalid_grade_value）
+//     - options.grade : 'ippan' | 'chu' | 'josei' のみ許容（不正値で invalid_grade_value）
 //   戻り値: {success, error?, duplicateCount?}
 // ============================================================
 function applyMasterMemberEdit(memberId,newName,newYomi,master,options){
@@ -2132,7 +2141,7 @@ function applyMasterMemberEdit(memberId,newName,newYomi,master,options){
   if(hasMemberOpt&&options.member!=='member'&&options.member!=='other'){
     return {success:false,error:'invalid_member_value'};
   }
-  if(hasGradeOpt&&options.grade!=='ippan'&&options.grade!=='chu'){
+  if(hasGradeOpt&&options.grade!=='ippan'&&options.grade!=='chu'&&options.grade!=='josei'){
     return {success:false,error:'invalid_grade_value'};
   }
   // A-4.5 §3.4: null 受理を撤廃。A / B のみ受理(undefined は「変更しない」を意味)
@@ -2231,6 +2240,23 @@ function attachMemberIdToPlayer(player,member){
   player.member_id=member.id;
 }
 
+// PAST-ADD-FEE-INHERIT-001: 支部マスタ member の会費区分（member / grade）を当日 player レコードへ
+//   写し込むときの唯一の正規化。単発追加 addPlayerFromMaster と一括追加 finalizeAddPastParticipants の
+//   両方から呼び、両経路が必ず同じ会費区分（＝同じ getFee 結果）を出すことを保証する。
+//   - member: 'other'（支部員以外）のみ非既定。それ以外（未定義含む）は 'member'。
+//   - grade : 'chu'（中学生以下）/ 'josei'（女性）は保持。それ以外（未定義・段位など）は 'ippan'。
+//   addPlayerFromMaster は #326（FEE-JOSEI-001）で既に chu/josei/ippan/other を保持済みのため、本 helper は
+//   その純抽出＝単発側は byte 同値。新たに会費区分を取りこぼさなくなるのは一括 finalizeAddPastParticipants
+//   側（旧 member:'member'/grade:'ippan' ハードコードを解消し、master の member/grade を引き継ぐ）。
+function normalizeMasterFeeFields(masterMember){
+  var rawMember=masterMember&&masterMember.member;
+  var rawGrade=masterMember&&masterMember.grade;
+  return {
+    member:(rawMember==='other')?'other':'member',
+    grade:(rawGrade==='chu'||rawGrade==='josei')?rawGrade:'ippan'
+  };
+}
+
 // A-4.2 §3.3: マスタの member を指定クラスで state.players に追加する純粋関数。
 // master 側のフィールド（yomi / last_class / attendance_count / last_attended / tournament_ids）は
 // 一切変更しない（saveData → syncBranchMasterOnSave 側の責務）。
@@ -2274,12 +2300,14 @@ function addPlayerFromMaster(memberId,cls,master,state){
     }
   }
   var id='p'+Date.now()+Math.floor(Math.random()*1000);
+  // PAST-ADD-FEE-INHERIT-001: 会費区分は normalizeMasterFeeFields に集約（一括追加と同一正規化）。
+  var feeFields=normalizeMasterFeeFields(member);
   var player={
     id:id,
     name:memberNameNorm||String(member.name||''),
     cls:cls,
-    member:(member.member==='other')?'other':'member',
-    grade:(member.grade==='chu')?'chu':'ippan',
+    member:feeFields.member,
+    grade:feeFields.grade,
     member_id:member.id,
     // FURIGANA-MVP-001: master.yomi を当日 player.yomi に snapshot コピー（normalizeYomi 正規化・空は ''）。
     yomi:normalizeYomi(member.yomi||''),
@@ -2344,7 +2372,7 @@ function createMemberFromParticipant(p,master,date){
   return {
     id:generateMemberId(master),
     name:normalizePersonName(p.name||''),
-    yomi:'',
+    yomi:normalizeYomi((p&&typeof p.yomi==='string')?p.yomi:''),
     last_class:(p.cls==='A'||p.cls==='B')?p.cls:null,
     last_attended:date,
     first_attended:date,
@@ -2354,7 +2382,7 @@ function createMemberFromParticipant(p,master,date){
     deleted_at:null,
     note:'',
     member:(p&&p.member==='other')?'other':'member',
-    grade:(p&&p.grade==='chu')?'chu':'ippan',
+    grade:(p&&(p.grade==='chu'||p.grade==='josei'))?p.grade:'ippan',
     // Phase 1 §2: 過去大会データから member 生成時、city は空で初期化(participant 側に city は無いため)
     city:''
   };
@@ -2465,11 +2493,14 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
       if(isLatestAttendance273)member.last_class=(p.cls==='A'||p.cls==='B')?p.cls:null;
       // A-3: 支部員区分・中学生以下区分の前回値を記録（次回サジェスト引き継ぎ用）
       if(p.member==='member'||p.member==='other')member.member=p.member;
-      if(p.grade==='ippan'||p.grade==='chu')member.grade=p.grade;
-      // A-4 §3.1.5 + Should Fix 2: 既存 member の yomi は **空のときのみ** yomiMap から補完。
-      //   既存値があれば触らない（誤上書き防止）。
-      if(yomiMap&&typeof yomiMap[p.id]==='string'&&!normalizeYomi(member.yomi||'')){
-        var yFill=normalizeYomi(yomiMap[p.id]);
+      if(p.grade==='ippan'||p.grade==='chu'||p.grade==='josei')member.grade=p.grade;
+      // Issue #333: 既存 member の yomi は **空のときのみ** 補完。yomiMap 優先・
+      //   無ければ player.yomi をフォールバック（リロード/復元で _pendingNewYomi が
+      //   失われても player.yomi から復旧）。既存の非空値は温存（誤上書き防止）。
+      if(!normalizeYomi(member.yomi||'')){
+        var yFill='';
+        if(yomiMap&&typeof yomiMap[p.id]==='string')yFill=normalizeYomi(yomiMap[p.id]);
+        if(!yFill&&typeof p.yomi==='string')yFill=normalizeYomi(p.yomi);
         if(yFill)member.yomi=yFill;
       }
       affected[member.id]=member;
@@ -3032,8 +3063,12 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi){
     if(existingMids[m.id]||existingNames[m.name]){skipped++;continue;}
     var cls=(m.last_class==='A'||m.last_class==='B')?m.last_class:'A';
     var pid='p'+Date.now()+Math.floor(Math.random()*1000)+'_'+p;
+    // PAST-ADD-FEE-INHERIT-001: 旧実装は member:'member'/grade:'ippan' をハードコードし、中学生以下・女性・
+    //   支部員以外の会費区分を取りこぼしていた。単発 addPlayerFromMaster と同じ normalizeMasterFeeFields で
+    //   master の member/grade を引き継ぐ（一括 vs 単発の非対称を解消）。
+    var feeFields=normalizeMasterFeeFields(m);
     // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（欠番維持）
-    state.players[cls].push({id:pid,name:m.name,cls:cls,member:'member',grade:'ippan',member_id:m.id,entry_no:nextEntryNoForClass(cls,state)});
+    state.players[cls].push({id:pid,name:m.name,cls:cls,member:feeFields.member,grade:feeFields.grade,member_id:m.id,entry_no:nextEntryNoForClass(cls,state)});
     existingMids[m.id]=true;
     existingNames[m.name]=true;
     added++;
@@ -3137,20 +3172,20 @@ function buildMasterTabHtml(master){
   }else{
     html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
     // master-list 列構成変更(2026-05-08): 7 列(氏名/ふりがな/区分/前回クラス/最終参加/回数/操作)→
-    // 5 列(氏名/支部員区分/中学生以下区分/編集/削除)。iPhone 375px 縦書き化解消が目的。
+    // 5 列(氏名/支部員区分/会費区分/編集/削除)。iPhone 375px 縦書き化解消が目的。
     // 削除した「ふりがな」「前回クラス」「最終参加」「回数」は F7 編集モーダル内で確認・編集可。
-    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">支部員区分</th><th style="text-align:left;padding:6px 8px">中学生以下区分</th><th style="padding:6px 8px">編集</th><th style="padding:6px 8px">削除</th></tr></thead><tbody>';
+    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">支部員区分</th><th style="text-align:left;padding:6px 8px">会費区分</th><th style="padding:6px 8px">編集</th><th style="padding:6px 8px">削除</th></tr></thead><tbody>';
     for(var i=0;i<members.length;i++){
       var m=members[i];
       var memberLabel=(m.member==='other')?'他':'支部員';
-      var gradeLabel=(m.grade==='chu')?'中学':'一般';
+      var gradeLabel=(m.grade==='chu')?'中学':(m.grade==='josei')?'女性':'一般';
       var isDel=(m.deleted===true);
       // A-4 §3.4.2: 削除済み行はグレー背景＋取り消し線
       var rowStyle=isDel?' style="background:#f5f5f5;color:#888;text-decoration:line-through" class="master-row-deleted"':'';
       html+='<tr'+rowStyle+'><td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.name)+'</td>';
       // 支部員区分(member: 支部員 / 他)
       html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee" class="master-cell-member">'+escapeHtml(memberLabel)+'</td>';
-      // 中学生以下区分(grade: 中学 / 一般)
+      // 会費区分(grade: 中学 / 女性 / 一般)
       html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee" class="master-cell-grade">'+escapeHtml(gradeLabel)+'</td>';
       if(isDel){
         // 削除済み行: 編集列に「復元」、削除列に削除日(A-4 §3.2.3 削除日表示 + 復元ボタンを 2 列に分割)
@@ -3183,9 +3218,10 @@ function buildMasterTabHtml(master){
 }
 
 function buildMasterEditModalHtml(member){
-  // A-4 §3.3.1: 支部員区分・中学生以下区分 + 履歴情報（読み取り専用）
+  // A-4 §3.3.1: 支部員区分・会費区分 + 履歴情報（読み取り専用）
   var memberCur=(member&&member.member==='other')?'other':'member';
-  var gradeCur=(member&&member.grade==='chu')?'chu':'ippan';
+  // FEE-JOSEI-001 (#325): 会費区分は 'ippan'/'chu'/'josei' の3値。未知値は 'ippan' 既定。
+  var gradeCur=(member&&(member.grade==='chu'||member.grade==='josei'))?member.grade:'ippan';
   // A-4.3 §2.5: 前回クラス（A / B / null=未設定）
   var lastClassCur=(member&&(member.last_class==='A'||member.last_class==='B'))?member.last_class:'';
   var firstAt=(member&&member.first_attended)?member.first_attended:'未記録';
@@ -3210,9 +3246,10 @@ function buildMasterEditModalHtml(member){
   html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-member" value="other"'+(memberCur==='other'?' checked':'')+' style="margin-right:6px">他</label>';
   html+='</fieldset>';
 
-  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">中学生以下</legend>';
+  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">会費区分</legend>';
   html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-grade" value="ippan"'+(gradeCur==='ippan'?' checked':'')+' style="margin-right:6px">一般</label>';
-  html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-grade" value="chu"'+(gradeCur==='chu'?' checked':'')+' style="margin-right:6px">中学</label>';
+  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-grade" value="chu"'+(gradeCur==='chu'?' checked':'')+' style="margin-right:6px">中学</label>';
+  html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-grade" value="josei"'+(gradeCur==='josei'?' checked':'')+' style="margin-right:6px">女性</label>';
   html+='</fieldset>';
 
   // A-4.5 §2.6: 前回クラス（A / B 2 択。null は未 checked で表現）
@@ -3578,6 +3615,15 @@ function processMasterImportText(text,mode,setStatus){
       else setStatus('インポートに失敗しました');
       return;
     }
+    // QA-MASTER-IMPORT-CORRUPTION-GUARD-329 (Issue #329 / B-01): import ファイルが未知 schema_version 等で
+    //   normalizeBranchMaster が _loaded_with_corruption=true（空マスタ）を返すと applyOverwriteImport の
+    //   success は true のまま。ここでフラグを確認せず confirm 後に saveBranchMaster(空) すると既存会員を
+    //   全消失させる（confirm 文言も「読込予定: 0名」としか出ない）。syncBranchMasterOnSave / loadBranchMaster
+    //   と同じ保全パターンで、フラグが立つときは保存も confirm もせずエラー表示し既存マスタを保持する。
+    if(result.newMaster&&result.newMaster._loaded_with_corruption===true){
+      setStatus('インポートファイルが非対応の版（schema_version）のため読み込めません。安全のため取り込みを中止しました。既存のマスタは保持しています。');
+      return;
+    }
     if(!confirm('現在のマスタをすべて置き換えます。元に戻せません。\n\n続けますか？\n\n読込予定: '+(result.newMaster.members.length)+'名'))return;
     // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
     var saved=saveBranchMaster(result.newMaster);
@@ -3591,6 +3637,16 @@ function processMasterImportText(text,mode,setStatus){
 
   if(mode==='merge'){
     var current=loadBranchMaster();
+    // QA-MASTER-IMPORT-CORRUPTION-GUARD-329 (Issue #329 / B-02): 保存済みマスタが未知 schema_version 等で
+    //   loadBranchMaster が _loaded_with_corruption=true を返すと、applyMergeImport の working は空になり結果は
+    //   import 側のみ＝旧会員が消える。merge 経路は confirm が無いぶん特に危険。current のフラグを確認し、
+    //   true なら保存せずエラー表示で既存データを保持する（syncBranchMasterOnSave と同じ保全パターン）。
+    //   ※ import ファイル側が未知 schema のケースは imported.members 空＝従来どおり no-op 安全のため、ここでは
+    //     current（保存済み）のみを判定し非回帰を保つ。
+    if(current&&current._loaded_with_corruption===true){
+      setStatus('保存済みのマスタが非対応の版（schema_version）のため読み込めません。安全のためマージを中止しました。既存のマスタは保持しています。');
+      return;
+    }
     var mr=applyMergeImport(parsed,current);
     if(!mr.success){
       if(mr.error==='tournament_format')setStatus('これは過去大会データの形式です。「マスタ」タブの「📥 過去大会を支部マスタに統合」をご利用ください');
@@ -3676,7 +3732,7 @@ function bindMasterEditModalEvents(){
     for(var rk=0;rk<lastClassRadios.length;rk++){if(lastClassRadios[rk].checked){lastClassPick=lastClassRadios[rk].value;lastClassPicked=true;break;}}
     var options={};
     if(memberPick==='member'||memberPick==='other')options.member=memberPick;
-    if(gradePick==='ippan'||gradePick==='chu')options.grade=gradePick;
+    if(gradePick==='ippan'||gradePick==='chu'||gradePick==='josei')options.grade=gradePick;
     // A-4.5 §2.6: 「未設定」radio 廃止。A/B どちらも未 check なら last_class を変更しない(undefined)
     if(lastClassPicked&&(lastClassPick==='A'||lastClassPick==='B'))options.last_class=lastClassPick;
     // Phase 1: cityInput が存在する場合のみ options.city を渡す。空文字も明示更新として扱う(=任意項目をクリア可能)
@@ -3690,7 +3746,7 @@ function bindMasterEditModalEvents(){
         else if(result.error==='not_found')statusEl.textContent='対象の member が見つかりません';
         else if(result.error==='deleted')statusEl.textContent='削除済み member は編集できません';
         else if(result.error==='invalid_member_value')statusEl.textContent='支部員区分の値が不正です';
-        else if(result.error==='invalid_grade_value')statusEl.textContent='中学生以下区分の値が不正です';
+        else if(result.error==='invalid_grade_value')statusEl.textContent='会費区分の値が不正です';
         else statusEl.textContent='保存に失敗しました';
       }
       return;
@@ -4851,8 +4907,11 @@ function makePlayerRow(p,cls,i){
   gSel.className='sel-sm';
   var g1=document.createElement('option');g1.value='ippan';g1.textContent='一般';
   var g2=document.createElement('option');g2.value='chu';g2.textContent='中学生以下';
-  if((p.grade||'ippan')==='chu')g2.selected=true; else g1.selected=true;
-  gSel.appendChild(g1);gSel.appendChild(g2);
+  // FEE-JOSEI-001 (#325): 会費区分に「女性」(josei) を追加（chu と同額）。josei 選択時は g3 を選択表示。
+  var g3=document.createElement('option');g3.value='josei';g3.textContent='女性';
+  var gradeSel=(p.grade==='chu'||p.grade==='josei')?p.grade:'ippan';
+  if(gradeSel==='chu')g2.selected=true; else if(gradeSel==='josei')g3.selected=true; else g1.selected=true;
+  gSel.appendChild(g1);gSel.appendChild(g2);gSel.appendChild(g3);
   gSel.addEventListener('change',(function(pid,c){return function(){
     updateField(pid,c,'grade',this.value);
   };})(p.id,cls));
@@ -5249,7 +5308,7 @@ function addPlayer(){
         }
         memberIdValue=sel.id;
         if(sel.member==='other')memberValue='other';
-        if(sel.grade==='chu')gradeValue='chu';
+        if(sel.grade==='chu'||sel.grade==='josei')gradeValue=sel.grade;
         suggestSelected=sel;
       }
     }
@@ -8061,6 +8120,27 @@ function editPastResult(cls,roundIdx,matchIdx){
   bindEditPastResultModalEvents(cls, roundIdx, matchIdx);
 }
 
+// #331: 2人の直接対決を全対戦行で集計した勝越し差を返す（pid1 視点）。
+//   >0: pid1 勝越し / <0: pid2 勝越し / 0: 決着なし（1-1 等の同数・または対戦なし）。
+//   旧実装（calcFinal 比較子・isSameDisplayedRank）は最初の対戦行で early-return し、
+//   1勝1敗(split)でも早い回戦の勝者を上位/別順位に固定していた（#331・作者方針=同順位）。
+function headToHeadBalance(pid1,pid2,cls){
+  var rounds=(typeof state!=='undefined'&&state&&state.results&&state.results[cls])?state.results[cls]:[];
+  var bal=0;
+  for(var r=0;r<rounds.length;r++){
+    var round=rounds[r];
+    if(!round)continue;
+    for(var m=0;m<round.length;m++){
+      var match=round[m];
+      if(!match)continue;
+      if((match.p1===pid1&&match.p2===pid2)||(match.p1===pid2&&match.p2===pid1)){
+        if(match.winner===pid1)bal++;
+        else if(match.winner===pid2)bal--;
+      }
+    }
+  }
+  return bal;
+}
 function calcFinal(cls){
   var players=state.players[cls];
   // QA D-02（#279 / Codex P1 follow-up）: 勝ち星(wins)を getWins(cls) で別走査せず、下の
@@ -8106,18 +8186,13 @@ function calcFinal(cls){
     if(b.A!==a.A)return b.A-a.A;
     if(b.B!==a.B)return b.B-a.B;
     if(b.C!==a.C)return b.C-a.C;
-    // A B C全て同じ場合：直接対決の結果で判定
+    // A B C全て同じ場合：直接対決を全対戦行で集計して判定（#331）。
+    //   1勝1敗(split)等の同数・対戦なしは決着なし→同順位（最終くじ引き）。
     var pid1=a.p.id,pid2=b.p.id;
-    for(var r=0;r<state.results[cls].length;r++){
-      for(var m=0;m<state.results[cls][r].length;m++){
-        var match=state.results[cls][r][m];
-        if(match.p1===pid1&&match.p2===pid2||match.p1===pid2&&match.p2===pid1){
-          if(match.winner===pid2)return 1;
-          if(match.winner===pid1)return -1;
-        }
-      }
-    }
-    return 0; // 対戦なし→同順位（くじ引き）
+    var bal=headToHeadBalance(pid1,pid2,cls);
+    if(bal>0)return -1; // pid1(a) 勝越し→上位
+    if(bal<0)return 1;  // pid2(b) 勝越し→上位
+    return 0; // 同数(1-1等)/対戦なし→同順位（くじ引き）
   });
   return res;
 }
@@ -8133,18 +8208,9 @@ function isSameDisplayedRank(a,b,cls){
   if(a.A!==b.A)return false;
   if(a.B!==b.B)return false;
   if(a.C!==b.C)return false;
-  var pid1=a.p.id,pid2=b.p.id;
-  var rounds=(typeof state!=='undefined'&&state&&state.results&&state.results[cls])?state.results[cls]:[];
-  for(var r=0;r<rounds.length;r++){
-    var round=rounds[r];
-    if(!round)continue;
-    for(var m=0;m<round.length;m++){
-      var match=round[m];
-      if((match.p1===pid1&&match.p2===pid2)||(match.p1===pid2&&match.p2===pid1)){
-        if(match.winner===pid1||match.winner===pid2)return false;
-      }
-    }
-  }
+  // #331: 直接対決を全対戦行で集計し、勝越し差があれば別順位。
+  //   1勝1敗(split)等の同数・対戦なしは決着なし＝同順位（最初の対戦行での early-return をやめる）。
+  if(headToHeadBalance(a.p.id,b.p.id,cls)!==0)return false;
   return true;
 }
 
@@ -8564,7 +8630,7 @@ function buildBackupAnonymous(s){
         cls:cls,
         member_id:(typeof p.member_id==='string'&&p.member_id)?p.member_id:null,
         player_ref:p.id,
-        entry_no:(typeof p.entry_no==='number')?p.entry_no:(ei+1),
+        entry_no:isValidEntryNo(p.entry_no)?p.entry_no:(ei+1),
         wins:wins[p.id]||0,
         games:games[p.id]||0
       });
