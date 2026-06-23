@@ -1131,6 +1131,25 @@ else
   warn "test_fee_josei_001.js が見つからない"
 fi
 
+# ============================================
+# PAST-ADD-FEE-INHERIT-001 過去参加者の一括追加が支部マスタの会費区分(member/grade)を引き継ぐ
+#   旧バグ（一括が member:'member'/grade:'ippan' をハードコード→中学生/女性/支部員以外を取りこぼし）の
+#   回帰テスト。単発 addPlayerFromMaster と同じ正規化（共有 helper）で chu/josei/other を保持し、
+#   単発=一括で getFee が一致することを完全架空データで固定する。
+# ============================================
+echo ""
+echo "【PAST-ADD-FEE-INHERIT-001 過去参加者 一括追加の会費区分(member/grade)引き継ぎ（単発=一括）】"
+if [ -f "$SCRIPT_DIR/test_past_add_fee_inherit_001.js" ]; then
+  if node "$SCRIPT_DIR/test_past_add_fee_inherit_001.js" "$TARGET" > /tmp/past_add_fee_inherit_001_out.log 2>&1; then
+    ok "PAST-ADD-FEE-INHERIT-001 テスト 全PASS ($(tail -1 /tmp/past_add_fee_inherit_001_out.log))"
+  else
+    ng "PAST-ADD-FEE-INHERIT-001 テスト 失敗"
+    cat /tmp/past_add_fee_inherit_001_out.log
+  fi
+else
+  warn "test_past_add_fee_inherit_001.js が見つからない"
+fi
+
 
 # ============================================
 # 最終結果
