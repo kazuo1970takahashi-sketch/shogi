@@ -978,6 +978,19 @@ else
   warn "test_master_import_corruption_guard_329.js が見つからない"
 fi
 
+echo ""
+echo "【ISSUE-333 リロード/復元後 yomi master同期サイレント消失 是正（yomiMap優先・player.yomiフォールバック・既存非空温存）】"
+if [ -f "$SCRIPT_DIR/test_yomi_master_sync_fallback_333.js" ]; then
+  if node "$SCRIPT_DIR/test_yomi_master_sync_fallback_333.js" "$TARGET" > /tmp/yomi_master_sync_fallback_333_out.log 2>&1; then
+    ok "ISSUE-333 テスト 全PASS ($(tail -1 /tmp/yomi_master_sync_fallback_333_out.log))"
+  else
+    ng "ISSUE-333 テスト 失敗"
+    cat /tmp/yomi_master_sync_fallback_333_out.log
+  fi
+else
+  warn "test_yomi_master_sync_fallback_333.js が見つからない"
+fi
+
 # ============================================
 # PHASE-A-TEST-SAFETY-NET (Issue #283): ゴールデンマスター土台 + 薄い領域の characterization
 #   shogi_v4.html 無改変。段階リファクタ（Phase B 以降）の挙動完全不変を機械的に担保する安全網。
