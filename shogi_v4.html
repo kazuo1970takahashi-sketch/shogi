@@ -2366,7 +2366,7 @@ function createMemberFromParticipant(p,master,date){
   return {
     id:generateMemberId(master),
     name:normalizePersonName(p.name||''),
-    yomi:'',
+    yomi:normalizeYomi((p&&typeof p.yomi==='string')?p.yomi:''),
     last_class:(p.cls==='A'||p.cls==='B')?p.cls:null,
     last_attended:date,
     first_attended:date,
@@ -2488,10 +2488,13 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
       // A-3: 支部員区分・中学生以下区分の前回値を記録（次回サジェスト引き継ぎ用）
       if(p.member==='member'||p.member==='other')member.member=p.member;
       if(p.grade==='ippan'||p.grade==='chu'||p.grade==='josei')member.grade=p.grade;
-      // A-4 §3.1.5 + Should Fix 2: 既存 member の yomi は **空のときのみ** yomiMap から補完。
-      //   既存値があれば触らない（誤上書き防止）。
-      if(yomiMap&&typeof yomiMap[p.id]==='string'&&!normalizeYomi(member.yomi||'')){
-        var yFill=normalizeYomi(yomiMap[p.id]);
+      // Issue #333: 既存 member の yomi は **空のときのみ** 補完。yomiMap 優先・
+      //   無ければ player.yomi をフォールバック（リロード/復元で _pendingNewYomi が
+      //   失われても player.yomi から復旧）。既存の非空値は温存（誤上書き防止）。
+      if(!normalizeYomi(member.yomi||'')){
+        var yFill='';
+        if(yomiMap&&typeof yomiMap[p.id]==='string')yFill=normalizeYomi(yomiMap[p.id]);
+        if(!yFill&&typeof p.yomi==='string')yFill=normalizeYomi(p.yomi);
         if(yFill)member.yomi=yFill;
       }
       affected[member.id]=member;
