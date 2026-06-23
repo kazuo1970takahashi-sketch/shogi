@@ -1111,6 +1111,26 @@ else
   warn "test_leftover_rotation_guard_001.js が見つからない"
 fi
 
+# ============================================
+# FEE-JOSEI-001 (#325) 会費区分に「女性」(josei) を追加（会費は中学生以下=chu と完全同額）
+#   getFee(josei===chu) / calcTotal 合算 / normalizeState・save→load 往復で josei 保持 /
+#   normalizeBranchMaster（アプリ native 往復で josei 保持・外部段位は ippan 既定維持）/ convertPhase2 /
+#   addPlayerFromMaster / createMemberFromParticipant / applyMasterMemberEdit（josei 受理・不正値拒否）/
+#   マスタ一覧「会費区分」「女性」/ 編集モーダル女性 radio / 受付一覧 select 女性 option / 未知値→ippan 非回帰。
+# ============================================
+echo ""
+echo "【FEE-JOSEI-001 (#325) 会費区分に女性追加（josei=chu 同額・正規化往復・UI/一覧表示・非回帰）】"
+if [ -f "$SCRIPT_DIR/test_fee_josei_001.js" ]; then
+  if node "$SCRIPT_DIR/test_fee_josei_001.js" "$TARGET" > /tmp/fee_josei_001_out.log 2>&1; then
+    ok "FEE-JOSEI-001 テスト 全PASS ($(tail -1 /tmp/fee_josei_001_out.log))"
+  else
+    ng "FEE-JOSEI-001 テスト 失敗"
+    cat /tmp/fee_josei_001_out.log
+  fi
+else
+  warn "test_fee_josei_001.js が見つからない"
+fi
+
 
 # ============================================
 # 最終結果
