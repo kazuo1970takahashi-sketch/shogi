@@ -252,7 +252,10 @@ body.sb-active{overflow:hidden}
       <div style="font-size:11px;color:#888;margin-top:4px">A・Bクラスは削除できません。開始済み・参加者がいるクラスは削除できません。</div>
     </div>
     <div class="section">
-      <h2>参加者を登録する</h2>
+      <div style="display:flex;align-items:center;gap:8px">
+        <h2 style="margin:0">参加者を登録する</h2>
+        <button type="button" id="helpBtnReg" class="btn-sm" title="登録・受付の使い方をヘルプで表示します" aria-label="登録・受付ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
+      </div>
       <div class="flex">
         <input type="text" id="inp-name" placeholder="氏名を入力" style="width:150px" autocomplete="off">
         <select id="inp-class">
@@ -324,6 +327,13 @@ body.sb-active{overflow:hidden}
   </div>
   <div id="pane-master" style="display:none"></div>
   <div id="pane-result" style="display:none">
+    <!-- HELP-UX-004 (#341): 順位タブの迷子防止ヘルプ。#309/#323 のモーダル三層を流用し topic 追加のみ。
+         順位表は per-class 動的描画（buildResultsClassHtml=golden 対象）のため、静的アンカーをここに置き
+         click は bindReportEvents 側で openHelpModal('standings') へ結線する（report help と同経路・golden 非接触）。 -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px" class="no-print">
+      <span style="font-size:14px;font-weight:600;color:#1F3864">順位の見方</span>
+      <button type="button" id="helpBtnStandings" class="btn-sm" title="順位の決め方をヘルプで表示します" aria-label="順位の見方ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
+    </div>
     <!-- ROUND-CLASS-START-005: result-{classId} を state.classes 駆動で append できるよう
          result-list ラッパーで囲む。A/B は既存互換のため静的に保持し、
          ensureClassResultDomNodes() が不足分のみ末尾に動的補完する。
@@ -3145,7 +3155,9 @@ function buildMasterTabHtml(master){
     if(la!==lb)return la<lb?1:-1;
     return (a.name||'')<(b.name||'')?-1:1;
   });
-  var html='<div class="section"><h2>沼津支部 参加者マスタ</h2>';
+  // HELP-UX-005 (#342): 見出し脇に「？ ヘルプ」（id=helpBtnMaster）。click は bindMasterTabEvents 側で
+  //   openHelpModal('master') へ結線（renderMasterTab 後に毎回 bind・#309/#323 と同じ build/bind 分離）。
+  var html='<div class="section"><div style="display:flex;align-items:center;gap:8px"><h2 style="margin:0">沼津支部 参加者マスタ</h2><button type="button" id="helpBtnMaster" class="btn-sm" title="支部マスタの使い方をヘルプで表示します" aria-label="支部マスタヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button></div>';
   // A-4 §3.5.2: 登録数 + ふりがな未入力数のサマリー
   var noYomiCount=0;
   for(var ny=0;ny<liveMembers.length;ny++){if(isNoYomiMember(liveMembers[ny]))noYomiCount++;}
@@ -3821,6 +3833,9 @@ function bindMasterEditModalEvents(){
 }
 
 function bindMasterTabEvents(){
+  // HELP-UX-005 (#342): 支部マスタ見出し脇「？ ヘルプ」（id=helpBtnMaster）→ openHelpModal('master')。
+  var helpBtnMaster=document.getElementById('helpBtnMaster');
+  if(helpBtnMaster)helpBtnMaster.addEventListener('click',function(){openHelpModal('master');});
   var btn=document.getElementById('masterMigrateBtn');
   if(btn)btn.addEventListener('click',openMigrationWizard);
   var importBtn=document.getElementById('masterImportBtn');
@@ -7850,6 +7865,44 @@ var HELP_TEXTS={
       '「報告書を印刷 / PDF保存」を押すと印刷用ページが開きます。プリンタの代わりに「PDFとして保存」を選べばファイルになります。',
       '出力したら、日時・参加人数・収支が合っているか必ず目で確認してください。'
     ]
+  },
+  // HELP-UX-003 (#338): 登録受付タブ（#pane-reg）の迷子防止ヘルプ。#309/#323 のモーダル三層を流用し topic 追加のみ。
+  //   本文は buildHelpModalHtml で escapeHtml 経由（innerHTML への自由文流入を増やさない）。保存スキーマ不変・script-global 固定文字列。
+  'reg':{
+    title:'登録・受付ヘルプ',
+    lines:[
+      '参加者の登録：氏名を入れて登録します。受付番号は自動で振られます（入力は不要です）。',
+      'ふりがな：同姓や読み違いの防止に入れておくと、50音での並べ替えや検索ができます。後から編集でき、空にすればルビは消えます。',
+      '会費区分：一般／中学生以下／女性 から選びます。中学生以下と女性は同額（支部員＝無料・支部員以外＝500円）、一般は支部員500円・支部員以外1,000円です。',
+      'クラスを管理する：A・B以外のクラス（Cなど）を追加・改名できます。A・Bは削除できません（参加者がいる／開始済みのクラスも削除できません）。',
+      '過去参加者から選ぶ：以前の参加者を呼び出して一括追加できます。会費区分（一般／中学生以下／女性）も引き継がれます。',
+      '登録した後でも、氏名・ふりがな・会費区分は編集で直せます。間違えても直せます。'
+    ]
+  },
+  // HELP-UX-004 (#341): 順位タブ（最終結果）の順位決定ルールの迷子防止ヘルプ。#309/#323 機構流用・topic 追加のみ。
+  //   本文は buildHelpModalHtml で escapeHtml 経由。保存スキーマ不変・script-global 固定文字列。
+  'standings':{
+    title:'順位の見方ヘルプ',
+    lines:[
+      '順位は ①勝数(A) → ②B（対戦相手の勝数合計）→ ③C（勝った相手の勝数合計）の順で決まります。B・Cは「強い相手と多く戦ったか／強い相手に勝ったか」を表します。',
+      'A・B・Cがすべて同じ2人は、直接対決で勝った方が上位です。',
+      '直接対決が1勝1敗（決着なし）や、まだ対戦していない場合は同順位になり、最終的にくじ引きで決めます。',
+      '「（途中経過）」は全局が終わる前の暫定順位です。全局が終わると「最終結果」に変わります。',
+      '表の「負数」は対局数から勝数を引いた負け数です（B・Cは最終的な勝数で計算します）。'
+    ]
+  },
+  // HELP-UX-005 (#342): 支部マスタタブの迷子防止ヘルプ（同期/統合/エクスポート/破損ガード/リセット）。#309/#323 機構流用・topic 追加のみ。
+  //   本文は buildHelpModalHtml で escapeHtml 経由。保存スキーマ不変・script-global 固定文字列。
+  'master':{
+    title:'支部マスタの使い方ヘルプ',
+    lines:[
+      '支部マスタは過去の参加者を蓄える名簿です。当日の大会データとは別物で、ここを直接いじらなくても大会運営はできます。',
+      '「📥 過去大会を支部マスタに統合」：以前保存した大会データ（JSON）から参加者を名簿へ追加・更新します。',
+      '受付・対局の画面で「大会データをコピー」すると、その大会の参加者が自動で支部マスタにも反映されます（同期）。',
+      '「📤 エクスポート」で名簿をファイル保存、「📂 インポート」で読み込みできます。端末の移行や万一の消失に備え、ときどきエクスポートして保管してください。',
+      '取り込むファイルが壊れている・対応していない版のときは、取り込みを中止して既存の名簿を守ります（黙って消えません）。',
+      '「📛 リセット」は名簿を全消去します。実行前に必ずエクスポートで退避してください。当日は無理にマスタをいじらなくて大丈夫です。'
+    ]
   }
 };
 
@@ -9521,6 +9574,9 @@ function bindRegistrationEvents(){
   //   bindClassBulkEditHandlers() で同経路 bind する。重複 bind は data-bulkedit-bound で抑止。
   bindClassBulkEditHandlers();
   document.getElementById('addBtn').addEventListener('click',addPlayer);
+  // HELP-UX-003 (#338): 登録受付タブ見出し脇「？ ヘルプ」（静的 HTML・id=helpBtnReg）→ openHelpModal('reg')。
+  var helpBtnReg=document.getElementById('helpBtnReg');
+  if(helpBtnReg)helpBtnReg.addEventListener('click',function(){openHelpModal('reg');});
   // START-UX-CONSOLIDATE-001 (設計 §5): #startBtn は「対局管理へ進むナビゲーション」。
   //   開始系の副作用を持つ startTournament ではなく goToTournamentFromReg（save()+タブ移動のみ）へ bind。
   document.getElementById('startBtn').addEventListener('click',goToTournamentFromReg);
@@ -9897,6 +9953,9 @@ function bindReportEvents(){
   //   （#309 の helpBtnFirstRound_ → bindClassActionBarEvents と同型）。
   var helpBtnReport=document.getElementById('helpBtnReport');
   if(helpBtnReport)helpBtnReport.addEventListener('click',function(){openHelpModal('report');});
+  // HELP-UX-004 (#341): 順位タブ見出し脇「？ ヘルプ」（静的 HTML・id=helpBtnStandings）→ openHelpModal('standings')。
+  var helpBtnStandings=document.getElementById('helpBtnStandings');
+  if(helpBtnStandings)helpBtnStandings.addEventListener('click',function(){openHelpModal('standings');});
 }
 
 // 全体として大会が完了しているか(参加者のいるクラスが全て全ラウンド消化済みか)
