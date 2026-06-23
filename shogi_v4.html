@@ -346,6 +346,12 @@ body.sb-active{overflow:hidden}
     <div style="margin-top:16px;text-align:right" class="no-print">
       <button type="button" class="btn-primary" onclick="printResults()">対戦成績を印刷 / PDF保存</button>
     </div>
+    <!-- B-2b-wire (#343): 確定結果をクラウド（Supabase）へ送信（任意・冪等・押さなければ従来通り）。
+         click は bindReportEvents で sendTournamentToCloud に結線。supabase-js/config は click 時のみ遅延ロード。 -->
+    <div style="margin-top:8px;text-align:right" class="no-print">
+      <button type="button" id="cloudSendBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ クラウドへ送信（任意）</button>
+      <div id="cloudSendStatus" style="font-size:12px;color:#888;margin-top:4px;min-height:1.2em"></div>
+    </div>
     <div class="section no-print" style="margin-top:16px">
       <!-- HELP-UX-002 (#322): 見出し脇に「？ ヘルプ」ボタンを1つ置く（報告書画面の迷子防止 in-app ヘルプ導線）。
            #309 の「1局目 未割当参加者」見出し（flex 横並び・btn-sm＋inline）と同型。click は build/bind 分離のため
@@ -8400,6 +8406,55 @@ function syncTournamentToCloud(client, master, opts){
   });
 }
 
+// CLOUD SYNC (B-2b-wire / #343): 当日アプリ→クラウド送信のブラウザ・グルー。
+//   全クラウド操作は任意・非ブロッキング・失敗は status 表示のみ（押さなければ従来通り・ネット不要）。
+//   supabase-js / app/config.js は click 時のみ遅延ロード（既定では外部依存ゼロ）。
+//   pickActiveClubId は純関数（claim 結果から1クラブ自動解決）でテスト対象。
+function pickActiveClubId(memberships){
+  var list=Array.isArray(memberships)?memberships:[];
+  for(var i=0;i<list.length;i++){ var m=list[i]; if(m&&m.status==='active'&&m.club_id)return m.club_id; }
+  return null;
+}
+function _cloudCfgReady(){
+  var c=(typeof window!=='undefined')&&window.SHOGI_CLOUD_CONFIG;
+  return !!(c&&c.url&&c.publishableKey&&!/REPLACE_ME|YOUR_PROJECT_REF/.test(String(c.url)+String(c.publishableKey)));
+}
+function _cloudSbReady(){ return (typeof window!=='undefined')&&window.supabase&&!!window.supabase.createClient; }
+function loadCloudDeps(){
+  return new Promise(function(resolve){
+    function injof(src){ return new Promise(function(res){ try{ var sc=document.createElement('script'); sc.src=src; sc.onload=function(){res(true);}; sc.onerror=function(){res(false);}; document.head.appendChild(sc); }catch(e){ res(false); } }); }
+    var p=Promise.resolve();
+    if(!_cloudCfgReady())p=p.then(function(){ return injof('app/config.js'); });
+    p=p.then(function(){ if(!_cloudSbReady())return injof('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js'); })
+       .then(function(){ resolve({cfg:_cloudCfgReady(),sb:_cloudSbReady()}); });
+  });
+}
+function sendTournamentToCloud(setStatus){
+  setStatus=setStatus||function(){};
+  setStatus('クラウドへ送信中…');
+  return loadCloudDeps().then(function(dep){
+    if(!dep.cfg){ setStatus('クラウド設定がありません（送信は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
+    if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
+    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+    if(!client||!client.auth){ setStatus('クラウドに接続できませんでした'); return {ok:false,step:'client'}; }
+    return client.auth.getSession().then(function(r){
+      var session=r&&r.data&&r.data.session;
+      if(!session){ setStatus('クラウド管理ページ（app/）でログインしてから送信してください'); return {ok:false,step:'auth'}; }
+      return client.rpc('claim_organizer_seat').then(function(rc){
+        var clubId=pickActiveClubId((rc&&rc.data)||[]);
+        if(!clubId){ setStatus('幹事として有効なクラブが見つかりません（管理ページを確認してください）'); return {ok:false,step:'club'}; }
+        var master=(typeof loadBranchMaster==='function')?loadBranchMaster():{members:[]};
+        try{ if(typeof ensureTournamentId==='function')ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report)); }catch(e){}
+        return syncTournamentToCloud(client,master,{clubId:clubId}).then(function(res){
+          if(res&&res.ok){ var c=res.counts||{}; setStatus('送信しました（名簿 '+(c.members||0)+' 名・結果 '+(c.entries||0)+' 件'+(c.unresolved?'／未紐付け '+c.unresolved+' 名':'')+'）'); }
+          else { setStatus('送信に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再送できます）'); }
+          return res;
+        });
+      });
+    });
+  }).catch(function(e){ setStatus('送信エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; });
+}
+
 // ============================================================
 // RENDER (RESULTS): 最終結果タブの描画
 //   build*Html: HTML文字列を返すだけ(副作用なし)
@@ -10055,6 +10110,12 @@ function bindReportEvents(){
   // HELP-UX-004 (#341): 順位タブ見出し脇「？ ヘルプ」（静的 HTML・id=helpBtnStandings）→ openHelpModal('standings')。
   var helpBtnStandings=document.getElementById('helpBtnStandings');
   if(helpBtnStandings)helpBtnStandings.addEventListener('click',function(){openHelpModal('standings');});
+  // B-2b-wire (#343): 「☁ クラウドへ送信」（静的・id=cloudSendBtn）→ sendTournamentToCloud（任意・失敗耐性）。
+  var cloudSendBtn=document.getElementById('cloudSendBtn');
+  if(cloudSendBtn)cloudSendBtn.addEventListener('click',function(){
+    var st=document.getElementById('cloudSendStatus');
+    sendTournamentToCloud(function(msg){ if(st)st.textContent=msg; });
+  });
 }
 
 // 全体として大会が完了しているか(参加者のいるクラスが全て全ラウンド消化済みか)
