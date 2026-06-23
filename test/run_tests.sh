@@ -921,6 +921,19 @@ else
 fi
 
 echo ""
+echo "【DATA-PERSISTENCE-PHASE2 Stage B-3a — クラウド members→ローカル支部マスタ pull マージ（mergeCloudMembersIntoMaster・正本上書き/空上書き禁止/運用フィールド温存/tombstone/同名非統合/冪等・mock 配列）】"
+if [ -f "$SCRIPT_DIR/test_stageb_pull_merge.js" ]; then
+  if node "$SCRIPT_DIR/test_stageb_pull_merge.js" "$TARGET" > /tmp/stageb_pull_merge_out.log 2>&1; then
+    ok "Stage B-3a pull マージ テスト 全PASS ($(tail -1 /tmp/stageb_pull_merge_out.log))"
+  else
+    ng "Stage B-3a pull マージ テスト 失敗"
+    cat /tmp/stageb_pull_merge_out.log
+  fi
+else
+  warn "test_stageb_pull_merge.js が見つからない"
+fi
+
+echo ""
 echo "【DATA-PERSISTENCE-PHASE2 Stage A — RLS 実 PostgreSQL 検証（stagea_rls_pgtest.sh / psql 無ければ SKIP）】"
 if [ -f "$SCRIPT_DIR/stagea_rls_pgtest.sh" ]; then
   if bash "$SCRIPT_DIR/stagea_rls_pgtest.sh" > /tmp/stagea_rls_out.log 2>&1; then

@@ -8363,6 +8363,60 @@ function buildCloudSyncPayload(master, opts){
   };
 }
 
+// CLOUD PULL (B-3a / #343): クラウド members（正本）→ ローカル支部マスタ（オフライン用キャッシュ）へのマージ。
+//   buildCloudSyncPayload の逆写像。throw せず {master, added, updated, skipped} を返す（当日運営を止めない）。
+//   方針（#343 設計確定 2026-06-24）: クラウドが名簿の正本。
+//   - キーは member_id（クラウド値＝ローカル member.id・沼津1クラブ固定で衝突なし）。同名照合はしない
+//     （member_id 一致のみ＝同名別人の誤統合が起きない）。
+//   - 既存会員: name/yomi をクラウド値で上書き（正本）。ただし**クラウド値が空のときは上書きしない**
+//     （未入力での消失防止＝#333「空上書き禁止」と同じ安全側）。
+//   - ローカル運用専用フィールド（last_class/出席日/tournament_ids/member/grade/city/note）は温存。
+//   - branch はローカル支部マスタの永続スキーマに無い（normalizeBranchMaster が保持しない）ため取り込まない。
+//   - tombstone: クラウド deleted=true はローカルへ反映（論理削除）。deleted=false での自動復元はしない
+//     （既存 import 規則と同じ・OR 安全側）。
+//   - クラウドに在ってローカルに無い会員は新規追加（normalize が出席日等を後で補完）。
+//   既知の限界: 「ある幹事が pull 前にオフラインで初対面の会員をローカル作成」した場合のみ、同一人物が別
+//     member_id で二重化しうる（起動時 auto-pull で実害小・名前ベース統合は app/ 名簿編集/手動マージで対応＝
+//     B-3a 対象外。再キーは履歴参照を壊すため行わない）。
+function mergeCloudMembersIntoMaster(master, cloudMembers, opts){
+  opts=opts||{};
+  var res={master:master, added:0, updated:0, skipped:0};
+  if(!master||!Array.isArray(master.members))return res;
+  if(!Array.isArray(cloudMembers))return res;
+  var byId={};
+  for(var i=0;i<master.members.length;i++){ var lm=master.members[i]; if(lm&&typeof lm.id==='string'&&lm.id)byId[lm.id]=lm; }
+  function nonEmpty(s){ return typeof s==='string'&&s.length>0; }
+  var changed=false;
+  for(var c=0;c<cloudMembers.length;c++){
+    var cm=cloudMembers[c];
+    if(!cm||typeof cm!=='object'){ res.skipped++; continue; }
+    var mid=cm.member_id;
+    if(typeof mid!=='string'||!mid){ res.skipped++; continue; }
+    var cName=nonEmpty(cm.name)?cm.name:'';
+    var cYomi=(typeof cm.yomi==='string')?cm.yomi:'';
+    var cDeleted=(cm.deleted===true);
+    var cDeletedAt=(typeof cm.deleted_at==='string'&&cm.deleted_at)?cm.deleted_at:null;
+    var existing=byId[mid];
+    if(existing){
+      var didChange=false;
+      if(nonEmpty(cName)&&existing.name!==cName){ existing.name=cName; didChange=true; }
+      if(nonEmpty(cYomi)&&existing.yomi!==cYomi){ existing.yomi=cYomi; didChange=true; }
+      if(cDeleted&&existing.deleted!==true){ existing.deleted=true; if(cDeletedAt&&!existing.deleted_at)existing.deleted_at=cDeletedAt; didChange=true; }
+      if(didChange){ res.updated++; changed=true; }
+    }else{
+      // 新規追加には有効な氏名が必須（normalizeBranchMaster の id&name 必須に整合）。
+      if(!nonEmpty(cName)){ res.skipped++; continue; }
+      var nm={ id:mid, name:cName, yomi:cYomi, tournament_ids:[] };
+      if(cDeleted){ nm.deleted=true; nm.deleted_at=cDeletedAt; }
+      master.members.push(nm);
+      byId[mid]=nm;
+      res.added++; changed=true;
+    }
+  }
+  if(changed)master.updated_at=new Date().toISOString();
+  return res;
+}
+
 // CLOUD SYNC (B-2b-core / #343): buildCloudSyncPayload の出力を supabase へ upsert するオーケストレーション。
 //   client は注入（mock 可）。throw せず {ok,...} を返す（当日運営を止めない）。冪等 upsert（onConflict）。
 //   順序: members → players(id 解決) → tournament(id 解決) → entries（tournament_id/player_id を解決）。
