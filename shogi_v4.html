@@ -8357,6 +8357,49 @@ function buildCloudSyncPayload(master, opts){
   };
 }
 
+// CLOUD SYNC (B-2b-core / #343): buildCloudSyncPayload の出力を supabase へ upsert するオーケストレーション。
+//   client は注入（mock 可）。throw せず {ok,...} を返す（当日運営を止めない）。冪等 upsert（onConflict）。
+//   順序: members → players(id 解決) → tournament(id 解決) → entries（tournament_id/player_id を解決）。
+//   失敗は {ok:false, step, message, counts} を返す。supabase-js v2 想定（.upsert(rows,{onConflict}).select()）。
+function syncTournamentToCloud(client, master, opts){
+  opts=opts||{};
+  var clubId=opts.clubId;
+  if(!client||!client.from)return Promise.resolve({ok:false,step:'init',message:'クラウドに接続していません'});
+  if(!clubId)return Promise.resolve({ok:false,step:'club',message:'送信先クラブが特定できません（ログインを確認してください）'});
+  var payload=buildCloudSyncPayload(master,{clubId:clubId});
+  if(!payload.tournament.app_tournament_id)return Promise.resolve({ok:false,step:'tournament',message:'大会IDが未設定です'});
+  var counts={members:payload.members.length,players:payload.players.length,entries:payload.entries.length,skipped:payload.skipped.length,unresolved:0};
+  function fail(step,res){ return {ok:false,step:step,counts:counts,message:((res&&res.error&&res.error.message)||'クラウド送信に失敗しました')+'（'+step+'）'}; }
+  return client.from('members').upsert(payload.members,{onConflict:'club_id,member_id'}).then(function(r1){
+    if(r1&&r1.error)return fail('members',r1);
+    return client.from('players').upsert(payload.players,{onConflict:'club_id,member_id'}).select('id,member_id').then(function(r2){
+      if(r2&&r2.error)return fail('players',r2);
+      var pidByMember={}; var prows=(r2&&r2.data)||[];
+      for(var i=0;i<prows.length;i++){ if(prows[i]&&prows[i].member_id)pidByMember[prows[i].member_id]=prows[i].id; }
+      return client.from('tournaments').upsert(payload.tournament,{onConflict:'club_id,app_tournament_id'}).select('id').then(function(r3){
+        if(r3&&r3.error)return fail('tournament',r3);
+        var d3=r3&&r3.data; var trow=(Array.isArray(d3)?d3[0]:d3)||null; var tid=trow&&trow.id;
+        if(!tid)return fail('tournament',{error:{message:'tournament id を取得できません'}});
+        var entryRows=[];
+        for(var e=0;e<payload.entries.length;e++){
+          var en=payload.entries[e]; var pid=pidByMember[en.member_id];
+          if(!pid){ counts.unresolved++; continue; }
+          var row={};
+          for(var k in en){ if(Object.prototype.hasOwnProperty.call(en,k)&&k!=='member_id'&&k!=='app_tournament_id')row[k]=en[k]; }
+          row.tournament_id=tid; row.player_id=pid;
+          entryRows.push(row);
+        }
+        counts.entries=entryRows.length;
+        if(!entryRows.length)return {ok:true,counts:counts,tournament_id:tid};
+        return client.from('entries').upsert(entryRows,{onConflict:'tournament_id,player_id'}).then(function(r4){
+          if(r4&&r4.error)return fail('entries',r4);
+          return {ok:true,counts:counts,tournament_id:tid};
+        });
+      });
+    });
+  });
+}
+
 // ============================================================
 // RENDER (RESULTS): 最終結果タブの描画
 //   build*Html: HTML文字列を返すだけ(副作用なし)
