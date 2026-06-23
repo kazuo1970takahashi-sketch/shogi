@@ -920,6 +920,19 @@ else
   warn "stageb_entries_tiebreak_pgtest.sh が見つからない"
 fi
 
+echo ""
+echo "【DATA-PERSISTENCE-PHASE2 Stage B-2(schema) — tournaments.app_tournament_id 追補（部分一意・実 PostgreSQL 検証 / psql 無ければ SKIP）】"
+if [ -f "$SCRIPT_DIR/stageb_tournaments_app_id_pgtest.sh" ]; then
+  if bash "$SCRIPT_DIR/stageb_tournaments_app_id_pgtest.sh" > /tmp/stageb_appid_out.log 2>&1; then
+    ok "Stage B-2(schema) pgtest OK/SKIP ($(tail -1 /tmp/stageb_appid_out.log))"
+  else
+    ng "Stage B-2(schema) pgtest 失敗"
+    cat /tmp/stageb_appid_out.log
+  fi
+else
+  warn "stageb_tournaments_app_id_pgtest.sh が見つからない"
+fi
+
 # ============================================
 # SAVE-UX-NONQUOTA-NOTIFY-001 (Issue #260): saveBranchMaster() の「quota 以外」保存失敗を
 #   サイレント握り潰し（console.warn 単独）から notifySaveWarning 経由のユーザー通知
