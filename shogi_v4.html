@@ -8460,6 +8460,32 @@ function syncTournamentToCloud(client, master, opts){
   });
 }
 
+// CLOUD PULL (B-3b / #343): クラウド members（正本）読み取り → mergeCloudMembersIntoMaster → saveBranchMaster。
+//   syncTournamentToCloud（送信）と対称の読み取りオーケストレーション。client は注入（mock 可）。
+//   throw せず {ok,...} を返す（当日運営を止めない）。全クラウド操作は任意・非ブロッキング・失敗は通知のみ。
+//   opts: { clubId（必須）, master（省略時 loadBranchMaster()） }。
+//   - members を select('member_id,name,yomi,branch').eq('club_id',clubId) で取得（B-1 read と同形）。
+//   - 変更が無ければ保存しない（保存失敗での誤通知を避ける）。
+//   - 戻り: {ok, step?, counts:{fetched,added,updated,skipped}, saved, master, message?}。
+function pullMembersFromCloud(client, opts){
+  opts=opts||{};
+  var clubId=opts.clubId;
+  if(!client||!client.from)return Promise.resolve({ok:false,step:'init',message:'クラウドに接続していません'});
+  if(!clubId)return Promise.resolve({ok:false,step:'club',message:'取得元クラブが特定できません（ログインを確認してください）'});
+  return client.from('members').select('member_id,name,yomi,branch').eq('club_id',clubId).then(function(r){
+    if(r&&r.error)return {ok:false,step:'fetch',message:((r.error&&r.error.message)||'名簿の読み込みに失敗しました')+'（fetch）'};
+    var rows=(r&&Array.isArray(r.data))?r.data:[];
+    var master=(opts.master&&Array.isArray(opts.master.members))?opts.master
+              :((typeof loadBranchMaster==='function')?loadBranchMaster():{schema_version:1,updated_at:new Date().toISOString(),members:[]});
+    var mres=mergeCloudMembersIntoMaster(master,rows,{});
+    var counts={fetched:rows.length,added:mres.added,updated:mres.updated,skipped:mres.skipped};
+    if(mres.added===0&&mres.updated===0)return {ok:true,counts:counts,saved:false,master:master};
+    var saved=(typeof saveBranchMaster==='function')?saveBranchMaster(master):true;
+    if(saved===false)return {ok:false,step:'save',counts:counts,message:'名簿の保存に失敗しました（取得は成功・再取得できます）',master:master};
+    return {ok:true,counts:counts,saved:true,master:master};
+  });
+}
+
 // CLOUD SYNC (B-2b-wire / #343): 当日アプリ→クラウド送信のブラウザ・グルー。
 //   全クラウド操作は任意・非ブロッキング・失敗は status 表示のみ（押さなければ従来通り・ネット不要）。
 //   supabase-js / app/config.js は click 時のみ遅延ロード（既定では外部依存ゼロ）。
