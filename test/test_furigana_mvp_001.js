@@ -224,6 +224,13 @@ function rowState(player){ const s=makeEmptyState(); s.players.A=[player]; retur
     {schema_version:1,members:[{id:'m2',name:'架空三郎',yomi:'',member:'member',grade:'ippan'}]},
     makeEmptyState());
   assertEq(res2.player.yomi, '', 'C-d master.yomi が空なら player.yomi は ""');
+
+  // PAST-ADD-FEE-INHERIT-001: 単発追加でも master の grade='josei'（女性）を ippan に潰さず保持する。
+  //   chu/ippan/other は従来挙動の byte 同値（純抽出）なので C-a..C-d は不変。josei のみ新たに保持。
+  const resJosei = env.addPlayerFromMaster('mj','A',
+    {schema_version:1,members:[{id:'mj',name:'架空女子',yomi:'かくうじょし',member:'member',grade:'josei'}]},
+    makeEmptyState());
+  assertEq(resJosei.player.grade, 'josei', 'C-e master.grade=josei は player.grade に保持（女性会費区分）');
 }
 
 // ============================================================

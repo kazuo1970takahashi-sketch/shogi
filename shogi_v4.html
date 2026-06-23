@@ -2234,6 +2234,23 @@ function attachMemberIdToPlayer(player,member){
   player.member_id=member.id;
 }
 
+// PAST-ADD-FEE-INHERIT-001: 支部マスタ member の会費区分（member / grade）を当日 player レコードへ
+//   写し込むときの唯一の正規化。単発追加 addPlayerFromMaster と一括追加 finalizeAddPastParticipants の
+//   両方から呼び、両経路が必ず同じ会費区分（＝同じ getFee 結果）を出すことを保証する。
+//   - member: 'other'（支部員以外）のみ非既定。それ以外（未定義含む）は 'member'。
+//   - grade : 'chu'（中学生以下）/ 'josei'（女性）は保持。それ以外（未定義・段位など）は 'ippan'。
+//   addPlayerFromMaster は #326（FEE-JOSEI-001）で既に chu/josei/ippan/other を保持済みのため、本 helper は
+//   その純抽出＝単発側は byte 同値。新たに会費区分を取りこぼさなくなるのは一括 finalizeAddPastParticipants
+//   側（旧 member:'member'/grade:'ippan' ハードコードを解消し、master の member/grade を引き継ぐ）。
+function normalizeMasterFeeFields(masterMember){
+  var rawMember=masterMember&&masterMember.member;
+  var rawGrade=masterMember&&masterMember.grade;
+  return {
+    member:(rawMember==='other')?'other':'member',
+    grade:(rawGrade==='chu'||rawGrade==='josei')?rawGrade:'ippan'
+  };
+}
+
 // A-4.2 §3.3: マスタの member を指定クラスで state.players に追加する純粋関数。
 // master 側のフィールド（yomi / last_class / attendance_count / last_attended / tournament_ids）は
 // 一切変更しない（saveData → syncBranchMasterOnSave 側の責務）。
@@ -2277,12 +2294,14 @@ function addPlayerFromMaster(memberId,cls,master,state){
     }
   }
   var id='p'+Date.now()+Math.floor(Math.random()*1000);
+  // PAST-ADD-FEE-INHERIT-001: 会費区分は normalizeMasterFeeFields に集約（一括追加と同一正規化）。
+  var feeFields=normalizeMasterFeeFields(member);
   var player={
     id:id,
     name:memberNameNorm||String(member.name||''),
     cls:cls,
-    member:(member.member==='other')?'other':'member',
-    grade:(member.grade==='chu'||member.grade==='josei')?member.grade:'ippan',
+    member:feeFields.member,
+    grade:feeFields.grade,
     member_id:member.id,
     // FURIGANA-MVP-001: master.yomi を当日 player.yomi に snapshot コピー（normalizeYomi 正規化・空は ''）。
     yomi:normalizeYomi(member.yomi||''),
@@ -3035,8 +3054,12 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi){
     if(existingMids[m.id]||existingNames[m.name]){skipped++;continue;}
     var cls=(m.last_class==='A'||m.last_class==='B')?m.last_class:'A';
     var pid='p'+Date.now()+Math.floor(Math.random()*1000)+'_'+p;
+    // PAST-ADD-FEE-INHERIT-001: 旧実装は member:'member'/grade:'ippan' をハードコードし、中学生以下・女性・
+    //   支部員以外の会費区分を取りこぼしていた。単発 addPlayerFromMaster と同じ normalizeMasterFeeFields で
+    //   master の member/grade を引き継ぐ（一括 vs 単発の非対称を解消）。
+    var feeFields=normalizeMasterFeeFields(m);
     // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（欠番維持）
-    state.players[cls].push({id:pid,name:m.name,cls:cls,member:'member',grade:'ippan',member_id:m.id,entry_no:nextEntryNoForClass(cls,state)});
+    state.players[cls].push({id:pid,name:m.name,cls:cls,member:feeFields.member,grade:feeFields.grade,member_id:m.id,entry_no:nextEntryNoForClass(cls,state)});
     existingMids[m.id]=true;
     existingNames[m.name]=true;
     added++;
