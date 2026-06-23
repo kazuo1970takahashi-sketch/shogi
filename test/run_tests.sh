@@ -1004,6 +1004,19 @@ else
   warn "test_entry_no_finite_guard_330.js が見つからない"
 fi
 
+echo ""
+echo "【ISSUE-331 直接対決 1勝1敗(split)は同順位（headToHeadBalance・全対戦行集計・明確な勝越しは勝者上位）】"
+if [ -f "$SCRIPT_DIR/test_rank_headtohead_split_331.js" ]; then
+  if node "$SCRIPT_DIR/test_rank_headtohead_split_331.js" "$TARGET" > /tmp/rank_headtohead_split_331_out.log 2>&1; then
+    ok "ISSUE-331 テスト 全PASS ($(tail -1 /tmp/rank_headtohead_split_331_out.log))"
+  else
+    ng "ISSUE-331 テスト 失敗"
+    cat /tmp/rank_headtohead_split_331_out.log
+  fi
+else
+  warn "test_rank_headtohead_split_331.js が見つからない"
+fi
+
 # ============================================
 # PHASE-A-TEST-SAFETY-NET (Issue #283): ゴールデンマスター土台 + 薄い領域の characterization
 #   shogi_v4.html 無改変。段階リファクタ（Phase B 以降）の挙動完全不変を機械的に担保する安全網。

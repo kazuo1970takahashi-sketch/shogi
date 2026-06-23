@@ -8120,6 +8120,27 @@ function editPastResult(cls,roundIdx,matchIdx){
   bindEditPastResultModalEvents(cls, roundIdx, matchIdx);
 }
 
+// #331: 2人の直接対決を全対戦行で集計した勝越し差を返す（pid1 視点）。
+//   >0: pid1 勝越し / <0: pid2 勝越し / 0: 決着なし（1-1 等の同数・または対戦なし）。
+//   旧実装（calcFinal 比較子・isSameDisplayedRank）は最初の対戦行で early-return し、
+//   1勝1敗(split)でも早い回戦の勝者を上位/別順位に固定していた（#331・作者方針=同順位）。
+function headToHeadBalance(pid1,pid2,cls){
+  var rounds=(typeof state!=='undefined'&&state&&state.results&&state.results[cls])?state.results[cls]:[];
+  var bal=0;
+  for(var r=0;r<rounds.length;r++){
+    var round=rounds[r];
+    if(!round)continue;
+    for(var m=0;m<round.length;m++){
+      var match=round[m];
+      if(!match)continue;
+      if((match.p1===pid1&&match.p2===pid2)||(match.p1===pid2&&match.p2===pid1)){
+        if(match.winner===pid1)bal++;
+        else if(match.winner===pid2)bal--;
+      }
+    }
+  }
+  return bal;
+}
 function calcFinal(cls){
   var players=state.players[cls];
   // QA D-02（#279 / Codex P1 follow-up）: 勝ち星(wins)を getWins(cls) で別走査せず、下の
@@ -8165,18 +8186,13 @@ function calcFinal(cls){
     if(b.A!==a.A)return b.A-a.A;
     if(b.B!==a.B)return b.B-a.B;
     if(b.C!==a.C)return b.C-a.C;
-    // A B C全て同じ場合：直接対決の結果で判定
+    // A B C全て同じ場合：直接対決を全対戦行で集計して判定（#331）。
+    //   1勝1敗(split)等の同数・対戦なしは決着なし→同順位（最終くじ引き）。
     var pid1=a.p.id,pid2=b.p.id;
-    for(var r=0;r<state.results[cls].length;r++){
-      for(var m=0;m<state.results[cls][r].length;m++){
-        var match=state.results[cls][r][m];
-        if(match.p1===pid1&&match.p2===pid2||match.p1===pid2&&match.p2===pid1){
-          if(match.winner===pid2)return 1;
-          if(match.winner===pid1)return -1;
-        }
-      }
-    }
-    return 0; // 対戦なし→同順位（くじ引き）
+    var bal=headToHeadBalance(pid1,pid2,cls);
+    if(bal>0)return -1; // pid1(a) 勝越し→上位
+    if(bal<0)return 1;  // pid2(b) 勝越し→上位
+    return 0; // 同数(1-1等)/対戦なし→同順位（くじ引き）
   });
   return res;
 }
@@ -8192,18 +8208,9 @@ function isSameDisplayedRank(a,b,cls){
   if(a.A!==b.A)return false;
   if(a.B!==b.B)return false;
   if(a.C!==b.C)return false;
-  var pid1=a.p.id,pid2=b.p.id;
-  var rounds=(typeof state!=='undefined'&&state&&state.results&&state.results[cls])?state.results[cls]:[];
-  for(var r=0;r<rounds.length;r++){
-    var round=rounds[r];
-    if(!round)continue;
-    for(var m=0;m<round.length;m++){
-      var match=round[m];
-      if((match.p1===pid1&&match.p2===pid2)||(match.p1===pid2&&match.p2===pid1)){
-        if(match.winner===pid1||match.winner===pid2)return false;
-      }
-    }
-  }
+  // #331: 直接対決を全対戦行で集計し、勝越し差があれば別順位。
+  //   1勝1敗(split)等の同数・対戦なしは決着なし＝同順位（最初の対戦行での early-return をやめる）。
+  if(headToHeadBalance(a.p.id,b.p.id,cls)!==0)return false;
   return true;
 }
 
