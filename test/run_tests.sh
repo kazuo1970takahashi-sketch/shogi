@@ -895,6 +895,19 @@ else
 fi
 
 echo ""
+echo "【DATA-PERSISTENCE-PHASE2 Stage B-2b-core — クラウド送信オーケストレーション（syncTournamentToCloud・mock client・upsert順/onConflict/id解決/error経路）】"
+if [ -f "$SCRIPT_DIR/test_stageb_sync.js" ]; then
+  if node "$SCRIPT_DIR/test_stageb_sync.js" "$TARGET" > /tmp/stageb_sync_out.log 2>&1; then
+    ok "Stage B-2b-core テスト 全PASS ($(tail -1 /tmp/stageb_sync_out.log))"
+  else
+    ng "Stage B-2b-core テスト 失敗"
+    cat /tmp/stageb_sync_out.log
+  fi
+else
+  warn "test_stageb_sync.js が見つからない"
+fi
+
+echo ""
 echo "【DATA-PERSISTENCE-PHASE2 Stage A — RLS 実 PostgreSQL 検証（stagea_rls_pgtest.sh / psql 無ければ SKIP）】"
 if [ -f "$SCRIPT_DIR/stagea_rls_pgtest.sh" ]; then
   if bash "$SCRIPT_DIR/stagea_rls_pgtest.sh" > /tmp/stagea_rls_out.log 2>&1; then
