@@ -1074,6 +1074,25 @@ else
 fi
 
 # ============================================
+# LEFTOVER-ROTATION-GUARD-001: 奇数人数の待機(leftover)が回戦をまたいでローテーションし、
+#   特定の1人が最後まで一度も対局に入らない事態が起きないことを固定（#272 の sitOut ローテーション
+#   ＋submitRound 待機許容を守る回帰テスト）。N=5/7/9/19/21 を多数試行で固定。
+# ============================================
+echo ""
+echo "【LEFTOVER-ROTATION-GUARD-001 奇数待機のローテーション（特定1人が全回戦 対局なしにならない）】"
+if [ -f "$SCRIPT_DIR/test_leftover_rotation_guard_001.js" ]; then
+  if node "$SCRIPT_DIR/test_leftover_rotation_guard_001.js" "$TARGET" > /tmp/leftover_rotation_guard_001_out.log 2>&1; then
+    ok "LEFTOVER-ROTATION-GUARD-001 テスト 全PASS ($(tail -1 /tmp/leftover_rotation_guard_001_out.log))"
+  else
+    ng "LEFTOVER-ROTATION-GUARD-001 テスト 失敗"
+    cat /tmp/leftover_rotation_guard_001_out.log
+  fi
+else
+  warn "test_leftover_rotation_guard_001.js が見つからない"
+fi
+
+
+# ============================================
 # 最終結果
 # ============================================
 echo ""
