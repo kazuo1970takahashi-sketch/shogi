@@ -148,7 +148,16 @@
       '<p>ようこそ、' + (name ? name + ' さん' : 'ゲスト') + '（' + esc(role) + '）</p>' +
       '<button type="button" id="signOutBtn">ログアウト</button>' +
       '</section>';
-    return head + (summary.isAdmin ? buildAdminPanelHtml(organizers, summary) : '');
+    var readCard = '' +
+      '<section class="card" id="cloudReadView">' +
+      '<h2>過去の大会（クラウド・閲覧）</h2>' +
+      '<div id="cloudTournaments" class="muted">読み込み中…</div>' +
+      '<h2>大会結果</h2>' +
+      '<div id="cloudEntries" class="muted">上の大会を選ぶと結果を表示します。</div>' +
+      '<h2>名簿（クラウド）</h2>' +
+      '<div id="cloudMembers" class="muted">読み込み中…</div>' +
+      '</section>';
+    return head + readCard + (summary.isAdmin ? buildAdminPanelHtml(organizers, summary) : '');
   }
 
   // ===========================================================================
@@ -211,6 +220,96 @@
   function signOut(client) { return client.auth.signOut(); }
 
   // ===========================================================================
+  // ===========================================================================
+  // B-1（#343）: クラウド read-only 閲覧（過去大会・結果・名簿）。純 build＋fetch ラッパ。
+  //   並べ替えは純関数側（mock/実 client とも .order 非依存）。本文は esc() 経由（XSS 安全）。
+  // ===========================================================================
+  var TSTATUS_LABEL = { draft:'下書き', confirmed:'確定', synced:'同期済み', 'void':'無効' };
+  function sortTournamentsDesc(list) {
+    return (Array.isArray(list) ? list.slice() : []).sort(function (a, b) {
+      var da = (a && a.date) || '', db = (b && b.date) || '';
+      if (da !== db) return da < db ? 1 : -1;                 // 日付 降順
+      var na = (a && a.name) || '', nb = (b && b.name) || '';
+      return na < nb ? -1 : (na > nb ? 1 : 0);
+    });
+  }
+  function buildTournamentListHtml(tournaments) {
+    var list = sortTournamentsDesc(tournaments);
+    if (!list.length) return '<p class="muted">クラウドに大会がありません。</p>';
+    var rows = list.map(function (t) {
+      var st = TSTATUS_LABEL[t && t.status] || esc((t && t.status) || '');
+      return '<li class="org-row">' +
+        '<button type="button" class="cloud-tnt" data-id="' + esc((t && t.id) || '') + '">' +
+        esc((t && t.date) || '') + '　' + esc((t && t.name) || '(名称未設定)') + '</button>' +
+        '<span class="org-meta">' + esc((t && t.season) || '') + '／' + st + '</span></li>';
+    }).join('');
+    return '<ul class="org-list">' + rows + '</ul>';
+  }
+  function buildMemberListHtml(members) {
+    var list = Array.isArray(members) ? members.slice() : [];
+    if (!list.length) return '<p class="muted">名簿が空です。</p>';
+    list.sort(function (a, b) {
+      var ya = (a && a.yomi) || '', yb = (b && b.yomi) || '';
+      if (ya !== yb) return ya < yb ? -1 : 1;
+      var na = (a && a.name) || '', nb = (b && b.name) || '';
+      return na < nb ? -1 : (na > nb ? 1 : 0);
+    });
+    var rows = list.map(function (m) {
+      var y = (m && m.yomi) ? ' <span class="org-meta">' + esc(m.yomi) + '</span>' : '';
+      return '<li class="org-row"><span class="org-who">' + esc((m && m.name) || '') + '</span>' + y + '</li>';
+    }).join('');
+    return '<ul class="org-list">' + rows + '</ul>';
+  }
+  function shapeEntryRow(e) {
+    var p = e && e.players, m = p && p.members;
+    return {
+      rank: (e && e.final_rank != null) ? e.final_rank : null,
+      cls: (e && e['class']) || '',
+      name: (m && m.name) || '',
+      yomi: (m && m.yomi) || '',
+      wins: (e && e.wins) || 0,
+      losses: (e && e.losses) || 0,
+      sos: (e && e.sos != null) ? e.sos : '',
+      sodos: (e && e.sodos != null) ? e.sodos : ''
+    };
+  }
+  function buildEntryTableHtml(entries) {
+    var list = (Array.isArray(entries) ? entries : []).map(shapeEntryRow);
+    if (!list.length) return '<p class="muted">この大会の結果がありません。</p>';
+    list.sort(function (a, b) {
+      var ca = a.cls || '', cb = b.cls || '';
+      if (ca !== cb) return ca < cb ? -1 : 1;
+      var ra = (a.rank == null) ? 9999 : a.rank, rb = (b.rank == null) ? 9999 : b.rank;
+      return ra - rb;
+    });
+    var rows = list.map(function (r) {
+      return '<tr><td>' + esc(r.cls) + '</td><td>' + (r.rank == null ? '-' : esc(String(r.rank))) + '</td>' +
+        '<td>' + esc(r.name) + '</td><td>' + esc(String(r.wins)) + '</td><td>' + esc(String(r.losses)) + '</td>' +
+        '<td>' + esc(String(r.sos)) + '</td><td>' + esc(String(r.sodos)) + '</td></tr>';
+    }).join('');
+    return '<table class="cloud-entries"><thead><tr><th>クラス</th><th>順位</th><th>氏名</th><th>勝</th><th>負</th><th>B(SOS)</th><th>C(SODOS)</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  function fetchTournaments(client, clubId) {
+    return client.from('tournaments').select('id,name,date,season,status').eq('club_id', clubId).then(function (res) {
+      if (res.error) return { ok:false, message:'大会の読み込みに失敗しました', tournaments:[] };
+      return { ok:true, tournaments: res.data || [] };
+    });
+  }
+  function fetchMembers(client, clubId) {
+    return client.from('members').select('member_id,name,yomi').eq('club_id', clubId).then(function (res) {
+      if (res.error) return { ok:false, message:'名簿の読み込みに失敗しました', members:[] };
+      return { ok:true, members: res.data || [] };
+    });
+  }
+  function fetchEntries(client, tournamentId) {
+    return client.from('entries')
+      .select('final_rank,class,wins,losses,sos,sodos,participated,players(member_id,members(name,yomi))')
+      .eq('tournament_id', tournamentId).then(function (res) {
+        if (res.error) return { ok:false, message:'結果の読み込みに失敗しました', entries:[] };
+        return { ok:true, entries: res.data || [] };
+      });
+  }
+
   // coordinator（render = build → mount → bind）。document/client は init で解決。
   // ===========================================================================
   function makeController(opts) {
@@ -266,6 +365,33 @@
         });
       });
       bindOrgActions();
+      loadReadViews();
+    }
+    function loadReadViews() {
+      if (!lastSummary) return;
+      fetchTournaments(client, lastSummary.clubId).then(function (r) {
+        var el = byId('cloudTournaments');
+        if (el) el.innerHTML = r.ok ? buildTournamentListHtml(r.tournaments) : '<p class="muted">' + esc(r.message) + '</p>';
+        bindTournamentRows();
+      });
+      fetchMembers(client, lastSummary.clubId).then(function (r) {
+        var el = byId('cloudMembers');
+        if (el) el.innerHTML = r.ok ? buildMemberListHtml(r.members) : '<p class="muted">' + esc(r.message) + '</p>';
+      });
+    }
+    function bindTournamentRows() {
+      if (!doc || !doc.querySelectorAll) return;
+      var nodes = doc.querySelectorAll('.cloud-tnt'); if (!nodes) return;
+      Array.prototype.forEach.call(nodes, function (n) {
+        n.addEventListener('click', function () {
+          var tid = n.getAttribute('data-id');
+          var el = byId('cloudEntries'); if (el) el.innerHTML = '<p class="muted">読み込み中…</p>';
+          fetchEntries(client, tid).then(function (r) {
+            var e2 = byId('cloudEntries');
+            if (e2) e2.innerHTML = r.ok ? buildEntryTableHtml(r.entries) : '<p class="muted">' + esc(r.message) + '</p>';
+          });
+        });
+      });
     }
     function bindOrgActions() {
       if (!doc || !doc.querySelectorAll) return;
@@ -356,6 +482,15 @@
     inviteOrganizer: inviteOrganizer,
     setOrganizerStatus: setOrganizerStatus,
     signOut: signOut,
+    // B-1 read-only（#343）
+    sortTournamentsDesc: sortTournamentsDesc,
+    buildTournamentListHtml: buildTournamentListHtml,
+    buildMemberListHtml: buildMemberListHtml,
+    shapeEntryRow: shapeEntryRow,
+    buildEntryTableHtml: buildEntryTableHtml,
+    fetchTournaments: fetchTournaments,
+    fetchMembers: fetchMembers,
+    fetchEntries: fetchEntries,
     // coordinator
     makeController: makeController,
     boot: boot

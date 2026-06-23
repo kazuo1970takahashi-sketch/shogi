@@ -869,6 +869,19 @@ else
 fi
 
 echo ""
+echo "【DATA-PERSISTENCE-PHASE2 Stage B-1 — クラウド read-only 閲覧（app/auth.js・過去大会/結果/名簿・mock client）】"
+if [ -f "$SCRIPT_DIR/test_stageb_read.js" ]; then
+  if node "$SCRIPT_DIR/test_stageb_read.js" "$TARGET" > /tmp/stageb_read_out.log 2>&1; then
+    ok "Stage B-1 read-only テスト 全PASS ($(tail -1 /tmp/stageb_read_out.log))"
+  else
+    ng "Stage B-1 read-only テスト 失敗"
+    cat /tmp/stageb_read_out.log
+  fi
+else
+  warn "test_stageb_read.js が見つからない"
+fi
+
+echo ""
 echo "【DATA-PERSISTENCE-PHASE2 Stage A — RLS 実 PostgreSQL 検証（stagea_rls_pgtest.sh / psql 無ければ SKIP）】"
 if [ -f "$SCRIPT_DIR/stagea_rls_pgtest.sh" ]; then
   if bash "$SCRIPT_DIR/stagea_rls_pgtest.sh" > /tmp/stagea_rls_out.log 2>&1; then
