@@ -703,6 +703,19 @@ else
   warn "test_help_003.js が見つからない"
 fi
 
+echo ""
+echo "【HELP-UX-004 (#341) 順位タブ in-app ヘルプ（HELP_TEXTS['standings'] / A/B/C・1勝1敗同順位 / open-close / XSS / ？ボタン結線）】"
+if [ -f "$SCRIPT_DIR/test_help_004.js" ]; then
+  if node "$SCRIPT_DIR/test_help_004.js" "$TARGET" > /tmp/help_004_out.log 2>&1; then
+    ok "HELP-UX-004 テスト 全PASS ($(tail -1 /tmp/help_004_out.log))"
+  else
+    ng "HELP-UX-004 テスト 失敗"
+    cat /tmp/help_004_out.log
+  fi
+else
+  warn "test_help_004.js が見つからない"
+fi
+
 # ============================================
 # MEMBERS-CANDIDATE-MASTER-RECUT-001 members 形式 参加者候補マスタ読込（#194 価値分の再切り）
 #   完全架空 fixture で member 真偽値後方互換 / 禁止項目 whitelist 除外 / deleted 墓石除外 /

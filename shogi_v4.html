@@ -327,6 +327,13 @@ body.sb-active{overflow:hidden}
   </div>
   <div id="pane-master" style="display:none"></div>
   <div id="pane-result" style="display:none">
+    <!-- HELP-UX-004 (#341): 順位タブの迷子防止ヘルプ。#309/#323 のモーダル三層を流用し topic 追加のみ。
+         順位表は per-class 動的描画（buildResultsClassHtml=golden 対象）のため、静的アンカーをここに置き
+         click は bindReportEvents 側で openHelpModal('standings') へ結線する（report help と同経路・golden 非接触）。 -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px" class="no-print">
+      <span style="font-size:14px;font-weight:600;color:#1F3864">順位の見方</span>
+      <button type="button" id="helpBtnStandings" class="btn-sm" title="順位の決め方をヘルプで表示します" aria-label="順位の見方ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
+    </div>
     <!-- ROUND-CLASS-START-005: result-{classId} を state.classes 駆動で append できるよう
          result-list ラッパーで囲む。A/B は既存互換のため静的に保持し、
          ensureClassResultDomNodes() が不足分のみ末尾に動的補完する。
@@ -7866,6 +7873,18 @@ var HELP_TEXTS={
       '過去参加者から選ぶ：以前の参加者を呼び出して一括追加できます。会費区分（一般／中学生以下／女性）も引き継がれます。',
       '登録した後でも、氏名・ふりがな・会費区分は編集で直せます。間違えても直せます。'
     ]
+  },
+  // HELP-UX-004 (#341): 順位タブ（最終結果）の順位決定ルールの迷子防止ヘルプ。#309/#323 機構流用・topic 追加のみ。
+  //   本文は buildHelpModalHtml で escapeHtml 経由。保存スキーマ不変・script-global 固定文字列。
+  'standings':{
+    title:'順位の見方ヘルプ',
+    lines:[
+      '順位は ①勝数(A) → ②B（対戦相手の勝数合計）→ ③C（勝った相手の勝数合計）の順で決まります。B・Cは「強い相手と多く戦ったか／強い相手に勝ったか」を表します。',
+      'A・B・Cがすべて同じ2人は、直接対決で勝った方が上位です。',
+      '直接対決が1勝1敗（決着なし）や、まだ対戦していない場合は同順位になり、最終的にくじ引きで決めます。',
+      '「（途中経過）」は全局が終わる前の暫定順位です。全局が終わると「最終結果」に変わります。',
+      '表の「負数」は対局数から勝数を引いた負け数です（B・Cは最終的な勝数で計算します）。'
+    ]
   }
 };
 
@@ -9916,6 +9935,9 @@ function bindReportEvents(){
   //   （#309 の helpBtnFirstRound_ → bindClassActionBarEvents と同型）。
   var helpBtnReport=document.getElementById('helpBtnReport');
   if(helpBtnReport)helpBtnReport.addEventListener('click',function(){openHelpModal('report');});
+  // HELP-UX-004 (#341): 順位タブ見出し脇「？ ヘルプ」（静的 HTML・id=helpBtnStandings）→ openHelpModal('standings')。
+  var helpBtnStandings=document.getElementById('helpBtnStandings');
+  if(helpBtnStandings)helpBtnStandings.addEventListener('click',function(){openHelpModal('standings');});
 }
 
 // 全体として大会が完了しているか(参加者のいるクラスが全て全ラウンド消化済みか)
