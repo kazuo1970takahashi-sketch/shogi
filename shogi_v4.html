@@ -3182,7 +3182,9 @@ function buildMasterTabHtml(master){
   html+='<button type="button" id="masterResetBtn" style="background:#fff;border:1px solid #c33;color:#c33">📛 マスタをリセット</button>';
   // A-4 §3.4.1: 削除済み表示トグル
   html+='<button type="button" id="masterShowDeletedBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864" data-on="'+(_masterShowDeleted?'1':'0')+'">'+(_masterShowDeleted?'🗑️ 削除済みを隠す':'🗑️ 削除済みを表示')+'</button>';
+  html+='<button type="button" id="masterCloudPullBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ クラウドから取得</button>';
   html+='</div>';
+  html+='<div id="masterCloudPullStatus" style="margin:4px 0 12px;font-size:13px;color:#555" aria-live="polite"></div>';
   html+='<hr class="separator">';
   html+='<h3>簡易一覧</h3>';
   if(members.length===0){
@@ -3842,6 +3844,12 @@ function bindMasterTabEvents(){
   // HELP-UX-005 (#342): 支部マスタ見出し脇「？ ヘルプ」（id=helpBtnMaster）→ openHelpModal('master')。
   var helpBtnMaster=document.getElementById('helpBtnMaster');
   if(helpBtnMaster)helpBtnMaster.addEventListener('click',function(){openHelpModal('master');});
+  // B-3c-wire (#343): 「☁ クラウドから取得」→ pullMembersToMasterUI（任意・非ブロッキング・status 表示のみ）。
+  var cloudPullBtn=document.getElementById('masterCloudPullBtn');
+  if(cloudPullBtn)cloudPullBtn.addEventListener('click',function(){
+    var setStatus=function(msg){ var el=document.getElementById('masterCloudPullStatus'); if(el)el.textContent=msg; };
+    pullMembersToMasterUI(setStatus);
+  });
   var btn=document.getElementById('masterMigrateBtn');
   if(btn)btn.addEventListener('click',openMigrationWizard);
   var importBtn=document.getElementById('masterImportBtn');
@@ -8533,6 +8541,39 @@ function sendTournamentToCloud(setStatus){
       });
     });
   }).catch(function(e){ setStatus('送信エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; });
+}
+
+// CLOUD PULL (B-3c-wire / #343): 支部マスタ画面→クラウド名簿取得のブラウザ・グルー。
+//   sendTournamentToCloud（送信）と対称。全クラウド操作は任意・非ブロッキング・失敗は status 表示のみ
+//   （ボタンを押さなければ従来通り・ネット不要）。supabase-js / app/config.js は click 時のみ遅延ロード。
+//   未ログインは案内のみ（当日アプリにログイン UI は持ち込まない）。成功時はマスタを再描画して反映。
+function pullMembersToMasterUI(setStatus){
+  setStatus=setStatus||function(){};
+  setStatus('クラウドから取得中…');
+  return loadCloudDeps().then(function(dep){
+    if(!dep.cfg){ setStatus('クラウド設定がありません（取得は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
+    if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
+    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+    if(!client||!client.auth){ setStatus('クラウドに接続できませんでした'); return {ok:false,step:'client'}; }
+    return client.auth.getSession().then(function(r){
+      var session=r&&r.data&&r.data.session;
+      if(!session){ setStatus('クラウド管理ページ（app/）でログインしてから取得してください'); return {ok:false,step:'auth'}; }
+      return client.rpc('claim_organizer_seat').then(function(rc){
+        var clubId=pickActiveClubId((rc&&rc.data)||[]);
+        if(!clubId){ setStatus('幹事として有効なクラブが見つかりません（管理ページを確認してください）'); return {ok:false,step:'club'}; }
+        return pullMembersFromCloud(client,{clubId:clubId}).then(function(res){
+          if(res&&res.ok){
+            var c=res.counts||{};
+            try{ if(typeof renderMasterTab==='function')renderMasterTab(); }catch(eR){}
+            setStatus('取得しました（新規 '+(c.added||0)+' 名・更新 '+(c.updated||0)+' 名／クラウド '+(c.fetched||0)+' 名）');
+          }else{
+            setStatus('取得に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再取得できます）');
+          }
+          return res;
+        });
+      });
+    });
+  }).catch(function(e){ setStatus('取得エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; });
 }
 
 // ============================================================
