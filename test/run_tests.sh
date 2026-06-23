@@ -965,6 +965,19 @@ else
   warn "test_branch_master_schema_guard_275.js が見つからない"
 fi
 
+echo ""
+echo "【ISSUE-329 支部マスタ import 破損ガード抜け是正（overwrite/merge で _loaded_with_corruption→保存スキップ・既存温存・非回帰）】"
+if [ -f "$SCRIPT_DIR/test_master_import_corruption_guard_329.js" ]; then
+  if node "$SCRIPT_DIR/test_master_import_corruption_guard_329.js" "$TARGET" > /tmp/master_import_corruption_guard_329_out.log 2>&1; then
+    ok "ISSUE-329 テスト 全PASS ($(tail -1 /tmp/master_import_corruption_guard_329_out.log))"
+  else
+    ng "ISSUE-329 テスト 失敗"
+    cat /tmp/master_import_corruption_guard_329_out.log
+  fi
+else
+  warn "test_master_import_corruption_guard_329.js が見つからない"
+fi
+
 # ============================================
 # PHASE-A-TEST-SAFETY-NET (Issue #283): ゴールデンマスター土台 + 薄い領域の characterization
 #   shogi_v4.html 無改変。段階リファクタ（Phase B 以降）の挙動完全不変を機械的に担保する安全網。

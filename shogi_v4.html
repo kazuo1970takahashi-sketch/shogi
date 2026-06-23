@@ -3606,6 +3606,15 @@ function processMasterImportText(text,mode,setStatus){
       else setStatus('インポートに失敗しました');
       return;
     }
+    // QA-MASTER-IMPORT-CORRUPTION-GUARD-329 (Issue #329 / B-01): import ファイルが未知 schema_version 等で
+    //   normalizeBranchMaster が _loaded_with_corruption=true（空マスタ）を返すと applyOverwriteImport の
+    //   success は true のまま。ここでフラグを確認せず confirm 後に saveBranchMaster(空) すると既存会員を
+    //   全消失させる（confirm 文言も「読込予定: 0名」としか出ない）。syncBranchMasterOnSave / loadBranchMaster
+    //   と同じ保全パターンで、フラグが立つときは保存も confirm もせずエラー表示し既存マスタを保持する。
+    if(result.newMaster&&result.newMaster._loaded_with_corruption===true){
+      setStatus('インポートファイルが非対応の版（schema_version）のため読み込めません。安全のため取り込みを中止しました。既存のマスタは保持しています。');
+      return;
+    }
     if(!confirm('現在のマスタをすべて置き換えます。元に戻せません。\n\n続けますか？\n\n読込予定: '+(result.newMaster.members.length)+'名'))return;
     // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
     var saved=saveBranchMaster(result.newMaster);
@@ -3619,6 +3628,16 @@ function processMasterImportText(text,mode,setStatus){
 
   if(mode==='merge'){
     var current=loadBranchMaster();
+    // QA-MASTER-IMPORT-CORRUPTION-GUARD-329 (Issue #329 / B-02): 保存済みマスタが未知 schema_version 等で
+    //   loadBranchMaster が _loaded_with_corruption=true を返すと、applyMergeImport の working は空になり結果は
+    //   import 側のみ＝旧会員が消える。merge 経路は confirm が無いぶん特に危険。current のフラグを確認し、
+    //   true なら保存せずエラー表示で既存データを保持する（syncBranchMasterOnSave と同じ保全パターン）。
+    //   ※ import ファイル側が未知 schema のケースは imported.members 空＝従来どおり no-op 安全のため、ここでは
+    //     current（保存済み）のみを判定し非回帰を保つ。
+    if(current&&current._loaded_with_corruption===true){
+      setStatus('保存済みのマスタが非対応の版（schema_version）のため読み込めません。安全のためマージを中止しました。既存のマスタは保持しています。');
+      return;
+    }
     var mr=applyMergeImport(parsed,current);
     if(!mr.success){
       if(mr.error==='tournament_format')setStatus('これは過去大会データの形式です。「マスタ」タブの「📥 過去大会を支部マスタに統合」をご利用ください');
