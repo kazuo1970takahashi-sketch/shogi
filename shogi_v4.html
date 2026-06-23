@@ -8302,6 +8302,62 @@ function computeDisplayRanks(finals,cls){
 }
 
 // ============================================================
+// CLOUD SYNC (B-2a / #343): ローカル state → クラウド upsert ペイロードの純マッピング。
+//   ネットワーク・supabase・UI は持たない（B-2b で送信グルーを足す）。当日運営はローカルファースト不変。
+//   冪等キー: tournament=(club_id, app_tournament_id) ※B-2b で tournaments に app_tournament_id 列が要る /
+//             members,players=(club_id, member_id) / entries=(tournament_id, player_id)。
+//   結果値: wins=A(勝数) / losses=played-A / sos=B(SOS) / sodos=C(SODOS) / final_rank=computeDisplayRanks。
+//   名簿未紐付け（member_id 無し）の参加者は送信対象外として skipped に積む（氏名のみ）。
+function deriveSeason(ymd){
+  var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd||''));
+  if(!m)return '';
+  var y=parseInt(m[1],10), mo=parseInt(m[2],10);
+  var fy=(mo>=4)?y:(y-1);
+  return fy+'年度';
+}
+function buildCloudSyncPayload(master, opts){
+  opts=opts||{};
+  var st=(typeof state!=='undefined')?state:null;
+  var clubId=opts.clubId||null;
+  var date=getTournamentDateFromReport(st&&st.report);
+  var appTid=(st&&typeof st.tournament_id==='string'&&st.tournament_id)?st.tournament_id:'';
+  var title=normalizeReportTitle(st&&st.report&&st.report.title);
+  var season=deriveSeason(date);
+  var memById={};
+  if(master&&Array.isArray(master.members)){
+    for(var mi=0;mi<master.members.length;mi++){var mm=master.members[mi]; if(mm&&mm.id)memById[mm.id]=mm;}
+  }
+  function stamp(o){ if(clubId)o.club_id=clubId; return o; }
+  var membersOut={}, playersOut={}, entries=[], skipped=[];
+  var classes=(st&&Array.isArray(st.classes))?st.classes:[];
+  for(var ci=0;ci<classes.length;ci++){
+    var cls=classes[ci]&&classes[ci].id; if(!cls)continue;
+    var players=(st.players&&Array.isArray(st.players[cls]))?st.players[cls]:[]; if(!players.length)continue;
+    var finals=calcFinal(cls); var ranks=computeDisplayRanks(finals,cls);
+    for(var fi=0;fi<finals.length;fi++){
+      var row=finals[fi], p=row.p, mid=p&&p.member_id;
+      if(typeof mid!=='string'||!mid){ skipped.push((p&&p.name)||''); continue; }
+      if(!membersOut[mid]){
+        var mm2=memById[mid]||{};
+        membersOut[mid]=stamp({ member_id:mid, name:(mm2.name||p.name||''), yomi:(mm2.yomi||p.yomi||''), branch:(mm2.branch||null) });
+        playersOut[mid]=stamp({ member_id:mid });
+      }
+      entries.push(stamp({
+        app_tournament_id:appTid, member_id:mid, 'class':cls,
+        final_rank:(ranks[fi]!=null?ranks[fi]:null),
+        wins:row.A, losses:(row.played-row.A), draws:0,
+        sos:row.B, sodos:row.C, participated:true
+      }));
+    }
+  }
+  function vals(o){ var a=[]; for(var k in o){ if(Object.prototype.hasOwnProperty.call(o,k))a.push(o[k]); } return a; }
+  return {
+    tournament:stamp({ app_tournament_id:appTid, name:title, date:date, season:season, status:'confirmed', source:'app_sync' }),
+    members:vals(membersOut), players:vals(playersOut), entries:entries, skipped:skipped
+  };
+}
+
+// ============================================================
 // RENDER (RESULTS): 最終結果タブの描画
 //   build*Html: HTML文字列を返すだけ(副作用なし)
 //   renderResults: A/B両クラスを取りまとめてDOMに反映
