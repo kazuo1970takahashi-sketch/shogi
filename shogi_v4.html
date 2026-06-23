@@ -521,6 +521,12 @@ function entryNoOf(cls,id){
 //   （重複は配列内で後発側＝2件目以降を再採番）。削除で生まれた欠番は再利用しない。
 //   旧実装は欠番補完に配列 index+1 を使い、別レコードの明示値と衝突（重複）し得た（#276）。
 //   players を in-place で正規化し、次に採番すべき番号（一意化後の max+1）を返す。冪等。
+// #330: entry_no の有効値判定（正の安全整数のみ）。Infinity/1e21(非安全整数)/NaN/負/小数を除外。
+//   ES5: Number.isFinite/isSafeInteger を使わず global isFinite + MAX_SAFE_INTEGER 上限で表現。
+//   #276 のガード（typeof number && >0 && floor===self）の取りこぼし（Infinity/1e21 素通り）を是正。
+function isValidEntryNo(en){
+  return typeof en==='number'&&isFinite(en)&&en>0&&Math.floor(en)===en&&en<=9007199254740991;
+}
 function reconcileEntryNos(players){
   var list=players||[];
   var claimed={};
@@ -531,7 +537,7 @@ function reconcileEntryNos(players){
     p=list[i];
     if(!p)continue;
     en=p.entry_no;
-    if(typeof en==='number'&&en>0&&Math.floor(en)===en&&!claimed[en]){
+    if(isValidEntryNo(en)&&!claimed[en]){
       claimed[en]=true;
       if(en>maxNo)maxNo=en;
     }else{
@@ -874,7 +880,7 @@ function normalizeState(raw){
       //   明示の有効値（正の整数）は一旦そのまま取り込み、不在/無効は null として
       //   後段の reconcileEntryNos でクラス単位に「正の整数・一意」へ正規化する。
       //   旧実装の index+1 補完は別レコードの明示値と衝突＝重複し得た（#276）。
-      if(p&&typeof p.entry_no==='number'&&p.entry_no>0){
+      if(p&&isValidEntryNo(p.entry_no)){
         pp.entry_no=p.entry_no;
       } else {
         pp.entry_no=null;
@@ -8617,7 +8623,7 @@ function buildBackupAnonymous(s){
         cls:cls,
         member_id:(typeof p.member_id==='string'&&p.member_id)?p.member_id:null,
         player_ref:p.id,
-        entry_no:(typeof p.entry_no==='number')?p.entry_no:(ei+1),
+        entry_no:isValidEntryNo(p.entry_no)?p.entry_no:(ei+1),
         wins:wins[p.id]||0,
         games:games[p.id]||0
       });

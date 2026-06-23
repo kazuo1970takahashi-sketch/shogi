@@ -991,6 +991,19 @@ else
   warn "test_yomi_master_sync_fallback_333.js が見つからない"
 fi
 
+echo ""
+echo "【ISSUE-330 entry_no 非有限/非安全整数(Infinity/1e21)の一意採番ガード（isValidEntryNo・#276堅牢化の取りこぼし是正）】"
+if [ -f "$SCRIPT_DIR/test_entry_no_finite_guard_330.js" ]; then
+  if node "$SCRIPT_DIR/test_entry_no_finite_guard_330.js" "$TARGET" > /tmp/entry_no_finite_guard_330_out.log 2>&1; then
+    ok "ISSUE-330 テスト 全PASS ($(tail -1 /tmp/entry_no_finite_guard_330_out.log))"
+  else
+    ng "ISSUE-330 テスト 失敗"
+    cat /tmp/entry_no_finite_guard_330_out.log
+  fi
+else
+  warn "test_entry_no_finite_guard_330.js が見つからない"
+fi
+
 # ============================================
 # PHASE-A-TEST-SAFETY-NET (Issue #283): ゴールデンマスター土台 + 薄い領域の characterization
 #   shogi_v4.html 無改変。段階リファクタ（Phase B 以降）の挙動完全不変を機械的に担保する安全網。
