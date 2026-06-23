@@ -252,7 +252,10 @@ body.sb-active{overflow:hidden}
       <div style="font-size:11px;color:#888;margin-top:4px">A・Bクラスは削除できません。開始済み・参加者がいるクラスは削除できません。</div>
     </div>
     <div class="section">
-      <h2>参加者を登録する</h2>
+      <div style="display:flex;align-items:center;gap:8px">
+        <h2 style="margin:0">参加者を登録する</h2>
+        <button type="button" id="helpBtnReg" class="btn-sm" title="登録・受付の使い方をヘルプで表示します" aria-label="登録・受付ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
+      </div>
       <div class="flex">
         <input type="text" id="inp-name" placeholder="氏名を入力" style="width:150px" autocomplete="off">
         <select id="inp-class">
@@ -7850,6 +7853,19 @@ var HELP_TEXTS={
       '「報告書を印刷 / PDF保存」を押すと印刷用ページが開きます。プリンタの代わりに「PDFとして保存」を選べばファイルになります。',
       '出力したら、日時・参加人数・収支が合っているか必ず目で確認してください。'
     ]
+  },
+  // HELP-UX-003 (#338): 登録受付タブ（#pane-reg）の迷子防止ヘルプ。#309/#323 のモーダル三層を流用し topic 追加のみ。
+  //   本文は buildHelpModalHtml で escapeHtml 経由（innerHTML への自由文流入を増やさない）。保存スキーマ不変・script-global 固定文字列。
+  'reg':{
+    title:'登録・受付ヘルプ',
+    lines:[
+      '参加者の登録：氏名を入れて登録します。受付番号は自動で振られます（入力は不要です）。',
+      'ふりがな：同姓や読み違いの防止に入れておくと、50音での並べ替えや検索ができます。後から編集でき、空にすればルビは消えます。',
+      '会費区分：一般／中学生以下／女性 から選びます。中学生以下と女性は同額（支部員＝無料・支部員以外＝500円）、一般は支部員500円・支部員以外1,000円です。',
+      'クラスを管理する：A・B以外のクラス（Cなど）を追加・改名できます。A・Bは削除できません（参加者がいる／開始済みのクラスも削除できません）。',
+      '過去参加者から選ぶ：以前の参加者を呼び出して一括追加できます。会費区分（一般／中学生以下／女性）も引き継がれます。',
+      '登録した後でも、氏名・ふりがな・会費区分は編集で直せます。間違えても直せます。'
+    ]
   }
 };
 
@@ -9521,6 +9537,9 @@ function bindRegistrationEvents(){
   //   bindClassBulkEditHandlers() で同経路 bind する。重複 bind は data-bulkedit-bound で抑止。
   bindClassBulkEditHandlers();
   document.getElementById('addBtn').addEventListener('click',addPlayer);
+  // HELP-UX-003 (#338): 登録受付タブ見出し脇「？ ヘルプ」（静的 HTML・id=helpBtnReg）→ openHelpModal('reg')。
+  var helpBtnReg=document.getElementById('helpBtnReg');
+  if(helpBtnReg)helpBtnReg.addEventListener('click',function(){openHelpModal('reg');});
   // START-UX-CONSOLIDATE-001 (設計 §5): #startBtn は「対局管理へ進むナビゲーション」。
   //   開始系の副作用を持つ startTournament ではなく goToTournamentFromReg（save()+タブ移動のみ）へ bind。
   document.getElementById('startBtn').addEventListener('click',goToTournamentFromReg);
