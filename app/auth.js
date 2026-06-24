@@ -157,7 +157,7 @@
       '<h2>名簿（クラウド・編集）</h2>' +
       '<div id="cloudMembers" class="muted">読み込み中…</div>' +
       '</section>';
-    return head + readCard + (summary.isAdmin ? buildAdminPanelHtml(organizers, summary) : '');
+    return head + readCard + (summary.isAdmin ? (buildAdminPanelHtml(organizers, summary) + buildImportPanelHtml()) : '');
   }
 
   // ===========================================================================
@@ -430,6 +430,123 @@
     return '「' + nm + '」を論理削除します。よろしいですか？\n（削除後も「復元」で元に戻せます）';
   }
 
+  // ===========================================================================
+  // B-4（#343）: 過去大会（Excel 由来）データの一括取り込み（移行）。
+  //   payload（cowork が Excel から生成: members/tournaments/entries）を、既存クラウド名簿と
+  //   氏名で突き合わせ（既存は上書きせず member_id 流用・未知のみ追加）→ べき等 upsert。
+  //   全て client 注入・throw せず {ok} を返す。プレビュー（ドライラン）は純関数。
+  // ===========================================================================
+  function impSquash(s) { return String(s == null ? '' : s).replace(/\s+/g, ''); }
+
+  function validateImportPayload(payload) {
+    var errors = [];
+    if (!payload || typeof payload !== 'object') return { ok: false, errors: ['JSON の形式が不正です'], counts: { members: 0, tournaments: 0, entries: 0 } };
+    var M = Array.isArray(payload.members) ? payload.members : null;
+    var T = Array.isArray(payload.tournaments) ? payload.tournaments : null;
+    var E = Array.isArray(payload.entries) ? payload.entries : null;
+    if (!M) errors.push('members 配列がありません');
+    if (!T) errors.push('tournaments 配列がありません');
+    if (!E) errors.push('entries 配列がありません');
+    if (M) for (var i = 0; i < M.length; i++) { if (!M[i] || !M[i].member_id || !M[i].name) { errors.push('members[' + i + '] に member_id/name がありません'); break; } }
+    if (T) for (var j = 0; j < T.length; j++) { var t = T[j]; if (!t || !t.app_tournament_id || !t.date || !t.season || !t.name) { errors.push('tournaments[' + j + '] に必須項目がありません'); break; } }
+    if (E) for (var k = 0; k < E.length; k++) { var e = E[k]; if (!e || !e.app_tournament_id || !e.member_id || !e['class']) { errors.push('entries[' + k + '] に必須項目がありません'); break; } }
+    return { ok: errors.length === 0, errors: errors, counts: { members: M ? M.length : 0, tournaments: T ? T.length : 0, entries: E ? E.length : 0 } };
+  }
+
+  // 既存クラウド会員と氏名で突き合わせ。一致=既存 member_id 流用（既存は変更しない）・未知=新規。
+  //   同名が複数いる場合は曖昧として新規扱い＋警告（誤った別人への紐付けを避ける）。
+  function resolveImportMembers(payload, existingMembers) {
+    var existing = Array.isArray(existingMembers) ? existingMembers : [];
+    var byName = {};
+    for (var i = 0; i < existing.length; i++) { var em = existing[i]; if (em && em.name) { var key = impSquash(em.name); (byName[key] = byName[key] || []).push(em); } }
+    var idMap = {}, newMembers = [], matched = 0, ambiguous = [];
+    var ms = Array.isArray(payload.members) ? payload.members : [];
+    for (var m = 0; m < ms.length; m++) {
+      var pm = ms[m], hits = byName[impSquash(pm.name)] || [];
+      if (hits.length === 1) { idMap[pm.member_id] = hits[0].member_id; matched++; }
+      else if (hits.length === 0) { idMap[pm.member_id] = pm.member_id; newMembers.push(pm); }
+      else { idMap[pm.member_id] = pm.member_id; newMembers.push(pm); ambiguous.push(pm.name); }
+    }
+    return { idMap: idMap, newMembers: newMembers, matched: matched, ambiguous: ambiguous };
+  }
+
+  function buildImportPreview(payload, resolution) {
+    var warnings = [];
+    if (resolution.ambiguous && resolution.ambiguous.length) warnings.push('クラウドに同名が複数いる会員 ' + resolution.ambiguous.length + ' 名は新規として扱います（要確認）: ' + resolution.ambiguous.slice(0, 5).join('、'));
+    var noRank = 0, es = Array.isArray(payload.entries) ? payload.entries : [];
+    for (var i = 0; i < es.length; i++) { if (es[i].final_rank == null) noRank++; }
+    if (noRank) warnings.push('順位なしの成績 ' + noRank + ' 件（※参考 等・そのまま取り込み）');
+    return { newMembers: resolution.newMembers.length, matchedMembers: resolution.matched, tournaments: (payload.tournaments || []).length, entries: es.length, warnings: warnings };
+  }
+
+  // オーケストレーション（client 注入・べき等）。members(新規のみ)→players(全resolved・id解決)→tournaments(id解決)→entries。
+  function importHistoryToCloud(client, clubId, payload, resolution) {
+    if (!client || !client.from) return Promise.resolve({ ok: false, step: 'init', message: 'クラウドに接続していません' });
+    if (!clubId) return Promise.resolve({ ok: false, step: 'club', message: 'クラブが特定できません' });
+    var idMap = resolution.idMap || {};
+    var counts = { members_new: resolution.newMembers.length, players: 0, tournaments: (payload.tournaments || []).length, entries: 0, unresolved: 0 };
+    function fail(step, res) { return { ok: false, step: step, counts: counts, message: ((res && res.error && res.error.message) || '取り込みに失敗しました') + '（' + step + '）' }; }
+    var newRows = resolution.newMembers.map(function (m) { return { club_id: clubId, member_id: m.member_id, name: m.name, branch: (m.branch || null) }; });
+    var step1 = newRows.length ? client.from('members').upsert(newRows, { onConflict: 'club_id,member_id' }) : Promise.resolve({ error: null });
+    return Promise.resolve(step1).then(function (r1) {
+      if (r1 && r1.error) return fail('members', r1);
+      var residSet = {}; for (var k in idMap) { if (Object.prototype.hasOwnProperty.call(idMap, k)) residSet[idMap[k]] = 1; }
+      var prows = Object.keys(residSet).map(function (mid) { return { club_id: clubId, member_id: mid }; });
+      return client.from('players').upsert(prows, { onConflict: 'club_id,member_id' }).select('id,member_id').then(function (r2) {
+        if (r2 && r2.error) return fail('players', r2);
+        var pidByMember = {}, pd = (r2 && r2.data) || []; for (var i = 0; i < pd.length; i++) { if (pd[i] && pd[i].member_id) pidByMember[pd[i].member_id] = pd[i].id; }
+        counts.players = Object.keys(pidByMember).length;
+        var trows = (payload.tournaments || []).map(function (t) { return { club_id: clubId, app_tournament_id: t.app_tournament_id, name: t.name, date: t.date, season: t.season, status: 'confirmed', source: 'json_import' }; });
+        return client.from('tournaments').upsert(trows, { onConflict: 'club_id,app_tournament_id' }).select('id,app_tournament_id').then(function (r3) {
+          if (r3 && r3.error) return fail('tournaments', r3);
+          var tidByAppt = {}, td = (r3 && r3.data) || []; for (var j = 0; j < td.length; j++) { if (td[j] && td[j].app_tournament_id) tidByAppt[td[j].app_tournament_id] = td[j].id; }
+          var erows = [], es = payload.entries || [];
+          for (var e = 0; e < es.length; e++) {
+            var en = es[e], rid = idMap[en.member_id], pid = pidByMember[rid], tid = tidByAppt[en.app_tournament_id];
+            if (!pid || !tid) { counts.unresolved++; continue; }
+            erows.push({ club_id: clubId, tournament_id: tid, player_id: pid, 'class': en['class'], wins: (en.wins == null ? 0 : en.wins), losses: (en.losses == null ? 0 : en.losses), final_rank: (en.final_rank == null ? null : en.final_rank), sos: (en.sos == null ? null : en.sos), sodos: (en.sodos == null ? null : en.sodos) });
+          }
+          counts.entries = erows.length;
+          if (!erows.length) return { ok: true, counts: counts };
+          return client.from('entries').upsert(erows, { onConflict: 'tournament_id,player_id' }).then(function (r4) {
+            if (r4 && r4.error) return fail('entries', r4);
+            return { ok: true, counts: counts };
+          });
+        });
+      });
+    });
+  }
+
+  // ---- B-4-wire: 取り込み UI（build＋ファイルテキスト→プレビューの純関数）----
+  function buildImportPanelHtml() {
+    return '' +
+      '<section class="card" id="importPanel">' +
+      '<h2>過去大会データの取り込み（移行）</h2>' +
+      '<p class="muted">cowork が作成した投入データ（JSON）を読み込み、プレビューで確認してから取り込みます。既存会員は上書きしません。何度実行しても重複しません。</p>' +
+      '<input type="file" id="importFile" accept=".json,application/json">' +
+      '<button type="button" id="importPreviewBtn">プレビュー（確認）</button>' +
+      '<div id="importPreview" class="muted"></div>' +
+      '<button type="button" id="importRunBtn" disabled>クラウドへ取り込む</button>' +
+      '<p id="importStatus" class="msg" role="status" aria-live="polite"></p>' +
+      '</section>';
+  }
+  function buildImportPreviewHtml(preview) {
+    if (!preview) return '';
+    var w = (preview.warnings || []).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
+    return '取り込み内容：<strong>新規会員 ' + esc(String(preview.newMembers)) + ' 名</strong>／既存一致 ' + esc(String(preview.matchedMembers)) +
+      ' 名／大会 ' + esc(String(preview.tournaments)) + ' 件／成績 ' + esc(String(preview.entries)) + ' 件' + (w ? '<ul>' + w + '</ul>' : '');
+  }
+  // JSON テキスト＋既存名簿 → 検証・突き合わせ・プレビュー（純粋・FileReader 非依存でテスト可）。
+  function prepareImportFromText(text, existingMembers) {
+    var payload;
+    try { payload = JSON.parse(text); } catch (e) { return { ok: false, errors: ['JSON を解釈できません: ' + (e && e.message || e)] }; }
+    var v = validateImportPayload(payload);
+    if (!v.ok) return { ok: false, errors: v.errors, counts: v.counts };
+    var resolution = resolveImportMembers(payload, existingMembers || []);
+    return { ok: true, payload: payload, resolution: resolution, preview: buildImportPreview(payload, resolution) };
+  }
+
+
   // coordinator（render = build → mount → bind）。document/client は init で解決。
   // ===========================================================================
   function makeController(opts) {
@@ -486,6 +603,7 @@
       });
       bindOrgActions();
       loadReadViews();
+      bindImport();
     }
     function loadReadViews() {
       if (!lastSummary) return;
@@ -558,6 +676,56 @@
         });
       }); });
     }
+    // ---- B-4-wire: 取り込み UI 配線（ファイル読込→プレビュー→べき等取り込み）----
+    var importPrep = null;
+    function bindImport() {
+      var pv = byId('importPreviewBtn');
+      if (pv) pv.addEventListener('click', function () {
+        var fi = byId('importFile');
+        var f = fi && fi.files && fi.files[0];
+        if (!f) { setMsg('importStatus', 'JSON ファイルを選択してください'); return; }
+        setMsg('importStatus', '読み込み中…');
+        var FR = global.FileReader;
+        if (!FR) { setMsg('importStatus', 'このブラウザはファイル読込に対応していません'); return; }
+        var rd = new FR();
+        rd.onload = function () {
+          fetchMembersForEdit(client, lastSummary.clubId).then(function (mr) {
+            var existing = (mr && mr.ok) ? mr.members : [];
+            var prep = prepareImportFromText(String(rd.result || ''), existing);
+            var pvEl = byId('importPreview'), runBtn = byId('importRunBtn');
+            if (!prep.ok) {
+              if (pvEl) pvEl.innerHTML = '<p class="muted">' + esc((prep.errors || ['不正なデータ']).join(' / ')) + '</p>';
+              importPrep = null; if (runBtn) runBtn.disabled = true; setMsg('importStatus', '');
+              return;
+            }
+            importPrep = prep;
+            if (pvEl) pvEl.innerHTML = buildImportPreviewHtml(prep.preview);
+            if (runBtn) runBtn.disabled = false;
+            setMsg('importStatus', 'プレビューを確認して「クラウドへ取り込む」を押してください');
+          });
+        };
+        rd.onerror = function () { setMsg('importStatus', 'ファイルの読み込みに失敗しました'); };
+        rd.readAsText(f);
+      });
+      var run = byId('importRunBtn');
+      if (run) run.addEventListener('click', function () {
+        if (!importPrep) { setMsg('importStatus', '先にプレビューしてください'); return; }
+        var p = importPrep.preview;
+        var ask = (typeof global.confirm === 'function') ? global.confirm : null;
+        if (ask && !ask('新規会員 ' + p.newMembers + ' 名・大会 ' + p.tournaments + ' 件・成績 ' + p.entries + ' 件をクラウドへ取り込みます。よろしいですか？（重複しません）')) return;
+        setMsg('importStatus', '取り込み中…'); run.disabled = true;
+        importHistoryToCloud(client, lastSummary.clubId, importPrep.payload, importPrep.resolution).then(function (r) {
+          if (r.ok) {
+            var c = r.counts;
+            setMsg('importStatus', '取り込み完了：新規会員 ' + c.members_new + ' 名・選手 ' + c.players + ' 名・大会 ' + c.tournaments + ' 件・成績 ' + c.entries + ' 件' + ((c.unresolved || 0) > 0 ? '（未解決 ' + c.unresolved + ' 件）' : ''));
+            loadReadViews();
+          } else {
+            setMsg('importStatus', '取り込み失敗（' + (r.step || '') + '）：' + (r.message || '')); run.disabled = false;
+          }
+        });
+      });
+    }
+
     function bindTournamentRows() {
       if (!doc || !doc.querySelectorAll) return;
       var nodes = doc.querySelectorAll('.cloud-tnt'); if (!nodes) return;
@@ -680,6 +848,14 @@
     buildMemberEditRowHtml: buildMemberEditRowHtml,
     buildMemberEditPanelHtml: buildMemberEditPanelHtml,
     memberDeleteConfirmMessage: memberDeleteConfirmMessage,
+    // B-4 移行取り込み（#343）
+    validateImportPayload: validateImportPayload,
+    resolveImportMembers: resolveImportMembers,
+    buildImportPreview: buildImportPreview,
+    importHistoryToCloud: importHistoryToCloud,
+    buildImportPanelHtml: buildImportPanelHtml,
+    buildImportPreviewHtml: buildImportPreviewHtml,
+    prepareImportFromText: prepareImportFromText,
     // coordinator
     makeController: makeController,
     boot: boot
