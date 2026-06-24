@@ -973,6 +973,19 @@ else
 fi
 
 echo ""
+echo "【DATA-PERSISTENCE-PHASE2 Stage B-5 — app/ 名簿編集（追加/氏名・ふりがな・支部の更新/論理削除・復元・採番m_+uuid12・deleted_at含む select・追加フォーム結線・mock）】"
+if [ -f "$SCRIPT_DIR/test_stageb_members_edit.js" ]; then
+  if node "$SCRIPT_DIR/test_stageb_members_edit.js" "$TARGET" > /tmp/stageb_members_edit_out.log 2>&1; then
+    ok "Stage B-5 名簿編集 テスト 全PASS ($(tail -1 /tmp/stageb_members_edit_out.log))"
+  else
+    ng "Stage B-5 名簿編集 テスト 失敗"
+    cat /tmp/stageb_members_edit_out.log
+  fi
+else
+  warn "test_stageb_members_edit.js が見つからない"
+fi
+
+echo ""
 echo "【DATA-IMPORT-ROUTING (#UX) — 保存系の取り違え防止（classifyImportJson 内容判別 / ファイル名 taikai/meibo/backup 判別 / 読込ルーティング backup自動復元・master誘導・空成功の罠解消）】"
 if [ -f "$SCRIPT_DIR/test_import_routing.js" ]; then
   if node "$SCRIPT_DIR/test_import_routing.js" "$TARGET" > /tmp/import_routing_out.log 2>&1; then

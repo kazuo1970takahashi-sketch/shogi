@@ -154,7 +154,7 @@
       '<div id="cloudTournaments" class="muted">読み込み中…</div>' +
       '<h2>大会結果</h2>' +
       '<div id="cloudEntries" class="muted">上の大会を選ぶと結果を表示します。</div>' +
-      '<h2>名簿（クラウド）</h2>' +
+      '<h2>名簿（クラウド・編集）</h2>' +
       '<div id="cloudMembers" class="muted">読み込み中…</div>' +
       '</section>';
     return head + readCard + (summary.isAdmin ? buildAdminPanelHtml(organizers, summary) : '');
@@ -310,6 +310,121 @@
       });
   }
 
+  // ===========================================================================
+  // B-5（#343）: 名簿の編集（追加 / 氏名・ふりがな・支部の更新 / 論理削除・復元）。
+  //   クラウド members を正本として app/ から直接編集する。権限は RLS が最終強制
+  //   （insert/update＝active organizer 全員可・物理 delete は admin 限定＝本UIは行わない）。
+  //   論理削除＝deleted_at に時刻を set する update（復元＝null に戻す）。当日アプリ
+  //   (shogi_v4.html) には一切触れない。build/bind/coordinator パターン・client 注入。
+  // ===========================================================================
+  function fetchMembersForEdit(client, clubId) {
+    return client.from('members').select('member_id,name,yomi,branch,deleted_at').eq('club_id', clubId).then(function (res) {
+      if (res.error) return { ok:false, message:'名簿の読み込みに失敗しました', members:[] };
+      return { ok:true, members: res.data || [] };
+    });
+  }
+  // member_id 採番。当日アプリ(shogi_v4.html)と同形式 'm_' + uuid hex 12。gen 注入でテスト可。
+  function newMemberId(gen) {
+    var raw;
+    if (typeof gen === 'function') raw = gen();
+    else if (global.crypto && global.crypto.randomUUID) raw = global.crypto.randomUUID();
+    else throw new Error('crypto.randomUUID が利用不可な環境です。ブラウザを更新してください。');
+    return 'm_' + String(raw).replace(/-/g, '').slice(0, 12);
+  }
+  function insertMember(client, clubId, fields, idGen) {
+    fields = fields || {};
+    var name = (fields.name || '').trim();
+    if (!name) return Promise.resolve({ ok:false, message:'氏名を入力してください。' });
+    if (!clubId) return Promise.resolve({ ok:false, message:'クラブが特定できません。' });
+    var mid;
+    try { mid = newMemberId(idGen); } catch (e) { return Promise.resolve({ ok:false, message:e.message }); }
+    var row = { club_id: clubId, member_id: mid, name: name,
+                yomi: (fields.yomi || '').trim() || null, branch: (fields.branch || '').trim() || null };
+    return client.from('members').insert(row).then(function (res) {
+      if (res && res.error) return { ok:false, message:'追加できませんでした（権限/重複の可能性）: ' + res.error.message };
+      return { ok:true, member_id: mid, message: name + ' を追加しました。' };
+    });
+  }
+  function updateMember(client, clubId, memberId, fields) {
+    fields = fields || {};
+    var name = (fields.name || '').trim();
+    if (!name) return Promise.resolve({ ok:false, message:'氏名は空にできません。' });
+    if (!clubId || !memberId) return Promise.resolve({ ok:false, message:'対象を特定できません。' });
+    var patch = { name: name, yomi: (fields.yomi || '').trim() || null, branch: (fields.branch || '').trim() || null };
+    return client.from('members').update(patch).eq('club_id', clubId).eq('member_id', memberId).then(function (res) {
+      if (res && res.error) return { ok:false, message:'更新できませんでした: ' + res.error.message };
+      return { ok:true, message:'更新しました。' };
+    });
+  }
+  // 論理削除（deleted=true → deleted_at=now）/ 復元（deleted=false → deleted_at=null）。どちらも update＝幹事全員可。
+  function setMemberDeleted(client, clubId, memberId, deleted) {
+    if (!clubId || !memberId) return Promise.resolve({ ok:false, message:'対象を特定できません。' });
+    var patch = { deleted_at: deleted ? new Date().toISOString() : null };
+    return client.from('members').update(patch).eq('club_id', clubId).eq('member_id', memberId).then(function (res) {
+      if (res && res.error) return { ok:false, message:(deleted ? '削除' : '復元') + 'できませんでした: ' + res.error.message };
+      return { ok:true, message: deleted ? '論理削除しました（復元できます）。' : '復元しました。' };
+    });
+  }
+  // build（純粋）: 有効を先頭・削除済を末尾、各 yomi→name 昇順。
+  function sortMembersForEdit(members) {
+    var list = Array.isArray(members) ? members.slice() : [];
+    list.sort(function (a, b) {
+      var da = (a && a.deleted_at) ? 1 : 0, db = (b && b.deleted_at) ? 1 : 0;
+      if (da !== db) return da - db;
+      var ya = (a && a.yomi) || '', yb = (b && b.yomi) || '';
+      if (ya !== yb) return ya < yb ? -1 : 1;
+      var na = (a && a.name) || '', nb = (b && b.name) || '';
+      return na < nb ? -1 : (na > nb ? 1 : 0);
+    });
+    return list;
+  }
+  function buildMemberEditRowHtml(m, editingId) {
+    var mid = esc((m && m.member_id) || '');
+    var isDeleted = !!(m && m.deleted_at);
+    if (m && m.member_id === editingId) {
+      return '<li class="org-row member-edit" data-id="' + mid + '">' +
+        '<input type="text" class="m-edit-name"   data-id="' + mid + '" value="' + esc((m.name) || '') + '" placeholder="氏名">' +
+        '<input type="text" class="m-edit-yomi"   data-id="' + mid + '" value="' + esc((m.yomi) || '') + '" placeholder="ふりがな">' +
+        '<input type="text" class="m-edit-branch" data-id="' + mid + '" value="' + esc((m.branch) || '') + '" placeholder="支部">' +
+        '<span class="org-actions">' +
+        '<button type="button" class="m-save"   data-id="' + mid + '">保存</button>' +
+        '<button type="button" class="m-cancel" data-id="' + mid + '">取消</button>' +
+        '</span></li>';
+    }
+    var nameCls = isDeleted ? 'org-who member-deleted' : 'org-who';
+    var y = (m && m.yomi) ? ' <span class="org-meta">' + esc(m.yomi) + '</span>' : '';
+    var br = (m && m.branch) ? ' <span class="org-meta">' + esc(m.branch) + '</span>' : '';
+    var tag = isDeleted ? ' <span class="org-meta">（削除済）</span>' : '';
+    var h = '<li class="org-row" data-id="' + mid + '">' +
+      '<span class="' + nameCls + '">' + esc((m && m.name) || '') + '</span>' + y + br + tag +
+      '<span class="org-actions">';
+    if (isDeleted) {
+      h += '<button type="button" class="m-restore" data-id="' + mid + '">復元</button>';
+    } else {
+      h += '<button type="button" class="m-edit"   data-id="' + mid + '">編集</button>';
+      h += '<button type="button" class="m-delete" data-id="' + mid + '">論理削除</button>';
+    }
+    h += '</span></li>';
+    return h;
+  }
+  function buildMemberEditPanelHtml(members, editingId) {
+    var list = sortMembersForEdit(members);
+    var rows = list.length
+      ? list.map(function (m) { return buildMemberEditRowHtml(m, editingId); }).join('')
+      : '<li class="org-row"><span class="muted">名簿が空です。下のフォームから追加できます。</span></li>';
+    var activeCount = list.filter(function (m) { return !(m && m.deleted_at); }).length;
+    return '' +
+      '<form id="memberAddForm" class="member-add" autocomplete="off">' +
+      '<input type="text" id="memberAddName"   name="name"   placeholder="氏名（必須）" required>' +
+      '<input type="text" id="memberAddYomi"   name="yomi"   placeholder="ふりがな">' +
+      '<input type="text" id="memberAddBranch" name="branch" placeholder="支部">' +
+      '<button type="submit" id="memberAddBtn">追加</button>' +
+      '</form>' +
+      '<p class="muted">有効 ' + activeCount + ' 名／全 ' + list.length + ' 名。氏名・ふりがな・支部の修正と論理削除（復元可）ができます。物理削除はしません。</p>' +
+      '<ul class="org-list member-list">' + rows + '</ul>' +
+      '<p id="memberEditMsg" class="msg" role="status"></p>';
+  }
+
   // coordinator（render = build → mount → bind）。document/client は init で解決。
   // ===========================================================================
   function makeController(opts) {
@@ -374,10 +489,66 @@
         if (el) el.innerHTML = r.ok ? buildTournamentListHtml(r.tournaments) : '<p class="muted">' + esc(r.message) + '</p>';
         bindTournamentRows();
       });
-      fetchMembers(client, lastSummary.clubId).then(function (r) {
+      loadMemberEditor();
+    }
+    // ---- B-5: 名簿編集（#cloudMembers を読取専用から編集可能パネルへ昇格）----
+    var membersForEdit = [];
+    var editingMemberId = null;
+    function renderMemberEditor() {
+      var el = byId('cloudMembers'); if (!el) return;
+      el.innerHTML = buildMemberEditPanelHtml(membersForEdit, editingMemberId);
+      bindMemberEditor();
+    }
+    function loadMemberEditor() {
+      if (!lastSummary) return;
+      fetchMembersForEdit(client, lastSummary.clubId).then(function (r) {
         var el = byId('cloudMembers');
-        if (el) el.innerHTML = r.ok ? buildMemberListHtml(r.members) : '<p class="muted">' + esc(r.message) + '</p>';
+        if (!r.ok) { if (el) el.innerHTML = '<p class="muted">' + esc(r.message) + '</p>'; return; }
+        membersForEdit = r.members; renderMemberEditor();
       });
+    }
+    function reloadMembers() { editingMemberId = null; loadMemberEditor(); }
+    function bindMemberEditor() {
+      var addForm = byId('memberAddForm');
+      if (addForm) addForm.addEventListener('submit', function (e) {
+        if (e && e.preventDefault) e.preventDefault();
+        var fields = { name: (byId('memberAddName') || {}).value || '',
+                       yomi: (byId('memberAddYomi') || {}).value || '',
+                       branch: (byId('memberAddBranch') || {}).value || '' };
+        setMsg('memberEditMsg', '追加中…');
+        insertMember(client, lastSummary.clubId, fields).then(function (r) {
+          setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
+        });
+      });
+      if (!doc || !doc.querySelectorAll) return;
+      function each(sel, fn) { var n = doc.querySelectorAll(sel); if (!n) return; Array.prototype.forEach.call(n, fn); }
+      function val(sel) { var el = doc.querySelector ? doc.querySelector(sel) : null; return el ? (el.value || '') : ''; }
+      each('.m-edit', function (b) { b.addEventListener('click', function () { editingMemberId = b.getAttribute('data-id'); renderMemberEditor(); }); });
+      each('.m-cancel', function (b) { b.addEventListener('click', function () { editingMemberId = null; renderMemberEditor(); }); });
+      each('.m-save', function (b) { b.addEventListener('click', function () {
+        var id = b.getAttribute('data-id');
+        var fields = { name: val('.m-edit-name[data-id="' + id + '"]'),
+                       yomi: val('.m-edit-yomi[data-id="' + id + '"]'),
+                       branch: val('.m-edit-branch[data-id="' + id + '"]') };
+        setMsg('memberEditMsg', '保存中…');
+        updateMember(client, lastSummary.clubId, id, fields).then(function (r) {
+          setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers(); else renderMemberEditor();
+        });
+      }); });
+      each('.m-delete', function (b) { b.addEventListener('click', function () {
+        var id = b.getAttribute('data-id');
+        setMsg('memberEditMsg', '削除中…');
+        setMemberDeleted(client, lastSummary.clubId, id, true).then(function (r) {
+          setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
+        });
+      }); });
+      each('.m-restore', function (b) { b.addEventListener('click', function () {
+        var id = b.getAttribute('data-id');
+        setMsg('memberEditMsg', '復元中…');
+        setMemberDeleted(client, lastSummary.clubId, id, false).then(function (r) {
+          setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
+        });
+      }); });
     }
     function bindTournamentRows() {
       if (!doc || !doc.querySelectorAll) return;
@@ -491,6 +662,15 @@
     fetchTournaments: fetchTournaments,
     fetchMembers: fetchMembers,
     fetchEntries: fetchEntries,
+    // B-5 名簿編集（#343）
+    fetchMembersForEdit: fetchMembersForEdit,
+    newMemberId: newMemberId,
+    insertMember: insertMember,
+    updateMember: updateMember,
+    setMemberDeleted: setMemberDeleted,
+    sortMembersForEdit: sortMembersForEdit,
+    buildMemberEditRowHtml: buildMemberEditRowHtml,
+    buildMemberEditPanelHtml: buildMemberEditPanelHtml,
     // coordinator
     makeController: makeController,
     boot: boot
