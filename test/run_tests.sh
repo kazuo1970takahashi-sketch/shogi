@@ -999,6 +999,19 @@ else
 fi
 
 echo ""
+echo "【SEC-S1 (#343 / SYSTEM-REVIEW S-1) supabase-js CDN の SRI＋バージョン固定（app/index.html 静的＋shogi_v4.html loadCloudDeps 動的・未固定@2残存なし）】"
+if [ -f "$SCRIPT_DIR/test_cloud_cdn_sri.js" ]; then
+  if node "$SCRIPT_DIR/test_cloud_cdn_sri.js" "$TARGET" > /tmp/cloud_cdn_sri_out.log 2>&1; then
+    ok "SEC-S1 SRI テスト 全PASS ($(tail -1 /tmp/cloud_cdn_sri_out.log))"
+  else
+    ng "SEC-S1 SRI テスト 失敗"
+    cat /tmp/cloud_cdn_sri_out.log
+  fi
+else
+  warn "test_cloud_cdn_sri.js が見つからない"
+fi
+
+echo ""
 echo "【DATA-PERSISTENCE-PHASE2 Stage A — RLS 実 PostgreSQL 検証（stagea_rls_pgtest.sh / psql 無ければ SKIP）】"
 if [ -f "$SCRIPT_DIR/stagea_rls_pgtest.sh" ]; then
   if bash "$SCRIPT_DIR/stagea_rls_pgtest.sh" > /tmp/stagea_rls_out.log 2>&1; then
