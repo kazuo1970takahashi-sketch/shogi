@@ -1024,6 +1024,19 @@ else
   warn "stageb_tournaments_app_id_pgtest.sh が見つからない"
 fi
 
+echo ""
+echo "【DATA-PERSISTENCE-PHASE2 Stage B-5(schema) — members.deleted_at 追補（論理削除列・実 PostgreSQL 検証 / psql 無ければ SKIP）】"
+if [ -f "$SCRIPT_DIR/stageb_members_deleted_at_pgtest.sh" ]; then
+  if bash "$SCRIPT_DIR/stageb_members_deleted_at_pgtest.sh" > /tmp/stageb_memdel_out.log 2>&1; then
+    ok "Stage B-5(schema) pgtest OK/SKIP ($(tail -1 /tmp/stageb_memdel_out.log))"
+  else
+    ng "Stage B-5(schema) pgtest 失敗"
+    cat /tmp/stageb_memdel_out.log
+  fi
+else
+  warn "stageb_members_deleted_at_pgtest.sh が見つからない"
+fi
+
 # ============================================
 # SAVE-UX-NONQUOTA-NOTIFY-001 (Issue #260): saveBranchMaster() の「quota 以外」保存失敗を
 #   サイレント握り潰し（console.warn 単独）から notifySaveWarning 経由のユーザー通知
