@@ -973,6 +973,19 @@ else
 fi
 
 echo ""
+echo "【DATA-IMPORT-ROUTING (#UX) — 保存系の取り違え防止（classifyImportJson 内容判別 / ファイル名 taikai/meibo/backup 判別 / 読込ルーティング backup自動復元・master誘導・空成功の罠解消）】"
+if [ -f "$SCRIPT_DIR/test_import_routing.js" ]; then
+  if node "$SCRIPT_DIR/test_import_routing.js" "$TARGET" > /tmp/import_routing_out.log 2>&1; then
+    ok "DATA-IMPORT-ROUTING テスト 全PASS ($(tail -1 /tmp/import_routing_out.log))"
+  else
+    ng "DATA-IMPORT-ROUTING テスト 失敗"
+    cat /tmp/import_routing_out.log
+  fi
+else
+  warn "test_import_routing.js が見つからない"
+fi
+
+echo ""
 echo "【DATA-PERSISTENCE-PHASE2 Stage A — RLS 実 PostgreSQL 検証（stagea_rls_pgtest.sh / psql 無ければ SKIP）】"
 if [ -f "$SCRIPT_DIR/stagea_rls_pgtest.sh" ]; then
   if bash "$SCRIPT_DIR/stagea_rls_pgtest.sh" > /tmp/stagea_rls_out.log 2>&1; then
