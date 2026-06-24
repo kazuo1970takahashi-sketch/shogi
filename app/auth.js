@@ -424,6 +424,11 @@
       '<ul class="org-list member-list">' + rows + '</ul>' +
       '<p id="memberEditMsg" class="msg" role="status"></p>';
   }
+  // 論理削除の確認メッセージ（純粋・テスト対象）。誤操作防止に confirm で挟む。
+  function memberDeleteConfirmMessage(name) {
+    var nm = (typeof name === 'string' && name) ? name : 'この会員';
+    return '「' + nm + '」を論理削除します。よろしいですか？\n（削除後も「復元」で元に戻せます）';
+  }
 
   // coordinator（render = build → mount → bind）。document/client は init で解決。
   // ===========================================================================
@@ -537,6 +542,9 @@
       }); });
       each('.m-delete', function (b) { b.addEventListener('click', function () {
         var id = b.getAttribute('data-id');
+        var nm = ''; for (var i = 0; i < membersForEdit.length; i++) { var mm = membersForEdit[i]; if (mm && mm.member_id === id) { nm = mm.name || ''; break; } }
+        var ask = (typeof global.confirm === 'function') ? global.confirm : null;
+        if (ask && !ask(memberDeleteConfirmMessage(nm))) return;   // キャンセルなら何もしない
         setMsg('memberEditMsg', '削除中…');
         setMemberDeleted(client, lastSummary.clubId, id, true).then(function (r) {
           setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
@@ -671,6 +679,7 @@
     sortMembersForEdit: sortMembersForEdit,
     buildMemberEditRowHtml: buildMemberEditRowHtml,
     buildMemberEditPanelHtml: buildMemberEditPanelHtml,
+    memberDeleteConfirmMessage: memberDeleteConfirmMessage,
     // coordinator
     makeController: makeController,
     boot: boot
