@@ -72,6 +72,23 @@ var mE2={schema_version:1,updated_at:'2026-06-01T00:00:00.000Z',members:[{id:'mz
 env.mergeCloudMembersIntoMaster(mE2,[{member_id:'mz',name:'削除済',yomi:'',deleted:false}]);
 ok(byId(mE2,'mz').deleted===true,'E2 cloud deleted=false でローカル deleted=true を復元しない');
 
+// B-3b-tombstone: 実クラウド members は deleted boolean を持たず deleted_at のみ（app/ B-5 が書く）。
+//   deleted_at 非 null だけで tombstone を反映できること（deleted フィールドは存在しない）。
+var mE3=mkMaster();
+env.mergeCloudMembersIntoMaster(mE3,[{member_id:'m1',name:'山田太郎',yomi:'やまだ',branch:'沼津',deleted_at:'2026-06-24T00:00:00.000Z'}]);
+ok(byId(mE3,'m1').deleted===true&&byId(mE3,'m1').deleted_at==='2026-06-24T00:00:00.000Z','E3 deleted_at のみ（deleted 欠落）で既存会員を tombstone 反映');
+// deleted_at が null（クラウドで有効）ならローカルを削除しない・既存 deleted も復元しない
+var mE4=mkMaster();
+env.mergeCloudMembersIntoMaster(mE4,[{member_id:'m1',name:'山田太郎',yomi:'やまだ',deleted_at:null}]);
+ok(byId(mE4,'m1').deleted!==true,'E4 deleted_at=null（クラウドで有効）はローカルを tombstone しない');
+var mE5={schema_version:1,updated_at:'2026-06-01T00:00:00.000Z',members:[{id:'mz',name:'削除済',yomi:'',deleted:true,deleted_at:'2026-05-01T00:00:00.000Z',tournament_ids:[]}]};
+env.mergeCloudMembersIntoMaster(mE5,[{member_id:'mz',name:'削除済',yomi:'',deleted_at:null}]);
+ok(byId(mE5,'mz').deleted===true,'E5 deleted_at=null でローカル deleted=true を復元しない（非復元・実クラウド形）');
+// 新規会員が deleted_at 付きで来たら deleted=true で追加
+var mE6=mkMaster();
+env.mergeCloudMembersIntoMaster(mE6,[{member_id:'mNew',name:'新削除',yomi:'しん',deleted_at:'2026-06-24T00:00:00.000Z'}]);
+ok(byId(mE6,'mNew')&&byId(mE6,'mNew').deleted===true&&byId(mE6,'mNew').deleted_at==='2026-06-24T00:00:00.000Z','E6 deleted_at 付き新規は deleted=true で追加');
+
 console.log('=== F: skipped（member_id 無し／新規で氏名無し）===');
 var mF=mkMaster();
 var rF=env.mergeCloudMembersIntoMaster(mF,[{name:'IDなし',yomi:'x'},{member_id:'',name:'空ID'},{member_id:'m9',name:''},null,'str']);
