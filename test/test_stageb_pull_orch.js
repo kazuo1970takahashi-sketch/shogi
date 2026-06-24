@@ -48,6 +48,7 @@ function byId(master,id){ for(var i=0;i<master.members.length;i++)if(master.memb
   var r1=await env.pullMembersFromCloud(c1,{clubId:'club-1',master:m1});
   ok(r1.ok===true,'P1-1 ok:true');
   ok(r1.counts.fetched===2&&r1.counts.added===1&&r1.counts.updated===1,'P1-2 counts fetched=2/added=1/updated=1');
+  ok(typeof r1.counts.possibleDuplicates==='number','P1-2b counts に possibleDuplicates（二重化検知数）が含まれる');
   ok(r1.saved===true,'P1-3 saved=true');
   ok(byId(m1,'m1').yomi==='やまだたろう'&&byId(m1,'m2')&&byId(m1,'m2').name==='新人花子','P1-4 master に反映');
   ok(byId(m1,'m1').last_class==='A'&&byId(m1,'m1').tournament_ids.length===1,'P1-5 運用フィールド温存');

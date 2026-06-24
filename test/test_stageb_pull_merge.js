@@ -89,6 +89,30 @@ var mE6=mkMaster();
 env.mergeCloudMembersIntoMaster(mE6,[{member_id:'mNew',name:'新削除',yomi:'しん',deleted_at:'2026-06-24T00:00:00.000Z'}]);
 ok(byId(mE6,'mNew')&&byId(mE6,'mNew').deleted===true&&byId(mE6,'mNew').deleted_at==='2026-06-24T00:00:00.000Z','E6 deleted_at 付き新規は deleted=true で追加');
 
+console.log('=== G: 二重化検知 possibleDuplicates（同名・同ふりがな・別ID・非削除）===');
+// m1=山田太郎/やまだ が既存。別 member_id で同名同ふりがなが来たら検知（統合せず追加）。
+var mG=mkMaster();
+var rG=env.mergeCloudMembersIntoMaster(mG,[{member_id:'m_dup1',name:'山田太郎',yomi:'やまだ'}]);
+ok(rG.possibleDuplicates===1,'G1 同名同ふりがな別IDで possibleDuplicates=1');
+ok(rG.added===1,'G2 検知しても追加は行う（自動統合しない＝同名非統合の方針維持）');
+ok(byId(mG,'m_dup1')&&byId(mG,'m1'),'G3 別IDの両会員が併存（統合されない）');
+// ふりがな違いは検知しない（誤検知抑制）
+var mG2=mkMaster();
+var rG2=env.mergeCloudMembersIntoMaster(mG2,[{member_id:'m_dup2',name:'山田太郎',yomi:'ちがう'}]);
+ok(rG2.possibleDuplicates===0,'G4 同名でもふりがな違いは検知しない');
+// id 一致（既存更新）は検知しない
+var mG3=mkMaster();
+var rG3=env.mergeCloudMembersIntoMaster(mG3,[{member_id:'m1',name:'山田太郎',yomi:'やまだ'}]);
+ok(rG3.possibleDuplicates===0,'G5 id 一致（既存更新）は検知しない');
+// 削除済みで来た同名は検知しない（tombstone は二重化警告の対象外）
+var mG4=mkMaster();
+var rG4=env.mergeCloudMembersIntoMaster(mG4,[{member_id:'m_dup4',name:'山田太郎',yomi:'やまだ',deleted_at:'2026-06-24T00:00:00.000Z'}]);
+ok(rG4.possibleDuplicates===0,'G6 削除済み(tombstone)で来た同名は検知対象外');
+// 既存が削除済みなら、その名前は二重化の母数に入れない
+var mG5={schema_version:1,updated_at:'2026-06-01T00:00:00.000Z',members:[{id:'mz',name:'削除済',yomi:'さく',deleted:true,deleted_at:'2026-05-01T00:00:00.000Z',tournament_ids:[]}]};
+var rG5=env.mergeCloudMembersIntoMaster(mG5,[{member_id:'m_new5',name:'削除済',yomi:'さく'}]);
+ok(rG5.possibleDuplicates===0,'G7 既存が削除済みの同名は検知しない（非削除のみ母数）');
+
 console.log('=== F: skipped（member_id 無し／新規で氏名無し）===');
 var mF=mkMaster();
 var rF=env.mergeCloudMembersIntoMaster(mF,[{name:'IDなし',yomi:'x'},{member_id:'',name:'空ID'},{member_id:'m9',name:''},null,'str']);
