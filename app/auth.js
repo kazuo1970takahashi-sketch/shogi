@@ -157,7 +157,7 @@
       '<h2>名簿（クラウド・編集）</h2>' +
       '<div id="cloudMembers" class="muted">読み込み中…</div>' +
       '</section>';
-    return head + readCard + (summary.isAdmin ? buildAdminPanelHtml(organizers, summary) : '');
+    return head + readCard + (summary.isAdmin ? (buildAdminPanelHtml(organizers, summary) + buildImportPanelHtml()) : '');
   }
 
   // ===========================================================================
@@ -517,6 +517,35 @@
     });
   }
 
+  // ---- B-4-wire: 取り込み UI（build＋ファイルテキスト→プレビューの純関数）----
+  function buildImportPanelHtml() {
+    return '' +
+      '<section class="card" id="importPanel">' +
+      '<h2>過去大会データの取り込み（移行）</h2>' +
+      '<p class="muted">cowork が作成した投入データ（JSON）を読み込み、プレビューで確認してから取り込みます。既存会員は上書きしません。何度実行しても重複しません。</p>' +
+      '<input type="file" id="importFile" accept=".json,application/json">' +
+      '<button type="button" id="importPreviewBtn">プレビュー（確認）</button>' +
+      '<div id="importPreview" class="muted"></div>' +
+      '<button type="button" id="importRunBtn" disabled>クラウドへ取り込む</button>' +
+      '<p id="importStatus" class="msg" role="status" aria-live="polite"></p>' +
+      '</section>';
+  }
+  function buildImportPreviewHtml(preview) {
+    if (!preview) return '';
+    var w = (preview.warnings || []).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
+    return '取り込み内容：<strong>新規会員 ' + esc(String(preview.newMembers)) + ' 名</strong>／既存一致 ' + esc(String(preview.matchedMembers)) +
+      ' 名／大会 ' + esc(String(preview.tournaments)) + ' 件／成績 ' + esc(String(preview.entries)) + ' 件' + (w ? '<ul>' + w + '</ul>' : '');
+  }
+  // JSON テキスト＋既存名簿 → 検証・突き合わせ・プレビュー（純粋・FileReader 非依存でテスト可）。
+  function prepareImportFromText(text, existingMembers) {
+    var payload;
+    try { payload = JSON.parse(text); } catch (e) { return { ok: false, errors: ['JSON を解釈できません: ' + (e && e.message || e)] }; }
+    var v = validateImportPayload(payload);
+    if (!v.ok) return { ok: false, errors: v.errors, counts: v.counts };
+    var resolution = resolveImportMembers(payload, existingMembers || []);
+    return { ok: true, payload: payload, resolution: resolution, preview: buildImportPreview(payload, resolution) };
+  }
+
 
   // coordinator（render = build → mount → bind）。document/client は init で解決。
   // ===========================================================================
@@ -574,6 +603,7 @@
       });
       bindOrgActions();
       loadReadViews();
+      bindImport();
     }
     function loadReadViews() {
       if (!lastSummary) return;
@@ -646,6 +676,56 @@
         });
       }); });
     }
+    // ---- B-4-wire: 取り込み UI 配線（ファイル読込→プレビュー→べき等取り込み）----
+    var importPrep = null;
+    function bindImport() {
+      var pv = byId('importPreviewBtn');
+      if (pv) pv.addEventListener('click', function () {
+        var fi = byId('importFile');
+        var f = fi && fi.files && fi.files[0];
+        if (!f) { setMsg('importStatus', 'JSON ファイルを選択してください'); return; }
+        setMsg('importStatus', '読み込み中…');
+        var FR = global.FileReader;
+        if (!FR) { setMsg('importStatus', 'このブラウザはファイル読込に対応していません'); return; }
+        var rd = new FR();
+        rd.onload = function () {
+          fetchMembersForEdit(client, lastSummary.clubId).then(function (mr) {
+            var existing = (mr && mr.ok) ? mr.members : [];
+            var prep = prepareImportFromText(String(rd.result || ''), existing);
+            var pvEl = byId('importPreview'), runBtn = byId('importRunBtn');
+            if (!prep.ok) {
+              if (pvEl) pvEl.innerHTML = '<p class="muted">' + esc((prep.errors || ['不正なデータ']).join(' / ')) + '</p>';
+              importPrep = null; if (runBtn) runBtn.disabled = true; setMsg('importStatus', '');
+              return;
+            }
+            importPrep = prep;
+            if (pvEl) pvEl.innerHTML = buildImportPreviewHtml(prep.preview);
+            if (runBtn) runBtn.disabled = false;
+            setMsg('importStatus', 'プレビューを確認して「クラウドへ取り込む」を押してください');
+          });
+        };
+        rd.onerror = function () { setMsg('importStatus', 'ファイルの読み込みに失敗しました'); };
+        rd.readAsText(f);
+      });
+      var run = byId('importRunBtn');
+      if (run) run.addEventListener('click', function () {
+        if (!importPrep) { setMsg('importStatus', '先にプレビューしてください'); return; }
+        var p = importPrep.preview;
+        var ask = (typeof global.confirm === 'function') ? global.confirm : null;
+        if (ask && !ask('新規会員 ' + p.newMembers + ' 名・大会 ' + p.tournaments + ' 件・成績 ' + p.entries + ' 件をクラウドへ取り込みます。よろしいですか？（重複しません）')) return;
+        setMsg('importStatus', '取り込み中…'); run.disabled = true;
+        importHistoryToCloud(client, lastSummary.clubId, importPrep.payload, importPrep.resolution).then(function (r) {
+          if (r.ok) {
+            var c = r.counts;
+            setMsg('importStatus', '取り込み完了：新規会員 ' + c.members_new + ' 名・選手 ' + c.players + ' 名・大会 ' + c.tournaments + ' 件・成績 ' + c.entries + ' 件' + ((c.unresolved || 0) > 0 ? '（未解決 ' + c.unresolved + ' 件）' : ''));
+            loadReadViews();
+          } else {
+            setMsg('importStatus', '取り込み失敗（' + (r.step || '') + '）：' + (r.message || '')); run.disabled = false;
+          }
+        });
+      });
+    }
+
     function bindTournamentRows() {
       if (!doc || !doc.querySelectorAll) return;
       var nodes = doc.querySelectorAll('.cloud-tnt'); if (!nodes) return;
@@ -773,6 +853,9 @@
     resolveImportMembers: resolveImportMembers,
     buildImportPreview: buildImportPreview,
     importHistoryToCloud: importHistoryToCloud,
+    buildImportPanelHtml: buildImportPanelHtml,
+    buildImportPreviewHtml: buildImportPreviewHtml,
+    prepareImportFromText: prepareImportFromText,
     // coordinator
     makeController: makeController,
     boot: boot
