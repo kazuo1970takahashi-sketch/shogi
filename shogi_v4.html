@@ -1924,7 +1924,7 @@ function serializeBranchMasterForExport(master){
 
 function buildMasterExportFilename(dateYmd){
   var ymd=isValidYmd(dateYmd)?dateYmd:todayYmd();
-  return 'shogi_branch_master_'+ymd+'.json';
+  return 'shogi_meibo_'+ymd+'.json';
 }
 
 // ============================================================
@@ -8834,7 +8834,7 @@ function saveDataAsFile(json){
     var d=('0'+now.getDate()).slice(-2);
     var hh=('0'+now.getHours()).slice(-2);
     var mm=('0'+now.getMinutes()).slice(-2);
-    var filename='shogi_'+y+m+d+'_'+hh+mm+'.json';
+    var filename='shogi_taikai_'+y+m+d+'_'+hh+mm+'.json';
     var blob=new Blob([json],{type:'application/json'});
     var url=URL.createObjectURL(blob);
     var a=document.createElement('a');
@@ -8869,17 +8869,43 @@ function applyLoadedJson(rawText){
   }
 }
 
+// DATA-IMPORT-ROUTING (#UX): 読み込みファイルの種類を内容から自動判定する純関数。
+//   ファイル名に頼らず JSON 構造で判別し、取り違え（バックアップ/名簿を「読込」に入れて無言で
+//   空読み込みされる事故）を防ぐ。戻り: 'backup' | 'master' | 'state' | 'invalid'。
+//   - backup : 大会バックアップ（kind=shogi_tour_backup）
+//   - master : 支部マスタ（名簿）= 先頭に members 配列を持ち大会データのキーを持たない
+//   - state  : 生の大会データ（従来の「保存」/applyLoadedJson 経路）
+function classifyImportJson(text){
+  var parsed;
+  try{ parsed=JSON.parse(text); }catch(e){ return 'invalid'; }
+  if(!parsed||typeof parsed!=='object'||Object.prototype.toString.call(parsed)==='[object Array]')return 'invalid';
+  if(parsed.kind===BACKUP_KIND)return 'backup';
+  if(Array.isArray(parsed.members)&&!parsed.players&&!parsed.classes&&!parsed.results&&!parsed.report&&parsed.rounds===undefined)return 'master';
+  return 'state';
+}
+
 function loadData(e){
   var file=e.target.files[0];
   if(!file)return;
-  if(!confirm('現在のデータを上書きして読み込みますか？')){e.target.value='';return;}
   var reader=new FileReader();
   reader.onload=function(ev){
-    try{
-      applyLoadedJson(ev.target.result);
-      alert('データを読み込みました');
-    } catch(err){
-      alert('読み込みに失敗しました。正しいファイルか確認してください');
+    var text=ev.target.result;
+    var kind=classifyImportJson(text);
+    if(kind==='backup'){
+      // バックアップ形式は専用復元へ自動誘導（確認・復元はそちらが担当・空読み込み事故を防ぐ）。
+      importTournamentBackupFromText(text);
+    }else if(kind==='master'){
+      alert('これは支部マスタ（名簿）ファイルです。\n「マスタ」タブの「📂 マスタをインポート」から取り込んでください。');
+    }else if(kind==='invalid'){
+      alert('読み込みに失敗しました。正しい大会データファイルか確認してください');
+    }else{
+      if(!confirm('現在のデータを上書きして読み込みますか？')){e.target.value='';var lm0=document.getElementById('load-modal');if(lm0)lm0.remove();return;}
+      try{
+        applyLoadedJson(text);
+        alert('データを読み込みました');
+      } catch(err){
+        alert('読み込みに失敗しました。正しいファイルか確認してください');
+      }
     }
     e.target.value='';
     var lm=document.getElementById('load-modal');if(lm)lm.remove();
@@ -8892,6 +8918,20 @@ function loadFromPaste(){
   if(!ta)return;
   var text=ta.value.trim();
   if(!text){alert('大会データを貼り付けてください');return;}
+  var kind=classifyImportJson(text);
+  if(kind==='backup'){
+    importTournamentBackupFromText(text);
+    var lmB=document.getElementById('load-modal');if(lmB)lmB.remove();
+    return;
+  }
+  if(kind==='master'){
+    alert('これは支部マスタ（名簿）ファイルです。\n「マスタ」タブの「📂 マスタをインポート」から取り込んでください。');
+    return;
+  }
+  if(kind==='invalid'){
+    alert('読み込みに失敗しました。正しい大会データか確認してください');
+    return;
+  }
   if(!confirm('現在のデータを上書きして読み込みますか？'))return;
   try{
     applyLoadedJson(text);
