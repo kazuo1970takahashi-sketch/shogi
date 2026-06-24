@@ -1025,6 +1025,19 @@ else
 fi
 
 echo ""
+echo "【DATA-PERSISTENCE-PHASE2 B-4 — 過去大会 Excel 由来データの一括取り込み（validate/突き合わせ/プレビュー/べき等 upsert・既存非上書き・mock）】"
+if [ -f "$SCRIPT_DIR/test_stageb_import.js" ]; then
+  if node "$SCRIPT_DIR/test_stageb_import.js" "$TARGET" > /tmp/stageb_import_out.log 2>&1; then
+    ok "B-4 移行取り込み テスト 全PASS ($(tail -1 /tmp/stageb_import_out.log))"
+  else
+    ng "B-4 移行取り込み テスト 失敗"
+    cat /tmp/stageb_import_out.log
+  fi
+else
+  warn "test_stageb_import.js が見つからない"
+fi
+
+echo ""
 echo "【DATA-PERSISTENCE-PHASE2 Stage A — RLS 実 PostgreSQL 検証（stagea_rls_pgtest.sh / psql 無ければ SKIP）】"
 if [ -f "$SCRIPT_DIR/stagea_rls_pgtest.sh" ]; then
   if bash "$SCRIPT_DIR/stagea_rls_pgtest.sh" > /tmp/stagea_rls_out.log 2>&1; then
