@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // DATA-PERSISTENCE-PHASE2 / Stage B-3b — pullMembersFromCloud 読み取りオーケストレーション検証（mock client）。
-//   観点: members を select('member_id,name,yomi,branch').eq('club_id',clubId) で取得 →
+//   観点: members を select('member_id,name,yomi,branch,deleted_at').eq('club_id',clubId) で取得 →
 //         mergeCloudMembersIntoMaster → 変更時のみ saveBranchMaster /
 //         成功 {ok:true,counts,saved} / 変更なしは saved:false 保存呼ばず /
 //         fetch error は {ok:false,step:'fetch'} throw しない / client 無し→init / clubId 無し→club /
@@ -52,7 +52,7 @@ function byId(master,id){ for(var i=0;i<master.members.length;i++)if(master.memb
   ok(byId(m1,'m1').yomi==='やまだたろう'&&byId(m1,'m2')&&byId(m1,'m2').name==='新人花子','P1-4 master に反映');
   ok(byId(m1,'m1').last_class==='A'&&byId(m1,'m1').tournament_ids.length===1,'P1-5 運用フィールド温存');
   var sel=c1._calls[0];
-  ok(sel.table==='members'&&sel.select==='member_id,name,yomi,branch','P1-6 select 列が member_id,name,yomi,branch');
+  ok(sel.table==='members'&&sel.select==='member_id,name,yomi,branch,deleted_at','P1-6 select 列が member_id,name,yomi,branch,deleted_at（tombstone 伝播のため deleted_at 含む）');
   ok(sel.eq.col==='club_id'&&sel.eq.val==='club-1','P1-7 eq(club_id, clubId)');
 
   console.log('=== P2: 変更なし → 保存しない（saved:false）===');

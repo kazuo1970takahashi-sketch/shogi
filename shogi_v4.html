@@ -8402,8 +8402,10 @@ function mergeCloudMembersIntoMaster(master, cloudMembers, opts){
     if(typeof mid!=='string'||!mid){ res.skipped++; continue; }
     var cName=nonEmpty(cm.name)?cm.name:'';
     var cYomi=(typeof cm.yomi==='string')?cm.yomi:'';
-    var cDeleted=(cm.deleted===true);
     var cDeletedAt=(typeof cm.deleted_at==='string'&&cm.deleted_at)?cm.deleted_at:null;
+    // クラウド members は deleted boolean を持たず deleted_at(timestamptz)のみ（app/ B-5 が書く）。
+    // 後方互換のため deleted===true も引き続き尊重しつつ、deleted_at 非 null を tombstone とみなす（B-3b-tombstone）。
+    var cDeleted=(cm.deleted===true)||(cDeletedAt!==null);
     var existing=byId[mid];
     if(existing){
       var didChange=false;
@@ -8472,7 +8474,8 @@ function syncTournamentToCloud(client, master, opts){
 //   syncTournamentToCloud（送信）と対称の読み取りオーケストレーション。client は注入（mock 可）。
 //   throw せず {ok,...} を返す（当日運営を止めない）。全クラウド操作は任意・非ブロッキング・失敗は通知のみ。
 //   opts: { clubId（必須）, master（省略時 loadBranchMaster()） }。
-//   - members を select('member_id,name,yomi,branch').eq('club_id',clubId) で取得（B-1 read と同形）。
+//   - members を select('member_id,name,yomi,branch,deleted_at').eq('club_id',clubId) で取得。
+//     deleted_at 非 null はクラウド側の論理削除（app/ B-5）→ merge でローカル tombstone 反映（B-3b-tombstone）。
 //   - 変更が無ければ保存しない（保存失敗での誤通知を避ける）。
 //   - 戻り: {ok, step?, counts:{fetched,added,updated,skipped}, saved, master, message?}。
 function pullMembersFromCloud(client, opts){
@@ -8480,7 +8483,7 @@ function pullMembersFromCloud(client, opts){
   var clubId=opts.clubId;
   if(!client||!client.from)return Promise.resolve({ok:false,step:'init',message:'クラウドに接続していません'});
   if(!clubId)return Promise.resolve({ok:false,step:'club',message:'取得元クラブが特定できません（ログインを確認してください）'});
-  return client.from('members').select('member_id,name,yomi,branch').eq('club_id',clubId).then(function(r){
+  return client.from('members').select('member_id,name,yomi,branch,deleted_at').eq('club_id',clubId).then(function(r){
     if(r&&r.error)return {ok:false,step:'fetch',message:((r.error&&r.error.message)||'名簿の読み込みに失敗しました')+'（fetch）'};
     var rows=(r&&Array.isArray(r.data))?r.data:[];
     var master=(opts.master&&Array.isArray(opts.master.members))?opts.master
