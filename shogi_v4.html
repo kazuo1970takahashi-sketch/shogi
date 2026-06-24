@@ -8575,6 +8575,47 @@ function pullMembersToMasterUI(setStatus){
     });
   }).catch(function(e){ setStatus('取得エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; });
 }
+// CLOUD PULL (B-3c-auto / #343): 起動時 auto-pull。全て任意・非ブロッキング・無音・fail-soft。
+//   config 検出かつ既存ログインセッションがあるときだけ背景で名簿 pull（B-3c-wire の手動ボタンと同経路）。
+//   未ログイン/オフライン/config 不在/失敗はすべて無音（ログインは促さない・status も出さない＝当日運営は無傷）。
+//   データ保存（pullMembersFromCloud→saveBranchMaster）は常に実施。再描画は「マスタタブ表示中」かつ
+//   「変更あり」のときだけ静かに行い、その時のみ status を出す（他タブ操作中は一切干渉しない）。
+//   起動描画をブロックしないよう scheduleAutoPullMembers が次 tick へ回す。throw は握りつぶす。
+function autoPullMembersOnStartup(){
+  try{
+    return loadCloudDeps().then(function(dep){
+      if(!dep||!dep.cfg||!dep.sb)return {ok:false,step:'deps'};
+      var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+      if(!client||!client.auth)return {ok:false,step:'client'};
+      return client.auth.getSession().then(function(r){
+        var session=r&&r.data&&r.data.session;
+        if(!session)return {ok:false,step:'auth'};
+        return client.rpc('claim_organizer_seat').then(function(rc){
+          var clubId=pickActiveClubId((rc&&rc.data)||[]);
+          if(!clubId)return {ok:false,step:'club'};
+          return pullMembersFromCloud(client,{clubId:clubId}).then(function(res){
+            if(res&&res.ok&&res.counts&&(res.counts.added||res.counts.updated)){
+              try{
+                var tm=document.getElementById('tab-master');
+                var masterActive=tm&&String(tm.className||'').indexOf('active')>=0;
+                if(masterActive&&typeof renderMasterTab==='function'){
+                  renderMasterTab();
+                  var el=document.getElementById('masterCloudPullStatus');
+                  if(el)el.textContent='クラウドから自動取得しました（新規 '+(res.counts.added||0)+' 名・更新 '+(res.counts.updated||0)+' 名）';
+                }
+              }catch(eR){}
+            }
+            return res;
+          });
+        });
+      });
+    }).catch(function(){ return {ok:false,step:'exception'}; });
+  }catch(e){ return Promise.resolve({ok:false,step:'exception'}); }
+}
+function scheduleAutoPullMembers(){
+  // 起動描画を一切ブロックしないよう次 tick へ。失敗は無音（握りつぶす）。
+  try{ setTimeout(function(){ try{ autoPullMembersOnStartup(); }catch(e){} },0); }catch(e){ try{ autoPullMembersOnStartup(); }catch(e2){} }
+}
 
 // ============================================================
 // RENDER (RESULTS): 最終結果タブの描画
@@ -10853,6 +10894,8 @@ document.addEventListener('DOMContentLoaded',function(){
   bindReportEvents();
   initApp();
   initScoreboard();
+  // B-3c-auto (#343): 起動時 auto-pull（非ブロッキング・無音・fail-soft）。描画完了後に次 tick で実行。
+  if(typeof scheduleAutoPullMembers==='function')scheduleAutoPullMembers();
 });
 </script>
 </body>
