@@ -457,15 +457,30 @@
   //   同名が複数いる場合は曖昧として新規扱い＋警告（誤った別人への紐付けを避ける）。
   function resolveImportMembers(payload, existingMembers) {
     var existing = Array.isArray(existingMembers) ? existingMembers : [];
-    var byName = {};
-    for (var i = 0; i < existing.length; i++) { var em = existing[i]; if (em && em.name) { var key = impSquash(em.name); (byName[key] = byName[key] || []).push(em); } }
-    var idMap = {}, newMembers = [], matched = 0, ambiguous = [];
+    var byNameBranch = {}, byName = {};
+    for (var i = 0; i < existing.length; i++) {
+      var em = existing[i]; if (!em || !em.name) continue;
+      var nk = impSquash(em.name);
+      byNameBranch[nk + '\u0001' + impSquash(em.branch || '')] = em;
+      (byName[nk] = byName[nk] || []).push(em);
+    }
+    var idMap = {}, newMembers = [], matched = 0, ambiguous = [], used = {};
     var ms = Array.isArray(payload.members) ? payload.members : [];
     for (var m = 0; m < ms.length; m++) {
-      var pm = ms[m], hits = byName[impSquash(pm.name)] || [];
-      if (hits.length === 1) { idMap[pm.member_id] = hits[0].member_id; matched++; }
-      else if (hits.length === 0) { idMap[pm.member_id] = pm.member_id; newMembers.push(pm); }
-      else { idMap[pm.member_id] = pm.member_id; newMembers.push(pm); ambiguous.push(pm.name); }
+      var pm = ms[m], nk = impSquash(pm.name), match = null;
+      // ① 氏名＋branch 完全一致を優先（同名別人を区別）。
+      var exact = byNameBranch[nk + '\u0001' + impSquash(pm.branch || '')];
+      if (exact && !used[exact.member_id]) match = exact;
+      // ② 無ければ氏名のみ一致（branch 未設定の既存名簿向け）。ただし未使用が1件のときだけ。
+      if (!match) {
+        var cands = []; var byn = byName[nk] || [];
+        for (var c = 0; c < byn.length; c++) { if (!used[byn[c].member_id]) cands.push(byn[c]); }
+        if (cands.length === 1) match = cands[0];
+        else if (cands.length > 1) ambiguous.push(pm.name);
+      }
+      // ③ 一致は既存 id を流用（同一既存会員を二重に使わない＝injective）。未一致は新規。
+      if (match) { idMap[pm.member_id] = match.member_id; used[match.member_id] = 1; matched++; }
+      else { idMap[pm.member_id] = pm.member_id; newMembers.push(pm); }
     }
     return { idMap: idMap, newMembers: newMembers, matched: matched, ambiguous: ambiguous };
   }
@@ -500,10 +515,15 @@
         return client.from('tournaments').upsert(trows, { onConflict: 'club_id,app_tournament_id' }).select('id,app_tournament_id').then(function (r3) {
           if (r3 && r3.error) return fail('tournaments', r3);
           var tidByAppt = {}, td = (r3 && r3.data) || []; for (var j = 0; j < td.length; j++) { if (td[j] && td[j].app_tournament_id) tidByAppt[td[j].app_tournament_id] = td[j].id; }
-          var erows = [], es = payload.entries || [];
+          var erows = [], es = payload.entries || [], seenTP = {};
+          counts.deduped = 0;
           for (var e = 0; e < es.length; e++) {
             var en = es[e], rid = idMap[en.member_id], pid = pidByMember[rid], tid = tidByAppt[en.app_tournament_id];
             if (!pid || !tid) { counts.unresolved++; continue; }
+            // 防御: 同一 (tournament_id, player_id) は1件だけ（ON CONFLICT が同一行を二度更新するエラーを防ぐ）。
+            var tpk = tid + '\u0001' + pid;
+            if (seenTP[tpk]) { counts.deduped++; continue; }
+            seenTP[tpk] = 1;
             erows.push({ club_id: clubId, tournament_id: tid, player_id: pid, 'class': en['class'], wins: (en.wins == null ? 0 : en.wins), losses: (en.losses == null ? 0 : en.losses), final_rank: (en.final_rank == null ? null : en.final_rank), sos: (en.sos == null ? null : en.sos), sodos: (en.sodos == null ? null : en.sodos) });
           }
           counts.entries = erows.length;

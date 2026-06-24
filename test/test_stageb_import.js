@@ -76,6 +76,17 @@ function samplePayload(){
     // 同名が複数＝曖昧→新規扱い＋警告候補
     var r2=A.resolveImportMembers(pl,[{member_id:'X1',name:'甲太郎'},{member_id:'X2',name:'甲 太郎'}]);
     assert(r2.ambiguous.length===1 && r2.idMap['m_a']==='m_a','R6 同名複数は曖昧＝新規扱い');
+    // R7 氏名+branch 完全一致を優先（同名別人を branch で区別）
+    var plSB={members:[{member_id:'m_x',name:'佐藤弘康',branch:'長泉町'},{member_id:'m_y',name:'佐藤弘康',branch:'沼津市'}],tournaments:[],entries:[]};
+    var r7=A.resolveImportMembers(plSB,[{member_id:'EX_NAGA',name:'佐藤弘康',branch:'長泉町'}]);
+    assert(r7.idMap['m_x']==='EX_NAGA','R7 氏名+branch 一致は既存流用（長泉）');
+    assert(r7.idMap['m_y']==='m_y' && r7.newMembers.length===1,'R8 同名でも branch 違いは別人＝新規（沼津）');
+    // R9 injective: 既存1人を2人の payload が取り合わない（2人目は新規）
+    var plSame={members:[{member_id:'m_p',name:'佐藤弘康',branch:'長泉町'},{member_id:'m_q',name:'佐藤弘康',branch:'沼津市'}],tournaments:[],entries:[]};
+    var r9=A.resolveImportMembers(plSame,[{member_id:'EX1',name:'佐藤弘康'}]);
+    var resolved=[r9.idMap['m_p'],r9.idMap['m_q']];
+    assert(resolved[0]!==resolved[1],'R9 同名2人が同一既存idに解決しない（injective）');
+    assert((resolved[0]==='EX1')!==(resolved[1]==='EX1'),'R10 既存idを流用するのは片方だけ・他方は新規');
   })();
 
   // P
@@ -118,6 +129,20 @@ function samplePayload(){
     var c=makeClient();
     var r=await A.importHistoryToCloud(c,CLUB,pl,res);
     assert(r.ok===true && r.counts.unresolved===1 && r.counts.entries===2,'I7 未解決 member の entry は unresolved にカウントして除外');
+  })();
+
+  // I — entries 重複排除（同一 tournament,player は1件）
+  await (async function(){
+    var pl=samplePayload();
+    // m_a が同じ大会に2件（同一 member）→ resolve 後 (tid,pid) 衝突 → deduped
+    pl.entries.push({app_tournament_id:'t_20250413',member_id:'m_a','class':'B',wins:0,losses:0,final_rank:null});
+    var res=A.resolveImportMembers(pl,[]);
+    var c=makeClient();
+    var r=await A.importHistoryToCloud(c,CLUB,pl,res);
+    assert(r.ok===true && r.counts.deduped===1,'I7b 同一(tournament,player)は1件に重複排除（deduped=1）');
+    // entries upsert に渡る行に (tid,pid) 重複がない
+    var rows=c._calls.entries[0]||[]; var keys=rows.map(x=>x.tournament_id+'|'+x.player_id);
+    assert(keys.length===new Set(keys).size,'I7c upsert 行に (tournament,player) 重複なし');
   })();
 
   // I — error 経路
