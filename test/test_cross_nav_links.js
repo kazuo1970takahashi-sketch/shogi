@@ -20,6 +20,8 @@ assert(/クラウド管理/.test(shogi), 'X3 リンク文言にクラウド管�
 // app/ → 当日アプリ
 assert(/href="\.\.\/shogi_v4\.html"/.test(appHtml), 'X4 app/ に当日アプリへ戻る相対リンクがある');
 assert(/当日運営アプリへ戻る/.test(appHtml), 'X5 戻りリンクの文言');
+// app/ の auth.js は cache-bust（?v=）付きでロード（旧JSキャッシュ問題の対策・#343）
+assert(/src="auth\.js\?v=\d+"/.test(appHtml), 'X6 app/auth.js は ?v= 付きでロード（cache-bust）');
 
 console.log('  PWA-PREP 相互ナビリンク テスト: PASS '+pass+'件 / FAIL '+fail+'件');
 process.exit(fail===0?0:1);
