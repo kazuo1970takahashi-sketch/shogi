@@ -150,6 +150,10 @@ const CLUB = 'cccccccc-0000-0000-0000-000000000001';
     var xss = A.buildMemberEditRowHtml({ member_id:'mX', name:'<b>tag</b>', yomi:'"q"' }, null);
     assert(xss.indexOf('<b>tag</b>')<0 && xss.indexOf('&lt;b&gt;')>=0, 'B10 esc で XSS 安全');
     assert(A.buildMemberEditPanelHtml([], null).indexOf('名簿が空です')>=0, 'B11 空名簿の案内');
+    // 論理削除の確認メッセージ（誤操作防止）
+    var cmsg = A.memberDeleteConfirmMessage('山田太郎');
+    assert(cmsg.indexOf('山田太郎')>=0 && cmsg.indexOf('論理削除')>=0 && cmsg.indexOf('復元')>=0, 'B12 確認メッセージに氏名・論理削除・復元の語');
+    assert(A.memberDeleteConfirmMessage('').indexOf('この会員')>=0, 'B13 氏名空は「この会員」にフォールバック');
   })();
 
   // ===================================================== F. fetchMembersForEdit
