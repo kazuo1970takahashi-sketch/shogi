@@ -1924,7 +1924,7 @@ function serializeBranchMasterForExport(master){
 
 function buildMasterExportFilename(dateYmd){
   var ymd=isValidYmd(dateYmd)?dateYmd:todayYmd();
-  return 'shogi_branch_master_'+ymd+'.json';
+  return 'shogi_meibo_'+ymd+'.json';
 }
 
 // ============================================================
@@ -3182,7 +3182,9 @@ function buildMasterTabHtml(master){
   html+='<button type="button" id="masterResetBtn" style="background:#fff;border:1px solid #c33;color:#c33">📛 マスタをリセット</button>';
   // A-4 §3.4.1: 削除済み表示トグル
   html+='<button type="button" id="masterShowDeletedBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864" data-on="'+(_masterShowDeleted?'1':'0')+'">'+(_masterShowDeleted?'🗑️ 削除済みを隠す':'🗑️ 削除済みを表示')+'</button>';
+  html+='<button type="button" id="masterCloudPullBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ クラウドから取得</button>';
   html+='</div>';
+  html+='<div id="masterCloudPullStatus" style="margin:4px 0 12px;font-size:13px;color:#555" aria-live="polite"></div>';
   html+='<hr class="separator">';
   html+='<h3>簡易一覧</h3>';
   if(members.length===0){
@@ -3842,6 +3844,12 @@ function bindMasterTabEvents(){
   // HELP-UX-005 (#342): 支部マスタ見出し脇「？ ヘルプ」（id=helpBtnMaster）→ openHelpModal('master')。
   var helpBtnMaster=document.getElementById('helpBtnMaster');
   if(helpBtnMaster)helpBtnMaster.addEventListener('click',function(){openHelpModal('master');});
+  // B-3c-wire (#343): 「☁ クラウドから取得」→ pullMembersToMasterUI（任意・非ブロッキング・status 表示のみ）。
+  var cloudPullBtn=document.getElementById('masterCloudPullBtn');
+  if(cloudPullBtn)cloudPullBtn.addEventListener('click',function(){
+    var setStatus=function(msg){ var el=document.getElementById('masterCloudPullStatus'); if(el)el.textContent=msg; };
+    pullMembersToMasterUI(setStatus);
+  });
   var btn=document.getElementById('masterMigrateBtn');
   if(btn)btn.addEventListener('click',openMigrationWizard);
   var importBtn=document.getElementById('masterImportBtn');
@@ -8363,6 +8371,60 @@ function buildCloudSyncPayload(master, opts){
   };
 }
 
+// CLOUD PULL (B-3a / #343): クラウド members（正本）→ ローカル支部マスタ（オフライン用キャッシュ）へのマージ。
+//   buildCloudSyncPayload の逆写像。throw せず {master, added, updated, skipped} を返す（当日運営を止めない）。
+//   方針（#343 設計確定 2026-06-24）: クラウドが名簿の正本。
+//   - キーは member_id（クラウド値＝ローカル member.id・沼津1クラブ固定で衝突なし）。同名照合はしない
+//     （member_id 一致のみ＝同名別人の誤統合が起きない）。
+//   - 既存会員: name/yomi をクラウド値で上書き（正本）。ただし**クラウド値が空のときは上書きしない**
+//     （未入力での消失防止＝#333「空上書き禁止」と同じ安全側）。
+//   - ローカル運用専用フィールド（last_class/出席日/tournament_ids/member/grade/city/note）は温存。
+//   - branch はローカル支部マスタの永続スキーマに無い（normalizeBranchMaster が保持しない）ため取り込まない。
+//   - tombstone: クラウド deleted=true はローカルへ反映（論理削除）。deleted=false での自動復元はしない
+//     （既存 import 規則と同じ・OR 安全側）。
+//   - クラウドに在ってローカルに無い会員は新規追加（normalize が出席日等を後で補完）。
+//   既知の限界: 「ある幹事が pull 前にオフラインで初対面の会員をローカル作成」した場合のみ、同一人物が別
+//     member_id で二重化しうる（起動時 auto-pull で実害小・名前ベース統合は app/ 名簿編集/手動マージで対応＝
+//     B-3a 対象外。再キーは履歴参照を壊すため行わない）。
+function mergeCloudMembersIntoMaster(master, cloudMembers, opts){
+  opts=opts||{};
+  var res={master:master, added:0, updated:0, skipped:0};
+  if(!master||!Array.isArray(master.members))return res;
+  if(!Array.isArray(cloudMembers))return res;
+  var byId={};
+  for(var i=0;i<master.members.length;i++){ var lm=master.members[i]; if(lm&&typeof lm.id==='string'&&lm.id)byId[lm.id]=lm; }
+  function nonEmpty(s){ return typeof s==='string'&&s.length>0; }
+  var changed=false;
+  for(var c=0;c<cloudMembers.length;c++){
+    var cm=cloudMembers[c];
+    if(!cm||typeof cm!=='object'){ res.skipped++; continue; }
+    var mid=cm.member_id;
+    if(typeof mid!=='string'||!mid){ res.skipped++; continue; }
+    var cName=nonEmpty(cm.name)?cm.name:'';
+    var cYomi=(typeof cm.yomi==='string')?cm.yomi:'';
+    var cDeleted=(cm.deleted===true);
+    var cDeletedAt=(typeof cm.deleted_at==='string'&&cm.deleted_at)?cm.deleted_at:null;
+    var existing=byId[mid];
+    if(existing){
+      var didChange=false;
+      if(nonEmpty(cName)&&existing.name!==cName){ existing.name=cName; didChange=true; }
+      if(nonEmpty(cYomi)&&existing.yomi!==cYomi){ existing.yomi=cYomi; didChange=true; }
+      if(cDeleted&&existing.deleted!==true){ existing.deleted=true; if(cDeletedAt&&!existing.deleted_at)existing.deleted_at=cDeletedAt; didChange=true; }
+      if(didChange){ res.updated++; changed=true; }
+    }else{
+      // 新規追加には有効な氏名が必須（normalizeBranchMaster の id&name 必須に整合）。
+      if(!nonEmpty(cName)){ res.skipped++; continue; }
+      var nm={ id:mid, name:cName, yomi:cYomi, tournament_ids:[] };
+      if(cDeleted){ nm.deleted=true; nm.deleted_at=cDeletedAt; }
+      master.members.push(nm);
+      byId[mid]=nm;
+      res.added++; changed=true;
+    }
+  }
+  if(changed)master.updated_at=new Date().toISOString();
+  return res;
+}
+
 // CLOUD SYNC (B-2b-core / #343): buildCloudSyncPayload の出力を supabase へ upsert するオーケストレーション。
 //   client は注入（mock 可）。throw せず {ok,...} を返す（当日運営を止めない）。冪等 upsert（onConflict）。
 //   順序: members → players(id 解決) → tournament(id 解決) → entries（tournament_id/player_id を解決）。
@@ -8403,6 +8465,32 @@ function syncTournamentToCloud(client, master, opts){
         });
       });
     });
+  });
+}
+
+// CLOUD PULL (B-3b / #343): クラウド members（正本）読み取り → mergeCloudMembersIntoMaster → saveBranchMaster。
+//   syncTournamentToCloud（送信）と対称の読み取りオーケストレーション。client は注入（mock 可）。
+//   throw せず {ok,...} を返す（当日運営を止めない）。全クラウド操作は任意・非ブロッキング・失敗は通知のみ。
+//   opts: { clubId（必須）, master（省略時 loadBranchMaster()） }。
+//   - members を select('member_id,name,yomi,branch').eq('club_id',clubId) で取得（B-1 read と同形）。
+//   - 変更が無ければ保存しない（保存失敗での誤通知を避ける）。
+//   - 戻り: {ok, step?, counts:{fetched,added,updated,skipped}, saved, master, message?}。
+function pullMembersFromCloud(client, opts){
+  opts=opts||{};
+  var clubId=opts.clubId;
+  if(!client||!client.from)return Promise.resolve({ok:false,step:'init',message:'クラウドに接続していません'});
+  if(!clubId)return Promise.resolve({ok:false,step:'club',message:'取得元クラブが特定できません（ログインを確認してください）'});
+  return client.from('members').select('member_id,name,yomi,branch').eq('club_id',clubId).then(function(r){
+    if(r&&r.error)return {ok:false,step:'fetch',message:((r.error&&r.error.message)||'名簿の読み込みに失敗しました')+'（fetch）'};
+    var rows=(r&&Array.isArray(r.data))?r.data:[];
+    var master=(opts.master&&Array.isArray(opts.master.members))?opts.master
+              :((typeof loadBranchMaster==='function')?loadBranchMaster():{schema_version:1,updated_at:new Date().toISOString(),members:[]});
+    var mres=mergeCloudMembersIntoMaster(master,rows,{});
+    var counts={fetched:rows.length,added:mres.added,updated:mres.updated,skipped:mres.skipped};
+    if(mres.added===0&&mres.updated===0)return {ok:true,counts:counts,saved:false,master:master};
+    var saved=(typeof saveBranchMaster==='function')?saveBranchMaster(master):true;
+    if(saved===false)return {ok:false,step:'save',counts:counts,message:'名簿の保存に失敗しました（取得は成功・再取得できます）',master:master};
+    return {ok:true,counts:counts,saved:true,master:master};
   });
 }
 
@@ -8453,6 +8541,80 @@ function sendTournamentToCloud(setStatus){
       });
     });
   }).catch(function(e){ setStatus('送信エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; });
+}
+
+// CLOUD PULL (B-3c-wire / #343): 支部マスタ画面→クラウド名簿取得のブラウザ・グルー。
+//   sendTournamentToCloud（送信）と対称。全クラウド操作は任意・非ブロッキング・失敗は status 表示のみ
+//   （ボタンを押さなければ従来通り・ネット不要）。supabase-js / app/config.js は click 時のみ遅延ロード。
+//   未ログインは案内のみ（当日アプリにログイン UI は持ち込まない）。成功時はマスタを再描画して反映。
+function pullMembersToMasterUI(setStatus){
+  setStatus=setStatus||function(){};
+  setStatus('クラウドから取得中…');
+  return loadCloudDeps().then(function(dep){
+    if(!dep.cfg){ setStatus('クラウド設定がありません（取得は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
+    if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
+    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+    if(!client||!client.auth){ setStatus('クラウドに接続できませんでした'); return {ok:false,step:'client'}; }
+    return client.auth.getSession().then(function(r){
+      var session=r&&r.data&&r.data.session;
+      if(!session){ setStatus('クラウド管理ページ（app/）でログインしてから取得してください'); return {ok:false,step:'auth'}; }
+      return client.rpc('claim_organizer_seat').then(function(rc){
+        var clubId=pickActiveClubId((rc&&rc.data)||[]);
+        if(!clubId){ setStatus('幹事として有効なクラブが見つかりません（管理ページを確認してください）'); return {ok:false,step:'club'}; }
+        return pullMembersFromCloud(client,{clubId:clubId}).then(function(res){
+          if(res&&res.ok){
+            var c=res.counts||{};
+            try{ if(typeof renderMasterTab==='function')renderMasterTab(); }catch(eR){}
+            setStatus('取得しました（新規 '+(c.added||0)+' 名・更新 '+(c.updated||0)+' 名／クラウド '+(c.fetched||0)+' 名）');
+          }else{
+            setStatus('取得に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再取得できます）');
+          }
+          return res;
+        });
+      });
+    });
+  }).catch(function(e){ setStatus('取得エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; });
+}
+// CLOUD PULL (B-3c-auto / #343): 起動時 auto-pull。全て任意・非ブロッキング・無音・fail-soft。
+//   config 検出かつ既存ログインセッションがあるときだけ背景で名簿 pull（B-3c-wire の手動ボタンと同経路）。
+//   未ログイン/オフライン/config 不在/失敗はすべて無音（ログインは促さない・status も出さない＝当日運営は無傷）。
+//   データ保存（pullMembersFromCloud→saveBranchMaster）は常に実施。再描画は「マスタタブ表示中」かつ
+//   「変更あり」のときだけ静かに行い、その時のみ status を出す（他タブ操作中は一切干渉しない）。
+//   起動描画をブロックしないよう scheduleAutoPullMembers が次 tick へ回す。throw は握りつぶす。
+function autoPullMembersOnStartup(){
+  try{
+    return loadCloudDeps().then(function(dep){
+      if(!dep||!dep.cfg||!dep.sb)return {ok:false,step:'deps'};
+      var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+      if(!client||!client.auth)return {ok:false,step:'client'};
+      return client.auth.getSession().then(function(r){
+        var session=r&&r.data&&r.data.session;
+        if(!session)return {ok:false,step:'auth'};
+        return client.rpc('claim_organizer_seat').then(function(rc){
+          var clubId=pickActiveClubId((rc&&rc.data)||[]);
+          if(!clubId)return {ok:false,step:'club'};
+          return pullMembersFromCloud(client,{clubId:clubId}).then(function(res){
+            if(res&&res.ok&&res.counts&&(res.counts.added||res.counts.updated)){
+              try{
+                var tm=document.getElementById('tab-master');
+                var masterActive=tm&&String(tm.className||'').indexOf('active')>=0;
+                if(masterActive&&typeof renderMasterTab==='function'){
+                  renderMasterTab();
+                  var el=document.getElementById('masterCloudPullStatus');
+                  if(el)el.textContent='クラウドから自動取得しました（新規 '+(res.counts.added||0)+' 名・更新 '+(res.counts.updated||0)+' 名）';
+                }
+              }catch(eR){}
+            }
+            return res;
+          });
+        });
+      });
+    }).catch(function(){ return {ok:false,step:'exception'}; });
+  }catch(e){ return Promise.resolve({ok:false,step:'exception'}); }
+}
+function scheduleAutoPullMembers(){
+  // 起動描画を一切ブロックしないよう次 tick へ。失敗は無音（握りつぶす）。
+  try{ setTimeout(function(){ try{ autoPullMembersOnStartup(); }catch(e){} },0); }catch(e){ try{ autoPullMembersOnStartup(); }catch(e2){} }
 }
 
 // ============================================================
@@ -8672,7 +8834,7 @@ function saveDataAsFile(json){
     var d=('0'+now.getDate()).slice(-2);
     var hh=('0'+now.getHours()).slice(-2);
     var mm=('0'+now.getMinutes()).slice(-2);
-    var filename='shogi_'+y+m+d+'_'+hh+mm+'.json';
+    var filename='shogi_taikai_'+y+m+d+'_'+hh+mm+'.json';
     var blob=new Blob([json],{type:'application/json'});
     var url=URL.createObjectURL(blob);
     var a=document.createElement('a');
@@ -8707,17 +8869,43 @@ function applyLoadedJson(rawText){
   }
 }
 
+// DATA-IMPORT-ROUTING (#UX): 読み込みファイルの種類を内容から自動判定する純関数。
+//   ファイル名に頼らず JSON 構造で判別し、取り違え（バックアップ/名簿を「読込」に入れて無言で
+//   空読み込みされる事故）を防ぐ。戻り: 'backup' | 'master' | 'state' | 'invalid'。
+//   - backup : 大会バックアップ（kind=shogi_tour_backup）
+//   - master : 支部マスタ（名簿）= 先頭に members 配列を持ち大会データのキーを持たない
+//   - state  : 生の大会データ（従来の「保存」/applyLoadedJson 経路）
+function classifyImportJson(text){
+  var parsed;
+  try{ parsed=JSON.parse(text); }catch(e){ return 'invalid'; }
+  if(!parsed||typeof parsed!=='object'||Object.prototype.toString.call(parsed)==='[object Array]')return 'invalid';
+  if(parsed.kind===BACKUP_KIND)return 'backup';
+  if(Array.isArray(parsed.members)&&!parsed.players&&!parsed.classes&&!parsed.results&&!parsed.report&&parsed.rounds===undefined)return 'master';
+  return 'state';
+}
+
 function loadData(e){
   var file=e.target.files[0];
   if(!file)return;
-  if(!confirm('現在のデータを上書きして読み込みますか？')){e.target.value='';return;}
   var reader=new FileReader();
   reader.onload=function(ev){
-    try{
-      applyLoadedJson(ev.target.result);
-      alert('データを読み込みました');
-    } catch(err){
-      alert('読み込みに失敗しました。正しいファイルか確認してください');
+    var text=ev.target.result;
+    var kind=classifyImportJson(text);
+    if(kind==='backup'){
+      // バックアップ形式は専用復元へ自動誘導（確認・復元はそちらが担当・空読み込み事故を防ぐ）。
+      importTournamentBackupFromText(text);
+    }else if(kind==='master'){
+      alert('これは支部マスタ（名簿）ファイルです。\n「マスタ」タブの「📂 マスタをインポート」から取り込んでください。');
+    }else if(kind==='invalid'){
+      alert('読み込みに失敗しました。正しい大会データファイルか確認してください');
+    }else{
+      if(!confirm('現在のデータを上書きして読み込みますか？')){e.target.value='';var lm0=document.getElementById('load-modal');if(lm0)lm0.remove();return;}
+      try{
+        applyLoadedJson(text);
+        alert('データを読み込みました');
+      } catch(err){
+        alert('読み込みに失敗しました。正しいファイルか確認してください');
+      }
     }
     e.target.value='';
     var lm=document.getElementById('load-modal');if(lm)lm.remove();
@@ -8730,6 +8918,20 @@ function loadFromPaste(){
   if(!ta)return;
   var text=ta.value.trim();
   if(!text){alert('大会データを貼り付けてください');return;}
+  var kind=classifyImportJson(text);
+  if(kind==='backup'){
+    importTournamentBackupFromText(text);
+    var lmB=document.getElementById('load-modal');if(lmB)lmB.remove();
+    return;
+  }
+  if(kind==='master'){
+    alert('これは支部マスタ（名簿）ファイルです。\n「マスタ」タブの「📂 マスタをインポート」から取り込んでください。');
+    return;
+  }
+  if(kind==='invalid'){
+    alert('読み込みに失敗しました。正しい大会データか確認してください');
+    return;
+  }
   if(!confirm('現在のデータを上書きして読み込みますか？'))return;
   try{
     applyLoadedJson(text);
@@ -10732,6 +10934,8 @@ document.addEventListener('DOMContentLoaded',function(){
   bindReportEvents();
   initApp();
   initScoreboard();
+  // B-3c-auto (#343): 起動時 auto-pull（非ブロッキング・無音・fail-soft）。描画完了後に次 tick で実行。
+  if(typeof scheduleAutoPullMembers==='function')scheduleAutoPullMembers();
 });
 </script>
 </body>
