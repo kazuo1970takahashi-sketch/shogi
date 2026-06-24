@@ -1012,6 +1012,19 @@ else
 fi
 
 echo ""
+echo "【PWA-PREP 相互ナビリンク（docs/PWA-PLAN）当日アプリ⇄app/ ワンタップ移動・同一ウィンドウ遷移】"
+if [ -f "$SCRIPT_DIR/test_cross_nav_links.js" ]; then
+  if node "$SCRIPT_DIR/test_cross_nav_links.js" "$TARGET" > /tmp/cross_nav_links_out.log 2>&1; then
+    ok "PWA-PREP 相互ナビリンク テスト 全PASS ($(tail -1 /tmp/cross_nav_links_out.log))"
+  else
+    ng "PWA-PREP 相互ナビリンク テスト 失敗"
+    cat /tmp/cross_nav_links_out.log
+  fi
+else
+  warn "test_cross_nav_links.js が見つからない"
+fi
+
+echo ""
 echo "【DATA-PERSISTENCE-PHASE2 Stage A — RLS 実 PostgreSQL 検証（stagea_rls_pgtest.sh / psql 無ければ SKIP）】"
 if [ -f "$SCRIPT_DIR/stagea_rls_pgtest.sh" ]; then
   if bash "$SCRIPT_DIR/stagea_rls_pgtest.sh" > /tmp/stagea_rls_out.log 2>&1; then
