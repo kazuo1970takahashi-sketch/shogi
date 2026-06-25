@@ -157,7 +157,13 @@
       '<h2>名簿（クラウド・編集）</h2>' +
       '<div id="cloudMembers" class="muted">読み込み中…</div>' +
       '</section>';
-    return head + readCard + (summary.isAdmin ? (buildAdminPanelHtml(organizers, summary) + buildImportPanelHtml()) : '');
+    var standingsCard = '' +
+      '<section class="card" id="cloudStandingsView">' +
+      '<h2>通年集計（シーズン別成績）</h2>' +
+      '<div id="seasonSelectWrap"></div>' +
+      '<div id="cloudStandings" class="muted">読み込み中…</div>' +
+      '</section>';
+    return head + readCard + standingsCard + (summary.isAdmin ? (buildAdminPanelHtml(organizers, summary) + buildImportPanelHtml()) : '');
   }
 
   // ===========================================================================
@@ -317,6 +323,76 @@
   //   論理削除＝deleted_at に時刻を set する update（復元＝null に戻す）。当日アプリ
   //   (shogi_v4.html) には一切触れない。build/bind/coordinator パターン・client 注入。
   // ===========================================================================
+
+  // ===========================================================================
+  // 通年集計（シーズン別成績・#343 / B-4 の活用）: entries＋tournaments(season)＋
+  //   players→members(name) を集約し、年度ごとの個人成績（出場・勝・負・優勝回数・勝率）を表示。
+  //   read-only。集計は純関数（テスト対象）。client 注入。
+  // ===========================================================================
+  function fetchSeasonEntries(client, clubId) {
+    return client.from('entries')
+      .select('wins,losses,final_rank,class,players(member_id,members(name)),tournaments(season,date)')
+      .eq('club_id', clubId).then(function (res) {
+        if (res.error) return { ok:false, message:'成績の読み込みに失敗しました', rows:[] };
+        return { ok:true, rows: res.data || [] };
+      });
+  }
+  // entry（embedding 付き）→ 平坦化（純粋）。
+  function shapeStandingRow(e) {
+    var p = e && e.players, m = p && p.members, t = e && e.tournaments;
+    return {
+      season: (t && t.season) || '',
+      member_id: (p && p.member_id) || '',
+      name: (m && m.name) || '',
+      wins: (e && e.wins) || 0,
+      losses: (e && e.losses) || 0,
+      rank: (e && e.final_rank != null) ? e.final_rank : null
+    };
+  }
+  // 年度の一覧（降順・新しい年度が先頭）。
+  function listSeasons(rows) {
+    var seen = {}, out = [];
+    for (var i = 0; i < (rows || []).length; i++) { var s = rows[i] && rows[i].season; if (s && !seen[s]) { seen[s] = 1; out.push(s); } }
+    out.sort(function (a, b) { return a < b ? 1 : (a > b ? -1 : 0); });
+    return out;
+  }
+  // 指定年度の会員別集計（純粋）。member_id 単位で集約し、勝→優勝回数→勝越し→出場→氏名 で順位付け。
+  function aggregateStandings(rows, season) {
+    var by = {};
+    for (var i = 0; i < (rows || []).length; i++) {
+      var r = rows[i]; if (!r || r.season !== season || !r.member_id) continue;
+      var a = by[r.member_id] || (by[r.member_id] = { member_id: r.member_id, name: r.name, games: 0, wins: 0, losses: 0, championships: 0 });
+      if (r.name) a.name = r.name;
+      a.games += 1; a.wins += (r.wins || 0); a.losses += (r.losses || 0);
+      if (r.rank === 1) a.championships += 1;
+    }
+    var list = [];
+    for (var k in by) { if (Object.prototype.hasOwnProperty.call(by, k)) list.push(by[k]); }
+    list.forEach(function (x) { var g = x.wins + x.losses; x.winRate = g > 0 ? Math.round(x.wins / g * 1000) / 10 : 0; });
+    list.sort(function (a, b) {
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      if (b.championships !== a.championships) return b.championships - a.championships;
+      if ((b.wins - b.losses) !== (a.wins - a.losses)) return (b.wins - b.losses) - (a.wins - a.losses);
+      if (b.games !== a.games) return b.games - a.games;
+      return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
+    });
+    return list;
+  }
+  function buildSeasonSelectorHtml(seasons, current) {
+    var ss = seasons || [];
+    if (!ss.length) return '';
+    var opts = ss.map(function (s) { return '<option value="' + esc(s) + '"' + (s === current ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('');
+    return '<label for="seasonSelect">年度</label> <select id="seasonSelect">' + opts + '</select>';
+  }
+  function buildSeasonStandingsHtml(season, standings) {
+    var list = standings || [];
+    if (!list.length) return '<p class="muted">この年度の成績がありません。</p>';
+    var rows = list.map(function (x, i) {
+      return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.name) + '</td><td>' + x.games + '</td><td>' + x.wins + '</td><td>' + x.losses + '</td><td>' + x.championships + '</td><td>' + x.winRate + '%</td></tr>';
+    }).join('');
+    return '<table class="cloud-entries"><thead><tr><th>順</th><th>氏名</th><th>出場</th><th>勝</th><th>負</th><th>優勝</th><th>勝率</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
   function fetchMembersForEdit(client, clubId) {
     return client.from('members').select('member_id,name,yomi,branch,deleted_at').eq('club_id', clubId).then(function (res) {
       if (res.error) return { ok:false, message:'名簿の読み込みに失敗しました', members:[] };
@@ -633,7 +709,30 @@
         bindTournamentRows();
       });
       loadMemberEditor();
+      loadSeasonStandings();
     }
+    // ---- 通年集計（シーズン別成績）配線 ----
+    var standingRows = [];
+    var currentSeason = null;
+    function renderSeasonStandings() {
+      var wrap = byId('seasonSelectWrap'), el = byId('cloudStandings');
+      var seasons = listSeasons(standingRows);
+      if (!currentSeason && seasons.length) currentSeason = seasons[0];
+      if (wrap) wrap.innerHTML = buildSeasonSelectorHtml(seasons, currentSeason);
+      if (el) el.innerHTML = buildSeasonStandingsHtml(currentSeason, aggregateStandings(standingRows, currentSeason));
+      var sel = byId('seasonSelect');
+      if (sel) sel.addEventListener('change', function () { currentSeason = sel.value; renderSeasonStandings(); });
+    }
+    function loadSeasonStandings() {
+      if (!lastSummary) return;
+      fetchSeasonEntries(client, lastSummary.clubId).then(function (r) {
+        var el = byId('cloudStandings');
+        if (!r.ok) { if (el) el.innerHTML = '<p class="muted">' + esc(r.message) + '</p>'; return; }
+        standingRows = (r.rows || []).map(shapeStandingRow);
+        renderSeasonStandings();
+      });
+    }
+
     // ---- B-5: 名簿編集（#cloudMembers を読取専用から編集可能パネルへ昇格）----
     var membersForEdit = [];
     var editingMemberId = null;
@@ -858,6 +957,13 @@
     fetchTournaments: fetchTournaments,
     fetchMembers: fetchMembers,
     fetchEntries: fetchEntries,
+    // 通年集計（#343）
+    fetchSeasonEntries: fetchSeasonEntries,
+    shapeStandingRow: shapeStandingRow,
+    listSeasons: listSeasons,
+    aggregateStandings: aggregateStandings,
+    buildSeasonSelectorHtml: buildSeasonSelectorHtml,
+    buildSeasonStandingsHtml: buildSeasonStandingsHtml,
     // B-5 名簿編集（#343）
     fetchMembersForEdit: fetchMembersForEdit,
     newMemberId: newMemberId,

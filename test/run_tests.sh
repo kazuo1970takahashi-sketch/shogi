@@ -1025,6 +1025,19 @@ else
 fi
 
 echo ""
+echo "【通年集計（シーズン別成績・#343/B-4活用）shape/listSeasons/aggregate/build/fetch/配線・read-only・mock】"
+if [ -f "$SCRIPT_DIR/test_stageb_standings.js" ]; then
+  if node "$SCRIPT_DIR/test_stageb_standings.js" "$TARGET" > /tmp/stageb_standings_out.log 2>&1; then
+    ok "通年集計 テスト 全PASS ($(tail -1 /tmp/stageb_standings_out.log))"
+  else
+    ng "通年集計 テスト 失敗"
+    cat /tmp/stageb_standings_out.log
+  fi
+else
+  warn "test_stageb_standings.js が見つからない"
+fi
+
+echo ""
 echo "【DATA-PERSISTENCE-PHASE2 B-4 — 過去大会 Excel 由来データの一括取り込み（validate/突き合わせ/プレビュー/べき等 upsert・既存非上書き・mock）】"
 if [ -f "$SCRIPT_DIR/test_stageb_import.js" ]; then
   if node "$SCRIPT_DIR/test_stageb_import.js" "$TARGET" > /tmp/stageb_import_out.log 2>&1; then
