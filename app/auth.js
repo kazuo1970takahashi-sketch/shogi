@@ -160,9 +160,12 @@
     var standingsCard = '' +
       '<section class="card" id="cloudStandingsView">' +
       '<h2>通年集計（シーズン別成績）</h2>' +
-      '<div id="seasonSelectWrap"></div>' +
+      '<div id="standingsControls"><span id="seasonSelectWrap"></span><span id="classSelectWrap"></span></div>' +
       '<div id="cloudStandings" class="muted">読み込み中…</div>' +
-      '</section>';
+      '</section>' +
+      '<section class="card" id="cloudRecordsView"><h2>記録・殿堂</h2><div id="cloudRecords" class="muted">読み込み中…</div></section>' +
+      '<section class="card" id="cloudMonthlyView"><h2>月別チャンピオン</h2><div id="cloudMonthly" class="muted">読み込み中…</div></section>' +
+      '<section class="card" id="cloudCityView"><h2>市町村対抗</h2><div id="cloudCity" class="muted">読み込み中…</div></section>';
     return head + readCard + standingsCard + (summary.isAdmin ? (buildAdminPanelHtml(organizers, summary) + buildImportPanelHtml()) : '');
   }
 
@@ -331,7 +334,7 @@
   // ===========================================================================
   function fetchSeasonEntries(client, clubId) {
     return client.from('entries')
-      .select('wins,losses,final_rank,class,players(member_id,members(name)),tournaments(season,date)')
+      .select('wins,losses,final_rank,class,players(member_id,members(name,branch)),tournaments(season,date)')
       .eq('club_id', clubId).then(function (res) {
         if (res.error) return { ok:false, message:'成績の読み込みに失敗しました', rows:[] };
         return { ok:true, rows: res.data || [] };
@@ -342,8 +345,11 @@
     var p = e && e.players, m = p && p.members, t = e && e.tournaments;
     return {
       season: (t && t.season) || '',
+      date: (t && t.date) || '',
+      cls: (e && e['class']) || '',
       member_id: (p && p.member_id) || '',
       name: (m && m.name) || '',
+      branch: (m && m.branch) || '',
       wins: (e && e.wins) || 0,
       losses: (e && e.losses) || 0,
       rank: (e && e.final_rank != null) ? e.final_rank : null
@@ -357,10 +363,11 @@
     return out;
   }
   // 指定年度の会員別集計（純粋）。member_id 単位で集約し、勝→優勝回数→勝越し→出場→氏名 で順位付け。
-  function aggregateStandings(rows, season) {
+  function aggregateStandings(rows, season, cls) {
     var by = {};
     for (var i = 0; i < (rows || []).length; i++) {
       var r = rows[i]; if (!r || r.season !== season || !r.member_id) continue;
+      if (cls && r.cls !== cls) continue;
       var a = by[r.member_id] || (by[r.member_id] = { member_id: r.member_id, name: r.name, games: 0, wins: 0, losses: 0, championships: 0 });
       if (r.name) a.name = r.name;
       a.games += 1; a.wins += (r.wins || 0); a.losses += (r.losses || 0);
@@ -391,6 +398,86 @@
       return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.name) + '</td><td>' + x.games + '</td><td>' + x.wins + '</td><td>' + x.losses + '</td><td>' + x.championships + '</td><td>' + x.winRate + '%</td></tr>';
     }).join('');
     return '<table class="cloud-entries"><thead><tr><th>順</th><th>氏名</th><th>出場</th><th>勝</th><th>負</th><th>優勝</th><th>勝率</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+
+  // ---- 通年集計の拡張: クラス一覧 / 記録殿堂 / 月別王者 / 市町村対抗（すべて純関数）----
+  function listClasses(rows, season) {
+    var seen = {}, out = [];
+    for (var i = 0; i < (rows || []).length; i++) { var r = rows[i]; if (r && r.season === season && r.cls && !seen[r.cls]) { seen[r.cls] = 1; out.push(r.cls); } }
+    out.sort();
+    return out;
+  }
+  function _maxRun(nums) { nums.sort(function (a, b) { return a - b; }); var best = 0, run = 0; for (var i = 0; i < nums.length; i++) { run = (i > 0 && nums[i] === nums[i - 1] + 1) ? run + 1 : 1; if (run > best) best = run; } return best; }
+  // 記録・殿堂（全期間・member別）: 通算 出場/勝/負/優勝/全勝(4-0)/最長連続出場。
+  function aggregateRecords(rows) {
+    rows = rows || [];
+    var dseen = {}, dlist = [];
+    for (var i = 0; i < rows.length; i++) { var d = rows[i].date; if (d && !dseen[d]) { dseen[d] = 1; dlist.push(d); } }
+    dlist.sort(); var didx = {}; for (var j = 0; j < dlist.length; j++) didx[dlist[j]] = j;
+    var by = {};
+    for (var k = 0; k < rows.length; k++) {
+      var r = rows[k]; if (!r.member_id) continue;
+      var a = by[r.member_id] || (by[r.member_id] = { member_id: r.member_id, name: r.name, games: 0, wins: 0, losses: 0, championships: 0, perfect: 0, _days: {} });
+      if (r.name) a.name = r.name;
+      a.games += 1; a.wins += (r.wins || 0); a.losses += (r.losses || 0);
+      if (r.rank === 1) a.championships += 1;
+      if ((r.wins || 0) >= 4 && (r.losses || 0) === 0) a.perfect += 1;
+      if (r.date) a._days[didx[r.date]] = 1;
+    }
+    var list = [];
+    for (var key in by) { if (Object.prototype.hasOwnProperty.call(by, key)) { var x = by[key]; var ds = []; for (var dk in x._days) ds.push(Number(dk)); x.maxStreak = _maxRun(ds); delete x._days; list.push(x); } }
+    return list;
+  }
+  function _topBy(list, key, n) {
+    return (list || []).filter(function (x) { return (x[key] || 0) > 0; })
+      .sort(function (a, b) { if (b[key] !== a[key]) return b[key] - a[key]; return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0); })
+      .slice(0, n || 5);
+  }
+  // 月別チャンピオン（大会×クラスの優勝者・日付降順）。
+  function aggregateMonthlyChampions(rows) {
+    var champ = {};
+    for (var i = 0; i < (rows || []).length; i++) { var r = rows[i]; if (r.rank === 1 && r.date && r.cls) { var k = r.date + '' + r.cls; if (!champ[k]) champ[k] = { date: r.date, season: r.season, cls: r.cls, name: r.name }; } }
+    var list = []; for (var key in champ) { if (Object.prototype.hasOwnProperty.call(champ, key)) list.push(champ[key]); }
+    list.sort(function (a, b) { if (a.date !== b.date) return a.date < b.date ? 1 : -1; return a.cls < b.cls ? -1 : 1; });
+    return list;
+  }
+  // 市町村別: 延べ出場/通算勝/人数。
+  function aggregateByCity(rows) {
+    var by = {};
+    for (var i = 0; i < (rows || []).length; i++) { var r = rows[i]; var c = r.branch || '(不明)'; var a = by[c] || (by[c] = { branch: c, games: 0, wins: 0, _m: {} }); a.games += 1; a.wins += (r.wins || 0); if (r.member_id) a._m[r.member_id] = 1; }
+    var list = []; for (var k in by) { if (Object.prototype.hasOwnProperty.call(by, k)) { var x = by[k]; x.members = 0; for (var mk in x._m) x.members++; delete x._m; list.push(x); } }
+    list.sort(function (a, b) { if (b.games !== a.games) return b.games - a.games; return b.wins - a.wins; });
+    return list;
+  }
+  // build
+  function buildClassSelectorHtml(classes, current) {
+    var cs = classes || []; if (!cs.length) return '';
+    var opts = '<option value="">全クラス</option>' + cs.map(function (c) { return '<option value="' + esc(c) + '"' + (c === current ? ' selected' : '') + '>' + esc(c) + 'クラス</option>'; }).join('');
+    return ' <label for="classSelect">クラス</label> <select id="classSelect">' + opts + '</select>';
+  }
+  function _miniRank(title, list, key, unit) {
+    var l = (list || []);
+    if (!l.length) return '';
+    var rows = l.map(function (x, i) { return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.name) + '</td><td>' + x[key] + (unit || '') + '</td></tr>'; }).join('');
+    return '<div class="rec-block"><h3>' + esc(title) + '</h3><table class="cloud-entries"><tbody>' + rows + '</tbody></table></div>';
+  }
+  function buildRecordsHtml(records) {
+    var r = records || []; if (!r.length) return '<p class="muted">記録がありません。</p>';
+    return _miniRank('通算勝数', _topBy(r, 'wins', 5), 'wins', '勝') +
+      _miniRank('優勝回数', _topBy(r, 'championships', 5), 'championships', '回') +
+      _miniRank('全勝大会(4-0)', _topBy(r, 'perfect', 5), 'perfect', '回') +
+      _miniRank('最長連続出場', _topBy(r, 'maxStreak', 5), 'maxStreak', '大会');
+  }
+  function buildMonthlyChampionsHtml(list) {
+    var l = list || []; if (!l.length) return '<p class="muted">優勝記録がありません。</p>';
+    var rows = l.map(function (x) { return '<tr><td>' + esc(x.date) + '</td><td>' + esc(x.cls) + '</td><td>' + esc(x.name) + '</td></tr>'; }).join('');
+    return '<table class="cloud-entries"><thead><tr><th>大会日</th><th>クラス</th><th>優勝</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  function buildCityStandingsHtml(list) {
+    var l = list || []; if (!l.length) return '<p class="muted">データがありません。</p>';
+    var rows = l.map(function (x, i) { return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.branch) + '</td><td>' + x.members + '</td><td>' + x.games + '</td><td>' + x.wins + '</td></tr>'; }).join('');
+    return '<table class="cloud-entries"><thead><tr><th>順</th><th>市町村</th><th>人数</th><th>延べ出場</th><th>通算勝</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   function fetchMembersForEdit(client, clubId) {
@@ -714,14 +801,25 @@
     // ---- 通年集計（シーズン別成績）配線 ----
     var standingRows = [];
     var currentSeason = null;
+    var currentClass = '';
     function renderSeasonStandings() {
-      var wrap = byId('seasonSelectWrap'), el = byId('cloudStandings');
+      var sw = byId('seasonSelectWrap'), cw = byId('classSelectWrap'), el = byId('cloudStandings');
       var seasons = listSeasons(standingRows);
       if (!currentSeason && seasons.length) currentSeason = seasons[0];
-      if (wrap) wrap.innerHTML = buildSeasonSelectorHtml(seasons, currentSeason);
-      if (el) el.innerHTML = buildSeasonStandingsHtml(currentSeason, aggregateStandings(standingRows, currentSeason));
-      var sel = byId('seasonSelect');
-      if (sel) sel.addEventListener('change', function () { currentSeason = sel.value; renderSeasonStandings(); });
+      if (sw) sw.innerHTML = buildSeasonSelectorHtml(seasons, currentSeason);
+      var classes = listClasses(standingRows, currentSeason);
+      if (currentClass && classes.indexOf(currentClass) < 0) currentClass = '';
+      if (cw) cw.innerHTML = buildClassSelectorHtml(classes, currentClass);
+      if (el) el.innerHTML = buildSeasonStandingsHtml(currentSeason, aggregateStandings(standingRows, currentSeason, currentClass));
+      var ss = byId('seasonSelect');
+      if (ss) ss.addEventListener('change', function () { currentSeason = ss.value; currentClass = ''; renderSeasonStandings(); });
+      var cs = byId('classSelect');
+      if (cs) cs.addEventListener('change', function () { currentClass = cs.value; renderSeasonStandings(); });
+    }
+    function renderRecords() {
+      var er = byId('cloudRecords'); if (er) er.innerHTML = buildRecordsHtml(aggregateRecords(standingRows));
+      var em = byId('cloudMonthly'); if (em) em.innerHTML = buildMonthlyChampionsHtml(aggregateMonthlyChampions(standingRows));
+      var ec = byId('cloudCity'); if (ec) ec.innerHTML = buildCityStandingsHtml(aggregateByCity(standingRows));
     }
     function loadSeasonStandings() {
       if (!lastSummary) return;
@@ -730,6 +828,7 @@
         if (!r.ok) { if (el) el.innerHTML = '<p class="muted">' + esc(r.message) + '</p>'; return; }
         standingRows = (r.rows || []).map(shapeStandingRow);
         renderSeasonStandings();
+        renderRecords();
       });
     }
 
@@ -964,6 +1063,14 @@
     aggregateStandings: aggregateStandings,
     buildSeasonSelectorHtml: buildSeasonSelectorHtml,
     buildSeasonStandingsHtml: buildSeasonStandingsHtml,
+    listClasses: listClasses,
+    aggregateRecords: aggregateRecords,
+    aggregateMonthlyChampions: aggregateMonthlyChampions,
+    aggregateByCity: aggregateByCity,
+    buildClassSelectorHtml: buildClassSelectorHtml,
+    buildRecordsHtml: buildRecordsHtml,
+    buildMonthlyChampionsHtml: buildMonthlyChampionsHtml,
+    buildCityStandingsHtml: buildCityStandingsHtml,
     // B-5 名簿編集（#343）
     fetchMembersForEdit: fetchMembersForEdit,
     newMemberId: newMemberId,
