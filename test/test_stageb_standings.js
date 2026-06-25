@@ -71,7 +71,7 @@ function row(season,mid,name,w,l,rank){return {wins:w,losses:l,final_rank:rank,c
     var c=makeClient({rows:[row('2025年度','m1','甲',3,1,1)]});
     var r=await A.fetchSeasonEntries(c,'club1');
     assert(r.ok===true && r.rows.length===1,'F1 ok 経路');
-    assert(c._calls.select[0].cols.indexOf('season')>=0 && c._calls.select[0].cols.indexOf('members(name)')>=0,'F2 select に season と members(name) を含む');
+    assert(c._calls.select[0].cols.indexOf('season')>=0 && c._calls.select[0].cols.indexOf('members(name,branch)')>=0,'F2 select に season と members(name,branch) を含む');
     var c2=makeClient({error:true});
     var r2=await A.fetchSeasonEntries(c2,'club1');
     assert(r2.ok===false && r2.rows.length===0,'F3 error 経路');
