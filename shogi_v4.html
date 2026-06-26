@@ -242,7 +242,7 @@ body.sb-active{overflow:hidden}
     <button type="button" class="tab" id="tab-result">最終結果</button>
     <button type="button" class="tab" id="tab-master">マスタ</button>
     <button type="button" class="tab" id="tab-history">大会履歴</button>
-    <span id="save-warning-indicator" class="save-warn-pill" role="button" tabindex="0" title="押すと「保存確認」の意味と消し方を表示します" hidden></span>
+    <span id="save-warning-indicator" class="save-warn-pill" role="button" tabindex="0" title="押すと対処方法を表示します" hidden></span>
   </div>
   <div id="pane-reg">
     <div class="section" id="past-participants-section" style="display:none">
@@ -4729,7 +4729,9 @@ function updateSaveWarningIndicator(){
       el.textContent='';
     }else{
       el.hidden=false;
-      el.textContent='保存確認 '+n+'件 ⓘ';
+      // U-2b (UX-P1): 数字ではなく行動を促す一言に。件数は title（ツールチップ）へ退避。
+      el.textContent='⚠ 未保存の恐れ・要バックアップ';
+      el.title='保存の確認が取れていません（'+n+'件）。押すと対処方法を表示します';
     }
   }catch(e){
     if(typeof console!=='undefined'&&console.warn){
@@ -7934,15 +7936,15 @@ var HELP_TEXTS={
       '「📛 リセット」は名簿を全消去します。実行前に必ずエクスポートで退避してください。当日は無理にマスタをいじらなくて大丈夫です。'
     ]
   },
-  // U-2 (UX-P1): 「保存確認 N件」ピルの説明（何を意味し・どう解消するか）。#309/#323 機構流用・topic 追加のみ。
+  // U-2/U-2b (UX-P1): 「⚠ 未保存の恐れ」チップの説明（何を意味し・どう対処するか）。#309/#323 機構流用・topic 追加のみ。
   //   本文は buildHelpModalHtml で escapeHtml 経由。保存スキーマ不変・script-global 固定文字列。文言は作者承認前提の案。
   'save-warning':{
-    title:'「保存確認」の意味と消し方',
+    title:'「未保存の恐れ」の意味と対処',
     lines:[
-      '「保存確認 N件」は、データを自動保存しようとしたとき保存できたか確認が取れなかった回数です（必ずしも失敗ではありません）。',
+      '画面上部に「⚠ 未保存の恐れ・要バックアップ」が出るのは、データを自動保存しようとして保存できたか確認が取れなかったときです（必ずしも失敗ではありません）。',
       'まず落ち着いて運営を続けて大丈夫です。入力した内容は画面に残っています。',
       '念のため「バックアップ」または「大会データをコピー」でデータを控えておくと安全です（端末やブラウザの不調に備え）。',
-      'この件数は記録の目安で、ブラウザを再読み込み（リロード）すると 0 に戻ります。件数が増え続ける・操作が保存されない場合は、空き容量を確認し、こまめにバックアップしてください。',
+      'この表示はブラウザを再読み込み（リロード）すると消えます。何度も出る・操作が保存されない場合は、空き容量を確認し、こまめにバックアップしてください。',
       'プライベートブラウズ（シークレット）では保存が制限されることがあります。通常モードでの利用をおすすめします。'
     ]
   }
