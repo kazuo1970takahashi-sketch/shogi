@@ -65,13 +65,15 @@ console.log('=== U-2 保存確認ピルの説明/解消導線 ===');
 ok(env.HELP_TEXTS&&env.HELP_TEXTS['save-warning'],'U2a HELP_TEXTS に save-warning topic');
 ok(env.HELP_TEXTS['save-warning'].lines.length>=4,'U2b 説明行が複数');
 var hm=env.buildHelpModalHtml('save-warning');
-ok(hm.indexOf('保存確認')>=0,'U2c モーダルに「保存確認」説明');
+ok(hm.indexOf('未保存の恐れ')>=0,'U2c モーダルに「未保存の恐れ」説明');
 ok(hm.indexOf('リロード')>=0,'U2d 「リロードで 0 に戻る」=消し方を明記');
 ok(/id="save-warning-indicator"[^>]*role="button"[^>]*tabindex="0"/.test(RAW),'U2e ピルが role=button/tabindex で操作可');
-ok(RAW.indexOf('title="押すと「保存確認」の意味と消し方を表示します"')>=0,'U2f ピルに title 補助');
+ok(RAW.indexOf('title="押すと対処方法を表示します"')>=0,'U2f ピルに title 補助');
 ok(RAW.indexOf("openHelpModal('save-warning')")>=0,'U2g ピル bind→openHelpModal');
 ok(/getElementById\('save-warning-indicator'\)[\s\S]{0,400}addEventListener\('keydown'/.test(RAW),'U2h Enter/Space keydown bind');
-ok(RAW.indexOf("'保存確認 '+n+'件 ⓘ'")>=0,'U2i ラベルに ⓘ ヒント');
+ok(RAW.indexOf("el.textContent='⚠ 未保存の恐れ・要バックアップ'")>=0,'U2i ラベルは行動文言（数字でない）');
+ok(RAW.indexOf("'保存確認 '+n+'件'")<0,'U2i2 旧「保存確認 N件」ラベルは撤去');
+ok(/el\.title='保存の確認が取れていません（'\+n\+'件）/.test(RAW),'U2i3 件数は title へ退避');
 ok(/\.save-warn-pill\{cursor:pointer\}/.test(RAW),'U2j ピル cursor:pointer');
 
 console.log('=== U-3 タッチターゲット 44px ===');
