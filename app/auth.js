@@ -269,11 +269,18 @@
     }).join('');
     return '<ul class="org-list">' + rows + '</ul>';
   }
+  // A-4 (SYSTEM-REVIEW #377 follow): クラス集計キーの正規化（純）。表示ラベルの揺れを年度横断の安定キーへ。
+  //   B-4 決定「少→B 統一」を読み取り側で吸収（既存データの書換え不要）。A/B/C・その他は trim のみ（恒等）。
+  function canonicalizeClass(cls){
+    var s=(cls==null)?'':String(cls).trim();
+    if(s==='少'||s==='少年')return 'B';
+    return s;
+  }
   function shapeEntryRow(e) {
     var p = e && e.players, m = p && p.members;
     return {
       rank: (e && e.final_rank != null) ? e.final_rank : null,
-      cls: (e && e['class']) || '',
+      cls: canonicalizeClass((e && e['class']) || ''),
       name: (m && m.name) || '',
       yomi: (m && m.yomi) || '',
       wins: (e && e.wins) || 0,
@@ -346,7 +353,7 @@
     return {
       season: (t && t.season) || '',
       date: (t && t.date) || '',
-      cls: (e && e['class']) || '',
+      cls: canonicalizeClass((e && e['class']) || ''),
       member_id: (p && p.member_id) || '',
       name: (m && m.name) || '',
       branch: (m && m.branch) || '',
@@ -1058,6 +1065,7 @@
     fetchEntries: fetchEntries,
     // 通年集計（#343）
     fetchSeasonEntries: fetchSeasonEntries,
+    canonicalizeClass: canonicalizeClass,
     shapeStandingRow: shapeStandingRow,
     listSeasons: listSeasons,
     aggregateStandings: aggregateStandings,

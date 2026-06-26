@@ -1503,6 +1503,31 @@ else
 fi
 
 
+echo ""
+echo "【A-2 (SYSTEM-REVIEW #377) push 未解決を警告ステータスに格上げ（syncTournamentToCloud warn / 黙って成功にしない）】"
+if [ -f "$SCRIPT_DIR/test_a2_partial_warn.js" ]; then
+  if node "$SCRIPT_DIR/test_a2_partial_warn.js" "$TARGET" > /tmp/a2_partial_warn_out.log 2>&1; then
+    ok "A-2 partial-warn テスト 全PASS ($(tail -1 /tmp/a2_partial_warn_out.log))"
+  else
+    ng "A-2 partial-warn テスト 失敗"; cat /tmp/a2_partial_warn_out.log
+  fi
+else
+  warn "test_a2_partial_warn.js が見つからない"
+fi
+
+echo ""
+echo "【A-4 (SYSTEM-REVIEW #377) クラス集計キーの正規化（app/auth.js canonicalizeClass・少→B・年度横断安定）】"
+if [ -f "$SCRIPT_DIR/test_a4_class_canon.js" ]; then
+  if node "$SCRIPT_DIR/test_a4_class_canon.js" > /tmp/a4_class_canon_out.log 2>&1; then
+    ok "A-4 class-canon テスト 全PASS ($(tail -1 /tmp/a4_class_canon_out.log))"
+  else
+    ng "A-4 class-canon テスト 失敗"; cat /tmp/a4_class_canon_out.log
+  fi
+else
+  warn "test_a4_class_canon.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
