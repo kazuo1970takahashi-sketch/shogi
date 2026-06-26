@@ -8502,10 +8502,10 @@ function syncTournamentToCloud(client, master, opts){
           entryRows.push(row);
         }
         counts.entries=entryRows.length;
-        if(!entryRows.length)return {ok:true,counts:counts,tournament_id:tid};
+        if(!entryRows.length)return {ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid};
         return client.from('entries').upsert(entryRows,{onConflict:'tournament_id,player_id'}).then(function(r4){
           if(r4&&r4.error)return fail('entries',r4);
-          return {ok:true,counts:counts,tournament_id:tid};
+          return {ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid};
         });
       });
     });
@@ -8598,7 +8598,16 @@ function sendTournamentToCloud(setStatus){
         var master=(typeof loadBranchMaster==='function')?loadBranchMaster():{members:[]};
         try{ if(typeof ensureTournamentId==='function')ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report)); }catch(e){}
         return syncTournamentToCloud(client,master,{clubId:clubId}).then(function(res){
-          if(res&&res.ok){ var c=res.counts||{}; setStatus('送信しました（名簿 '+(c.members||0)+' 名・結果 '+(c.entries||0)+' 件'+(c.unresolved?'／未紐付け '+c.unresolved+' 名':'')+'）'); }
+          if(res&&res.ok){
+            // A-2 (SYSTEM-REVIEW #377 follow): 未解決 entry を黙って成功扱いにしない。
+            //   unresolved>0 は ⚠ 警告（U-1 で橙）＝集計欠落に気づける。skipped(マスタ未連携)は対象外の中立注記。
+            var c=res.counts||{};
+            var base='送信しました（名簿 '+(c.members||0)+' 名・結果 '+(c.entries||0)+' 件';
+            if(c.skipped)base+='／マスタ未連携 '+c.skipped+' 名は対象外';
+            base+='）';
+            if(res.warn){ base='⚠ 一部の結果を送信できませんでした：未解決 '+(c.unresolved||0)+' 名。'+base+' 支部マスタへ紐付けてから再送してください（冪等・運営は続行できます）'; }
+            setStatus(base);
+          }
           else { setStatus('送信に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再送できます）'); }
           return res;
         });
