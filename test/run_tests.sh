@@ -1489,6 +1489,20 @@ else
 fi
 
 
+echo ""
+echo "【UX-P1-001 (#U-1/U-2/U-3) 当日UX P1: クラウドstatus色分け+aria-live / 保存ピル説明導線 / 受付ボタン44px】"
+if [ -f "$SCRIPT_DIR/test_ux_p1_001.js" ]; then
+  if node "$SCRIPT_DIR/test_ux_p1_001.js" "$TARGET" > /tmp/ux_p1_001_out.log 2>&1; then
+    ok "UX-P1-001 テスト 全PASS ($(tail -1 /tmp/ux_p1_001_out.log))"
+  else
+    ng "UX-P1-001 テスト 失敗"
+    cat /tmp/ux_p1_001_out.log
+  fi
+else
+  warn "test_ux_p1_001.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================

@@ -29,6 +29,20 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .alert-ok{background:#eaf3de;color:#27500A;border:1px solid #97c459}
 .alert-warn{background:#faeeda;color:#633806;border:1px solid #EF9F27}
 .save-warn-pill{flex:0 0 auto;align-self:center;padding:4px 10px;border-radius:12px;background:#faeeda;color:#633806;border:1px solid #EF9F27;font-size:12px;font-weight:500}
+/* U-1 (UX-P1): クラウド結果 status の色分け＋AAコントラスト（applyCloudStatus が kind クラスを付与）。
+   旧 #888（コントラスト不足）を解消し 成功=緑/失敗=赤/警告=橙/案内=中立/送信中=紺 で区別する。 */
+.cloud-status{color:#444}
+.cloud-status-pending{color:#1F3864}
+.cloud-status-info{color:#444}
+.cloud-status-ok{color:#1a5c00;font-weight:600}
+.cloud-status-warn{color:#7a4a00;font-weight:600}
+.cloud-status-err{color:#A32D2D;font-weight:600}
+/* U-2 (UX-P1): 「保存確認 N件」ピルは押すと説明モーダルを開く（cursor/focus を明示）。 */
+.save-warn-pill{cursor:pointer}
+.save-warn-pill:focus{outline:2px solid #EF9F27;outline-offset:1px}
+/* U-3 (UX-P1): 受付一覧の操作ボタン（名前編集/ふりがな/削除）はタッチターゲット 44px を確保し誤タップを防ぐ。
+   危険操作の削除も含め行内で高さを揃える。ヘッダの危険ボタン（全リセット等）は別グループで対象外。 */
+.player-row-buttons button{min-height:44px}
 .fee-bar{margin-top:12px;padding:10px 14px;background:#e8f0f8;border-radius:8px;font-size:14px}
 /* SHOGI-TOUR-START-001: 受付クラス別「開始 readiness」バッジ（見出し直下・派生表示・保存しない）。
    色は既存 alert 系の意味色を流用（ready=alert-ok 緑 / warn=alert-warn 黄 / started=primary 紺 / empty=灰）。
@@ -228,7 +242,7 @@ body.sb-active{overflow:hidden}
     <button type="button" class="tab" id="tab-result">最終結果</button>
     <button type="button" class="tab" id="tab-master">マスタ</button>
     <button type="button" class="tab" id="tab-history">大会履歴</button>
-    <span id="save-warning-indicator" class="save-warn-pill" hidden></span>
+    <span id="save-warning-indicator" class="save-warn-pill" role="button" tabindex="0" title="押すと「保存確認」の意味と消し方を表示します" hidden></span>
   </div>
   <div id="pane-reg">
     <div class="section" id="past-participants-section" style="display:none">
@@ -350,7 +364,7 @@ body.sb-active{overflow:hidden}
          click は bindReportEvents で sendTournamentToCloud に結線。supabase-js/config は click 時のみ遅延ロード。 -->
     <div style="margin-top:8px;text-align:right" class="no-print">
       <button type="button" id="cloudSendBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ クラウドへ送信（任意）</button>
-      <div id="cloudSendStatus" style="font-size:12px;color:#888;margin-top:4px;min-height:1.2em"></div>
+      <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
     </div>
     <div class="section no-print" style="margin-top:16px">
       <!-- HELP-UX-002 (#322): 見出し脇に「？ ヘルプ」ボタンを1つ置く（報告書画面の迷子防止 in-app ヘルプ導線）。
@@ -3184,7 +3198,7 @@ function buildMasterTabHtml(master){
   html+='<button type="button" id="masterShowDeletedBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864" data-on="'+(_masterShowDeleted?'1':'0')+'">'+(_masterShowDeleted?'🗑️ 削除済みを隠す':'🗑️ 削除済みを表示')+'</button>';
   html+='<button type="button" id="masterCloudPullBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ クラウドから取得</button>';
   html+='</div>';
-  html+='<div id="masterCloudPullStatus" style="margin:4px 0 12px;font-size:13px;color:#555" aria-live="polite"></div>';
+  html+='<div id="masterCloudPullStatus" class="cloud-status" role="status" style="margin:4px 0 12px;font-size:13px" aria-live="polite"></div>';
   // PWA 収束方針(docs/PWA-PLAN): 当日アプリ⇄app/ の相互リンク（同一ウィンドウ遷移・別タブを増やさない）。
   html+='<div style="margin:0 0 12px"><a href="app/" style="font-size:13px;color:#1F3864">☁ クラウド管理ページ（名簿編集・ログイン）を開く →</a></div>';
   html+='<hr class="separator">';
@@ -3849,7 +3863,7 @@ function bindMasterTabEvents(){
   // B-3c-wire (#343): 「☁ クラウドから取得」→ pullMembersToMasterUI（任意・非ブロッキング・status 表示のみ）。
   var cloudPullBtn=document.getElementById('masterCloudPullBtn');
   if(cloudPullBtn)cloudPullBtn.addEventListener('click',function(){
-    var setStatus=function(msg){ var el=document.getElementById('masterCloudPullStatus'); if(el)el.textContent=msg; };
+    var setStatus=function(msg){ applyCloudStatus(document.getElementById('masterCloudPullStatus'),msg); };
     pullMembersToMasterUI(setStatus);
   });
   var btn=document.getElementById('masterMigrateBtn');
@@ -4715,7 +4729,7 @@ function updateSaveWarningIndicator(){
       el.textContent='';
     }else{
       el.hidden=false;
-      el.textContent='保存確認 '+n+'件';
+      el.textContent='保存確認 '+n+'件 ⓘ';
     }
   }catch(e){
     if(typeof console!=='undefined'&&console.warn){
@@ -7919,6 +7933,18 @@ var HELP_TEXTS={
       '取り込むファイルが壊れている・対応していない版のときは、取り込みを中止して既存の名簿を守ります（黙って消えません）。',
       '「📛 リセット」は名簿を全消去します。実行前に必ずエクスポートで退避してください。当日は無理にマスタをいじらなくて大丈夫です。'
     ]
+  },
+  // U-2 (UX-P1): 「保存確認 N件」ピルの説明（何を意味し・どう解消するか）。#309/#323 機構流用・topic 追加のみ。
+  //   本文は buildHelpModalHtml で escapeHtml 経由。保存スキーマ不変・script-global 固定文字列。文言は作者承認前提の案。
+  'save-warning':{
+    title:'「保存確認」の意味と消し方',
+    lines:[
+      '「保存確認 N件」は、データを自動保存しようとしたとき保存できたか確認が取れなかった回数です（必ずしも失敗ではありません）。',
+      'まず落ち着いて運営を続けて大丈夫です。入力した内容は画面に残っています。',
+      '念のため「バックアップ」または「大会データをコピー」でデータを控えておくと安全です（端末やブラウザの不調に備え）。',
+      'この件数は記録の目安で、ブラウザを再読み込み（リロード）すると 0 に戻ります。件数が増え続ける・操作が保存されない場合は、空き容量を確認し、こまめにバックアップしてください。',
+      'プライベートブラウズ（シークレット）では保存が制限されることがあります。通常モードでの利用をおすすめします。'
+    ]
   }
 };
 
@@ -8534,6 +8560,25 @@ function loadCloudDeps(){
        .then(function(){ resolve({cfg:_cloudCfgReady(),sb:_cloudSbReady()}); });
   });
 }
+// U-1 (UX-P1 / #343): クラウド結果 status の種別判定（純関数・キーワード分類）。
+//   成功/失敗/警告(⚠)/案内/送信中 を分け、applyCloudStatus が色クラスを当てる。
+//   優先順: err(失敗/エラー) > warn(⚠) > ok(送信/取得しました) > pending(…中) > info。
+function classifyCloudStatusKind(msg){
+  var s=(msg==null)?'':String(msg);
+  if(s==='')return 'none';
+  if(s.indexOf('失敗')>=0||s.indexOf('エラー')>=0)return 'err';
+  if(s.indexOf('\u26a0')>=0)return 'warn';
+  if(s.indexOf('しました')>=0)return 'ok';
+  if(s.indexOf('\u4e2d\u2026')>=0)return 'pending';
+  return 'info';
+}
+// U-1 (UX-P1): status 要素に textContent と色クラスを反映（DOM 不在/null は安全に無視・innerHTML 不使用）。
+function applyCloudStatus(el,msg){
+  if(!el)return;
+  var s=(msg==null)?'':String(msg);
+  el.textContent=s;
+  el.className='cloud-status cloud-status-'+classifyCloudStatusKind(s);
+}
 function sendTournamentToCloud(setStatus){
   setStatus=setStatus||function(){};
   setStatus('クラウドへ送信中…');
@@ -8618,7 +8663,7 @@ function autoPullMembersOnStartup(){
                 if(masterActive&&typeof renderMasterTab==='function'){
                   renderMasterTab();
                   var el=document.getElementById('masterCloudPullStatus');
-                  if(el)el.textContent='クラウドから自動取得しました（新規 '+(res.counts.added||0)+' 名・更新 '+(res.counts.updated||0)+' 名）'+((res.counts.possibleDuplicates||0)>0?'　⚠ 同名別IDの会員 '+res.counts.possibleDuplicates+' 件（app/ で確認）':'');
+                  applyCloudStatus(el,'クラウドから自動取得しました（新規 '+(res.counts.added||0)+' 名・更新 '+(res.counts.updated||0)+' 名）'+((res.counts.possibleDuplicates||0)>0?'　⚠ 同名別IDの会員 '+res.counts.possibleDuplicates+' 件（app/ で確認）':''));
                 }
               }catch(eR){}
             }
@@ -9939,6 +9984,15 @@ function bindHeaderEvents(){
   // RESET-UX-PARTIAL-RESET-IMPL-LIGHT: 参加者を残す部分リセット
   var resetProgressBtn=document.getElementById('resetProgressBtn');
   if(resetProgressBtn)resetProgressBtn.addEventListener('click',resetTournamentProgressOnly);
+  // U-2 (UX-P1): 「保存確認 N件」ピル → 説明モーダル（意味/解消導線）。クリックと Enter/Space で開く。
+  var saveWarnPill=document.getElementById('save-warning-indicator');
+  if(saveWarnPill){
+    saveWarnPill.addEventListener('click',function(){openHelpModal('save-warning');});
+    saveWarnPill.addEventListener('keydown',function(e){
+      var k=e&&(e.key||e.keyCode);
+      if(k==='Enter'||k===' '||k==='Spacebar'||k===13||k===32){ if(e&&e.preventDefault)e.preventDefault(); openHelpModal('save-warning'); }
+    });
+  }
 }
 
 function bindRegistrationEvents(){
@@ -10333,7 +10387,7 @@ function bindReportEvents(){
   var cloudSendBtn=document.getElementById('cloudSendBtn');
   if(cloudSendBtn)cloudSendBtn.addEventListener('click',function(){
     var st=document.getElementById('cloudSendStatus');
-    sendTournamentToCloud(function(msg){ if(st)st.textContent=msg; });
+    sendTournamentToCloud(function(msg){ applyCloudStatus(st,msg); });
   });
 }
 
