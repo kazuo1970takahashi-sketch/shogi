@@ -10978,6 +10978,105 @@ function saveCurrentTournamentToArchive(){
 }
 
 // 履歴一覧（read-only。§5）。identity だけで描画し snapshot 本体は開かない。各行から閲覧へ遷移。
+// ============================================================
+// HISTORY-CLOUD (#343): 当日アプリ「大会履歴」にクラウドの過去大会も表示（①別セクション）。
+//   クラウドは選手ごと集計のみ＝結果一覧で表示（1回戦ごとの星取りはローカル保存分のみ）。
+//   要ログイン＋オンライン・fail-soft（未ログイン/オフライン/config 不在は案内のみ＝当日運営は無傷）。
+//   既存クラウド機構（loadCloudDeps/getSession/claim_organizer_seat/pickActiveClubId/applyCloudStatus）を再利用。
+// ============================================================
+function fetchCloudTournaments(client, clubId){
+  if(!client||!client.from)return Promise.resolve({ok:false,message:'クラウドに接続していません',tournaments:[]});
+  return client.from('tournaments').select('id,name,date,season,status').eq('club_id',clubId).then(function(res){
+    if(res&&res.error)return {ok:false,message:'大会の読み込みに失敗しました',tournaments:[]};
+    return {ok:true,tournaments:(res&&res.data)||[]};
+  });
+}
+function fetchCloudEntriesForTournament(client, tid){
+  if(!client||!client.from)return Promise.resolve({ok:false,message:'クラウドに接続していません',entries:[]});
+  return client.from('entries').select('final_rank,class,wins,losses,sos,sodos,players(member_id,members(name,yomi))').eq('tournament_id',tid).then(function(res){
+    if(res&&res.error)return {ok:false,message:'結果の読み込みに失敗しました',entries:[]};
+    return {ok:true,entries:(res&&res.data)||[]};
+  });
+}
+function buildCloudTournamentListHtml(tournaments){
+  var arr=Array.isArray(tournaments)?tournaments.slice():[];
+  arr.sort(function(a,b){var da=(a&&a.date)||'',db=(b&&b.date)||'';return da<db?1:(da>db?-1:0);});
+  if(!arr.length)return '<div style="color:#888;font-size:13px;padding:8px 0">クラウドに過去大会がありません。</div>';
+  var html='';
+  for(var i=0;i<arr.length;i++){var t=arr[i];
+    html+='<button type="button" class="cloud-history-row" data-tid="'+escapeHtml((t&&t.id)||'')+'" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid #d3dbe5;border-radius:8px;padding:9px 12px;margin-bottom:6px;cursor:pointer">'
+      +'<span style="font-weight:600;color:#1F3864">'+escapeHtml((t&&t.date)||'')+'　'+escapeHtml((t&&t.name)||'(名称未設定)')+'</span>'
+      +'<span style="font-size:11px;color:#999;margin-left:8px">'+escapeHtml((t&&t.season)||'')+'</span></button>';
+  }
+  return html;
+}
+function buildCloudEntriesTableHtml(entries){
+  var list=Array.isArray(entries)?entries.slice():[];
+  if(!list.length)return '<div style="color:#888;font-size:13px;padding:8px 0">この大会の結果がありません。</div>';
+  list.sort(function(a,b){
+    var ca=(a&&a['class'])||'',cb=(b&&b['class'])||'';
+    if(ca!==cb)return ca<cb?-1:1;
+    var ra=(a&&a.final_rank!=null)?a.final_rank:9999, rb=(b&&b.final_rank!=null)?b.final_rank:9999;
+    return ra-rb;
+  });
+  var html='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#e8f0f8">'
+    +'<th style="padding:6px 8px;border:1px solid #ccc">クラス</th><th style="padding:6px 8px;border:1px solid #ccc">順位</th><th style="padding:6px 8px;border:1px solid #ccc;text-align:left">氏名</th><th style="padding:6px 8px;border:1px solid #ccc">勝</th><th style="padding:6px 8px;border:1px solid #ccc">負</th><th style="padding:6px 8px;border:1px solid #ccc">B</th><th style="padding:6px 8px;border:1px solid #ccc">C</th></tr></thead><tbody>';
+  for(var i=0;i<list.length;i++){
+    var e=list[i]; var p=e&&e.players; var m=p&&p.members;
+    var nm=(m&&m.name)||''; var ym=(m&&m.yomi)||'';
+    html+='<tr><td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+escapeHtml(String((e&&e['class'])||''))+'</td>'
+      +'<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+((e&&e.final_rank!=null)?escapeHtml(String(e.final_rank))+'位':'-')+'</td>'
+      +'<td style="padding:6px 8px;border:1px solid #ccc">'+playerNameRubyHtml(nm,ym)+'</td>'
+      +'<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+escapeHtml(String((e&&e.wins!=null)?e.wins:''))+'</td>'
+      +'<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+escapeHtml(String((e&&e.losses!=null)?e.losses:''))+'</td>'
+      +'<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+escapeHtml(String((e&&e.sos!=null)?e.sos:''))+'</td>'
+      +'<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+escapeHtml(String((e&&e.sodos!=null)?e.sodos:''))+'</td></tr>';
+  }
+  html+='</tbody></table></div>';
+  return html;
+}
+function bindCloudHistoryRows(client){
+  var listEl=document.getElementById('history-cloud-list'); if(!listEl)return;
+  var rows=listEl.querySelectorAll('.cloud-history-row');
+  for(var i=0;i<rows.length;i++){
+    rows[i].addEventListener('click',(function(node){return function(){
+      var tid=node.getAttribute('data-tid');
+      var det=document.getElementById('history-cloud-detail'); if(det)det.innerHTML='<div style="color:#888;font-size:13px;padding:8px 0">読み込み中…</div>';
+      fetchCloudEntriesForTournament(client,tid).then(function(r){
+        var d2=document.getElementById('history-cloud-detail');
+        if(d2)d2.innerHTML=r.ok?buildCloudEntriesTableHtml(r.entries):'<div style="color:#A32D2D;font-size:13px;padding:8px 0">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
+      });
+    };})(rows[i]));
+  }
+}
+// クラウド過去大会の取得オーケストレーション（pullMembersToMasterUI と対称・fail-soft）。
+function loadCloudPastTournamentsUI(setStatus){
+  setStatus=setStatus||function(){};
+  setStatus('クラウドの過去大会を取得中…');
+  return loadCloudDeps().then(function(dep){
+    if(dep&&dep.offline){ setStatus('オフラインのため取得できません（ネット接続後に再度お試しください・運営は続行できます）'); return {ok:false,step:'offline'}; }
+    if(!dep.cfg){ setStatus('クラウド設定がありません（取得は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
+    if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
+    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+    if(!client||!client.auth){ setStatus('クラウドに接続できませんでした'); return {ok:false,step:'client'}; }
+    return client.auth.getSession().then(function(r){
+      var session=r&&r.data&&r.data.session;
+      if(!session){ setStatus('クラウド管理ページ（app/）でログインすると過去大会を表示できます'); return {ok:false,step:'auth'}; }
+      return client.rpc('claim_organizer_seat').then(function(rc){
+        var clubId=pickActiveClubId((rc&&rc.data)||[]);
+        if(!clubId){ setStatus('取得元クラブを一意に特定できません（有効な幹事クラブが無い／複数所属の可能性・管理ページを確認してください）'); return {ok:false,step:'club'}; }
+        return fetchCloudTournaments(client,clubId).then(function(res){
+          if(!res.ok){ setStatus('取得に失敗しました：'+(res.message||'不明')+'（運営は続行できます・再取得できます）'); return res; }
+          var listEl=document.getElementById('history-cloud-list');
+          if(listEl){ listEl.innerHTML=buildCloudTournamentListHtml(res.tournaments); bindCloudHistoryRows(client); }
+          setStatus('クラウドの過去大会 '+res.tournaments.length+' 件（大会名をタップで結果表示）');
+          return res;
+        });
+      });
+    });
+  }).catch(function(e){ setStatus('取得エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; });
+}
+
 function renderHistoryList(flashMessage){
   var host=document.getElementById('history-content');
   if(!host)return;
@@ -11009,6 +11108,13 @@ function renderHistoryList(flashMessage){
       html+='</button>';
     }
   }
+  // HISTORY-CLOUD: クラウドの過去大会セクション（別セクション・①案）。読み込みは押下時（fail-soft）。
+  html+='<hr class="separator">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px"><h2 style="font-size:16px;margin:0;color:#1F3864">☁ クラウドの過去大会（みんなで共有）</h2><button type="button" class="btn-sm" id="history-cloud-load" style="background:#fff;border:1px solid #1F3864;color:#1F3864">読み込む</button></div>';
+  html+='<div style="font-size:12px;color:#888;margin-bottom:6px">クラウドに保存された過去大会の結果一覧です（ログイン＋オンライン時）。</div>';
+  html+='<div id="history-cloud-status" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-bottom:6px"></div>';
+  html+='<div id="history-cloud-list"></div>';
+  html+='<div id="history-cloud-detail" style="margin-top:8px"></div>';
   host.innerHTML=html;
   var saveBtn=document.getElementById('history-save-btn');
   if(saveBtn)saveBtn.addEventListener('click',saveCurrentTournamentToArchive);
@@ -11016,6 +11122,10 @@ function renderHistoryList(flashMessage){
   for(var r=0;r<rows.length;r++){
     rows[r].addEventListener('click',function(){renderHistoryDetail(this.getAttribute('data-tid'));});
   }
+  var cloudLoadBtn=document.getElementById('history-cloud-load');
+  if(cloudLoadBtn)cloudLoadBtn.addEventListener('click',function(){
+    loadCloudPastTournamentsUI(function(msg){ if(typeof applyCloudStatus==='function')applyCloudStatus(document.getElementById('history-cloud-status'),msg); else { var el=document.getElementById('history-cloud-status'); if(el)el.textContent=msg; } });
+  });
 }
 
 // 過去大会の read-only 閲覧（§6）。既存 scoreboard レンダラを snapshot 入力で流用（編集 UI を一切出さない）。
