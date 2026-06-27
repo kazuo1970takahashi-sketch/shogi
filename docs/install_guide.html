@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>将棋大会アプリ ホーム画面に追加する手順</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Hiragino Sans','Meiryo',sans-serif; color:#222; background:#fff; line-height:1.9; font-size:19px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 24px 18px 48px; }
+  h1 { font-size: 27px; color:#1F3864; text-align:center; margin-bottom: 6px; }
+  .lead { text-align:center; color:#444; font-size:18px; margin-bottom: 22px; }
+  .merit { background:#eaf3de; border:1px solid #97c459; border-radius:12px; padding:14px 18px; font-size:18px; margin-bottom:26px; }
+  .merit b { color:#27500A; }
+  h2 { font-size:22px; color:#fff; background:#1F3864; border-radius:10px; padding:10px 16px; margin: 26px 0 14px; display:flex; align-items:center; gap:10px; }
+  h2 .os { font-size:15px; background:#fff; color:#1F3864; border-radius:20px; padding:2px 12px; font-weight:700; }
+  ol { list-style:none; counter-reset: step; }
+  li.step { counter-increment: step; display:flex; gap:14px; align-items:flex-start; padding:14px 0; border-bottom:1px dashed #ddd; }
+  li.step::before { content: counter(step); flex:0 0 auto; width:42px; height:42px; background:#2E75B6; color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:700; margin-top:2px; }
+  .step-body { flex:1; }
+  .step-body .big { font-size:20px; }
+  .icon { display:inline-flex; vertical-align:middle; width:34px; height:34px; border:2px solid #1F3864; border-radius:8px; align-items:center; justify-content:center; margin:0 4px; }
+  .pill { display:inline-block; background:#f2f2f2; border:1px solid #ccc; border-radius:8px; padding:2px 10px; font-weight:700; margin:0 2px; white-space:nowrap; }
+  .pill-blue { background:#e8f0f8; border-color:#9DB7D5; color:#1F3864; }
+  .note { background:#faeeda; border-left:5px solid #EF9F27; border-radius:0 10px 10px 0; padding:12px 16px; font-size:17px; color:#633806; margin:18px 0; }
+  .done { background:#e8f0f8; border:1px solid #9DB7D5; border-radius:12px; padding:14px 18px; font-size:19px; margin-top:14px; }
+  .done b { color:#1F3864; }
+  .koma { display:inline-block; width:30px; height:32px; background:#1F3864; color:#fff; border-radius:4px; text-align:center; line-height:32px; font-weight:700; vertical-align:middle; margin:0 3px; }
+  .warn { background:#fcebeb; border:1px solid #f09595; border-radius:12px; padding:14px 18px; color:#A32D2D; font-size:17px; margin-top:28px; }
+  .back { display:inline-block; margin-top:24px; color:#1F3864; font-size:16px; }
+  @media print { body{font-size:15px;} .wrap{padding:0;} h2{-webkit-print-color-adjust:exact; print-color-adjust:exact;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>将棋大会アプリを<br>「ホーム画面」に追加しよう</h1>
+  <p class="lead">最初に一度だけ設定すれば、次からはアイコンを押すだけで開けます。</p>
+
+  <div class="merit">
+    <b>これをすると便利！</b><br>
+    毎回リンクを探さなくてよくなります。スマホの画面に <span class="koma">将</span> のアイコンができて、ふつうのアプリと同じように一発で開けます。
+  </div>
+
+  <!-- iPhone -->
+  <h2><span class="os">iPhone</span> Safari（サファリ）で開いている場合</h2>
+  <p style="font-size:17px; color:#444; margin-bottom:8px;">※ iPhone は必ず <b>Safari</b>（標準の青いコンパスのアプリ）で開いてください。</p>
+  <ol>
+    <li class="step"><div class="step-body"><span class="big">将棋大会アプリのページを開きます。</span><br>（役員から送られたリンク、またはこの運営サイトの「大会運営アプリを開く」を押す）</div></li>
+    <li class="step"><div class="step-body"><span class="big">画面<b>右下の <span style="font-size:26px;">•••</span>（点が3つ）</b>を押します。</span></div></li>
+    <li class="step"><div class="step-body"><span class="big">出てきたメニューの中の <span class="pill">共有</span> を押します。</span></div></li>
+    <li class="step"><div class="step-body"><span class="big"><b style="color:#A32D2D;">ここが大事！</b> 出てきた画面を<b>指で下のほうまでスクロール</b>します。</span><br>
+      下のほうに <span class="pill">ホーム画面に追加</span> があるので押します。<br>
+      <span style="font-size:16px;color:#633806;">（最初の画面には出ていません。必ず<b>下までスクロール</b>してください）</span></div></li>
+    <li class="step"><div class="step-body"><span class="big">右上の <span class="pill pill-blue">追加</span> を押します。</span></div></li>
+  </ol>
+  <div class="done"><b>完了！</b> ホーム画面に <span class="koma">将</span> のアイコンができます。次からはそれを押すだけ。</div>
+
+  <!-- Android -->
+  <h2><span class="os">Android</span> Chrome（クローム）で開いている場合</h2>
+  <ol>
+    <li class="step"><div class="step-body"><span class="big">将棋大会アプリのページを開きます。</span></div></li>
+    <li class="step"><div class="step-body"><span class="big">画面の<b>右上にある<span style="font-size:24px;">⋮</span>（点が縦に3つ）</b>を押します。</span></div></li>
+    <li class="step"><div class="step-body"><span class="big">メニューの中の <span class="pill">アプリをインストール</span> または <span class="pill">ホーム画面に追加</span> を押します。</span></div></li>
+    <li class="step"><div class="step-body"><span class="big">確認が出たら <span class="pill pill-blue">インストール</span>（または <span class="pill pill-blue">追加</span>）を押します。</span></div></li>
+  </ol>
+  <div class="done"><b>完了！</b> ホーム画面に <span class="koma">将</span> のアイコンができます。次からはそれを押すだけ。</div>
+
+  <div class="note">
+    <b>大事なお願い（とくに iPhone）</b><br>
+    アプリを入れた直後は、これまでの名簿が「空」に見えることがあります。あわてず、<b>大会を始める前</b>にアイコンから開き、「マスタ」タブの <b>「☁ クラウドから取得」</b> を押すと名簿が出てきます（インターネットにつながっているとき）。
+  </div>
+
+  <div class="warn">
+    うまくいかないときは、支部役員（事務局）にこの画面を見せて相談してください。スマホの機種や設定で表示が少し違うことがあります。
+  </div>
+
+  <a class="back" href="../index.html">← 運営サイトへ戻る</a>
+
+</div>
+</body>
+</html>
