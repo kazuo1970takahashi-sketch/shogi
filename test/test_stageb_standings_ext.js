@@ -13,12 +13,24 @@ function loadAuth(){const win={location:{origin:'x',pathname:'/'}};new Function(
 function makeClient(opts){opts=opts||{};const calls={select:[]};
   function R(d,e){return Promise.resolve({data:d===undefined?null:d,error:e||null});}
   function b(t,cols){const o={_sel:cols};if(cols!==undefined)calls.select.push({table:t,cols:cols});o.select=function(c){if(c!==undefined)calls.select.push({table:t,cols:c});return this;};o.eq=function(){return this;};
-    o.then=function(res,rej){let out=opts.error?R(null,{message:'e'}):R(opts.rows!==undefined?opts.rows:[]);return out.then(res,rej);};return o;}
+    o.then=function(res,rej){let data=(opts.byTable&&opts.byTable[t]!==undefined)?opts.byTable[t]:(opts.rows!==undefined?opts.rows:[]);let out=opts.error?R(null,{message:'e'}):R(data);return out.then(res,rej);};return o;}
   return {_calls:calls,from(t){return{select:(c)=>b(t,c),upsert:()=>b(t),insert:()=>b(t),update:()=>b(t)};}};}
 
 const A=loadAuth();
 // raw entry (embedding) helper
 function e(season,date,cls,mid,name,branch,w,l,rank){return {wins:w,losses:l,final_rank:rank,'class':cls,players:{member_id:mid,members:{name:name,branch:branch}},tournaments:{season:season,date:date}};}
+function seasonClient(objs){
+  var ents=[],pmap={},tmap={};
+  objs.forEach(function(r){
+    var mid=r.players.member_id,nm=r.players.members.name,br=(r.players.members.branch||'');
+    var season=r.tournaments.season,date=r.tournaments.date;
+    var pid='P_'+mid,tid='T_'+season+'|'+date;
+    ents.push({wins:r.wins,losses:r.losses,final_rank:r.final_rank,'class':r['class'],player_id:pid,tournament_id:tid});
+    pmap[pid]={id:pid,member_id:mid,members:{name:nm,branch:br}};
+    tmap[tid]={id:tid,season:season,date:date};
+  });
+  return makeClient({byTable:{entries:ents,players:Object.keys(pmap).map(function(k){return pmap[k];}),tournaments:Object.keys(tmap).map(function(k){return tmap[k];})}});
+}
 function shaped(){return [
   e('2025年度','2025-04-13','A','m1','甲','沼津市',4,0,1),
   e('2025年度','2025-04-13','B','m2','乙','三島市',1,3,null),
@@ -88,10 +100,10 @@ function shaped(){return [
   })();
   // controller
   await (async function(){
-    const doc=makeDoc(); const client=makeClient({rows:shaped().length?[
+    const doc=makeDoc(); const client=seasonClient([
       e('2025年度','2025-04-13','A','m1','甲','沼津市',4,0,1),
       e('2025年度','2025-04-13','B','m2','乙','三島市',1,3,null)
-    ]:[]});
+    ]);
     const ctrl=A.makeController({client,document:doc});
     ctrl.showApp({isRegistered:true,isActive:true,isAdmin:false,role:'organizer',clubId:'c1',clubName:'沼津',displayName:'幹'},[]);
     await new Promise(r=>setTimeout(r,0));

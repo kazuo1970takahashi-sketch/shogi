@@ -16,10 +16,22 @@ function loadAuth(extra){const win=Object.assign({location:{origin:'https://app.
 function makeClient(opts){opts=opts||{};const calls={select:[]};
   function R(d,e){return Promise.resolve({data:d===undefined?null:d,error:e||null});}
   function b(t,cols){const o={_sel:cols};if(cols!==undefined)calls.select.push({table:t,cols:cols});o.select=function(c){this._sel=c;if(c!==undefined)calls.select.push({table:t,cols:c});return this;};o.eq=function(){return this;};
-    o.then=function(res,rej){let out=opts.error?R(null,{message:'err'}):R(opts.rows!==undefined?opts.rows:[]);return out.then(res,rej);};return o;}
+    o.then=function(res,rej){let data=(opts.byTable&&opts.byTable[t]!==undefined)?opts.byTable[t]:(opts.rows!==undefined?opts.rows:[]);let out=opts.error?R(null,{message:'err'}):R(data);return out.then(res,rej);};return o;}
   return {_calls:calls, from(t){return {select:(c)=>b(t,c),upsert:()=>b(t),insert:()=>b(t),update:()=>b(t)};}};}
 
 const A=loadAuth();
+function seasonClient(objs){
+  var ents=[],pmap={},tmap={};
+  objs.forEach(function(r){
+    var mid=r.players.member_id,nm=r.players.members.name,br=(r.players.members.branch||'');
+    var season=r.tournaments.season,date=r.tournaments.date;
+    var pid='P_'+mid,tid='T_'+season+'|'+date;
+    ents.push({wins:r.wins,losses:r.losses,final_rank:r.final_rank,'class':r['class'],player_id:pid,tournament_id:tid});
+    pmap[pid]={id:pid,member_id:mid,members:{name:nm,branch:br}};
+    tmap[tid]={id:tid,season:season,date:date};
+  });
+  return makeClient({byTable:{entries:ents,players:Object.keys(pmap).map(function(k){return pmap[k];}),tournaments:Object.keys(tmap).map(function(k){return tmap[k];})}});
+}
 function row(season,mid,name,w,l,rank){return {wins:w,losses:l,final_rank:rank,class:'A',players:{member_id:mid,members:{name:name}},tournaments:{season:season,date:season+'-x'}};}
 
 (async function(){
@@ -71,7 +83,17 @@ function row(season,mid,name,w,l,rank){return {wins:w,losses:l,final_rank:rank,c
     var c=makeClient({rows:[row('2025年度','m1','甲',3,1,1)]});
     var r=await A.fetchSeasonEntries(c,'club1');
     assert(r.ok===true && r.rows.length===1,'F1 ok 経路');
-    assert(c._calls.select[0].cols.indexOf('season')>=0 && c._calls.select[0].cols.indexOf('members(name,branch)')>=0,'F2 select に season と members(name,branch) を含む');
+    var cj=makeClient({byTable:{
+      entries:[{wins:4,losses:0,final_rank:1,'class':'A',player_id:'p1',tournament_id:'t1'}],
+      players:[{id:'p1',member_id:'m1',members:{name:'甲',branch:'沼津'}}],
+      tournaments:[{id:'t1',season:'2025年度',date:'2025-05-01'}]
+    }});
+    var rj=await A.fetchSeasonEntries(cj,'club1');
+    var sj=A.shapeStandingRow(rj.rows[0]);
+    assert(sj.name==='甲' && sj.season==='2025年度' && sj.member_id==='m1','F1b player_id/tournament_id を JS で突き合わせ');
+    var cols=c._calls.select.map(function(x){return x.table+':'+x.cols;}).join(' | ');
+  assert(c._calls.select[0].cols.indexOf('player_id')>=0 && c._calls.select[0].cols.indexOf('tournament_id')>=0 && c._calls.select[0].cols.indexOf('members(')<0,'F2 entries は player_id/tournament_id のみ（曖昧embed回避）');
+  assert(cols.indexOf('players:')>=0 && cols.indexOf('members(name,branch)')>=0 && cols.indexOf('tournaments:')>=0,'F2b players(members)・tournaments を別取得');
     var c2=makeClient({error:true});
     var r2=await A.fetchSeasonEntries(c2,'club1');
     assert(r2.ok===false && r2.rows.length===0,'F3 error 経路');
@@ -79,7 +101,7 @@ function row(season,mid,name,w,l,rank){return {wins:w,losses:l,final_rank:rank,c
   // C 配線
   await (async function(){
     const doc=makeDoc();
-    const client=makeClient({rows:[row('2025年度','m1','甲',4,0,1),row('2024年度','m1','甲',2,2,2)]});
+    const client=seasonClient([row('2025年度','m1','甲',4,0,1),row('2024年度','m1','甲',2,2,2)]);
     const ctrl=A.makeController({client,document:doc});
     ctrl.showApp({isRegistered:true,isActive:true,isAdmin:false,role:'organizer',clubId:'club1',clubName:'沼津',displayName:'幹事'},[]);
     await new Promise(r=>setTimeout(r,0));

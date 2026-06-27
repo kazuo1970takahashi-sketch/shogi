@@ -15,6 +15,12 @@ function ok(m){ pass++; if(process.env.VERBOSE) console.log('  ✓ '+m); }
 function ng(m){ fail++; console.error('  ✗ '+m); }
 function assert(c,m){ c?ok(m):ng(m); }
 function loadAuth(){ const win={ location:{ origin:'https://app.test', pathname:'/app/' } }; new Function('window', AUTH_JS)(win); return win.ShogiAuth; }
+// table 別に異なるデータを返す mock（2段取得＋JS突き合わせ検証用）。
+function tableClient(byTable){
+  function builder(t){const b={};b.select=function(){return this;};b.eq=function(){return this;};
+    b.then=function(res,rej){return Promise.resolve({data:(byTable[t]!==undefined?byTable[t]:[]),error:null}).then(res,rej);};return b;}
+  return { from(t){ return { select:()=>builder(t) }; } };
+}
 // ok 経路: from().select().eq().then → {data:selectData,error:null}
 function okClient(selectData){
   function builder(){ const b={}; b.select=function(){return this;}; b.eq=function(){return this;};
@@ -63,11 +69,12 @@ const A = loadAuth();
   assert(rt.ok===true && rt.tournaments.length===1, 'F1 fetchTournaments ok 経路');
   var rm = await A.fetchMembers(okClient([{ member_id:'m1', name:'甲', yomi:'こう' }]), 'club1');
   assert(rm.ok===true && rm.members.length===1, 'F2 fetchMembers ok 経路');
-  var re = await A.fetchEntries(okClient([{ final_rank:1, 'class':'A', players:{ members:{ name:'甲' } } }]), 't1');
+  var re = await A.fetchEntries(tableClient({entries:[{final_rank:1,'class':'A',player_id:'p1'}],players:[{id:'p1',member_id:'m1',members:{name:'甲',yomi:'こう'}}]}), 't1', 'club1');
   assert(re.ok===true && re.entries.length===1, 'F3 fetchEntries ok 経路');
+  assert(A.shapeEntryRow(re.entries[0]).name==='甲', 'F3b fetchEntries が player_id→氏名を JS 突き合わせ');
   var rerr = await A.fetchTournaments(errClient(), 'club1');
   assert(rerr.ok===false && rerr.tournaments.length===0, 'F4 fetchTournaments error 経路は ok:false');
-  var rerr2 = await A.fetchEntries(errClient(), 't1');
+  var rerr2 = await A.fetchEntries(errClient(), 't1', 'club1');
   assert(rerr2.ok===false, 'F5 fetchEntries error 経路は ok:false');
 
   // ---- X: XSS ----
