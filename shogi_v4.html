@@ -10991,11 +10991,20 @@ function fetchCloudTournaments(client, clubId){
     return {ok:true,tournaments:(res&&res.data)||[]};
   });
 }
-function fetchCloudEntriesForTournament(client, tid){
+function fetchCloudEntriesForTournament(client, tid, clubId){
   if(!client||!client.from)return Promise.resolve({ok:false,message:'クラウドに接続していません',entries:[]});
-  return client.from('entries').select('final_rank,class,wins,losses,sos,sodos,players(member_id,members(name,yomi))').eq('tournament_id',tid).then(function(res){
+  // entries→players は FK が2本（player_id / (club_id,player_id)）で埋め込みが曖昧になるため、
+  // players は埋め込まず別取得して JS で突き合わせる（制約名に非依存・確実）。
+  return client.from('entries').select('final_rank,class,wins,losses,sos,sodos,player_id').eq('tournament_id',tid).then(function(res){
     if(res&&res.error)return {ok:false,message:'結果の読み込みに失敗しました',entries:[]};
-    return {ok:true,entries:(res&&res.data)||[]};
+    var rows=(res&&res.data)||[];
+    return client.from('players').select('id,member_id,members(name,yomi)').eq('club_id',clubId).then(function(pr){
+      if(pr&&pr.error)return {ok:false,message:'選手情報の読み込みに失敗しました',entries:[]};
+      var byId={}; var plist=(pr&&pr.data)||[];
+      for(var i=0;i<plist.length;i++){ if(plist[i])byId[plist[i].id]=plist[i]; }
+      for(var j=0;j<rows.length;j++){ var pl=byId[rows[j]&&rows[j].player_id]; rows[j].players=pl?{member_id:pl.member_id,members:pl.members}:null; }
+      return {ok:true,entries:rows};
+    });
   });
 }
 function buildCloudTournamentListHtml(tournaments){
@@ -11035,14 +11044,14 @@ function buildCloudEntriesTableHtml(entries){
   html+='</tbody></table></div>';
   return html;
 }
-function bindCloudHistoryRows(client){
+function bindCloudHistoryRows(client, clubId){
   var listEl=document.getElementById('history-cloud-list'); if(!listEl)return;
   var rows=listEl.querySelectorAll('.cloud-history-row');
   for(var i=0;i<rows.length;i++){
     rows[i].addEventListener('click',(function(node){return function(){
       var tid=node.getAttribute('data-tid');
       var det=document.getElementById('history-cloud-detail'); if(det)det.innerHTML='<div style="color:#888;font-size:13px;padding:8px 0">読み込み中…</div>';
-      fetchCloudEntriesForTournament(client,tid).then(function(r){
+      fetchCloudEntriesForTournament(client,tid,clubId).then(function(r){
         var d2=document.getElementById('history-cloud-detail');
         if(d2)d2.innerHTML=r.ok?buildCloudEntriesTableHtml(r.entries):'<div style="color:#A32D2D;font-size:13px;padding:8px 0">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
       });
@@ -11068,7 +11077,7 @@ function loadCloudPastTournamentsUI(setStatus){
         return fetchCloudTournaments(client,clubId).then(function(res){
           if(!res.ok){ setStatus('取得に失敗しました：'+(res.message||'不明')+'（運営は続行できます・再取得できます）'); return res; }
           var listEl=document.getElementById('history-cloud-list');
-          if(listEl){ listEl.innerHTML=buildCloudTournamentListHtml(res.tournaments); bindCloudHistoryRows(client); }
+          if(listEl){ listEl.innerHTML=buildCloudTournamentListHtml(res.tournaments); bindCloudHistoryRows(client,clubId); }
           setStatus('クラウドの過去大会 '+res.tournaments.length+' 件（大会名をタップで結果表示）');
           return res;
         });

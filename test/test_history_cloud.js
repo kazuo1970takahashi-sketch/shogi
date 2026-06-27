@@ -16,7 +16,7 @@ function makeCtx(){
 function loadEnv(){
   var ctx=makeCtx();var js=extractScripts(RAW);
   var fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout','navigator',
-    `${js};return {buildCloudTournamentListHtml:buildCloudTournamentListHtml,buildCloudEntriesTableHtml:buildCloudEntriesTableHtml,loadCloudPastTournamentsUI:loadCloudPastTournamentsUI,pickActiveClubId:pickActiveClubId};`);
+    `${js};return {buildCloudTournamentListHtml:buildCloudTournamentListHtml,buildCloudEntriesTableHtml:buildCloudEntriesTableHtml,loadCloudPastTournamentsUI:loadCloudPastTournamentsUI,fetchCloudEntriesForTournament:fetchCloudEntriesForTournament,pickActiveClubId:pickActiveClubId};`);
   var env=fn(ctx.doc,ctx.win,ctx.ls,{randomUUID:function(){return '0';}},function(){},function(){return true;},function(){return '';},function(){},function(){},{createObjectURL:function(){return 'b';},revokeObjectURL:function(){}},{log:function(){},warn:function(){},error:function(){}},Promise,function(){return 0;},{onLine:true});
   return {env:env,ctx:ctx};
 }
@@ -57,10 +57,26 @@ console.log('=== 取得オーケストレーション（fail-soft）===');
   ok(r3.ok===true&&r3.tournaments.length===1,'O3 成功→tournaments 取得');
   ok((C.ctx.el['history-cloud-list']||{}).innerHTML.indexOf('cloud-history-row')>=0,'O4 一覧を #history-cloud-list に描画');
 
+  console.log('=== entries 2段取得＋JS突き合わせ ===');
+  var D=loadEnv(); installCloud(D.ctx,{tables:{
+    entries:{data:[{final_rank:1,'class':'A',wins:4,losses:0,sos:6,sodos:6,player_id:'p1'},{final_rank:2,'class':'A',wins:3,losses:1,sos:5,sodos:4,player_id:'p2'}]},
+    players:{data:[{id:'p1',member_id:'m1',members:{name:'甲',yomi:'こう'}},{id:'p2',member_id:'m2',members:{name:'乙',yomi:'おつ'}}]}
+  }});
+  var client=D.ctx.win.supabase.createClient();
+  var rj=await D.env.fetchCloudEntriesForTournament(client,'t1','c1');
+  ok(rj.ok===true&&rj.entries.length===2,'J1 entries 取得OK');
+  ok(rj.entries[0].players&&rj.entries[0].players.members.name==='甲','J2 player_id→氏名を突き合わせ');
+  var th2=D.env.buildCloudEntriesTableHtml(rj.entries);
+  ok(th2.indexOf('甲')>=0&&th2.indexOf('乙')>=0&&/<ruby>/.test(th2),'J3 突き合わせ結果が結果表に出る');
+  var E2=loadEnv(); installCloud(E2.ctx,{tables:{entries:{error:{message:'x'}}}});
+  var rerr=await E2.env.fetchCloudEntriesForTournament(E2.ctx.win.supabase.createClient(),'t1','c1');
+  ok(rerr.ok===false,'J4 entries エラーは ok=false');
+
   console.log('=== 配線（RAW）===');
   ok(RAW.indexOf('id="history-cloud-load"')>=0,'W1 読み込みボタン（大会履歴内）');
   ok(/getElementById\('history-cloud-load'\)[\s\S]{0,200}loadCloudPastTournamentsUI/.test(RAW),'W2 ボタン→loadCloudPastTournamentsUI 結線');
-  ok(RAW.indexOf("client.from('entries').select('final_rank,class,wins,losses,sos,sodos,players(member_id,members(name,yomi))')")>=0,'W3 entries 取得クエリ');
+  ok(RAW.indexOf("client.from('entries').select('final_rank,class,wins,losses,sos,sodos,player_id')")>=0,'W3 entries は player_id のみ（曖昧embed回避）');
+  ok(RAW.indexOf("client.from('players').select('id,member_id,members(name,yomi)')")>=0,'W3b players を別取得');
 
   console.log('HISTORY-CLOUD: PASS='+pass+' FAIL='+fail);
   process.exit(fail===0?0:1);
