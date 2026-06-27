@@ -1593,6 +1593,19 @@ else
 fi
 
 
+echo ""
+echo "【HISTORY-CLOUD (#343) 大会履歴にクラウド過去大会セクション（一覧/結果表/取得オーケストレーション・fail-soft・mock）】"
+if [ -f "$SCRIPT_DIR/test_history_cloud.js" ]; then
+  if node "$SCRIPT_DIR/test_history_cloud.js" "$TARGET" > /tmp/history_cloud_out.log 2>&1; then
+    ok "HISTORY-CLOUD テスト 全PASS ($(tail -1 /tmp/history_cloud_out.log))"
+  else
+    ng "HISTORY-CLOUD テスト 失敗"; cat /tmp/history_cloud_out.log
+  fi
+else
+  warn "test_history_cloud.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
