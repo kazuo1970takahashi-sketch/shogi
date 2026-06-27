@@ -1541,6 +1541,19 @@ else
 fi
 
 
+echo ""
+echo "【PWA-SLICE1 manifest＋アイコン＋head タグ（インストール可能化・SW は別スライス）】"
+if [ -f "$SCRIPT_DIR/test_pwa_manifest.js" ]; then
+  if node "$SCRIPT_DIR/test_pwa_manifest.js" "$TARGET" > /tmp/pwa_manifest_out.log 2>&1; then
+    ok "PWA-SLICE1 テスト 全PASS ($(tail -1 /tmp/pwa_manifest_out.log))"
+  else
+    ng "PWA-SLICE1 テスト 失敗"; cat /tmp/pwa_manifest_out.log
+  fi
+else
+  warn "test_pwa_manifest.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================

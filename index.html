@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>沼津支部 月例将棋大会 運営サイト</title>
+<!-- PWA Slice1 (#... ): ホーム画面インストール用。manifest＋テーマ色＋iOS用メタ/アイコン。
+     Service Worker（オフライン/キャッシュ）は別スライス。挙動非接触（head への追加のみ）。 -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1F3864">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="将棋大会運営">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:15px;color:#222;background:#f5f5f0;line-height:1.7}
