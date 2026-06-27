@@ -10984,10 +10984,12 @@ function saveCurrentTournamentToArchive(){
 //   要ログイン＋オンライン・fail-soft（未ログイン/オフライン/config 不在は案内のみ＝当日運営は無傷）。
 //   既存クラウド機構（loadCloudDeps/getSession/claim_organizer_seat/pickActiveClubId/applyCloudStatus）を再利用。
 // ============================================================
+// 診断用：Supabase エラーの要点（code/message）を短く取り出す（#343 過去大会取得の不具合切り分け）。
+function cloudErrDetail(err){ if(!err)return '不明'; var c=err.code?('['+err.code+'] '):''; return c+(err.message||err.details||err.hint||'エラー'); }
 function fetchCloudTournaments(client, clubId){
   if(!client||!client.from)return Promise.resolve({ok:false,message:'クラウドに接続していません',tournaments:[]});
   return client.from('tournaments').select('id,name,date,season,status').eq('club_id',clubId).then(function(res){
-    if(res&&res.error)return {ok:false,message:'大会の読み込みに失敗しました',tournaments:[]};
+    if(res&&res.error)return {ok:false,message:'大会の読み込みに失敗しました：'+cloudErrDetail(res.error),tournaments:[]};
     return {ok:true,tournaments:(res&&res.data)||[]};
   });
 }
@@ -10996,10 +10998,10 @@ function fetchCloudEntriesForTournament(client, tid, clubId){
   // entries→players は FK が2本（player_id / (club_id,player_id)）で埋め込みが曖昧になるため、
   // players は埋め込まず別取得して JS で突き合わせる（制約名に非依存・確実）。
   return client.from('entries').select('final_rank,class,wins,losses,sos,sodos,player_id').eq('tournament_id',tid).then(function(res){
-    if(res&&res.error)return {ok:false,message:'結果の読み込みに失敗しました',entries:[]};
+    if(res&&res.error)return {ok:false,message:'結果の読み込みに失敗しました：'+cloudErrDetail(res.error),entries:[]};
     var rows=(res&&res.data)||[];
     return client.from('players').select('id,member_id,members(name,yomi)').eq('club_id',clubId).then(function(pr){
-      if(pr&&pr.error)return {ok:false,message:'選手情報の読み込みに失敗しました',entries:[]};
+      if(pr&&pr.error)return {ok:false,message:'選手情報の読み込みに失敗しました：'+cloudErrDetail(pr.error),entries:[]};
       var byId={}; var plist=(pr&&pr.data)||[];
       for(var i=0;i<plist.length;i++){ if(plist[i])byId[plist[i].id]=plist[i]; }
       for(var j=0;j<rows.length;j++){ var pl=byId[rows[j]&&rows[j].player_id]; rows[j].players=pl?{member_id:pl.member_id,members:pl.members}:null; }
