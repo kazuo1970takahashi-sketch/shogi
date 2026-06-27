@@ -1528,6 +1528,19 @@ else
 fi
 
 
+echo ""
+echo "【ARCH-P2 (SYSTEM-REVIEW #384) A-6 複数クラブ誤選択防止(送信/取得 文言出し分け) / A-8 schema_version方針 / A-9 オフライン事前ガード(offlineマーカー)】"
+if [ -f "$SCRIPT_DIR/test_arch_p2.js" ]; then
+  if node "$SCRIPT_DIR/test_arch_p2.js" "$TARGET" > /tmp/arch_p2_out.log 2>&1; then
+    ok "ARCH-P2 テスト 全PASS ($(tail -1 /tmp/arch_p2_out.log))"
+  else
+    ng "ARCH-P2 テスト 失敗"; cat /tmp/arch_p2_out.log
+  fi
+else
+  warn "test_arch_p2.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
