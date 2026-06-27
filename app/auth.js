@@ -318,12 +318,21 @@
       return { ok:true, members: res.data || [] };
     });
   }
-  function fetchEntries(client, tournamentId) {
+  // entries→players は FK が2本（player_id / (club_id,player_id)）で埋め込みが曖昧（PGRST200/201）になるため、
+  // players は埋め込まず club 単位で別取得し JS で突き合わせる（制約名に非依存・確実）。shapeEntryRow 互換の形に再構成。
+  function fetchEntries(client, tournamentId, clubId) {
     return client.from('entries')
-      .select('final_rank,class,wins,losses,sos,sodos,participated,players(member_id,members(name,yomi))')
+      .select('final_rank,class,wins,losses,sos,sodos,participated,player_id')
       .eq('tournament_id', tournamentId).then(function (res) {
         if (res.error) return { ok:false, message:'結果の読み込みに失敗しました', entries:[] };
-        return { ok:true, entries: res.data || [] };
+        var rows = res.data || [];
+        return client.from('players').select('id,member_id,members(name,yomi)').eq('club_id', clubId).then(function (pr) {
+          if (pr.error) return { ok:false, message:'選手情報の読み込みに失敗しました', entries:[] };
+          var byId = {}, plist = pr.data || [];
+          for (var i=0;i<plist.length;i++){ if(plist[i]) byId[plist[i].id]=plist[i]; }
+          for (var j=0;j<rows.length;j++){ var pl=byId[rows[j] && rows[j].player_id]; rows[j].players = pl ? { member_id: pl.member_id, members: pl.members } : null; }
+          return { ok:true, entries: rows };
+        });
       });
   }
 
@@ -340,12 +349,28 @@
   //   players→members(name) を集約し、年度ごとの個人成績（出場・勝・負・優勝回数・勝率）を表示。
   //   read-only。集計は純関数（テスト対象）。client 注入。
   // ===========================================================================
+  // entries→players / entries→tournaments はいずれも FK が2本で埋め込みが曖昧（PGRST200/201）になるため、
+  // players と tournaments を club 単位で別取得し JS で突き合わせる。shapeStandingRow 互換の形に再構成。
   function fetchSeasonEntries(client, clubId) {
     return client.from('entries')
-      .select('wins,losses,final_rank,class,players(member_id,members(name,branch)),tournaments(season,date)')
+      .select('wins,losses,final_rank,class,player_id,tournament_id')
       .eq('club_id', clubId).then(function (res) {
         if (res.error) return { ok:false, message:'成績の読み込みに失敗しました', rows:[] };
-        return { ok:true, rows: res.data || [] };
+        var rows = res.data || [];
+        return client.from('players').select('id,member_id,members(name,branch)').eq('club_id', clubId).then(function (pr) {
+          if (pr.error) return { ok:false, message:'成績の読み込みに失敗しました', rows:[] };
+          return client.from('tournaments').select('id,season,date').eq('club_id', clubId).then(function (tr) {
+            if (tr.error) return { ok:false, message:'成績の読み込みに失敗しました', rows:[] };
+            var pById={}, tById={}, pl=pr.data||[], tl=tr.data||[];
+            for (var i=0;i<pl.length;i++){ if(pl[i]) pById[pl[i].id]=pl[i]; }
+            for (var k=0;k<tl.length;k++){ if(tl[k]) tById[tl[k].id]=tl[k]; }
+            for (var j=0;j<rows.length;j++){
+              var P=pById[rows[j] && rows[j].player_id]; rows[j].players = P ? { member_id:P.member_id, members:P.members } : null;
+              var T=tById[rows[j] && rows[j].tournament_id]; rows[j].tournaments = T ? { season:T.season, date:T.date } : null;
+            }
+            return { ok:true, rows: rows };
+          });
+        });
       });
   }
   // entry（embedding 付き）→ 平坦化（純粋）。
@@ -1003,7 +1028,7 @@
         n.addEventListener('click', function () {
           var tid = n.getAttribute('data-id');
           var el = byId('cloudEntries'); if (el) el.innerHTML = '<p class="muted">読み込み中…</p>';
-          fetchEntries(client, tid).then(function (r) {
+          fetchEntries(client, tid, lastSummary.clubId).then(function (r) {
             var e2 = byId('cloudEntries');
             if (e2) e2.innerHTML = r.ok ? buildEntryTableHtml(r.entries) : '<p class="muted">' + esc(r.message) + '</p>';
           });
