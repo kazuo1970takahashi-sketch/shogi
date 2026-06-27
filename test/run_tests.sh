@@ -1580,6 +1580,19 @@ else
 fi
 
 
+echo ""
+echo "【DAYOF-QUICKWINS 当日UX即効1: タブ先頭スクロール/保存トースト/persist/タブ名会員名簿/22名取込撤去】"
+if [ -f "$SCRIPT_DIR/test_dayof_quickwins.js" ]; then
+  if node "$SCRIPT_DIR/test_dayof_quickwins.js" "$TARGET" > /tmp/dayof_quickwins_out.log 2>&1; then
+    ok "DAYOF-QUICKWINS テスト 全PASS ($(tail -1 /tmp/dayof_quickwins_out.log))"
+  else
+    ng "DAYOF-QUICKWINS テスト 失敗"; cat /tmp/dayof_quickwins_out.log
+  fi
+else
+  warn "test_dayof_quickwins.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
