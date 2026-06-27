@@ -1567,6 +1567,19 @@ else
 fi
 
 
+echo ""
+echo "【GROWTH-AWARD (#343) 成長賞＝前年度比 勝率の伸び（aggregateGrowthAward・read-only・app/）】"
+if [ -f "$SCRIPT_DIR/test_growth_award.js" ]; then
+  if node "$SCRIPT_DIR/test_growth_award.js" > /tmp/growth_award_out.log 2>&1; then
+    ok "GROWTH-AWARD テスト 全PASS ($(tail -1 /tmp/growth_award_out.log))"
+  else
+    ng "GROWTH-AWARD テスト 失敗"; cat /tmp/growth_award_out.log
+  fi
+else
+  warn "test_growth_award.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
