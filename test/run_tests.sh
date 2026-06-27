@@ -1554,6 +1554,19 @@ else
 fi
 
 
+echo ""
+echo "【PWA-SW Service Worker 構造（network-first/外部素通り/versioned cache/ES5登録）※実挙動は実機オフライン確認】"
+if [ -f "$SCRIPT_DIR/test_pwa_sw.js" ]; then
+  if node "$SCRIPT_DIR/test_pwa_sw.js" "$TARGET" > /tmp/pwa_sw_out.log 2>&1; then
+    ok "PWA-SW テスト 全PASS ($(tail -1 /tmp/pwa_sw_out.log))"
+  else
+    ng "PWA-SW テスト 失敗"; cat /tmp/pwa_sw_out.log
+  fi
+else
+  warn "test_pwa_sw.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
