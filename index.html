@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>沼津支部 月例将棋大会 運営サイト</title>
+<!-- PWA Slice1 (#... ): ホーム画面インストール用。manifest＋テーマ色＋iOS用メタ/アイコン。
+     Service Worker（オフライン/キャッシュ）は別スライス。挙動非接触（head への追加のみ）。 -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1F3864">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="将棋大会運営">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:15px;color:#222;background:#f5f5f0;line-height:1.7}
@@ -49,7 +57,7 @@ th.cell-amt{text-align:right}
   <!-- アプリリンク -->
   <div class="card">
     <h2>運営ツール</h2>
-    <a class="app-link" href="shogi_v4.html?v=17">大会運営アプリを開く</a>
+    <a class="app-link" href="shogi_v4.html?v=18">大会運営アプリを開く</a>
     <p style="font-size:13px;color:#888;text-align:center">スマートフォンのブラウザで開いてください</p>
     <!-- 運営マニュアル導線（事前リファレンス・別タブ起動 / #316 MANUAL-LINK-001） -->
     <a class="app-link" href="docs/manual_sp.html" target="_blank" rel="noopener noreferrer" style="background:#2E75B6">📖 運営マニュアル（はじめに読む）</a>
