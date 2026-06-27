@@ -163,6 +163,7 @@
       '<div id="standingsControls"><span id="seasonSelectWrap"></span><span id="classSelectWrap"></span></div>' +
       '<div id="cloudStandings" class="muted">読み込み中…</div>' +
       '</section>' +
+      '<section class="card" id="cloudGrowthView"><h2>成長賞（前年度比 勝率の伸び）</h2><div id="cloudGrowth" class="muted">読み込み中…</div></section>' +
       '<section class="card" id="cloudRecordsView"><h2>記録・殿堂</h2><div id="cloudRecords" class="muted">読み込み中…</div></section>' +
       '<section class="card" id="cloudMonthlyView"><h2>月別チャンピオン</h2><div id="cloudMonthly" class="muted">読み込み中…</div></section>' +
       '<section class="card" id="cloudCityView"><h2>市町村対抗</h2><div id="cloudCity" class="muted">読み込み中…</div></section>';
@@ -405,6 +406,49 @@
       return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.name) + '</td><td>' + x.games + '</td><td>' + x.wins + '</td><td>' + x.losses + '</td><td>' + x.championships + '</td><td>' + x.winRate + '%</td></tr>';
     }).join('');
     return '<table class="cloud-entries"><thead><tr><th>順</th><th>氏名</th><th>出場</th><th>勝</th><th>負</th><th>優勝</th><th>勝率</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  // 成長賞（#343 次の伸びしろ）: 前年度→今年度の勝率の伸びが最大の会員（read-only・既存集計の再利用）。
+  //   前年度＝listSeasons（新しい順）で当該 season の1つ前。両年度とも minGames（既定3大会）以上出場の会員のみ。
+  //   並び: delta(pt)降順→今年度勝率→出場→氏名。list[0] が成長賞候補。
+  function aggregateGrowthAward(rows, season, opts) {
+    opts = opts || {};
+    var minGames = (typeof opts.minGames === 'number') ? opts.minGames : 3;
+    var seasons = listSeasons(rows);
+    var idx = seasons.indexOf(season);
+    if (idx < 0 || idx + 1 >= seasons.length) return { prevSeason: null, minGames: minGames, list: [] };
+    var prevSeason = seasons[idx + 1];
+    var cur = aggregateStandings(rows, season);
+    var prev = aggregateStandings(rows, prevSeason);
+    var prevById = {};
+    for (var i = 0; i < prev.length; i++) prevById[prev[i].member_id] = prev[i];
+    var list = [];
+    for (var j = 0; j < cur.length; j++) {
+      var c = cur[j], p = prevById[c.member_id];
+      if (!p) continue;
+      if (c.games < minGames || p.games < minGames) continue;
+      list.push({ member_id: c.member_id, name: c.name, prevWinRate: p.winRate, curWinRate: c.winRate,
+        delta: Math.round((c.winRate - p.winRate) * 10) / 10, prevGames: p.games, curGames: c.games });
+    }
+    list.sort(function (a, b) {
+      if (b.delta !== a.delta) return b.delta - a.delta;
+      if (b.curWinRate !== a.curWinRate) return b.curWinRate - a.curWinRate;
+      if (b.curGames !== a.curGames) return b.curGames - a.curGames;
+      return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
+    });
+    return { prevSeason: prevSeason, minGames: minGames, list: list };
+  }
+  function buildGrowthAwardHtml(season, result) {
+    var r = result || {};
+    if (!r.prevSeason) return '<p class="muted">前年度のデータがないため成長賞は算出できません（前年度がある年度を選んでください）。</p>';
+    var list = r.list || [];
+    if (!list.length) return '<p class="muted">' + esc(r.prevSeason) + '→' + esc(season) + ' の両方に' + (r.minGames || 3) + '大会以上出場した会員がいません。</p>';
+    var rows = list.slice(0, 5).map(function (x, i) {
+      var sign = x.delta > 0 ? '+' : '';
+      var hl = (i === 0) ? ' style="background:#eaf3de;font-weight:600"' : '';
+      return '<tr' + hl + '><td>' + (i + 1) + '</td><td>' + esc(x.name) + (i === 0 ? ' \ud83c\udfc5' : '') + '</td><td>' + x.prevWinRate + '%</td><td>' + x.curWinRate + '%</td><td>' + sign + x.delta + 'pt</td><td>' + x.prevGames + '\u2192' + x.curGames + '</td></tr>';
+    }).join('');
+    return '<p class="muted">' + esc(r.prevSeason) + ' \u2192 ' + esc(season) + ' の勝率の伸び（両年度 ' + (r.minGames || 3) + '大会以上）。\ud83c\udfc5＝成長賞候補。</p>' +
+      '<table class="cloud-entries"><thead><tr><th>順</th><th>氏名</th><th>前年度</th><th>今年度</th><th>伸び</th><th>出場</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
 
@@ -818,6 +862,7 @@
       if (currentClass && classes.indexOf(currentClass) < 0) currentClass = '';
       if (cw) cw.innerHTML = buildClassSelectorHtml(classes, currentClass);
       if (el) el.innerHTML = buildSeasonStandingsHtml(currentSeason, aggregateStandings(standingRows, currentSeason, currentClass));
+      var eg = byId('cloudGrowth'); if (eg) eg.innerHTML = buildGrowthAwardHtml(currentSeason, aggregateGrowthAward(standingRows, currentSeason));
       var ss = byId('seasonSelect');
       if (ss) ss.addEventListener('change', function () { currentSeason = ss.value; currentClass = ''; renderSeasonStandings(); });
       var cs = byId('classSelect');
@@ -1069,6 +1114,8 @@
     shapeStandingRow: shapeStandingRow,
     listSeasons: listSeasons,
     aggregateStandings: aggregateStandings,
+    aggregateGrowthAward: aggregateGrowthAward,
+    buildGrowthAwardHtml: buildGrowthAwardHtml,
     buildSeasonSelectorHtml: buildSeasonSelectorHtml,
     buildSeasonStandingsHtml: buildSeasonStandingsHtml,
     listClasses: listClasses,
