@@ -1571,6 +1571,10 @@ function normalizeCity(value){
 }
 
 function normalizeBranchMaster(raw){
+  // A-8 (SYSTEM-REVIEW #384 follow / ポリシー明文化): schema_version は **additive-only**。
+  //   bump（数値を上げて旧版を別扱い）は禁止＝古い端末では未知版が createEmptyBranchMaster で空化され
+  //   ローカル名簿が全消失するリスクがあるため。スキーマ拡張は「フィールド追加（既定値で後方互換）」のみ
+  //   で行い schema_version は据え置く（破壊的変更の余地はゼロ＝運用ポリシーとして固定）。
   // 仕様書 3.5: 破損データを与えられても落ちない／既存運営を止めない
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return createEmptyBranchMaster();
   var schema_version=Number(raw.schema_version);
@@ -8544,9 +8548,12 @@ function pullMembersFromCloud(client, opts){
 //   supabase-js / app/config.js は click 時のみ遅延ロード（既定では外部依存ゼロ）。
 //   pickActiveClubId は純関数（claim 結果から1クラブ自動解決）でテスト対象。
 function pickActiveClubId(memberships){
+  // A-6 (SYSTEM-REVIEW #384 follow): distinct な active クラブが2つ以上なら一意に定まらない→null
+  //   （先頭一致での誤クラブ送信を防ぐ）。沼津=単一クラブは従来どおり当該 club_id を返す。
   var list=Array.isArray(memberships)?memberships:[];
-  for(var i=0;i<list.length;i++){ var m=list[i]; if(m&&m.status==='active'&&m.club_id)return m.club_id; }
-  return null;
+  var found=null;
+  for(var i=0;i<list.length;i++){ var m=list[i]; if(m&&m.status==='active'&&m.club_id){ if(found===null)found=m.club_id; else if(m.club_id!==found)return null; } }
+  return found;
 }
 function _cloudCfgReady(){
   var c=(typeof window!=='undefined')&&window.SHOGI_CLOUD_CONFIG;
@@ -8555,6 +8562,10 @@ function _cloudCfgReady(){
 function _cloudSbReady(){ return (typeof window!=='undefined')&&window.supabase&&!!window.supabase.createClient; }
 function loadCloudDeps(){
   return new Promise(function(resolve){
+    // A-9 (SYSTEM-REVIEW #384 follow): オフライン事前ガード。navigator.onLine===false なら CDN 注入を
+    //   待たずに即 resolve（当日ネット断での無駄待ちを避ける）。offline:true マーカーを付け、呼び出し側が
+    //   「設定がありません」ではなく offline 案内を出せるようにする（fail-soft）。
+    if(typeof navigator!=='undefined'&&navigator&&navigator.onLine===false){ resolve({cfg:_cloudCfgReady(),sb:_cloudSbReady(),offline:true}); return; }
     function injof(src, integrity){ return new Promise(function(res){ try{ var sc=document.createElement('script'); sc.src=src; if(integrity){ sc.integrity=integrity; sc.crossOrigin='anonymous'; } sc.onload=function(){res(true);}; sc.onerror=function(){res(false);}; document.head.appendChild(sc); }catch(e){ res(false); } }); }
     var p=Promise.resolve();
     if(!_cloudCfgReady())p=p.then(function(){ return injof('app/config.js'); });
@@ -8585,6 +8596,7 @@ function sendTournamentToCloud(setStatus){
   setStatus=setStatus||function(){};
   setStatus('クラウドへ送信中…');
   return loadCloudDeps().then(function(dep){
+    if(dep.offline){ setStatus('オフラインのため送信できません（ネット接続後に再度お試しください・運営は続行できます）'); return {ok:false,step:'offline'}; }
     if(!dep.cfg){ setStatus('クラウド設定がありません（送信は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
     if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
     var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
@@ -8594,7 +8606,7 @@ function sendTournamentToCloud(setStatus){
       if(!session){ setStatus('クラウド管理ページ（app/）でログインしてから送信してください'); return {ok:false,step:'auth'}; }
       return client.rpc('claim_organizer_seat').then(function(rc){
         var clubId=pickActiveClubId((rc&&rc.data)||[]);
-        if(!clubId){ setStatus('幹事として有効なクラブが見つかりません（管理ページを確認してください）'); return {ok:false,step:'club'}; }
+        if(!clubId){ setStatus('送信先クラブを一意に特定できません（有効な幹事クラブが無い／複数所属の可能性・管理ページを確認してください）'); return {ok:false,step:'club'}; }
         var master=(typeof loadBranchMaster==='function')?loadBranchMaster():{members:[]};
         try{ if(typeof ensureTournamentId==='function')ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report)); }catch(e){}
         return syncTournamentToCloud(client,master,{clubId:clubId}).then(function(res){
@@ -8624,6 +8636,7 @@ function pullMembersToMasterUI(setStatus){
   setStatus=setStatus||function(){};
   setStatus('クラウドから取得中…');
   return loadCloudDeps().then(function(dep){
+    if(dep.offline){ setStatus('オフラインのため取得できません（ネット接続後に再度お試しください・運営は続行できます）'); return {ok:false,step:'offline'}; }
     if(!dep.cfg){ setStatus('クラウド設定がありません（取得は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
     if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
     var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
@@ -8633,7 +8646,7 @@ function pullMembersToMasterUI(setStatus){
       if(!session){ setStatus('クラウド管理ページ（app/）でログインしてから取得してください'); return {ok:false,step:'auth'}; }
       return client.rpc('claim_organizer_seat').then(function(rc){
         var clubId=pickActiveClubId((rc&&rc.data)||[]);
-        if(!clubId){ setStatus('幹事として有効なクラブが見つかりません（管理ページを確認してください）'); return {ok:false,step:'club'}; }
+        if(!clubId){ setStatus('取得元クラブを一意に特定できません（有効な幹事クラブが無い／複数所属の可能性・管理ページを確認してください）'); return {ok:false,step:'club'}; }
         return pullMembersFromCloud(client,{clubId:clubId}).then(function(res){
           if(res&&res.ok){
             var c=res.counts||{};
