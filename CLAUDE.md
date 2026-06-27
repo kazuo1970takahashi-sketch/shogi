@@ -12,7 +12,7 @@
 - [`docs/ai-ops/AGENT-ROLES-AND-SOD.md`](docs/ai-ops/AGENT-ROLES-AND-SOD.md) — 役割定義・**職務分離 SoD（G1〜G6・L0–L4）**・役割境界（継続監視/定期実行は scheduled actor）・レビュアー SPOF escalation。
 - [`docs/ai-ops/CODEX-RESULT-PROTOCOL.md`](docs/ai-ops/CODEX-RESULT-PROTOCOL.md) — レビュー結果の GitHub 書き戻し仕様（Codex ネイティブ形式の読み取り含む）。
 
-**要点**: 各工程の完了は **GitHub に定型ヘッダ付きコメント＋末尾に凍結マーカー1ブロックを書き戻すまでが1工程**（自分のチャットで終わりは未完了）。`stage:` ラベルの付け替えは reconciler（scheduled actor）が唯一の書き手。レビューは作者と別セッション・別素性（L3+ の code-review は Codex 必須）。
+**要点**: 各工程の完了は **GitHub に定型ヘッダ付きコメント＋末尾に凍結マーカー1ブロックを書き戻すまでが1工程**（自分のチャットで終わりは未完了）。`stage:` ラベルの付け替えは reconciler（scheduled actor）が唯一の書き手。レビューは作者と別セッション・別素性（**L4 の code-review は Codex 必須／L3 は別セッションの Claude Code レビューア**で可＝Codex 週次枠を温存）。
 
 ## 編集時の拘束ルール（9 項目・違反は実装前に停止）
 
