@@ -11,7 +11,7 @@
 | **人間** | — | intake / ready-for-merge 承認 | 要求発信・最終承認・merge・production | — |
 | **cowork（PM）** | Anthropic（本セッション系） | triage / reconcile / monitor | 棚卸し・割当・可視化・drift 検知・承認段取り | **設計・実装・コードレビュー判定**（レビューの“判定”を出さない）|
 | **Claude Code（実装ライン）** | Anthropic | design / implementing / needs-fix | 設計・実装・self-check・Draft PR・結果書き戻し | **自分の成果物のレビュー判定**・Ready化/merge |
-| **レビュアー（設計/実装）** | **独立**：L3+=Codex(OpenAI 必須) / L≤2=別セッションの Claude Code レビューエージェント可 | design-review / code-review | read-only 判定（`verdict: go / conditional-go / block`）＋Must/Should/Nice | 実装・自作箇所のレビュー・merge |
+| **レビュアー（設計/実装）** | **独立**：L4=Codex(OpenAI・クロスベンダー必須) / L3=別セッションの Claude Code レビューエージェント(独立必須) / L≤2=同一ベンダー別セッション可(任意) | design-review / code-review | read-only 判定（`verdict: go / conditional-go / block`）＋Must/Should/Nice | 実装・自作箇所のレビュー・merge |
 | **ChatGPT（相談役）** | OpenAI | （工程外）consult | 仕様割れ・BLOCK・再設計・優先順位の相談 | 実装・承認 |
 | **独立検証エージェント** | 別セッション（必要時 別vendor） | （工程外）audit | PM/reconciler 出力の監査・高リスク作業の最終確認 | 実装・承認 |
 | **scheduled actor（reconciler 等）** | 定期実行タスク | reconcile / monitor / audit | 継続監視・ラベル前進（単一ライター）・整合性チェック・ゼロ記憶監査の定例化 | 設計・実装・レビュー判定・承認 |
@@ -19,7 +19,7 @@
 ## 2. 絶対ゲート（SoD・独立性）
 - **G1 作者≠レビュアー**: あるタスクの design を作った素性は、その design-review をしない。implement した素性は、その code-review をしない。
 - **G2 独立コンテキスト**: レビューは**作者と別セッション**で、入力は PR/Issue 本文＋diff のみ（設計セッションの記憶を引き継がない）。
-- **G3 L レベル別レビュー要否＋L4 クロスベンダー**: design-review/code-review の要否を **L0–L4** で分岐（L0-1=省略可 / L2=任意・同一ベンダー別セッション可 / L3=独立必須 / L4=クロスベンダー必須）。L3 以上の code-review は **Codex（OpenAI）必須**＝Anthropic の実装を Anthropic が自己採点しない（相談役 #265 反映・全件 design-review は課さない）。
+- **G3 L レベル別レビュー要否＋L4 クロスベンダー**: design-review/code-review の要否を **L0–L4** で分岐（L0-1=省略可 / L2=任意・同一ベンダー別セッション可 / L3=独立必須 / L4=クロスベンダー必須）。**L4 の code-review は Codex（OpenAI・クロスベンダー）必須**＝最重要層は Anthropic の実装を Anthropic が自己採点しない。**L3 は独立 code-review 必須だが、別セッション・別素性の Claude Code レビューエージェントで可**（Codex 週次枠を温存するため L3 までは同一ベンダー別素性で独立性を担保。作者≠レビュアー・実装者の自己レビュー禁止は厳守）。（相談役 #265 反映・全件 design-review は課さない）
 - **G4 self-check ≠ レビュー**: Claude Code の self-check は「実装」工程の一部。**code-review ゲートを満たさない**（別途独立レビューが要る）。
 - **G5 1セッション1役割**: 同一セッションで design と review、implement と review を**同居させない**。役割は1タスクにつき1つ。
 - **G6 PM の独立監査**: cowork（PM）は**レビュー判定を出さない**。PM/reconciler 自身の正しさは独立検証エージェントが監査する（PM が自分を採点しない）。
@@ -29,13 +29,13 @@
 |---|---|---|---|
 | L0 | 雑務（コメント/ラベル等） | 省略可 | 省略可 |
 | L1-2 | docs・test・小 CSS | 省略可 | 任意（同一ベンダー別セッション可） |
-| L3 | runtime（shogi_v4.html ロジック等） | 推奨 | **独立 code-review 必須（Codex）** |
+| L3 | runtime（shogi_v4.html ロジック等） | 推奨 | **独立 code-review 必須（別セッション Claude Code レビューア）** |
 | L4 | scripts 本体・ゲート/ツール | **必須** | **クロスベンダー必須（Codex）** |
 | L5 | production 反映 | — | **人間専用**（AI は実行しない） |
 
 ## 3. v2 パイプラインとの対応（誰がどの前進を書くか）
 - `## 設計完了`＋マーカー `cowork-status: design-done`＝Claude Code（design）→ design-review は**別素性レビュアー**が `## 設計レビュー結果`＋マーカー `cowork-status: design-review` / `verdict:`。
-- `## 実装完了`＋マーカー `cowork-status: implement-done`＝Claude Code（implementing）→ code-review は**別素性レビュアー（L3+=Codex）**が `## Codexレビュー結果`＋マーカー `cowork-status: code-review-result` / `verdict:`。
+- `## 実装完了`＋マーカー `cowork-status: implement-done`＝Claude Code（implementing）→ code-review は**別素性レビュアー（L4=Codex / L3=別セッション Claude Code レビューア）**が `## Codexレビュー結果`＋マーカー `cowork-status: code-review-result` / `verdict:`。
 - ラベル前進は reconciler のみ（単一ライター）。reconciler は前進時に**レビュアー素性 ≠ その工程の作者素性**（design-review は設計者、code-review は実装者＝**stage 別**）を検証し、自己レビューを検知したら前進を拒否して `flag:sod-violation` を立てる（詳細 §4）。
 
 ## 4. 独立性の検証（自己レビューを機械検知）
@@ -54,7 +54,7 @@
 | エージェント | できる（実測） | できない（実測） | 向く役割 |
 |---|---|---|---|
 | 相談役(ChatGPT) | GitHub 経由で Issue/PR/コメント/一部ファイルを読む・Issue へコメント書き戻し（#265 実測） | 継続監視・自動定期実行・ローカル未push変更の把握・Actions ログ常時監視・人間専用承認の代行 | **オンデマンド**の設計/実装レビュー・相談（バス経由）。監視/定期実行は不可＝scheduled actor(reconciler) が担当 |
-| Codex | **実測済(#262)**: `@codex review` で Draft PR 含むレビューを GitHub に投稿（`chatgpt-codex-connector[bot]` 名義・💡サマリ＋P0-P3 バッジ＋👍・クラウド実行でデスクトップ非依存） | 継続監視/定期実行は不可（オンデマンド or PR オープン時トリガ）・Plus はスコープ「自分のPR」・YAML マーカーは書かない（ネイティブ形式） | L3+ の独立 code-review（クロスベンダー・bot identity で SoD 自動判別） |
+| Codex | **実測済(#262)**: `@codex review` で Draft PR 含むレビューを GitHub に投稿（`chatgpt-codex-connector[bot]` 名義・💡サマリ＋P0-P3 バッジ＋👍・クラウド実行でデスクトップ非依存） | 継続監視/定期実行は不可（オンデマンド or PR オープン時トリガ）・Plus はスコープ「自分のPR」・YAML マーカーは書かない（ネイティブ形式） | **L4** の独立 code-review（クロスベンダー・bot identity で SoD 自動判別）。L3 は週次枠温存のため別セッション Claude Code レビューアに委譲 |
 | Claude Code | 設計・実装・self-check・Draft PR・repo 書込 | 自作のレビュー（SoD で禁止）・merge/Ready/承認・**自律ポーリング/継続監視** | design / implementing |
 | cowork(PM) | GitHub Issue/PR/コメント・ラベル読書き・定期タスク(reconciler)・可視化 | **ラベル新規作成・repo Contents 書込**・merge/Ready/承認 | triage / reconcile / monitor |
 | scheduled actor(reconciler) | 継続監視・定期実行・ラベル前進（単一ライター）・整合性チェック・ゼロ記憶監査の定例化 | 設計・実装・レビュー判定・承認 | reconcile / monitor / audit |
@@ -62,7 +62,7 @@
 → 重要: 相談役・Codex・Claude Code は**継続監視ができない**＝「常時ボードを見て前進させる」役は担えない。その責務は **scheduled actor（reconciler）**が持つ。**ラベルの新規作成は cowork でも不可**（実測）＝ラベル作成は Claude Code（repo 書込可）が #264 系で実施する。役割は capability に従って割り当てる。
 
 ## 6. レビュアー SPOF の手当て（escalation・v2.1-final 条件3）
-L3+/L4 の code-review を **Codex 一者に依存すると、Codex が応答しないときにパイプラインが停止**する（単一障害点＝SPOF）。decision queue（[`AI-DEV-PIPELINE.md §8` 項目5](./AI-DEV-PIPELINE.md)）に下記 escalation を**必ず含める**:
+**L4 の code-review を Codex 一者に依存すると、Codex が応答しないときにパイプラインが停止**する（単一障害点＝SPOF）。decision queue（[`AI-DEV-PIPELINE.md §8` 項目5](./AI-DEV-PIPELINE.md)）に下記 escalation を**必ず含める**:
 
 - **review SLA**: code-review/design-review 依頼から一定時間（既定: 運用で定める。例 24h）応答が無い＝stale。
 - **SLA 超過時の escalation**: ①**人間レビュー**にエスカレーション、または ②**代替レビュアー**（別セッションの Claude Code レビューエージェント＝L≤2 の場合 / 別の独立素性）へ振り替え。

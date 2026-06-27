@@ -137,7 +137,7 @@ Claude Code（#266 コメント 4757415323）と Codex（同 4757420499・再レ
 
 1. **マーカー文法の凍結（唯一の実装 must）**: `verdict` 表記ゆれ（`GO`/`Conditional GO`/`CONDITIONAL_GO`）を解消。小文字 ASCII `go | conditional-go | block` に固定、キー固定、1コメント1ブロック、最新優先。→ **§3-1 に反映済**（テンプレ `.github/` と [`CODEX-RESULT-PROTOCOL.md`](./CODEX-RESULT-PROTOCOL.md) も同 enum に統一）。
 2. **空振り期間の回避**: reconciler（#264 系 scheduled actor）稼働までは `stage:*` への cut over を行わない。稼働までの間はマーカーを出しても消費者が居ないため、**cowork が手動 reconcile**（既存ラベル運用 `needs-codex` 等を継続）。reconciler 稼働を合図に一括 cut over。→ **§7 に反映済**。
-3. **レビュアー SPOF の手当て**: L3+/L4 を Codex 一者に依存すると停止する。decision queue（§8 項目5）に **review SLA 超過 → 人間レビュー or 代替レビュアーへ escalation** を必ず含める。→ [`AGENT-ROLES-AND-SOD.md §6`](./AGENT-ROLES-AND-SOD.md) に明記。
+3. **レビュアー SPOF の手当て**: L4 を Codex 一者に依存すると停止する（L3 は別セッション Claude Code レビューアで枠非依存）。decision queue（§8 項目5）に **review SLA 超過 → 人間レビュー or 代替レビュアーへ escalation** を必ず含める。→ [`AGENT-ROLES-AND-SOD.md §6`](./AGENT-ROLES-AND-SOD.md) に明記。
 4. **役割境界の明記（capability を仮定しない）**: 継続監視・定期実行（reconciler）・ゼロ記憶監査の定例化は **scheduled actor（スケジュール実行タスク）の担当**。Claude Code / Codex は「呼ばれたら1工程を完遂して書き戻す」**起動駆動**で自律ポーリングしない。→ [`AGENT-ROLES-AND-SOD.md §5`](./AGENT-ROLES-AND-SOD.md) に明記。
 
 → 3・4・8-1・8-2・8-3 のラベル/マーカー/フィールド/Codex 読取/条件反映は repo 反映（#264）と reconciler 実装に落とす。各エージェント capability（継続監視/定期実行は不可＝scheduled actor へ）は役割割当の前提（→ [`AGENT-ROLES-AND-SOD.md §5`](./AGENT-ROLES-AND-SOD.md)）。

@@ -56,7 +56,7 @@ reconciler（scheduled actor。既存 `cowork-dispatch-refresh` を拡張）が�
 → **レビュアー自身はラベル付替を行わない**（PAT/権限事情に依存せず、コメント投稿1アクションで完結）。merge / Ready化 / squash / branch削除 / production は人間の明示承認まで誰も行わない。
 
 ## レビュアー SPOF / escalation（v2.1-final 条件3）
-L3+/L4 を Codex 一者に依存して停止しないよう、**review SLA 超過 → 人間レビュー or 代替レビュアーへ escalation**（無回答時の default action は「前進させない」＝安全側）。詳細＝[`AGENT-ROLES-AND-SOD.md §6`](./AGENT-ROLES-AND-SOD.md)。
+L4 を Codex 一者に依存して停止しないよう（L3 は別セッション Claude Code レビューアが担うため枠依存は L4 のみ）、**review SLA 超過 → 人間レビュー or 代替レビュアーへ escalation**（無回答時の default action は「前進させない」＝安全側）。詳細＝[`AGENT-ROLES-AND-SOD.md §6`](./AGENT-ROLES-AND-SOD.md)。
 
 ## 依頼を出す側（cowork / 人間）の義務
 レビュー依頼を発行するときは、本プロトコルの「必須フォーマット」節を**依頼文に必ず同梱**する。「結果の書き戻し先＝ローカル RESULT.md のみ」と書かない（GitHub PR コメントが第一・PAT 対象外 repo のみ RESULT.md 併用）。

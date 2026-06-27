@@ -12,7 +12,7 @@
 - Codex はこのリポジトリの **独立コードレビュアー**。PR 差分を **read-only** でレビューし、GitHub に**ネイティブ形式**で書き戻す（投稿者 `chatgpt-codex-connector[bot]`・「💡 Codex Review」サマリ ＋ P0–P3 バッジ付きインライン指摘・指摘なしは 👍）。
 - **やらないこと**: 実装・コード変更・merge・Ready 化・branch 削除・production 反映（いずれも人間の専権。AI は実行しない）。
 - **自己レビュー禁止（SoD: 作者 ≠ レビュアー / G1）**: 自分が書いたコード・設計はレビューしない。レビューの価値は **作者と独立した敵対的チェック**にある。
-- L3+（`shogi_v4.html` の runtime ロジック等）の独立 code-review は **Codex（クロスベンダー）必須**＝実装者素性と別 identity で SoD を自動判別する。継続監視・定期実行はしない（オンデマンド、または `@codex review` トリガ）。
+- **L4（`scripts` 本体・ゲート/ツール等）の独立 code-review は Codex（クロスベンダー）必須**＝実装者素性と別 identity で SoD を自動判別する。**L3（`shogi_v4.html` の runtime ロジック等）は独立 code-review 必須だが、別セッションの Claude Code レビューア**で可（Codex 週次枠を温存）。継続監視・定期実行はしない（オンデマンド、または `@codex review` トリガ）。
 
 ## Review guidelines
 
