@@ -55,6 +55,9 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .cloud-status-err{color:#A32D2D;font-weight:600}
 /* U-2 (UX-P1): 「保存確認 N件」ピルは押すと説明モーダルを開く（cursor/focus を明示）。 */
 .save-warn-pill{cursor:pointer}
+/* 当日UX: 操作の成功を控えめに知らせるトースト（対局管理タブでも見える固定表示）。 */
+.app-toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);max-width:90%;background:#27500A;color:#fff;padding:10px 18px;border-radius:10px;font-size:15px;font-weight:500;z-index:10000;box-shadow:0 2px 10px rgba(0,0,0,.3);opacity:0;transition:opacity .2s;pointer-events:none;text-align:center}
+.app-toast.show{opacity:1}
 .save-warn-pill:focus{outline:2px solid #EF9F27;outline-offset:1px}
 /* U-3 (UX-P1): 受付一覧の操作ボタン（名前編集/ふりがな/削除）はタッチターゲット 44px を確保し誤タップを防ぐ。
    危険操作の削除も含め行内で高さを揃える。ヘッダの危険ボタン（全リセット等）は別グループで対象外。 */
@@ -226,6 +229,7 @@ body.sb-active{overflow:hidden}
 </style>
 </head>
 <body>
+<div id="app-toast" class="app-toast" role="status" aria-live="polite"></div>
 <div id="rotate-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#1F3864;z-index:99999;flex-direction:column;align-items:center;justify-content:center;color:#fff;text-align:center;padding:20px">
   <div style="font-size:60px;margin-bottom:20px">↩️</div>
   <div style="font-size:20px;font-weight:500;margin-bottom:12px">縦向きにしてください</div>
@@ -256,7 +260,7 @@ body.sb-active{overflow:hidden}
     <button type="button" class="tab active" id="tab-reg">参加者登録</button>
     <button type="button" class="tab" id="tab-tournament">対局管理</button>
     <button type="button" class="tab" id="tab-result">最終結果</button>
-    <button type="button" class="tab" id="tab-master">マスタ</button>
+    <button type="button" class="tab" id="tab-master">会員名簿</button>
     <button type="button" class="tab" id="tab-history">大会履歴</button>
     <span id="save-warning-indicator" class="save-warn-pill" role="button" tabindex="0" title="押すと対処方法を表示します" hidden></span>
   </div>
@@ -3211,7 +3215,6 @@ function buildMasterTabHtml(master){
   html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
   html+='<button type="button" id="masterImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📂 マスタをインポート</button>';
   // Phase 2 §5.2: 22 名取込(5/10 大会用、空マスタ専用)。本番後は使われない予定の専用ボタン
-  html+='<button type="button" id="masterPhase2ImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📥 22 名取込(5/10 大会用)</button>';
   // Phase 2 §5.1: マスタリセット(B 案: バックアップ済チェック + テキスト確認 + 二段階確認)
   html+='<button type="button" id="masterResetBtn" style="background:#fff;border:1px solid #c33;color:#c33">📛 マスタをリセット</button>';
   // A-4 §3.4.1: 削除済み表示トグル
@@ -3890,9 +3893,7 @@ function bindMasterTabEvents(){
   if(btn)btn.addEventListener('click',openMigrationWizard);
   var importBtn=document.getElementById('masterImportBtn');
   if(importBtn)importBtn.addEventListener('click',openMasterImportModal);
-  // Phase 2: 専用 import / リセットモーダルを開く
-  var phase2ImportBtn=document.getElementById('masterPhase2ImportBtn');
-  if(phase2ImportBtn)phase2ImportBtn.addEventListener('click',openPhase2ImportModal);
+  // Phase 2: マスタリセットモーダルを開く（22名取込ボタンは撤去・関数は未使用化）
   var resetBtn=document.getElementById('masterResetBtn');
   if(resetBtn)resetBtn.addEventListener('click',openMasterResetModal);
   var exportBtn=document.getElementById('masterExportBtn');
@@ -4655,6 +4656,7 @@ function showTab(t){
   document.getElementById('tab-result').className='tab'+(t==='result'?' active':'');
   var tm=document.getElementById('tab-master');if(tm)tm.className='tab'+(t==='master'?' active':'');
   var th=document.getElementById('tab-history');if(th)th.className='tab'+(t==='history'?' active':'');
+  try{window.scrollTo(0,0);}catch(e){}
   if(t==='result')renderResults();
   // ROUND-CLASS-START-005 (spec §15.1 row 1): tournament タブ表示時は
   //   state.classes を走査して renderTournament(c.id) を呼ぶ（A/B literal 解消）。
@@ -4676,6 +4678,18 @@ function showTab(t){
 function showMsg(text,type){
   var el=document.getElementById('reg-msg');
   el.innerHTML=text?'<div class="alert alert-'+type+'">'+escapeHtml(text)+'</div>':'';
+}
+// 当日UX: 成功フィードバックの軽量トースト（#app-toast）。textContent のみ・自動で消える・例外は握りつぶす。
+var _toastTimer=null;
+function showToast(text){
+  try{
+    var el=document.getElementById('app-toast');
+    if(!el)return;
+    el.textContent=String(text==null?'':text);
+    el.className='app-toast show';
+    if(_toastTimer)clearTimeout(_toastTimer);
+    _toastTimer=setTimeout(function(){ var e2=document.getElementById('app-toast'); if(e2)e2.className='app-toast'; },1800);
+  }catch(e){}
 }
 
 // 致命的エラーは登録タブが見えていない可能性があるため alert で通知（重複連発を避けるため直近メッセージで抑止）
@@ -7545,6 +7559,7 @@ function submitRound(cls){
   state.pairings[cls]=[];
   if(state.results[cls].length<state.rounds)generatePairing(cls);
   renderTournament(cls);save();
+  if(typeof showToast==='function')showToast('\u2713 結果を保存しました');
   // A-5.1-SAVE-003: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
   // false は「保存未確認」（保存失敗と断定しない）。回戦確定は rollback しない・運営は継続する。
   // 内部で generatePairing(cls) が呼ばれた場合、in-memory の state.pairings[cls] は新ペアを保持する。
@@ -11038,6 +11053,8 @@ function renderHistoryDetail(tid){
   if(back)back.addEventListener('click',function(){renderHistoryList();});
 }
 
+// 当日UX: localStorage の自動退避（eviction）を抑止＝大会途中の消失耐性。失敗は無視。起動時に一度要求（DOM 非依存）。
+try{ if(typeof navigator!=='undefined'&&navigator.storage&&navigator.storage.persist)navigator.storage.persist(); }catch(e){}
 document.addEventListener('DOMContentLoaded',function(){
   bindHeaderEvents();
   bindRegistrationEvents();
