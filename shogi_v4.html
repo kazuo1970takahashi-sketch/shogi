@@ -11012,36 +11012,42 @@ function fetchCloudEntriesForTournament(client, tid, clubId){
 function buildCloudTournamentListHtml(tournaments){
   var arr=Array.isArray(tournaments)?tournaments.slice():[];
   arr.sort(function(a,b){var da=(a&&a.date)||'',db=(b&&b.date)||'';return da<db?1:(da>db?-1:0);});
-  if(!arr.length)return '<div style="color:#888;font-size:13px;padding:8px 0">クラウドに過去大会がありません。</div>';
+  if(!arr.length)return '<div style="padding:20px;text-align:center;color:#888;background:#f7f7f7;border-radius:8px">クラウドに過去大会がありません。</div>';
   var html='';
   for(var i=0;i<arr.length;i++){var t=arr[i];
-    html+='<button type="button" class="cloud-history-row" data-tid="'+escapeHtml((t&&t.id)||'')+'" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid #d3dbe5;border-radius:8px;padding:9px 12px;margin-bottom:6px;cursor:pointer">'
-      +'<span style="font-weight:600;color:#1F3864">'+escapeHtml((t&&t.date)||'')+'　'+escapeHtml((t&&t.name)||'(名称未設定)')+'</span>'
-      +'<span style="font-size:11px;color:#999;margin-left:8px">'+escapeHtml((t&&t.season)||'')+'</span></button>';
+    var nm=escapeHtml((t&&t.name)||'(名称未設定)');
+    var dt=escapeHtml((t&&t.date)||'—');
+    var sn=escapeHtml((t&&t.season)||'');
+    // ローカル履歴カード(.history-row)と同じ2行レイアウトに統一。
+    html+='<button type="button" class="cloud-history-row" data-tid="'+escapeHtml((t&&t.id)||'')+'" data-label="'+nm+'" data-date="'+dt+'" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid #d3dbe5;border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer">'
+      +'<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="font-weight:600;color:#1F3864">'+nm+'</span><span style="font-size:11px;color:#999">'+sn+'</span></div>'
+      +'<div style="font-size:12px;color:#555;margin-top:4px">開催日 '+dt+'　/　タップで結果を表示</div>'
+      +'</button>';
   }
   return html;
 }
 function buildCloudEntriesTableHtml(entries){
   var list=Array.isArray(entries)?entries.slice():[];
-  if(!list.length)return '<div style="color:#888;font-size:13px;padding:8px 0">この大会の結果がありません。</div>';
+  if(!list.length)return '<div style="padding:16px;text-align:center;color:#888;background:#f7f7f7;border-radius:8px">この大会の結果がありません。</div>';
   list.sort(function(a,b){
     var ca=(a&&a['class'])||'',cb=(b&&b['class'])||'';
     if(ca!==cb)return ca<cb?-1:1;
     var ra=(a&&a.final_rank!=null)?a.final_rank:9999, rb=(b&&b.final_rank!=null)?b.final_rank:9999;
     return ra-rb;
   });
-  var html='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#e8f0f8">'
-    +'<th style="padding:6px 8px;border:1px solid #ccc">クラス</th><th style="padding:6px 8px;border:1px solid #ccc">順位</th><th style="padding:6px 8px;border:1px solid #ccc;text-align:left">氏名</th><th style="padding:6px 8px;border:1px solid #ccc">勝</th><th style="padding:6px 8px;border:1px solid #ccc">負</th><th style="padding:6px 8px;border:1px solid #ccc">B</th><th style="padding:6px 8px;border:1px solid #ccc">C</th></tr></thead><tbody>';
+  // アプリ標準の table/th/td 装飾（青ヘッダ＋下線）に合わせる。インライン枠は付けない。
+  var html='<div style="overflow-x:auto;margin-top:4px"><table><thead><tr>'
+    +'<th>クラス</th><th>順位</th><th style="text-align:left">氏名</th><th>勝</th><th>負</th><th>B</th><th>C</th></tr></thead><tbody>';
   for(var i=0;i<list.length;i++){
     var e=list[i]; var p=e&&e.players; var m=p&&p.members;
     var nm=(m&&m.name)||''; var ym=(m&&m.yomi)||'';
-    html+='<tr><td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+escapeHtml(String((e&&e['class'])||''))+'</td>'
-      +'<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+((e&&e.final_rank!=null)?escapeHtml(String(e.final_rank))+'位':'-')+'</td>'
-      +'<td style="padding:6px 8px;border:1px solid #ccc">'+playerNameRubyHtml(nm,ym)+'</td>'
-      +'<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+escapeHtml(String((e&&e.wins!=null)?e.wins:''))+'</td>'
-      +'<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+escapeHtml(String((e&&e.losses!=null)?e.losses:''))+'</td>'
-      +'<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+escapeHtml(String((e&&e.sos!=null)?e.sos:''))+'</td>'
-      +'<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+escapeHtml(String((e&&e.sodos!=null)?e.sodos:''))+'</td></tr>';
+    html+='<tr><td>'+escapeHtml(String((e&&e['class'])||''))+'</td>'
+      +'<td>'+((e&&e.final_rank!=null)?escapeHtml(String(e.final_rank))+'位':'-')+'</td>'
+      +'<td style="text-align:left">'+playerNameRubyHtml(nm,ym)+'</td>'
+      +'<td>'+escapeHtml(String((e&&e.wins!=null)?e.wins:''))+'</td>'
+      +'<td>'+escapeHtml(String((e&&e.losses!=null)?e.losses:''))+'</td>'
+      +'<td>'+escapeHtml(String((e&&e.sos!=null)?e.sos:''))+'</td>'
+      +'<td>'+escapeHtml(String((e&&e.sodos!=null)?e.sodos:''))+'</td></tr>';
   }
   html+='</tbody></table></div>';
   return html;
@@ -11052,10 +11058,16 @@ function bindCloudHistoryRows(client, clubId){
   for(var i=0;i<rows.length;i++){
     rows[i].addEventListener('click',(function(node){return function(){
       var tid=node.getAttribute('data-tid');
-      var det=document.getElementById('history-cloud-detail'); if(det)det.innerHTML='<div style="color:#888;font-size:13px;padding:8px 0">読み込み中…</div>';
+      var lbl=node.getAttribute('data-label')||''; var ldt=node.getAttribute('data-date')||'';
+      var det=document.getElementById('history-cloud-detail'); if(det)det.innerHTML='<div style="color:#888;font-size:13px;padding:10px 2px">読み込み中…</div>';
       fetchCloudEntriesForTournament(client,tid,clubId).then(function(r){
-        var d2=document.getElementById('history-cloud-detail');
-        if(d2)d2.innerHTML=r.ok?buildCloudEntriesTableHtml(r.entries):'<div style="color:#A32D2D;font-size:13px;padding:8px 0">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
+        var d2=document.getElementById('history-cloud-detail'); if(!d2)return;
+        if(r.ok){
+          var head='<div style="font-weight:700;color:#1F3864;font-size:15px;margin:6px 0 2px">'+escapeHtml(lbl)+'</div>'+(ldt?'<div style="font-size:12px;color:#888;margin-bottom:4px">開催日 '+escapeHtml(ldt)+'</div>':'');
+          d2.innerHTML=head+buildCloudEntriesTableHtml(r.entries);
+        }else{
+          d2.innerHTML='<div style="color:#A32D2D;font-size:13px;padding:10px 2px">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
+        }
       });
     };})(rows[i]));
   }
