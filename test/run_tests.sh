@@ -1684,6 +1684,19 @@ else
 fi
 
 
+echo ""
+echo "【MASTER-TAB-DECLUTTER (当日第2弾⑪) 会員名簿タブのボタン整理（☁常時表示・保守系は折りたたみ・id不変）】"
+if [ -f "$SCRIPT_DIR/test_master_tab_declutter.js" ]; then
+  if node "$SCRIPT_DIR/test_master_tab_declutter.js" "$TARGET" > /tmp/master_declutter_out.log 2>&1; then
+    ok "MASTER-TAB-DECLUTTER テスト 全PASS ($(tail -1 /tmp/master_declutter_out.log))"
+  else
+    ng "MASTER-TAB-DECLUTTER テスト 失敗"; cat /tmp/master_declutter_out.log
+  fi
+else
+  warn "test_master_tab_declutter.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
