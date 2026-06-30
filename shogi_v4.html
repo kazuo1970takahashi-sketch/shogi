@@ -263,6 +263,14 @@ body.sb-active{overflow:hidden}
     </div>
   </div>
 </div>
+<!-- BACKUP-NUDGE (当日第2弾⑫): 節目（大会開始/クラス完了/全終了）で「今ひかえますか？」を非ブロッキングで促す。既定非表示・あとで可・端末事故の全損防止。 -->
+<div id="backup-nudge" class="no-print" role="status" aria-live="polite" style="display:none;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#faeeda;border:1px solid #EF9F27;color:#633806;padding:10px 14px;margin:0 12px 0;border-radius:0 0 8px 8px;font-size:13px">
+  <span id="backup-nudge-msg"></span>
+  <span style="display:flex;gap:6px;flex-wrap:wrap">
+    <button type="button" class="btn-sm no-print" id="backup-nudge-do" style="min-height:36px;background:#EF9F27;color:#fff;border-color:#EF9F27">バックアップする</button>
+    <button type="button" class="btn-sm no-print" id="backup-nudge-later" style="min-height:36px;background:#fff;color:#633806;border:1px solid #d6b673">あとで</button>
+  </span>
+</div>
 <div class="container">
   <div class="tab-bar no-print">
     <button type="button" class="tab active" id="tab-reg">参加者登録</button>
@@ -6562,6 +6570,7 @@ function startTournament(){
   showTab('tournament');
   // SAVE-003 verify は verifyStartSavedForCandidates で classId 単位（spec §6.5）。
   verifyStartSavedForCandidates(v.candidates);
+  if(typeof promptMilestoneBackup==='function')promptMilestoneBackup('start','大会を開始しました（参加者の登録が完了）');
 }
 
 // ROUND-CLASS-START-004 (spec §7.6):
@@ -7587,6 +7596,11 @@ function submitRound(cls){
       aggregateKey:'save-verify:core',
       severity:'warn'
     });
+  }
+  // BACKUP-NUDGE (当日第2弾⑫): このクラスが完走（rounds 到達）した節目で促す。全クラス終了なら全体を促す。
+  if(state.results[cls]&&state.results[cls].length>=state.rounds&&typeof promptMilestoneBackup==='function'){
+    if(typeof isTournamentDone==='function'&&isTournamentDone())promptMilestoneBackup('all','全クラスの対局が終了しました');
+    else promptMilestoneBackup('class:'+cls,_classDisplayNameForBackup(cls)+'が終了しました');
   }
 }
 
@@ -9296,6 +9310,27 @@ function bindBackupModalEvents(modal){
 }
 
 // coordinator: バックアップ modal を開く（既存 openLoadModal と同方針）。
+// BACKUP-NUDGE (当日第2弾⑫): 節目バックアップ促し。memory-only で節目ごと1回だけ表示（reload で解除＝再表示は許容）。
+var _backupNudged={};
+function _classDisplayNameForBackup(cls){
+  if(Array.isArray(state.classes)){
+    for(var i=0;i<state.classes.length;i++){ if(state.classes[i]&&state.classes[i].id===cls)return state.classes[i].name||(cls+'クラス'); }
+  }
+  return cls+'クラス';
+}
+function hideBackupNudge(){ var el=document.getElementById('backup-nudge'); if(el)el.style.display='none'; }
+function promptMilestoneBackup(key,label){
+  if(!key||_backupNudged[key])return;            // 同じ節目は1回だけ
+  _backupNudged[key]=true;
+  var el=document.getElementById('backup-nudge'); if(!el)return;
+  var msg=document.getElementById('backup-nudge-msg');
+  if(msg)msg.innerHTML='💾 '+escapeHtml(String(label||''))+'　今のうちに<strong>バックアップ</strong>しておくと安心です（端末の電池切れ・故障対策）。';
+  el.style.display='flex';
+  var doBtn=document.getElementById('backup-nudge-do');
+  if(doBtn)doBtn.onclick=function(){ hideBackupNudge(); if(typeof openBackupModal==='function')openBackupModal(); };
+  var laterBtn=document.getElementById('backup-nudge-later');
+  if(laterBtn)laterBtn.onclick=function(){ hideBackupNudge(); };
+}
 function openBackupModal(){
   var existing=document.getElementById('backup-modal');
   if(existing)existing.remove();

@@ -1632,6 +1632,19 @@ else
 fi
 
 
+echo ""
+echo "【BACKUP-NUDGE (当日第2弾⑫) 節目バックアップ促し（markup/フック/開閉・1節目1回）】"
+if [ -f "$SCRIPT_DIR/test_backup_nudge.js" ]; then
+  if node "$SCRIPT_DIR/test_backup_nudge.js" "$TARGET" > /tmp/backup_nudge_out.log 2>&1; then
+    ok "BACKUP-NUDGE テスト 全PASS ($(tail -1 /tmp/backup_nudge_out.log))"
+  else
+    ng "BACKUP-NUDGE テスト 失敗"; cat /tmp/backup_nudge_out.log
+  fi
+else
+  warn "test_backup_nudge.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
