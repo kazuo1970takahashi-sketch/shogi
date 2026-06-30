@@ -3226,18 +3226,24 @@ function buildMasterTabHtml(master){
     summaryHtml+='<span id="master-no-yomi-summary" style="color:#888;margin-left:8px">（うちふりがな未入力: <strong>'+noYomiCount+'名</strong>）</span>';
   }
   html+='<div style="margin-bottom:12px;font-size:14px">'+summaryHtml+'</div>';
-  html+='<div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:8px">';
-  html+='<button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button>';
-  html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
-  html+='<button type="button" id="masterImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📂 マスタをインポート</button>';
-  // Phase 2 §5.2: 22 名取込(5/10 大会用、空マスタ専用)。本番後は使われない予定の専用ボタン
-  // Phase 2 §5.1: マスタリセット(B 案: バックアップ済チェック + テキスト確認 + 二段階確認)
-  html+='<button type="button" id="masterResetBtn" style="background:#fff;border:1px solid #c33;color:#c33">📛 マスタをリセット</button>';
-  // A-4 §3.4.1: 削除済み表示トグル
-  html+='<button type="button" id="masterShowDeletedBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864" data-on="'+(_masterShowDeleted?'1':'0')+'">'+(_masterShowDeleted?'🗑️ 削除済みを隠す':'🗑️ 削除済みを表示')+'</button>';
+  // ⑪ 名簿タブのボタン整理: 当日に使う「☁ クラウドから取得」だけ常時表示。準備/保守系（統合・入出力・削除済み表示・リセット）は
+  //   <details>「⚙ 名簿のメンテナンス」へ格納し画面圧迫と誤タップ（特に赤いリセット）を減らす。各ボタンの id は不変＝既存 bind を温存。
+  html+='<div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:8px">';
   html+='<button type="button" id="masterCloudPullBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ クラウドから取得</button>';
   html+='</div>';
   html+='<div id="masterCloudPullStatus" class="cloud-status" role="status" style="margin:4px 0 12px;font-size:13px" aria-live="polite"></div>';
+  // 削除済み表示中は折りたたみを開いたまま（トグル直後の再描画でメンテ操作を見失わない）。
+  html+='<details class="master-maint" style="margin:0 0 12px"'+(_masterShowDeleted?' open':'')+'>';
+  html+='<summary style="cursor:pointer;font-size:13px;color:#1F3864;padding:6px 0">⚙ 名簿のメンテナンス（過去大会の統合・バックアップ・削除済み・リセット）</summary>';
+  html+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
+  html+='<button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button>';
+  html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
+  html+='<button type="button" id="masterImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📂 マスタをインポート</button>';
+  // A-4 §3.4.1: 削除済み表示トグル
+  html+='<button type="button" id="masterShowDeletedBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864" data-on="'+(_masterShowDeleted?'1':'0')+'">'+(_masterShowDeleted?'🗑️ 削除済みを隠す':'🗑️ 削除済みを表示')+'</button>';
+  // Phase 2 §5.1: マスタリセット(B 案: バックアップ済チェック + テキスト確認 + 二段階確認)。誤タップ防止のため最下＋折りたたみ内。
+  html+='<button type="button" id="masterResetBtn" style="background:#fff;border:1px solid #c33;color:#c33">📛 マスタをリセット</button>';
+  html+='</div></details>';
   // PWA 収束方針(docs/PWA-PLAN): 当日アプリ⇄app/ の相互リンク（同一ウィンドウ遷移・別タブを増やさない）。
   html+='<div style="margin:0 0 12px"><a href="app/" style="font-size:13px;color:#1F3864">☁ クラウド管理ページ（名簿編集・ログイン）を開く →</a></div>';
   html+='<hr class="separator">';
