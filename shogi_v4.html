@@ -6593,6 +6593,7 @@ function startTournamentForClass(classId){
   applyStartForCandidates([v.candidateClassId]);
   showTab('tournament');
   verifyStartSavedForCandidates([v.candidateClassId]);
+  if(typeof promptMilestoneBackup==='function')promptMilestoneBackup('start','大会を開始しました（参加者の登録が完了）');
 }
 
 // FRP-IMPL-002 (FRP-DESIGN-002 §5 / §7): クラスを「部分開始」状態にする土台。
@@ -6641,6 +6642,7 @@ function startClassPartial(cls){
     });
   }
   renderTournament(cls);
+  if(typeof promptMilestoneBackup==='function')promptMilestoneBackup('start','大会を開始しました（参加者の登録が完了）');
 }
 
 // FRP-IMPL-002 (FRP-DESIGN-002 §5.3 / §7): 1局目の未割当参加者を「派生」で返す（state に保存しない）。
