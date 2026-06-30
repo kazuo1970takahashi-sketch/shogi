@@ -10046,6 +10046,10 @@ function resetTournamentProgressOnly(){
   });
   save();
   renderRegList();
+  // RESET-PP-REFRESH (bugfix): リセット後は過去参加者パネルも再描画する。
+  //   A/B の「✓ 登録中」ハイライト(currentRegMap=state.players 由来)が、再描画しないとリセット前のまま残るため。
+  var _ppSearchReset=document.getElementById('pp-search');
+  if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel(_ppSearchReset?_ppSearchReset.value:'');
   showTab('reg');
   showResetUndoBanner('大会進行データをリセットしました');
 }
@@ -10107,6 +10111,10 @@ function resetAll(){
   //   保存済み値の正規化代入 → defaults 補完 を一括で再実行する。これにより同一セッションで
   //   新大会を開始した直後でも、開催日=今日 / 開始=13:00 / 終了=17:00 が自然に再表示される。
   populateReportFields();
+  // RESET-PP-REFRESH (bugfix): リセット後は過去参加者パネルも再描画する。
+  //   A/B の「✓ 登録中」ハイライト(currentRegMap=state.players 由来)が、再描画しないとリセット前のまま残るため。
+  var _ppSearchReset=document.getElementById('pp-search');
+  if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel(_ppSearchReset?_ppSearchReset.value:'');
   showTab('reg');
   showResetUndoBanner('大会データを全リセットしました');
 }
