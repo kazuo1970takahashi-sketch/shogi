@@ -135,7 +135,8 @@ assert(ht && typeof ht.title==='string' && ht.title.length>0, 'R2 first-round �
 assert(ht && Array.isArray(ht.lines) && ht.lines.length>=5, 'R3 first-round の lines が承認済み5項目以上の配列');
 const joined = ht ? ht.lines.join('\n') : '';
 assert(joined.indexOf('待機')>=0, 'R4 待機(leftover)の説明を含む');
-assert(joined.indexOf('1卓追加')>=0, 'R5 「1卓追加」の説明を含む');
+assert(joined.indexOf('1卓追加')<0, 'R5 ①「1卓追加」の説明は撤去済み');
+assert(joined.indexOf('選択した参加者')>=0, 'R5b ③「選択した参加者で」の説明を含む');
 assert(joined.indexOf('まとめて')>=0, 'R6 「まとめて作成」の説明を含む');
 assert(joined.indexOf('奇数')>=0, 'R7 奇数なら1人待機の説明を含む');
 assert(joined.indexOf('勝敗')>=0 || joined.indexOf('再生成')>=0, 'R8 勝敗入力済みは不用意に再作成しない注意を含む');
@@ -200,7 +201,8 @@ const secA = ew.buildFirstRoundPartialSectionHtml('A');
 assert(secA.indexOf('id="helpBtnFirstRound_A"')>=0, 'W1 未割当セクション見出し脇に「？ ヘルプ」ボタン(helpBtnFirstRound_A)が出る');
 assert(secA.indexOf('1局目 未割当参加者')>=0, 'W2 既存見出し pin「1局目 未割当参加者」は維持（前方一致）');
 assert(secA.indexOf('1局目 未割当参加者（4名）')>=0, 'W3 未割当人数併記（4名）も維持（FRP-UNASSIGNED-COUNT-001 非劣化）');
-assert(secA.indexOf('id="addTableBtn_A"')>=0 && secA.indexOf('id="addAllTablesBtn_A"')>=0, 'W4 既存ボタン(1卓追加/まとめて作成)は不変で残る');
+assert(secA.indexOf('id="addTableBtn_A"')<0, 'W4 ①「1卓追加」ボタンは撤去（addTableBtn_A 非出力）');
+assert(secA.indexOf('id="addAllTablesBtn_A"')>=0, 'W4b ②「まとめて作成」ボタンは残る');
 // build/bind 分離: click は bindClassActionBarEvents 側で openHelpModal に結線
 assert(/helpBtnFirstRound_'\+cls/.test(RAW), 'W5 helpBtnFirstRound_ を bindClassActionBarEvents で取得している');
 assert(RAW.indexOf("openHelpModal('first-round')")>=0, 'W6 click が openHelpModal(\'first-round\') に結線されている');
@@ -212,7 +214,7 @@ const eb = loadEnv(); eb._setState(eb.normalizeState(fxState()));
 const barB = eb.buildClassActionBarHtml('B');
 assert(barB.indexOf('id="startBtnPartial_B"')>=0, 'T1 部分開始ボタン startBtnPartial_B は健在');
 assert(barB.indexOf('来ている人だけで先に始めます。未到着者は未割当として残ります。')>=0, 'T2 部分開始 title が承認済み文言');
-assert(secA.indexOf('今すぐ始める対局だけを1卓ずつ追加します。あとから残りを追加できます。')>=0, 'T3 「1卓追加」title が承認済み文言');
+assert(secA.indexOf('今すぐ始める対局だけを1卓ずつ追加します。あとから残りを追加できます。')<0, 'T3 ①「1卓追加」title は撤去済み');
 assert(secA.indexOf('未割当の参加者から、作れる対局をまとめて作成します。')>=0, 'T4 「まとめて作成」title が承認済み文言');
 
 // ───────────────────────────────────────────────────────────────────

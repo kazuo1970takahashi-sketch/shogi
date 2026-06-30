@@ -7918,11 +7918,6 @@ function bindClassActionBarEvents(cls){
   if(addBtn){
     addBtn.addEventListener('click',(function(c){return function(){onClickAppendFirstRound(c);};})(cls));
   }
-  // PROGRESSIVE-PAIRING-IMPL-P1 (CONFIRMED spec §2): 「1卓追加」(受付順の先頭2名) を onClickAddOneTable に bind（追加のみ）。
-  var addTableBtn=document.getElementById('addTableBtn_'+cls);
-  if(addTableBtn){
-    addTableBtn.addEventListener('click',(function(c){return function(){onClickAddOneTable(c);};})(cls));
-  }
   // PROGRESSIVE-PAIRING-IMPL-P2 (CONFIRMED spec §P2): 「未手合いをまとめて1局目作成」を onClickAddAllTables に bind（追加のみ）。
   var addAllTablesBtn=document.getElementById('addAllTablesBtn_'+cls);
   if(addAllTablesBtn){
@@ -7944,7 +7939,7 @@ var HELP_TEXTS={
   'first-round':{
     title:'1局目の作り方ヘルプ',
     lines:[
-      '「1卓追加」：受付順の先頭2名で1卓ずつ作成します。少しずつ始めたいときに使います。',
+      '「選択した参加者で1局目を追加作成」：来た人をチェックして組みます。奇数で待っている1人＋新たに来た1人を組むときに便利です。',
       '「未手合いをまとめて1局目作成」：いま未割当の全員を2人ずつ一気に組みます。受付が一段落したときに便利です。',
       '待機（leftover）：今回は対局に入らず、次の作成対象として残る人です。',
       '参加人数が奇数のときは、1人が待機になります（不戦勝にはなりません）。次の参加者が来たら組めます。',
@@ -8105,8 +8100,8 @@ function buildFirstRoundPartialSectionHtml(cls){
   //   onClickAddOneTable へ bindClassActionBarEvents 側で行う。この helper は表示専用（イベント登録は持たない）。
   var canAddOneTable=unassigned.length>=2;
   html+='<div class="frp-add-one-table" style="margin:0 0 10px">';
-  html+='<button type="button" id="addTableBtn_'+escapeHtml(cls)+'" class="btn-primary"'+(canAddOneTable?'':' disabled')+' title="今すぐ始める対局だけを1卓ずつ追加します。あとから残りを追加できます。">1卓追加（受付順の先頭2名で1局目を作成）</button>';
-  html+='<p style="margin:6px 0 0;font-size:11px;color:#888">※受付順（参加者追加順）の先頭2名で1卓を作成します。押すたびに次の1卓。未手合いが1名のときは、次の参加者が来るまで待機します（不戦勝にはなりません）。</p>';
+  // PROGRESSIVE-PAIRING: ①「1卓追加」(先頭2名で1卓) の UI 導線は撤去（受付運用上ほぼ不要・奇数調整は③「選択した参加者で」が上位互換）。
+  //   ハンドラ onClickAddOneTable は #274 多重実行防止テスト等の回帰資産として温存（UI からは未バインド）。② / ③ は維持。
   // PROGRESSIVE-PAIRING-IMPL-P2 (CONFIRMED spec §P2 / 受入 Phase P2): まとめて導線「未手合いをまとめて1局目作成」。
   //   未手合い（受付順＝entry_no 昇順）の全員を 2人ずつペア化して round=1 の卓をまとめて作成する（偶数=全員・
   //   奇数=末尾1人待機）。P1「1卓追加」(addTableBtn_・先頭2名で1卓) と同じ未割当が対象で、両方を併置（純追加）。

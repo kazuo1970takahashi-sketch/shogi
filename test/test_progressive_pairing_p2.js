@@ -340,7 +340,7 @@ function fnBody(name){
   // 未手合い2名以上のときボタンは有効（disabled でない）
   assert(!/addAllTablesBtn_A[^>]*disabled/.test(secA), 'BIND4 未手合い2名以上ではボタン有効（disabled でない）');
   // P1「1卓追加」(addTableBtn_)と併置（両方残す・純追加）
-  assert(secA.indexOf('addTableBtn_A')>=0 && secA.indexOf('1卓追加（受付順の先頭2名で1局目を作成）')>=0, 'BIND5 P1「1卓追加」(addTableBtn_)も併置される（両方残す）');
+  assert(secA.indexOf('addTableBtn_A')<0, 'BIND5 ①「1卓追加」(addTableBtn_)は撤去済み（②のみ）');
   // 未手合い1名のときは disabled（B に1卓作って b3 を1名残す）
   const env2 = loadEnv(); env2._setState(env2.normalizeState(fxState())); env2.startClassPartial('B');
   env2.onClickAddOneTable('B'); // b1,b2 → b3 のみ残る
