@@ -11104,9 +11104,48 @@ function buildCloudTournamentListHtml(tournaments){
 }
 // クラウド結果を「最終結果タブ」と同じ見た目（クラス別セクション＋金銀銅バッジ＋順位で色分け＋勝/負/相手(B)/勝相手(C)）で描画。
 //   既存 _resultsRankBadgeHtml と .section / .badge スタイルを流用（buildResultsMobileHtml と同系）。クラウドは星取り無しのため回戦セルは出さない。
-function buildCloudResultBlocksHtml(entries){
+function _cloudResultRankInfo(e){
+  var rank=(e&&e.final_rank!=null)?e.final_rank:null;
+  return { rank:rank, badge:(rank!=null)?_resultsRankBadgeHtml(rank):'-', rowCls:rank===1?'row-r1':rank===2?'row-r2':rank===3?'row-r3':'',
+    color:rank===1?'#fef8e7':rank===2?'#f5f5f5':rank===3?'#eaf3fb':'#fff' };
+}
+// スマホ用カード（縦に積む）。
+function _cloudResultCardsHtml(rows){
+  var html='';
+  for(var j=0;j<rows.length;j++){
+    var e=rows[j]; var p=e&&e.players; var m=p&&p.members;
+    var nm=(m&&m.name)||''; var ym=(m&&m.yomi)||''; var ri=_cloudResultRankInfo(e);
+    var wins=(e&&e.wins!=null)?e.wins:'-'; var losses=(e&&e.losses!=null)?e.losses:'-';
+    var sos=(e&&e.sos!=null)?e.sos:'-'; var sodos=(e&&e.sodos!=null)?e.sodos:'-';
+    html+='<div style="background:'+ri.color+';border:1px solid #e0e0e0;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px">';
+    html+='<div style="min-width:46px;text-align:center;flex:0 0 auto">'+ri.badge+'</div>';
+    html+='<div style="flex:1;min-width:0">';
+    html+='<div style="font-weight:500;font-size:15px">'+playerNameRubyHtml(nm,ym)+'</div>';
+    html+='<div style="font-size:12px;color:#555;margin-top:2px">勝：<strong>'+escapeHtml(String(wins))+'</strong>　負：'+escapeHtml(String(losses))+'　相手(B)：'+escapeHtml(String(sos))+'　勝相手(C)：'+escapeHtml(String(sodos))+'</div>';
+    html+='</div></div>';
+  }
+  return html;
+}
+// PC/ワイド用テーブル（最終結果タブ buildResultsDesktopHtml と同型・全幅を使う）。
+function _cloudResultTableHtml(rows){
+  var html='<div style="overflow-x:auto"><table><thead><tr><th style="width:64px">順位</th><th style="text-align:left">氏名</th><th>勝数(A)</th><th>負数</th><th>B<br><small style="font-weight:normal;font-size:10px">対戦相手<br>勝数合計</small></th><th>C<br><small style="font-weight:normal;font-size:10px">勝った相手<br>勝数合計</small></th></tr></thead><tbody>';
+  for(var j=0;j<rows.length;j++){
+    var e=rows[j]; var p=e&&e.players; var m=p&&p.members;
+    var nm=(m&&m.name)||''; var ym=(m&&m.yomi)||''; var ri=_cloudResultRankInfo(e);
+    var wins=(e&&e.wins!=null)?e.wins:'-'; var losses=(e&&e.losses!=null)?e.losses:'-';
+    var sos=(e&&e.sos!=null)?e.sos:'-'; var sodos=(e&&e.sodos!=null)?e.sodos:'-';
+    html+='<tr class="'+ri.rowCls+'"><td>'+ri.badge+'</td><td style="text-align:left;font-weight:500">'+playerNameRubyHtml(nm,ym)+'</td>'
+      +'<td><strong>'+escapeHtml(String(wins))+'</strong></td><td>'+escapeHtml(String(losses))+'</td><td>'+escapeHtml(String(sos))+'</td><td>'+escapeHtml(String(sodos))+'</td></tr>';
+  }
+  html+='</tbody></table></div>';
+  return html;
+}
+// クラウド結果を「最終結果タブ」と同じ見た目で描画。画面幅でPC=表／スマホ=カードを切替（renderResults と同方針）。
+//   既存 _resultsRankBadgeHtml / .row-r* / .section を流用。クラウドは星取り無しのため回戦セルは出さない。isSP は省略時 window 幅で判定（テスト注入可）。
+function buildCloudResultBlocksHtml(entries, isSP){
   var list=Array.isArray(entries)?entries.slice():[];
   if(!list.length)return '<div style="padding:20px;text-align:center;color:#888;background:#f7f7f7;border-radius:8px">この大会の結果がありません。</div>';
+  if(isSP===undefined)isSP=(typeof window!=='undefined'&&window.innerWidth)?(window.innerWidth<600):false;
   var groups={}, order=[];
   for(var i=0;i<list.length;i++){
     var cls=(list[i]&&list[i]['class']!=null&&String(list[i]['class'])!=='')?String(list[i]['class']):'（クラス未設定）';
@@ -11119,22 +11158,8 @@ function buildCloudResultBlocksHtml(entries){
     var key=order[g]; var rows=groups[key].slice();
     rows.sort(function(a,b){ var ra=(a&&a.final_rank!=null)?a.final_rank:9999, rb=(b&&b.final_rank!=null)?b.final_rank:9999; return ra-rb; });
     html+='<div class="section"><h2>'+escapeHtml(key)+(key==='（クラス未設定）'?'':'クラス')+' 最終結果</h2>';
-    for(var j=0;j<rows.length;j++){
-      var e=rows[j]; var p=e&&e.players; var m=p&&p.members;
-      var nm=(m&&m.name)||''; var ym=(m&&m.yomi)||'';
-      var rank=(e&&e.final_rank!=null)?e.final_rank:null;
-      var rowColor=rank===1?'#fef8e7':rank===2?'#f5f5f5':rank===3?'#eaf3fb':'#fff';
-      var badge=(rank!=null)?_resultsRankBadgeHtml(rank):'-';
-      var wins=(e&&e.wins!=null)?e.wins:'-'; var losses=(e&&e.losses!=null)?e.losses:'-';
-      var sos=(e&&e.sos!=null)?e.sos:'-'; var sodos=(e&&e.sodos!=null)?e.sodos:'-';
-      html+='<div style="background:'+rowColor+';border:1px solid #e0e0e0;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px">';
-      html+='<div style="min-width:46px;text-align:center;flex:0 0 auto">'+badge+'</div>';
-      html+='<div style="flex:1;min-width:0">';
-      html+='<div style="font-weight:500;font-size:15px">'+playerNameRubyHtml(nm,ym)+'</div>';
-      html+='<div style="font-size:12px;color:#555;margin-top:2px">勝：<strong>'+escapeHtml(String(wins))+'</strong>　負：'+escapeHtml(String(losses))+'　相手(B)：'+escapeHtml(String(sos))+'　勝相手(C)：'+escapeHtml(String(sodos))+'</div>';
-      html+='</div></div>';
-    }
-    html+='<div style="margin-top:4px;font-size:12px;color:#666">※順位：①勝数 ②相手(B=対戦相手の勝数合計) ③勝相手(C=勝った相手の勝数合計) …</div>';
+    html+= isSP ? _cloudResultCardsHtml(rows) : _cloudResultTableHtml(rows);
+    html+='<div style="margin-top:8px;font-size:12px;color:#666">※順位：①勝数(A)　②B（対戦相手の勝数合計）　③C（勝った相手の勝数合計）　④直接対決　⑤くじ引き</div>';
     html+='</div>';
   }
   return html;
