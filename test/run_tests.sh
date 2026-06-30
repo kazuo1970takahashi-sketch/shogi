@@ -1619,6 +1619,19 @@ else
 fi
 
 
+echo ""
+echo "【RESET-MENU (当日第2弾⑩後半) 危険リセットを⋯メニュー退避（markup/開閉/結線・id不変）】"
+if [ -f "$SCRIPT_DIR/test_reset_menu.js" ]; then
+  if node "$SCRIPT_DIR/test_reset_menu.js" "$TARGET" > /tmp/reset_menu_out.log 2>&1; then
+    ok "RESET-MENU テスト 全PASS ($(tail -1 /tmp/reset_menu_out.log))"
+  else
+    ng "RESET-MENU テスト 失敗"; cat /tmp/reset_menu_out.log
+  fi
+else
+  warn "test_reset_menu.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
