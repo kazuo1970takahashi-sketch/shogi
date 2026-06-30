@@ -11058,6 +11058,8 @@ function saveCurrentTournamentToArchive(){
 //   要ログイン＋オンライン・fail-soft（未ログイン/オフライン/config 不在は案内のみ＝当日運営は無傷）。
 //   既存クラウド機構（loadCloudDeps/getSession/claim_organizer_seat/pickActiveClubId/applyCloudStatus）を再利用。
 // ============================================================
+// クラウド過去大会の取得結果をセッション内で保持（タップ→戻る で一覧を再取得せず即復元・履歴タブ再表示でも維持）。
+var _cloudHistoryState=null;
 // 診断用：Supabase エラーの要点（code/message）を短く取り出す（#343 過去大会取得の不具合切り分け）。
 function cloudErrDetail(err){ if(!err)return '不明'; var c=err.code?('['+err.code+'] '):''; return c+(err.message||err.details||err.hint||'エラー'); }
 function fetchCloudTournaments(client, clubId){
@@ -11100,31 +11102,60 @@ function buildCloudTournamentListHtml(tournaments){
   }
   return html;
 }
-function buildCloudEntriesTableHtml(entries){
+// クラウド結果を「最終結果タブ」と同じ見た目（クラス別セクション＋金銀銅バッジ＋順位で色分け＋勝/負/相手(B)/勝相手(C)）で描画。
+//   既存 _resultsRankBadgeHtml と .section / .badge スタイルを流用（buildResultsMobileHtml と同系）。クラウドは星取り無しのため回戦セルは出さない。
+function buildCloudResultBlocksHtml(entries){
   var list=Array.isArray(entries)?entries.slice():[];
-  if(!list.length)return '<div style="padding:16px;text-align:center;color:#888;background:#f7f7f7;border-radius:8px">この大会の結果がありません。</div>';
-  list.sort(function(a,b){
-    var ca=(a&&a['class'])||'',cb=(b&&b['class'])||'';
-    if(ca!==cb)return ca<cb?-1:1;
-    var ra=(a&&a.final_rank!=null)?a.final_rank:9999, rb=(b&&b.final_rank!=null)?b.final_rank:9999;
-    return ra-rb;
-  });
-  // アプリ標準の table/th/td 装飾（青ヘッダ＋下線）に合わせる。インライン枠は付けない。
-  var html='<div style="overflow-x:auto;margin-top:4px"><table><thead><tr>'
-    +'<th>クラス</th><th>順位</th><th style="text-align:left">氏名</th><th>勝</th><th>負</th><th>B</th><th>C</th></tr></thead><tbody>';
+  if(!list.length)return '<div style="padding:20px;text-align:center;color:#888;background:#f7f7f7;border-radius:8px">この大会の結果がありません。</div>';
+  var groups={}, order=[];
   for(var i=0;i<list.length;i++){
-    var e=list[i]; var p=e&&e.players; var m=p&&p.members;
-    var nm=(m&&m.name)||''; var ym=(m&&m.yomi)||'';
-    html+='<tr><td>'+escapeHtml(String((e&&e['class'])||''))+'</td>'
-      +'<td>'+((e&&e.final_rank!=null)?escapeHtml(String(e.final_rank))+'位':'-')+'</td>'
-      +'<td style="text-align:left">'+playerNameRubyHtml(nm,ym)+'</td>'
-      +'<td>'+escapeHtml(String((e&&e.wins!=null)?e.wins:''))+'</td>'
-      +'<td>'+escapeHtml(String((e&&e.losses!=null)?e.losses:''))+'</td>'
-      +'<td>'+escapeHtml(String((e&&e.sos!=null)?e.sos:''))+'</td>'
-      +'<td>'+escapeHtml(String((e&&e.sodos!=null)?e.sodos:''))+'</td></tr>';
+    var cls=(list[i]&&list[i]['class']!=null&&String(list[i]['class'])!=='')?String(list[i]['class']):'（クラス未設定）';
+    if(!groups[cls]){ groups[cls]=[]; order.push(cls); }
+    groups[cls].push(list[i]);
   }
-  html+='</tbody></table></div>';
+  order.sort();
+  var html='';
+  for(var g=0;g<order.length;g++){
+    var key=order[g]; var rows=groups[key].slice();
+    rows.sort(function(a,b){ var ra=(a&&a.final_rank!=null)?a.final_rank:9999, rb=(b&&b.final_rank!=null)?b.final_rank:9999; return ra-rb; });
+    html+='<div class="section"><h2>'+escapeHtml(key)+(key==='（クラス未設定）'?'':'クラス')+' 最終結果</h2>';
+    for(var j=0;j<rows.length;j++){
+      var e=rows[j]; var p=e&&e.players; var m=p&&p.members;
+      var nm=(m&&m.name)||''; var ym=(m&&m.yomi)||'';
+      var rank=(e&&e.final_rank!=null)?e.final_rank:null;
+      var rowColor=rank===1?'#fef8e7':rank===2?'#f5f5f5':rank===3?'#eaf3fb':'#fff';
+      var badge=(rank!=null)?_resultsRankBadgeHtml(rank):'-';
+      var wins=(e&&e.wins!=null)?e.wins:'-'; var losses=(e&&e.losses!=null)?e.losses:'-';
+      var sos=(e&&e.sos!=null)?e.sos:'-'; var sodos=(e&&e.sodos!=null)?e.sodos:'-';
+      html+='<div style="background:'+rowColor+';border:1px solid #e0e0e0;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px">';
+      html+='<div style="min-width:46px;text-align:center;flex:0 0 auto">'+badge+'</div>';
+      html+='<div style="flex:1;min-width:0">';
+      html+='<div style="font-weight:500;font-size:15px">'+playerNameRubyHtml(nm,ym)+'</div>';
+      html+='<div style="font-size:12px;color:#555;margin-top:2px">勝：<strong>'+escapeHtml(String(wins))+'</strong>　負：'+escapeHtml(String(losses))+'　相手(B)：'+escapeHtml(String(sos))+'　勝相手(C)：'+escapeHtml(String(sodos))+'</div>';
+      html+='</div></div>';
+    }
+    html+='<div style="margin-top:4px;font-size:12px;color:#666">※順位：①勝数 ②相手(B=対戦相手の勝数合計) ③勝相手(C=勝った相手の勝数合計) …</div>';
+    html+='</div>';
+  }
   return html;
+}
+// タップした大会の結果を「履歴一覧を差し替えて先頭に大きく表示」する（renderHistoryDetail と同じ全画面パターン）。
+function renderCloudTournamentDetail(client,clubId,tid,label,date){
+  var host=document.getElementById('history-content'); if(!host)return;
+  host.innerHTML='<div style="padding:24px;text-align:center;color:#888">読み込み中…</div>';
+  if(typeof window!=='undefined'&&window.scrollTo)window.scrollTo(0,0);
+  fetchCloudEntriesForTournament(client,tid,clubId).then(function(r){
+    var h=document.getElementById('history-content'); if(!h)return;
+    var html='';
+    html+='<div style="margin-bottom:10px"><button type="button" class="btn-sm" id="cloud-history-back-btn" style="background:#fff;color:#444;font-size:13px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← クラウドの大会一覧へ戻る</button></div>';
+    html+='<div style="background:#e8f0f8;border:1px solid #9DB7D5;color:#1F3864;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">☁ クラウドの過去大会（閲覧専用・みんなで共有）</div>';
+    html+='<div style="margin-bottom:10px"><div style="font-size:16px;font-weight:700;color:#1F3864">'+escapeHtml(label||'(大会名未設定)')+'</div>'+(date?'<div style="font-size:12px;color:#666;margin-top:2px">開催日 '+escapeHtml(date)+'</div>':'')+'</div>';
+    html+= r.ok ? buildCloudResultBlocksHtml(r.entries) : '<div class="alert alert-err" style="font-size:13px">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
+    h.innerHTML=html;
+    if(typeof window!=='undefined'&&window.scrollTo)window.scrollTo(0,0);
+    var back=document.getElementById('cloud-history-back-btn');
+    if(back)back.addEventListener('click',function(){ renderHistoryList(); });
+  });
 }
 function bindCloudHistoryRows(client, clubId){
   var listEl=document.getElementById('history-cloud-list'); if(!listEl)return;
@@ -11133,16 +11164,7 @@ function bindCloudHistoryRows(client, clubId){
     rows[i].addEventListener('click',(function(node){return function(){
       var tid=node.getAttribute('data-tid');
       var lbl=node.getAttribute('data-label')||''; var ldt=node.getAttribute('data-date')||'';
-      var det=document.getElementById('history-cloud-detail'); if(det)det.innerHTML='<div style="color:#888;font-size:13px;padding:10px 2px">読み込み中…</div>';
-      fetchCloudEntriesForTournament(client,tid,clubId).then(function(r){
-        var d2=document.getElementById('history-cloud-detail'); if(!d2)return;
-        if(r.ok){
-          var head='<div style="font-weight:700;color:#1F3864;font-size:15px;margin:6px 0 2px">'+escapeHtml(lbl)+'</div>'+(ldt?'<div style="font-size:12px;color:#888;margin-bottom:4px">開催日 '+escapeHtml(ldt)+'</div>':'');
-          d2.innerHTML=head+buildCloudEntriesTableHtml(r.entries);
-        }else{
-          d2.innerHTML='<div style="color:#A32D2D;font-size:13px;padding:10px 2px">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
-        }
-      });
+      renderCloudTournamentDetail(client,clubId,tid,lbl,ldt);
     };})(rows[i]));
   }
 }
@@ -11164,6 +11186,7 @@ function loadCloudPastTournamentsUI(setStatus){
         if(!clubId){ setStatus('取得元クラブを一意に特定できません（有効な幹事クラブが無い／複数所属の可能性・管理ページを確認してください）'); return {ok:false,step:'club'}; }
         return fetchCloudTournaments(client,clubId).then(function(res){
           if(!res.ok){ setStatus('取得に失敗しました：'+(res.message||'不明')+'（運営は続行できます・再取得できます）'); return res; }
+          _cloudHistoryState={tournaments:res.tournaments,client:client,clubId:clubId,count:res.tournaments.length};
           var listEl=document.getElementById('history-cloud-list');
           if(listEl){ listEl.innerHTML=buildCloudTournamentListHtml(res.tournaments); bindCloudHistoryRows(client,clubId); }
           setStatus('クラウドの過去大会 '+res.tournaments.length+' 件（大会名をタップで結果表示）');
@@ -11211,7 +11234,6 @@ function renderHistoryList(flashMessage){
   html+='<div style="font-size:12px;color:#888;margin-bottom:6px">クラウドに保存された過去大会の結果一覧です（ログイン＋オンライン時）。</div>';
   html+='<div id="history-cloud-status" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-bottom:6px"></div>';
   html+='<div id="history-cloud-list"></div>';
-  html+='<div id="history-cloud-detail" style="margin-top:8px"></div>';
   host.innerHTML=html;
   var saveBtn=document.getElementById('history-save-btn');
   if(saveBtn)saveBtn.addEventListener('click',saveCurrentTournamentToArchive);
@@ -11223,6 +11245,12 @@ function renderHistoryList(flashMessage){
   if(cloudLoadBtn)cloudLoadBtn.addEventListener('click',function(){
     loadCloudPastTournamentsUI(function(msg){ if(typeof applyCloudStatus==='function')applyCloudStatus(document.getElementById('history-cloud-status'),msg); else { var el=document.getElementById('history-cloud-status'); if(el)el.textContent=msg; } });
   });
+  // 既に取得済みなら一覧を即復元（戻る/再表示で再取得不要）。
+  if(_cloudHistoryState&&_cloudHistoryState.tournaments){
+    var cl=document.getElementById('history-cloud-list');
+    if(cl){ cl.innerHTML=buildCloudTournamentListHtml(_cloudHistoryState.tournaments); bindCloudHistoryRows(_cloudHistoryState.client,_cloudHistoryState.clubId); }
+    if(typeof applyCloudStatus==='function')applyCloudStatus(document.getElementById('history-cloud-status'),'クラウドの過去大会 '+_cloudHistoryState.count+' 件（大会名をタップで結果表示）');
+  }
 }
 
 // 過去大会の read-only 閲覧（§6）。既存 scoreboard レンダラを snapshot 入力で流用（編集 UI を一切出さない）。
