@@ -317,19 +317,20 @@ function fnBody(name){
 // ============================================================
 {
   // 未開始から startClassPartial で開始＋描画 → addTableBtn_A に click handler が bind される
+  // ①「1卓追加」UI 撤去（受付運用上ほぼ不要・奇数調整は③で代替）。ボタン非出力・未bind を確認（ハンドラ onClickAddOneTable は #274/AC 回帰資産として温存）。
   const env = loadEnv(); env._setState(env.normalizeState(fxState())); env.startClassPartial('A');
   const btn = env._ctx.document.getElementById('addTableBtn_A');
-  assert(btn._listeners.click && btn._listeners.click.length>=1, 'BIND1 render 後 addTableBtn_A に click handler が bind される');
+  assert(!(btn._listeners.click && btn._listeners.click.length>=1), 'BIND1 ①「1卓追加」ボタンは未bind（UI撤去）');
   const secA = env.buildFirstRoundPartialSectionHtml('A');
-  assert(secA.indexOf('1卓追加（受付順の先頭2名で1局目を作成）')>=0, 'BIND2 ボタン文言「1卓追加（受付順の先頭2名で1局目を作成）」');
-  assert(secA.indexOf('addTableBtn_A')>=0, 'BIND3 addTableBtn_A の id が出力される');
-  // 未手合い2名以上のときボタンは有効（disabled でない）
-  assert(!/addTableBtn_A[^>]*disabled/.test(secA), 'BIND4 未手合い2名以上ではボタン有効（disabled でない）');
-  // 未手合い1名のときは disabled（B に1卓追加して b3 を1名残す）
+  assert(secA.indexOf('1卓追加（受付順の先頭2名で1局目を作成）')<0, 'BIND2 ①ボタン文言は非出力');
+  assert(secA.indexOf('addTableBtn_A')<0, 'BIND3 addTableBtn_A は非出力');
+  // ②「まとめて」は健在・未手合い2名以上で有効
+  assert(secA.indexOf('id="addAllTablesBtn_A"')>=0 && !/addAllTablesBtn_A[^>]*disabled/.test(secA), 'BIND4 ②まとめては残り未手合い2名以上で有効');
+  // 未手合い1名のとき ②まとめて は disabled（B に1卓作って b3 を1名残す。onClickAddOneTable は温存ハンドラ）
   const env2 = loadEnv(); env2._setState(env2.normalizeState(fxState())); env2.startClassPartial('B');
   env2.onClickAddOneTable('B'); // b1,b2 → b3 のみ残る
   const secB = env2.buildFirstRoundPartialSectionHtml('B');
-  assert(/addTableBtn_B[^>]*disabled/.test(secB), 'BIND5 未手合い1名のとき addTableBtn は disabled');
+  assert(/addAllTablesBtn_B[^>]*disabled/.test(secB), 'BIND5 未手合い1名のとき②まとめては disabled');
   // 既存の選択式ボタン(frpAddBtn_)は併置されたまま（純追加・既存導線を壊さない）
   assert(secB.indexOf('frpAddBtn_B')>=0 && secB.indexOf('選択した参加者で1局目を追加作成')>=0, 'BIND6 既存の選択式「選択した参加者で1局目を追加作成」も併置される（純追加）');
 }
