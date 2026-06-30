@@ -1671,6 +1671,19 @@ else
 fi
 
 
+echo ""
+echo "【DAYOF-UNENTERED (当日第2弾⑥) 未入力卓カウンタ＋確定ボタン無効化（カウンタ/disabled/RAW配線）】"
+if [ -f "$SCRIPT_DIR/test_dayof_unentered_001.js" ]; then
+  if node "$SCRIPT_DIR/test_dayof_unentered_001.js" "$TARGET" > /tmp/dayof_unentered_out.log 2>&1; then
+    ok "DAYOF-UNENTERED テスト 全PASS ($(tail -1 /tmp/dayof_unentered_out.log))"
+  else
+    ng "DAYOF-UNENTERED テスト 失敗"; cat /tmp/dayof_unentered_out.log
+  fi
+else
+  warn "test_dayof_unentered_001.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================

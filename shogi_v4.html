@@ -7787,8 +7787,17 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       +(labelsHtml?'<div style="margin-top:4px">'+labelsHtml+'</div>':'')
       +'</div>';
   }
+  // DAYOF-UNENTERED-COUNTER (当日第2弾⑥): 未入力（勝者未選択）の卓を数えて表示し、未入力がある間は
+  //   「確定して次へ」を無効化する（取りこぼし／事後 alert を減らす）。submitRound の既存ガードは温存（二重防御）。
+  //   勝者選択は setWinner→renderTournament で毎回再描画されるためカウンタ／無効化はライブ更新される。
+  var unfinishedCount=0;
+  for(var ufi=0;ufi<state.pairings[cls].length;ufi++){ if(state.pairings[cls][ufi]&&!state.pairings[cls][ufi].winner)unfinishedCount++; }
+  var totalTables=state.pairings[cls].length;
+  html+=(unfinishedCount>0
+    ?'<div class="alert alert-warn" style="margin:8px 0 0">残り <strong>'+unfinishedCount+'</strong> 卓 未入力です（全'+totalTables+'卓）。すべて入力すると「確定して次へ」が押せます。</div>'
+    :'<div class="alert alert-ok" style="margin:8px 0 0">✓ 全 '+totalTables+' 卓 入力済みです。「確定して次へ」を押せます。</div>');
   html+='<div style="display:flex;gap:8px;margin-top:8px">'
-    +'<button class="btn-success" id="submitBtn_'+cls+'">'+roundNum+'回戦 確定して次へ</button>'
+    +'<button class="btn-success" id="submitBtn_'+cls+'"'+(unfinishedCount>0?' disabled aria-disabled="true" style="opacity:0.5;cursor:not-allowed"':'')+'>'+roundNum+'回戦 確定して次へ</button>'
     // FRP-IMPL-004B (設計 §5.4 / §5.4.2): 部分手合い組成中（started・results 空・未割当>0）は
     //   再生成ボタンを出力しない（HTML に出さない＝bind 対象も存在しない）。未割当0 は由来を問わず従来どおり出力。
     +(shouldShowRegenerateButton(cls)
