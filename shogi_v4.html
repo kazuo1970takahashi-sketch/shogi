@@ -9925,8 +9925,52 @@ function downloadReport(){
 //     （pairings / results / started）のみ初期化。
 //   resetAll() 自体は変更しない（全リセットとして温存、§10.2）。
 //   PR #112 startTournament guard alert は本ボタンへ誘導するよう同期更新（§10.1）。
+// ============================================================
+// RESET-UNDO (当日運営レビュー第2弾⑩): リセット誤タップの全消失を防ぐ安全網。
+//   全リセット/進行リセットの「直前」に現在の state を1回分スナップショット（UNDO_KEY）し、
+//   実行後に「元に戻す」を提示する。元に戻すは load() と同じ normalizeState 経路で復元する。
+//   一段（1回分）のみ。次のリセットで上書き、元に戻すと消去。保存形式は state と同一（save() 互換）。
+// ============================================================
+var UNDO_KEY='shogi_undo_snapshot';
+function captureResetSnapshot(kind){
+  try{
+    localStorage.setItem(UNDO_KEY, JSON.stringify({kind:String(kind||''), savedAt:Date.now(), payload:JSON.stringify(state)}));
+  }catch(e){ /* quota 等は握りつぶす＝リセット自体は続行（安全網は best-effort） */ }
+}
+function hasResetUndoSnapshot(){
+  try{ return !!localStorage.getItem(UNDO_KEY); }catch(e){ return false; }
+}
+function undoLastReset(){
+  try{
+    var raw=localStorage.getItem(UNDO_KEY);
+    if(!raw){ showMsg('元に戻せる直前のデータがありません','warn'); return false; }
+    var snap=JSON.parse(raw);
+    if(!snap||typeof snap.payload!=='string'){ showMsg('元に戻せる直前のデータがありません','warn'); return false; }
+    state=normalizeState(JSON.parse(snap.payload));   // load() と同じ復元経路
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+    try{ localStorage.removeItem(UNDO_KEY); }catch(e){}
+    _pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
+    populateReportFields();
+    renderRegList();
+    renderPastParticipantsPanel();
+    if(state.started){ showTab(isTournamentDone()?'result':'tournament'); } else { showTab('reg'); }
+    showMsg('リセットを元に戻しました','ok');
+    return true;
+  }catch(e){ showMsg('元に戻すのに失敗しました','err'); return false; }
+}
+// リセット成功＋「元に戻す」ボタンを #reg-msg に表示（showMsg と同じ場所・次のメッセージで自然に消える＝一時的提示）。
+function showResetUndoBanner(msg){
+  var el=document.getElementById('reg-msg'); if(!el){ showMsg(msg,'ok'); return; }
+  el.innerHTML='<div class="alert alert-ok" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+    +'<span>'+escapeHtml(String(msg||''))+'</span>'
+    +'<button type="button" id="reset-undo-btn" class="btn-sm" style="min-height:36px;background:#fff;border:1px solid #1F3864;color:#1F3864">↩ 元に戻す</button></div>';
+  var b=document.getElementById('reset-undo-btn');
+  if(b)b.addEventListener('click',function(){ undoLastReset(); });
+}
+
 function resetTournamentProgressOnly(){
   if(!confirm('参加者一覧は残したまま、現在の組み合わせ・勝敗結果を削除します。\nよろしいですか？'))return;
+  captureResetSnapshot('progress');
   // B. 大会進行データ（局単位）のみ初期化
   // ROUND-CLASS-START-004b (spec §12.2):
   //   state.classes 駆動で全クラス一括リセット。A/B 固定 literal を廃止し、
@@ -9958,11 +10002,12 @@ function resetTournamentProgressOnly(){
   save();
   renderRegList();
   showTab('reg');
-  showMsg('大会進行データをリセットしました','ok');
+  showResetUndoBanner('大会進行データをリセットしました');
 }
 
 function resetAll(){
   if(!confirm('参加者一覧・組み合わせ・勝敗結果を含む大会データをすべてリセットします。\n支部マスタは保持されます。'))return;
+  captureResetSnapshot('all');
   // ROUND-CLASS-START-004b (spec §12.3 / §8.2 例外):
   //   state.classes 駆動で全リセット。{A:[],B:[]} 固定 literal を廃止し、emptyClassDict 経由で
   //   classId ベースに初期化する。既定 classes は ['A','B']（A/B 大会の互換維持、Phase 6 までは現状維持）。
@@ -10018,7 +10063,7 @@ function resetAll(){
   //   新大会を開始した直後でも、開催日=今日 / 開始=13:00 / 終了=17:00 が自然に再表示される。
   populateReportFields();
   showTab('reg');
-  showMsg('大会データを全リセットしました','ok');
+  showResetUndoBanner('大会データを全リセットしました');
 }
 
 // ============================================================
