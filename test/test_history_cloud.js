@@ -16,7 +16,7 @@ function makeCtx(){
 function loadEnv(){
   var ctx=makeCtx();var js=extractScripts(RAW);
   var fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout','navigator',
-    `${js};return {buildCloudTournamentListHtml:buildCloudTournamentListHtml,buildCloudEntriesTableHtml:buildCloudEntriesTableHtml,loadCloudPastTournamentsUI:loadCloudPastTournamentsUI,fetchCloudEntriesForTournament:fetchCloudEntriesForTournament,pickActiveClubId:pickActiveClubId};`);
+    `${js};return {buildCloudTournamentListHtml:buildCloudTournamentListHtml,buildCloudResultBlocksHtml:buildCloudResultBlocksHtml,loadCloudPastTournamentsUI:loadCloudPastTournamentsUI,fetchCloudEntriesForTournament:fetchCloudEntriesForTournament,pickActiveClubId:pickActiveClubId};`);
   var env=fn(ctx.doc,ctx.win,ctx.ls,{randomUUID:function(){return '0';}},function(){},function(){return true;},function(){return '';},function(){},function(){},{createObjectURL:function(){return 'b';},revokeObjectURL:function(){}},{log:function(){},warn:function(){},error:function(){}},Promise,function(){return 0;},{onLine:true});
   return {env:env,ctx:ctx};
 }
@@ -35,14 +35,18 @@ ok(lh.indexOf('cloud-history-row')>=0&&lh.indexOf('data-tid="t1"')>=0,'L2 行＋
 ok(lh.indexOf('2026-04-12')<lh.indexOf('2026-03-08'),'L3 日付降順（新しい順）');
 
 console.log('=== 純ビルダー: 結果表 ===');
-ok(E.buildCloudEntriesTableHtml([]).indexOf('結果がありません')>=0,'T1 空');
-var th=E.buildCloudEntriesTableHtml([
+ok(E.buildCloudResultBlocksHtml([]).indexOf('結果がありません')>=0,'T1 空');
+var th=E.buildCloudResultBlocksHtml([
   {final_rank:2,'class':'A',wins:3,losses:1,sos:5,sodos:4,players:{members:{name:'乙',yomi:'おつ'}}},
-  {final_rank:1,'class':'A',wins:4,losses:0,sos:6,sodos:6,players:{members:{name:'甲',yomi:'こう'}}}
+  {final_rank:1,'class':'A',wins:4,losses:0,sos:6,sodos:6,players:{members:{name:'甲',yomi:'こう'}}},
+  {final_rank:1,'class':'B',wins:4,losses:0,sos:6,sodos:6,players:{members:{name:'丙',yomi:'へい'}}}
 ]);
 ok(th.indexOf('甲')>=0&&th.indexOf('乙')>=0,'T2 氏名表示');
 ok(th.indexOf('甲')<th.indexOf('乙'),'T3 同クラスは順位昇順（甲1位→乙2位）');
 ok(/<ruby>/.test(th),'T4 ふりがなルビ');
+ok(th.indexOf('Aクラス 最終結果')>=0&&th.indexOf('Bクラス 最終結果')>=0,'T5 クラス別セクション見出し');
+ok(th.indexOf('class="badge b1"')>=0,'T6 1位は金バッジ（最終結果と同じ）');
+ok(th.indexOf('勝相手(C)')>=0&&th.indexOf('相手(B)')>=0,'T7 勝/負/相手(B)/勝相手(C) 表記');
 
 console.log('=== 取得オーケストレーション（fail-soft）===');
 (async function(){
@@ -66,8 +70,8 @@ console.log('=== 取得オーケストレーション（fail-soft）===');
   var rj=await D.env.fetchCloudEntriesForTournament(client,'t1','c1');
   ok(rj.ok===true&&rj.entries.length===2,'J1 entries 取得OK');
   ok(rj.entries[0].players&&rj.entries[0].players.members.name==='甲','J2 player_id→氏名を突き合わせ');
-  var th2=D.env.buildCloudEntriesTableHtml(rj.entries);
-  ok(th2.indexOf('甲')>=0&&th2.indexOf('乙')>=0&&/<ruby>/.test(th2),'J3 突き合わせ結果が結果表に出る');
+  var th2=D.env.buildCloudResultBlocksHtml(rj.entries);
+  ok(th2.indexOf('甲')>=0&&th2.indexOf('乙')>=0&&/<ruby>/.test(th2),'J3 突き合わせ結果が結果カードに出る');
   var E2=loadEnv(); installCloud(E2.ctx,{tables:{entries:{error:{message:'x'}}}});
   var rerr=await E2.env.fetchCloudEntriesForTournament(E2.ctx.win.supabase.createClient(),'t1','c1');
   ok(rerr.ok===false,'J4 entries エラーは ok=false');
@@ -77,6 +81,10 @@ console.log('=== 取得オーケストレーション（fail-soft）===');
   ok(/getElementById\('history-cloud-load'\)[\s\S]{0,200}loadCloudPastTournamentsUI/.test(RAW),'W2 ボタン→loadCloudPastTournamentsUI 結線');
   ok(RAW.indexOf("client.from('entries').select('final_rank,class,wins,losses,sos,sodos,player_id')")>=0,'W3 entries は player_id のみ（曖昧embed回避）');
   ok(RAW.indexOf("client.from('players').select('id,member_id,members(name,yomi)')")>=0,'W3b players を別取得');
+  ok(/renderCloudTournamentDetail\(client,clubId,tid/.test(RAW),'W4 タップ→全画面詳細 renderCloudTournamentDetail');
+  ok(RAW.indexOf('cloud-history-back-btn')>=0&&RAW.indexOf('renderHistoryList()')>=0,'W5 戻るボタンで一覧へ復帰');
+  ok(RAW.indexOf('id="history-cloud-detail"')<0,'W6 旧 inline 詳細枠は撤去（全画面化）');
+  ok(/window\.scrollTo\(0,0\)/.test(RAW),'W7 詳細表示で先頭へスクロール');
 
   console.log('HISTORY-CLOUD: PASS='+pass+' FAIL='+fail);
   process.exit(fail===0?0:1);
