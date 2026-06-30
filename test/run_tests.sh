@@ -1658,6 +1658,19 @@ else
 fi
 
 
+echo ""
+echo "【BACKUP-GUIDE バックアップ画面に保存先/復元手順の案内（presentational）】"
+if [ -f "$SCRIPT_DIR/test_backup_guide.js" ]; then
+  if node "$SCRIPT_DIR/test_backup_guide.js" "$TARGET" > /tmp/backup_guide_out.log 2>&1; then
+    ok "BACKUP-GUIDE テスト 全PASS ($(tail -1 /tmp/backup_guide_out.log))"
+  else
+    ng "BACKUP-GUIDE テスト 失敗"; cat /tmp/backup_guide_out.log
+  fi
+else
+  warn "test_backup_guide.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
