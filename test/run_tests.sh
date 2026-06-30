@@ -1645,6 +1645,19 @@ else
 fi
 
 
+echo ""
+echo "【RESET-PP-REFRESH (bugfix) リセット後に過去参加者パネル再描画（A/B✓ハイライトの残留解消）】"
+if [ -f "$SCRIPT_DIR/test_reset_pp_refresh.js" ]; then
+  if node "$SCRIPT_DIR/test_reset_pp_refresh.js" "$TARGET" > /tmp/reset_pp_out.log 2>&1; then
+    ok "RESET-PP-REFRESH テスト 全PASS ($(tail -1 /tmp/reset_pp_out.log))"
+  else
+    ng "RESET-PP-REFRESH テスト 失敗"; cat /tmp/reset_pp_out.log
+  fi
+else
+  warn "test_reset_pp_refresh.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
