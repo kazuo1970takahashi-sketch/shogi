@@ -1606,6 +1606,19 @@ else
 fi
 
 
+echo ""
+echo "【RESET-UNDO (当日運営第2弾⑩) リセット直前スナップショット＋元に戻す（捕捉/復元/バナー/配線）】"
+if [ -f "$SCRIPT_DIR/test_reset_undo.js" ]; then
+  if node "$SCRIPT_DIR/test_reset_undo.js" "$TARGET" > /tmp/reset_undo_out.log 2>&1; then
+    ok "RESET-UNDO テスト 全PASS ($(tail -1 /tmp/reset_undo_out.log))"
+  else
+    ng "RESET-UNDO テスト 失敗"; cat /tmp/reset_undo_out.log
+  fi
+else
+  warn "test_reset_undo.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
