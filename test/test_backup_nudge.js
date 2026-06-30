@@ -28,7 +28,8 @@ ok(RAW.indexOf('id="backup-nudge-msg"')>=0,'M3 文言領域');
 ok(RAW.indexOf('class="no-print"')>=0&&/id="backup-nudge"[^>]*no-print/.test(RAW),'M4 印刷非表示');
 
 console.log('=== 節目フック（RAW） ===');
-ok(/verifyStartSavedForCandidates\(v\.candidates\);\s*\n\s*if\(typeof promptMilestoneBackup[\s\S]{0,80}'start'/.test(RAW),'H1 大会開始で promptMilestoneBackup(start)');
+ok(/verifyStartSavedForCandidates\(\[v\.candidateClassId\]\);\s*\n\s*if\(typeof promptMilestoneBackup[\s\S]{0,80}'start'/.test(RAW),'H1 クラス開始(startTournamentForClass)で start 促し');
+ok(/renderTournament\(cls\);\s*\n\s*if\(typeof promptMilestoneBackup[\s\S]{0,80}'start'/.test(RAW),'H1b 部分開始(startClassPartial)で start 促し');
 ok(/state\.results\[cls\]\.length>=state\.rounds[\s\S]{0,200}promptMilestoneBackup\('class:'\+cls/.test(RAW),'H2 クラス完走で class 促し');
 ok(/isTournamentDone\(\)\)promptMilestoneBackup\('all'/.test(RAW),'H3 全クラス終了で all 促し');
 
