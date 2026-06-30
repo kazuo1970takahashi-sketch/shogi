@@ -251,8 +251,16 @@ body.sb-active{overflow:hidden}
     <button type="button" class="btn-sm no-print" id="loadBtn" style="background:#185FA5;color:#fff;border-color:#185FA5">読み込み</button>
     <input type="file" id="loadFile" accept=".json" style="display:none">
     <button type="button" class="btn-sm no-print" id="backupBtn" style="background:#5B6770;color:#fff;border-color:#5B6770">バックアップ</button>
-    <button type="button" class="btn-danger btn-sm no-print" id="resetBtn">大会データを全リセット</button>
-    <button type="button" class="btn-danger btn-sm no-print" id="resetProgressBtn">大会進行データをリセット</button>
+    <!-- RESET-MENU (当日第2弾⑩後半): 危険な全リセット/進行リセットは常時表示せず ⋯メニュー配下へ退避し誤タップを防ぐ。
+         id（resetBtn / resetProgressBtn）は不変＝既存の resetAll / resetTournamentProgressOnly 結線をそのまま温存。 -->
+    <div id="dangerMenuWrap" class="no-print" style="position:relative;display:inline-block">
+      <button type="button" class="btn-sm no-print" id="dangerMenuBtn" aria-haspopup="true" aria-expanded="false" title="リセットなどの操作" style="background:#fff;border:1px solid #c33;color:#c33;min-height:36px">⋯ その他</button>
+      <div id="dangerMenu" role="menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:60;background:#fff;border:1px solid #ccc;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.18);padding:8px;min-width:230px;text-align:left">
+        <div style="font-size:11px;color:#999;padding:2px 6px 6px">危険な操作（元に戻すで1回分復旧できます）</div>
+        <button type="button" class="btn-danger no-print" id="resetProgressBtn" role="menuitem" style="display:block;width:100%;text-align:left;margin-bottom:6px">大会進行データをリセット</button>
+        <button type="button" class="btn-danger no-print" id="resetBtn" role="menuitem" style="display:block;width:100%;text-align:left">大会データを全リセット</button>
+      </div>
+    </div>
   </div>
 </div>
 <div class="container">
@@ -10073,6 +10081,26 @@ function resetAll(){
 //   DOMContentLoaded: 上記を順に呼ぶだけ
 // ============================================================
 
+// RESET-MENU (当日第2弾⑩後半): ⋯メニューの開閉。危険操作を1段深くして誤タップを防ぐ。
+function toggleDangerMenu(forceClose){
+  var menu=document.getElementById('dangerMenu'); var btn=document.getElementById('dangerMenuBtn');
+  if(!menu||!btn)return;
+  var open=(forceClose===true)?false:(menu.style.display==='none'||menu.style.display==='');
+  menu.style.display=open?'block':'none';
+  btn.setAttribute('aria-expanded',open?'true':'false');
+}
+function bindDangerMenuEvents(){
+  var btn=document.getElementById('dangerMenuBtn');
+  if(btn)btn.addEventListener('click',function(e){ if(e&&e.stopPropagation)e.stopPropagation(); toggleDangerMenu(); });
+  var menu=document.getElementById('dangerMenu');
+  if(menu)menu.addEventListener('click',function(e){ if(e&&e.stopPropagation)e.stopPropagation(); }); // メニュー内クリックで外側クローズを発火させない
+  // メニュー外クリックで閉じる（document 直付け・1回のみ登録）
+  if(typeof document!=='undefined'&&document.addEventListener)document.addEventListener('click',function(){ toggleDangerMenu(true); });
+  // リセット項目を押したら閉じる（reset 本体は既存の別 bind で実行される）
+  var rp=document.getElementById('resetProgressBtn'); if(rp)rp.addEventListener('click',function(){ toggleDangerMenu(true); });
+  var ra=document.getElementById('resetBtn'); if(ra)ra.addEventListener('click',function(){ toggleDangerMenu(true); });
+}
+
 function bindHeaderEvents(){
   document.getElementById('saveBtn').addEventListener('click',saveData);
   document.getElementById('loadBtn').addEventListener('click',openLoadModal);
@@ -10084,6 +10112,7 @@ function bindHeaderEvents(){
   // RESET-UX-PARTIAL-RESET-IMPL-LIGHT: 参加者を残す部分リセット
   var resetProgressBtn=document.getElementById('resetProgressBtn');
   if(resetProgressBtn)resetProgressBtn.addEventListener('click',resetTournamentProgressOnly);
+  bindDangerMenuEvents();
   // U-2 (UX-P1): 「保存確認 N件」ピル → 説明モーダル（意味/解消導線）。クリックと Enter/Space で開く。
   var saveWarnPill=document.getElementById('save-warning-indicator');
   if(saveWarnPill){
