@@ -1769,6 +1769,18 @@ else
   warn "test_report_form_ui.js が見つからない"
 fi
 
+echo ""
+echo "【WITHDRAW-001 途中棄権（軽量版・以降の組み合わせ除外/不戦勝/順位表表示・成績は残す）】"
+if [ -f "$SCRIPT_DIR/test_withdraw.js" ]; then
+  if node "$SCRIPT_DIR/test_withdraw.js" "$TARGET" > /tmp/withdraw_out.log 2>&1; then
+    ok "WITHDRAW テスト 全PASS ($(tail -1 /tmp/withdraw_out.log))"
+  else
+    ng "WITHDRAW テスト 失敗"; cat /tmp/withdraw_out.log
+  fi
+else
+  warn "test_withdraw.js が見つからない"
+fi
+
 
 # ============================================
 # 最終結果
