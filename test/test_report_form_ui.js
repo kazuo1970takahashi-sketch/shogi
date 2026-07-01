@@ -10,6 +10,7 @@ ok(/\.rep-form input,\.rep-form select,\.rep-form textarea\{[^}]*height:40px/.te
 ok(RAW.indexOf('.rep-form .rep-num{width:80px')>=0,'C2 数値欄(.rep-num)は幅80px');
 ok(RAW.indexOf('.rep-form .rep-tc{')>=0,'C3 持ち時間ブロック(.rep-tc)のCSS');
 ok(RAW.indexOf('.rep-form .rep-g2{')>=0,'C4 2列グリッド(.rep-g2)のCSS');
+ok(/\.rep-form \.rep-tc select\{width:auto;max-width:100%\}/.test(RAW),'C5 区分selectは内容幅(width:auto・全幅化しない)');
 
 console.log('=== マークアップ ===');
 ok(/class="section no-print rep-form"/.test(RAW),'M1 報告書セクションに rep-form クラス');
