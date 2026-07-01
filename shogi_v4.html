@@ -247,7 +247,7 @@ body.sb-active{overflow:hidden}
          運営画面（このタブ）はそのまま維持し、閲覧専用ビューは #scoreboard hash で起動する。
          同一ブラウザの localStorage(state) を参照し、運営タブの保存に追従してリアルタイム更新する。 -->
     <button type="button" class="btn-sm no-print" id="openScoreboardBtn" style="background:#2E75B6;color:#fff;border-color:#2E75B6">📱 スマホ星取表</button>
-    <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">大会データをコピー</button>
+    <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">📋 名簿に反映＋コピー</button>
     <!-- ⑨-a: 「読み込み」ボタンは撤去（復元は「バックアップ」に集約＝ファイル/貼り付けの両方をバックアップ画面で行う）。
          loadFile input は温存（loadData の受け皿・import_routing 資産）。openLoadModal/loadData/loadFromPaste は温存。 -->
     <input type="file" id="loadFile" accept=".json" style="display:none">
@@ -1160,7 +1160,7 @@ function save(){
     // SAVE-NONQUOTA-ALERT (Issue #278): 非quota の保存失敗（循環参照による JSON.stringify の TypeError /
     //   SecurityError / プライベートブラウズ等）はデータ消失に直結するため、登録タブ表示中でも blocking alert を
     //   確実に出す（quota 分岐と認知強度を揃える）。banner（showMsg）と dedup は notifyError が担当（二重 alert なし）。
-    notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります。大会データをコピー（バックアップ）してください。',true);
+    notifyError('保存に失敗しました。容量超過か、プライベートブラウズの可能性があります。「バックアップ」でデータを控えてください。',true);
   }
 }
 function load(){
@@ -2462,7 +2462,7 @@ function createMemberFromParticipant(p,master,date){
 // Issue #273: 支部マスタ同期/統合のクラス列挙を「全クラス対応」にするための純関数。
 //   旧実装は updateBranchMasterFromTournament / mergeTournamentParticipantsIntoMaster の双方で
 //   var classes=['A','B'] とハードコードしており、addClass()/nextClassId() で追加できる C 以降の
-//   クラス参加者がマスタ同期（「大会データをコピー」）・過去大会統合（「マスタ」タブ）の両経路から
+//   クラス参加者がマスタ同期（「📋 名簿に反映＋コピー」）・過去大会統合（「マスタ」タブ）の両経路から
 //   黙って取りこぼされていた。state.classes（normalizeState が常に整える権威リスト・A/B を必ず含む）
 //   の id を主とし、保存揺れに備えて Object.keys(state.players) も union する（重複除外・順序は
 //   classes 優先 → players のみに存在する id を後置）。A/B のみの state では ['A','B'] と同順・同一
@@ -4036,7 +4036,7 @@ function buildMigrationModalHtml(opts){
   html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">過去大会の統合（支部マスタへ）</h3>';
   // M5: 「読み込み」との違いを明記
   html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">過去大会の参加者を支部マスタに取り込みます。<strong>大会そのものを復元する機能ではありません。</strong></p>';
-  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">「大会データをコピー」したテキストを貼り付けてください：</p>';
+  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">「📋 名簿に反映＋コピー」でコピーしたテキストを貼り付けてください：</p>';
   html+='<textarea id="mig-paste-area" rows="8" style="width:100%;font-size:16px;font-family:monospace;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box" placeholder="ここに大会データを貼り付けてください"></textarea>';
   html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-top:8px;margin-bottom:0">複数大会をまとめて取り込む場合は、1大会分を貼り付けたあとに空行を1行入れて、次の大会データを貼り付けてください。</p>';
   // M3: 既存ファイル保有者向けの代替案内
@@ -8000,7 +8000,7 @@ var HELP_TEXTS={
     lines:[
       '支部マスタは過去の参加者を蓄える名簿です。当日の大会データとは別物で、ここを直接いじらなくても大会運営はできます。',
       '「📥 過去大会を支部マスタに統合」：以前保存した大会データ（JSON）から参加者を名簿へ追加・更新します。',
-      '受付・対局の画面で「大会データをコピー」すると、その大会の参加者が自動で支部マスタにも反映されます（同期）。',
+      '受付・対局の画面で「📋 名簿に反映＋コピー」を押すと、その大会の参加者が自動で支部マスタ（名簿）にも反映されます（同期）。',
       '「📤 エクスポート」で名簿をファイル保存、「📂 インポート」で読み込みできます。端末の移行や万一の消失に備え、ときどきエクスポートして保管してください。',
       '取り込むファイルが壊れている・対応していない版のときは、取り込みを中止して既存の名簿を守ります（黙って消えません）。',
       '「📛 リセット」は名簿を全消去します。実行前に必ずエクスポートで退避してください。当日は無理にマスタをいじらなくて大丈夫です。'
@@ -8013,7 +8013,7 @@ var HELP_TEXTS={
     lines:[
       '画面上部に「⚠ 未保存の恐れ・要バックアップ」が出るのは、データを自動保存しようとして保存できたか確認が取れなかったときです（必ずしも失敗ではありません）。',
       'まず落ち着いて運営を続けて大丈夫です。入力した内容は画面に残っています。',
-      '念のため「バックアップ」または「大会データをコピー」でデータを控えておくと安全です（端末やブラウザの不調に備え）。',
+      '念のため「バックアップ」または「📋 名簿に反映＋コピー」でデータを控えておくと安全です（端末やブラウザの不調に備え）。',
       'この表示はブラウザを再読み込み（リロード）すると消えます。何度も出る・操作が保存されない場合は、空き容量を確認し、こまめにバックアップしてください。',
       'プライベートブラウズ（シークレット）では保存が制限されることがあります。通常モードでの利用をおすすめします。'
     ]
@@ -8969,7 +8969,7 @@ function saveData(){
   var json=JSON.stringify(state,null,2);
   if(navigator.clipboard&&navigator.clipboard.writeText&&window.isSecureContext){
     navigator.clipboard.writeText(json).then(function(){
-      alert('大会データをコピーしました。\n\nメモ帳やEvernoteに貼り付けて保管してください。\n\n次回大会前に「マスタ」タブの統合機能で取り込めます。');
+      alert('名簿に反映し、大会データをコピーしました。\n\nメモ帳やEvernoteに貼り付けて保管できます。\n\n次回大会前に「マスタ」タブの統合機能で取り込めます。');
     }).catch(function(){
       saveDataAsFile(json);
     });
