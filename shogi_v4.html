@@ -248,7 +248,8 @@ body.sb-active{overflow:hidden}
          同一ブラウザの localStorage(state) を参照し、運営タブの保存に追従してリアルタイム更新する。 -->
     <button type="button" class="btn-sm no-print" id="openScoreboardBtn" style="background:#2E75B6;color:#fff;border-color:#2E75B6">📱 スマホ星取表</button>
     <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">大会データをコピー</button>
-    <button type="button" class="btn-sm no-print" id="loadBtn" style="background:#185FA5;color:#fff;border-color:#185FA5">読み込み</button>
+    <!-- ⑨-a: 「読み込み」ボタンは撤去（復元は「バックアップ」に集約＝ファイル/貼り付けの両方をバックアップ画面で行う）。
+         loadFile input は温存（loadData の受け皿・import_routing 資産）。openLoadModal/loadData/loadFromPaste は温存。 -->
     <input type="file" id="loadFile" accept=".json" style="display:none">
     <button type="button" class="btn-sm no-print" id="backupBtn" style="background:#5B6770;color:#fff;border-color:#5B6770">バックアップ</button>
     <!-- RESET-MENU (当日第2弾⑩後半): 危険な全リセット/進行リセットは常時表示せず ⋯メニュー配下へ退避し誤タップを防ぐ。
@@ -3226,18 +3227,24 @@ function buildMasterTabHtml(master){
     summaryHtml+='<span id="master-no-yomi-summary" style="color:#888;margin-left:8px">（うちふりがな未入力: <strong>'+noYomiCount+'名</strong>）</span>';
   }
   html+='<div style="margin-bottom:12px;font-size:14px">'+summaryHtml+'</div>';
-  html+='<div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:8px">';
-  html+='<button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button>';
-  html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
-  html+='<button type="button" id="masterImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📂 マスタをインポート</button>';
-  // Phase 2 §5.2: 22 名取込(5/10 大会用、空マスタ専用)。本番後は使われない予定の専用ボタン
-  // Phase 2 §5.1: マスタリセット(B 案: バックアップ済チェック + テキスト確認 + 二段階確認)
-  html+='<button type="button" id="masterResetBtn" style="background:#fff;border:1px solid #c33;color:#c33">📛 マスタをリセット</button>';
-  // A-4 §3.4.1: 削除済み表示トグル
-  html+='<button type="button" id="masterShowDeletedBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864" data-on="'+(_masterShowDeleted?'1':'0')+'">'+(_masterShowDeleted?'🗑️ 削除済みを隠す':'🗑️ 削除済みを表示')+'</button>';
+  // ⑪ 名簿タブのボタン整理: 当日に使う「☁ クラウドから取得」だけ常時表示。準備/保守系（統合・入出力・削除済み表示・リセット）は
+  //   <details>「⚙ 名簿のメンテナンス」へ格納し画面圧迫と誤タップ（特に赤いリセット）を減らす。各ボタンの id は不変＝既存 bind を温存。
+  html+='<div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:8px">';
   html+='<button type="button" id="masterCloudPullBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ クラウドから取得</button>';
   html+='</div>';
   html+='<div id="masterCloudPullStatus" class="cloud-status" role="status" style="margin:4px 0 12px;font-size:13px" aria-live="polite"></div>';
+  // 削除済み表示中は折りたたみを開いたまま（トグル直後の再描画でメンテ操作を見失わない）。
+  html+='<details class="master-maint" style="margin:0 0 12px"'+(_masterShowDeleted?' open':'')+'>';
+  html+='<summary style="cursor:pointer;font-size:13px;color:#1F3864;padding:6px 0">⚙ 名簿のメンテナンス（過去大会の統合・バックアップ・削除済み・リセット）</summary>';
+  html+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
+  html+='<button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button>';
+  html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
+  html+='<button type="button" id="masterImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📂 マスタをインポート</button>';
+  // A-4 §3.4.1: 削除済み表示トグル
+  html+='<button type="button" id="masterShowDeletedBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864" data-on="'+(_masterShowDeleted?'1':'0')+'">'+(_masterShowDeleted?'🗑️ 削除済みを隠す':'🗑️ 削除済みを表示')+'</button>';
+  // Phase 2 §5.1: マスタリセット(B 案: バックアップ済チェック + テキスト確認 + 二段階確認)。誤タップ防止のため最下＋折りたたみ内。
+  html+='<button type="button" id="masterResetBtn" style="background:#fff;border:1px solid #c33;color:#c33">📛 マスタをリセット</button>';
+  html+='</div></details>';
   // PWA 収束方針(docs/PWA-PLAN): 当日アプリ⇄app/ の相互リンク（同一ウィンドウ遷移・別タブを増やさない）。
   html+='<div style="margin:0 0 12px"><a href="app/" style="font-size:13px;color:#1F3864">☁ クラウド管理ページ（名簿編集・ログイン）を開く →</a></div>';
   html+='<hr class="separator">';
@@ -9058,15 +9065,17 @@ function loadData(e){
   reader.readAsText(file);
 }
 
+// ⑨-a: 復元をバックアップ画面へ集約。貼り付け欄は load-modal（従来）と backup-modal（新）の両対応。
+function _closeRestoreModals(){ var a=document.getElementById('load-modal'); if(a)a.remove(); var b=document.getElementById('backup-modal'); if(b)b.remove(); }
 function loadFromPaste(){
-  var ta=document.getElementById('load-paste-area');
+  var ta=document.getElementById('load-paste-area')||document.getElementById('backup-paste-area');
   if(!ta)return;
   var text=ta.value.trim();
   if(!text){alert('大会データを貼り付けてください');return;}
   var kind=classifyImportJson(text);
   if(kind==='backup'){
     importTournamentBackupFromText(text);
-    var lmB=document.getElementById('load-modal');if(lmB)lmB.remove();
+    _closeRestoreModals();
     return;
   }
   if(kind==='master'){
@@ -9080,7 +9089,7 @@ function loadFromPaste(){
   if(!confirm('現在のデータを上書きして読み込みますか？'))return;
   try{
     applyLoadedJson(text);
-    var lm=document.getElementById('load-modal');if(lm)lm.remove();
+    _closeRestoreModals();
     alert('データを読み込みました');
   }catch(err){
     alert('読み込みに失敗しました。正しい大会データか確認してください');
@@ -9300,6 +9309,9 @@ function buildBackupModalHtml(){
     +'<button id="backup-import-pick" style="width:100%;padding:12px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:14px;cursor:pointer">バックアップから復元（ファイル選択）</button>'
     +'<input type="file" id="backup-import-file" accept=".json,application/json" style="display:none">'
     +'<div style="margin:8px 0 0;background:#eaf0f7;border:1px solid #c2d4e6;border-radius:8px;padding:8px 10px;color:#1F3864;font-size:12px;line-height:1.6">↩ 復元：上の「ファイル選択」を押し、保存した <strong>shogi_backup_….json</strong> を選ぶだけです（フォルダの指定は不要・iPhone はファイル画面の「ダウンロード」から選べます）。</div>'
+    +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:12px">─ または 貼り付けから復元 ─</div>'
+    +'<textarea id="backup-paste-area" placeholder="バックアップ/大会データのテキストを貼り付け" style="width:100%;height:90px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px;font-family:monospace;resize:vertical;box-sizing:border-box"></textarea>'
+    +'<button id="backup-paste-btn" style="width:100%;margin-top:6px;padding:10px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:14px;cursor:pointer">貼り付けから復元</button>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
     +'<button id="backup-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">閉じる</button>'
     +'</div></div>';
@@ -9313,6 +9325,8 @@ function bindBackupModalEvents(modal){
   var fileInput=document.getElementById('backup-import-file');
   if(pick&&fileInput)pick.addEventListener('click',function(){ fileInput.click(); });
   if(fileInput)fileInput.addEventListener('change',importTournamentBackupFile);
+  var pasteBtn=document.getElementById('backup-paste-btn');
+  if(pasteBtn)pasteBtn.addEventListener('click',loadFromPaste);
   var cancel=document.getElementById('backup-cancel');
   if(cancel)cancel.addEventListener('click',function(){ if(modal)modal.remove(); });
 }
@@ -10154,7 +10168,6 @@ function bindDangerMenuEvents(){
 
 function bindHeaderEvents(){
   document.getElementById('saveBtn').addEventListener('click',saveData);
-  document.getElementById('loadBtn').addEventListener('click',openLoadModal);
   document.getElementById('loadFile').addEventListener('change',loadData);
   // DATA-PERSISTENCE Phase 1: バックアップ（JSON エクスポート/インポート）modal を開く。
   var backupBtn=document.getElementById('backupBtn');
