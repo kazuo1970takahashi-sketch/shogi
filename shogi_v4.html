@@ -7364,8 +7364,10 @@ function generatePairing(cls){
       if(match.p1)inRound272[match.p1]=true;
       if(match.p2)inRound272[match.p2]=true;
       if(match.winner){
-        played[match.p1].push(match.p2);
-        played[match.p2].push(match.p1);
+        // WITHDRAW-001 fix: 棄権者は上の filter で players(active) から外れ played に存在しないが、
+        //   過去 results にはその対局行が残る。存在ガード無しの push は undefined 参照で落ちる（再生成/次回戦生成でクラッシュ）。
+        if(played[match.p1])played[match.p1].push(match.p2);
+        if(played[match.p2])played[match.p2].push(match.p1);
       }
     }
     for(var so=0;so<players.length;so++){
