@@ -1793,6 +1793,18 @@ else
   warn "test_scenario_e2e_001.js が見つからない"
 fi
 
+echo ""
+echo "【STORAGE-WARN-001 (⑬) 起動時ストレージ検知＋常時警告バナー（プライベートブラウズ/保存不可の予防警告）】"
+if [ -f "$SCRIPT_DIR/test_storage_warn_001.js" ]; then
+  if node "$SCRIPT_DIR/test_storage_warn_001.js" "$TARGET" > /tmp/storage_warn_out.log 2>&1; then
+    ok "STORAGE-WARN テスト 全PASS ($(tail -1 /tmp/storage_warn_out.log))"
+  else
+    ng "STORAGE-WARN テスト 失敗"; cat /tmp/storage_warn_out.log
+  fi
+else
+  warn "test_storage_warn_001.js が見つからない"
+fi
+
 
 # ============================================
 # 最終結果

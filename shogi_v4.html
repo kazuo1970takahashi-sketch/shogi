@@ -285,6 +285,12 @@ body.sb-active{overflow:hidden}
     <button type="button" class="btn-sm no-print" id="backup-nudge-later" style="min-height:36px;background:#fff;color:#633806;border:1px solid #d6b673">あとで</button>
   </span>
 </div>
+<!-- STORAGE-WARN (⑬): 起動時プローブで localStorage 書込不可（プライベートブラウズ/ストレージ無効）を検知したら常時警告。既定非表示・データ全損の予防。 -->
+<div id="storage-warn" class="no-print" role="alert" style="display:none;background:#fdecea;border:1px solid #d93025;color:#a50e0e;padding:10px 14px;margin:0 12px;border-radius:0 0 8px 8px;font-size:13px">
+  <strong>⚠ この端末ではデータが保存されません</strong><br>
+  プライベートブラウズ（シークレット）を解除するか、通常のブラウザ／ホーム画面アプリで開いてください。このまま使う場合は「バックアップ」でこまめに控えてください（ブラウザを閉じると消える場合があります）。
+  <div style="margin-top:6px"><button type="button" class="btn-sm no-print" id="storage-warn-close" style="min-height:32px;background:#fff;color:#a50e0e;border:1px solid #d93025">閉じる</button></div>
+</div>
 <div class="container">
   <div class="tab-bar no-print">
     <button type="button" class="tab active" id="tab-reg">参加者登録</button>
@@ -10349,6 +10355,9 @@ function bindDangerMenuEvents(){
 }
 
 function bindHeaderEvents(){
+  // ⑬ STORAGE-WARN: 警告バナーの「閉じる」（表示中のみ存在・押下で非表示）。
+  var storageWarnClose=document.getElementById('storage-warn-close');
+  if(storageWarnClose)storageWarnClose.addEventListener('click',function(){var w=document.getElementById('storage-warn');if(w)w.style.display='none';});
   document.getElementById('saveBtn').addEventListener('click',saveData);
   document.getElementById('loadFile').addEventListener('change',loadData);
   // DATA-PERSISTENCE Phase 1: バックアップ（JSON エクスポート/インポート）modal を開く。
@@ -10848,7 +10857,26 @@ function isTournamentDone(){
   return hasAnyClass;
 }
 
+// ⑬ STORAGE-WARN: localStorage が書込→読戻し→削除できるかを検査する（pure・失敗時 false）。
+//   プライベートブラウズ/ストレージ無効等で throw する環境や、書いた値が読み戻せない環境を検知する。
+function probeStorageWritable(){
+  try{
+    var k='__shogi_storage_probe__';
+    localStorage.setItem(k,'1');
+    var ok=(localStorage.getItem(k)==='1');
+    localStorage.removeItem(k);
+    return ok;
+  }catch(e){ return false; }
+}
+// ⑬ STORAGE-WARN: 起動時にストレージ可否を検査し、不可なら常時警告バナーを表示（可なら非表示）。
+//   データを入力する前に「この端末では保存されない」ことを先回りで知らせ、全損事故を予防する。
+function checkStorageAndWarn(){
+  var el=document.getElementById('storage-warn');
+  if(!el)return;
+  el.style.display=probeStorageWritable()?'none':'block';
+}
 function initApp(){
+  checkStorageAndWarn();
   load();
   populateReportFields();
   renderRegList();
