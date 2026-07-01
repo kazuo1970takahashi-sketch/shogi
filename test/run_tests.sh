@@ -1745,6 +1745,18 @@ else
   warn "test_start_odd_note.js が見つからない"
 fi
 
+echo ""
+echo "【REPORT-TIMECONTROL (TIME-CONTROL-001) 持ち時間（区分/分/秒・報告書メタ・大会ごとに可変）】"
+if [ -f "$SCRIPT_DIR/test_report_timecontrol.js" ]; then
+  if node "$SCRIPT_DIR/test_report_timecontrol.js" "$TARGET" > /tmp/report_timecontrol_out.log 2>&1; then
+    ok "REPORT-TIMECONTROL テスト 全PASS ($(tail -1 /tmp/report_timecontrol_out.log))"
+  else
+    ng "REPORT-TIMECONTROL テスト 失敗"; cat /tmp/report_timecontrol_out.log
+  fi
+else
+  warn "test_report_timecontrol.js が見つからない"
+fi
+
 
 # ============================================
 # 最終結果

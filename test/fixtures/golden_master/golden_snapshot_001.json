@@ -105,6 +105,9 @@
         "prize": 7000,
         "sei": "架空一郎",
         "start": "10:00",
+        "timeByoyomi": 30,
+        "timeMain": 25,
+        "timeType": "sudden",
         "title": "架空将棋大会"
       },
       "results": {
@@ -430,6 +433,9 @@
         "prize": 7000,
         "sei": "架空一郎",
         "start": "10:00",
+        "timeByoyomi": 30,
+        "timeMain": 25,
+        "timeType": "sudden",
         "title": "架空将棋大会"
       },
       "results": {
