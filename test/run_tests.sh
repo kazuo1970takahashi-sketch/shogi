@@ -1721,6 +1721,18 @@ else
   warn "test_rounds_selector.js が見つからない"
 fi
 
+echo ""
+echo "【ROUNDS-PER-CLASS (ROUNDS-PER-CLASS-001/SAVE-BTN-MEIBO-001) 回戦数クラス別上書き＋保存ボタン「名簿を更新」一本化】"
+if [ -f "$SCRIPT_DIR/test_rounds_per_class.js" ]; then
+  if node "$SCRIPT_DIR/test_rounds_per_class.js" "$TARGET" > /tmp/rounds_perclass_out.log 2>&1; then
+    ok "ROUNDS-PER-CLASS テスト 全PASS ($(tail -1 /tmp/rounds_perclass_out.log))"
+  else
+    ng "ROUNDS-PER-CLASS テスト 失敗"; cat /tmp/rounds_perclass_out.log
+  fi
+else
+  warn "test_rounds_per_class.js が見つからない"
+fi
+
 
 # ============================================
 # 最終結果

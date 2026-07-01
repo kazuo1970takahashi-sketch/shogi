@@ -111,7 +111,7 @@ assert(ms && Array.isArray(ms.lines) && ms.lines.length===6, 'R4 master の line
 const j = ms ? ms.lines.join('\n') : '';
 assert(j.indexOf('名簿')>=0 && j.indexOf('大会データとは別物')>=0, 'R5 (1)支部マスタは名簿・大会データと別物の説明を含む');
 assert(j.indexOf('統合')>=0, 'R6 (2)過去大会の統合の説明を含む');
-assert(j.indexOf('名簿に反映')>=0 && j.indexOf('同期')>=0, 'R7 (3)「名簿に反映＋コピー」時の自動同期の説明を含む');
+assert(j.indexOf('名簿を更新')>=0 && j.indexOf('同期')>=0, 'R7 (3)「名簿を更新」時の自動同期の説明を含む');
 assert(j.indexOf('エクスポート')>=0 && j.indexOf('インポート')>=0 && j.indexOf('保管')>=0, 'R8 (4)エクスポート/インポート・保管推奨の説明を含む');
 assert(j.indexOf('壊れている')>=0 && j.indexOf('黙って消えません')>=0, 'R9 (5)破損/未対応版は取り込み中止・既存温存の説明を含む');
 assert(j.indexOf('リセット')>=0 && j.indexOf('退避')>=0, 'R10 (6)リセットは全消去・事前退避の説明を含む');
