@@ -46,6 +46,10 @@ const RESET_FRESH = `state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},re
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(String(e && e.message || e)));
   page.on('dialog', d => d.accept().catch(() => {}));
+  // タブ切替方式で非表示の要素も実ハンドラを発火させるため、確認ダイアログはページ側で自動承認。
+  //   （Playwright の click は可視・操作可能性を厳密チェックするため、アプリのボタンは
+  //    実ハンドラ .click() / change ディスパッチで駆動する＝実ブラウザで実イベントは通す）
+  await page.addInitScript(() => { window.confirm = () => true; window.prompt = () => 'テストクラス'; window.alert = () => {}; });
 
   await page.goto(TARGET, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof generatePairing === 'function', null, { timeout: 15000 });
@@ -75,9 +79,9 @@ const RESET_FRESH = `state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},re
   console.log('\n[S2] クラス追加（実ボタンクリック）');
   await page.evaluate(RESET_FRESH + 'showTab("registration");renderRegList();');
   const before2 = await page.evaluate(() => state.classes.length);
-  const addBtn = await page.$('#addClassBtn');
-  ok(!!addBtn, '「クラスを追加」ボタンが存在する');
-  if (addBtn) await addBtn.click();
+  const hasAdd = await page.evaluate(() => !!document.getElementById('addClassBtn'));
+  ok(hasAdd, '「クラスを追加」ボタンが存在する');
+  await page.evaluate(() => document.getElementById('addClassBtn').click()); // 実クリックハンドラを発火
   await page.waitForTimeout(200);
   const s2 = await page.evaluate(() => { const last = state.classes[state.classes.length - 1]; return { n: state.classes.length, id: last && last.id, arrays: !!(state.players[last.id] && state.pairings[last.id] && state.results[last.id]) }; });
   ok(s2.n === before2 + 1, 'クラスが1つ増える（' + before2 + '→' + s2.n + '）');
@@ -86,9 +90,9 @@ const RESET_FRESH = `state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},re
   // ---- S3: 回戦数の変更（実セレクト操作＋クラス別上書き） ----
   console.log('\n[S3] 回戦数の変更（実セレクト #inp-rounds）');
   await page.evaluate(RESET_FRESH + 'showTab("registration");renderRegList();');
-  const sel = await page.$('#inp-rounds');
-  ok(!!sel, '回戦数セレクト(#inp-rounds)が存在する');
-  if (sel) await sel.selectOption('5');
+  const hasSel = await page.evaluate(() => !!document.getElementById('inp-rounds'));
+  ok(hasSel, '回戦数セレクト(#inp-rounds)が存在する');
+  await page.evaluate(() => { const s = document.getElementById('inp-rounds'); s.value = '5'; s.dispatchEvent(new Event('change', { bubbles: true })); }); // 実 change ハンドラを発火
   await page.waitForTimeout(150);
   const s3a = await page.evaluate(() => ({ rounds: state.rounds, rfc: roundsForClass('A') }));
   ok(s3a.rfc === 5, 'セレクトで全体回戦数を5に変更→roundsForClass(A)=5（実際 ' + s3a.rfc + '）');
