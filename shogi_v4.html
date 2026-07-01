@@ -474,6 +474,26 @@ body.sb-active{overflow:hidden}
           <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">賞金額（円）</label>
           <input type="number" id="rep-prize" min="0" step="100" inputmode="numeric" placeholder="7000" style="width:100%">
         </div>
+        <!-- TIME-CONTROL-001: 持ち時間（報告書メタ・大会ごとに可変）。区分＝切れ負け/秒読み＋持ち時間(分)＋秒読み(秒)。
+             システムのロジックには影響しない表示値。renderTimeControlFields が秒読み欄の表示/プレビューを同期。 -->
+        <div style="grid-column:1 / -1">
+          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">持ち時間（報告書に記載）</label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="rep-time-type" style="font-size:16px;padding:6px 8px">
+              <option value="sudden">切れ負け</option>
+              <option value="byoyomi">秒読み（切れたら一手N秒）</option>
+            </select>
+            <span style="font-size:13px;color:#666">持ち時間</span>
+            <input type="number" id="rep-time-main" min="1" step="1" inputmode="numeric" placeholder="25" style="width:72px">
+            <span style="font-size:13px;color:#666">分</span>
+            <span id="rep-time-byoyomi-wrap" style="display:none;align-items:center;gap:4px">
+              <span style="font-size:13px;color:#666">秒読み</span>
+              <input type="number" id="rep-time-byoyomi" min="1" step="1" inputmode="numeric" placeholder="30" style="width:72px">
+              <span style="font-size:13px;color:#666">秒</span>
+            </span>
+          </div>
+          <div id="rep-time-preview" style="font-size:12px;color:#888;margin-top:4px"></div>
+        </div>
       </div>
       <div style="margin-bottom:12px">
         <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">申し送り事項</label>
@@ -521,7 +541,7 @@ var state = {
   pairings: {A:[], B:[]},
   results: {A:[], B:[]},
   started: false,
-  report: {date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会', organizer:'日本将棋連盟沼津支部', fax:'943-9443', officeName:'沼津支部事務局', accountingNote:'※役員会で会計長へ収支報告書として提出ください。'},
+  report: {date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会', organizer:'日本将棋連盟沼津支部', fax:'943-9443', officeName:'沼津支部事務局', accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30},
   // ROUND-CLASS-START-003: classId 単位 started を正とする state.classes を導入。
   //   既存 dict (players/pairings/results) は当面 A/B 固定構造で維持。詳細: spec §5.2
   classes: [
@@ -940,7 +960,7 @@ function normalizeState(raw){
     pairings:emptyClassDict(classes,function(){return [];}),
     results:emptyClassDict(classes,function(){return [];}),
     started:false,
-    report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会', organizer:'日本将棋連盟沼津支部', fax:'943-9443', officeName:'沼津支部事務局', accountingNote:'※役員会で会計長へ収支報告書として提出ください。'},
+    report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会', organizer:'日本将棋連盟沼津支部', fax:'943-9443', officeName:'沼津支部事務局', accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30},
     classes:classes
   };
   classes.forEach(function(c){
@@ -1067,6 +1087,16 @@ function normalizeState(raw){
     //   中間改行は normalizeReportAccountingNote が保持する。
     if(Object.prototype.hasOwnProperty.call(s.report,'accountingNote')){
       base.report.accountingNote=normalizeReportAccountingNote(s.report.accountingNote);
+    }
+    // TIME-CONTROL-001: 持ち時間（区分/分/秒）。旧データ欠落時は schema 既定（25分切れ負け）を維持。
+    if(Object.prototype.hasOwnProperty.call(s.report,'timeType')){
+      base.report.timeType=normalizeReportTimeType(s.report.timeType);
+    }
+    if(Object.prototype.hasOwnProperty.call(s.report,'timeMain')){
+      base.report.timeMain=normalizeReportTimeMain(s.report.timeMain);
+    }
+    if(Object.prototype.hasOwnProperty.call(s.report,'timeByoyomi')){
+      base.report.timeByoyomi=normalizeReportTimeByoyomi(s.report.timeByoyomi);
     }
   }
   // 支部マスタ連携用の tournament_id を保持（F2）
@@ -1452,6 +1482,20 @@ function normalizeReportAccountingNote(value){ return normalizeReportField(value
 //   '労政会館' になる。
 function normalizeReportPlace(value){ return normalizeReportField(value,'place'); }
 
+// TIME-CONTROL-001: 持ち時間（報告書メタデータ・システムのロジックには非影響の表示値）。
+//   区分 timeType＝'sudden'(切れ負け)/'byoyomi'(秒読み＝切れたら一手N秒)、timeMain=持ち時間(分)、timeByoyomi=秒読み(秒)。
+//   大会ごとに変更でき、他支部でも汎用に使える。既定は沼津の「25分切れ負け」。
+function normalizeReportTimeType(v){ return v==='byoyomi'?'byoyomi':'sudden'; }
+function normalizeReportTimeMain(v){ var n=Math.floor(Number(v)); return (isNaN(n)||n<1)?25:n; }
+function normalizeReportTimeByoyomi(v){ var n=Math.floor(Number(v)); return (isNaN(n)||n<1)?30:n; }
+// 持ち時間を報告書用の1行文字列に整形する（pure）。切れ負け＝「N分切れ負け」／秒読み＝「N分（切れたら一手M秒）」。
+function formatTimeControl(report){
+  var t=normalizeReportTimeType(report&&report.timeType);
+  var m=normalizeReportTimeMain(report&&report.timeMain);
+  if(t==='byoyomi'){ var b=normalizeReportTimeByoyomi(report&&report.timeByoyomi); return m+'分（切れたら一手'+b+'秒）'; }
+  return m+'分切れ負け';
+}
+
 // REPORT-UX-006C: 担当役員（正）正規化 pure helper。
 //   既定値: '' (空欄許容)。氏名フィールドのため空文字を有効値として扱い、specific な default 氏名は持たない。
 //   - 文字列なら trim する
@@ -1515,7 +1559,7 @@ function getReportClassLabel(c){
 //   state.report の値は populateReportFields が input.value にコピーした「後」に呼ぶ前提。
 //   helper 内で state.report も同期更新する（保存忘れ防止）。
 function ensureReportDateTimeDefaults(){
-  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。'};
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30};
   var pairs=[
     {key:'date', defaultFn:function(){return formatLocalDateForInput(new Date());}},
     {key:'start',defaultFn:function(){return '13:00';}},
@@ -9982,6 +10026,8 @@ function buildReportHtml(){
   //   既定値 '日本将棋連盟沼津支部'、空欄/不正値は normalizeReportOrganizer で fallback。
   //   escapeHtml は HTML 組立時に通すため、ここでは正規化済の生文字列を保持する。
   var reportOrganizer=normalizeReportOrganizer(state.report&&state.report.organizer);
+  // TIME-CONTROL-001: 持ち時間を報告書メタに1行追加（例「25分切れ負け」「20分（切れたら一手30秒）」）。
+  var timeControl=formatTimeControl(state.report);
 
   // REPORT-UX-007A / FAX削除対応: footer 1行目の事務局名は state.report.officeName から取得。
   //   既定値は normalizeReportOfficeName 側に集約済み、空欄/不正値は helper で default fallback。
@@ -10036,6 +10082,8 @@ function buildReportHtml(){
     +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+escapeHtml(start)+' 〜 '+escapeHtml(end)+'</td></tr>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">会場</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+escapeHtml(place)+'</td></tr>'
+    +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">持ち時間</td>'
+    +'<td style="padding:6px 10px;border:1px solid #999;" colspan="2">'+escapeHtml(timeControl)+'</td></tr>'
     +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">担当役員</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;width:80px">正</td>'
     +'<td style="padding:6px 10px;border:1px solid #999;">'+escapeHtml(sei)+'</td></tr>'
@@ -10208,7 +10256,7 @@ function resetAll(){
     pairings:emptyClassDict(defaultClasses,function(){return [];}),
     results:emptyClassDict(defaultClasses,function(){return [];}),
     started:false,
-    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。'},
+    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30},
     classes:defaultClasses
   };
   _pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
@@ -10397,8 +10445,19 @@ function bindTabEvents(){
   if(th)th.addEventListener('click',function(){showTab('history');});
 }
 
+// TIME-CONTROL-001: 持ち時間 UI の表示同期（秒読み欄は type=byoyomi のときだけ表示・プレビュー更新）。
+//   値の保存は bind 側、表示同期は本関数。populateReportFields と各 change から呼ぶ。
+function renderTimeControlFields(){
+  if(!state.report)return;
+  var wrap=document.getElementById('rep-time-byoyomi-wrap');
+  var prev=document.getElementById('rep-time-preview');
+  var t=normalizeReportTimeType(state.report.timeType);
+  if(wrap)wrap.style.display=(t==='byoyomi')?'inline-flex':'none';
+  if(prev)prev.textContent='報告書に「持ち時間：'+formatTimeControl(state.report)+'」と記載されます';
+}
+
 function populateReportFields(){
-  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。'};
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30};
   // REPORT-UX-001 (Codex Must Fix 1):
   //   date / start / end は <input type="date|time"> の value 制約に合わせて正規化してから代入する。
   //   旧形式 "YYYY年MM月DD日" / "H時MM分" が来ても、HTML5 input が値を空に戻して
@@ -10464,6 +10523,26 @@ function populateReportFields(){
     state.report.prize=normalizedPrize;
     priceEl.value=String(normalizedPrize);
   }
+  // TIME-CONTROL-001: 持ち時間（区分/分/秒）を input に反映＋ state を正規化後値で同期。
+  var timeTypeElP=document.getElementById('rep-time-type');
+  if(timeTypeElP){
+    var normTimeType=normalizeReportTimeType(state.report.timeType);
+    state.report.timeType=normTimeType;
+    timeTypeElP.value=normTimeType;
+  }
+  var timeMainElP=document.getElementById('rep-time-main');
+  if(timeMainElP){
+    var normTimeMain=normalizeReportTimeMain(state.report.timeMain);
+    state.report.timeMain=normTimeMain;
+    timeMainElP.value=String(normTimeMain);
+  }
+  var timeByoElP=document.getElementById('rep-time-byoyomi');
+  if(timeByoElP){
+    var normTimeByo=normalizeReportTimeByoyomi(state.report.timeByoyomi);
+    state.report.timeByoyomi=normTimeByo;
+    timeByoElP.value=String(normTimeByo);
+  }
+  renderTimeControlFields();
   // REPORT-UX-004: 大会名（文字列フィールド）。state.report.title を input に反映する。
   //   - 空欄 / 不正値の場合は normalizeReportTitle 経由で '沼津支部月例将棋大会' fallback
   //   - state.report.title も同期書き込み（不正値クリーンアップ）
@@ -10534,7 +10613,7 @@ function updateReportFieldFromElement(el,eventType){
   }
   if(!key&&el.id&&el.id.indexOf('rep-')===0)key=el.id.substring(4);
   if(!key)return;
-  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。'};
+  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30};
   // REPORT-UX-003A: prize は数値として保存する。空欄・負数・不正値は 7000 にフォールバック。
   //   0 は有効値として 0 のまま保存（normalizeReportPrize 内部で 0 を valid 扱い）。
   //   既存の string field (date/place/start/end/sei/fuku/note) の保存挙動は変えない。
@@ -10687,6 +10766,26 @@ function bindReportEvents(){
     var accountingNoteChangeHandler=function(e){ updateReportFieldFromElement(e.target||accountingNoteEl_bind,'change'); };
     accountingNoteEl_bind.addEventListener('input',accountingNoteInputHandler);
     accountingNoteEl_bind.addEventListener('change',accountingNoteChangeHandler);
+  }
+  // TIME-CONTROL-001: 持ち時間（区分 select＋分＋秒）を bind。専用 normalizer で state 反映＋save＋表示同期。
+  //   updateReportFieldFromElement の汎用経路には載せない（型変換・秒読み欄トグルが専用のため）。
+  var timeTypeEl_bind=document.getElementById('rep-time-type');
+  if(timeTypeEl_bind){
+    timeTypeEl_bind.addEventListener('change',function(){
+      state.report.timeType=normalizeReportTimeType(timeTypeEl_bind.value); save(); renderTimeControlFields();
+    });
+  }
+  var timeMainEl_bind=document.getElementById('rep-time-main');
+  if(timeMainEl_bind){
+    var timeMainHandler=function(){ state.report.timeMain=normalizeReportTimeMain(timeMainEl_bind.value); save(); renderTimeControlFields(); };
+    timeMainEl_bind.addEventListener('input',timeMainHandler);
+    timeMainEl_bind.addEventListener('change',timeMainHandler);
+  }
+  var timeByoEl_bind=document.getElementById('rep-time-byoyomi');
+  if(timeByoEl_bind){
+    var timeByoHandler=function(){ state.report.timeByoyomi=normalizeReportTimeByoyomi(timeByoEl_bind.value); save(); renderTimeControlFields(); };
+    timeByoEl_bind.addEventListener('input',timeByoHandler);
+    timeByoEl_bind.addEventListener('change',timeByoHandler);
   }
   var btn=document.getElementById('downloadReportBtn');
   if(btn)btn.addEventListener('click',downloadReport);
