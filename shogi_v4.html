@@ -247,7 +247,7 @@ body.sb-active{overflow:hidden}
          運営画面（このタブ）はそのまま維持し、閲覧専用ビューは #scoreboard hash で起動する。
          同一ブラウザの localStorage(state) を参照し、運営タブの保存に追従してリアルタイム更新する。 -->
     <button type="button" class="btn-sm no-print" id="openScoreboardBtn" style="background:#2E75B6;color:#fff;border-color:#2E75B6">📱 スマホ星取表</button>
-    <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">📋 名簿に反映＋コピー</button>
+    <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">📋 名簿を更新</button>
     <!-- ⑨-a: 「読み込み」ボタンは撤去（復元は「バックアップ」に集約＝ファイル/貼り付けの両方をバックアップ画面で行う）。
          loadFile input は温存（loadData の受け皿・import_routing 資産）。openLoadModal/loadData/loadFromPaste は温存。 -->
     <input type="file" id="loadFile" accept=".json" style="display:none">
@@ -307,10 +307,11 @@ body.sb-active{overflow:hidden}
          value/disabled/注記を毎描画同期し、選択肢(3/4/5＋現在値)も renderRoundsControl が動的生成する。 -->
     <div class="section" id="rounds-config-section">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <h2 style="margin:0;font-size:15px">回戦数</h2>
+        <h2 style="margin:0;font-size:15px">回戦数（全クラス既定）</h2>
         <select id="inp-rounds" style="font-size:16px;padding:4px 8px"></select>
         <span id="rounds-config-note" style="font-size:11px;color:#888"></span>
       </div>
+      <div style="font-size:11px;color:#888;margin-top:6px">クラスごとに変えたい場合は、上の「クラスを管理する」の各クラスで個別に設定できます。</div>
     </div>
     <div class="section">
       <div style="display:flex;align-items:center;gap:8px">
@@ -848,11 +849,16 @@ function normalizeClasses(raw){
     classes=raw.classes
       .filter(function(c){return c&&isSafeClassId(c&&c.id);})
       .map(function(c){
-        return {
+        // ROUNDS-PER-CLASS-001: クラス別回戦数の上書き。正の整数のみ保持し、未設定/不正は
+        //   キーを付けない（＝全体既定 state.rounds に従う）。JSON では undefined キーは落ちる。
+        var rn=(c&&c.rounds!=null)?Math.floor(Number(c.rounds)):NaN;
+        var o={
           id:c.id,
           name:typeof c.name==='string'&&c.name?c.name:(c.id+'クラス'),
           started:c.started===true
         };
+        if(!isNaN(rn)&&rn>=1)o.rounds=rn;
+        return o;
       });
     // 既存A/B大会の互換補完（足りない側を追加）
     ['A','B'].forEach(function(cls){
@@ -2472,7 +2478,7 @@ function createMemberFromParticipant(p,master,date){
 // Issue #273: 支部マスタ同期/統合のクラス列挙を「全クラス対応」にするための純関数。
 //   旧実装は updateBranchMasterFromTournament / mergeTournamentParticipantsIntoMaster の双方で
 //   var classes=['A','B'] とハードコードしており、addClass()/nextClassId() で追加できる C 以降の
-//   クラス参加者がマスタ同期（「📋 名簿に反映＋コピー」）・過去大会統合（「マスタ」タブ）の両経路から
+//   クラス参加者がマスタ同期（「📋 名簿を更新」）・過去大会統合（「マスタ」タブ）の両経路から
 //   黙って取りこぼされていた。state.classes（normalizeState が常に整える権威リスト・A/B を必ず含む）
 //   の id を主とし、保存揺れに備えて Object.keys(state.players) も union する（重複除外・順序は
 //   classes 優先 → players のみに存在する id を後置）。A/B のみの state では ['A','B'] と同順・同一
@@ -4046,7 +4052,7 @@ function buildMigrationModalHtml(opts){
   html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">過去大会の統合（支部マスタへ）</h3>';
   // M5: 「読み込み」との違いを明記
   html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">過去大会の参加者を支部マスタに取り込みます。<strong>大会そのものを復元する機能ではありません。</strong></p>';
-  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">「📋 名簿に反映＋コピー」でコピーしたテキストを貼り付けてください：</p>';
+  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">以前に保存・バックアップした大会データ（JSON）を貼り付けてください：</p>';
   html+='<textarea id="mig-paste-area" rows="8" style="width:100%;font-size:16px;font-family:monospace;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box" placeholder="ここに大会データを貼り付けてください"></textarea>';
   html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-top:8px;margin-bottom:0">複数大会をまとめて取り込む場合は、1大会分を貼り付けたあとに空行を1行入れて、次の大会データを貼り付けてください。</p>';
   // M3: 既存ファイル保有者向けの代替案内
@@ -4591,6 +4597,23 @@ function renderClassManager(){
       var n=(state&&state.players&&Array.isArray(state.players[c.id]))?state.players[c.id].length:0;
       statusSpan.textContent='('+n+'名'+(isClassStarted(c.id)?'・開始済み':'')+')';
       row.appendChild(statusSpan);
+      // ROUNDS-PER-CLASS-001: クラス別の回戦数上書き。既定（全クラス共通）＋3/4/5。開始後はロック。
+      //   「既定」を選ぶと上書きを外して全体既定に戻す。選択肢は現在の上書き値が3/4/5以外でも必ず含める。
+      var gdef=Math.floor(Number(state&&state.rounds)); if(isNaN(gdef)||gdef<1)gdef=4;
+      var curOv=(c&&c.rounds!=null)?Math.floor(Number(c.rounds)):NaN;
+      var nums=[3,4,5];
+      if(!isNaN(curOv)&&curOv>=1&&nums.indexOf(curOv)<0)nums.push(curOv);
+      nums.sort(function(a,b){return a-b;});
+      var roundsSel=document.createElement('select');
+      roundsSel.style.cssText='font-size:13px;padding:2px 4px';
+      if(roundsSel.setAttribute)roundsSel.setAttribute('aria-label',(c.name||c.id)+'の回戦数');
+      var optHtml='<option value="">既定('+gdef+')</option>';
+      for(var oi=0;oi<nums.length;oi++)optHtml+='<option value="'+nums[oi]+'">'+nums[oi]+'回戦</option>';
+      roundsSel.innerHTML=optHtml;
+      roundsSel.value=(!isNaN(curOv)&&curOv>=1)?String(curOv):'';
+      roundsSel.disabled=isClassStarted(c.id);
+      roundsSel.addEventListener('change',function(){onChangeClassRounds(c.id,roundsSel.value);});
+      row.appendChild(roundsSel);
       var renameBtn=document.createElement('button');
       renameBtn.type='button';
       renameBtn.className='btn-sm';
@@ -4878,6 +4901,48 @@ function notifySaveWarning(options){
   if(aggregateKey!==undefined)indicatorPayload.aggregateKey=aggregateKey;
   if(severity!==undefined)indicatorPayload.severity=severity;
   recordSaveWarningForIndicator(indicatorPayload);
+}
+
+// ROUNDS-PER-CLASS-001: そのクラスに適用する回戦数を返す。クラス別上書き(state.classes[i].rounds)が
+//   正の整数ならそれを、無ければ全体既定 state.rounds（既定4）を使う。ペアリング/順位/星取/報告書は
+//   すべて本関数を通す（クラスごとに回戦数を変えられる）。
+function roundsForClass(cls){
+  var g=Math.floor(Number(state&&state.rounds));
+  if(isNaN(g)||g<1)g=4;
+  if(state&&Array.isArray(state.classes)){
+    for(var i=0;i<state.classes.length;i++){
+      var c=state.classes[i];
+      if(c&&c.id===cls){
+        var r=(c.rounds!=null)?Math.floor(Number(c.rounds)):NaN;
+        return (!isNaN(r)&&r>=1)?r:g;
+      }
+    }
+  }
+  return g;
+}
+
+// ROUNDS-PER-CLASS-001: クラス別回戦数の change ハンドラ。空文字=既定に戻す（上書き削除）、数値=上書き設定。
+//   開始後はロック（表示を戻して拒否）。正の整数にクランプ。renderClassManager から結線。
+function onChangeClassRounds(classId,val){
+  if(!state||!Array.isArray(state.classes))return;
+  if(isClassStarted(classId)){renderClassManager();if(typeof showMsg==='function')showMsg('開始後は回戦数を変更できません。','warn');return;}
+  var c=null;
+  for(var i=0;i<state.classes.length;i++){if(state.classes[i]&&state.classes[i].id===classId){c=state.classes[i];break;}}
+  if(!c)return;
+  var s=String(val==null?'':val).trim();
+  if(s===''){
+    if(c.rounds!=null)delete c.rounds;   // 既定に戻す
+  }else{
+    var v=Math.floor(Number(s));
+    if(isNaN(v)||v<1){renderClassManager();return;}
+    c.rounds=v;
+  }
+  save();
+  renderClassManager();
+  if(typeof showMsg==='function'){
+    var nm=c.name||(classId+'クラス');
+    showMsg(s===''?nm+'の回戦数を既定に戻しました。':nm+'の回戦数を'+c.rounds+'回戦にしました。','ok');
+  }
 }
 
 // ROUNDS-CONFIG-001: 回戦数セレクタ(#inp-rounds)の描画同期。
@@ -7632,7 +7697,7 @@ function submitRound(cls){
   }
   state.results[cls].push(JSON.parse(JSON.stringify(state.pairings[cls])));
   state.pairings[cls]=[];
-  if(state.results[cls].length<state.rounds)generatePairing(cls);
+  if(state.results[cls].length<roundsForClass(cls))generatePairing(cls);
   renderTournament(cls);save();
   if(typeof showToast==='function')showToast('\u2713 結果を保存しました');
   // A-5.1-SAVE-003: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
@@ -7656,7 +7721,7 @@ function submitRound(cls){
     });
   }
   // BACKUP-NUDGE (当日第2弾⑫): このクラスが完走（rounds 到達）した節目で促す。全クラス終了なら全体を促す。
-  if(state.results[cls]&&state.results[cls].length>=state.rounds&&typeof promptMilestoneBackup==='function'){
+  if(state.results[cls]&&state.results[cls].length>=roundsForClass(cls)&&typeof promptMilestoneBackup==='function'){
     if(typeof isTournamentDone==='function'&&isTournamentDone())promptMilestoneBackup('all','全クラスの対局が終了しました');
     else promptMilestoneBackup('class:'+cls,_classDisplayNameForBackup(cls)+'が終了しました');
   }
@@ -7731,12 +7796,12 @@ function buildPastResultsHtml(cls){
 
 function buildCurrentPairingsHtml(cls, roundNum, done){
   if(done){
-    return '<div class="final-done">全'+state.rounds+'局終了！「最終結果」タブで確認してください。</div>';
+    return '<div class="final-done">全'+roundsForClass(cls)+'局終了！「最終結果」タブで確認してください。</div>';
   }
   if(state.pairings[cls].length===0)return '';
   var html='';
   var duplicatePlayers=getDuplicatePlayersInPairings(cls);
-  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3>'+roundNum+'回戦 組み合わせ</h3><span style="background:#2E75B6;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px">'+roundNum+' / '+state.rounds+'回戦</span></div>';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3>'+roundNum+'回戦 組み合わせ</h3><span style="background:#2E75B6;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px">'+roundNum+' / '+roundsForClass(cls)+'回戦</span></div>';
   if(duplicatePlayers.length>0){
     html+='<div class="alert alert-err">同じ選手が複数の対局に入っています：'+escapeHtml(duplicatePlayers.map(function(pid){return getName(pid,cls);}).join('、'))+'</div>';
   }
@@ -8049,7 +8114,7 @@ var HELP_TEXTS={
     lines:[
       '支部マスタは過去の参加者を蓄える名簿です。当日の大会データとは別物で、ここを直接いじらなくても大会運営はできます。',
       '「📥 過去大会を支部マスタに統合」：以前保存した大会データ（JSON）から参加者を名簿へ追加・更新します。',
-      '受付・対局の画面で「📋 名簿に反映＋コピー」を押すと、その大会の参加者が自動で支部マスタ（名簿）にも反映されます（同期）。',
+      '受付・対局の画面で「📋 名簿を更新」を押すと、その大会の参加者が支部マスタ（名簿）に反映されます（同期）。',
       '「📤 エクスポート」で名簿をファイル保存、「📂 インポート」で読み込みできます。端末の移行や万一の消失に備え、ときどきエクスポートして保管してください。',
       '取り込むファイルが壊れている・対応していない版のときは、取り込みを中止して既存の名簿を守ります（黙って消えません）。',
       '「📛 リセット」は名簿を全消去します。実行前に必ずエクスポートで退避してください。当日は無理にマスタをいじらなくて大丈夫です。'
@@ -8062,7 +8127,7 @@ var HELP_TEXTS={
     lines:[
       '画面上部に「⚠ 未保存の恐れ・要バックアップ」が出るのは、データを自動保存しようとして保存できたか確認が取れなかったときです（必ずしも失敗ではありません）。',
       'まず落ち着いて運営を続けて大丈夫です。入力した内容は画面に残っています。',
-      '念のため「バックアップ」または「📋 名簿に反映＋コピー」でデータを控えておくと安全です（端末やブラウザの不調に備え）。',
+      '念のため「バックアップ」でデータを控えておくと安全です（端末やブラウザの不調に備え）。',
       'この表示はブラウザを再読み込み（リロード）すると消えます。何度も出る・操作が保存されない場合は、空き容量を確認し、こまめにバックアップしてください。',
       'プライベートブラウズ（シークレット）では保存が制限されることがあります。通常モードでの利用をおすすめします。'
     ]
@@ -8209,7 +8274,7 @@ function renderTournament(cls){
     return;
   }
   var wins=getWins(cls);
-  var done=state.results[cls].length>=state.rounds;
+  var done=state.results[cls].length>=roundsForClass(cls);
   var roundNum=state.results[cls].length+1;
   // PAIRING-UX-SCORE-LIST-READABILITY-IMPL-LIGHT (PR #104 §4.1 候補 C):
   //   暫定成績の並び順を「勝数降順 + 同勝数内エントリー番号順」に明示する。
@@ -8889,7 +8954,7 @@ function buildResultsMobileHtml(cls, finals, wins){
     html+='</div>';
     html+='</div>';
     html+='<div style="display:flex;gap:4px">';
-    for(var r=0;r<state.rounds;r++){
+    for(var r=0;r<roundsForClass(cls);r++){
       html+=buildResultsRoundCellMobileHtml(cls, f.p.id, r, wins);
     }
     html+='</div></div>';
@@ -8900,7 +8965,7 @@ function buildResultsMobileHtml(cls, finals, wins){
 // PC向け表示全体(テーブル)
 function buildResultsDesktopHtml(cls, finals, wins){
   var html='<div style="overflow-x:auto"><table><thead><tr><th style="width:60px">順位</th><th style="text-align:left">氏名</th>';
-  for(var r=1;r<=state.rounds;r++)html+='<th>'+r+'回戦</th>';
+  for(var r=1;r<=roundsForClass(cls);r++)html+='<th>'+r+'回戦</th>';
   html+='<th>勝数(A)</th><th>負数</th><th>B<br><small style="font-weight:normal;font-size:10px">対戦相手<br>勝数合計</small></th><th>C<br><small style="font-weight:normal;font-size:10px">勝った相手<br>勝数合計</small></th></tr></thead><tbody>';
   var displayRanks=computeDisplayRanks(finals,cls);
   for(var idx=0;idx<finals.length;idx++){
@@ -8908,7 +8973,7 @@ function buildResultsDesktopHtml(cls, finals, wins){
     var rowCls=rank===1?'row-r1':rank===2?'row-r2':rank===3?'row-r3':'';
     var badge=_resultsRankBadgeHtml(rank);
     html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+nameWithNoRubyHtml(f.p.id,cls)+'</td>';
-    for(var r=0;r<state.rounds;r++){
+    for(var r=0;r<roundsForClass(cls);r++){
       html+=buildResultsRoundCellDesktopHtml(cls, f.p.id, r, wins);
     }
     html+='<td><strong>'+f.A+'</strong></td><td>'+(f.played-f.A)+'</td><td>'+f.B+'</td><td>'+f.C+'</td></tr>';
@@ -8920,7 +8985,7 @@ function buildResultsDesktopHtml(cls, finals, wins){
 // 1クラス分のセクション全体(参加者0チェックは呼び出し側で行う前提)
 function buildResultsClassHtml(cls, isSP){
   var wins=getWins(cls);
-  var done=state.results[cls].length>=state.rounds;
+  var done=state.results[cls].length>=roundsForClass(cls);
   var finals=calcFinal(cls);
   var html='<div class="section"><h2>'+cls+'クラス '+(done?'最終結果':'（途中経過）')+'</h2>';
   html+=isSP?buildResultsMobileHtml(cls, finals, wins):buildResultsDesktopHtml(cls, finals, wins);
@@ -9012,19 +9077,13 @@ function syncBranchMasterOnSave(){
 }
 
 // クリップボード優先、非対応(http等)はファイルダウンロードにフォールバック
+// SAVE-BTN-MEIBO-001: 保存ボタンは「名簿を更新」＝この大会の参加者を支部マスタ（名簿）へ反映するだけの
+//   単機能に一本化した（旧「大会データをコピー」のクリップボード書き出しは撤去）。データの控え/バックアップは
+//   専用の「バックアップ」ボタンに一本化（役割の重複を解消）。saveDataAsFile は互換のため定義を温存（未使用）。
 function saveData(){
-  // F2: 大会データコピー時に支部マスタへ同期（A-1 ではこのタイミングのみ）
+  // F2: 名簿を更新（支部マスタへ同期）。当日の参加者・クラス構成を名簿へ反映する。
   syncBranchMasterOnSave();
-  var json=JSON.stringify(state,null,2);
-  if(navigator.clipboard&&navigator.clipboard.writeText&&window.isSecureContext){
-    navigator.clipboard.writeText(json).then(function(){
-      alert('名簿に反映し、大会データをコピーしました。\n\nメモ帳やEvernoteに貼り付けて保管できます。\n\n次回大会前に「マスタ」タブの統合機能で取り込めます。');
-    }).catch(function(){
-      saveDataAsFile(json);
-    });
-    return;
-  }
-  saveDataAsFile(json);
+  alert('名簿を更新しました。\n\nこの大会の参加者を支部マスタ（名簿）に反映しました。\n\nデータの控えが必要なときは「バックアップ」をお使いください。');
 }
 
 function saveDataAsFile(json){
@@ -9550,7 +9609,7 @@ function buildPrintResultsHtml(){
     html+='<div style="font-size:15px;font-weight:bold;color:#1F3864;margin-bottom:4px">'+escapeHtml(className)+'</div>';
     html+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px">';
     html+='<thead><tr style="background:#e8f0f8"><th style="padding:6px 8px;border:1px solid #ccc;text-align:center">順位</th><th style="padding:6px 8px;border:1px solid #ccc;text-align:left">氏名</th>';
-    for(var r=1;r<=state.rounds;r++)html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+r+'回戦</th>';
+    for(var r=1;r<=roundsForClass(cls);r++)html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+r+'回戦</th>';
     html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">勝数(A)</th>';
     html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">負数</th>';
     html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">B<br><small style="font-weight:normal;font-size:10px">対戦相手<br>勝数合計</small></th>';
@@ -9566,7 +9625,7 @@ function buildPrintResultsHtml(){
       //   画面 UI（buildResultsMobileHtml / buildResultsDesktopHtml）や受付・対局カード・
       //   参加者一覧では従来通り getNameWithNo を使用し本変更の影響を受けない。
       html+='<td style="padding:6px 8px;border:1px solid #ccc;font-weight:bold">'+playerNameRubyHtml(getName(f.p.id,cls),yomiOf(f.p.id,cls))+'</td>';
-      for(var r=0;r<state.rounds;r++){
+      for(var r=0;r<roundsForClass(cls);r++){
         var round=state.results[cls][r];
         if(!round){html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;color:#ccc">-</td>';continue;}
         var match=null;
@@ -9695,7 +9754,7 @@ function printPairings(){
     var pccid=pcc.id;
     if(typeof isClassStarted==='function'&&!isClassStarted(pccid))continue;
     var pccResults=(state.results&&Array.isArray(state.results[pccid]))?state.results[pccid]:[];
-    var pccRounds=Number(state.rounds)||0;
+    var pccRounds=roundsForClass(pccid)||0;
     if(pccRounds>0&&pccResults.length>=pccRounds)continue;
     var pccPairings=(state.pairings&&Array.isArray(state.pairings[pccid]))?state.pairings[pccid]:[];
     if(pccPairings.length===0)continue;
@@ -10642,7 +10701,7 @@ function bindReportEvents(){
 // ROUND-CLASS-START-005 (spec §15.1 row 3): A/B 固定 literal を解消し
 //   state.classes を走査する形に置換。挙動は既存と等価：
 //     - 参加者のいるクラスが 1 つでもあれば hasAnyClass=true
-//     - そのクラスの results.length < state.rounds なら未完了 (false)
+//     - そのクラスの results.length < roundsForClass(cls) なら未完了 (false)
 //     - 参加者 0 のクラスは判定対象外（skip-empty 相当）
 //   3 クラス以上の構成 (C 含む) でも自然に拡張される。
 function isTournamentDone(){
@@ -10658,7 +10717,7 @@ function isTournamentDone(){
     if(players.length>0){
       hasAnyClass=true;
       var results=(state.results&&state.results[cls])||[];
-      if(results.length<state.rounds)return false;
+      if(results.length<roundsForClass(cls))return false;
     }
   }
   return hasAnyClass;
@@ -10747,7 +10806,7 @@ function buildScoreboardClassTableHtml(cls,sourceState){
   if(players.length===0)return '';
   var finals=calcFinal(cls);
   var ranks=computeDisplayRanks(finals,cls);
-  var rounds=Number(state.rounds)||0;
+  var rounds=roundsForClass(cls)||0;
   var resultsArr=(state.results&&state.results[cls])||[];
   var done=rounds>0&&resultsArr.length>=rounds;
   var html='<div class="sb-class">';
