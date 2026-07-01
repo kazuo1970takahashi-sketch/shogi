@@ -31,6 +31,10 @@ setA(4,false);
 var h4=E.buildClassActionBarHtml('A');
 ok(h4.indexOf('id="startBtnClass_A"')>=0,'E1 偶数は「全員で1局目を開始」ボタンあり');
 ok(h4.indexOf('class-start-note')<0,'E2 偶数は奇数案内を出さない');
+// START-FRP-UX-003: 縦積みの開始ボタンは全幅で揃える（全員/部分開始）。partial の btn-sm は撤去。
+ok(h4.indexOf('id="startBtnClass_A" style="width:100%"')>=0,'E3 全員開始ボタンは全幅(width:100%)');
+ok(h4.indexOf('id="startBtnPartial_A" style="width:100%"')>=0,'E4 部分開始ボタンも全幅(width:100%)');
+ok(h4.indexOf('btn-sm" id="startBtnPartial_A"')<0,'E5 部分開始ボタンから btn-sm を撤去（全員開始と同格化）');
 
 console.log('=== 奇数（7名・未開始）: 全員開始ボタン無し＋理由案内 ===');
 setA(7,false);
