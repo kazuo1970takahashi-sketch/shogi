@@ -30,6 +30,8 @@
 
 加えて、**回帰・データ消失リスク・保存復元の破壊**も P0/P1 で指摘する（例: `state.pairings` / `state.results` の破壊、match 正準形 `{p1,p2,winner,lastModifiedBy}`＝`sanitizeMatch` からの逸脱、`generatePairing` の意図しない全員上書き、`normalizeState` の往復恒等性が崩れる保存スキーマ変更）。データモデルの詳細は [`docs/REFERENCE.md`](docs/REFERENCE.md)。
 
+UI（ボタン・色・文言・通知・ヘルプ）を触る差分は [`docs/STYLE-GUIDE.md`](docs/STYLE-GUIDE.md)（UI 規約正本）への準拠も確認し、違反は **P2** で指摘する（非ブロッキング）。
+
 ## Severity 運用
 
 | severity | 対象 | 区分 |
