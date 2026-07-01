@@ -389,6 +389,13 @@ body.sb-active{overflow:hidden}
     </div>
   </div>
   <div id="pane-tournament" style="display:none">
+    <!-- HELP-UX-006 (STYLE-GUIDE §9 M2): 対局管理タブの迷子防止ヘルプ。#309/#341 のモーダル三層を流用し topic 追加のみ。
+         対局画面は per-class 動的描画（buildCurrentPairingsHtml=golden 対象）のため、静的アンカーをここに置き
+         click は bindReportEvents 側で openHelpModal('tournament') へ結線する（standings help #341 と同経路・golden 非接触）。 -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px" class="no-print">
+      <span style="font-size:14px;font-weight:600;color:#1F3864">対局管理の使い方</span>
+      <button type="button" id="helpBtnTournament" class="btn-sm" title="対局管理の使い方をヘルプで表示します" aria-label="対局管理の使い方ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
+    </div>
     <!-- REPORT-PRINT-003: 全クラスの現ラウンド組み合わせを印刷するボタン。
          no-print: 印刷時はボタン自体を隠す（クリックはブラウザ印刷経路ではなく専用 HTML 経路）。
          配置: pane-tournament-grid のクラス別 action bar（リセット / 再生成）と物理的に離すため
@@ -430,6 +437,8 @@ body.sb-active{overflow:hidden}
     <!-- B-2b-wire (#343): 確定結果をクラウド（Supabase）へ送信（任意・冪等・押さなければ従来通り）。
          click は bindReportEvents で sendTournamentToCloud に結線。supabase-js/config は click 時のみ遅延ロード。 -->
     <div style="margin-top:8px;text-align:right" class="no-print">
+      <!-- HELP-UX-006 (STYLE-GUIDE §9 M2): 送信ボタン脇「？ ヘルプ」→ openHelpModal('cloud')（bindReportEvents で結線・topic は大会履歴側と共用）。 -->
+      <button type="button" id="helpBtnCloud" class="btn-sm" title="クラウド送信・取得の意味をヘルプで表示します" aria-label="クラウド送信・取得ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
       <button type="button" id="cloudSendBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ クラウドへ送信（任意）</button>
       <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
     </div>
@@ -8207,6 +8216,34 @@ var HELP_TEXTS={
       'この表示はブラウザを再読み込み（リロード）すると消えます。何度も出る・操作が保存されない場合は、空き容量を確認し、こまめにバックアップしてください。',
       'プライベートブラウズ（シークレット）では保存が制限されることがあります。通常モードでの利用をおすすめします。'
     ]
+  },
+  // HELP-UX-006 (STYLE-GUIDE §9 M2 / 監査 Step2): 対局管理タブ全般の迷子防止ヘルプ。#309/#341 のモーダル三層を流用し topic 追加のみ。
+  //   本文は buildHelpModalHtml で escapeHtml 経由（innerHTML への自由文流入を増やさない）。保存スキーマ不変・script-global 固定文字列。
+  //   文言は作者承認済（2026-07-02）。
+  'tournament':{
+    title:'対局管理の使い方ヘルプ',
+    lines:[
+      '対局の開始：人数が偶数なら「全員で1局目を開始」。全員そろわなくても「このクラスを部分開始」で来た人から始められます。',
+      '勝敗の入力：勝った人のボタンを押します。もう一度押すと取り消し、相手側を押すと変更できます。',
+      '全卓の入力が終わると「N回戦 確定して次へ」が押せるようになります。未入力が残っている間は残り卓数が表示されます。',
+      '「組み合わせを再生成」は入力済みの勝敗が消えることがあります。確認メッセージをよく読んで使ってください。',
+      '途中で帰る人は、受付タブの参加者一覧で「棄権」にすると次の組み合わせから外れます（それまでの成績は残ります）。',
+      '「現在の組み合わせを印刷 / PDF保存」で貼り出し用の組み合わせ表を出せます。'
+    ]
+  },
+  // HELP-UX-006 (STYLE-GUIDE §9 M2 / 監査 Step2): クラウド送信/取得の意味と失敗時の影響のヘルプ。
+  //   順位タブ「☁ クラウドへ送信」脇（helpBtnCloud・静的）と大会履歴タブのクラウド見出し脇（history-cloud-help・動的）で1 topic を共用。
+  //   本文は buildHelpModalHtml で escapeHtml 経由。保存スキーマ不変・script-global 固定文字列。文言は作者承認済（2026-07-02）。
+  'cloud':{
+    title:'クラウド送信・取得ヘルプ',
+    lines:[
+      'クラウドは大会結果をみんなで共有するための仕組みです。使わなくても大会運営・報告書には影響しません（任意）。',
+      '「☁ クラウドへ送信」：確定した結果をクラウドに保存します。クラウド管理ページ（app/）でのログインとネット接続が必要です。',
+      '同じ大会を何度送信しても二重にはなりません。',
+      '送信に失敗しても当日のデータは端末に残っています。運営はそのまま続けて、あとで再送信できます。',
+      '「大会履歴」タブの「☁ クラウドの過去大会」→「読み込む」で、共有された過去大会の結果を見られます。',
+      'クラウドはバックアップの代わりではありません。端末の控えは「バックアップ」ボタンで保存してください。'
+    ]
   }
 };
 
@@ -10823,6 +10860,13 @@ function bindReportEvents(){
   // HELP-UX-004 (#341): 順位タブ見出し脇「？ ヘルプ」（静的 HTML・id=helpBtnStandings）→ openHelpModal('standings')。
   var helpBtnStandings=document.getElementById('helpBtnStandings');
   if(helpBtnStandings)helpBtnStandings.addEventListener('click',function(){openHelpModal('standings');});
+  // HELP-UX-006 (STYLE-GUIDE §9 M2): 対局管理タブ上部「？ ヘルプ」（静的 HTML・id=helpBtnTournament）→ openHelpModal('tournament')。
+  //   #341 と同じく静的アンカーの結線は bindReportEvents に集約（1回だけ bind・build/bind 分離）。
+  var helpBtnTournament=document.getElementById('helpBtnTournament');
+  if(helpBtnTournament)helpBtnTournament.addEventListener('click',function(){openHelpModal('tournament');});
+  // HELP-UX-006 (STYLE-GUIDE §9 M2): 「☁ クラウドへ送信」脇「？ ヘルプ」（静的 HTML・id=helpBtnCloud）→ openHelpModal('cloud')。
+  var helpBtnCloud=document.getElementById('helpBtnCloud');
+  if(helpBtnCloud)helpBtnCloud.addEventListener('click',function(){openHelpModal('cloud');});
   // B-2b-wire (#343): 「☁ クラウドへ送信」（静的・id=cloudSendBtn）→ sendTournamentToCloud（任意・失敗耐性）。
   var cloudSendBtn=document.getElementById('cloudSendBtn');
   if(cloudSendBtn)cloudSendBtn.addEventListener('click',function(){
@@ -11585,7 +11629,8 @@ function renderHistoryList(flashMessage){
   }
   // HISTORY-CLOUD: クラウドの過去大会セクション（別セクション・①案）。読み込みは押下時（fail-soft）。
   html+='<hr class="separator">';
-  html+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px"><h2 style="font-size:16px;margin:0;color:#1F3864">☁ クラウドの過去大会（みんなで共有）</h2><button type="button" class="btn-sm" id="history-cloud-load" style="background:#fff;border:1px solid #1F3864;color:#1F3864">読み込む</button></div>';
+  // HELP-UX-006 (STYLE-GUIDE §9 M2): クラウド見出し脇「？ ヘルプ」→ openHelpModal('cloud')（topic は順位タブ送信ボタン脇と共用・下で bind）。
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px"><h2 style="font-size:16px;margin:0;color:#1F3864">☁ クラウドの過去大会（みんなで共有）</h2><span style="display:flex;gap:6px;align-items:center"><button type="button" class="btn-sm" id="history-cloud-help" title="クラウド送信・取得の意味をヘルプで表示します" aria-label="クラウド送信・取得ヘルプ" style="background:#fff;font-weight:400;white-space:nowrap">？ ヘルプ</button><button type="button" class="btn-sm" id="history-cloud-load" style="background:#fff;border:1px solid #1F3864;color:#1F3864">読み込む</button></span></div>';
   html+='<div style="font-size:12px;color:#888;margin-bottom:6px">クラウドに保存された過去大会の結果一覧です（ログイン＋オンライン時）。</div>';
   html+='<div id="history-cloud-status" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-bottom:6px"></div>';
   html+='<div id="history-cloud-list"></div>';
@@ -11600,6 +11645,9 @@ function renderHistoryList(flashMessage){
   if(cloudLoadBtn)cloudLoadBtn.addEventListener('click',function(){
     loadCloudPastTournamentsUI(function(msg){ if(typeof applyCloudStatus==='function')applyCloudStatus(document.getElementById('history-cloud-status'),msg); else { var el=document.getElementById('history-cloud-status'); if(el)el.textContent=msg; } });
   });
+  // HELP-UX-006 (STYLE-GUIDE §9 M2): クラウド見出し脇「？ ヘルプ」→ openHelpModal('cloud')。renderHistoryList は動的描画のため描画直後にここで bind（history-save-btn 等と同型）。
+  var cloudHelpBtn=document.getElementById('history-cloud-help');
+  if(cloudHelpBtn)cloudHelpBtn.addEventListener('click',function(){openHelpModal('cloud');});
   // 既に取得済みなら一覧を即復元（戻る/再表示で再取得不要）。
   if(_cloudHistoryState&&_cloudHistoryState.tournaments){
     var cl=document.getElementById('history-cloud-list');
