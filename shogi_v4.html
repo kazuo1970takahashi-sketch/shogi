@@ -9053,7 +9053,7 @@ function syncBranchMasterOnSave(){
       //   重複回避のため既存 explicit console.warn / showMsg は呼ばない（PR #79 storage-quota パターン）。
       //   aggregation 対象外（SAVE_WARN_AGGREGATABLE_KINDS は変更しない）。
       notifySaveWarning({
-        message:'支部マスタが破損しているため自動同期をスキップしました（大会データのコピーは継続）。マスタタブのインポート・統合で復旧できます。',
+        message:'支部マスタ（名簿）が破損しているため名簿への自動反映をスキップしました（大会データは端末に保存済み）。マスタタブのインポート・統合で復旧できます。',
         consoleTag:'[STORAGE-CORRUPTED] syncBranchMasterOnSave skipped (master._loaded_with_corruption)',
         callsiteId:'PARSE-MASTER-003',
         kind:'storage-corrupted',
@@ -9070,7 +9070,7 @@ function syncBranchMasterOnSave(){
     updateBranchMasterFromTournament(state,master,{tournament_id:state.tournament_id,tournament_date:date,yomiMap:_pendingNewYomi});
     // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2-B): yomi バックフィルを含む master 同期の保存失敗を握り潰さない。
     //   saveBranchMaster は失敗時に notifySaveWarning（showMsg('warn')＋console.warn＋indicator +1）を
-    //   既に発火する（kind:'storage-error' は集約対象外＝確実に可視化）。大会データのコピー（saveData の
+    //   既に発火する（kind:'storage-error' は集約対象外＝確実に可視化）。「名簿を更新」完了の alert（saveData の
     //   後続表示）は native alert で別経路のため、この inline 警告は上書きされない。よって二重通知は避け、
     //   ここでは戻り値を受けて「保存できなかった一時マップ（_pendingNewYomi）を破棄しない」ことで
     //   ふりがなの反映漏れを握り潰さない（成功時のみクリアして次回再試行に委ねる）。
