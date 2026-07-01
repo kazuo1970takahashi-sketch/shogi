@@ -3708,7 +3708,7 @@ function processMasterImportText(text,mode,setStatus){
   if(mode==='overwrite'){
     var result=applyOverwriteImport(parsed);
     if(!result.success){
-      if(result.error==='tournament_format')setStatus('これは過去大会データの形式です。「マスタ」タブの「📥 過去大会を支部マスタに統合」をご利用ください');
+      if(result.error==='tournament_format')setStatus('これは過去大会データの形式です。「マスタ」タブの「⚙ 名簿のメンテナンス」を開き「📥 過去大会を支部マスタに統合」をご利用ください');
       else if(result.error==='invalid_format')setStatus('マスタの形式として認識できませんでした（schema_version / members を確認してください）');
       else setStatus('インポートに失敗しました');
       return;
@@ -3747,7 +3747,7 @@ function processMasterImportText(text,mode,setStatus){
     }
     var mr=applyMergeImport(parsed,current);
     if(!mr.success){
-      if(mr.error==='tournament_format')setStatus('これは過去大会データの形式です。「マスタ」タブの「📥 過去大会を支部マスタに統合」をご利用ください');
+      if(mr.error==='tournament_format')setStatus('これは過去大会データの形式です。「マスタ」タブの「⚙ 名簿のメンテナンス」を開き「📥 過去大会を支部マスタに統合」をご利用ください');
       else if(mr.error==='invalid_format')setStatus('マスタの形式として認識できませんでした（schema_version / members を確認してください）');
       else setStatus('インポートに失敗しました');
       return;
@@ -8122,7 +8122,7 @@ var HELP_TEXTS={
     title:'支部マスタの使い方ヘルプ',
     lines:[
       '支部マスタは過去の参加者を蓄える名簿です。当日の大会データとは別物で、ここを直接いじらなくても大会運営はできます。',
-      '「📥 過去大会を支部マスタに統合」：以前保存した大会データ（JSON）から参加者を名簿へ追加・更新します。',
+      '「📥 過去大会を支部マスタに統合」（「⚙ 名簿のメンテナンス」内）：以前保存した大会データ（JSON）から参加者を名簿へ追加・更新します。',
       '受付・対局の画面で「📋 名簿を更新」を押すと、その大会の参加者が支部マスタ（名簿）に反映されます（同期）。',
       '「📤 エクスポート」で名簿をファイル保存、「📂 インポート」で読み込みできます。端末の移行や万一の消失に備え、ときどきエクスポートして保管してください。',
       '取り込むファイルが壊れている・対応していない版のときは、取り込みを中止して既存の名簿を守ります（黙って消えません）。',
