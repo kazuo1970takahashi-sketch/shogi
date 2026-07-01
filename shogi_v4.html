@@ -8000,7 +8000,8 @@ function buildClassActionBarHtml(cls){
     // START-UX-CONSOLIDATE-001 (設計 §7): 正規の開始導線。文言を「<className>全員で1局目を開始」に明確化。
     //   「全員」は全クラスではなく、そのクラス内全員の意味。startTournamentForClass(cls) は当該クラスのみ開始する。
     //   START-FRP-UX-001: 主導線として full-size btn-primary にする（btn-sm を外す）。
-    html+='<button type="button" class="btn-primary" id="startBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'全員で1局目を開始</button>';
+    //   START-FRP-UX-003: 部分開始ボタンと縦積みで幅を揃える＝全幅(width:100%)。box-sizing:border-box はグローバル。
+    html+='<button type="button" class="btn-primary" id="startBtnClass_'+escapeHtml(cls)+'" style="width:100%">'+escapeHtml(className)+'全員で1局目を開始</button>';
     html+='<span style="font-size:12px;color:#888">※このクラス内の全員で開始します（他クラスは開始しません）</span>';
   } else if(players.length>=1){
     // START-FRP-UX-002: 未開始だが「全員で1局目を開始」が出せない理由と対処を明示する（黙って消さない）。
@@ -8017,7 +8018,7 @@ function buildClassActionBarHtml(cls){
   //   選択者だけの1局目対局を append 作成できる（onClickAppendFirstRound）。文言は「全員で1局目を開始」と対比する。
   //   既存 startBtnClass_ / リセットボタンの出力条件・id・文言は一切変更しない（純追加）。
   if(!classStarted && players.length>=1){
-    html+='<button type="button" class="btn-primary btn-sm" id="startBtnPartial_'+escapeHtml(cls)+'" title="来ている人だけで先に始めます。未到着者は未割当として残ります。">このクラスを部分開始（未割当者を表示）</button>';
+    html+='<button type="button" class="btn-primary" id="startBtnPartial_'+escapeHtml(cls)+'" style="width:100%" title="来ている人だけで先に始めます。未到着者は未割当として残ります。">このクラスを部分開始（未割当者を表示）</button>';
     html+='<span style="font-size:12px;color:#888">※部分開始にすると、1局目の未割当者から選んで対局を追加作成できます（既存の対局は変更しません）</span>';
   }
   html+='</div>';
