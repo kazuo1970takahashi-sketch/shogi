@@ -114,6 +114,18 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
    3+ クラス本格 UI レイアウト改善は後続タスク（008 以降）で扱う。 */
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:700px){.grid2{grid-template-columns:1fr}}
+/* REPORT-FORM-UI-001: 報告書設定フォームの統一スタイル（.rep-form にスコープ＝他UIへ非干渉・見た目のみ）。 */
+.rep-form label{font-size:12px;color:#666;display:block;margin-bottom:4px}
+.rep-form .rep-fld{margin-bottom:12px}
+.rep-form input,.rep-form select,.rep-form textarea{width:100%;box-sizing:border-box;height:40px;border:1px solid #ccc;border-radius:8px;padding:8px 10px;font-size:16px;background:#fff;font-family:inherit;color:#222}
+.rep-form textarea{height:auto;min-height:56px;resize:vertical;line-height:1.5}
+.rep-form .rep-g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+@media(max-width:700px){.rep-form .rep-g2{grid-template-columns:1fr}}
+.rep-form .rep-tc{border:1px solid #e6ebf2;background:#f7f9fc;border-radius:8px;padding:12px;margin-bottom:12px}
+.rep-form .rep-tc-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.rep-form .rep-tc-row span{font-size:13px;color:#555}
+.rep-form .rep-num{width:80px;text-align:right}
+.rep-form .rep-hint{font-size:12px;color:#888;margin-top:8px}
 /* Codex Should Fix 2 (根本対処): 対局管理のクラスpane(#pane-tournament-grid 直下のグリッド項目)は
    既定の min-width:auto だとコンテンツ最小幅でトラックを突き破り、スマホ幅で pane ごと横あふれする
    （長い氏名の winner-btn / 暫定成績 / 対戦済みリストが原因になり得た）。min-width:0 でトラック幅に
@@ -414,118 +426,53 @@ body.sb-active{overflow:hidden}
       <button type="button" id="cloudSendBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ クラウドへ送信（任意）</button>
       <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
     </div>
-    <div class="section no-print" style="margin-top:16px">
-      <!-- HELP-UX-002 (#322): 見出し脇に「？ ヘルプ」ボタンを1つ置く（報告書画面の迷子防止 in-app ヘルプ導線）。
-           #309 の「1局目 未割当参加者」見出し（flex 横並び・btn-sm＋inline）と同型。click は build/bind 分離のため
-           bindReportEvents 側で openHelpModal('report') へ結線する。本文は HELP_TEXTS['report'] に集約し escapeHtml 経由。 -->
-      <div style="display:flex;align-items:center;gap:8px">
+    <div class="section no-print rep-form" style="margin-top:16px">
+      <!-- HELP-UX-002 (#322): 見出し脇「？ ヘルプ」。click は bindReportEvents で openHelpModal('report') に結線。 -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
         <h2 style="margin:0">大会報告書</h2>
         <button type="button" id="helpBtnReport" class="btn-sm" title="報告書の作り方をヘルプで表示します" aria-label="報告書の作り方ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
       </div>
-      <!-- REPORT-UX-004: 大会名（state.report.title）。downloadReport の <title> / h2 / ファイル名
-           で参照される。既定値 '沼津支部月例将棋大会'。「報告書」接尾辞は downloadReport 側で付与。
-           空欄/不正値は normalizeReportTitle で既定値に fallback、DOM 表示値も同期される。 -->
-      <div style="margin-bottom:12px">
-        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">大会名</label>
-        <input type="text" id="rep-title" placeholder="沼津支部月例将棋大会" style="width:100%">
+      <!-- REPORT-FORM-UI-001: 入力欄は .rep-form のスコープ CSS で幅/高さ/枠線/角丸/文字を統一（見た目のみ・id/保存復元/出力は不変）。 -->
+      <!-- REPORT-UX-004: 大会名（state.report.title）。downloadReport の title/h2/ファイル名で参照。既定 '沼津支部月例将棋大会'。 -->
+      <div class="rep-fld"><label>大会名</label><input type="text" id="rep-title" placeholder="沼津支部月例将棋大会"></div>
+      <!-- REPORT-UX-005: 主催者名（state.report.organizer）。downloadReport の「主催」行で参照。既定 '日本将棋連盟沼津支部'。 -->
+      <div class="rep-fld"><label>主催者</label><input type="text" id="rep-organizer" placeholder="日本将棋連盟沼津支部"></div>
+      <!-- REPORT-UX-001: 開催日=date、開始/終了=time（step=300・5分刻み）。未入力は ensureReportDateTimeDefaults が補完。 -->
+      <div class="rep-g2">
+        <div><label>開催日</label><input type="date" id="rep-date"></div>
+        <div><label>会場</label><input type="text" id="rep-place" value="労政会館"></div>
+        <div><label>開始時間</label><input type="time" id="rep-start" step="300"></div>
+        <div><label>終了時間</label><input type="time" id="rep-end" step="300"><div id="rep-time-warning" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px"></div></div>
+        <div><label>担当役員（正）</label><input type="text" id="rep-sei" placeholder="氏名"></div>
+        <div><label>担当役員（副）</label><input type="text" id="rep-fuku" placeholder="氏名"></div>
+        <!-- REPORT-UX-003A: 賞金額（円）。既定7000・0有効・負/不正は7000。downloadReport の収支で参照。 -->
+        <div><label>賞金額（円）</label><input type="number" id="rep-prize" min="0" step="100" inputmode="numeric" placeholder="7000"></div>
       </div>
-      <!-- REPORT-UX-005: 主催者名（state.report.organizer）。downloadReport の「主催」行で参照される。
-           既定値 '日本将棋連盟沼津支部'。「主催：」ラベル文言は downloadReport 側で付与し、state には
-           純粋な主催者名のみを保存する。空欄/不正値は normalizeReportOrganizer で既定値に fallback、
-           DOM 表示値も change イベント時のみ同期書き戻し（input 時は IME-safe で state 更新のみ）。 -->
-      <div style="margin-bottom:12px">
-        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">主催者</label>
-        <input type="text" id="rep-organizer" placeholder="日本将棋連盟沼津支部" style="width:100%">
+      <!-- TIME-CONTROL-001: 持ち時間（報告書メタ・大会ごとに可変）。区分＝切れ負け/秒読み＋分＋秒。
+           renderTimeControlFields が秒読み欄の表示/プレビューを同期。ロジックには非影響の表示値。 -->
+      <div class="rep-tc">
+        <label>持ち時間（報告書に記載）</label>
+        <select id="rep-time-type">
+          <option value="sudden">切れ負け</option>
+          <option value="byoyomi">秒読み（切れたら一手N秒）</option>
+        </select>
+        <div class="rep-tc-row">
+          <span>持ち時間</span><input type="number" class="rep-num" id="rep-time-main" min="1" step="1" inputmode="numeric" placeholder="25"><span>分</span>
+          <span id="rep-time-byoyomi-wrap" style="display:none;align-items:center;gap:6px">
+            <span>秒読み</span><input type="number" class="rep-num" id="rep-time-byoyomi" min="1" step="1" inputmode="numeric" placeholder="30"><span>秒</span>
+          </span>
+        </div>
+        <div class="rep-hint" id="rep-time-preview"></div>
       </div>
-      <!-- REPORT-UX-001: 開催日は <input type="date">、開始/終了時間は <input type="time"> で
-           ブラウザ標準のカレンダー/時刻ピッカーを使用。step="300" は 5 分刻み。
-           未入力時は ensureReportDateTimeDefaults() が今日 / 13:00 / 17:00 を補完する。
-           保存済み値・入力済み値は populateReportFields() が優先し、defaults は上書きしない。
-           印刷帳票では downloadReport() が YYYY-MM-DD / HH:MM を YYYY年M月D日 / HH時MM分 に変換して表示する。 -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-        <div>
-          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">開催日</label>
-          <input type="date" id="rep-date" style="width:100%">
-        </div>
-        <div>
-          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">会場</label>
-          <input type="text" id="rep-place" value="労政会館" style="width:100%">
-        </div>
-        <div>
-          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">開始時間</label>
-          <input type="time" id="rep-start" step="300" style="width:100%">
-        </div>
-        <div>
-          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">終了時間</label>
-          <input type="time" id="rep-end" step="300" style="width:100%">
-          <div id="rep-time-warning" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px"></div>
-        </div>
-        <div>
-          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">担当役員（正）</label>
-          <input type="text" id="rep-sei" placeholder="氏名" style="width:100%">
-        </div>
-        <div>
-          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">担当役員（副）</label>
-          <input type="text" id="rep-fuku" placeholder="氏名" style="width:100%">
-        </div>
-        <!-- REPORT-UX-003A: 賞金額（円）入力欄。既定 7000 円、0 は有効値、負値・不正値は 7000 にフォールバック。
-             downloadReport で state.report.prize を参照し、収支表示も同期。 -->
-        <div>
-          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">賞金額（円）</label>
-          <input type="number" id="rep-prize" min="0" step="100" inputmode="numeric" placeholder="7000" style="width:100%">
-        </div>
-        <!-- TIME-CONTROL-001: 持ち時間（報告書メタ・大会ごとに可変）。区分＝切れ負け/秒読み＋持ち時間(分)＋秒読み(秒)。
-             システムのロジックには影響しない表示値。renderTimeControlFields が秒読み欄の表示/プレビューを同期。 -->
-        <div style="grid-column:1 / -1">
-          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">持ち時間（報告書に記載）</label>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <select id="rep-time-type" style="font-size:16px;padding:6px 8px">
-              <option value="sudden">切れ負け</option>
-              <option value="byoyomi">秒読み（切れたら一手N秒）</option>
-            </select>
-            <span style="font-size:13px;color:#666">持ち時間</span>
-            <input type="number" id="rep-time-main" min="1" step="1" inputmode="numeric" placeholder="25" style="width:72px">
-            <span style="font-size:13px;color:#666">分</span>
-            <span id="rep-time-byoyomi-wrap" style="display:none;align-items:center;gap:4px">
-              <span style="font-size:13px;color:#666">秒読み</span>
-              <input type="number" id="rep-time-byoyomi" min="1" step="1" inputmode="numeric" placeholder="30" style="width:72px">
-              <span style="font-size:13px;color:#666">秒</span>
-            </span>
-          </div>
-          <div id="rep-time-preview" style="font-size:12px;color:#888;margin-top:4px"></div>
-        </div>
+      <div class="rep-fld"><label>申し送り事項</label><textarea id="rep-note" placeholder="特になし"></textarea></div>
+      <!-- REPORT-UX-007A: FAX番号は schema/保存互換で残置するが downloadReport では非出力。事務局名は footer で参照。 -->
+      <div class="rep-g2">
+        <div><label>FAX番号</label><input type="text" id="rep-fax" placeholder="943-9443"></div>
+        <div><label>事務局名</label><input type="text" id="rep-office-name" placeholder="沼津支部事務局"></div>
       </div>
-      <div style="margin-bottom:12px">
-        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">申し送り事項</label>
-        <textarea id="rep-note" placeholder="特になし" style="width:100%;height:60px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical"></textarea>
-      </div>
-      <!-- REPORT-UX-007A / FAX削除対応（Codex 追加 Must Fix）:
-           FAX番号入力欄（#rep-fax / state.report.fax）は schema・保存読込互換のため残置するが、
-           FAX が実在しないため報告書出力（downloadReport）には一切出力しない（出力で参照しない）。
-           事務局名（#rep-office-name / officeName）は引き続き footer 1行目
-           '※ホームページ掲載の為、当日夜までにメールまたは直接<officeName>まで' で参照する。
-           既定値 '943-9443'(fax・出力未使用) / '沼津支部事務局'(officeName)。空欄/不正値は normalize
-           helper で既定値に fallback、DOM 同期は change イベント時のみ（input 時は IME-safe で state のみ）。 -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-        <div>
-          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">FAX番号</label>
-          <input type="text" id="rep-fax" placeholder="943-9443" style="width:100%">
-        </div>
-        <div>
-          <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">事務局名</label>
-          <input type="text" id="rep-office-name" placeholder="沼津支部事務局" style="width:100%">
-        </div>
-      </div>
-      <!-- REPORT-UX-007B-1: 報告書 footer 2行目（会計提出文 / state.report.accountingNote）。
-           downloadReport が '<p style="font-size:11px">…</p>' で参照する。既定値
-           '※役員会で会計長へ収支報告書として提出ください。'。空欄/不正値は normalizeReportAccountingNote
-           で既定値に fallback。DOM 表示値は change イベント時のみ同期書き戻し（input 時は IME-safe）。
-           中間改行は維持し、帳票表示で <br> に変換される。 -->
-      <div style="margin-bottom:12px">
-        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">会計提出文</label>
-        <textarea id="rep-accounting-note" placeholder="※役員会で会計長へ収支報告書として提出ください。" style="width:100%;height:48px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px;font-family:inherit;resize:vertical"></textarea>
-      </div>
-      <button type="button" class="btn-primary" id="downloadReportBtn">報告書を印刷 / PDF保存</button>
+      <!-- REPORT-UX-007B-1: 会計提出文（footer 2行目 / accountingNote）。既定 '※役員会で…提出ください。'。改行維持→帳票で<br>。 -->
+      <div class="rep-fld"><label>会計提出文</label><textarea id="rep-accounting-note" placeholder="※役員会で会計長へ収支報告書として提出ください。"></textarea></div>
+      <button type="button" class="btn-primary" id="downloadReportBtn" style="width:100%">報告書を印刷 / PDF保存</button>
     </div>
   </div>
   <!-- SHOGI-TOUR-HISTORY-STEP1: 過去大会の履歴一覧 / read-only 閲覧（追加 pane。既存 pane は変更しない） -->
