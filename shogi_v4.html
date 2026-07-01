@@ -302,6 +302,16 @@ body.sb-active{overflow:hidden}
       </div>
       <div style="font-size:11px;color:#888;margin-top:4px">A・Bクラスは削除できません。開始済み・参加者がいるクラスは削除できません。</div>
     </div>
+    <!-- ROUNDS-CONFIG-001: 回戦数の設定（既定4）。ペアリング/順位/星取/報告書は全て state.rounds を参照するため、
+         ここを変えるだけで N 回戦制に対応する。開始後(state.started)は誤操作防止のため変更不可＝renderRoundsControl が
+         value/disabled/注記を毎描画同期し、選択肢(3/4/5＋現在値)も renderRoundsControl が動的生成する。 -->
+    <div class="section" id="rounds-config-section">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0;font-size:15px">回戦数</h2>
+        <select id="inp-rounds" style="font-size:16px;padding:4px 8px"></select>
+        <span id="rounds-config-note" style="font-size:11px;color:#888"></span>
+      </div>
+    </div>
     <div class="section">
       <div style="display:flex;align-items:center;gap:8px">
         <h2 style="margin:0">参加者を登録する</h2>
@@ -4870,6 +4880,44 @@ function notifySaveWarning(options){
   recordSaveWarningForIndicator(indicatorPayload);
 }
 
+// ROUNDS-CONFIG-001: 回戦数セレクタ(#inp-rounds)の描画同期。
+//   - 選択肢は 3/4/5 を基本とし、現在値(state.rounds)がそれ以外(旧データ/将来値)でも必ず option を含める。
+//   - value を state.rounds に同期。開始後(state.started)は disabled＋注記でロック（誤操作防止）。
+//   renderRegList から毎描画呼ばれるので、開始状態やインポート後も表示が追従する。build/bind とは分離（値/状態同期のみ）。
+function renderRoundsControl(){
+  var sel=document.getElementById('inp-rounds');
+  if(!sel)return;
+  var cur=Math.floor(Number(state&&state.rounds));
+  if(isNaN(cur)||cur<1)cur=4;
+  var opts=[3,4,5];
+  if(opts.indexOf(cur)<0)opts.push(cur);
+  opts.sort(function(a,b){return a-b;});
+  var html='';
+  for(var i=0;i<opts.length;i++)html+='<option value="'+opts[i]+'">'+opts[i]+'回戦</option>';
+  sel.innerHTML=html;
+  sel.value=String(cur);
+  var started=!!(state&&state.started);
+  sel.disabled=started;
+  var note=document.getElementById('rounds-config-note');
+  if(note)note.textContent=started?'開始後は変更できません（新規大会または全リセット後に設定してください）':'開始前に設定してください（全クラス共通）';
+}
+
+// ROUNDS-CONFIG-001: 回戦数セレクタの change ハンドラ。開始後は変更を拒否（表示も元に戻す）。
+//   正の整数にクランプ（normalizeState と同基準）し state.rounds に反映＋save()。
+//   ペアリング/順位/星取/報告書は state.rounds を live 参照するため、ここでは保存とトーストのみで足りる。
+function onChangeRounds(){
+  var sel=document.getElementById('inp-rounds');
+  if(!sel)return;
+  // 開始後ロック: disabled を潜り抜けた場合も保険で拒否し、表示を現状へ戻す。
+  if(state&&state.started){renderRoundsControl();if(typeof showMsg==='function')showMsg('開始後は回戦数を変更できません。','warn');return;}
+  var v=Math.floor(Number(sel.value));
+  if(isNaN(v)||v<1){renderRoundsControl();return;}
+  state.rounds=v;
+  save();
+  renderRoundsControl();
+  if(typeof showMsg==='function')showMsg('回戦数を'+v+'回戦に設定しました。','ok');
+}
+
 function renderRegList(){
   // ROUND-CLASS-START-006 (spec §15.1):
   //   受付一覧を classes-driven にする。fallback で state.classes 不在時も安全に動作する（Codex S4）。
@@ -4886,6 +4934,7 @@ function renderRegList(){
   //   populateClassSelect は現在の選択値を保持するため、登録途中の再描画でも選択が飛ばない。
   populateClassSelect();
   renderClassManager();
+  renderRoundsControl();
   var clsList=getRegistrationClassList();
   var allCount=0;
   for(var ci=0;ci<clsList.length;ci++){
@@ -10212,6 +10261,11 @@ function bindRegistrationEvents(){
     inpNewClass.addEventListener('compositionend',function(){newClassComposing=false;});
     inpNewClass.addEventListener('keypress',function(e){if(e.key==='Enter'&&!newClassComposing)onClickAddClass();});
   }
+
+  // ROUNDS-CONFIG-001: 回戦数セレクタ(#inp-rounds)の change を onChangeRounds へ bind。
+  //   値の反映/保存は onChangeRounds が担い、表示同期(value/disabled/選択肢)は renderRoundsControl。
+  var inpRounds=document.getElementById('inp-rounds');
+  if(inpRounds)inpRounds.addEventListener('change',onChangeRounds);
 
   // 参加者名入力欄: IME対応 + Enterで追加
   var inpName=document.getElementById('inp-name');

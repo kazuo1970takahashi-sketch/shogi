@@ -59,7 +59,7 @@ ok "全35必須関数 重複/欠落なし"
 # 1-3. 必須DOM要素の存在
 for id in pane-reg pane-tournament pane-result pane-A pane-B result-A result-B \
           tab-reg tab-tournament tab-result inp-name inp-class addBtn startBtn \
-          saveBtn loadFile resetBtn rep-date rep-place rep-start rep-end \
+          inp-rounds saveBtn loadFile resetBtn rep-date rep-place rep-start rep-end \
           rep-sei rep-fuku rep-note bulkEditA bulkEditB reg-msg; do
   count=$(grep -c "id=\"$id\"" "$TARGET" || true)
   if [ "$count" -lt 1 ]; then ng "DOM要素 #$id がない"; fi
@@ -1707,6 +1707,18 @@ if [ -f "$SCRIPT_DIR/test_restore_consolidation.js" ]; then
   fi
 else
   warn "test_restore_consolidation.js が見つからない"
+fi
+
+echo ""
+echo "【ROUNDS-SELECTOR (ROUNDS-CONFIG-001) 回戦数セレクタ（受付タブ・state.rounds 駆動・既定4/3-5・開始後ロック）】"
+if [ -f "$SCRIPT_DIR/test_rounds_selector.js" ]; then
+  if node "$SCRIPT_DIR/test_rounds_selector.js" "$TARGET" > /tmp/rounds_selector_out.log 2>&1; then
+    ok "ROUNDS-SELECTOR テスト 全PASS ($(tail -1 /tmp/rounds_selector_out.log))"
+  else
+    ng "ROUNDS-SELECTOR テスト 失敗"; cat /tmp/rounds_selector_out.log
+  fi
+else
+  warn "test_rounds_selector.js が見つからない"
 fi
 
 
