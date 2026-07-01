@@ -59,7 +59,7 @@ ok "全35必須関数 重複/欠落なし"
 # 1-3. 必須DOM要素の存在
 for id in pane-reg pane-tournament pane-result pane-A pane-B result-A result-B \
           tab-reg tab-tournament tab-result inp-name inp-class addBtn startBtn \
-          saveBtn loadBtn loadFile resetBtn rep-date rep-place rep-start rep-end \
+          saveBtn loadFile resetBtn rep-date rep-place rep-start rep-end \
           rep-sei rep-fuku rep-note bulkEditA bulkEditB reg-msg; do
   count=$(grep -c "id=\"$id\"" "$TARGET" || true)
   if [ "$count" -lt 1 ]; then ng "DOM要素 #$id がない"; fi
@@ -1694,6 +1694,19 @@ if [ -f "$SCRIPT_DIR/test_master_tab_declutter.js" ]; then
   fi
 else
   warn "test_master_tab_declutter.js が見つからない"
+fi
+
+
+echo ""
+echo "【SAVE-LINE-CONSOLIDATE (当日第2弾⑨-a) 復元をバックアップへ集約（読み込みボタン撤去＋貼り付け復元追加・loadData等温存）】"
+if [ -f "$SCRIPT_DIR/test_restore_consolidation.js" ]; then
+  if node "$SCRIPT_DIR/test_restore_consolidation.js" "$TARGET" > /tmp/save_consolidate_out.log 2>&1; then
+    ok "SAVE-LINE-CONSOLIDATE テスト 全PASS ($(tail -1 /tmp/save_consolidate_out.log))"
+  else
+    ng "SAVE-LINE-CONSOLIDATE テスト 失敗"; cat /tmp/save_consolidate_out.log
+  fi
+else
+  warn "test_restore_consolidation.js が見つからない"
 fi
 
 
