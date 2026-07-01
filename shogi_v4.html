@@ -936,6 +936,9 @@ function normalizeState(raw){
       } else {
         pp.entry_no=null;
       }
+      // WITHDRAW-001: 棄権フラグ（任意・既定なし＝在籍）。true のときのみ保持（member_id と同じ default 補完パターン）。
+      //   棄権者は generatePairing の対象外（以降の組み合わせに入らない）＝成績はそのまま順位表に残す。
+      if(p&&p.withdrawn===true)pp.withdrawn=true;
       return pp;
     }).filter(function(p){return p.name;});
     // #276: クラス内 entry_no を「正の整数・一意」に正規化。明示の有効・一意値は保持し、
@@ -5081,6 +5084,17 @@ function nameWithNoRubyHtml(id,cls){
   return escapeHtml(d.entryNo+'｜')+playerNameRubyHtml(d.name,d.yomi);
 }
 
+// WITHDRAW-001: 順位表で棄権者の氏名に付す「棄権」マーク（棄権時のみ・非棄権は空文字＝既存出力不変）。
+function withdrawMarkHtml(id,cls){
+  var players=(state&&state.players&&state.players[cls])||[];
+  for(var i=0;i<players.length;i++){
+    if(players[i]&&players[i].id===id&&players[i].withdrawn){
+      return ' <span style="font-size:11px;color:#A32D2D;border:1px solid #A32D2D;border-radius:4px;padding:0 4px;vertical-align:middle">棄権</span>';
+    }
+  }
+  return '';
+}
+
 function makePlayerRow(p,cls,i){
   var div=document.createElement('div');
   div.className='player-row';
@@ -5100,6 +5114,14 @@ function makePlayerRow(p,cls,i){
   name.className='player-name';
   // FURIGANA-MVP-001: ふりがながあれば氏名にルビ表示（受付一覧のみ）。空なら従来どおり氏名テキスト。
   name.appendChild(renderPlayerNameWithRuby(p.name,p.yomi));
+  // WITHDRAW-001: 棄権者は行を淡色化＋「棄権」バッジ（記録として残す＝削除ではない）。
+  if(p&&p.withdrawn){
+    div.style.opacity='0.55';
+    var wdBadge=document.createElement('span');
+    wdBadge.textContent='棄権';
+    wdBadge.style.cssText='margin-left:6px;font-size:11px;color:#A32D2D;border:1px solid #A32D2D;border-radius:4px;padding:0 4px;vertical-align:middle';
+    name.appendChild(wdBadge);
+  }
   mainDiv.appendChild(name);
 
   var mSel=document.createElement('select');
@@ -5166,6 +5188,16 @@ function makePlayerRow(p,cls,i){
   delBtn.addEventListener('click',(function(pid,c){return function(){removePlayer(pid,c);};})(p.id,cls));
   buttonsDiv.appendChild(delBtn);
 
+  // WITHDRAW-001: 開始後のみ「棄権/復帰」トグル（開始前は削除で足りる）。棄権＝以降の組み合わせ対象外。
+  if(isClassStarted(cls)){
+    var wdBtn=document.createElement('button');
+    wdBtn.className='btn-sm';
+    wdBtn.textContent=p.withdrawn?'復帰':'棄権';
+    if(p.withdrawn)wdBtn.style.cssText='border-color:#2E75B6;color:#2E75B6';
+    wdBtn.addEventListener('click',(function(pid,c){return function(){toggleWithdrawn(pid,c);};})(p.id,cls));
+    buttonsDiv.appendChild(wdBtn);
+  }
+
   actionsDiv.appendChild(buttonsDiv);
   div.appendChild(actionsDiv);
 
@@ -5192,6 +5224,38 @@ function updateField(id,cls,field,value){
       severity:'warn'
     });
   }
+}
+
+// WITHDRAW-001: 途中棄権のトグル。棄権＝以降の generatePairing 対象外（過去の対局結果はそのまま残す）。
+//   棄権にした時点で「現在の回戦に未結果の対局」があれば、対局拒否として相手を不戦勝（勝ち）にするか確認する
+//   （標準的な forfeit 扱い）。復帰は withdrawn を外すのみ。残り奇数は既存の待機ローテーションが吸収する。
+function toggleWithdrawn(id,cls){
+  var players=(state&&state.players&&state.players[cls])||[];
+  var pl=null;
+  for(var i=0;i<players.length;i++){if(players[i]&&players[i].id===id){pl=players[i];break;}}
+  if(!pl)return;
+  if(pl.withdrawn){
+    delete pl.withdrawn;
+    save();renderRegList();
+    if(typeof showMsg==='function')showMsg(getName(id,cls)+'さんを復帰しました（次の回戦から組み合わせに入ります）','ok');
+    return;
+  }
+  pl.withdrawn=true;
+  save();
+  // 現在の回戦の未結果対局に本人が居れば、相手を不戦勝にするか確認（forfeit）。
+  var pairings=(state.pairings&&state.pairings[cls])||[];
+  var oppId=null,mIdx=-1;
+  for(var j=0;j<pairings.length;j++){
+    var m=pairings[j];if(!m||m.winner)continue;
+    if(m.p1===id){oppId=m.p2;mIdx=j;break;}
+    if(m.p2===id){oppId=m.p1;mIdx=j;break;}
+  }
+  if(oppId&&mIdx>=0&&typeof confirm==='function'&&
+     confirm(getName(id,cls)+'さんを棄権にしました。\n現在の回戦で '+getName(oppId,cls)+'さんと対局予定です。\n'+getName(oppId,cls)+'さんを不戦勝（勝ち）にしますか？')){
+    setWinner(cls,mIdx,oppId);   // 相手を勝ちに記録（＝不戦勝）。setWinner が保存・再描画も行う。
+  }
+  renderRegList();
+  if(typeof showMsg==='function')showMsg(getName(id,cls)+'さんを棄権にしました（次の回戦から組み合わせ対象外・成績は残ります）','ok');
 }
 
 // A-3 サジェスト状態（候補タップで保持される選択 member の参照）
@@ -6807,6 +6871,7 @@ function getRoundLeftoverPlayers(cls){
   var out=[];
   for(var j=0;j<players.length;j++){
     var p=players[j];if(!p)continue;
+    if(p.withdrawn)continue;   // WITHDRAW-001: 棄権者は「待機」ではないので除外（組み合わせ対象外）。
     if(!assigned[p.id])out.push(p);
   }
   return out;
@@ -7280,7 +7345,9 @@ function evaluatePairingQuality(pairings, results, players){
 }
 
 function generatePairing(cls){
-  var players=state.players[cls];
+  // WITHDRAW-001: 棄権者は以降の組み合わせ対象から除外（過去成績・results は不変）。残りが奇数なら
+  //   既存の Issue #272 待機ローテーションがそのまま回る（待機者は不戦勝にしない）。
+  var players=(state.players[cls]||[]).filter(function(p){return !(p&&p.withdrawn);});
   if(players.length<2)return;
   var wins=getWins(cls);
   var played={};
@@ -8946,7 +9013,7 @@ function buildResultsMobileHtml(cls, finals, wins){
     html+='<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px">';
     html+=badge;
     html+='<div style="display:flex;flex-direction:column;gap:2px">';
-    html+='<span style="font-weight:500;font-size:15px">'+nameWithNoRubyHtml(f.p.id,cls)+'</span>';
+    html+='<span style="font-weight:500;font-size:15px">'+nameWithNoRubyHtml(f.p.id,cls)+withdrawMarkHtml(f.p.id,cls)+'</span>';
     // ROUND-CLASS-START-007 (最終結果タブ ラベル統一):
     //   モバイル成績カード内のラベルを 4 項目すべて全角コロン「：」付きで揃える。
     //   表示: 勝：N　負：N　相手：N　勝相手：N
@@ -8973,7 +9040,7 @@ function buildResultsDesktopHtml(cls, finals, wins){
     var f=finals[idx];var rank=displayRanks[idx];
     var rowCls=rank===1?'row-r1':rank===2?'row-r2':rank===3?'row-r3':'';
     var badge=_resultsRankBadgeHtml(rank);
-    html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+nameWithNoRubyHtml(f.p.id,cls)+'</td>';
+    html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+nameWithNoRubyHtml(f.p.id,cls)+withdrawMarkHtml(f.p.id,cls)+'</td>';
     for(var r=0;r<roundsForClass(cls);r++){
       html+=buildResultsRoundCellDesktopHtml(cls, f.p.id, r, wins);
     }
