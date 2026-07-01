@@ -50,9 +50,11 @@ const DEFAULTS = {
   date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'',
   prize:7000, title:'沼津支部月例将棋大会', organizer:'日本将棋連盟沼津支部',
   fax:'943-9443', officeName:'沼津支部事務局',
-  accountingNote:'※役員会で会計長へ収支報告書として提出ください。'
+  accountingNote:'※役員会で会計長へ収支報告書として提出ください。',
+  // TIME-CONTROL-001: 持ち時間（区分/分/秒）。既定は「25分切れ負け」。
+  timeType:'sudden', timeMain:25, timeByoyomi:30
 };
-const FIELDS = Object.keys(DEFAULTS); // 13 フィールド（schema 定義順）
+const FIELDS = Object.keys(DEFAULTS); // 16 フィールド（schema 定義順）
 
 // ---- 架空の有効値（normalizer 冪等＝往復で不変な値のみ）----
 const VALID = {
@@ -60,7 +62,9 @@ const VALID = {
   sei:'架空正', fuku:'架空副', note:'架空メモ',
   prize:3000, title:'架空大会', organizer:'架空連盟',
   fax:'012-345-6789', officeName:'架空事務局',
-  accountingNote:'架空会計提出文'
+  accountingNote:'架空会計提出文',
+  // 既定(sudden/25/30)と異なる有効値で往復の意味を持たせる（normalizer 冪等）。
+  timeType:'byoyomi', timeMain:20, timeByoyomi:30
 };
 
 // field → normalizeState 復元分岐で呼ばれる normalizer 名
@@ -70,7 +74,8 @@ const NORMALIZER = {
   sei:'normalizeReportSei', fuku:'normalizeReportFuku', note:'normalizeReportNote',
   prize:'normalizeReportPrize', title:'normalizeReportTitle',
   organizer:'normalizeReportOrganizer', fax:'normalizeReportFax',
-  officeName:'normalizeReportOfficeName', accountingNote:'normalizeReportAccountingNote'
+  officeName:'normalizeReportOfficeName', accountingNote:'normalizeReportAccountingNote',
+  timeType:'normalizeReportTimeType', timeMain:'normalizeReportTimeMain', timeByoyomi:'normalizeReportTimeByoyomi'
 };
 
 // field → 報告書フォームの DOM id
@@ -78,7 +83,8 @@ const DOM_ID = {
   date:'rep-date', place:'rep-place', start:'rep-start', end:'rep-end',
   sei:'rep-sei', fuku:'rep-fuku', note:'rep-note', prize:'rep-prize',
   title:'rep-title', organizer:'rep-organizer', fax:'rep-fax',
-  officeName:'rep-office-name', accountingNote:'rep-accounting-note'
+  officeName:'rep-office-name', accountingNote:'rep-accounting-note',
+  timeType:'rep-time-type', timeMain:'rep-time-main', timeByoyomi:'rep-time-byoyomi'
 };
 
 let pass=0, fail=0;
@@ -274,8 +280,8 @@ function makeBaseState(reportOverrides){
   FIELDS.forEach(function(k){
     assertEq(r[k], VALID[k], 'B1 save→load 往復で "' + k + '" が保たれる');
   });
-  // report オブジェクトに 13 フィールドのみ（余計なキーが増減していない）
-  assertEq(Object.keys(r).sort(), FIELDS.slice().sort(), 'B1-keys report は 13 フィールド構成');
+  // report オブジェクトに 16 フィールドのみ（余計なキーが増減していない）
+  assertEq(Object.keys(r).sort(), FIELDS.slice().sort(), 'B1-keys report は 16 フィールド構成');
 }
 
 // B2: 二重往復（save→load→save→load）で冪等
