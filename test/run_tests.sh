@@ -1781,6 +1781,18 @@ else
   warn "test_withdraw.js が見つからない"
 fi
 
+echo ""
+echo "【SCENARIO-E2E-001 実利用フロー統合シナリオ（クラス追加/回戦数/棄権/過去実績/持ち時間/会費）】"
+if [ -f "$SCRIPT_DIR/test_scenario_e2e_001.js" ]; then
+  if node "$SCRIPT_DIR/test_scenario_e2e_001.js" "$TARGET" > /tmp/scenario_e2e_out.log 2>&1; then
+    ok "SCENARIO-E2E テスト 全PASS ($(tail -1 /tmp/scenario_e2e_out.log))"
+  else
+    ng "SCENARIO-E2E テスト 失敗"; cat /tmp/scenario_e2e_out.log
+  fi
+else
+  warn "test_scenario_e2e_001.js が見つからない"
+fi
+
 
 # ============================================
 # 最終結果
