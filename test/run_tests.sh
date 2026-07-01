@@ -1733,6 +1733,18 @@ else
   warn "test_rounds_per_class.js が見つからない"
 fi
 
+echo ""
+echo "【START-ODD-NOTE (START-FRP-UX-002) 未開始で一括開始が出せない（奇数/1名）とき理由＋対処を明示】"
+if [ -f "$SCRIPT_DIR/test_start_odd_note.js" ]; then
+  if node "$SCRIPT_DIR/test_start_odd_note.js" "$TARGET" > /tmp/start_odd_note_out.log 2>&1; then
+    ok "START-ODD-NOTE テスト 全PASS ($(tail -1 /tmp/start_odd_note_out.log))"
+  else
+    ng "START-ODD-NOTE テスト 失敗"; cat /tmp/start_odd_note_out.log
+  fi
+else
+  warn "test_start_odd_note.js が見つからない"
+fi
+
 
 # ============================================
 # 最終結果

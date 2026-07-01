@@ -8002,6 +8002,14 @@ function buildClassActionBarHtml(cls){
     //   START-FRP-UX-001: 主導線として full-size btn-primary にする（btn-sm を外す）。
     html+='<button type="button" class="btn-primary" id="startBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'全員で1局目を開始</button>';
     html+='<span style="font-size:12px;color:#888">※このクラス内の全員で開始します（他クラスは開始しません）</span>';
+  } else if(players.length>=1){
+    // START-FRP-UX-002: 未開始だが「全員で1局目を開始」が出せない理由と対処を明示する（黙って消さない）。
+    //   条件は上の分岐(players>=2 かつ偶数)の補集合＝奇数(>=3) または 1名。id/文言/開始導線は不変・案内div の純追加。
+    if(players.length===1){
+      html+='<div class="class-start-note" style="flex-basis:100%;font-size:12px;color:#7a5a00;background:#fff8e1;border:1px solid #ffe08a;border-radius:6px;padding:6px 10px">まだ1名です。もう1名到着すると「全員で1局目を開始」が使えます。下の「部分開始」でも始められます。</div>';
+    } else {
+      html+='<div class="class-start-note" style="flex-basis:100%;font-size:12px;color:#7a5a00;background:#fff8e1;border:1px solid #ffe08a;border-radius:6px;padding:6px 10px">奇数（'+players.length+'名）のため「'+escapeHtml(className)+'全員で1局目を開始」は表示されません。1名調整して偶数にするか、下の「部分開始」で来ている人から始められます。</div>';
+    }
   }
   // FRP-IMPL-002/003 (FRP-DESIGN-002 §2.3 / §8): 未開始かつ参加者1名以上なら「部分開始」導線を併置。
   //   既存の一括開始(startBtnClass_「全員で1局目を開始」)とは別 id・別導線（偶数/奇数を問わず出す＝奇数でも来た人から開始可）。
