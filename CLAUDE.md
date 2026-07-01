@@ -2,7 +2,7 @@
 
 沼津将棋支部の月例大会運営 Web アプリ（`shogi_v4.html` 単一 HTML + localStorage、GitHub Pages 公開、スマホ運用前提）。
 
-> **役割（このファイル）= Claude Code（実装ライン）の作業指針。** ドキュメント役割境界 = `docs/ai-ops/` 運用プロセス正本／[`docs/REFERENCE.md`](docs/REFERENCE.md) コード設計マップ／[`docs/CHANGELOG.md`](docs/CHANGELOG.md) 履歴／[`HANDOFF.md`](HANDOFF.md) 現在地。Codex のレビュー観点は [`AGENTS.md`](AGENTS.md)。
+> **役割（このファイル）= Claude Code（実装ライン）の作業指針。** ドキュメント役割境界 = `docs/ai-ops/` 運用プロセス正本／[`docs/REFERENCE.md`](docs/REFERENCE.md) コード設計マップ／[`docs/STYLE-GUIDE.md`](docs/STYLE-GUIDE.md) **UI 規約正本（色・ボタン・文言・通知・ヘルプ。UI を触るスライスは準拠必須）**／[`docs/CHANGELOG.md`](docs/CHANGELOG.md) 履歴／[`HANDOFF.md`](HANDOFF.md) 現在地。Codex のレビュー観点は [`AGENTS.md`](AGENTS.md)。
 
 ## 🔴 実装着手前に必読（AI 開発パイプライン正本 / PMO-OPS v2.1-final）
 
