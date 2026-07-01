@@ -1757,6 +1757,18 @@ else
   warn "test_report_timecontrol.js が見つからない"
 fi
 
+echo ""
+echo "【REPORT-FORM-UI (REPORT-FORM-UI-001) 報告書設定フォームの統一スタイル化（見た目のみ・id/保存復元不変）】"
+if [ -f "$SCRIPT_DIR/test_report_form_ui.js" ]; then
+  if node "$SCRIPT_DIR/test_report_form_ui.js" "$TARGET" > /tmp/report_form_ui_out.log 2>&1; then
+    ok "REPORT-FORM-UI テスト 全PASS ($(tail -1 /tmp/report_form_ui_out.log))"
+  else
+    ng "REPORT-FORM-UI テスト 失敗"; cat /tmp/report_form_ui_out.log
+  fi
+else
+  warn "test_report_form_ui.js が見つからない"
+fi
+
 
 # ============================================
 # 最終結果
