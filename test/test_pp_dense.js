@@ -144,7 +144,9 @@ assert(h.indexOf('安藤架空')<h.indexOf('架空太郎'), 'B4 あ行（安藤�
 assert(iOther<h.indexOf('読無架空'), 'B5 ふりがな無しは「他」見出しの下（末尾）');
 assert(h.indexOf('前A')>=0&&h.indexOf('前B')>=0, 'B6 前回クラスバッジ');
 assert(h.indexOf('支部外')>=0, 'B7 支部員以外バッジ');
-assert(h.indexOf('かくうたろう')>=0, 'B8 ふりがなをセル2段目に表示');
+// 作者FB: ふりがなはルビ位置＝氏名の上に表示する。
+const cellY=eb._buildPpDenseCellHtml({id:'m-a1',name:'架空太郎',yomi:'かくうたろう'},null);
+assert(cellY.indexOf('かくうたろう')>=0&&cellY.indexOf('かくうたろう')<cellY.indexOf('架空太郎</div>'), 'B8 ふりがなは氏名の上（ルビ位置）に表示');
 assert(h.indexOf('pp-section-a-enrolled')<0&&h.indexOf('エントリー済')<0, 'B9 3セクション分割は廃止');
 // L3 P1-b: 検索/フィルタ活性中は 🔍 details を open 維持（再描画で閉じない）
 assert(h.indexOf('<details class="pp-search-details" style')>=0, 'B10 フィルタ非活性時は details 閉');
