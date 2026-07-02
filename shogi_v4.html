@@ -3737,7 +3737,8 @@ function buildMasterTabHtml(master){
       var gradeLabel=(m.grade==='chu')?'中学':(m.grade==='josei')?'女性':'一般';
       var lastCls=(m.last_class==='A'||m.last_class==='B')?m.last_class:'－';
       var rowStyle=isDel?'background:#f5f5f5;color:#888;text-decoration:line-through':'';
-      html+='<tr class="master-sheet-row'+(isDel?' master-row-deleted':'')+'" style="border-bottom:1px solid #eef1f5;'+rowStyle+'">';
+      // MASTER-SHEET-003: tr に data-mid を付与（更新後の行追跡＝scroll＋ハイライトのフック）。
+      html+='<tr class="master-sheet-row'+(isDel?' master-row-deleted':'')+'" data-mid="'+mid+'" style="border-bottom:1px solid #eef1f5;'+rowStyle+'">';
       html+='<td style="text-align:center;padding:4px 2px"><input type="checkbox" class="master-row-check" data-mid="'+mid+'"'+checked+' aria-label="'+escapeHtml(m.name||'')+'を選択" style="width:18px;height:18px"></td>';
       // 氏名セル（ふりがなはルビ位置）。live 行のみ editable（class 付与＝bind 対象）。
       var yomiN=normalizeYomi(m.yomi);
@@ -4526,6 +4527,8 @@ function masterSheetCommitNameEdit(){
   _masterEditingMid=null;
   showToast('更新しました');
   renderMasterTab();
+  // MASTER-SHEET-003: ふりがな順で行が移動するため、更新行へスクロール＋ハイライトして見失わないようにする。
+  masterSheetFlashRow(mid);
   if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
   // MASTER-CLOUD-PUSH-001: ログイン中ならクラウド members にも反映（fail-soft・非同期・結果は status 行 N4）。
   //   status 要素は renderMasterTab 再描画後も同 id で存在するため、closure 内で都度 getElementById する。
@@ -4539,6 +4542,19 @@ function masterSheetCommitNameEdit(){
 function masterSheetCancelNameEdit(){
   _masterEditingMid=null;
   renderMasterTab();
+}
+// MASTER-SHEET-003 (作者FB 2026-07-02): ふりがな順ソートのため、ふりがな/氏名を更新すると行が別の位置へ
+//   飛んで見失う → 更新後にその行へ自動スクロールし、約1.5秒ハイライトして追跡できるようにする（fail-soft）。
+function masterSheetFlashRow(mid){
+  try{
+    if(typeof document==='undefined'||!document.querySelector)return;
+    var row=document.querySelector('.master-sheet-row[data-mid="'+mid+'"]');
+    if(!row)return;
+    try{ if(row.scrollIntoView)row.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e2){ if(row.scrollIntoView)row.scrollIntoView(); }
+    row.style.transition='background-color 0.4s';
+    row.style.backgroundColor='#fff3bf';
+    setTimeout(function(){ try{ row.style.backgroundColor=''; }catch(e3){} },1500);
+  }catch(e){}
 }
 
 function bindMasterTabEvents(){
