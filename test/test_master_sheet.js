@@ -132,7 +132,8 @@ const eb4=loadEnv();
 eb4._setShowDeleted(true);
 eb4._select('m-dl');
 const h4=eb4.buildMasterTabHtml(JSON.parse(fixJson()));
-assert(h4.indexOf('master-row-deleted')>=0&&h4.indexOf('削除:2026-06-15')>=0, 'B11 削除済み行＝取り消し線系＋削除日');
+// MASTER-SHEET-002: 日付は短縮表示（今年=M/D・他年=YYYY/M/D）＝年に依存しない regex pin。
+assert(h4.indexOf('master-row-deleted')>=0&&/削除:(2026\/)?6\/15/.test(h4), 'B11 削除済み行＝取り消し線系＋削除日（短縮表示）');
 assert(h4.indexOf('復元（1名）')>=0, 'B12 削除済み行を選択すると復元ボタン');
 assert(!/master-cell-name[^>]*data-mid="m-dl"/.test(h4), 'B13 削除済み行のセルは編集不可（class 非付与）');
 

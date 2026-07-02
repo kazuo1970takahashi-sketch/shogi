@@ -3699,10 +3699,13 @@ function buildMasterTabHtml(master){
   //   削除・復元は行選択（checkbox）→選択ツールバー。ふりがなは氏名の上（ルビ位置・ピッカーと同型）で復活。
   //   既定ソートはふりがな順（#master-sort で最終参加順に切替）。旧 F7 編集モーダル/.master-edit-btn 系は
   //   回帰資産として温存（UI 未結線化）。
+  // MASTER-SHEET-002 (作者FB ?v=60 実機): PC の広幅で氏名列が間延びしないよう、一覧全体を max-width カードに収める。
+  html+='<div style="max-width:760px">';
   html+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
   html+='<h3 style="margin:0">簡易一覧</h3>';
   html+='<select id="master-sort" style="font-size:13px;padding:4px 8px"><option value="yomi"'+(_masterSortMode!=='recent'?' selected':'')+'>ふりがな順</option><option value="recent"'+(_masterSortMode==='recent'?' selected':'')+'>最終参加順</option></select>';
-  html+='<span style="font-size:11px;color:#888">セルをタップで編集／削除は左の□で行を選択</span>';
+  html+='<span style="font-size:12px;color:#888">名簿 '+liveMembers.length+'名'+(noYomiCount>0?('（ふりがな未入力 '+noYomiCount+'名）'):'')+'</span>';
+  html+='<span style="font-size:11px;color:#aaa;margin-left:auto">セルをタップで編集／□で選択→削除</span>';
   html+='</div>';
   var selInfo=masterSheetSelectedMids(members);
   if(selInfo.total>0){
@@ -3716,7 +3719,8 @@ function buildMasterTabHtml(master){
   if(members.length===0){
     html+='<div style="color:#888;font-size:13px;padding:8px 0">登録された参加者はいません。</div>';
   }else{
-    html+='<div style="overflow-x:auto"><table id="master-sheet" style="width:100%;border-collapse:collapse;font-size:13px">';
+    // MASTER-SHEET-002: 角丸カードで包む（モック承認時の密度・overflow-x は狭幅端末のフォールバック）。
+    html+='<div style="overflow-x:auto"><div style="border:1px solid #d3dbe5;border-radius:10px;overflow:hidden"><table id="master-sheet" style="width:100%;border-collapse:collapse;font-size:13px">';
     html+='<thead><tr style="background:#f4f6f9">'
       +'<th style="width:34px;padding:6px 2px;font-weight:400;font-size:11px;color:#888">選択</th>'
       +'<th style="text-align:left;padding:6px 8px;font-size:12px;color:#556;font-weight:600">氏名（ふりがな）</th>'
@@ -3750,14 +3754,15 @@ function buildMasterTabHtml(master){
       html+='<td'+(isDel?'':' class="master-cell-grade" data-mid="'+mid+'" title="タップで切替"')+' style="text-align:center;padding:4px 2px;font-size:12px'+(isDel?'':';cursor:pointer')+'">'+escapeHtml(gradeLabel)+'</td>';
       html+='<td style="text-align:center;padding:4px 2px;font-size:12px">'+escapeHtml(lastCls)+'</td>';
       if(isDel){
-        html+='<td style="text-align:center;padding:4px 2px;font-size:10px;color:#888;text-decoration:none">削除:'+escapeHtml(m.deleted_at||'')+'</td>';
+        html+='<td style="text-align:center;padding:4px 2px;font-size:10px;color:#888;text-decoration:none">削除:'+escapeHtml(_masterSheetFmtDate(m.deleted_at))+'</td>';
       }else{
-        html+='<td style="text-align:center;padding:4px 2px;font-size:11px;color:#888">'+escapeHtml(m.last_attended||'－')+'</td>';
+        html+='<td style="text-align:center;padding:4px 2px;font-size:11px;color:#888" title="'+escapeHtml(m.last_attended||'')+'">'+escapeHtml(_masterSheetFmtDate(m.last_attended))+'</td>';
       }
       html+='</tr>';
     }
-    html+='</tbody></table></div>';
+    html+='</tbody></table></div></div>';
   }
+  html+='</div>';
   html+='<hr class="separator">';
   html+='<h3>利用目的</h3>';
   html+='<div style="font-size:13px;color:#444;line-height:1.6">'
@@ -4374,6 +4379,14 @@ function bindMasterEditModalEvents(){
 // ============================================================
 // MASTER-SHEET-001: スプレッドシート型 簡易一覧の coordinator 群（bind から呼ぶ・テストから直接呼べる）。
 //   削除/復元/編集は既存の applyMasterMember*（純関数・ガード込み）を流用＝新しい破壊ロジックを作らない。
+// MASTER-SHEET-002: 日付の表示短縮（今年=M/D・他年=YYYY/M/D・不明=－）。title に生値を残す。
+function _masterSheetFmtDate(s){
+  var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||'');
+  if(!m)return s?String(s):'－';
+  var nowY=new Date().getFullYear();
+  var y=parseInt(m[1],10),mo=parseInt(m[2],10),d=parseInt(m[3],10);
+  return (y===nowY)?(mo+'/'+d):(y+'/'+mo+'/'+d);
+}
 function masterSheetSelectedMids(members){
   var live=[],del=[];
   var list=Array.isArray(members)?members:[];
