@@ -110,7 +110,8 @@ assert(ms && ms.title==='支部マスタの使い方ヘルプ', 'R3 master の t
 assert(ms && Array.isArray(ms.lines) && ms.lines.length===6, 'R4 master の lines が6項目の配列');
 const j = ms ? ms.lines.join('\n') : '';
 assert(j.indexOf('名簿')>=0 && j.indexOf('大会データとは別物')>=0, 'R5 (1)支部マスタは名簿・大会データと別物の説明を含む');
-assert(j.indexOf('統合')>=0, 'R6 (2)過去大会の統合の説明を含む');
+// MASTER-MIGRATE-RETIRE-001: 統合は撤去→一括送信の説明に差し替え（MASTER-BULK-PUSH-001）。
+assert(j.indexOf('一括送信')>=0, 'R6 (2)名簿全体の一括送信の説明を含む');
 assert(j.indexOf('名簿を更新')>=0 && j.indexOf('同期')>=0, 'R7 (3)「名簿を更新」時の自動同期の説明を含む');
 assert(j.indexOf('エクスポート')>=0 && j.indexOf('インポート')>=0 && j.indexOf('保管')>=0, 'R8 (4)エクスポート/インポート・保管推奨の説明を含む');
 assert(j.indexOf('壊れている')>=0 && j.indexOf('黙って消えません')>=0, 'R9 (5)破損/未対応版は取り込み中止・既存温存の説明を含む');

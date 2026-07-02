@@ -53,7 +53,8 @@ function byId(master,id){ for(var i=0;i<master.members.length;i++)if(master.memb
   ok(byId(m1,'m1').yomi==='やまだたろう'&&byId(m1,'m2')&&byId(m1,'m2').name==='新人花子','P1-4 master に反映');
   ok(byId(m1,'m1').last_class==='A'&&byId(m1,'m1').tournament_ids.length===1,'P1-5 運用フィールド温存');
   var sel=c1._calls[0];
-  ok(sel.table==='members'&&sel.select==='member_id,name,yomi,branch,deleted_at','P1-6 select 列が member_id,name,yomi,branch,deleted_at（tombstone 伝播のため deleted_at 含む）');
+  // CLOUD-MEMBER-FIELDS-001: 明示列挙→'*'（スキーマ追補に自動追従・列追加前でも取得が壊れない）。
+ok(sel.table==='members'&&sel.select==='*','P1-6 select は *（スキーマ追補追従・deleted_at/member_kind/grade/city を含む）');
   ok(sel.eq.col==='club_id'&&sel.eq.val==='club-1','P1-7 eq(club_id, clubId)');
 
   console.log('=== P2: 変更なし → 保存しない（saved:false）===');
