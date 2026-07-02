@@ -138,36 +138,68 @@
       '<p id="adminMsg" class="msg" role="status"></p>' +
       '</section>';
   }
+  // APP-UX-001 (作者依頼 2026-07-02): 「縦一本のカード羅列」をやめ、紺のヘッダバー＋ピル型ナビで
+  //   セクション切替する骨格に刷新（当日アプリと同じ設計言語・STYLE-GUIDE M5=primary #1F3864 は index.html 側）。
+  //   既存の全 id（cloudTournaments/cloudEntries/cloudMembers/cloudStandings/…/adminPanel）は温存＝
+  //   各 render*/bind* は無改変で動く。ナビは .app-sec の display 切替のみ（bindAppNav）。
+  //   「名簿」は従来 cloudReadView カード内に同居していたが専用カード（cloudMembersView）へ分離
+  //   （中身の #cloudMembers は同一 id＝renderMemberEditor 非接触）。
   function buildAppViewHtml(summary, organizers) {
     var name = esc(summary.displayName || '');
     var club = esc(summary.clubName || '');
     var role = ROLE_LABEL[summary.role] || summary.role;
     var head = '' +
-      '<section class="card" id="appView">' +
-      '<h1>' + club + '</h1>' +
-      '<p>ようこそ、' + (name ? name + ' さん' : 'ゲスト') + '（' + esc(role) + '）</p>' +
-      '<button type="button" id="signOutBtn">ログアウト</button>' +
-      '</section>';
-    var readCard = '' +
+      '<header class="app-bar" id="appView">' +
+      '<div class="app-bar-title">' + club + '<span class="app-bar-sub">クラウド管理</span></div>' +
+      '<div class="app-bar-user">' + (name ? name + ' さん' : '') + '（' + esc(role) + '）' +
+      '<button type="button" id="signOutBtn" class="bar-btn">ログアウト</button></div>' +
+      '</header>';
+    var nav = '' +
+      '<nav class="app-nav" id="appNav">' +
+      '<button type="button" class="nav-pill active" data-nav="sec-results">大会結果</button>' +
+      '<button type="button" class="nav-pill" data-nav="sec-members">名簿</button>' +
+      '<button type="button" class="nav-pill" data-nav="sec-standings">通年集計</button>' +
+      '<button type="button" class="nav-pill" data-nav="sec-awards">記録・表彰</button>' +
+      (summary.isAdmin ? '<button type="button" class="nav-pill" data-nav="sec-admin">幹事管理</button>' : '') +
+      '</nav>';
+    var resultsSec = '' +
+      '<div class="app-sec" id="sec-results">' +
       '<section class="card" id="cloudReadView">' +
       '<h2>過去の大会（クラウド・閲覧）</h2>' +
       '<div id="cloudTournaments" class="muted">読み込み中…</div>' +
       '<h2>大会結果</h2>' +
       '<div id="cloudEntries" class="muted">上の大会を選ぶと結果を表示します。</div>' +
+      '</section>' +
+      '</div>';
+    var membersSec = '' +
+      '<div class="app-sec" id="sec-members" style="display:none">' +
+      '<section class="card" id="cloudMembersView">' +
       '<h2>名簿（クラウド・編集）</h2>' +
       '<div id="cloudMembers" class="muted">読み込み中…</div>' +
-      '</section>';
-    var standingsCard = '' +
+      '</section>' +
+      '</div>';
+    var standingsSec = '' +
+      '<div class="app-sec" id="sec-standings" style="display:none">' +
       '<section class="card" id="cloudStandingsView">' +
       '<h2>通年集計（シーズン別成績）</h2>' +
       '<div id="standingsControls"><span id="seasonSelectWrap"></span><span id="classSelectWrap"></span></div>' +
       '<div id="cloudStandings" class="muted">読み込み中…</div>' +
       '</section>' +
+      '</div>';
+    var awardsSec = '' +
+      '<div class="app-sec" id="sec-awards" style="display:none">' +
+      '<div class="card-grid">' +
       '<section class="card" id="cloudGrowthView"><h2>成長賞（前年度比 勝率の伸び）</h2><div id="cloudGrowth" class="muted">読み込み中…</div></section>' +
       '<section class="card" id="cloudRecordsView"><h2>記録・殿堂</h2><div id="cloudRecords" class="muted">読み込み中…</div></section>' +
       '<section class="card" id="cloudMonthlyView"><h2>月別チャンピオン</h2><div id="cloudMonthly" class="muted">読み込み中…</div></section>' +
-      '<section class="card" id="cloudCityView"><h2>市町村対抗</h2><div id="cloudCity" class="muted">読み込み中…</div></section>';
-    return head + readCard + standingsCard + (summary.isAdmin ? (buildAdminPanelHtml(organizers, summary) + buildImportPanelHtml()) : '');
+      '<section class="card" id="cloudCityView"><h2>市町村対抗</h2><div id="cloudCity" class="muted">読み込み中…</div></section>' +
+      '</div>' +
+      '</div>';
+    var adminSec = summary.isAdmin ? ('' +
+      '<div class="app-sec" id="sec-admin" style="display:none">' +
+      buildAdminPanelHtml(organizers, summary) + buildImportPanelHtml() +
+      '</div>') : '';
+    return head + nav + resultsSec + membersSec + standingsSec + awardsSec + adminSec;
   }
 
   // ===========================================================================
@@ -815,6 +847,9 @@
     var root = null;
     var pendingEmail = '';
     var lastSummary = null;
+    // APP-UX-001 L3 P2-1: showApp は refreshAdmin/onAuthStateChange で全再マウントされるため、
+    //   アクティブタブを closure に保持し bindApp で復元する（幹事管理の操作結果が見えたまま残る）。
+    var activeSec = 'sec-results';
     var lastOrganizers = [];
 
     function mount(html) { if (root) root.innerHTML = html; }
@@ -848,7 +883,42 @@
       var btn = byId('signOutBtn');
       if (btn) btn.addEventListener('click', function () { signOut(client).then(showLogin); });
     }
+    // APP-UX-001: ピル型ナビ＝.app-sec の display 切替のみ（各セクションは常に DOM に居るため
+    //   既存の render*/bind*（cloudTournaments/cloudMembers/cloudStandings…）は無改変で動く）。
+    // 現在の activeSec を DOM に反映（存在しないタブ＝権限変化等は sec-results にフォールバック）。
+    function applyActiveSec() {
+      if (!doc || !doc.querySelectorAll) return;
+      var secs = doc.querySelectorAll('.app-sec');
+      var found = false;
+      for (var f = 0; f < secs.length; f++) { if (secs[f].id === activeSec) { found = true; break; } }
+      if (!found) activeSec = 'sec-results';
+      for (var j = 0; j < secs.length; j++) { secs[j].style.display = (secs[j].id === activeSec) ? '' : 'none'; }
+      var nav = byId('appNav');
+      if (nav && nav.querySelectorAll) {
+        var pills = nav.querySelectorAll('.nav-pill');
+        for (var k = 0; k < pills.length; k++) {
+          var dn = pills[k].getAttribute ? pills[k].getAttribute('data-nav') : null;
+          pills[k].className = 'nav-pill' + (dn === activeSec ? ' active' : '');
+        }
+      }
+    }
+    function bindAppNav() {
+      var nav = byId('appNav');
+      if (!nav || !nav.querySelectorAll) return;
+      var pills = nav.querySelectorAll('.nav-pill');
+      for (var i = 0; i < pills.length; i++) {
+        pills[i].addEventListener('click', function (e) {
+          var t = e.currentTarget || e.target;
+          var target = t && t.getAttribute ? t.getAttribute('data-nav') : null;
+          if (!target) return;
+          activeSec = target;
+          applyActiveSec();
+        });
+      }
+    }
     function bindApp() {
+      bindAppNav();
+      applyActiveSec();
       var so = byId('signOutBtn');
       if (so) so.addEventListener('click', function () { signOut(client).then(showLogin); });
       var inviteForm = byId('inviteForm');
