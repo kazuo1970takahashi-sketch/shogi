@@ -9347,7 +9347,9 @@ function syncBranchMasterOnSave(){
 function saveData(){
   // F2: 名簿を更新（支部マスタへ同期）。当日の参加者・クラス構成を名簿へ反映する。
   syncBranchMasterOnSave();
-  alert('名簿を更新しました。\n\nこの大会の参加者を支部マスタ（名簿）に反映しました。\n\nデータの控えが必要なときは「バックアップ」をお使いください。');
+  // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は blocking alert をやめ toast へ（OK タップ不要）。
+  //   旧 alert にあった「控えはバックアップ」案内は保存状態バー＋save-systems ヘルプ（?v=56）がカバー済み。
+  showToast('📋 名簿を更新しました');
 }
 
 function saveDataAsFile(json){
@@ -9426,7 +9428,8 @@ function loadData(e){
       if(!confirm('現在のデータを上書きして読み込みますか？')){e.target.value='';var lm0=document.getElementById('load-modal');if(lm0)lm0.remove();return;}
       try{
         applyLoadedJson(text);
-        alert('データを読み込みました');
+        // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert は維持）。
+        showToast('データを読み込みました');
       } catch(err){
         alert('読み込みに失敗しました。正しいファイルか確認してください');
       }
@@ -9462,7 +9465,8 @@ function loadFromPaste(){
   try{
     applyLoadedJson(text);
     _closeRestoreModals();
-    alert('データを読み込みました');
+    // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert は維持）。
+    showToast('データを読み込みました');
   }catch(err){
     alert('読み込みに失敗しました。正しい大会データか確認してください');
   }
@@ -9632,7 +9636,9 @@ function exportTournamentBackup(){
     a.href=url; a.download=filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    alert(filename+' にバックアップを保存しました（端末のダウンロードフォルダ）');
+    // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ。ファイル名は toast(1.8秒)では読み切れないため
+    //   省略（保存先はバックアップ画面の常設案内に記載済み・実行時刻は保存状態バーに記録される）。
+    showToast('バックアップを保存しました（ダウンロードフォルダ）');
     // SAVE-STATUS-BAR-001: バックアップ成功の時刻を記録（fail-soft）。
     markSaveStatus('backup');
     return true;
@@ -9651,7 +9657,8 @@ function importTournamentBackupFromText(text){
   try{
     // 復元は独自正規化を作らず、既存 applyLoadedJson（state=normalizeState(...)→save→再描画）を再利用する。
     applyLoadedJson(JSON.stringify(res.state));
-    alert('バックアップを復元しました');
+    // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert・復元前の confirm は維持）。
+    showToast('バックアップを復元しました');
     return true;
   }catch(err){
     alert('復元に失敗しました。正しいバックアップファイルか確認してください');
