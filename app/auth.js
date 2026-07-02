@@ -911,15 +911,18 @@
 
   // ---- B-4-wire: 取り込み UI（build＋ファイルテキスト→プレビューの純関数）----
   function buildImportPanelHtml() {
+    // APP-UX-003: 役目を終えた初期移行ツールを details で折り畳み（機能・id・bind は温存＝開けば従来どおり）。
     return '' +
       '<section class="card" id="importPanel">' +
-      '<h2>過去大会データの取り込み（移行）</h2>' +
+      '<details>' +
+      '<summary>過去大会データの取り込み（初期移行・通常は使いません）</summary>' +
       '<p class="muted">cowork が作成した投入データ（JSON）を読み込み、プレビューで確認してから取り込みます。既存会員は上書きしません。何度実行しても重複しません。</p>' +
       '<input type="file" id="importFile" accept=".json,application/json">' +
       '<button type="button" id="importPreviewBtn">プレビュー（確認）</button>' +
       '<div id="importPreview" class="muted"></div>' +
       '<button type="button" id="importRunBtn" disabled>クラウドへ取り込む</button>' +
       '<p id="importStatus" class="msg" role="status" aria-live="polite"></p>' +
+      '</details>' +
       '</section>';
   }
   function buildImportPreviewHtml(preview) {

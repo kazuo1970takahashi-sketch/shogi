@@ -73,6 +73,21 @@
     .member-add input { flex:1 1 140px; }
     .member-edit input { flex:1 1 120px; }
     .member-deleted { text-decoration:line-through; color:var(--muted); font-weight:400; }
+    /* APP-UX-003 (作者承認 2026-07-03): 集計系テーブル（.cloud-entries＝大会結果/通年/殿堂/月別/市町村/成長賞 共通）の
+       統一スタイル＋通年集計の操作列＋取り込みパネルの details 化。CSS 追加のみ・既存 id/bind 非接触。 */
+    .cloud-entries { width:100%; border-collapse:collapse; font-size:13px; margin-top:6px; font-variant-numeric:tabular-nums; color:var(--fg); }
+    .cloud-entries thead tr { background:#f4f6f9; }
+    .cloud-entries th { padding:6px 6px; font-size:12px; color:#556; font-weight:600; text-align:center; border-bottom:1px solid var(--line); }
+    .cloud-entries td { padding:5px 8px; border-top:1px solid #eef1f5; text-align:center; }
+    .cloud-entries tbody tr:first-child td { border-top:none; }
+    .cloud-entries tbody tr:last-child td { border-bottom:1px solid #eef1f5; }
+    .rec-block h3 { font-size:13px; margin:12px 0 0; color:#333; }
+    .rec-block:first-child h3 { margin-top:4px; }
+    #standingsControls { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:6px 0 2px; }
+    #standingsControls label { display:inline; margin:0; font-size:12px; color:#556; }
+    #standingsControls select { width:auto; max-width:100%; padding:6px 8px; font-size:14px; }
+    #importPanel summary { cursor:pointer; font-size:14px; font-weight:600; color:var(--primary); padding:2px 0; }
+    #importPanel details[open] summary { margin-bottom:6px; }
   </style>
 </head>
 <body>
@@ -86,7 +101,7 @@
   <!-- Supabase JS（UMD・global `supabase` を生やす）。publishable key + URL のみ使用。 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js" integrity="sha384-nD3dwv4+ZqdYnmZKe/249ImlV04om7xTCcsoSeQYI+RO+XlKPoqAWaJR1M5SJH9p" crossorigin="anonymous"></script>
   <!-- cache-bust: app/auth.js 変更時に ?v=N をバンプ（app/ は cache-bust が無く旧 JS を握る問題の対策・#343）-->
-  <script src="auth.js?v=15"></script>
+  <script src="auth.js?v=16"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       try { window.ShogiAuth.boot(); }
