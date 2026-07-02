@@ -3100,17 +3100,16 @@ function _buildPpDenseCellHtml(fm,registeredCls){
   if(fm.member==='other'){
     badges+=' <span style="font-size:10px;background:#f1efe8;color:#5f5e5a;border-radius:4px;padding:0 4px;font-weight:400;vertical-align:1px">支部外</span>';
   }
-  var sub;
-  if(registeredCls){
-    sub='✓ 受付済（'+escapeHtml(ppDenseClsName(registeredCls))+'）'+(fm.yomi?('・'+escapeHtml(normalizeYomi(fm.yomi))):'');
-  }else{
-    sub=fm.yomi?escapeHtml(normalizeYomi(fm.yomi)):'（ふりがな未登録）';
-  }
-  var style='text-align:left;border-radius:8px;padding:6px 8px;min-height:52px;cursor:pointer;'
+  // 作者FB (2026-07-02): ふりがなはルビ位置＝漢字の上に置く（下ではない）。
+  var yomiLine=fm.yomi?escapeHtml(normalizeYomi(fm.yomi)):'（ふりがな未登録）';
+  var style='text-align:left;border-radius:8px;padding:5px 8px 6px;min-height:52px;cursor:pointer;'
     +(registeredCls?('background:'+pal.bg+';border:1px solid '+pal.bd):'background:#fff;border:1px solid #c9d2dd');
   var html='<button type="button" class="pp-cell" data-mid="'+midSafe+'" aria-label="'+nameSafe+(registeredCls?'（受付済）':'を受付')+'" style="'+style+'">';
+  html+='<div style="font-size:10px;color:'+(registeredCls?pal.fg:'#888')+';line-height:1.2">'+yomiLine+'</div>';
   html+='<div style="font-size:16px;font-weight:500;color:'+(registeredCls?pal.fg:'#222')+';overflow-wrap:anywhere;line-height:1.3">'+nameSafe+badges+'</div>';
-  html+='<div style="font-size:11px;color:'+(registeredCls?pal.fg:'#888')+';margin-top:1px">'+sub+'</div>';
+  if(registeredCls){
+    html+='<div style="font-size:11px;color:'+pal.fg+';margin-top:1px">✓ 受付済（'+escapeHtml(ppDenseClsName(registeredCls))+'）</div>';
+  }
   html+='</button>';
   return html;
 }
