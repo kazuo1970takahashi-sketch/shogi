@@ -72,6 +72,7 @@ function loadEnv(){
        masterSheetCycleMember:masterSheetCycleMember,
        masterSheetCycleGrade:masterSheetCycleGrade,
        masterSheetCommitNameEdit:masterSheetCommitNameEdit,
+       pushMemberEditToCloud:pushMemberEditToCloud,
        loadBranchMaster:loadBranchMaster,
        BRANCH_MASTER_KEY:BRANCH_MASTER_KEY,
        _setSort:function(v){_masterSortMode=v;},
@@ -196,5 +197,50 @@ assert(bmeBody.indexOf("querySelectorAll('.master-row-check')")>=0, 'W2 行 chec
 assert(bmeBody.indexOf('masterSheetDeleteSelected')>=0&&bmeBody.indexOf('masterSheetRestoreSelected')>=0&&bmeBody.indexOf('masterSheetClearSelection')>=0, 'W3 ツールバー3操作を bind');
 assert(bmeBody.indexOf("querySelectorAll('.master-cell-name')")>=0&&bmeBody.indexOf("querySelectorAll('.master-cell-member')")>=0&&bmeBody.indexOf("querySelectorAll('.master-cell-grade')")>=0, 'W4 編集セル3種を bind');
 
-console.log('\n  MASTER-SHEET テスト: PASS '+pass+'件 / FAIL '+fail+'件');
-if(fail>0){ process.exit(1); }
+// P: MASTER-CLOUD-PUSH-001（氏名・ふりがな編集のクラウド即時反映・fail-soft）
+const commitSrc=RAW.slice(RAW.indexOf('function masterSheetCommitNameEdit'),RAW.indexOf('function masterSheetCommitNameEdit')+1800);
+assert(commitSrc.indexOf('pushMemberEditToCloud')>=0, 'P1 commit 成功パスからクラウド push を呼ぶ');
+const pushSrc=RAW.slice(RAW.indexOf('function pushMemberEditToCloud'),RAW.indexOf('function pushMemberEditToCloud')+3000);
+assert(pushSrc.indexOf("onConflict:'club_id,member_id'")>=0, 'P2 upsert は club_id,member_id で冪等（既存 sync と同一）');
+assert(!/branch\s*:/.test(pushSrc), 'P3 branch 列を送らない（クラウド側の値を保全）');
+assert(pushSrc.indexOf('未反映')>=0, 'P4 未反映は status で明示（黙って巻き戻りリスクを残さない）');
+
+const pOk=(function(){
+  const e=envWithFix();
+  let upserted=null;
+  e._ctx.window.SHOGI_CLOUD_CONFIG={url:'https://kakuu.example',publishableKey:'pk_kakuu'};
+  e._ctx.window.supabase={createClient:function(){return {
+    auth:{getSession:function(){return Promise.resolve({data:{session:{user:{}}}});}},
+    rpc:function(){return Promise.resolve({data:[{club_id:'club-kakuu',status:'active'}]});},
+    from:function(){return {upsert:function(rows){upserted=rows;return {select:function(){return Promise.resolve({data:rows,error:null});}};}};}
+  };}};
+  const msgs=[];
+  return e.pushMemberEditToCloud({id:'m-ka',name:'架空改名',yomi:'かくうかいめい'},function(m){msgs.push(String(m));}).then(function(res){
+    assert(res&&res.ok===true, 'P5 ログイン中は push 成功');
+    assert(upserted&&upserted[0].member_id==='m-ka'&&upserted[0].name==='架空改名'&&upserted[0].yomi==='かくうかいめい'&&upserted[0].club_id==='club-kakuu', 'P6 upsert 行＝member_id/name/yomi/club_id');
+    assert(!('branch' in (upserted[0]||{})), 'P7 行に branch を含まない');
+    assert(msgs.some(m=>m.indexOf('反映しました')>=0), 'P8 成功 status を通知');
+  });
+})();
+const pAuth=(function(){
+  const e=envWithFix();
+  let upsertCalled=false;
+  e._ctx.window.SHOGI_CLOUD_CONFIG={url:'https://kakuu.example',publishableKey:'pk_kakuu'};
+  e._ctx.window.supabase={createClient:function(){return {
+    auth:{getSession:function(){return Promise.resolve({data:{session:null}});}},
+    rpc:function(){return Promise.resolve({data:[]});},
+    from:function(){upsertCalled=true;return {upsert:function(){return {select:function(){return Promise.resolve({data:[],error:null});}};}};}
+  };}};
+  const msgs=[];
+  return e.pushMemberEditToCloud({id:'m-ka',name:'x',yomi:''},function(m){msgs.push(String(m));}).then(function(res){
+    assert(res&&res.ok===false&&res.step==='auth', 'P9 未ログインは fail-soft skip（例外なし）');
+    assert(upsertCalled===false, 'P10 未ログインでは upsert を呼ばない');
+    assert(msgs.some(m=>m.indexOf('未反映')>=0&&m.indexOf('保存済み')>=0), 'P11 「未反映・端末には保存済み」を明示');
+  });
+})();
+
+function summary(){
+  console.log('\n  MASTER-SHEET テスト: PASS '+pass+'件 / FAIL '+fail+'件');
+  if(fail>0){ process.exit(1); }
+}
+Promise.all([pOk,pAuth]).then(summary).catch(function(e){ console.error('  ✗ 非同期テスト例外: '+((e&&e.message)||e)); fail++; summary(); });
