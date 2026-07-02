@@ -1,6 +1,6 @@
 # SHOGI-TOUR UI スタイルガイド（UI 規約の正本）
 
-- 制定日: 2026-07-02（v1）
+- 制定日: 2026-07-02（v1）／改定: 2026-07-02（v1.1＝§5 topic 一覧更新・§9 M2/M3 消し込み・?v=56 反映）
 - 位置づけ: **UI（色・ボタン・文言・通知・ヘルプ）の正本**。コード設計の正本 = `docs/REFERENCE.md`、
   プロセスの正本 = `docs/ai-ops/` と並ぶ第3の正本。
 - 適用範囲: `shogi_v4.html`・`app/`・`index.html` の全 UI。
@@ -103,8 +103,10 @@
 
 - 見出し脇に「？ ヘルプ」（`btn-sm`）→ `openHelpModal(topic)`。
 - topic は固定文字列・escapeHtml 経由・1スライス=1画面。
-- 現行 topic: first-round / report / reg / standings / master / save-warning。
-- **不足（追加予定）**: tournament（対局管理全般）・cloud（送信/取得の意味と失敗時の影響）→ §9。
+- 現行 topic: first-round / report / reg / standings / master / save-warning /
+  tournament（対局管理全般・?v=56）/
+  cloud（送信/取得の意味と失敗時の影響・順位タブ送信ボタン脇と大会履歴クラウド見出し脇で1 topic 共用・?v=56）/
+  save-systems（保存4系統の役割と「復旧できるのはバックアップだけ」・保存状態バーから開く・?v=56）。
 
 ## 6. レイアウト構造
 
@@ -132,8 +134,8 @@
 | # | 不適合 | 対応方針 | 優先度 |
 |---|---|---|---|
 | M1 | alert 61 箇所（成功通知にも使用） | タブ単位で N2/N3 へ置換（挙動変更スライス） | 高 |
-| M2 | 対局管理・クラウドのヘルプ topic 欠落 | 'tournament'・'cloud' を追加（低リスク・#307 定石） | 高 |
-| M3 | 保存4系統の状態が見えない | ヘッダに保存状態バー（別スライス・監査 🔵-2） | 高 |
+| M2 | ~~対局管理・クラウドのヘルプ topic 欠落~~ | **対応済**（HELP-UX-006・#471・?v=56 で本番反映） | 済 |
+| M3 | ~~保存4系統の状態が見えない~~ | **対応済**（SAVE-STATUS-BAR-001・#472・?v=56＝ヘッダ保存状態バー＋save-systems ヘルプ） | 済 |
 | M4 | インライン style 520 箇所 | 「見た目のみスライス」で画面単位クラス化・GOLDEN 再採取 | 中 |
 | M5 | app/ の primary 色 #2b6cb0 | `:root --primary` を #1F3864 へ（1行・app/ release 時に同乗） | 中 |
 | M6 | 44px が一部ボタンのみ | 共通 CSS で全面化を検証（CSS 変更＝ルール3 に注意して単独スライス） | 中 |
