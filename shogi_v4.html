@@ -9398,8 +9398,10 @@ function buildCloudSyncPayload(master, opts){
       if(!membersOut[mid]){
         var mm2=memById[mid]||{};
         // CLOUD-MEMBER-FIELDS-001: 区分・市町村も同乗（クラウドが会員の真の属性を全て持つ）。
+        // CITY-UNIFY-001: branch は送らない（ローカルマスタに branch は無く常に null 送信＝クラウド値を消す実害
+        //   ＝L3 申し送りの既存バグ修正。市町村は city 列に一本化・migration 20260703 で旧 branch 値は city へ移行済み）。
         var fc2=_cloudMemberFieldCols(mm2);
-        membersOut[mid]=stamp({ member_id:mid, name:(mm2.name||p.name||''), yomi:(mm2.yomi||p.yomi||''), branch:(mm2.branch||null), member_kind:fc2.member_kind, grade:fc2.grade, city:fc2.city });
+        membersOut[mid]=stamp({ member_id:mid, name:(mm2.name||p.name||''), yomi:(mm2.yomi||p.yomi||''), member_kind:fc2.member_kind, grade:fc2.grade, city:fc2.city });
         playersOut[mid]=stamp({ member_id:mid });
       }
       entries.push(stamp({
