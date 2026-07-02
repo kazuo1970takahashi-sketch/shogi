@@ -1324,6 +1324,10 @@ var _phaseA2State={cryptoNotificationShown:false};
 
 // A-4 §3.4.1: マスタタブの「削除済みを表示」トグル状態（タブ切替で保持）
 var _masterShowDeleted=false;
+// MASTER-SHEET-001: 簡易一覧（スプレッドシート型）の表示状態（memory-only・保存しない）。
+var _masterSortMode='yomi';   // 'yomi'（既定・ふりがな順）| 'recent'（最終参加順）
+var _masterSelected={};       // 選択中 member id → true（削除/復元ツールバー用）
+var _masterEditingMid=null;   // 氏名セルのインライン編集中 member id
 
 function createEmptyBranchMaster(){
   return {schema_version:BRANCH_MASTER_SCHEMA_VERSION,updated_at:new Date().toISOString(),members:[]};
@@ -3646,6 +3650,14 @@ function buildMasterTabHtml(master){
   members.sort(function(a,b){
     // 削除済みは末尾にまとめる
     if((!!a.deleted)!==(!!b.deleted))return a.deleted?1:-1;
+    // MASTER-SHEET-001: 既定はふりがな順（人を探す速さ優先・ピッカーと同思想・作者選択）。
+    //   ふりがな未入力は末尾。切替（#master-sort）で従来の最終参加順（新しい順）。
+    if(_masterSortMode!=='recent'){
+      var ya=normalizeYomi(a.yomi)||'￿';
+      var yb=normalizeYomi(b.yomi)||'￿';
+      if(ya!==yb)return ya<yb?-1:1;
+      return (a.name||'')<(b.name||'')?-1:1;
+    }
     var la=a.last_attended||'',lb=b.last_attended||'';
     if(la!==lb)return la<lb?1:-1;
     return (a.name||'')<(b.name||'')?-1:1;
@@ -3682,42 +3694,65 @@ function buildMasterTabHtml(master){
   // PWA 収束方針(docs/PWA-PLAN): 当日アプリ⇄app/ の相互リンク（同一ウィンドウ遷移・別タブを増やさない）。
   html+='<div style="margin:0 0 12px"><a href="app/" style="font-size:13px;color:#1F3864">☁ クラウド管理ページ（名簿編集・ログイン）を開く →</a></div>';
   html+='<hr class="separator">';
-  html+='<h3>簡易一覧</h3>';
+  // MASTER-SHEET-001 (作者FB 2026-07-02): 簡易一覧をスプレッドシート型に刷新（案1・作者承認済）。
+  //   行の編集/削除ボタンを全廃＝セルをタップで直接編集（氏名・ふりがな＝その場入力／支部員・会費＝タップで切替）、
+  //   削除・復元は行選択（checkbox）→選択ツールバー。ふりがなは氏名の上（ルビ位置・ピッカーと同型）で復活。
+  //   既定ソートはふりがな順（#master-sort で最終参加順に切替）。旧 F7 編集モーダル/.master-edit-btn 系は
+  //   回帰資産として温存（UI 未結線化）。
+  html+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
+  html+='<h3 style="margin:0">簡易一覧</h3>';
+  html+='<select id="master-sort" style="font-size:13px;padding:4px 8px"><option value="yomi"'+(_masterSortMode!=='recent'?' selected':'')+'>ふりがな順</option><option value="recent"'+(_masterSortMode==='recent'?' selected':'')+'>最終参加順</option></select>';
+  html+='<span style="font-size:11px;color:#888">セルをタップで編集／削除は左の□で行を選択</span>';
+  html+='</div>';
+  var selInfo=masterSheetSelectedMids(members);
+  if(selInfo.total>0){
+    html+='<div id="master-sel-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#E6F1FB;border:1px solid #B5D4F4;border-radius:8px;padding:6px 10px;margin-bottom:8px;font-size:13px;color:#0C447C">';
+    html+='<span>'+selInfo.total+'名 選択中</span>';
+    if(selInfo.live.length>0)html+='<button type="button" id="masterSelDeleteBtn" class="btn-sm" style="border:1px solid #A32D2D;color:#A32D2D;background:#fff">削除（'+selInfo.live.length+'名）</button>';
+    if(selInfo.del.length>0)html+='<button type="button" id="masterSelRestoreBtn" class="btn-sm" style="border:1px solid #1F3864;color:#1F3864;background:#fff">復元（'+selInfo.del.length+'名）</button>';
+    html+='<button type="button" id="masterSelClearBtn" class="btn-sm" style="background:#fff">選択解除</button>';
+    html+='</div>';
+  }
   if(members.length===0){
     html+='<div style="color:#888;font-size:13px;padding:8px 0">登録された参加者はいません。</div>';
   }else{
-    html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
-    // master-list 列構成変更(2026-05-08): 7 列(氏名/ふりがな/区分/前回クラス/最終参加/回数/操作)→
-    // 5 列(氏名/支部員区分/会費区分/編集/削除)。iPhone 375px 縦書き化解消が目的。
-    // 削除した「ふりがな」「前回クラス」「最終参加」「回数」は F7 編集モーダル内で確認・編集可。
-    html+='<thead><tr><th style="text-align:left;padding:6px 8px">氏名</th><th style="text-align:left;padding:6px 8px">支部員区分</th><th style="text-align:left;padding:6px 8px">会費区分</th><th style="padding:6px 8px">編集</th><th style="padding:6px 8px">削除</th></tr></thead><tbody>';
+    html+='<div style="overflow-x:auto"><table id="master-sheet" style="width:100%;border-collapse:collapse;font-size:13px">';
+    html+='<thead><tr style="background:#f4f6f9">'
+      +'<th style="width:34px;padding:6px 2px;font-weight:400;font-size:11px;color:#888">選択</th>'
+      +'<th style="text-align:left;padding:6px 8px;font-size:12px;color:#556;font-weight:600">氏名（ふりがな）</th>'
+      +'<th style="width:58px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">支部員</th>'
+      +'<th style="width:50px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">会費</th>'
+      +'<th style="width:42px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">前回</th>'
+      +'<th style="width:86px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">最終参加</th>'
+      +'</tr></thead><tbody>';
     for(var i=0;i<members.length;i++){
       var m=members[i];
-      var memberLabel=(m.member==='other')?'他':'支部員';
-      var gradeLabel=(m.grade==='chu')?'中学':(m.grade==='josei')?'女性':'一般';
+      var mid=escapeHtml(m.id||'');
       var isDel=(m.deleted===true);
-      // A-4 §3.4.2: 削除済み行はグレー背景＋取り消し線
-      var rowStyle=isDel?' style="background:#f5f5f5;color:#888;text-decoration:line-through" class="master-row-deleted"':'';
-      html+='<tr'+rowStyle+'><td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee">'+escapeHtml(m.name)+'</td>';
-      // 支部員区分(member: 支部員 / 他)
-      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee" class="master-cell-member">'+escapeHtml(memberLabel)+'</td>';
-      // 会費区分(grade: 中学 / 女性 / 一般)
-      html+='<td style="text-align:left;padding:6px 8px;border-bottom:1px solid #eee" class="master-cell-grade">'+escapeHtml(gradeLabel)+'</td>';
+      var checked=_masterSelected[m.id]?' checked':'';
+      var gradeLabel=(m.grade==='chu')?'中学':(m.grade==='josei')?'女性':'一般';
+      var lastCls=(m.last_class==='A'||m.last_class==='B')?m.last_class:'－';
+      var rowStyle=isDel?'background:#f5f5f5;color:#888;text-decoration:line-through':'';
+      html+='<tr class="master-sheet-row'+(isDel?' master-row-deleted':'')+'" style="border-bottom:1px solid #eef1f5;'+rowStyle+'">';
+      html+='<td style="text-align:center;padding:4px 2px"><input type="checkbox" class="master-row-check" data-mid="'+mid+'"'+checked+' aria-label="'+escapeHtml(m.name||'')+'を選択" style="width:18px;height:18px"></td>';
+      // 氏名セル（ふりがなはルビ位置）。live 行のみ editable（class 付与＝bind 対象）。
+      var yomiN=normalizeYomi(m.yomi);
+      var yomiHtml=yomiN
+        ?'<span style="font-size:10px;color:'+(isDel?'#aaa':'#888')+';display:block;line-height:1.15">'+escapeHtml(yomiN)+'</span>'
+        :'<span style="font-size:10px;color:'+(isDel?'#aaa':'#BA7517')+';display:block;line-height:1.15">（ふりがな未入力）</span>';
+      html+='<td'+(isDel?'':' class="master-cell-name" data-mid="'+mid+'" title="タップで氏名・ふりがなを編集"')+' style="text-align:left;padding:5px 8px'+(isDel?'':';cursor:pointer')+'">'+yomiHtml+'<span style="font-weight:500">'+escapeHtml(m.name||'')+'</span></td>';
+      // 支部員セル（タップで 支部員⇄他）。
+      var memberBadge=(m.member==='other')
+        ?'<span style="font-size:11px;background:#f1efe8;color:#5f5e5a;border-radius:5px;padding:1px 6px">他</span>'
+        :'<span style="font-size:11px;background:#eaf3de;color:#27500A;border-radius:5px;padding:1px 6px">支部員</span>';
+      html+='<td'+(isDel?'':' class="master-cell-member" data-mid="'+mid+'" title="タップで切替"')+' style="text-align:center;padding:4px 2px'+(isDel?'':';cursor:pointer')+'">'+memberBadge+'</td>';
+      // 会費セル（タップで 一般→中学→女性）。
+      html+='<td'+(isDel?'':' class="master-cell-grade" data-mid="'+mid+'" title="タップで切替"')+' style="text-align:center;padding:4px 2px;font-size:12px'+(isDel?'':';cursor:pointer')+'">'+escapeHtml(gradeLabel)+'</td>';
+      html+='<td style="text-align:center;padding:4px 2px;font-size:12px">'+escapeHtml(lastCls)+'</td>';
       if(isDel){
-        // 削除済み行: 編集列に「復元」、削除列に削除日(A-4 §3.2.3 削除日表示 + 復元ボタンを 2 列に分割)
-        html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap" class="master-cell-edit">';
-        html+='<button type="button" class="btn-sm master-restore-btn" data-mid="'+escapeHtml(m.id||'')+'" data-name="'+escapeHtml(m.name||'')+'" style="border-color:#1F3864;color:#1F3864;text-decoration:none">復元</button>';
-        html+='</td>';
-        html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap" class="master-cell-delete">';
-        if(m.deleted_at)html+='<span style="font-size:11px;color:#888;text-decoration:none">削除日：'+escapeHtml(m.deleted_at)+'</span>';
-        html+='</td>';
+        html+='<td style="text-align:center;padding:4px 2px;font-size:10px;color:#888;text-decoration:none">削除:'+escapeHtml(m.deleted_at||'')+'</td>';
       }else{
-        html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap" class="master-cell-edit">';
-        html+='<button type="button" class="btn-sm master-edit-btn" data-mid="'+escapeHtml(m.id||'')+'">編集</button>';
-        html+='</td>';
-        html+='<td style="padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap" class="master-cell-delete">';
-        html+='<button type="button" class="btn-sm master-delete-btn" data-mid="'+escapeHtml(m.id||'')+'" data-name="'+escapeHtml(m.name||'')+'" style="border-color:#c33;color:#c33">削除</button>';
-        html+='</td>';
+        html+='<td style="text-align:center;padding:4px 2px;font-size:11px;color:#888">'+escapeHtml(m.last_attended||'－')+'</td>';
       }
       html+='</tr>';
     }
@@ -4336,6 +4371,155 @@ function bindMasterEditModalEvents(){
   });
 }
 
+// ============================================================
+// MASTER-SHEET-001: スプレッドシート型 簡易一覧の coordinator 群（bind から呼ぶ・テストから直接呼べる）。
+//   削除/復元/編集は既存の applyMasterMember*（純関数・ガード込み）を流用＝新しい破壊ロジックを作らない。
+function masterSheetSelectedMids(members){
+  var live=[],del=[];
+  var list=Array.isArray(members)?members:[];
+  for(var i=0;i<list.length;i++){
+    var m=list[i];
+    if(m&&m.id&&_masterSelected[m.id]){ if(m.deleted===true)del.push(m.id); else live.push(m.id); }
+  }
+  return {live:live,del:del,total:live.length+del.length};
+}
+function masterSheetToggleSelect(mid,on){
+  if(!mid)return;
+  if(on)_masterSelected[mid]=true; else delete _masterSelected[mid];
+  renderMasterTab();
+}
+function masterSheetClearSelection(){
+  _masterSelected={};
+  renderMasterTab();
+}
+function _masterSheetNamesFor(mids,master){
+  var names=[];
+  var members=(master&&master.members)||[];
+  for(var i=0;i<members.length;i++){ if(mids.indexOf(members[i].id)>=0)names.push(members[i].name||''); }
+  var head=names.slice(0,5).join('、');
+  if(names.length>5)head+=' 他'+(names.length-5)+'名';
+  return head;
+}
+function masterSheetDeleteSelected(){
+  var master=loadBranchMaster();
+  var sel=masterSheetSelectedMids((master&&master.members)||[]);
+  if(sel.live.length===0)return;
+  if(!confirm(sel.live.length+'名（'+_masterSheetNamesFor(sel.live,master)+'）を支部マスタから削除します。\n削除後はサジェスト・過去参加者・一覧から非表示になります（参加履歴データは保持・復元できます）。\n\nよろしいですか？'))return;
+  var okc=0;
+  for(var i=0;i<sel.live.length;i++){
+    var r=applyMasterMemberDelete(sel.live[i],master,todayYmd());
+    if(r&&r.success){okc++;delete _masterSelected[sel.live[i]];}
+  }
+  saveBranchMaster(master);
+  showToast(okc+'名を削除しました');
+  renderMasterTab();
+  if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+}
+function masterSheetRestoreSelected(){
+  var master=loadBranchMaster();
+  var sel=masterSheetSelectedMids((master&&master.members)||[]);
+  if(sel.del.length===0)return;
+  if(!confirm(sel.del.length+'名（'+_masterSheetNamesFor(sel.del,master)+'）を復元します。\n一覧・過去参加者・サジェスト候補に再表示されます。\n\nよろしいですか？'))return;
+  var okc=0;
+  for(var i=0;i<sel.del.length;i++){
+    var r=applyMasterMemberRestore(sel.del[i],master);
+    if(r&&r.success){okc++;delete _masterSelected[sel.del[i]];}
+  }
+  saveBranchMaster(master);
+  showToast(okc+'名を復元しました');
+  renderMasterTab();
+  if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+}
+function _masterSheetFindMember(mid,master){
+  var members=(master&&master.members)||[];
+  for(var i=0;i<members.length;i++){ if(members[i]&&members[i].id===mid)return members[i]; }
+  return null;
+}
+function masterSheetCycleMember(mid){
+  var master=loadBranchMaster();
+  var m=_masterSheetFindMember(mid,master);
+  if(!m||m.deleted===true)return;
+  var next=(m.member==='other')?'member':'other';
+  var r=applyMasterMemberEdit(mid,m.name||'',m.yomi||'',master,{member:next});
+  if(!r||!r.success)return;
+  saveBranchMaster(master);
+  renderMasterTab();
+  if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+}
+function masterSheetCycleGrade(mid){
+  var master=loadBranchMaster();
+  var m=_masterSheetFindMember(mid,master);
+  if(!m||m.deleted===true)return;
+  var cur=(m.grade==='chu'||m.grade==='josei')?m.grade:'ippan';
+  var next=(cur==='ippan')?'chu':(cur==='chu')?'josei':'ippan';
+  var r=applyMasterMemberEdit(mid,m.name||'',m.yomi||'',master,{grade:next});
+  if(!r||!r.success)return;
+  saveBranchMaster(master);
+  renderMasterTab();
+  if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+}
+// 氏名セルのインライン編集: タップ→セル内を ふりがな/氏名 の2入力に差し替え。Enter=確定・Esc=取消・
+//   セル外へ focus が出たら確定（スプレッドシートの流儀）。確定は applyMasterMemberEdit（正規化・ガード込み）。
+function masterSheetStartNameEdit(mid){
+  if(_masterEditingMid===mid)return;
+  if(_masterEditingMid)masterSheetCommitNameEdit();
+  // L3 P2-1: 強制 commit が失敗（空氏名 alert 等）して編集が継続中なら、新しいセルの編集を開始しない。
+  //   旧エディタが DOM に残ったまま同 id 入力を二重注入し、別会員へ誤保存し得る経路を塞ぐ。
+  if(_masterEditingMid)return;
+  var master=loadBranchMaster();
+  var m=_masterSheetFindMember(mid,master);
+  if(!m||m.deleted===true)return;
+  var cell=(typeof document!=='undefined'&&document.querySelector)?document.querySelector('.master-cell-name[data-mid="'+mid+'"]'):null;
+  if(!cell)return;
+  _masterEditingMid=mid;
+  cell.innerHTML='<input type="text" id="ms-edit-yomi" value="'+escapeHtml(m.yomi||'')+'" placeholder="ふりがな" style="width:96%;font-size:13px;padding:3px 6px;border:1px solid #185FA5;border-radius:4px;margin-bottom:2px;box-sizing:border-box">'
+    +'<input type="text" id="ms-edit-name" value="'+escapeHtml(m.name||'')+'" placeholder="氏名" style="width:96%;font-size:15px;font-weight:500;padding:3px 6px;border:1px solid #185FA5;border-radius:4px;box-sizing:border-box">';
+  var onKey=function(e){
+    var k=e&&(e.key||e.keyCode);
+    if(k==='Enter'||k===13){ if(e&&e.preventDefault)e.preventDefault(); masterSheetCommitNameEdit(); }
+    else if(k==='Escape'||k===27){ masterSheetCancelNameEdit(); }
+  };
+  var yi=document.getElementById('ms-edit-yomi');
+  var ni=document.getElementById('ms-edit-name');
+  if(yi)yi.addEventListener('keydown',onKey);
+  if(ni)ni.addEventListener('keydown',onKey);
+  cell.addEventListener('focusout',function(){
+    setTimeout(function(){
+      try{
+        if(_masterEditingMid!==mid)return;
+        if(cell.contains&&document.activeElement&&cell.contains(document.activeElement))return;
+        masterSheetCommitNameEdit();
+      }catch(e){}
+    },0);
+  });
+  if(ni&&ni.focus)ni.focus();
+}
+function masterSheetCommitNameEdit(){
+  if(!_masterEditingMid)return;
+  var mid=_masterEditingMid;
+  var nameEl=document.getElementById('ms-edit-name');
+  var yomiEl=document.getElementById('ms-edit-yomi');
+  if(!nameEl){_masterEditingMid=null;return;}
+  var master=loadBranchMaster();
+  var r=applyMasterMemberEdit(mid,nameEl.value,yomiEl?yomiEl.value:'',master,{});
+  if(!r||!r.success){
+    if(r&&r.error==='empty_name'){ alert('氏名を入力してください'); if(nameEl.focus)nameEl.focus(); return; }
+    alert('更新できませんでした。入力内容を確認してください');
+    _masterEditingMid=null;
+    renderMasterTab();
+    return;
+  }
+  saveBranchMaster(master);
+  _masterEditingMid=null;
+  showToast('更新しました');
+  renderMasterTab();
+  if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+}
+function masterSheetCancelNameEdit(){
+  _masterEditingMid=null;
+  renderMasterTab();
+}
+
 function bindMasterTabEvents(){
   // HELP-UX-005 (#342): 支部マスタ見出し脇「？ ヘルプ」（id=helpBtnMaster）→ openHelpModal('master')。
   var helpBtnMaster=document.getElementById('helpBtnMaster');
@@ -4417,6 +4601,48 @@ function bindMasterTabEvents(){
     _masterShowDeleted=!_masterShowDeleted;
     renderMasterTab();
   });
+  // MASTER-SHEET-001: スプレッドシート型一覧の bind（build/bind 分離＝renderMasterTab 後に毎回結線）。
+  var sortSel=document.getElementById('master-sort');
+  if(sortSel)sortSel.addEventListener('change',function(){
+    _masterSortMode=(sortSel.value==='recent')?'recent':'yomi';
+    renderMasterTab();
+  });
+  var rowChecks=document.querySelectorAll('.master-row-check');
+  for(var ci2=0;ci2<rowChecks.length;ci2++){
+    rowChecks[ci2].addEventListener('change',function(e){
+      var t=e.currentTarget||e.target;
+      masterSheetToggleSelect(t&&t.getAttribute?t.getAttribute('data-mid'):null,!!(t&&t.checked));
+    });
+  }
+  var selDel=document.getElementById('masterSelDeleteBtn');
+  if(selDel)selDel.addEventListener('click',masterSheetDeleteSelected);
+  var selRes=document.getElementById('masterSelRestoreBtn');
+  if(selRes)selRes.addEventListener('click',masterSheetRestoreSelected);
+  var selClr=document.getElementById('masterSelClearBtn');
+  if(selClr)selClr.addEventListener('click',masterSheetClearSelection);
+  var nameCells=document.querySelectorAll('.master-cell-name');
+  for(var nc=0;nc<nameCells.length;nc++){
+    nameCells[nc].addEventListener('click',function(e){
+      var tgt=e&&e.target;
+      if(tgt&&tgt.tagName==='INPUT')return; // 編集中の入力への操作は素通し
+      var t=e.currentTarget||e.target;
+      masterSheetStartNameEdit(t&&t.getAttribute?t.getAttribute('data-mid'):null);
+    });
+  }
+  var memberCells=document.querySelectorAll('.master-cell-member');
+  for(var mc=0;mc<memberCells.length;mc++){
+    memberCells[mc].addEventListener('click',function(e){
+      var t=e.currentTarget||e.target;
+      masterSheetCycleMember(t&&t.getAttribute?t.getAttribute('data-mid'):null);
+    });
+  }
+  var gradeCells=document.querySelectorAll('.master-cell-grade');
+  for(var gc=0;gc<gradeCells.length;gc++){
+    gradeCells[gc].addEventListener('click',function(e){
+      var t=e.currentTarget||e.target;
+      masterSheetCycleGrade(t&&t.getAttribute?t.getAttribute('data-mid'):null);
+    });
+  }
   // A-4 §3.4.3: 復元ボタン
   var restoreBtns=document.querySelectorAll('.master-restore-btn');
   if(restoreBtns&&restoreBtns.length){

@@ -794,6 +794,19 @@ else
   warn "test_pp_dense.js が見つからない"
 fi
 
+echo ""
+echo "【MASTER-SHEET-001 会員名簿スプレッドシート型一覧（旧ボタン全廃 / ルビ位置ふりがな / ふりがな順 / セル直接編集 / 選択削除・復元）】"
+if [ -f "$SCRIPT_DIR/test_master_sheet.js" ]; then
+  if node "$SCRIPT_DIR/test_master_sheet.js" "$TARGET" > /tmp/master_sheet_out.log 2>&1; then
+    ok "MASTER-SHEET テスト 全PASS ($(tail -1 /tmp/master_sheet_out.log))"
+  else
+    ng "MASTER-SHEET テスト 失敗"
+    cat /tmp/master_sheet_out.log
+  fi
+else
+  warn "test_master_sheet.js が見つからない"
+fi
+
 # ============================================
 # MEMBERS-CANDIDATE-MASTER-RECUT-001 members 形式 参加者候補マスタ読込（#194 価値分の再切り）
 #   完全架空 fixture で member 真偽値後方互換 / 禁止項目 whitelist 除外 / deleted 墓石除外 /
