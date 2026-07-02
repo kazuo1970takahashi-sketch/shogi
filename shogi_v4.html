@@ -2885,7 +2885,7 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   }
   var html=_buildPpControlsHtml(filter,row,qf);
   if(members.length===0){
-    html+='<div style="color:#888;font-size:13px;padding:8px 0">支部マスタが空です。「マスタ」タブから過去大会を統合できます。</div>';
+    html+='<div style="color:#888;font-size:13px;padding:8px 0">支部マスタが空です。「マスタ」タブの「☁ クラウドから取得」（要ログイン）またはインポートで名簿を用意できます。</div>';
     return html;
   }
   if(filtered.length===0){
@@ -3062,7 +3062,7 @@ function buildPpDenseListHtml(master,filter,yomiRow,quickFilter){
   var searchOpen=_ppSearchOpen||!!query||row!=='all'||!!qf;
   html+='<details class="pp-search-details"'+(searchOpen?' open':'')+' style="margin-bottom:8px"><summary style="font-size:12px;color:#666;cursor:pointer;padding:4px 2px">🔍 検索・絞り込み（普段は不要）</summary>'+_buildPpControlsHtml(filter,row,qf)+'</details>';
   if(members.length===0){
-    html+='<div style="color:#888;font-size:13px;padding:8px 0">支部マスタが空です。「マスタ」タブから過去大会を統合できます。</div>';
+    html+='<div style="color:#888;font-size:13px;padding:8px 0">支部マスタが空です。「マスタ」タブの「☁ クラウドから取得」（要ログイン）またはインポートで名簿を用意できます。</div>';
     return html;
   }
   if(filtered.length===0){
@@ -3681,9 +3681,14 @@ function buildMasterTabHtml(master){
   html+='<div id="masterCloudPullStatus" class="cloud-status" role="status" style="margin:4px 0 12px;font-size:13px" aria-live="polite"></div>';
   // 削除済み表示中は折りたたみを開いたまま（トグル直後の再描画でメンテ操作を見失わない）。
   html+='<details class="master-maint" style="margin:0 0 12px"'+(_masterShowDeleted?' open':'')+'>';
-  html+='<summary style="cursor:pointer;font-size:13px;color:#1F3864;padding:6px 0">⚙ 名簿のメンテナンス（過去大会の統合・バックアップ・削除済み・リセット）</summary>';
+  // MASTER-MIGRATE-RETIRE-001 (作者判断 2026-07-02): 「📥 過去大会を統合」はブートストラップ用で役目を終えたため
+  //   UI 導線を撤去（openMigrationWizard・bind・テスト資産は温存＝onClickAddOneTable 前例）。過去大会 JSON から
+  //   会員を回収したい場合は「バックアップ画面で復元→📋 名簿を更新」で代替できる（誘導文言も更新済み）。
+  // MASTER-BULK-PUSH-001: 代わりに「☁ 名簿全体を一括送信」＝ローカル全会員（区分・市町村込み）をクラウドへ
+  //   冪等 upsert する初期同期ボタンを置く（ローカルのみ会員の解消・CLOUD-MEMBER-FIELDS-001 とセット）。
+  html+='<summary style="cursor:pointer;font-size:13px;color:#1F3864;padding:6px 0">⚙ 名簿のメンテナンス（バックアップ・クラウド一括送信・削除済み・リセット）</summary>';
   html+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
-  html+='<button type="button" class="btn-primary" id="masterMigrateBtn">📥 過去大会を支部マスタに統合</button>';
+  html+='<button type="button" id="masterBulkPushBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ 名簿全体をクラウドへ一括送信</button>';
   html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
   html+='<button type="button" id="masterImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📂 マスタをインポート</button>';
   // A-4 §3.4.1: 削除済み表示トグル
@@ -4167,7 +4172,7 @@ function processMasterImportText(text,mode,setStatus){
   if(mode==='overwrite'){
     var result=applyOverwriteImport(parsed);
     if(!result.success){
-      if(result.error==='tournament_format')setStatus('これは過去大会データの形式です。「マスタ」タブの「⚙ 名簿のメンテナンス」を開き「📥 過去大会を支部マスタに統合」をご利用ください');
+      if(result.error==='tournament_format')setStatus('これは過去大会データの形式です。会員を名簿へ取り込むには、バックアップ画面の「貼り付けから復元」等で大会として読み込み、「📋 名簿を更新」を押してください');
       else if(result.error==='invalid_format')setStatus('マスタの形式として認識できませんでした（schema_version / members を確認してください）');
       else setStatus('インポートに失敗しました');
       return;
@@ -4206,7 +4211,7 @@ function processMasterImportText(text,mode,setStatus){
     }
     var mr=applyMergeImport(parsed,current);
     if(!mr.success){
-      if(mr.error==='tournament_format')setStatus('これは過去大会データの形式です。「マスタ」タブの「⚙ 名簿のメンテナンス」を開き「📥 過去大会を支部マスタに統合」をご利用ください');
+      if(mr.error==='tournament_format')setStatus('これは過去大会データの形式です。会員を名簿へ取り込むには、バックアップ画面の「貼り付けから復元」等で大会として読み込み、「📋 名簿を更新」を押してください');
       else if(mr.error==='invalid_format')setStatus('マスタの形式として認識できませんでした（schema_version / members を確認してください）');
       else setStatus('インポートに失敗しました');
       return;
@@ -4587,7 +4592,15 @@ function bindMasterTabEvents(){
     pullMembersToMasterUI(setStatus);
   });
   var btn=document.getElementById('masterMigrateBtn');
-  if(btn)btn.addEventListener('click',openMigrationWizard);
+  if(btn)btn.addEventListener('click',openMigrationWizard); // MASTER-MIGRATE-RETIRE-001: ボタン非描画＝no-op（回帰資産として温存）
+  // MASTER-BULK-PUSH-001: 名簿全体の一括送信（confirm はクラウド上書きの明示＝N1）。
+  var bulkPushBtn=document.getElementById('masterBulkPushBtn');
+  if(bulkPushBtn)bulkPushBtn.addEventListener('click',function(){
+    var master=loadBranchMaster();
+    var n=(master&&Array.isArray(master.members))?master.members.length:0;
+    if(!confirm('名簿 '+n+'名をクラウドへ一括送信します。\nクラウド側の氏名・ふりがな・区分・市町村は、この端末の名簿の内容で上書きされます。\n\nよろしいですか？'))return;
+    pushAllMembersToCloud(_masterCloudStatusFn());
+  });
   var importBtn=document.getElementById('masterImportBtn');
   if(importBtn)importBtn.addEventListener('click',openMasterImportModal);
   // Phase 2: マスタリセットモーダルを開く（22名取込ボタンは撤去・関数は未使用化）
@@ -8889,7 +8902,7 @@ var HELP_TEXTS={
     title:'支部マスタの使い方ヘルプ',
     lines:[
       '支部マスタは過去の参加者を蓄える名簿です。当日の大会データとは別物で、ここを直接いじらなくても大会運営はできます。',
-      '「📥 過去大会を支部マスタに統合」（「⚙ 名簿のメンテナンス」内）：以前保存した大会データ（JSON）から参加者を名簿へ追加・更新します。',
+      '「☁ 名簿全体をクラウドへ一括送信」（「⚙ 名簿のメンテナンス」内）：この端末の名簿全員（区分・市町村込み）をクラウドへ反映します（ログインが必要）。',
       '受付・対局の画面で「📋 名簿を更新」を押すと、その大会の参加者が支部マスタ（名簿）に反映されます（同期）。',
       '「📤 エクスポート」で名簿をファイル保存、「📂 インポート」で読み込みできます。端末の移行や万一の消失に備え、ときどきエクスポートして保管してください。',
       '取り込むファイルが壊れている・対応していない版のときは、取り込みを中止して既存の名簿を守ります（黙って消えません）。',
@@ -9384,7 +9397,9 @@ function buildCloudSyncPayload(master, opts){
       if(typeof mid!=='string'||!mid){ skipped.push((p&&p.name)||''); continue; }
       if(!membersOut[mid]){
         var mm2=memById[mid]||{};
-        membersOut[mid]=stamp({ member_id:mid, name:(mm2.name||p.name||''), yomi:(mm2.yomi||p.yomi||''), branch:(mm2.branch||null) });
+        // CLOUD-MEMBER-FIELDS-001: 区分・市町村も同乗（クラウドが会員の真の属性を全て持つ）。
+        var fc2=_cloudMemberFieldCols(mm2);
+        membersOut[mid]=stamp({ member_id:mid, name:(mm2.name||p.name||''), yomi:(mm2.yomi||p.yomi||''), branch:(mm2.branch||null), member_kind:fc2.member_kind, grade:fc2.grade, city:fc2.city });
         playersOut[mid]=stamp({ member_id:mid });
       }
       entries.push(stamp({
@@ -9447,11 +9462,19 @@ function mergeCloudMembersIntoMaster(master, cloudMembers, opts){
     // クラウド members は deleted boolean を持たず deleted_at(timestamptz)のみ（app/ B-5 が書く）。
     // 後方互換のため deleted===true も引き続き尊重しつつ、deleted_at 非 null を tombstone とみなす（B-3b-tombstone）。
     var cDeleted=(cm.deleted===true)||(cDeletedAt!==null);
+    // CLOUD-MEMBER-FIELDS-001: 区分・市町村も下りで反映（非空値のみ＝NULL（未設定・旧行）はローカルを壊さない。
+    //   name/yomi と同じ「非空ガード付き last-writer-wins」。上りは編集/削除 push・☁送信・一括送信が担う）。
+    var cKind=(cm.member_kind==='member'||cm.member_kind==='other')?cm.member_kind:null;
+    var cGrade=(cm.grade==='ippan'||cm.grade==='chu'||cm.grade==='josei')?cm.grade:null;
+    var cCity=(typeof cm.city==='string'&&cm.city)?cm.city:null;
     var existing=byId[mid];
     if(existing){
       var didChange=false;
       if(nonEmpty(cName)&&existing.name!==cName){ existing.name=cName; didChange=true; }
       if(nonEmpty(cYomi)&&existing.yomi!==cYomi){ existing.yomi=cYomi; didChange=true; }
+      if(cKind&&existing.member!==cKind){ existing.member=cKind; didChange=true; }
+      if(cGrade&&existing.grade!==cGrade){ existing.grade=cGrade; didChange=true; }
+      if(cCity&&existing.city!==cCity){ existing.city=cCity; didChange=true; }
       if(cDeleted&&existing.deleted!==true){ existing.deleted=true; if(cDeletedAt&&!existing.deleted_at)existing.deleted_at=cDeletedAt; didChange=true; }
       if(didChange){ res.updated++; changed=true; }
     }else{
@@ -9460,6 +9483,10 @@ function mergeCloudMembersIntoMaster(master, cloudMembers, opts){
       // 同名・同ふりがなの非削除ローカル会員が別 id で既にいる＝二重化の疑い（検知のみ・統合しない）。
       if(!cDeleted&&byNameYomi[nameYomiKey(cName,cYomi)])res.possibleDuplicates++;
       var nm={ id:mid, name:cName, yomi:cYomi, tournament_ids:[] };
+      // CLOUD-MEMBER-FIELDS-001: 新規追加時も区分・市町村を反映（非空値のみ・無ければ normalize の既定に従う）。
+      if(cKind)nm.member=cKind;
+      if(cGrade)nm.grade=cGrade;
+      if(cCity)nm.city=cCity;
       if(cDeleted){ nm.deleted=true; nm.deleted_at=cDeletedAt; }
       master.members.push(nm);
       byId[mid]=nm;
@@ -9526,7 +9553,8 @@ function pullMembersFromCloud(client, opts){
   var clubId=opts.clubId;
   if(!client||!client.from)return Promise.resolve({ok:false,step:'init',message:'クラウドに接続していません'});
   if(!clubId)return Promise.resolve({ok:false,step:'club',message:'取得元クラブが特定できません（ログインを確認してください）'});
-  return client.from('members').select('member_id,name,yomi,branch,deleted_at').eq('club_id',clubId).then(function(r){
+  // CLOUD-MEMBER-FIELDS-001: 明示列挙をやめ '*'（スキーマ追補に自動追従＝列追加前の環境でも取得が壊れない）。
+  return client.from('members').select('*').eq('club_id',clubId).then(function(r){
     if(r&&r.error)return {ok:false,step:'fetch',message:((r.error&&r.error.message)||'名簿の読み込みに失敗しました')+'（fetch）'};
     var rows=(r&&Array.isArray(r.data))?r.data:[];
     var master=(opts.master&&Array.isArray(opts.master.members))?opts.master
@@ -9598,6 +9626,17 @@ function applyCloudStatus(el,msg){
 //     異なり、ユーザーの明示編集への応答なので結果を伝える）。
 //   - upsert は既存 sync と同じ onConflict（club_id,member_id）で冪等。row に branch 列は含めない
 //     ＝クラウド側の branch 値を保全（提供列のみ更新される）。
+// CLOUD-MEMBER-FIELDS-001: ローカルマスタの「真の属性」（支部員区分・会費区分・市町村）をクラウド row へ
+//   載せる共通整形。語彙はローカルと同一に正規化（member_kind: member/other・grade: ippan/chu/josei・
+//   city: 空は null）。前回クラス・最終参加・回数は entries から導出できるため送らない（二重管理回避）。
+function _cloudMemberFieldCols(m){
+  return {
+    member_kind:(m&&m.member==='other')?'other':'member',
+    grade:(m&&(m.grade==='chu'||m.grade==='josei'))?m.grade:'ippan',
+    city:(m&&typeof m.city==='string'&&m.city)?m.city:null
+  };
+}
+
 function pushMemberEditToCloud(member,setStatus){
   setStatus=setStatus||function(){};
   if(!member||!member.id)return Promise.resolve({ok:false,step:'input'});
@@ -9614,10 +9653,13 @@ function pushMemberEditToCloud(member,setStatus){
       return client.rpc('claim_organizer_seat').then(function(rc){
         var clubId=pickActiveClubId((rc&&rc.data)||[]);
         if(!clubId){ setStatus('クラウド未反映（送信先クラブを特定できません・端末には保存済み）'); return {ok:false,step:'club'}; }
-        var row={member_id:member.id,name:member.name||'',yomi:member.yomi||'',club_id:clubId};
+        // CLOUD-MEMBER-FIELDS-001: 区分・市町村も同乗（クラウドが全項目を持つ・スキーマは migration 20260702150000）。
+        var fc=_cloudMemberFieldCols(member);
+        var row={member_id:member.id,name:member.name||'',yomi:member.yomi||'',member_kind:fc.member_kind,grade:fc.grade,city:fc.city,club_id:clubId};
         return client.from('members').upsert([row],{onConflict:'club_id,member_id'}).select().then(function(res){
           if(res&&res.error){ setStatus('クラウドへの反映に失敗しました：'+((res.error&&res.error.message)||'不明')+'（端末には保存済み・☁送信時にも同期されます）'); return {ok:false,step:'upsert'}; }
-          setStatus('氏名・ふりがなをクラウドにも反映しました');
+          // L3 P3-4 (CLOUD-MEMBER-FIELDS-001): 区分・市町村も同乗するようになったため文言を汎化。
+          setStatus('会員情報（氏名・ふりがな・区分）をクラウドにも反映しました');
           return {ok:true};
         });
       });
@@ -9656,7 +9698,9 @@ function pushMemberDeleteStateToCloud(mids,master,deleted,setStatus){
         for(var i=0;i<mids.length;i++){
           var m=_masterSheetFindMember(mids[i],master);
           if(!m)continue;
-          rows.push({member_id:mids[i],name:m.name||'',yomi:m.yomi||'',club_id:clubId,deleted_at:deleted?nowIso:null});
+          // CLOUD-MEMBER-FIELDS-001: 区分・市町村も同乗（未存在会員の INSERT を完全な行にする）。
+          var fc=_cloudMemberFieldCols(m);
+          rows.push({member_id:mids[i],name:m.name||'',yomi:m.yomi||'',member_kind:fc.member_kind,grade:fc.grade,city:fc.city,club_id:clubId,deleted_at:deleted?nowIso:null});
         }
         if(!rows.length){ setStatus('クラウド未反映（対象が見つかりません）'); return {ok:false,step:'input'}; }
         return client.from('members').upsert(rows,{onConflict:'club_id,member_id'}).select().then(function(res){
@@ -9670,6 +9714,62 @@ function pushMemberDeleteStateToCloud(mids,master,deleted,setStatus){
   }).catch(function(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 削除/復元の反映例外:',(e&&e.message)||e);
     setStatus('クラウドへの'+actLabel+'反映に失敗しました（この端末では'+actLabel+'済み）');
+    return {ok:false,step:'exception'};
+  });
+}
+
+// MASTER-BULK-PUSH-001: ローカル名簿の全会員をクラウド members へ一括 upsert（初期同期・冪等）。
+//   ローカルのみ会員（クラウド以前の蓄積・過去大会統合・インポート由来）を一度で解消する。
+//   - 生存会員: deleted_at 列を**送らない**＝クラウド側の tombstone を誤って蘇生しない（提供列のみ更新）。
+//   - 削除済み会員: deleted_at（ローカルの削除日 or now）込みで送る＝tombstone も同期。
+//   - PostgREST の一括 upsert は全行同一キーが必要なため、生存/削除済みの2回に分けて upsert する。
+//   fail-soft・非同期・結果は status 行（N4）。呼び出し側（bind）で confirm 済み（N1・クラウド上書きの明示）。
+function pushAllMembersToCloud(setStatus){
+  setStatus=setStatus||function(){};
+  var master=loadBranchMaster();
+  var members=(master&&Array.isArray(master.members))?master.members:[];
+  if(!members.length){ setStatus('名簿が空のため送信するものがありません'); return Promise.resolve({ok:false,step:'input'}); }
+  setStatus('名簿全体をクラウドへ送信中…');
+  return loadCloudDeps().then(function(dep){
+    if(dep.offline){ setStatus('未送信（オフライン・ネット接続後に再度お試しください）'); return {ok:false,step:'offline'}; }
+    if(!dep.cfg){ setStatus('未送信（クラウド設定なし）'); return {ok:false,step:'config'}; }
+    if(!dep.sb){ setStatus('未送信（接続不可）'); return {ok:false,step:'network'}; }
+    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+    if(!client||!client.auth){ setStatus('未送信（接続不可）'); return {ok:false,step:'client'}; }
+    return client.auth.getSession().then(function(r){
+      var session=r&&r.data&&r.data.session;
+      if(!session){ setStatus('未送信（app/ でログインしてから実行してください）'); return {ok:false,step:'auth'}; }
+      return client.rpc('claim_organizer_seat').then(function(rc){
+        var clubId=pickActiveClubId((rc&&rc.data)||[]);
+        if(!clubId){ setStatus('未送信（送信先クラブを特定できません）'); return {ok:false,step:'club'}; }
+        var nowIso=new Date().toISOString();
+        var alive=[],dead=[];
+        for(var i=0;i<members.length;i++){
+          var m=members[i];
+          if(!m||typeof m.id!=='string'||!m.id||!m.name)continue;
+          var fc=_cloudMemberFieldCols(m);
+          var row={member_id:m.id,name:m.name,yomi:m.yomi||'',member_kind:fc.member_kind,grade:fc.grade,city:fc.city,club_id:clubId};
+          if(m.deleted===true){ row.deleted_at=m.deleted_at||nowIso; dead.push(row); }
+          else alive.push(row);
+        }
+        if(!alive.length&&!dead.length){ setStatus('未送信（送信できる会員がいません）'); return {ok:false,step:'input'}; }
+        function upsertRows(rows){
+          if(!rows.length)return Promise.resolve({error:null});
+          return client.from('members').upsert(rows,{onConflict:'club_id,member_id'}).select().then(function(res){ return res||{}; });
+        }
+        return upsertRows(alive).then(function(r1){
+          if(r1&&r1.error){ setStatus('一括送信に失敗しました：'+((r1.error&&r1.error.message)||'不明')+'（再実行できます）'); return {ok:false,step:'upsert-alive'}; }
+          return upsertRows(dead).then(function(r2){
+            if(r2&&r2.error){ setStatus('一括送信に失敗しました：'+((r2.error&&r2.error.message)||'不明')+'（生存会員 '+alive.length+'名は送信済み・再実行できます）'); return {ok:false,step:'upsert-dead'}; }
+            setStatus('名簿全体をクラウドへ一括送信しました（'+(alive.length+dead.length)+'名・うち削除済み '+dead.length+'名）');
+            return {ok:true,alive:alive.length,dead:dead.length};
+          });
+        });
+      });
+    });
+  }).catch(function(e){
+    if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 一括送信例外:',(e&&e.message)||e);
+    setStatus('一括送信に失敗しました（再実行できます）');
     return {ok:false,step:'exception'};
   });
 }
@@ -9948,7 +10048,7 @@ function syncBranchMasterOnSave(){
       //   重複回避のため既存 explicit console.warn / showMsg は呼ばない（PR #79 storage-quota パターン）。
       //   aggregation 対象外（SAVE_WARN_AGGREGATABLE_KINDS は変更しない）。
       notifySaveWarning({
-        message:'支部マスタ（名簿）が破損しているため名簿への自動反映をスキップしました（大会データは端末に保存済み）。マスタタブのインポート・統合で復旧できます。',
+        message:'支部マスタ（名簿）が破損しているため名簿への自動反映をスキップしました（大会データは端末に保存済み）。マスタタブのインポート、またはログインして「☁ クラウドから取得」で復旧できます。',
         consoleTag:'[STORAGE-CORRUPTED] syncBranchMasterOnSave skipped (master._loaded_with_corruption)',
         callsiteId:'PARSE-MASTER-003',
         kind:'storage-corrupted',
