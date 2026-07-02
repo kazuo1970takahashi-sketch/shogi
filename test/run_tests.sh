@@ -781,6 +781,19 @@ else
   warn "test_notify_n2_save.js が見つからない"
 fi
 
+echo ""
+echo "【REG-TAB-IA-001 + PP-DENSE-MODE-001 登録タブ再配置＋高密度ピッカー（⚙設定details / 追加先モード / 50音見出し / 即受付とシート / 旧ビルダー温存）】"
+if [ -f "$SCRIPT_DIR/test_pp_dense.js" ]; then
+  if node "$SCRIPT_DIR/test_pp_dense.js" "$TARGET" > /tmp/pp_dense_out.log 2>&1; then
+    ok "PP-DENSE テスト 全PASS ($(tail -1 /tmp/pp_dense_out.log))"
+  else
+    ng "PP-DENSE テスト 失敗"
+    cat /tmp/pp_dense_out.log
+  fi
+else
+  warn "test_pp_dense.js が見つからない"
+fi
+
 # ============================================
 # MEMBERS-CANDIDATE-MASTER-RECUT-001 members 形式 参加者候補マスタ読込（#194 価値分の再切り）
 #   完全架空 fixture で member 真偽値後方互換 / 禁止項目 whitelist 除外 / deleted 墓石除外 /

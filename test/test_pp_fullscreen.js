@@ -111,9 +111,11 @@ const ovBlock=RAW.slice(ovIdx,ovIdx+2200);
 assert(ovBlock.indexOf('position:sticky')>=0&&ovBlock.indexOf('id="ppFullscreenCloseBtn"')>=0, 'H3 sticky ヘッダ＋✕閉じるボタン');
 assert(ovBlock.indexOf('id="ppPanel"')>=0, 'H4 #ppPanel は overlay 内に移動');
 const secIdx=RAW.indexOf('id="past-participants-section"');
-const secBlock=RAW.slice(secIdx,RAW.indexOf('id="class-manager-section"'));
+// REG-TAB-IA-001 (S1): section は登録セクション内へ移動したため、末尾アンカーは手入力 UI（suggest-list）にする。
+const secBlock=RAW.slice(secIdx,RAW.indexOf('id="suggest-list"'));
 assert(secBlock.indexOf('id="ppPanel"')<0, 'H5 登録タブ section 側に #ppPanel は残らない（入れ子スクロール撤去）');
-assert(secBlock.indexOf('id="ppToggleBtn"')>=0&&secBlock.indexOf('全画面で開く')>=0, 'H6 #ppToggleBtn は id 温存・ラベル「全画面で開く」');
+// REG-TAB-IA-001 (S1): ランチャーは登録セクション先頭の primary「📋 名簿から受付」に統合（id は温存）。
+assert(secBlock.indexOf('id="ppToggleBtn"')>=0&&secBlock.indexOf('名簿から受付')>=0, 'H6 #ppToggleBtn は id 温存・ラベル「📋 名簿から受付」（S1 で primary 統合）');
 assert(ovBlock.indexOf('id="pp-summary-fs"')>=0, 'H7 overlay ヘッダに件数表示 #pp-summary-fs');
 
 // C ビルダー＋scoped CSS
@@ -125,7 +127,8 @@ env._ctx.localStorage.setItem(env.BRANCH_MASTER_KEY,FIX_MASTER);
 const panelHtml=env.buildPastParticipantsPanelHtml(JSON.parse(FIX_MASTER),'','all',null);
 assert(panelHtml.indexOf('class="pp-list-box"')>=0&&panelHtml.indexOf('max-height:280px')>=0, 'C2 一覧箱に .pp-list-box 付与（通常フローの inline 280px は維持）');
 assert(/#pp-fullscreen \.pp-list-box\{[^}]*max-height:none!important/.test(RAW), 'C3 scoped CSS が全画面時のみ内側スクロールを解除');
-assert(/#pp-fullscreen \.pp-controls\{[^}]*position:sticky/.test(RAW), 'C4 scoped CSS で検索/50音がヘッダ直下に sticky');
+// PP-DENSE-MODE-001 (S2): sticky は「追加先モードバー」へ移行（検索/50音は 🔍 details 内へ格納）。
+assert(/#pp-fullscreen \.pp-mode-bar\{[^}]*position:sticky/.test(RAW), 'C4 scoped CSS で追加先モードバーがヘッダ直下に sticky');
 
 // O open/close（bind 経由の実クリック）
 const eo=loadEnv();
@@ -140,7 +143,7 @@ assert(ov.style.display==='block', 'O2 クリックで overlay 表示');
 assert(eo.isPpFullscreenOpen()===true, 'O3 isPpFullscreenOpen が true');
 assert(eo._ctx.document.body.style.overflow==='hidden', 'O4 背面ページのスクロールを停止');
 const panelEl=eo._ctx._elements['ppPanel'];
-assert(panelEl&&panelEl.innerHTML.indexOf('架空太郎')>=0&&panelEl.innerHTML.indexOf('pp-list-box')>=0, 'O5 open 時に一覧を描画（架空 fixture）');
+assert(panelEl&&panelEl.innerHTML.indexOf('架空太郎')>=0&&panelEl.innerHTML.indexOf('pp-dense-grid')>=0, 'O5 open 時に高密度一覧を描画（架空 fixture・S2）');
 const cbtn=eo._ctx._elements['ppFullscreenCloseBtn'];
 cbtn._listeners.click[0]();
 assert(ov.style.display==='none'&&eo.isPpFullscreenOpen()===false, 'O6 ✕閉じるで非表示');
@@ -161,8 +164,9 @@ assert(/showMsg\('\['\+memberName[\s\S]{0,300}isPpFullscreenOpen\(\)\)showToast\
 const en=loadEnv();
 en._ctx.localStorage.setItem(en.BRANCH_MASTER_KEY,FIX_MASTER);
 en.renderPastParticipantsPanel('');
-assert(en._ctx._elements['pp-summary-fs']&&en._ctx._elements['pp-summary-fs'].textContent==='登録 2名', 'N1 #pp-summary-fs に件数同期');
-assert(en._ctx._elements['pp-summary']&&en._ctx._elements['pp-summary'].textContent==='登録 2名', 'N2 既存 #pp-summary も従来どおり');
+// PP-DENSE-MODE-001 (S2): fs は受付済みサマリ・launcher 側は名簿件数に変更。
+assert(en._ctx._elements['pp-summary-fs']&&en._ctx._elements['pp-summary-fs'].textContent==='受付 A 0・B 0｜計 0名', 'N1 #pp-summary-fs に受付サマリ');
+assert(en._ctx._elements['pp-summary']&&en._ctx._elements['pp-summary'].textContent==='名簿 2名', 'N2 #pp-summary は名簿件数');
 const en2=loadEnv();
 en2.renderPastParticipantsPanel('');
 assert(en2._ctx._elements['past-participants-section'].style.display==='none', 'N3 マスタ空なら section 非表示（既存非劣化）');
