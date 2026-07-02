@@ -277,6 +277,10 @@ body.sb-active{overflow:hidden}
     </div>
   </div>
 </div>
+<!-- SAVE-STATUS-BAR-001 (STYLE-GUIDE §9 M3 / 監査 🟡-2・🔵-2): 保存4系統（自動保存/📋名簿を更新/バックアップ/☁クラウドへ送信）の
+     最終実行時刻を常時1行表示し「保存されているか不安」を見える化する。時刻は localStorage 別キー（SAVE_STATUS_KEY）＝state スキーマ非接触。
+     文言は renderSaveStatusBar が textContent で書く（innerHTML 不使用）。タップ/Enter/Space で openHelpModal('save-systems')（bindHeaderEvents で結線）。 -->
+<div id="save-status-bar" class="no-print" role="button" tabindex="0" title="押すと保存の仕組みを表示します" aria-label="保存状態（押すと説明を表示）" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:#f4f6f9;border-bottom:1px solid #d3dbe5;color:#555;padding:4px 14px;font-size:12px;cursor:pointer"></div>
 <!-- BACKUP-NUDGE (当日第2弾⑫): 節目（大会開始/クラス完了/全終了）で「今ひかえますか？」を非ブロッキングで促す。既定非表示・あとで可・端末事故の全損防止。 -->
 <div id="backup-nudge" class="no-print" role="status" aria-live="polite" style="display:none;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#faeeda;border:1px solid #EF9F27;color:#633806;padding:10px 14px;margin:0 12px 0;border-radius:0 0 8px 8px;font-size:13px">
   <span id="backup-nudge-msg"></span>
@@ -389,6 +393,13 @@ body.sb-active{overflow:hidden}
     </div>
   </div>
   <div id="pane-tournament" style="display:none">
+    <!-- HELP-UX-006 (STYLE-GUIDE §9 M2): 対局管理タブの迷子防止ヘルプ。#309/#341 のモーダル三層を流用し topic 追加のみ。
+         対局画面は per-class 動的描画（buildCurrentPairingsHtml=golden 対象）のため、静的アンカーをここに置き
+         click は bindReportEvents 側で openHelpModal('tournament') へ結線する（standings help #341 と同経路・golden 非接触）。 -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px" class="no-print">
+      <span style="font-size:14px;font-weight:600;color:#1F3864">対局管理の使い方</span>
+      <button type="button" id="helpBtnTournament" class="btn-sm" title="対局管理の使い方をヘルプで表示します" aria-label="対局管理の使い方ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
+    </div>
     <!-- REPORT-PRINT-003: 全クラスの現ラウンド組み合わせを印刷するボタン。
          no-print: 印刷時はボタン自体を隠す（クリックはブラウザ印刷経路ではなく専用 HTML 経路）。
          配置: pane-tournament-grid のクラス別 action bar（リセット / 再生成）と物理的に離すため
@@ -430,6 +441,8 @@ body.sb-active{overflow:hidden}
     <!-- B-2b-wire (#343): 確定結果をクラウド（Supabase）へ送信（任意・冪等・押さなければ従来通り）。
          click は bindReportEvents で sendTournamentToCloud に結線。supabase-js/config は click 時のみ遅延ロード。 -->
     <div style="margin-top:8px;text-align:right" class="no-print">
+      <!-- HELP-UX-006 (STYLE-GUIDE §9 M2): 送信ボタン脇「？ ヘルプ」→ openHelpModal('cloud')（bindReportEvents で結線・topic は大会履歴側と共用）。 -->
+      <button type="button" id="helpBtnCloud" class="btn-sm" title="クラウド送信・取得の意味をヘルプで表示します" aria-label="クラウド送信・取得ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
       <button type="button" id="cloudSendBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ クラウドへ送信（任意）</button>
       <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
     </div>
@@ -1140,9 +1153,76 @@ function isQuotaExceededError(e){
   );
 }
 
+// SAVE-STATUS-BAR-001 (STYLE-GUIDE §9 M3 / 監査 🟡-2・🔵-2): 保存4系統の最終実行時刻の記録と表示。
+//   kind = 'autosave'（save() 成功）/ 'meibo'（syncBranchMasterOnSave 成功）/ 'backup'（exportTournamentBackup 成功）/
+//   'cloud'（sendTournamentToCloud res.ok）。localStorage の別キー SAVE_STATUS_KEY に {kind:epoch_ms} で保持
+//   （state スキーマ非接触＝GOLDEN/クラウド payload/normalizeState 不変）。記録・描画とも fail-soft（try/catch＋
+//   DOM ガード）で、保存系の既存動作を一切ブロックしない（読めない/書けないときは黙って表示だけ据え置く）。
+var SAVE_STATUS_KEY='shogi_save_status_v1';
+// 自動保存の分単位スロットル: save() は入力のたびに呼ばれる高頻度経路のため、同一分内は再書込しない（表示は HH:MM 粒度）。
+var _saveStatusLastMinute=null;
+
+function loadSaveStatus(){
+  try{
+    var raw=localStorage.getItem(SAVE_STATUS_KEY);
+    if(!raw)return {};
+    var parsed=JSON.parse(raw);
+    return (parsed&&typeof parsed==='object'&&!Array.isArray(parsed))?parsed:{};
+  }catch(e){ return {}; }
+}
+
+function markSaveStatus(kind){
+  try{
+    var st=loadSaveStatus();
+    st[kind]=Date.now();
+    localStorage.setItem(SAVE_STATUS_KEY,JSON.stringify(st));
+  }catch(e){}
+  renderSaveStatusBar();
+}
+
+function markAutosaveStatus(){
+  var m=Math.floor(Date.now()/60000);
+  if(_saveStatusLastMinute===m)return;
+  _saveStatusLastMinute=m;
+  markSaveStatus('autosave');
+}
+
+// 表示用: 未実行/不正値は「未」・当日は HH:MM・別日は M/D HH:MM。
+function formatSaveStatusTime(ms){
+  if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return '未';
+  var d=new Date(ms);
+  if(isNaN(d.getTime()))return '未';
+  var hh=('0'+d.getHours()).slice(-2);
+  var mm=('0'+d.getMinutes()).slice(-2);
+  var now=new Date();
+  if(d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate())return hh+':'+mm;
+  return (d.getMonth()+1)+'/'+d.getDate()+' '+hh+':'+mm;
+}
+
+// 表示テキスト組立（固定文言＋時刻のみ＝自由文なし。textContent で書くため escape 不要）。
+function buildSaveStatusBarText(st){
+  st=st||{};
+  return '💾 自動保存 '+formatSaveStatusTime(st.autosave)
+    +'｜📋 名簿 '+formatSaveStatusTime(st.meibo)
+    +'｜バックアップ '+formatSaveStatusTime(st.backup)
+    +'｜☁ 送信 '+formatSaveStatusTime(st.cloud);
+}
+
+function renderSaveStatusBar(){
+  try{
+    if(typeof document==='undefined')return;
+    var el=document.getElementById('save-status-bar');
+    if(!el)return;
+    el.textContent=buildSaveStatusBarText(loadSaveStatus());
+  }catch(e){}
+}
+
 function save(){
   try{
     localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+    // SAVE-STATUS-BAR-001: 自動保存成功（setItem が throw しなかった）時刻を記録（分単位スロットル・fail-soft）。
+    //   iOS プライベート等「書けたのに残らない」ケースは検知対象外（既存の ⚠ピル/storage-warn が担当）。
+    markAutosaveStatus();
   }catch(e){
     // SAVE-UX-QUOTA-HANDLING-IMPL: quota の場合は storage-quota 系統に分岐。
     //   alert は容量問題を user に確実に認知させるため維持。
@@ -8207,6 +8287,47 @@ var HELP_TEXTS={
       'この表示はブラウザを再読み込み（リロード）すると消えます。何度も出る・操作が保存されない場合は、空き容量を確認し、こまめにバックアップしてください。',
       'プライベートブラウズ（シークレット）では保存が制限されることがあります。通常モードでの利用をおすすめします。'
     ]
+  },
+  // HELP-UX-006 (STYLE-GUIDE §9 M2 / 監査 Step2): 対局管理タブ全般の迷子防止ヘルプ。#309/#341 のモーダル三層を流用し topic 追加のみ。
+  //   本文は buildHelpModalHtml で escapeHtml 経由（innerHTML への自由文流入を増やさない）。保存スキーマ不変・script-global 固定文字列。
+  //   文言は作者承認済（2026-07-02）。
+  'tournament':{
+    title:'対局管理の使い方ヘルプ',
+    lines:[
+      '対局の開始：人数が偶数なら「全員で1局目を開始」。全員そろわなくても「このクラスを部分開始」で来た人から始められます。',
+      '勝敗の入力：勝った人のボタンを押します。もう一度押すと取り消し、相手側を押すと変更できます。',
+      '全卓の入力が終わると「N回戦 確定して次へ」が押せるようになります。未入力が残っている間は残り卓数が表示されます。',
+      '「組み合わせを再生成」は入力済みの勝敗が消えることがあります。確認メッセージをよく読んで使ってください。',
+      '途中で帰る人は、受付タブの参加者一覧で「棄権」にすると次の組み合わせから外れます（それまでの成績は残ります）。',
+      '「現在の組み合わせを印刷 / PDF保存」で貼り出し用の組み合わせ表を出せます。'
+    ]
+  },
+  // HELP-UX-006 (STYLE-GUIDE §9 M2 / 監査 Step2): クラウド送信/取得の意味と失敗時の影響のヘルプ。
+  //   順位タブ「☁ クラウドへ送信」脇（helpBtnCloud・静的）と大会履歴タブのクラウド見出し脇（history-cloud-help・動的）で1 topic を共用。
+  //   本文は buildHelpModalHtml で escapeHtml 経由。保存スキーマ不変・script-global 固定文字列。文言は作者承認済（2026-07-02）。
+  'cloud':{
+    title:'クラウド送信・取得ヘルプ',
+    lines:[
+      'クラウドは大会結果をみんなで共有するための仕組みです。使わなくても大会運営・報告書には影響しません（任意）。',
+      '「☁ クラウドへ送信」：確定した結果をクラウドに保存します。クラウド管理ページ（app/）でのログインとネット接続が必要です。',
+      '同じ大会を何度送信しても二重にはなりません。',
+      '送信に失敗しても当日のデータは端末に残っています。運営はそのまま続けて、あとで再送信できます。',
+      '「大会履歴」タブの「☁ クラウドの過去大会」→「読み込む」で、共有された過去大会の結果を見られます。',
+      'クラウドはバックアップの代わりではありません。端末の控えは「バックアップ」ボタンで保存してください。'
+    ]
+  },
+  // SAVE-STATUS-BAR-001 (STYLE-GUIDE §9 M3): ヘッダ直下の保存状態バーから開く保存4系統の説明。
+  //   本文は buildHelpModalHtml で escapeHtml 経由。保存スキーマ不変・script-global 固定文字列。文言は作者承認済（2026-07-02）。
+  'save-systems':{
+    title:'保存の仕組み（4系統）',
+    lines:[
+      'このアプリは操作のたびに端末（ブラウザ）へ自動保存しています。ふだんは何もしなくて大丈夫です。',
+      '💾 自動保存：この端末の中だけの保存です。端末の故障・ブラウザのデータ消去には備えられません。',
+      '📋 名簿を更新：この大会の参加者を支部マスタ（名簿）へ反映します。大会データの控えではありません。',
+      'バックアップ：大会データをファイル（shogi_backup_….json）に控えます。端末事故からの復旧ができるのはこれだけです。節目ごとの実行がおすすめです。',
+      '☁ クラウドへ送信：確定した結果をみんなで共有するための送信です（任意・ログインが必要）。バックアップの代わりにはなりません。',
+      'バーの時刻は、各操作をこの端末で最後に実行した時刻です。「未」はこの端末でまだ実行していないことを示します。'
+    ]
   }
 };
 
@@ -8875,6 +8996,8 @@ function sendTournamentToCloud(setStatus){
             base+='）';
             if(res.warn){ base='⚠ 一部の結果を送信できませんでした：未解決 '+(c.unresolved||0)+' 名。'+base+' 支部マスタへ紐付けてから再送してください（冪等・運営は続行できます）'; }
             setStatus(base);
+            // SAVE-STATUS-BAR-001: クラウド送信成功（res.ok・warn 含む＝送信自体は実行済み）の時刻を記録（fail-soft）。
+            markSaveStatus('cloud');
           }
           else { setStatus('送信に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再送できます）'); }
           return res;
@@ -9145,6 +9268,8 @@ function syncBranchMasterOnSave(){
     if(masterSaved!==false){
       // 反映済みのため一時マップをクリア（保存成功時のみ。失敗時は次回 saveData での再試行に備えて保持）。
       _pendingNewYomi={};
+      // SAVE-STATUS-BAR-001: 名簿同期成功の時刻を記録（fail-soft・破損スキップ/保存失敗時は記録しない）。
+      markSaveStatus('meibo');
     }
     save();
   }catch(e){
@@ -9445,6 +9570,8 @@ function exportTournamentBackup(){
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
     alert(filename+' にバックアップを保存しました（端末のダウンロードフォルダ）');
+    // SAVE-STATUS-BAR-001: バックアップ成功の時刻を記録（fail-soft）。
+    markSaveStatus('backup');
     return true;
   }catch(e){
     alert('バックアップの保存に失敗しました');
@@ -10377,6 +10504,16 @@ function bindHeaderEvents(){
       if(k==='Enter'||k===' '||k==='Spacebar'||k===13||k===32){ if(e&&e.preventDefault)e.preventDefault(); openHelpModal('save-warning'); }
     });
   }
+  // SAVE-STATUS-BAR-001: 保存状態バー＝タップ/Enter/Space で保存4系統の説明ヘルプ。初期表示もここで描画（U-2 ピルと同型）。
+  var saveStatusBar=document.getElementById('save-status-bar');
+  if(saveStatusBar){
+    saveStatusBar.addEventListener('click',function(){openHelpModal('save-systems');});
+    saveStatusBar.addEventListener('keydown',function(e){
+      var k=e&&(e.key||e.keyCode);
+      if(k==='Enter'||k===' '||k==='Spacebar'||k===13||k===32){ if(e&&e.preventDefault)e.preventDefault(); openHelpModal('save-systems'); }
+    });
+  }
+  renderSaveStatusBar();
 }
 
 function bindRegistrationEvents(){
@@ -10823,6 +10960,13 @@ function bindReportEvents(){
   // HELP-UX-004 (#341): 順位タブ見出し脇「？ ヘルプ」（静的 HTML・id=helpBtnStandings）→ openHelpModal('standings')。
   var helpBtnStandings=document.getElementById('helpBtnStandings');
   if(helpBtnStandings)helpBtnStandings.addEventListener('click',function(){openHelpModal('standings');});
+  // HELP-UX-006 (STYLE-GUIDE §9 M2): 対局管理タブ上部「？ ヘルプ」（静的 HTML・id=helpBtnTournament）→ openHelpModal('tournament')。
+  //   #341 と同じく静的アンカーの結線は bindReportEvents に集約（1回だけ bind・build/bind 分離）。
+  var helpBtnTournament=document.getElementById('helpBtnTournament');
+  if(helpBtnTournament)helpBtnTournament.addEventListener('click',function(){openHelpModal('tournament');});
+  // HELP-UX-006 (STYLE-GUIDE §9 M2): 「☁ クラウドへ送信」脇「？ ヘルプ」（静的 HTML・id=helpBtnCloud）→ openHelpModal('cloud')。
+  var helpBtnCloud=document.getElementById('helpBtnCloud');
+  if(helpBtnCloud)helpBtnCloud.addEventListener('click',function(){openHelpModal('cloud');});
   // B-2b-wire (#343): 「☁ クラウドへ送信」（静的・id=cloudSendBtn）→ sendTournamentToCloud（任意・失敗耐性）。
   var cloudSendBtn=document.getElementById('cloudSendBtn');
   if(cloudSendBtn)cloudSendBtn.addEventListener('click',function(){
@@ -11585,7 +11729,8 @@ function renderHistoryList(flashMessage){
   }
   // HISTORY-CLOUD: クラウドの過去大会セクション（別セクション・①案）。読み込みは押下時（fail-soft）。
   html+='<hr class="separator">';
-  html+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px"><h2 style="font-size:16px;margin:0;color:#1F3864">☁ クラウドの過去大会（みんなで共有）</h2><button type="button" class="btn-sm" id="history-cloud-load" style="background:#fff;border:1px solid #1F3864;color:#1F3864">読み込む</button></div>';
+  // HELP-UX-006 (STYLE-GUIDE §9 M2): クラウド見出し脇「？ ヘルプ」→ openHelpModal('cloud')（topic は順位タブ送信ボタン脇と共用・下で bind）。
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px"><h2 style="font-size:16px;margin:0;color:#1F3864">☁ クラウドの過去大会（みんなで共有）</h2><span style="display:flex;gap:6px;align-items:center"><button type="button" class="btn-sm" id="history-cloud-help" title="クラウド送信・取得の意味をヘルプで表示します" aria-label="クラウド送信・取得ヘルプ" style="background:#fff;font-weight:400;white-space:nowrap">？ ヘルプ</button><button type="button" class="btn-sm" id="history-cloud-load" style="background:#fff;border:1px solid #1F3864;color:#1F3864">読み込む</button></span></div>';
   html+='<div style="font-size:12px;color:#888;margin-bottom:6px">クラウドに保存された過去大会の結果一覧です（ログイン＋オンライン時）。</div>';
   html+='<div id="history-cloud-status" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-bottom:6px"></div>';
   html+='<div id="history-cloud-list"></div>';
@@ -11600,6 +11745,9 @@ function renderHistoryList(flashMessage){
   if(cloudLoadBtn)cloudLoadBtn.addEventListener('click',function(){
     loadCloudPastTournamentsUI(function(msg){ if(typeof applyCloudStatus==='function')applyCloudStatus(document.getElementById('history-cloud-status'),msg); else { var el=document.getElementById('history-cloud-status'); if(el)el.textContent=msg; } });
   });
+  // HELP-UX-006 (STYLE-GUIDE §9 M2): クラウド見出し脇「？ ヘルプ」→ openHelpModal('cloud')。renderHistoryList は動的描画のため描画直後にここで bind（history-save-btn 等と同型）。
+  var cloudHelpBtn=document.getElementById('history-cloud-help');
+  if(cloudHelpBtn)cloudHelpBtn.addEventListener('click',function(){openHelpModal('cloud');});
   // 既に取得済みなら一覧を即復元（戻る/再表示で再取得不要）。
   if(_cloudHistoryState&&_cloudHistoryState.tournaments){
     var cl=document.getElementById('history-cloud-list');
