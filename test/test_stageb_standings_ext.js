@@ -18,15 +18,15 @@ function makeClient(opts){opts=opts||{};const calls={select:[]};
 
 const A=loadAuth();
 // raw entry (embedding) helper
-function e(season,date,cls,mid,name,branch,w,l,rank){return {wins:w,losses:l,final_rank:rank,'class':cls,players:{member_id:mid,members:{name:name,branch:branch}},tournaments:{season:season,date:date}};}
+function e(season,date,cls,mid,name,city,w,l,rank){return {wins:w,losses:l,final_rank:rank,'class':cls,players:{member_id:mid,members:{name:name,city:city}},tournaments:{season:season,date:date}};}
 function seasonClient(objs){
   var ents=[],pmap={},tmap={};
   objs.forEach(function(r){
-    var mid=r.players.member_id,nm=r.players.members.name,br=(r.players.members.branch||'');
+    var mid=r.players.member_id,nm=r.players.members.name,ct=(r.players.members.city||'');
     var season=r.tournaments.season,date=r.tournaments.date;
     var pid='P_'+mid,tid='T_'+season+'|'+date;
     ents.push({wins:r.wins,losses:r.losses,final_rank:r.final_rank,'class':r['class'],player_id:pid,tournament_id:tid});
-    pmap[pid]={id:pid,member_id:mid,members:{name:nm,branch:br}};
+    pmap[pid]={id:pid,member_id:mid,members:{name:nm,city:ct}};
     tmap[tid]={id:tid,season:season,date:date};
   });
   return makeClient({byTable:{entries:ents,players:Object.keys(pmap).map(function(k){return pmap[k];}),tournaments:Object.keys(tmap).map(function(k){return tmap[k];})}});
@@ -44,7 +44,7 @@ function shaped(){return [
   // shape 拡張
   (function(){
     var r=A.shapeStandingRow(e('2025年度','2025-04-13','A','m1','甲','沼津市',4,0,1));
-    assert(r.cls==='A'&&r.branch==='沼津市'&&r.date==='2025-04-13','X1 shape に class/branch/date');
+    assert(r.cls==='A'&&r.city==='沼津市'&&r.date==='2025-04-13','X1 shape に class/city/date（CITY-UNIFY-001）');
   })();
   // listClasses
   (function(){
@@ -81,9 +81,9 @@ function shaped(){return [
   // by city
   (function(){
     var cy=A.aggregateByCity(shaped());
-    var numa=cy.find(x=>x.branch==='沼津市');
+    var numa=cy.find(x=>x.city==='沼津市');
     assert(numa.members===2 && numa.games===4,'X12 沼津市: 2名・延べ4');
-    var mishima=cy.find(x=>x.branch==='三島市');
+    var mishima=cy.find(x=>x.city==='三島市');
     assert(mishima.members===1 && mishima.wins===5,'X13 三島市: 1名・通算5勝(乙1+4)');
   })();
   // build
@@ -95,7 +95,7 @@ function shaped(){return [
     assert(rh.indexOf('通算勝数')>=0 && rh.indexOf('最長連続出場')>=0,'X17 殿堂に各ランキング見出し');
     var mh=A.buildMonthlyChampionsHtml([{date:'2025-06-08',cls:'B',name:'乙'}]);
     assert(mh.indexOf('2025-06-08')>=0 && mh.indexOf('優勝')>=0,'X18 月別年表');
-    var ch=A.buildCityStandingsHtml([{branch:'沼津市',members:2,games:4,wins:7}]);
+    var ch=A.buildCityStandingsHtml([{city:'沼津市',members:2,games:4,wins:7}]);
     assert(ch.indexOf('沼津市')>=0 && ch.indexOf('市町村')>=0,'X19 市町村対抗');
   })();
   // controller

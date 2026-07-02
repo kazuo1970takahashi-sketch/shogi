@@ -46,7 +46,7 @@ function mkState(){
     report:{ date:'2026-06-14', title:'六月例会' } };
 }
 const master={ schema_version:1, members:[
-  {id:'m_a1',name:'甲',yomi:'こう',branch:'沼津'},
+  {id:'m_a1',name:'甲',yomi:'こう',branch:'沼津',city:'沼津市'},
   {id:'m_a2',name:'乙',yomi:'おつ'}
 ]};
 
@@ -63,7 +63,9 @@ ok(String(pl.tournament.name).indexOf('六月例会')>=0,'T6 name に大会名')
 console.log('=== M/P: members / players（重複排除・master由来）===');
 ok(pl.members.length===2,'M1 members は2件（m_a1/m_a2）');
 var ma1=pl.members.filter(function(m){return m.member_id==='m_a1';})[0];
-ok(ma1&&ma1.name==='甲'&&ma1.yomi==='こう'&&ma1.branch==='沼津','M2 master 由来の name/yomi/branch');
+ok(ma1&&ma1.name==='甲'&&ma1.yomi==='こう','M2 master 由来の name/yomi');
+ok(ma1&&!('branch' in ma1),'M2b branch 列は送らない（CITY-UNIFY-001＝クラウド値を null で消さない）');
+ok(ma1&&ma1.city==='沼津市','M2c city は _cloudMemberFieldCols 経由で同乗');
 ok(pl.players.length===2,'P1 players は2件');
 
 console.log('=== E: entries（A/B/C 対応・final_rank）===');

@@ -389,7 +389,7 @@
       .eq('club_id', clubId).then(function (res) {
         if (res.error) return { ok:false, message:'成績の読み込みに失敗しました', rows:[] };
         var rows = res.data || [];
-        return client.from('players').select('id,member_id,members(name,branch)').eq('club_id', clubId).then(function (pr) {
+        return client.from('players').select('id,member_id,members(name,city)').eq('club_id', clubId).then(function (pr) {
           if (pr.error) return { ok:false, message:'成績の読み込みに失敗しました', rows:[] };
           return client.from('tournaments').select('id,season,date').eq('club_id', clubId).then(function (tr) {
             if (tr.error) return { ok:false, message:'成績の読み込みに失敗しました', rows:[] };
@@ -414,7 +414,7 @@
       cls: canonicalizeClass((e && e['class']) || ''),
       member_id: (p && p.member_id) || '',
       name: (m && m.name) || '',
-      branch: (m && m.branch) || '',
+      city: (m && m.city) || '',
       wins: (e && e.wins) || 0,
       losses: (e && e.losses) || 0,
       rank: (e && e.final_rank != null) ? e.final_rank : null
@@ -550,10 +550,10 @@
     list.sort(function (a, b) { if (a.date !== b.date) return a.date < b.date ? 1 : -1; return a.cls < b.cls ? -1 : 1; });
     return list;
   }
-  // 市町村別: 延べ出場/通算勝/人数。
+  // 市町村別: 延べ出場/通算勝/人数。CITY-UNIFY-001: 参照列を branch→city に一本化（旧 branch の市町村は migration 20260703 で city へ移行済み）。
   function aggregateByCity(rows) {
     var by = {};
-    for (var i = 0; i < (rows || []).length; i++) { var r = rows[i]; var c = r.branch || '(不明)'; var a = by[c] || (by[c] = { branch: c, games: 0, wins: 0, _m: {} }); a.games += 1; a.wins += (r.wins || 0); if (r.member_id) a._m[r.member_id] = 1; }
+    for (var i = 0; i < (rows || []).length; i++) { var r = rows[i]; var c = r.city || '(不明)'; var a = by[c] || (by[c] = { city: c, games: 0, wins: 0, _m: {} }); a.games += 1; a.wins += (r.wins || 0); if (r.member_id) a._m[r.member_id] = 1; }
     var list = []; for (var k in by) { if (Object.prototype.hasOwnProperty.call(by, k)) { var x = by[k]; x.members = 0; for (var mk in x._m) x.members++; delete x._m; list.push(x); } }
     list.sort(function (a, b) { if (b.games !== a.games) return b.games - a.games; return b.wins - a.wins; });
     return list;
@@ -584,7 +584,7 @@
   }
   function buildCityStandingsHtml(list) {
     var l = list || []; if (!l.length) return '<p class="muted">データがありません。</p>';
-    var rows = l.map(function (x, i) { return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.branch) + '</td><td>' + x.members + '</td><td>' + x.games + '</td><td>' + x.wins + '</td></tr>'; }).join('');
+    var rows = l.map(function (x, i) { return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.city) + '</td><td>' + x.members + '</td><td>' + x.games + '</td><td>' + x.wins + '</td></tr>'; }).join('');
     return '<table class="cloud-entries"><thead><tr><th>順</th><th>市町村</th><th>人数</th><th>延べ出場</th><th>通算勝</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
@@ -611,7 +611,8 @@
     var mid;
     try { mid = newMemberId(idGen); } catch (e) { return Promise.resolve({ ok:false, message:e.message }); }
     var row = { club_id: clubId, member_id: mid, name: name,
-                yomi: (fields.yomi || '').trim() || null, branch: (fields.branch || '').trim() || null };
+                yomi: (fields.yomi || '').trim() || null, branch: (fields.branch || '').trim() || null,
+                city: (fields.city || '').trim() || null };
     return client.from('members').insert(row).then(function (res) {
       if (res && res.error) return { ok:false, message:'追加できませんでした（権限/重複の可能性）: ' + res.error.message };
       return { ok:true, member_id: mid, message: name + ' を追加しました。' };
@@ -729,7 +730,6 @@
     h += '<td class="ms-c' + (isDel ? '' : ' ms-kind-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで切替"') + '>' + memberKindBadgeHtml(m && m.member_kind) + '</td>';
     h += '<td class="ms-c' + (isDel ? '' : ' ms-grade-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで切替"') + '>' + esc(gradeShortLabel(m && m.grade)) + '</td>';
     h += '<td class="ms-c' + (isDel ? '' : ' ms-city-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで編集"') + '>' + esc((m && m.city) || '－') + '</td>';
-    h += '<td class="ms-c' + (isDel ? '' : ' ms-branch-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで編集"') + '>' + esc((m && m.branch) || '－') + '</td>';
     h += '</tr>';
     return h;
   }
@@ -746,7 +746,7 @@
     h += '<form id="memberAddForm" class="member-add" autocomplete="off">' +
       '<input type="text" id="memberAddName" name="name" placeholder="氏名（必須）" required>' +
       '<input type="text" id="memberAddYomi" name="yomi" placeholder="ふりがな">' +
-      '<input type="text" id="memberAddBranch" name="branch" placeholder="支部">' +
+      '<input type="text" id="memberAddCity" name="city" placeholder="市町村">' +
       '<button type="submit" id="memberAddBtn">追加</button>' +
       '</form>';
     h += '<p class="muted">有効 ' + activeCount + ' 名／全 ' + list.length + ' 名。セルをタップで編集／削除・復元は左の□で行を選択（論理削除＝復元できます）。</p>';
@@ -761,7 +761,7 @@
       h += '<p class="muted">名簿が空です。上のフォームから追加できます。</p>';
     } else {
       h += '<div class="ms-wrap"><table class="ms-table"><thead><tr>' +
-        '<th class="ms-th-check">選択</th><th class="ms-th-name">氏名（ふりがな）</th><th>支部員</th><th>会費</th><th>市町村</th><th>支部</th>' +
+        '<th class="ms-th-check">選択</th><th class="ms-th-name">氏名（ふりがな）</th><th>支部員</th><th>会費</th><th>市町村</th>' +
         '</tr></thead><tbody>';
       for (var r = 0; r < list.length; r++) { h += buildMemberSheetRowHtml(list[r], !!(list[r] && selectedMap[list[r].member_id])); }
       h += '</tbody></table></div>';
@@ -833,17 +833,17 @@
     for (var i = 0; i < existing.length; i++) {
       var em = existing[i]; if (!em || !em.name) continue;
       var nk = impSquash(em.name);
-      byNameBranch[nk + '\u0001' + impSquash(em.branch || '')] = em;
+      byNameBranch[nk + '\u0001' + impSquash(em.city || em.branch || '')] = em;
       (byName[nk] = byName[nk] || []).push(em);
     }
     var idMap = {}, newMembers = [], matched = 0, ambiguous = [], used = {};
     var ms = Array.isArray(payload.members) ? payload.members : [];
     for (var m = 0; m < ms.length; m++) {
       var pm = ms[m], nk = impSquash(pm.name), match = null;
-      // ① 氏名＋branch 完全一致を優先（同名別人を区別）。
-      var exact = byNameBranch[nk + '\u0001' + impSquash(pm.branch || '')];
+      // ① 氏名＋市町村（city・旧 payload は branch）完全一致を優先（同名別人を区別）。CITY-UNIFY-001。
+      var exact = byNameBranch[nk + '\u0001' + impSquash(pm.city || pm.branch || '')];
       if (exact && !used[exact.member_id]) match = exact;
-      // ② 無ければ氏名のみ一致（branch 未設定の既存名簿向け）。ただし未使用が1件のときだけ。
+      // ② 無ければ氏名のみ一致（市町村未設定の既存名簿向け）。ただし未使用が1件のときだけ。
       if (!match) {
         var cands = []; var byn = byName[nk] || [];
         for (var c = 0; c < byn.length; c++) { if (!used[byn[c].member_id]) cands.push(byn[c]); }
@@ -873,7 +873,7 @@
     var idMap = resolution.idMap || {};
     var counts = { members_new: resolution.newMembers.length, players: 0, tournaments: (payload.tournaments || []).length, entries: 0, unresolved: 0 };
     function fail(step, res) { return { ok: false, step: step, counts: counts, message: ((res && res.error && res.error.message) || '取り込みに失敗しました') + '（' + step + '）' }; }
-    var newRows = resolution.newMembers.map(function (m) { return { club_id: clubId, member_id: m.member_id, name: m.name, branch: (m.branch || null) }; });
+    var newRows = resolution.newMembers.map(function (m) { return { club_id: clubId, member_id: m.member_id, name: m.name, city: ((m.city || m.branch) || null) }; });
     var step1 = newRows.length ? client.from('members').upsert(newRows, { onConflict: 'club_id,member_id' }) : Promise.resolve({ error: null });
     return Promise.resolve(step1).then(function (r1) {
       if (r1 && r1.error) return fail('members', r1);
@@ -1144,7 +1144,7 @@
         if (e && e.preventDefault) e.preventDefault();
         var fields = { name: (byId('memberAddName') || {}).value || '',
                        yomi: (byId('memberAddYomi') || {}).value || '',
-                       branch: (byId('memberAddBranch') || {}).value || '' };
+                       city: (byId('memberAddCity') || {}).value || '' };
         setMsg('memberEditMsg', '追加中…');
         insertMember(client, lastSummary.clubId, fields).then(function (r) {
           setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
@@ -1217,7 +1217,6 @@
         }); });
       }
       bindTextCell('.ms-city-cell', 'city', 'msEditCity');
-      bindTextCell('.ms-branch-cell', 'branch', 'msEditBranch');
       each('.ms-kind-cell', function (cell) { cell.addEventListener('click', function () {
         if (msEditing) return;
         var id = cell.getAttribute('data-id'); var m = msFind(id); if (!m) return;

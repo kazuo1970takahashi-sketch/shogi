@@ -81,6 +81,9 @@ function samplePayload(){
     var r7=A.resolveImportMembers(plSB,[{member_id:'EX_NAGA',name:'佐藤弘康',branch:'長泉町'}]);
     assert(r7.idMap['m_x']==='EX_NAGA','R7 氏名+branch 一致は既存流用（長泉）');
     assert(r7.idMap['m_y']==='m_y' && r7.newMembers.length===1,'R8 同名でも branch 違いは別人＝新規（沼津）');
+    // CITY-UNIFY-001: 移行後の既存名簿は city に市町村・branch は null。旧 payload（branch のみ）とも一致する
+    var r7c=A.resolveImportMembers(plSB,[{member_id:'EX_NAGA',name:'佐藤弘康',city:'長泉町',branch:null}]);
+    assert(r7c.idMap['m_x']==='EX_NAGA' && r7c.idMap['m_y']==='m_y','R7b 既存の city と payload の branch でも同名別人を区別（移行後互換）');
     // R9 injective: 既存1人を2人の payload が取り合わない（2人目は新規）
     var plSame={members:[{member_id:'m_p',name:'佐藤弘康',branch:'長泉町'},{member_id:'m_q',name:'佐藤弘康',branch:'沼津市'}],tournaments:[],entries:[]};
     var r9=A.resolveImportMembers(plSame,[{member_id:'EX1',name:'佐藤弘康'}]);
@@ -110,6 +113,8 @@ function samplePayload(){
     assert(r.ok===true,'I1 取り込み成功');
     // members upsert は新規(m_b)のみ＝既存(EXIST_A=甲)は触らない
     assert(c._calls.members.length===1 && c._calls.members[0].length===1 && c._calls.members[0][0].member_id==='m_b','I2 members は新規のみ upsert（既存は非上書き）');
+    // CITY-UNIFY-001: 新規行の市町村は city 列へ（旧 payload の branch は city にマップ・branch は書かない）
+    assert(c._calls.members[0][0].city==='三島市' && !('branch' in c._calls.members[0][0]),'I2b 新規 upsert は city 列（branch 列は書かない）');
     // players は resolved 全員（EXIST_A と m_b）
     var pmids=c._calls.players[0].map(x=>x.member_id).sort();
     assert(pmids.length===2 && pmids.indexOf('EXIST_A')>=0 && pmids.indexOf('m_b')>=0,'I3 players は全 resolved member_id');
