@@ -74,6 +74,9 @@ function loadEnv(){
        masterSheetCommitNameEdit:masterSheetCommitNameEdit,
        pushMemberEditToCloud:pushMemberEditToCloud,
        pushMemberDeleteStateToCloud:pushMemberDeleteStateToCloud,
+       pushAllMembersToCloud:pushAllMembersToCloud,
+       mergeCloudMembersIntoMaster:mergeCloudMembersIntoMaster,
+       _cloudMemberFieldCols:_cloudMemberFieldCols,
        loadBranchMaster:loadBranchMaster,
        BRANCH_MASTER_KEY:BRANCH_MASTER_KEY,
        _setSort:function(v){_masterSortMode=v;},
@@ -262,11 +265,12 @@ assert(pdSrc.indexOf("onConflict:'club_id,member_id'")>=0&&pdSrc.indexOf('delete
 assert(!/branch\s*:/.test(pdSrc), 'Q4 branch 列を送らない（クラウド値保全）');
 
 function mockCloudEnv(e,capture){
+  capture.calls=capture.calls||[];
   e._ctx.window.SHOGI_CLOUD_CONFIG={url:'https://kakuu.example',publishableKey:'pk_kakuu'};
   e._ctx.window.supabase={createClient:function(){return {
     auth:{getSession:function(){return Promise.resolve({data:{session:{user:{}}}});}},
     rpc:function(){return Promise.resolve({data:[{club_id:'club-kakuu',status:'active'}]});},
-    from:function(){return {upsert:function(rows){capture.rows=rows;return {select:function(){return Promise.resolve({data:rows,error:null});}};}};}
+    from:function(){return {upsert:function(rows){capture.rows=rows;capture.calls.push(rows);return {select:function(){return Promise.resolve({data:rows,error:null});}};}};}
   };}};
 }
 const qDel=(function(){
@@ -304,8 +308,51 @@ const qAuth=(function(){
   });
 })();
 
+// S: CLOUD-MEMBER-FIELDS-001＋MASTER-BULK-PUSH-001＋MASTER-MIGRATE-RETIRE-001
+const sEnv=loadEnv();
+const fc=sEnv._cloudMemberFieldCols({member:'other',grade:'josei',city:'沼津市'});
+assert(fc.member_kind==='other'&&fc.grade==='josei'&&fc.city==='沼津市', 'S1 区分・市町村の整形（other/josei/city）');
+const fcDef=sEnv._cloudMemberFieldCols({});
+assert(fcDef.member_kind==='member'&&fcDef.grade==='ippan'&&fcDef.city===null, 'S2 既定は member/ippan/city=null');
+const mm={schema_version:1,members:[{id:'m-x',name:'架空太郎',yomi:'かくう',member:'member',grade:'ippan',city:'',tournament_ids:[]}]};
+const mres=sEnv.mergeCloudMembersIntoMaster(mm,[{member_id:'m-x',name:'架空太郎',yomi:'かくう',member_kind:'other',grade:'josei',city:'三島市'}],{});
+assert(mm.members[0].member==='other'&&mm.members[0].grade==='josei'&&mm.members[0].city==='三島市'&&mres.updated===1, 'S3 ☁取得で区分・市町村が下りる（非空値のみ）');
+const mm2={schema_version:1,members:[{id:'m-x',name:'架空太郎',yomi:'かくう',member:'other',grade:'josei',city:'三島市',tournament_ids:[]}]};
+const mres2=sEnv.mergeCloudMembersIntoMaster(mm2,[{member_id:'m-x',name:'架空太郎',yomi:'かくう',member_kind:null,grade:null,city:null}],{});
+assert(mm2.members[0].member==='other'&&mm2.members[0].grade==='josei'&&mm2.members[0].city==='三島市'&&mres2.updated===0, 'S4 NULL（未設定の旧行）はローカルを壊さない');
+assert(RAW.indexOf('id="masterMigrateBtn"')<0&&RAW.indexOf('function openMigrationWizard')>=0, 'S5 統合＝UI撤去・関数は温存（回帰資産）');
+assert(RAW.indexOf('id="masterBulkPushBtn"')>=0, 'S6 一括送信ボタンが details 内に存在');
+const bmeS=RAW.slice(RAW.indexOf('function bindMasterTabEvents'),RAW.indexOf('function bindMasterTabEvents')+12000);
+assert(bmeS.indexOf('masterBulkPushBtn')>=0&&bmeS.indexOf('上書きされます')>=0, 'S7 一括送信は confirm（クラウド上書きの明示）付きで bind');
+assert(RAW.indexOf('「📋 名簿を更新」を押してください')>=0, 'S8 大会形式ファイルの誘導は「復元→名簿を更新」へ更新');
+
+const sBulk=(function(){
+  const e=envWithFix();
+  const cap={};
+  mockCloudEnv(e,cap);
+  const msgs=[];
+  return e.pushAllMembersToCloud(function(m){msgs.push(String(m));}).then(function(res){
+    assert(res&&res.ok===true&&res.alive===3&&res.dead===1, 'S9 一括送信＝生存3名＋削除済み1名');
+    assert(cap.calls.length===2, 'S10 生存/削除済みの2回に分けて upsert');
+    const aliveRows=cap.calls[0];
+    assert(aliveRows.length===3&&aliveRows.every(r=>!('deleted_at' in r)), 'S11 生存行は deleted_at を送らない（クラウド tombstone 保全）');
+    assert(aliveRows.every(r=>r.member_kind&&r.grade&&('city' in r)&&r.club_id==='club-kakuu'), 'S12 生存行に区分・市町村・club_id');
+    const deadRows=cap.calls[1];
+    assert(deadRows.length===1&&deadRows[0].member_id==='m-dl'&&deadRows[0].deleted_at==='2026-06-15', 'S13 削除済み行はローカル削除日を deleted_at に');
+    assert(msgs.some(m=>m.indexOf('一括送信しました（4名・うち削除済み 1名）')>=0), 'S14 結果 status（人数内訳）');
+  });
+})();
+const sEdit=(function(){
+  const e=envWithFix();
+  const cap={};
+  mockCloudEnv(e,cap);
+  return e.pushMemberEditToCloud({id:'m-ka',name:'架空太郎',yomi:'かくう',member:'other',grade:'chu',city:'沼津市'},function(){}).then(function(){
+    assert(cap.rows&&cap.rows[0].member_kind==='other'&&cap.rows[0].grade==='chu'&&cap.rows[0].city==='沼津市', 'S15 編集 push にも区分・市町村が同乗');
+  });
+})();
+
 function summary(){
   console.log('\n  MASTER-SHEET テスト: PASS '+pass+'件 / FAIL '+fail+'件');
   if(fail>0){ process.exit(1); }
 }
-Promise.all([pOk,pAuth,qDel,qRes,qAuth]).then(summary).catch(function(e){ console.error('  ✗ 非同期テスト例外: '+((e&&e.message)||e)); fail++; summary(); });
+Promise.all([pOk,pAuth,qDel,qRes,qAuth,sBulk,sEdit]).then(summary).catch(function(e){ console.error('  ✗ 非同期テスト例外: '+((e&&e.message)||e)); fail++; summary(); });

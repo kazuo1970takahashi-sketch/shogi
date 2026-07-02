@@ -11,7 +11,8 @@ ok(/<details class="master-maint"/.test(RAW),'D2 「⚙ 名簿のメンテナン
 ok(/名簿のメンテナンス/.test(RAW),'D3 summary 文言');
 // メンテナンス系5ボタンが details 内（details の後に出現）
 var dpos=RAW.indexOf('<details class="master-maint"');
-ok(dpos>=0 && RAW.indexOf('id="masterMigrateBtn"')>dpos,'D4 統合は details 内');
+// MASTER-MIGRATE-RETIRE-001: 統合ボタンは撤去（関数は温存）。代替の一括送信が details 内にあることを pin。
+ok(dpos>=0 && RAW.indexOf('id="masterBulkPushBtn"')>dpos && RAW.indexOf('id="masterMigrateBtn"')<0,'D4 統合は撤去・一括送信が details 内');
 ok(dpos>=0 && RAW.indexOf('id="masterExportBtn"')>dpos,'D5 エクスポートは details 内');
 ok(dpos>=0 && RAW.indexOf('id="masterImportBtn"')>dpos,'D6 インポートは details 内');
 ok(dpos>=0 && RAW.indexOf('id="masterShowDeletedBtn"')>dpos,'D7 削除済み表示は details 内');
