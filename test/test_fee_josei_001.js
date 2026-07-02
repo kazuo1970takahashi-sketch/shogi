@@ -291,7 +291,8 @@ function collectOptions(node, acc){
     {id:'mz2',name:'架空中',yomi:'',member:'other',grade:'chu',deleted:false,last_attended:'2026-05-01',attendance_count:1,tournament_ids:['t'],city:''},
     {id:'mz3',name:'架空般',yomi:'',member:'member',grade:'ippan',deleted:false,last_attended:'2026-04-01',attendance_count:1,tournament_ids:['t'],city:''}
   ]});
-  assert(masterHtml.indexOf('会費区分')>=0, 'M1 マスタ一覧ヘッダが「会費区分」（中学生以下区分から変更）');
+  // MASTER-SHEET-001: 一覧はスプレッドシート型に刷新＝会費区分列のヘッダは幅の都合で「会費」。
+  assert(masterHtml.indexOf('>会費</th>')>=0, 'M1 マスタ一覧に会費（区分）列ヘッダがある（MASTER-SHEET-001 で短縮）');
   assert(masterHtml.indexOf('中学生以下区分')<0, 'M2 旧ヘッダ「中学生以下区分」は残存しない');
   assert(masterHtml.indexOf('女性')>=0, 'M3 josei member の行ラベルに「女性」を表示');
   // 既存ラベル（中学 / 一般）は非回帰で残る
