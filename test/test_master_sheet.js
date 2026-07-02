@@ -204,6 +204,12 @@ assert(flashSrc.indexOf('scrollIntoView')>=0&&flashSrc.indexOf('backgroundColor'
 const commitSrc0=RAW.slice(RAW.indexOf('function masterSheetCommitNameEdit'),RAW.indexOf('function masterSheetCommitNameEdit')+2000);
 assert(/renderMasterTab\(\);[\s\S]{0,200}masterSheetFlashRow\(mid\)/.test(commitSrc0), 'F3 commit 成功→再描画直後に追跡を呼ぶ');
 
+// I: MASTER-SHEET-004（IME 変換ガード＝変換確定の Enter で更新しない）
+const startSrc4=RAW.slice(RAW.indexOf('function masterSheetStartNameEdit'),RAW.indexOf('function masterSheetCommitNameEdit'));
+assert(startSrc4.indexOf("addEventListener('compositionstart'")>=0&&startSrc4.indexOf("addEventListener('compositionend'")>=0, 'I1 両入力に composition イベントを結線');
+assert(/if\(composing\|\|\(e&&e\.isComposing\)\|\|\(e&&e\.keyCode===229\)\)return;/.test(startSrc4), 'I2 変換中は Enter/Esc を無視（isComposing・keyCode 229 の後方互換込み）');
+assert(/if\(composing\)return;[\s\S]{0,80}_masterEditingMid!==mid/.test(startSrc4), 'I3 変換中は focusout の自動確定も抑止');
+
 // P: MASTER-CLOUD-PUSH-001（氏名・ふりがな編集のクラウド即時反映・fail-soft）
 const commitSrc=RAW.slice(RAW.indexOf('function masterSheetCommitNameEdit'),RAW.indexOf('function masterSheetCommitNameEdit')+1800);
 assert(commitSrc.indexOf('pushMemberEditToCloud')>=0, 'P1 commit 成功パスからクラウド push を呼ぶ');
