@@ -29,6 +29,29 @@
     .card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr)); gap:12px; }
     .card-grid .card { margin:0; }
     #loginView, #checkEmailView, #unregisteredView { max-width:420px; margin:8vh auto 0; }
+    /* APP-UX-002: 名簿シート（当日アプリ MASTER-SHEET と同型）。 */
+    .ms-wrap { border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-top:4px; }
+    .ms-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .ms-table thead tr { background:#f4f6f9; }
+    .ms-table th { padding:6px 4px; font-size:12px; color:#556; font-weight:600; text-align:center; }
+    .ms-th-name { text-align:left; padding-left:8px; }
+    .ms-th-check { width:44px; font-weight:400; font-size:11px; color:#888; }
+    .ms-table td { border-top:1px solid #eef1f5; padding:5px 8px; text-align:center; }
+    .ms-name-cell, .ms-city-cell, .ms-branch-cell, .ms-kind-cell, .ms-grade-cell { cursor:pointer; }
+    .ms-yomi { display:block; font-size:10px; color:#888; line-height:1.15; }
+    .ms-yomi-missing { color:#BA7517; }
+    .ms-name { font-weight:600; }
+    .ms-del-tag { color:var(--muted); font-size:11px; }
+    .ms-row-deleted { background:#f5f5f5; color:#888; text-decoration:line-through; }
+    .mk-badge { font-size:11px; border-radius:5px; padding:1px 6px; }
+    .mk-member { background:#eaf3de; color:#27500A; }
+    .mk-other { background:#f1efe8; color:#5f5e5a; }
+    .ms-toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; background:#E6F1FB; border:1px solid #B5D4F4;
+                  border-radius:8px; padding:6px 10px; margin:0 0 10px; font-size:13px; color:#0C447C; }
+    .ms-toolbar button { margin-top:0; padding:6px 12px; font-size:13px; background:#fff; }
+    .ms-danger { border-color:#A32D2D; color:#A32D2D; }
+    .ms-check { width:18px; height:18px; }
+    .ms-in { width:96%; font-size:14px; padding:4px 6px; border:1px solid var(--primary); border-radius:6px; margin:1px 0; }
     .muted { color:var(--muted); font-size:13px; }
     label { display:block; font-size:13px; margin:10px 0 4px; }
     input[type="email"], select { width:100%; padding:10px; font-size:16px; border:1px solid var(--line); border-radius:8px; }
@@ -63,7 +86,7 @@
   <!-- Supabase JS（UMD・global `supabase` を生やす）。publishable key + URL のみ使用。 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js" integrity="sha384-nD3dwv4+ZqdYnmZKe/249ImlV04om7xTCcsoSeQYI+RO+XlKPoqAWaJR1M5SJH9p" crossorigin="anonymous"></script>
   <!-- cache-bust: app/auth.js 変更時に ?v=N をバンプ（app/ は cache-bust が無く旧 JS を握る問題の対策・#343）-->
-  <script src="auth.js?v=24"></script>
+  <script src="auth.js?v=25"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       try { window.ShogiAuth.boot(); }
