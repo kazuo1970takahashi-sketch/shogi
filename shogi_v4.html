@@ -4488,18 +4488,25 @@ function masterSheetStartNameEdit(mid){
   _masterEditingMid=mid;
   cell.innerHTML='<input type="text" id="ms-edit-yomi" value="'+escapeHtml(m.yomi||'')+'" placeholder="ふりがな" style="width:96%;font-size:13px;padding:3px 6px;border:1px solid #185FA5;border-radius:4px;margin-bottom:2px;box-sizing:border-box">'
     +'<input type="text" id="ms-edit-name" value="'+escapeHtml(m.name||'')+'" placeholder="氏名" style="width:96%;font-size:15px;font-weight:500;padding:3px 6px;border:1px solid #185FA5;border-radius:4px;box-sizing:border-box">';
+  // MASTER-SHEET-004 (作者FB 2026-07-02): IME 変換ガード。変換確定の Enter を「編集確定」と誤解釈して
+  //   変換した瞬間に更新される問題を解消＝composing 中（compositionstart〜end・isComposing・keyCode 229）は
+  //   Enter/Esc とも無視し、focusout の自動確定も抑止する（pp-search の composition ガードと同方針）。
+  var composing=false;
+  var onComp=function(on){ return function(){ composing=on; }; };
   var onKey=function(e){
+    if(composing||(e&&e.isComposing)||(e&&e.keyCode===229))return;
     var k=e&&(e.key||e.keyCode);
     if(k==='Enter'||k===13){ if(e&&e.preventDefault)e.preventDefault(); masterSheetCommitNameEdit(); }
     else if(k==='Escape'||k===27){ masterSheetCancelNameEdit(); }
   };
   var yi=document.getElementById('ms-edit-yomi');
   var ni=document.getElementById('ms-edit-name');
-  if(yi)yi.addEventListener('keydown',onKey);
-  if(ni)ni.addEventListener('keydown',onKey);
+  if(yi){ yi.addEventListener('compositionstart',onComp(true)); yi.addEventListener('compositionend',onComp(false)); yi.addEventListener('keydown',onKey); }
+  if(ni){ ni.addEventListener('compositionstart',onComp(true)); ni.addEventListener('compositionend',onComp(false)); ni.addEventListener('keydown',onKey); }
   cell.addEventListener('focusout',function(){
     setTimeout(function(){
       try{
+        if(composing)return; // MASTER-SHEET-004: 変換中の一時的な focus 移動では確定しない
         if(_masterEditingMid!==mid)return;
         if(cell.contains&&document.activeElement&&cell.contains(document.activeElement))return;
         masterSheetCommitNameEdit();
