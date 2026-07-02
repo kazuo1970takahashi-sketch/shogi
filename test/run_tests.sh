@@ -742,6 +742,19 @@ else
   warn "test_help_006.js が見つからない"
 fi
 
+echo ""
+echo "【SAVE-STATUS-BAR-001 (STYLE-GUIDE M3) 保存状態バー（4系統の最終実行時刻 / save フック / textContent 描画 / ？結線 / save-systems ヘルプ）】"
+if [ -f "$SCRIPT_DIR/test_save_status_bar.js" ]; then
+  if node "$SCRIPT_DIR/test_save_status_bar.js" "$TARGET" > /tmp/save_status_bar_out.log 2>&1; then
+    ok "SAVE-STATUS-BAR テスト 全PASS ($(tail -1 /tmp/save_status_bar_out.log))"
+  else
+    ng "SAVE-STATUS-BAR テスト 失敗"
+    cat /tmp/save_status_bar_out.log
+  fi
+else
+  warn "test_save_status_bar.js が見つからない"
+fi
+
 # ============================================
 # MEMBERS-CANDIDATE-MASTER-RECUT-001 members 形式 参加者候補マスタ読込（#194 価値分の再切り）
 #   完全架空 fixture で member 真偽値後方互換 / 禁止項目 whitelist 除外 / deleted 墓石除外 /
