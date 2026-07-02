@@ -33,6 +33,9 @@ const payloadText=JSON.stringify({
     assert(h.indexOf('id="importPreviewBtn"')>=0 && h.indexOf('id="importRunBtn"')>=0,'W2 プレビュー/取り込みボタンがある');
     assert(/id="importRunBtn"[^>]*disabled/.test(h),'W3 取り込みボタンは初期 disabled');
     assert(h.indexOf('既存会員は上書きしません')>=0,'W4 既存非上書きの注記');
+    // APP-UX-003: 初期移行ツールは details で折り畳み（id/機能温存）
+    assert(h.indexOf('<details>')>=0 && h.indexOf('<summary>')>=0 && h.indexOf('通常は使いません')>=0,'W4b 取り込みは details 折り畳み＋控えめ文言');
+    assert(h.indexOf('id="importPanel"')>=0,'W4c importPanel id 温存');
   })();
   // preview HTML
   (function(){
