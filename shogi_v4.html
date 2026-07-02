@@ -4527,6 +4527,14 @@ function masterSheetCommitNameEdit(){
   showToast('更新しました');
   renderMasterTab();
   if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+  // MASTER-CLOUD-PUSH-001: ログイン中ならクラウド members にも反映（fail-soft・非同期・結果は status 行 N4）。
+  //   status 要素は renderMasterTab 再描画後も同 id で存在するため、closure 内で都度 getElementById する。
+  var editedMember=_masterSheetFindMember(mid,master);
+  if(editedMember&&typeof pushMemberEditToCloud==='function'){
+    pushMemberEditToCloud(editedMember,function(msg){
+      if(typeof applyCloudStatus==='function')applyCloudStatus(document.getElementById('masterCloudPullStatus'),msg);
+    });
+  }
 }
 function masterSheetCancelNameEdit(){
   _masterEditingMid=null;
@@ -9546,6 +9554,46 @@ function applyCloudStatus(el,msg){
   el.textContent=s;
   el.className='cloud-status cloud-status-'+classifyCloudStatusKind(s);
 }
+// MASTER-CLOUD-PUSH-001 (作者要望 2026-07-02): 名簿タブの氏名・ふりがな編集を、ログイン中なら
+//   クラウド members にもその場で upsert する（巻き戻り防止＝☁取得/起動時自動取得がクラウドの古い表記で
+//   端末修正を上書きする非対称の解消）。設計:
+//   - 対象は氏名・ふりがなのみ（支部員/会費区分はクラウドに置き場がない・削除の tombstone は app/ の領分）。
+//   - fail-soft・非同期・当日運営を止めない（未ログイン/オフライン/失敗でも端末保存は完了済み）。
+//   - 「未反映」は status 行（N4）で必ず明示する＝黙って巻き戻りリスクを残さない（auto-pull の無音方針とは
+//     異なり、ユーザーの明示編集への応答なので結果を伝える）。
+//   - upsert は既存 sync と同じ onConflict（club_id,member_id）で冪等。row に branch 列は含めない
+//     ＝クラウド側の branch 値を保全（提供列のみ更新される）。
+function pushMemberEditToCloud(member,setStatus){
+  setStatus=setStatus||function(){};
+  if(!member||!member.id)return Promise.resolve({ok:false,step:'input'});
+  setStatus('クラウドへ反映中…');
+  return loadCloudDeps().then(function(dep){
+    if(dep.offline){ setStatus('クラウド未反映（オフライン・端末には保存済み。☁送信時にも同期されます）'); return {ok:false,step:'offline'}; }
+    if(!dep.cfg){ setStatus('クラウド未反映（クラウド設定なし・端末には保存済み）'); return {ok:false,step:'config'}; }
+    if(!dep.sb){ setStatus('クラウド未反映（接続不可・端末には保存済み）'); return {ok:false,step:'network'}; }
+    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+    if(!client||!client.auth){ setStatus('クラウド未反映（接続不可・端末には保存済み）'); return {ok:false,step:'client'}; }
+    return client.auth.getSession().then(function(r){
+      var session=r&&r.data&&r.data.session;
+      if(!session){ setStatus('クラウド未反映（app/ でログインすると反映できます・端末には保存済み）'); return {ok:false,step:'auth'}; }
+      return client.rpc('claim_organizer_seat').then(function(rc){
+        var clubId=pickActiveClubId((rc&&rc.data)||[]);
+        if(!clubId){ setStatus('クラウド未反映（送信先クラブを特定できません・端末には保存済み）'); return {ok:false,step:'club'}; }
+        var row={member_id:member.id,name:member.name||'',yomi:member.yomi||'',club_id:clubId};
+        return client.from('members').upsert([row],{onConflict:'club_id,member_id'}).select().then(function(res){
+          if(res&&res.error){ setStatus('クラウドへの反映に失敗しました：'+((res.error&&res.error.message)||'不明')+'（端末には保存済み・☁送信時にも同期されます）'); return {ok:false,step:'upsert'}; }
+          setStatus('氏名・ふりがなをクラウドにも反映しました');
+          return {ok:true};
+        });
+      });
+    });
+  }).catch(function(e){
+    if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 名簿編集の反映例外:',(e&&e.message)||e);
+    setStatus('クラウドへの反映に失敗しました（端末には保存済み・☁送信時にも同期されます）');
+    return {ok:false,step:'exception'};
+  });
+}
+
 function sendTournamentToCloud(setStatus){
   setStatus=setStatus||function(){};
   setStatus('クラウドへ送信中…');
