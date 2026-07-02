@@ -238,6 +238,19 @@ const CLUB = 'cccccccc-0000-0000-0000-000000000001';
     assert(cm.indexOf('2名')>=0 && cm.indexOf('論理削除')>=0 && cm.indexOf('復元できます')>=0 && cm.indexOf('よろしいですか')>=0, 'S15 削除 confirm＝件数・危険語・復元可・確認文体');
   })();
 
+  // ===================================================== U16-U19. CITY-UNIFY-001（市町村を city 列に一本化）
+  await (async function(){
+    var row = A.buildMemberSheetRowHtml({ member_id:'m1', name:'架空太郎', yomi:'かくうたろう', city:'沼津市', branch:'（旧市町村データ）', deleted_at:null }, false);
+    assert(row.indexOf('ms-branch-cell')<0 && row.indexOf('（旧市町村データ）')<0, 'U16 シート行に支部セルは無い（branch は表示しない）');
+    var sheet = A.buildMemberSheetHtml([{ member_id:'m1', name:'甲', yomi:'こ', deleted_at:null }], {});
+    assert(sheet.indexOf('<th>支部</th>')<0 && sheet.indexOf('<th>市町村</th>')>=0, 'U17 ヘッダは市町村のみ（支部列撤去）');
+    assert(sheet.indexOf('memberAddCity')>=0 && sheet.indexOf('memberAddBranch')<0 && sheet.indexOf('placeholder="市町村"')>=0, 'U18 追加フォームは市町村入力（branch 入力撤去）');
+    var cI = makeClient({});
+    await A.insertMember(cI, CLUB, { name:'新規 花子', yomi:'', city:' 三島市 ' }, function(){ return 'dddddddd-eeee-ffff-0000-111111111111'; });
+    var payI = cI._calls.insert[0].payload;
+    assert(payI.city==='三島市' && payI.branch===null, 'U19 追加は city へ保存（trim・branch は書かない）');
+  })();
+
   console.log('  Stage B-5 名簿編集 テスト: PASS '+pass+'件 / FAIL '+fail+'件');
   process.exit(fail===0?0:1);
 })();

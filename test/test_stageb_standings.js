@@ -23,11 +23,11 @@ const A=loadAuth();
 function seasonClient(objs){
   var ents=[],pmap={},tmap={};
   objs.forEach(function(r){
-    var mid=r.players.member_id,nm=r.players.members.name,br=(r.players.members.branch||'');
+    var mid=r.players.member_id,nm=r.players.members.name,ct=(r.players.members.city||'');
     var season=r.tournaments.season,date=r.tournaments.date;
     var pid='P_'+mid,tid='T_'+season+'|'+date;
     ents.push({wins:r.wins,losses:r.losses,final_rank:r.final_rank,'class':r['class'],player_id:pid,tournament_id:tid});
-    pmap[pid]={id:pid,member_id:mid,members:{name:nm,branch:br}};
+    pmap[pid]={id:pid,member_id:mid,members:{name:nm,city:ct}};
     tmap[tid]={id:tid,season:season,date:date};
   });
   return makeClient({byTable:{entries:ents,players:Object.keys(pmap).map(function(k){return pmap[k];}),tournaments:Object.keys(tmap).map(function(k){return tmap[k];})}});
@@ -85,7 +85,7 @@ function row(season,mid,name,w,l,rank){return {wins:w,losses:l,final_rank:rank,c
     assert(r.ok===true && r.rows.length===1,'F1 ok 経路');
     var cj=makeClient({byTable:{
       entries:[{wins:4,losses:0,final_rank:1,'class':'A',player_id:'p1',tournament_id:'t1'}],
-      players:[{id:'p1',member_id:'m1',members:{name:'甲',branch:'沼津'}}],
+      players:[{id:'p1',member_id:'m1',members:{name:'甲',city:'沼津市'}}],
       tournaments:[{id:'t1',season:'2025年度',date:'2025-05-01'}]
     }});
     var rj=await A.fetchSeasonEntries(cj,'club1');
@@ -93,7 +93,7 @@ function row(season,mid,name,w,l,rank){return {wins:w,losses:l,final_rank:rank,c
     assert(sj.name==='甲' && sj.season==='2025年度' && sj.member_id==='m1','F1b player_id/tournament_id を JS で突き合わせ');
     var cols=c._calls.select.map(function(x){return x.table+':'+x.cols;}).join(' | ');
   assert(c._calls.select[0].cols.indexOf('player_id')>=0 && c._calls.select[0].cols.indexOf('tournament_id')>=0 && c._calls.select[0].cols.indexOf('members(')<0,'F2 entries は player_id/tournament_id のみ（曖昧embed回避）');
-  assert(cols.indexOf('players:')>=0 && cols.indexOf('members(name,branch)')>=0 && cols.indexOf('tournaments:')>=0,'F2b players(members)・tournaments を別取得');
+  assert(cols.indexOf('players:')>=0 && cols.indexOf('members(name,city)')>=0 && cols.indexOf('tournaments:')>=0,'F2b players(members)・tournaments を別取得（CITY-UNIFY-001: branch ではなく city）');
     var c2=makeClient({error:true});
     var r2=await A.fetchSeasonEntries(c2,'club1');
     assert(r2.ok===false && r2.rows.length===0,'F3 error 経路');
