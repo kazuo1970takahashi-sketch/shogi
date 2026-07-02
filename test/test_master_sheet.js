@@ -73,6 +73,7 @@ function loadEnv(){
        masterSheetCycleGrade:masterSheetCycleGrade,
        masterSheetCommitNameEdit:masterSheetCommitNameEdit,
        pushMemberEditToCloud:pushMemberEditToCloud,
+       pushMemberDeleteStateToCloud:pushMemberDeleteStateToCloud,
        loadBranchMaster:loadBranchMaster,
        BRANCH_MASTER_KEY:BRANCH_MASTER_KEY,
        _setSort:function(v){_masterSortMode=v;},
@@ -252,8 +253,59 @@ const pAuth=(function(){
   });
 })();
 
+// Q: MASTER-CLOUD-DELETE-001（選択削除/復元のクラウド反映）
+const delSrc=RAW.slice(RAW.indexOf('function masterSheetDeleteSelected'),RAW.indexOf('function _masterCloudStatusFn'));
+assert(delSrc.indexOf('pushMemberDeleteStateToCloud(doneMids,master,true')>=0&&delSrc.indexOf('pushMemberDeleteStateToCloud(doneMids,master,false')>=0, 'Q1 削除/復元とも成功分をクラウドへ push');
+assert(delSrc.indexOf('クラウドの名簿からも削除され、全端末に反映')>=0&&delSrc.indexOf('クラウドの名簿でも復元され')>=0, 'Q2 confirm にクラウド波及を明示（N1）');
+const pdSrc=RAW.slice(RAW.indexOf('function pushMemberDeleteStateToCloud'),RAW.indexOf('function pushMemberDeleteStateToCloud')+3600);
+assert(pdSrc.indexOf("onConflict:'club_id,member_id'")>=0&&pdSrc.indexOf('deleted_at:deleted?nowIso:null')>=0, 'Q3 deleted_at＝削除は現在時刻・復元は null（冪等 upsert）');
+assert(!/branch\s*:/.test(pdSrc), 'Q4 branch 列を送らない（クラウド値保全）');
+
+function mockCloudEnv(e,capture){
+  e._ctx.window.SHOGI_CLOUD_CONFIG={url:'https://kakuu.example',publishableKey:'pk_kakuu'};
+  e._ctx.window.supabase={createClient:function(){return {
+    auth:{getSession:function(){return Promise.resolve({data:{session:{user:{}}}});}},
+    rpc:function(){return Promise.resolve({data:[{club_id:'club-kakuu',status:'active'}]});},
+    from:function(){return {upsert:function(rows){capture.rows=rows;return {select:function(){return Promise.resolve({data:rows,error:null});}};}};}
+  };}};
+}
+const qDel=(function(){
+  const e=envWithFix();
+  const cap={rows:null};
+  mockCloudEnv(e,cap);
+  e._select('m-ka');e._select('m-an');
+  return Promise.resolve(e.masterSheetDeleteSelected()).then(function(){
+    assert(cap.rows&&cap.rows.length===2, 'Q5 削除2名分をまとめて upsert');
+    assert(cap.rows.every(r=>typeof r.deleted_at==='string'&&r.deleted_at.length>0&&typeof r.name==='string'&&r.name.length>0), 'Q6 各行に deleted_at（時刻）と name（未存在会員の INSERT 対策）');
+  });
+})();
+const qRes=(function(){
+  const e=envWithFix();
+  const cap={rows:null};
+  mockCloudEnv(e,cap);
+  e._setShowDeleted(true);
+  e._select('m-dl');
+  return Promise.resolve(e.masterSheetRestoreSelected()).then(function(){
+    assert(cap.rows&&cap.rows.length===1&&cap.rows[0].member_id==='m-dl'&&cap.rows[0].deleted_at===null, 'Q7 復元は deleted_at=null を upsert');
+  });
+})();
+const qAuth=(function(){
+  const e=envWithFix();
+  e._ctx.window.SHOGI_CLOUD_CONFIG={url:'https://kakuu.example',publishableKey:'pk_kakuu'};
+  e._ctx.window.supabase={createClient:function(){return {
+    auth:{getSession:function(){return Promise.resolve({data:{session:null}});}},
+    rpc:function(){return Promise.resolve({data:[]});},
+    from:function(){return {upsert:function(){return {select:function(){return Promise.resolve({data:[],error:null});}};}};}
+  };}};
+  const msgs=[];
+  return e.pushMemberDeleteStateToCloud(['m-ka'],JSON.parse(fixJson())?{members:JSON.parse(fixJson()).members}:null,true,function(m){msgs.push(String(m));}).then(function(res){
+    assert(res&&res.ok===false&&res.step==='auth', 'Q8 未ログインは fail-soft skip');
+    assert(msgs.some(m=>m.indexOf('未反映')>=0&&m.indexOf('この端末のみ削除')>=0), 'Q9 「未反映・この端末のみ削除」を明示');
+  });
+})();
+
 function summary(){
   console.log('\n  MASTER-SHEET テスト: PASS '+pass+'件 / FAIL '+fail+'件');
   if(fail>0){ process.exit(1); }
 }
-Promise.all([pOk,pAuth]).then(summary).catch(function(e){ console.error('  ✗ 非同期テスト例外: '+((e&&e.message)||e)); fail++; summary(); });
+Promise.all([pOk,pAuth,qDel,qRes,qAuth]).then(summary).catch(function(e){ console.error('  ✗ 非同期テスト例外: '+((e&&e.message)||e)); fail++; summary(); });

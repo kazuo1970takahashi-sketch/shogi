@@ -4418,31 +4418,43 @@ function masterSheetDeleteSelected(){
   var master=loadBranchMaster();
   var sel=masterSheetSelectedMids((master&&master.members)||[]);
   if(sel.live.length===0)return;
-  if(!confirm(sel.live.length+'名（'+_masterSheetNamesFor(sel.live,master)+'）を支部マスタから削除します。\n削除後はサジェスト・過去参加者・一覧から非表示になります（参加履歴データは保持・復元できます）。\n\nよろしいですか？'))return;
-  var okc=0;
+  // MASTER-CLOUD-DELETE-001: ログイン中はクラウドにも波及することを confirm で明示（全端末反映＝影響が大きい）。
+  if(!confirm(sel.live.length+'名（'+_masterSheetNamesFor(sel.live,master)+'）を支部マスタから削除します。\n削除後はサジェスト・過去参加者・一覧から非表示になります（参加履歴データは保持・復元できます）。\nログイン中はクラウドの名簿からも削除され、全端末に反映されます。\n\nよろしいですか？'))return;
+  var okc=0;var doneMids=[];
   for(var i=0;i<sel.live.length;i++){
     var r=applyMasterMemberDelete(sel.live[i],master,todayYmd());
-    if(r&&r.success){okc++;delete _masterSelected[sel.live[i]];}
+    if(r&&r.success){okc++;doneMids.push(sel.live[i]);delete _masterSelected[sel.live[i]];}
   }
   saveBranchMaster(master);
   showToast(okc+'名を削除しました');
   renderMasterTab();
   if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+  // MASTER-CLOUD-DELETE-001: 成功分だけクラウドの deleted_at にも反映（fail-soft・結果は status 行 N4）。
+  return pushMemberDeleteStateToCloud(doneMids,master,true,_masterCloudStatusFn());
 }
 function masterSheetRestoreSelected(){
   var master=loadBranchMaster();
   var sel=masterSheetSelectedMids((master&&master.members)||[]);
   if(sel.del.length===0)return;
-  if(!confirm(sel.del.length+'名（'+_masterSheetNamesFor(sel.del,master)+'）を復元します。\n一覧・過去参加者・サジェスト候補に再表示されます。\n\nよろしいですか？'))return;
-  var okc=0;
+  // L3 P1-1: 復元は「既に削除を取り込んだ端末」には自動で戻らない（merge に un-delete 分岐なし）ため、
+  //   「全端末に反映」とは言わない（削除方向のみ全端末伝播）。merge の un-delete 化は別スライス判断。
+  if(!confirm(sel.del.length+'名（'+_masterSheetNamesFor(sel.del,master)+'）を復元します。\n一覧・過去参加者・サジェスト候補に再表示されます。\nログイン中はクラウドの名簿でも復元されます。\n\nよろしいですか？'))return;
+  var okc=0;var doneMids=[];
   for(var i=0;i<sel.del.length;i++){
     var r=applyMasterMemberRestore(sel.del[i],master);
-    if(r&&r.success){okc++;delete _masterSelected[sel.del[i]];}
+    if(r&&r.success){okc++;doneMids.push(sel.del[i]);delete _masterSelected[sel.del[i]];}
   }
   saveBranchMaster(master);
   showToast(okc+'名を復元しました');
   renderMasterTab();
   if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+  return pushMemberDeleteStateToCloud(doneMids,master,false,_masterCloudStatusFn());
+}
+// MASTER-CLOUD-DELETE-001: 名簿タブの status 行（N4）へ書く setStatus を作る（closure 内で都度 getElementById）。
+function _masterCloudStatusFn(){
+  return function(msg){
+    if(typeof applyCloudStatus==='function')applyCloudStatus(document.getElementById('masterCloudPullStatus'),msg);
+  };
 }
 function _masterSheetFindMember(mid,master){
   var members=(master&&master.members)||[];
@@ -9613,6 +9625,51 @@ function pushMemberEditToCloud(member,setStatus){
   }).catch(function(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 名簿編集の反映例外:',(e&&e.message)||e);
     setStatus('クラウドへの反映に失敗しました（端末には保存済み・☁送信時にも同期されます）');
+    return {ok:false,step:'exception'};
+  });
+}
+
+// MASTER-CLOUD-DELETE-001 (作者承認 2026-07-02): 名簿タブの選択削除/復元をクラウド members の
+//   deleted_at にも反映する（削除=現在時刻・復元=null）。これで氏名/ふりがな（?v=62）に続き削除も双方向になり、
+//   名簿タブがマスタメンテの正面玄関として一巡する。設計は pushMemberEditToCloud と同型:
+//   fail-soft・非同期・未反映は status 行（N4）で明示。row に name/yomi を含める＝クラウド未存在の会員でも
+//   INSERT が成立（name NOT NULL 対策）。branch 列は送らずクラウド値保全。onConflict は既存 sync と同一。
+function pushMemberDeleteStateToCloud(mids,master,deleted,setStatus){
+  setStatus=setStatus||function(){};
+  if(!mids||!mids.length)return Promise.resolve({ok:false,step:'input'});
+  var actLabel=deleted?'削除':'復元';
+  setStatus('クラウドの名簿にも'+actLabel+'を反映中…');
+  return loadCloudDeps().then(function(dep){
+    if(dep.offline){ setStatus('クラウド未反映（オフライン・この端末では'+actLabel+'済み）'); return {ok:false,step:'offline'}; }
+    if(!dep.cfg){ setStatus('クラウド未反映（クラウド設定なし・この端末では'+actLabel+'済み）'); return {ok:false,step:'config'}; }
+    if(!dep.sb){ setStatus('クラウド未反映（接続不可・この端末では'+actLabel+'済み）'); return {ok:false,step:'network'}; }
+    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+    if(!client||!client.auth){ setStatus('クラウド未反映（接続不可・この端末では'+actLabel+'済み）'); return {ok:false,step:'client'}; }
+    return client.auth.getSession().then(function(r){
+      var session=r&&r.data&&r.data.session;
+      if(!session){ setStatus('クラウド未反映（この端末のみ'+actLabel+'。app/ でログインすると全端末に反映できます）'); return {ok:false,step:'auth'}; }
+      return client.rpc('claim_organizer_seat').then(function(rc){
+        var clubId=pickActiveClubId((rc&&rc.data)||[]);
+        if(!clubId){ setStatus('クラウド未反映（送信先クラブを特定できません・この端末では'+actLabel+'済み）'); return {ok:false,step:'club'}; }
+        var nowIso=new Date().toISOString();
+        var rows=[];
+        for(var i=0;i<mids.length;i++){
+          var m=_masterSheetFindMember(mids[i],master);
+          if(!m)continue;
+          rows.push({member_id:mids[i],name:m.name||'',yomi:m.yomi||'',club_id:clubId,deleted_at:deleted?nowIso:null});
+        }
+        if(!rows.length){ setStatus('クラウド未反映（対象が見つかりません）'); return {ok:false,step:'input'}; }
+        return client.from('members').upsert(rows,{onConflict:'club_id,member_id'}).select().then(function(res){
+          if(res&&res.error){ setStatus('クラウドへの'+actLabel+'反映に失敗しました：'+((res.error&&res.error.message)||'不明')+'（この端末では'+actLabel+'済み）'); return {ok:false,step:'upsert'}; }
+          // L3 P1-1: 「全端末に反映」は削除方向のみ（復元は削除取り込み済み端末に自動では戻らない）。
+          setStatus(deleted?('クラウドの名簿からも削除しました（'+rows.length+'名・全端末に反映）'):('クラウドの名簿でも復元しました（'+rows.length+'名）'));
+          return {ok:true,count:rows.length};
+        });
+      });
+    });
+  }).catch(function(e){
+    if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 削除/復元の反映例外:',(e&&e.message)||e);
+    setStatus('クラウドへの'+actLabel+'反映に失敗しました（この端末では'+actLabel+'済み）');
     return {ok:false,step:'exception'};
   });
 }
