@@ -755,6 +755,19 @@ else
   warn "test_save_status_bar.js が見つからない"
 fi
 
+echo ""
+echo "【PP-FULLSCREEN-001 過去参加者から選ぶ 全画面ビュー（overlay open-close / 内側スクロール解除 / focus復元 / toast鏡映）】"
+if [ -f "$SCRIPT_DIR/test_pp_fullscreen.js" ]; then
+  if node "$SCRIPT_DIR/test_pp_fullscreen.js" "$TARGET" > /tmp/pp_fullscreen_out.log 2>&1; then
+    ok "PP-FULLSCREEN テスト 全PASS ($(tail -1 /tmp/pp_fullscreen_out.log))"
+  else
+    ng "PP-FULLSCREEN テスト 失敗"
+    cat /tmp/pp_fullscreen_out.log
+  fi
+else
+  warn "test_pp_fullscreen.js が見つからない"
+fi
+
 # ============================================
 # MEMBERS-CANDIDATE-MASTER-RECUT-001 members 形式 参加者候補マスタ読込（#194 価値分の再切り）
 #   完全架空 fixture で member 真偽値後方互換 / 禁止項目 whitelist 除外 / deleted 墓石除外 /
