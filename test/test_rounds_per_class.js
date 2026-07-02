@@ -63,8 +63,10 @@ console.log('=== 保存ボタン「名簿を更新」一本化（挙動） ===')
 var Es=makeEnv();
 Es.env.saveData();
 ok(Es.clip.called===false,'S1 saveData はクリップボードへコピーしない');
-ok(Es.alerts.some(a=>a.indexOf('名簿を更新しました')>=0),'S2 「名簿を更新しました」を通知');
-ok(Es.alerts.some(a=>a.indexOf('バックアップ')>=0),'S3 控えは「バックアップ」へ誘導');
+// NOTIFY-N2-SAVE-001: 成功通知は alert → toast へ移行（STYLE-GUIDE §3 N2）。旧「控えはバックアップ」誘導は
+// 保存状態バー＋save-systems ヘルプ（?v=56）へ移管済みのため S3 は「成功に alert を使わない」検証へ差し替え。
+ok(Es.els['app-toast']&&String(Es.els['app-toast'].textContent).indexOf('名簿を更新しました')>=0,'S2 「名簿を更新しました」を toast で通知');
+ok(Es.alerts.every(a=>a.indexOf('名簿を更新しました')<0),'S3 成功通知に blocking alert を使わない（N2）');
 
 console.log('=== 静的HTML / 配線（RAW） ===');
 ok(RAW.indexOf('>📋 名簿を更新</button>')>=0,'R1 ボタン名は「📋 名簿を更新」');
