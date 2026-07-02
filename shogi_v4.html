@@ -61,8 +61,10 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 /* PP-FULLSCREEN-001: 全画面ビュー内だけのスタイル上書き（scoped・追加のみ）。
    .pp-controls＝検索/50音/クイックフィルタをヘッダ（約56px）直下に sticky。
    .pp-list-box＝登録タブ時代の内側スクロール箱（inline max-height:280px）を !important で解除し、スクロールを overlay 1本に。 */
-#pp-fullscreen .pp-controls{position:sticky;top:56px;z-index:4;background:#eef2f7;padding-top:8px;margin-top:-8px}
 #pp-fullscreen .pp-list-box{max-height:none!important;overflow-y:visible!important;border:none!important;padding:0!important}
+/* PP-DENSE-MODE-001 (S2): 全画面ピッカーの「追加先モード」バーをヘッダ（約56px）直下に sticky。
+   旧 .pp-controls の sticky は S2 で 🔍 details 内へ移動したため解除（詳細は buildPpDenseListHtml）。 */
+#pp-fullscreen .pp-mode-bar{position:sticky;top:56px;z-index:4}
 .save-warn-pill:focus{outline:2px solid #EF9F27;outline-offset:1px}
 /* U-3 (UX-P1): 受付一覧の操作ボタン（名前編集/ふりがな/削除）はタッチターゲット 44px を確保し誤タップを防ぐ。
    危険操作の削除も含め行内で高さを揃える。ヘッダの危険ボタン（全リセット等）は別グループで対象外。 */
@@ -323,44 +325,50 @@ body.sb-active{overflow:hidden}
     <span id="save-warning-indicator" class="save-warn-pill" role="button" tabindex="0" title="押すと対処方法を表示します" hidden></span>
   </div>
   <div id="pane-reg">
-    <!-- PP-FULLSCREEN-001: 「過去参加者から選ぶ」は全画面ビュー（#pp-fullscreen・下方の fixed overlay）へ移行。
-         登録タブ内の入れ子スクロール（280px 箱）を廃し、スクロールを1本化する（作者FB 2026-07-02）。
-         #ppToggleBtn の id は温存し、click は bindPastParticipantsToggle が openPpFullscreen へ結線する。 -->
-    <div class="section" id="past-participants-section" style="display:none">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <h2 style="border:none;padding:0;margin:0;font-size:15px">過去参加者から選ぶ <span id="pp-summary" style="color:#888;font-weight:400;font-size:12px"></span></h2>
-        <button type="button" class="btn-sm" id="ppToggleBtn">🔍 全画面で開く</button>
+    <!-- REG-TAB-IA-001 (作者FB 2026-07-02・S1): 登録タブを4目的（①クラス数 ②回戦数 ③参加者登録 ④人数・会費）の
+         使用頻度順に再配置。①②は大会前に1回だけ触る設定なので <details>「⚙ 大会の設定」へ格納（STYLE-GUIDE §7・§9 M8）、
+         ③を主役に格上げし「📋 名簿から受付」を登録セクション先頭の primary 導線とする。
+         HTML 再配置のみ＝各 section/ボタンの id・bind・レンダラ（renderClassManager/renderRoundsControl/
+         renderPastParticipantsPanel/bindPastParticipantsToggle）は全て不変。 -->
+    <details id="reg-setup-details" style="margin-bottom:12px">
+      <summary style="font-size:14px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">⚙ 大会の設定（クラス・回戦数）<span style="font-weight:400;font-size:11px;color:#888">　大会開始前に確認</span></summary>
+      <!-- CLASS-VARIABLE-001 (CV-1): クラス管理UI。state.classes を runtime で追加/改名/削除する。
+           A/B はアプリ既定クラス（normalizeClasses が読込毎に必ず補完するため）削除不可。
+           renderClassManager() が #class-manager-list を描画し、追加は #addClassBtn / #inp-new-class。
+           登録プルダウン inp-class は populateClassSelect() が state.classes 駆動で生成する。 -->
+      <div class="section" id="class-manager-section">
+        <h2>クラスを管理する</h2>
+        <div id="class-manager-list" style="margin-bottom:8px"></div>
+        <div class="flex">
+          <input type="text" id="inp-new-class" placeholder="クラス名（例: Cクラス）" style="width:200px" autocomplete="off" maxlength="20">
+          <button type="button" class="btn-sm" id="addClassBtn" style="border-color:#2E75B6;color:#2E75B6">クラスを追加</button>
+        </div>
+        <div style="font-size:11px;color:#888;margin-top:4px">A・Bクラスは削除できません。開始済み・参加者がいるクラスは削除できません。</div>
       </div>
-    </div>
-    <!-- CLASS-VARIABLE-001 (CV-1): クラス管理UI。state.classes を runtime で追加/改名/削除する。
-         A/B はアプリ既定クラス（normalizeClasses が読込毎に必ず補完するため）削除不可。
-         renderClassManager() が #class-manager-list を描画し、追加は #addClassBtn / #inp-new-class。
-         登録プルダウン inp-class は populateClassSelect() が state.classes 駆動で生成する。 -->
-    <div class="section" id="class-manager-section">
-      <h2>クラスを管理する</h2>
-      <div id="class-manager-list" style="margin-bottom:8px"></div>
-      <div class="flex">
-        <input type="text" id="inp-new-class" placeholder="クラス名（例: Cクラス）" style="width:200px" autocomplete="off" maxlength="20">
-        <button type="button" class="btn-sm" id="addClassBtn" style="border-color:#2E75B6;color:#2E75B6">クラスを追加</button>
+      <!-- ROUNDS-CONFIG-001: 回戦数の設定（既定4）。ペアリング/順位/星取/報告書は全て state.rounds を参照するため、
+           ここを変えるだけで N 回戦制に対応する。開始後(state.started)は誤操作防止のため変更不可＝renderRoundsControl が
+           value/disabled/注記を毎描画同期し、選択肢(3/4/5＋現在値)も renderRoundsControl が動的生成する。 -->
+      <div class="section" id="rounds-config-section">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <h2 style="margin:0;font-size:15px">回戦数（全クラス既定）</h2>
+          <select id="inp-rounds" style="font-size:16px;padding:4px 8px"></select>
+          <span id="rounds-config-note" style="font-size:11px;color:#888"></span>
+        </div>
+        <div style="font-size:11px;color:#888;margin-top:6px">クラスごとに変えたい場合は、上の「クラスを管理する」の各クラスで個別に設定できます。</div>
       </div>
-      <div style="font-size:11px;color:#888;margin-top:4px">A・Bクラスは削除できません。開始済み・参加者がいるクラスは削除できません。</div>
-    </div>
-    <!-- ROUNDS-CONFIG-001: 回戦数の設定（既定4）。ペアリング/順位/星取/報告書は全て state.rounds を参照するため、
-         ここを変えるだけで N 回戦制に対応する。開始後(state.started)は誤操作防止のため変更不可＝renderRoundsControl が
-         value/disabled/注記を毎描画同期し、選択肢(3/4/5＋現在値)も renderRoundsControl が動的生成する。 -->
-    <div class="section" id="rounds-config-section">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <h2 style="margin:0;font-size:15px">回戦数（全クラス既定）</h2>
-        <select id="inp-rounds" style="font-size:16px;padding:4px 8px"></select>
-        <span id="rounds-config-note" style="font-size:11px;color:#888"></span>
-      </div>
-      <div style="font-size:11px;color:#888;margin-top:6px">クラスごとに変えたい場合は、上の「クラスを管理する」の各クラスで個別に設定できます。</div>
-    </div>
+    </details>
     <div class="section">
       <div style="display:flex;align-items:center;gap:8px">
         <h2 style="margin:0">参加者を登録する</h2>
         <button type="button" id="helpBtnReg" class="btn-sm" title="登録・受付の使い方をヘルプで表示します" aria-label="登録・受付ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
       </div>
+      <!-- REG-TAB-IA-001 / PP-FULLSCREEN-001: 常連の主経路＝名簿から受付（全画面ピッカー）。登録セクション先頭の primary。
+           #past-participants-section / #ppToggleBtn / #pp-summary の id は温存（renderPastParticipantsPanel が
+           マスタ空なら section 非表示・件数を #pp-summary に同期／bindPastParticipantsToggle が openPpFullscreen へ結線＝全て無改変）。 -->
+      <div id="past-participants-section" style="display:none;margin:10px 0 6px">
+        <button type="button" class="btn-primary" id="ppToggleBtn" style="width:100%">📋 名簿から受付（過去参加者から選ぶ）<span id="pp-summary" style="font-weight:400;font-size:12px;opacity:.85;margin-left:6px"></span></button>
+      </div>
+      <div style="font-size:11px;color:#888;margin:0 0 4px">名簿にない新規の方は下の欄で手入力:</div>
       <div class="flex">
         <input type="text" id="inp-name" placeholder="氏名を入力" style="width:150px" autocomplete="off">
         <select id="inp-class">
@@ -2962,6 +2970,263 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   return html;
 }
 
+// ============================================================
+// PP-DENSE-MODE-001 (S2・作者FB 2026-07-02・方式X「追加先モード」承認済): 全画面ピッカーの高密度表示。
+//   - sticky モードバーで「受付するクラス」を選び、名前セルをタップ＝そのクラスで即受付（confirm 無し＝
+//     追加は可逆操作のため N1 対象外。誤タップは済セル再タップ→シートの「受付を取り消す」で復旧）。
+//   - ふりがな昇順の安定した1本リスト＋50音見出し（3セクション分割は廃止＝受付が進んでも名前の位置が
+//     動かない）。2列グリッドで約20名/画面。ふりがな無しは「他」見出しに集約。
+//   - 済セルはクラス色＋✓表示のまま同じ位置に残る。再タップで「クラス変更/受付取消」シート。
+//   - 検索・50音タブ・クイックフィルタ（低頻度）は 🔍 details に格納（id/bind は既存のまま流用）。
+//   旧 buildPastParticipantsPanelHtml / renderPpRow 系は GOLDEN・回帰資産として無改変で温存（UI 未結線化）。
+var _ppDenseCls=null;
+// L3 P1-b: 🔍 検索 details の開閉状態（memory-only）。再描画で閉じ戻さないために保持する。
+var _ppSearchOpen=false;
+var PP_DENSE_PALETTES=[
+  {bg:'#bbdefb',fg:'#0d47a1',bd:'#0d47a1',light:'#e3f2fd'},
+  {bg:'#ffe0b2',fg:'#5d4037',bd:'#e65100',light:'#fff3e0'},
+  {bg:'#c8e6c9',fg:'#1b5e20',bd:'#2e7d32',light:'#e8f5e9'},
+  {bg:'#e1bee7',fg:'#4a148c',bd:'#6a1b9a',light:'#f3e5f5'}
+];
+function ppDenseClsPalette(clsId){
+  var list=getRegistrationClassList();
+  for(var i=0;i<list.length;i++){ if(list[i].id===clsId)return PP_DENSE_PALETTES[i%PP_DENSE_PALETTES.length]; }
+  return PP_DENSE_PALETTES[0];
+}
+// L3 P1-a: addPlayerFromMaster / changePlayerClass は CV-2 未実装のため A/B 以外を hard reject する。
+//   モードバー/シートに受付できないクラスを出すと主導線が無言失敗するため、選択肢を受理可能クラスに限定する。
+//   CV-2（非A/B への追加）実装時はこのフィルタを外すだけで全クラス対応になる。
+function ppDenseSelectableClasses(){
+  var list=getRegistrationClassList();
+  var out=[];
+  for(var i=0;i<list.length;i++){ if(list[i].id==='A'||list[i].id==='B')out.push(list[i]); }
+  return out.length?out:list;
+}
+function ppDenseActiveCls(){
+  var list=ppDenseSelectableClasses();
+  for(var i=0;i<list.length;i++){ if(list[i].id===_ppDenseCls)return _ppDenseCls; }
+  return list.length?list[0].id:'A';
+}
+function ppDenseClsName(clsId){
+  var list=getRegistrationClassList();
+  for(var i=0;i<list.length;i++){ if(list[i].id===clsId)return list[i].name; }
+  return clsId+'クラス';
+}
+
+function _buildPpModeBarHtml(){
+  var active=ppDenseActiveCls();
+  var pal=ppDenseClsPalette(active);
+  var list=ppDenseSelectableClasses();
+  var allList=getRegistrationClassList();
+  var html='<div class="pp-mode-bar" style="background:'+pal.light+';border:1px solid '+pal.bd+';border-radius:8px;padding:8px 10px;margin-bottom:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">';
+  html+='<span style="font-size:12px;font-weight:600;color:'+pal.fg+';white-space:nowrap">受付するクラス:</span>';
+  for(var i=0;i<list.length;i++){
+    var c=list[i];var p=ppDenseClsPalette(c.id);var on=(c.id===active);
+    html+='<button type="button" class="pp-mode-btn" data-cls="'+escapeHtml(c.id)+'" style="min-height:40px;padding:6px 14px;border-radius:8px;font-size:15px;cursor:pointer;'
+      +(on?('background:'+p.bd+';color:#fff;border:1px solid '+p.bd+';font-weight:600'):'background:#fff;color:#444;border:1px solid #bbb')+'">'
+      +escapeHtml(c.name)+(on?' ✓':'')+'</button>';
+  }
+  // L3 P1-a: A/B 以外のクラスがあるときは手入力への誘導を明示（無言で選択肢から消さない）。
+  if(allList.length>list.length){
+    html+='<span style="font-size:11px;color:'+pal.fg+'">※A/B 以外は登録画面の手入力で受付</span>';
+  }
+  html+='<span style="margin-left:auto;font-size:11px;color:'+pal.fg+'">名前をタップで受付</span>';
+  html+='</div>';
+  return html;
+}
+
+// 全画面ピッカー本体（フィルタパイプラインは旧ビルダーと同一の helper を流用）。
+function buildPpDenseListHtml(master,filter,yomiRow,quickFilter){
+  var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
+  var query=filter||'';
+  var row=yomiRow||'all';
+  var qf=(quickFilter===QUICK_FILTER_RECENT_LAST||quickFilter===QUICK_FILTER_WITHIN_3MO||quickFilter===QUICK_FILTER_REGULAR||quickFilter===QUICK_FILTER_NO_YOMI)?quickFilter:null;
+  var qfApplied=applyQuickFilter(members,qf,todayYmd());
+  var filtered=[];
+  for(var i=0;i<qfApplied.length;i++){
+    var mm=qfApplied[i];
+    if(!matchesPastParticipantQuery(mm,query))continue;
+    if(row!=='all'){
+      var memberRow=getYomiInitialRow(normalizeYomi(mm.yomi));
+      if(memberRow!==row)continue;
+    }
+    filtered.push(mm);
+  }
+  var html=_buildPpModeBarHtml();
+  // L3 P1-b: 再描画（検索1文字ごと等）で details が閉じて検索が使えなくなる回帰を防ぐ＝
+  //   ユーザーが開いた状態（_ppSearchOpen・toggle で追従）またはフィルタ活性中は open を維持する。
+  var searchOpen=_ppSearchOpen||!!query||row!=='all'||!!qf;
+  html+='<details class="pp-search-details"'+(searchOpen?' open':'')+' style="margin-bottom:8px"><summary style="font-size:12px;color:#666;cursor:pointer;padding:4px 2px">🔍 検索・絞り込み（普段は不要）</summary>'+_buildPpControlsHtml(filter,row,qf)+'</details>';
+  if(members.length===0){
+    html+='<div style="color:#888;font-size:13px;padding:8px 0">支部マスタが空です。「マスタ」タブから過去大会を統合できます。</div>';
+    return html;
+  }
+  if(filtered.length===0){
+    html+='<div style="color:#888;font-size:13px;padding:8px 0">該当する参加者がいません。</div>';
+    return html;
+  }
+  // ふりがな昇順の安定した1本リスト（50音グループ→グループ内 yomi 昇順・「他」は氏名昇順で末尾）。
+  var groups={};
+  for(var gi=0;gi<filtered.length;gi++){
+    var gk=getYomiInitialRow(normalizeYomi(filtered[gi].yomi));
+    (groups[gk]=groups[gk]||[]).push(filtered[gi]);
+  }
+  var currentRegMap=_buildPpCurrentRegMap(state);
+  html+='<div class="pp-dense-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
+  for(var ti=0;ti<PP_YOMI_TAB_DEFS.length;ti++){
+    var td=PP_YOMI_TAB_DEFS[ti];
+    if(td.key==='all')continue;
+    var list=groups[td.key];
+    if(!list||list.length===0)continue;
+    list.sort(td.key==='other'?_ppCompareOtherRow:_ppCompareYomiRow);
+    html+='<div class="pp-kana-header" style="grid-column:1/-1;font-size:11px;font-weight:600;color:#556;background:#e9edf3;border-radius:4px;padding:2px 8px;margin-top:2px">'+escapeHtml(td.label)+'</div>';
+    for(var li=0;li<list.length;li++){
+      html+=_buildPpDenseCellHtml(list[li],currentRegMap[list[li].id]||null);
+    }
+  }
+  html+='</div>';
+  return html;
+}
+
+function _buildPpDenseCellHtml(fm,registeredCls){
+  var pal=registeredCls?ppDenseClsPalette(registeredCls):null;
+  var nameSafe=escapeHtml(fm.name||'');
+  var midSafe=escapeHtml(fm.id||'');
+  var badges='';
+  if(fm.last_class){
+    var lp=ppDenseClsPalette(fm.last_class);
+    badges+=' <span style="font-size:10px;background:'+lp.light+';color:'+lp.fg+';border-radius:4px;padding:0 4px;font-weight:400;vertical-align:1px">前'+escapeHtml(fm.last_class)+'</span>';
+  }
+  if(fm.member==='other'){
+    badges+=' <span style="font-size:10px;background:#f1efe8;color:#5f5e5a;border-radius:4px;padding:0 4px;font-weight:400;vertical-align:1px">支部外</span>';
+  }
+  var sub;
+  if(registeredCls){
+    sub='✓ 受付済（'+escapeHtml(ppDenseClsName(registeredCls))+'）'+(fm.yomi?('・'+escapeHtml(normalizeYomi(fm.yomi))):'');
+  }else{
+    sub=fm.yomi?escapeHtml(normalizeYomi(fm.yomi)):'（ふりがな未登録）';
+  }
+  var style='text-align:left;border-radius:8px;padding:6px 8px;min-height:52px;cursor:pointer;'
+    +(registeredCls?('background:'+pal.bg+';border:1px solid '+pal.bd):'background:#fff;border:1px solid #c9d2dd');
+  var html='<button type="button" class="pp-cell" data-mid="'+midSafe+'" aria-label="'+nameSafe+(registeredCls?'（受付済）':'を受付')+'" style="'+style+'">';
+  html+='<div style="font-size:16px;font-weight:500;color:'+(registeredCls?pal.fg:'#222')+';overflow-wrap:anywhere;line-height:1.3">'+nameSafe+badges+'</div>';
+  html+='<div style="font-size:11px;color:'+(registeredCls?pal.fg:'#888')+';margin-top:1px">'+sub+'</div>';
+  html+='</button>';
+  return html;
+}
+
+// タップ処理: 未受付＝追加先モードのクラスで即受付（confirm 無し・toast＋済セル化が即時フィードバック）。
+//   受付済＝シート（クラス変更/受付取消/キャンセル）＝silent toggle にしない（誤連打での消失事故防止）。
+function handlePpDenseTap(memberId){
+  var cur=_buildPpCurrentRegMap(state)[memberId]||null;
+  if(cur){ openPpDenseActionSheet(memberId,cur); return; }
+  var cls=ppDenseActiveCls();
+  var master=loadBranchMaster();
+  var member=null;
+  if(master&&Array.isArray(master.members)){
+    for(var mi=0;mi<master.members.length;mi++){ if(master.members[mi]&&master.members[mi].id===memberId){member=master.members[mi];break;} }
+  }
+  if(!member){alert('該当する参加者が見つかりません');return;}
+  if(member.deleted===true){alert('この参加者は削除済みのため追加できません');return;}
+  var r=addPlayerFromMaster(memberId,cls,master,state);
+  if(!r||!r.success){
+    var err=r&&r.error;
+    if(err==='duplicate_name')alert('同じ名前の参加者がいます。別人の場合は手入力で区別してください');
+    else if(err==='duplicate_member')alert('この参加者はすでに登録されています');
+    else if(err==='invalid_class')alert('このクラスへの受付は現在未対応です。登録画面の手入力をご利用ください');
+    else alert('受付に失敗しました');
+    return;
+  }
+  renderRegList();save();
+  var inp=document.getElementById('pp-search');
+  renderPastParticipantsPanel(inp?inp.value:'');
+  showToast('['+r.player.name+'] を '+ppDenseClsName(cls)+'で受付しました');
+  if(!verifyPlayerPersistedById(r.player.id,cls,r.player.name)){
+    notifySaveWarning({
+      message:'参加者は登録されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-003b: handlePpDenseTap (add) の保存が確認できませんでした (player='+r.player.id+', cls='+cls+', name='+r.player.name+')',
+      callsiteId:'SAVE-003b-handlePpDenseTap-add',
+      kind:'save-verify',
+      aggregateKey:'save-verify:past',
+      severity:'warn'
+    });
+  }
+}
+
+// 受付済セルの再タップ用シート。変更は既存 handlePastParticipantClassAdd（confirm→changePlayerClass）、
+//   取消は既存 removePlayer（ガード＋confirm）を流用＝新規の破壊ロジックを作らない。
+function openPpDenseActionSheet(memberId,currentCls){
+  var existing=document.getElementById('pp-dense-sheet');
+  if(existing&&existing.remove)existing.remove();
+  var master=loadBranchMaster();
+  var name='';
+  if(master&&Array.isArray(master.members)){
+    for(var i=0;i<master.members.length;i++){ if(master.members[i]&&master.members[i].id===memberId){name=master.members[i].name||'';break;} }
+  }
+  var html='<div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:320px">';
+  html+='<div style="font-size:15px;font-weight:600;color:#1F3864;margin-bottom:4px">'+escapeHtml(name)+'</div>';
+  html+='<div style="font-size:12px;color:#666;margin-bottom:12px">受付済（'+escapeHtml(ppDenseClsName(currentCls))+'）</div>';
+  // L3 P1-a: 変更先も受理可能クラス（CV-2 まで A/B）に限定＝changePlayerClass の hard reject を UI に出さない。
+  var list=ppDenseSelectableClasses();
+  for(var ci=0;ci<list.length;ci++){
+    if(list[ci].id===currentCls)continue;
+    html+='<button type="button" class="pp-sheet-change" data-cls="'+escapeHtml(list[ci].id)+'" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">'+escapeHtml(list[ci].name)+'へ変更</button>';
+  }
+  html+='<button type="button" id="pp-sheet-remove" class="btn-danger" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border-radius:8px;padding:8px 12px;font-size:14px">受付を取り消す（一覧から削除）</button>';
+  html+='<button type="button" id="pp-sheet-cancel" style="display:block;width:100%;min-height:44px;border:1px solid #ccc;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">キャンセル</button>';
+  html+='</div>';
+  var modal=document.createElement('div');
+  modal.id='pp-dense-sheet';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9700;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=html;
+  document.body.appendChild(modal);
+  function closeSheet(){ var m=document.getElementById('pp-dense-sheet'); if(m&&m.remove)m.remove(); }
+  var chBtns=modal.querySelectorAll('.pp-sheet-change');
+  for(var bi=0;bi<chBtns.length;bi++){
+    chBtns[bi].addEventListener('click',(function(c){return function(){ closeSheet(); handlePastParticipantClassAdd(memberId,c); };})(chBtns[bi].getAttribute('data-cls')));
+  }
+  var rmBtn=document.getElementById('pp-sheet-remove');
+  if(rmBtn)rmBtn.addEventListener('click',function(){
+    closeSheet();
+    var pid=null;var arr=(state.players&&state.players[currentCls])||[];
+    for(var pi=0;pi<arr.length;pi++){ if(arr[pi]&&arr[pi].member_id===memberId){pid=arr[pi].id;break;} }
+    if(pid==null){alert('該当する受付が見つかりません');return;}
+    removePlayer(pid,currentCls);
+    var inp=document.getElementById('pp-search');
+    renderPastParticipantsPanel(inp?inp.value:'');
+  });
+  var caBtn=document.getElementById('pp-sheet-cancel');
+  if(caBtn)caBtn.addEventListener('click',closeSheet);
+  modal.addEventListener('click',function(e){ if(e&&e.target===modal)closeSheet(); });
+}
+
+function bindPpDenseEvents(){
+  // 🔍 details 内の検索/50音タブ/クイックフィルタは既存 bind をそのまま流用（.pp-add-btn は不在＝no-op）。
+  bindPastParticipantsPanelEvents();
+  // L3 P1-b: ユーザーの開閉操作を追従（toggle）→ 再描画後も open 状態を維持できる。
+  var sd=document.querySelector?document.querySelector('.pp-search-details'):null;
+  if(sd)sd.addEventListener('toggle',function(){ _ppSearchOpen=!!sd.open; });
+  var modeBtns=document.querySelectorAll('.pp-mode-btn');
+  for(var i=0;i<modeBtns.length;i++){
+    modeBtns[i].addEventListener('click',function(e){
+      var t=e.currentTarget||e.target;
+      var c=t&&t.getAttribute?t.getAttribute('data-cls'):null;
+      if(!c)return;
+      _ppDenseCls=c;
+      var inp=document.getElementById('pp-search');
+      renderPastParticipantsPanel(inp?inp.value:'');
+    });
+  }
+  var cells=document.querySelectorAll('.pp-cell');
+  for(var ci=0;ci<cells.length;ci++){
+    cells[ci].addEventListener('click',function(e){
+      var t=e.currentTarget||e.target;
+      var mid=t&&t.getAttribute?t.getAttribute('data-mid'):null;
+      if(mid)handlePpDenseTap(mid);
+    });
+  }
+}
+
 function bindPastParticipantsPanelEvents(){
   var input=document.getElementById('pp-search');
   if(input){
@@ -3054,7 +3319,8 @@ function handlePastParticipantClassAdd(memberId,cls){
     var ok2=confirm(memberName+'さんは現在 '+existingCls+'クラス に登録されています。\n'+cls+'クラス に変更しますか?');
     if(!ok2)return;
     var r2=changePlayerClass(memberId,cls,master,state);
-    if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');return;}
+    // L3 P2: 全画面ビュー中は #reg-msg が背面で見えないため、失敗も blocking alert で確実に伝える。
+    if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');if(typeof isPpFullscreenOpen==='function'&&isPpFullscreenOpen())alert('クラス変更に失敗しました');return;}
     saveBranchMaster(master);
     // MASTER-V2-LASTCLASS S03: 既登録者クラス変更分岐限定の master.last_class 保存検証。
     // changePlayerClass が master.members[i].last_class を新クラスに更新済み（line 1250）。
@@ -3316,14 +3582,23 @@ function renderPastParticipantsPanel(filter){
   if(members.length===0){section.style.display='none';return;}
   section.style.display='block';
   var summary=document.getElementById('pp-summary');
-  if(summary)summary.textContent='登録 '+members.length+'名';
-  // PP-FULLSCREEN-001: 全画面ビューのヘッダにも件数を同期（存在しない環境では無視）。
+  if(summary)summary.textContent='名簿 '+members.length+'名';
+  // PP-DENSE-MODE-001: 全画面ヘッダには受付済みの人数（クラス別＋計）を常時表示（作者要望④の要約）。
   var summaryFs=document.getElementById('pp-summary-fs');
-  if(summaryFs)summaryFs.textContent='登録 '+members.length+'名';
+  if(summaryFs){
+    var clsList_fs=getRegistrationClassList();var parts_fs=[];var total_fs=0;
+    for(var fi=0;fi<clsList_fs.length;fi++){
+      var n_fs=((state&&state.players&&state.players[clsList_fs[fi].id])||[]).length;
+      total_fs+=n_fs;
+      parts_fs.push(clsList_fs[fi].name.replace('クラス','')+' '+n_fs);
+    }
+    summaryFs.textContent='受付 '+parts_fs.join('・')+'｜計 '+total_fs+'名';
+  }
   var panel=document.getElementById('ppPanel');
   if(!panel)return;
-  panel.innerHTML=buildPastParticipantsPanelHtml(master,filter||'',ppYomiRow,ppQuickFilter);
-  bindPastParticipantsPanelEvents();
+  // PP-DENSE-MODE-001: 描画は高密度ビュー（旧 buildPastParticipantsPanelHtml は回帰資産として温存・UI 未結線）。
+  panel.innerHTML=buildPpDenseListHtml(master,filter||'',ppYomiRow,ppQuickFilter);
+  bindPpDenseEvents();
 }
 
 // PP-FULLSCREEN-001: 全画面ビューの open/close（#scoreboard-view と同型の fixed overlay・DOM は静的）。
@@ -5587,7 +5862,8 @@ function handleSuggestClassAdd(memberId,cls){
     var ok2=confirm(memberName+'さんは現在 '+existingCls+'クラス に登録されています。\n'+cls+'クラス に変更しますか?');
     if(!ok2)return;
     var r2=changePlayerClass(memberId,cls,master,state);
-    if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');return;}
+    // L3 P2: 全画面ビュー中は #reg-msg が背面で見えないため、失敗も blocking alert で確実に伝える。
+    if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');if(typeof isPpFullscreenOpen==='function'&&isPpFullscreenOpen())alert('クラス変更に失敗しました');return;}
     saveBranchMaster(master);
     // MASTER-V2-LASTCLASS S05: 既登録者クラス変更分岐限定の master.last_class 保存検証。
     // changePlayerClass が master.members[i].last_class を新クラスに更新済み（line 1250）。
