@@ -589,7 +589,8 @@
   }
 
   function fetchMembersForEdit(client, clubId) {
-    return client.from('members').select('member_id,name,yomi,branch,deleted_at').eq('club_id', clubId).then(function (res) {
+    // APP-UX-002/CLOUD-MEMBER-FIELDS-001: 明示列挙→'*'（member_kind/grade/city などスキーマ追補に自動追従）。
+    return client.from('members').select('*').eq('club_id', clubId).then(function (res) {
       if (res.error) return { ok:false, message:'名簿の読み込みに失敗しました', members:[] };
       return { ok:true, members: res.data || [] };
     });
@@ -699,6 +700,106 @@
   function memberDeleteConfirmMessage(name) {
     var nm = (typeof name === 'string' && name) ? name : 'この会員';
     return '「' + nm + '」を論理削除します。よろしいですか？\n（削除後も「復元」で元に戻せます）';
+  }
+
+  // ===========================================================================
+  // APP-UX-002 (作者依頼 2026-07-02): 名簿（クラウド・編集）を当日アプリの MASTER-SHEET と同型の
+  //   スプレッドシートへ刷新。行の 編集/論理削除 ボタンを全廃＝セルをタップで直接編集
+  //   （氏名/ふりがな・市町村・支部＝入力欄、支部員・会費＝タップで切替）、削除/復元は
+  //   行選択（checkbox）→ツールバー。ふりがなは氏名の上（ルビ位置）。
+  //   旧 buildMemberEditRowHtml/buildMemberEditPanelHtml/updateMember/bindMemberEditor は
+  //   回帰資産として温存（UI 未結線・既存テストの対象のまま）。
+  // ===========================================================================
+  function memberKindBadgeHtml(kind) {
+    return (kind === 'other')
+      ? '<span class="mk-badge mk-other">他</span>'
+      : '<span class="mk-badge mk-member">支部員</span>';
+  }
+  function gradeShortLabel(g) { return g === 'chu' ? '中学' : (g === 'josei' ? '女性' : '一般'); }
+  function buildMemberSheetRowHtml(m, selected) {
+    var mid = esc((m && m.member_id) || '');
+    var isDel = !!(m && m.deleted_at);
+    var yomi = (m && m.yomi) ? esc(m.yomi) : '';
+    var yomiHtml = yomi
+      ? '<span class="ms-yomi">' + yomi + '</span>'
+      : '<span class="ms-yomi ms-yomi-missing">（ふりがな未入力）</span>';
+    var h = '<tr class="ms-row' + (isDel ? ' ms-row-deleted' : '') + '" data-id="' + mid + '">';
+    h += '<td class="ms-check-cell"><input type="checkbox" class="ms-check" data-id="' + mid + '"' + (selected ? ' checked' : '') + ' aria-label="' + esc((m && m.name) || '') + 'を選択"></td>';
+    h += '<td' + (isDel ? '' : ' class="ms-name-cell" data-id="' + mid + '" title="タップで氏名・ふりがなを編集"') + ' style="text-align:left">' + yomiHtml + '<span class="ms-name">' + esc((m && m.name) || '') + '</span>' + (isDel ? ' <span class="ms-del-tag">（削除済）</span>' : '') + '</td>';
+    h += '<td class="ms-c' + (isDel ? '' : ' ms-kind-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで切替"') + '>' + memberKindBadgeHtml(m && m.member_kind) + '</td>';
+    h += '<td class="ms-c' + (isDel ? '' : ' ms-grade-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで切替"') + '>' + esc(gradeShortLabel(m && m.grade)) + '</td>';
+    h += '<td class="ms-c' + (isDel ? '' : ' ms-city-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで編集"') + '>' + esc((m && m.city) || '－') + '</td>';
+    h += '<td class="ms-c' + (isDel ? '' : ' ms-branch-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで編集"') + '>' + esc((m && m.branch) || '－') + '</td>';
+    h += '</tr>';
+    return h;
+  }
+  function buildMemberSheetHtml(members, selectedMap) {
+    selectedMap = selectedMap || {};
+    var list = sortMembersForEdit(members);
+    var selLive = [], selDel = [];
+    for (var i = 0; i < list.length; i++) {
+      var m = list[i];
+      if (m && selectedMap[m.member_id]) { (m.deleted_at ? selDel : selLive).push(m.member_id); }
+    }
+    var activeCount = list.filter(function (mm) { return !(mm && mm.deleted_at); }).length;
+    var h = '';
+    h += '<form id="memberAddForm" class="member-add" autocomplete="off">' +
+      '<input type="text" id="memberAddName" name="name" placeholder="氏名（必須）" required>' +
+      '<input type="text" id="memberAddYomi" name="yomi" placeholder="ふりがな">' +
+      '<input type="text" id="memberAddBranch" name="branch" placeholder="支部">' +
+      '<button type="submit" id="memberAddBtn">追加</button>' +
+      '</form>';
+    h += '<p class="muted">有効 ' + activeCount + ' 名／全 ' + list.length + ' 名。セルをタップで編集／削除・復元は左の□で行を選択（論理削除＝復元できます）。</p>';
+    var selTotal = selLive.length + selDel.length;
+    if (selTotal > 0) {
+      h += '<div class="ms-toolbar" id="msToolbar"><span>' + selTotal + '名 選択中</span>';
+      if (selLive.length > 0) h += '<button type="button" id="msDeleteBtn" class="ms-danger">論理削除（' + selLive.length + '名）</button>';
+      if (selDel.length > 0) h += '<button type="button" id="msRestoreBtn">復元（' + selDel.length + '名）</button>';
+      h += '<button type="button" id="msClearBtn">選択解除</button></div>';
+    }
+    if (!list.length) {
+      h += '<p class="muted">名簿が空です。上のフォームから追加できます。</p>';
+    } else {
+      h += '<div class="ms-wrap"><table class="ms-table"><thead><tr>' +
+        '<th class="ms-th-check">選択</th><th class="ms-th-name">氏名（ふりがな）</th><th>支部員</th><th>会費</th><th>市町村</th><th>支部</th>' +
+        '</tr></thead><tbody>';
+      for (var r = 0; r < list.length; r++) { h += buildMemberSheetRowHtml(list[r], !!(list[r] && selectedMap[list[r].member_id])); }
+      h += '</tbody></table></div>';
+    }
+    h += '<p id="memberEditMsg" class="msg" role="status"></p>';
+    return h;
+  }
+  function memberBulkConfirmMessage(count, namesPreview, deleted) {
+    return deleted
+      ? (count + '名（' + namesPreview + '）を論理削除します。名簿・当日アプリの取得先から非表示になります（復元できます）。\n\nよろしいですか？')
+      : (count + '名（' + namesPreview + '）を復元します。名簿に再表示されます。\n\nよろしいですか？');
+  }
+  // 部分更新（patch の提供列のみ update・name は空拒否・空文字は null 化）。
+  function updateMemberFields(client, clubId, memberId, patch) {
+    patch = patch || {};
+    if (!clubId || !memberId) return Promise.resolve({ ok: false, message: '対象を特定できません。' });
+    if (Object.prototype.hasOwnProperty.call(patch, 'name')) {
+      var nm = (patch.name || '').trim();
+      if (!nm) return Promise.resolve({ ok: false, message: '氏名は空にできません。' });
+      patch.name = nm;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'yomi')) patch.yomi = (patch.yomi || '').trim() || null;
+    if (Object.prototype.hasOwnProperty.call(patch, 'city')) patch.city = (patch.city || '').trim() || null;
+    if (Object.prototype.hasOwnProperty.call(patch, 'branch')) patch.branch = (patch.branch || '').trim() || null;
+    return client.from('members').update(patch).eq('club_id', clubId).eq('member_id', memberId).then(function (res) {
+      if (res && res.error) return { ok: false, message: '更新できませんでした: ' + res.error.message };
+      return { ok: true, message: '更新しました。' };
+    });
+  }
+  // まとめて論理削除/復元（.in で1リクエスト・冪等）。
+  function setMembersDeletedBulk(client, clubId, memberIds, deleted) {
+    var ids = Array.isArray(memberIds) ? memberIds.filter(function (x) { return !!x; }) : [];
+    if (!clubId || !ids.length) return Promise.resolve({ ok: false, message: '対象を特定できません。' });
+    var patch = { deleted_at: deleted ? new Date().toISOString() : null };
+    return client.from('members').update(patch).eq('club_id', clubId).in('member_id', ids).then(function (res) {
+      if (res && res.error) return { ok: false, message: (deleted ? '削除' : '復元') + 'できませんでした: ' + res.error.message };
+      return { ok: true, message: ids.length + '名を' + (deleted ? '論理削除しました（復元できます）' : '復元しました') + '。' };
+    });
   }
 
   // ===========================================================================
@@ -982,10 +1083,14 @@
     // ---- B-5: 名簿編集（#cloudMembers を読取専用から編集可能パネルへ昇格）----
     var membersForEdit = [];
     var editingMemberId = null;
+    // APP-UX-002: 描画はシート型（旧 buildMemberEditPanelHtml/bindMemberEditor は回帰資産として温存・未結線）。
+    var memberSheetSelected = {};
+    var msEditing = null; // {id,kind}（インライン編集中のセル）
     function renderMemberEditor() {
       var el = byId('cloudMembers'); if (!el) return;
-      el.innerHTML = buildMemberEditPanelHtml(membersForEdit, editingMemberId);
-      bindMemberEditor();
+      msEditing = null;
+      el.innerHTML = buildMemberSheetHtml(membersForEdit, memberSheetSelected);
+      bindMemberSheet();
     }
     function loadMemberEditor() {
       if (!lastSummary) return;
@@ -996,6 +1101,135 @@
       });
     }
     function reloadMembers() { editingMemberId = null; loadMemberEditor(); }
+    // APP-UX-002: シートの bind（IME 変換ガードは当日アプリ MASTER-SHEET-004 と同方針）。
+    function msFind(id) { for (var i = 0; i < membersForEdit.length; i++) { var m = membersForEdit[i]; if (m && m.member_id === id) return m; } return null; }
+    function msCommitPatch(id, patch) {
+      setMsg('memberEditMsg', '保存中…');
+      updateMemberFields(client, lastSummary.clubId, id, patch).then(function (r) {
+        msEditing = null;
+        setMsg('memberEditMsg', r.message);
+        if (r.ok) reloadMembers(); else renderMemberEditor();
+      });
+    }
+    function msBindEditorInputs(cell, commit) {
+      var composing = false;
+      var inputs = cell.querySelectorAll ? cell.querySelectorAll('input') : [];
+      function onComp(on) { return function () { composing = on; }; }
+      function onKey(e) {
+        if (composing || (e && e.isComposing) || (e && e.keyCode === 229)) return;
+        var k = e && (e.key || e.keyCode);
+        if (k === 'Enter' || k === 13) { if (e && e.preventDefault) e.preventDefault(); commit(); }
+        else if (k === 'Escape' || k === 27) { msEditing = null; renderMemberEditor(); }
+      }
+      Array.prototype.forEach.call(inputs, function (inp) {
+        inp.addEventListener('compositionstart', onComp(true));
+        inp.addEventListener('compositionend', onComp(false));
+        inp.addEventListener('keydown', onKey);
+      });
+      cell.addEventListener('focusout', function () {
+        setTimeout(function () {
+          try {
+            if (composing) return;
+            if (!msEditing) return;
+            if (cell.contains && doc.activeElement && cell.contains(doc.activeElement)) return;
+            commit();
+          } catch (e2) {}
+        }, 0);
+      });
+      if (inputs && inputs.length && inputs[inputs.length - 1].focus) inputs[inputs.length - 1].focus();
+    }
+    function bindMemberSheet() {
+      var addForm = byId('memberAddForm');
+      if (addForm) addForm.addEventListener('submit', function (e) {
+        if (e && e.preventDefault) e.preventDefault();
+        var fields = { name: (byId('memberAddName') || {}).value || '',
+                       yomi: (byId('memberAddYomi') || {}).value || '',
+                       branch: (byId('memberAddBranch') || {}).value || '' };
+        setMsg('memberEditMsg', '追加中…');
+        insertMember(client, lastSummary.clubId, fields).then(function (r) {
+          setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
+        });
+      });
+      if (!doc || !doc.querySelectorAll) return;
+      function each(sel, fn) { var n = doc.querySelectorAll(sel); if (!n) return; Array.prototype.forEach.call(n, fn); }
+      each('.ms-check', function (cb) { cb.addEventListener('change', function () {
+        var id = cb.getAttribute('data-id'); if (!id) return;
+        if (cb.checked) memberSheetSelected[id] = true; else delete memberSheetSelected[id];
+        renderMemberEditor();
+      }); });
+      var clearBtn = byId('msClearBtn');
+      if (clearBtn) clearBtn.addEventListener('click', function () { memberSheetSelected = {}; renderMemberEditor(); });
+      function selectedSplit() {
+        var live = [], del = [], names = [];
+        for (var i = 0; i < membersForEdit.length; i++) {
+          var m = membersForEdit[i];
+          if (m && memberSheetSelected[m.member_id]) {
+            (m.deleted_at ? del : live).push(m.member_id);
+            if (names.length < 5) names.push(m.name || '');
+          }
+        }
+        return { live: live, del: del, preview: names.join('、') + ((live.length + del.length) > 5 ? ' 他' : '') };
+      }
+      var delBtn = byId('msDeleteBtn');
+      if (delBtn) delBtn.addEventListener('click', function () {
+        var s = selectedSplit(); if (!s.live.length) return;
+        var ask = (typeof global.confirm === 'function') ? global.confirm : null;
+        if (ask && !ask(memberBulkConfirmMessage(s.live.length, s.preview, true))) return;
+        setMsg('memberEditMsg', '削除中…');
+        setMembersDeletedBulk(client, lastSummary.clubId, s.live, true).then(function (r) {
+          if (r.ok) { for (var i = 0; i < s.live.length; i++) delete memberSheetSelected[s.live[i]]; }
+          setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
+        });
+      });
+      var resBtn = byId('msRestoreBtn');
+      if (resBtn) resBtn.addEventListener('click', function () {
+        var s = selectedSplit(); if (!s.del.length) return;
+        var ask = (typeof global.confirm === 'function') ? global.confirm : null;
+        if (ask && !ask(memberBulkConfirmMessage(s.del.length, s.preview, false))) return;
+        setMsg('memberEditMsg', '復元中…');
+        setMembersDeletedBulk(client, lastSummary.clubId, s.del, false).then(function (r) {
+          if (r.ok) { for (var i = 0; i < s.del.length; i++) delete memberSheetSelected[s.del[i]]; }
+          setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
+        });
+      });
+      each('.ms-name-cell', function (cell) { cell.addEventListener('click', function (e) {
+        if (e && e.target && e.target.tagName === 'INPUT') return;
+        if (msEditing) return;
+        var id = cell.getAttribute('data-id'); var m = msFind(id); if (!m) return;
+        msEditing = { id: id, kind: 'name' };
+        cell.innerHTML = '<input type="text" class="ms-in" id="msEditYomi" value="' + esc(m.yomi || '') + '" placeholder="ふりがな">' +
+          '<input type="text" class="ms-in ms-in-name" id="msEditName" value="' + esc(m.name || '') + '" placeholder="氏名">';
+        msBindEditorInputs(cell, function () {
+          msCommitPatch(id, { name: (byId('msEditName') || {}).value || '', yomi: (byId('msEditYomi') || {}).value || '' });
+        });
+      }); });
+      function bindTextCell(cls, field, elId) {
+        each(cls, function (cell) { cell.addEventListener('click', function (e) {
+          if (e && e.target && e.target.tagName === 'INPUT') return;
+          if (msEditing) return;
+          var id = cell.getAttribute('data-id'); var m = msFind(id); if (!m) return;
+          msEditing = { id: id, kind: field };
+          cell.innerHTML = '<input type="text" class="ms-in" id="' + elId + '" value="' + esc(m[field] || '') + '">';
+          msBindEditorInputs(cell, function () {
+            var patch = {}; patch[field] = (byId(elId) || {}).value || '';
+            msCommitPatch(id, patch);
+          });
+        }); });
+      }
+      bindTextCell('.ms-city-cell', 'city', 'msEditCity');
+      bindTextCell('.ms-branch-cell', 'branch', 'msEditBranch');
+      each('.ms-kind-cell', function (cell) { cell.addEventListener('click', function () {
+        if (msEditing) return;
+        var id = cell.getAttribute('data-id'); var m = msFind(id); if (!m) return;
+        msCommitPatch(id, { member_kind: (m.member_kind === 'other') ? 'member' : 'other' });
+      }); });
+      each('.ms-grade-cell', function (cell) { cell.addEventListener('click', function () {
+        if (msEditing) return;
+        var id = cell.getAttribute('data-id'); var m = msFind(id); if (!m) return;
+        var cur = (m.grade === 'chu' || m.grade === 'josei') ? m.grade : 'ippan';
+        msCommitPatch(id, { grade: (cur === 'ippan') ? 'chu' : (cur === 'chu' ? 'josei' : 'ippan') });
+      }); });
+    }
     function bindMemberEditor() {
       var addForm = byId('memberAddForm');
       if (addForm) addForm.addEventListener('submit', function (e) {
@@ -1231,6 +1465,14 @@
     buildMemberEditRowHtml: buildMemberEditRowHtml,
     buildMemberEditPanelHtml: buildMemberEditPanelHtml,
     memberDeleteConfirmMessage: memberDeleteConfirmMessage,
+    // APP-UX-002（シート型名簿）
+    memberKindBadgeHtml: memberKindBadgeHtml,
+    gradeShortLabel: gradeShortLabel,
+    buildMemberSheetRowHtml: buildMemberSheetRowHtml,
+    buildMemberSheetHtml: buildMemberSheetHtml,
+    memberBulkConfirmMessage: memberBulkConfirmMessage,
+    updateMemberFields: updateMemberFields,
+    setMembersDeletedBulk: setMembersDeletedBulk,
     // B-4 移行取り込み（#343）
     validateImportPayload: validateImportPayload,
     resolveImportMembers: resolveImportMembers,

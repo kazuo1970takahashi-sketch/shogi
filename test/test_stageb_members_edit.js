@@ -161,7 +161,8 @@ const CLUB = 'cccccccc-0000-0000-0000-000000000001';
     var c = makeClient({ selectData:[{ member_id:'m1', name:'甲', yomi:'こう', branch:'沼津', deleted_at:null }] });
     var r = await A.fetchMembersForEdit(c, CLUB);
     assert(r.ok===true && r.members.length===1, 'F1 ok 経路で members 返却');
-    assert(c._calls.select[0].cols.indexOf('deleted_at')>=0 && c._calls.select[0].cols.indexOf('branch')>=0, 'F2 select に deleted_at と branch を含む（編集用）');
+    // APP-UX-002/CLOUD-MEMBER-FIELDS-001: 明示列挙→'*'（member_kind/grade/city などスキーマ追補に自動追従）。
+    assert(c._calls.select[0].cols==='*', 'F2 select は *（deleted_at/branch/member_kind/grade/city を含む全列）');
     assert(c._calls.select[0].filters.club_id===CLUB, 'F3 club_id で限定');
     var c2 = makeClient({ selectError:'rls' });
     var r2 = await A.fetchMembersForEdit(c2, CLUB);
@@ -187,6 +188,54 @@ const CLUB = 'cccccccc-0000-0000-0000-000000000001';
     await form._listeners.submit[0]({ preventDefault(){} });
     await new Promise(function(r){ setTimeout(r, 0); });
     assert(client._calls.insert.length===1 && client._calls.insert[0].payload.name==='新規 花子', 'C2 submit で members.insert（trim 済 name）');
+  })();
+
+  // ===================================================== S. APP-UX-002 シート型名簿
+  await (async function(){
+    var row = A.buildMemberSheetRowHtml({ member_id:'m1', name:'架空太郎', yomi:'かくうたろう', member_kind:'other', grade:'josei', city:'沼津市', branch:'沼津', deleted_at:null }, false);
+    assert(row.indexOf('かくうたろう')>=0 && row.indexOf('かくうたろう')<row.indexOf('架空太郎</span>'), 'S1 ふりがなは氏名の上（ルビ位置・checkbox aria-label は除外して比較）');
+    assert(row.indexOf('mk-other')>=0 && row.indexOf('>女性<')>=0 && row.indexOf('沼津市')>=0, 'S2 区分バッジ・会費・市町村を表示');
+    assert(row.indexOf('ms-name-cell')>=0 && row.indexOf('ms-kind-cell')>=0 && row.indexOf('ms-grade-cell')>=0 && row.indexOf('ms-check')>=0, 'S3 編集セル class＋選択 checkbox');
+    assert(row.indexOf('m-edit')<0 && row.indexOf('m-delete')<0, 'S4 行の編集/削除ボタンは無い');
+    var delRow = A.buildMemberSheetRowHtml({ member_id:'m2', name:'削除架空', yomi:'さくじょ', deleted_at:'2026-06-15T00:00:00Z' }, true);
+    assert(delRow.indexOf('ms-row-deleted')>=0 && delRow.indexOf('（削除済）')>=0 && delRow.indexOf('ms-name-cell')<0 && delRow.indexOf(' checked')>=0, 'S5 削除済み行＝取り消し系・編集不可・選択は可（復元用）');
+    var p0 = A.buildMemberSheetHtml([{ member_id:'m1', name:'甲', yomi:'こ', deleted_at:null }], {});
+    assert(p0.indexOf('msToolbar')<0 && p0.indexOf('memberAddForm')>=0 && p0.indexOf('ms-table')>=0, 'S6 未選択＝ツールバー非表示・追加フォーム/表あり');
+    var p1 = A.buildMemberSheetHtml([
+      { member_id:'m1', name:'甲', yomi:'こ', deleted_at:null },
+      { member_id:'m2', name:'乙', yomi:'お', deleted_at:'2026-06-15T00:00:00Z' }
+    ], { m1:true, m2:true });
+    assert(p1.indexOf('2名 選択中')>=0 && p1.indexOf('論理削除（1名）')>=0 && p1.indexOf('復元（1名）')>=0 && p1.indexOf('msClearBtn')>=0, 'S7 選択時ツールバー＝削除/復元/解除の出し分け');
+    var cU = makeClient({});
+    var rU = await A.updateMemberFields(cU, CLUB, 'm1', { name:'  新名  ', yomi:'  ', city:'' });
+    assert(rU.ok===true && cU._calls.update[0].payload.name==='新名' && cU._calls.update[0].payload.yomi===null && cU._calls.update[0].payload.city===null, 'S8 部分更新＝trim・空は null 化');
+    assert(cU._calls.update[0].filters.club_id===CLUB && cU._calls.update[0].filters.member_id==='m1', 'S9 club_id＋member_id で限定');
+    var rU2 = await A.updateMemberFields(makeClient({}), CLUB, 'm1', { name:'  ' });
+    assert(rU2.ok===false, 'S10 氏名空は拒否');
+    var cK = makeClient({});
+    await A.updateMemberFields(cK, CLUB, 'm1', { member_kind:'other' });
+    assert(cK._calls.update[0].payload.member_kind==='other' && !('name' in cK._calls.update[0].payload), 'S11 区分のみの patch は他列を触らない');
+    function makeInClient(){
+      var calls={update:[]};
+      function builder(payload){
+        var b={_payload:payload,_filters:{},_in:null};
+        b.eq=function(k,v){this._filters[k]=v;return this;};
+        b['in']=function(k,vals){this._in={col:k,vals:vals};return this;};
+        b.then=function(res,rej){calls.update.push({payload:payload,filters:b._filters,inq:b._in});return Promise.resolve({data:null,error:null}).then(res,rej);};
+        return b;
+      }
+      return {_calls:calls,from:function(){return {update:function(p){return builder(p);}};}};
+    }
+    var cB=makeInClient();
+    var rB=await A.setMembersDeletedBulk(cB, CLUB, ['m1','m2'], true);
+    assert(rB.ok===true && cB._calls.update[0].inq.col==='member_id' && cB._calls.update[0].inq.vals.length===2 && typeof cB._calls.update[0].payload.deleted_at==='string', 'S12 まとめ削除＝.in 1リクエスト・deleted_at=時刻');
+    var cB2=makeInClient();
+    await A.setMembersDeletedBulk(cB2, CLUB, ['m2'], false);
+    assert(cB2._calls.update[0].payload.deleted_at===null, 'S13 まとめ復元＝deleted_at=null');
+    var rB3=await A.setMembersDeletedBulk(makeInClient(), CLUB, [], true);
+    assert(rB3.ok===false, 'S14 空選択は拒否');
+    var cm=A.memberBulkConfirmMessage(2,'甲、乙',true);
+    assert(cm.indexOf('2名')>=0 && cm.indexOf('論理削除')>=0 && cm.indexOf('復元できます')>=0 && cm.indexOf('よろしいですか')>=0, 'S15 削除 confirm＝件数・危険語・復元可・確認文体');
   })();
 
   console.log('  Stage B-5 名簿編集 テスト: PASS '+pass+'件 / FAIL '+fail+'件');
