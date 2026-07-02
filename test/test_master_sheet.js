@@ -197,6 +197,13 @@ assert(bmeBody.indexOf("querySelectorAll('.master-row-check')")>=0, 'W2 行 chec
 assert(bmeBody.indexOf('masterSheetDeleteSelected')>=0&&bmeBody.indexOf('masterSheetRestoreSelected')>=0&&bmeBody.indexOf('masterSheetClearSelection')>=0, 'W3 ツールバー3操作を bind');
 assert(bmeBody.indexOf("querySelectorAll('.master-cell-name')")>=0&&bmeBody.indexOf("querySelectorAll('.master-cell-member')")>=0&&bmeBody.indexOf("querySelectorAll('.master-cell-grade')")>=0, 'W4 編集セル3種を bind');
 
+// F: MASTER-SHEET-003（更新行の追跡＝ふりがな順ソートで行が飛んでも見失わない）
+assert(h.indexOf('master-sheet-row" data-mid="')>=0||/master-sheet-row[^"]*" data-mid="/.test(h), 'F1 行 tr に data-mid（追跡フック）');
+const flashSrc=RAW.slice(RAW.indexOf('function masterSheetFlashRow'),RAW.indexOf('function masterSheetFlashRow')+800);
+assert(flashSrc.indexOf('scrollIntoView')>=0&&flashSrc.indexOf('backgroundColor')>=0&&flashSrc.indexOf('setTimeout')>=0, 'F2 更新行へスクロール＋一時ハイライト（自動解除）');
+const commitSrc0=RAW.slice(RAW.indexOf('function masterSheetCommitNameEdit'),RAW.indexOf('function masterSheetCommitNameEdit')+2000);
+assert(/renderMasterTab\(\);[\s\S]{0,200}masterSheetFlashRow\(mid\)/.test(commitSrc0), 'F3 commit 成功→再描画直後に追跡を呼ぶ');
+
 // P: MASTER-CLOUD-PUSH-001（氏名・ふりがな編集のクラウド即時反映・fail-soft）
 const commitSrc=RAW.slice(RAW.indexOf('function masterSheetCommitNameEdit'),RAW.indexOf('function masterSheetCommitNameEdit')+1800);
 assert(commitSrc.indexOf('pushMemberEditToCloud')>=0, 'P1 commit 成功パスからクラウド push を呼ぶ');
