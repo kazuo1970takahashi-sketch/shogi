@@ -263,6 +263,10 @@ body.sb-active{overflow:hidden}
 <div class="header">
   <div><h1>沼津支部 月例将棋大会 運営ツール</h1></div>
   <div style="display:flex;gap:8px;align-items:center">
+    <!-- DAYOF-UX-HINT-001 (作者依頼 2026-07-03): 運営サイト（index.html＝当日の流れ・持ち時間・賞品等の案内）への
+         参照リンク。運営中の大会状態を離れないよう必ず新規タブで開く（target=_blank＋rel=noopener）。
+         静的リンク＝bind 不要・JS 非依存。 -->
+    <a class="btn-sm no-print" id="openGuideLink" href="index.html" target="_blank" rel="noopener" style="background:#fff;color:#1F3864;border:1px solid #1F3864;border-radius:8px;text-decoration:none;display:inline-flex;align-items:center">📖 案内</a>
     <!-- LIVE-MOBILE-SCOREBOARD-001 §1: スマホ閲覧用の星取表ビューを別タブで開く。
          運営画面（このタブ）はそのまま維持し、閲覧専用ビューは #scoreboard hash で起動する。
          同一ブラウザの localStorage(state) を参照し、運営タブの保存に追従してリアルタイム更新する。 -->
@@ -3023,7 +3027,10 @@ function _buildPpModeBarHtml(){
   var list=ppDenseSelectableClasses();
   var allList=getRegistrationClassList();
   var html='<div class="pp-mode-bar" style="background:'+pal.light+';border:1px solid '+pal.bd+';border-radius:8px;padding:8px 10px;margin-bottom:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">';
-  html+='<span style="font-size:12px;font-weight:600;color:'+pal.fg+';white-space:nowrap">受付するクラス:</span>';
+  // DAYOF-UX-HINT-001 (作者依頼 2026-07-03): 「クラスを選んでから名前をタップ」の2段階操作を
+  //   手順番号 ①② で伝える（行数は増やさない・既存バー内の文言のみ）。②側には選択中クラス名を
+  //   動的に入れ、どのクラスに受付されるかを常時明示する（クラス名はユーザーデータ＝escapeHtml 必須）。
+  html+='<span style="font-size:12px;font-weight:600;color:'+pal.fg+';white-space:nowrap">① 受付するクラス:</span>';
   for(var i=0;i<list.length;i++){
     var c=list[i];var p=ppDenseClsPalette(c.id);var on=(c.id===active);
     html+='<button type="button" class="pp-mode-btn" data-cls="'+escapeHtml(c.id)+'" style="min-height:40px;padding:6px 14px;border-radius:8px;font-size:15px;cursor:pointer;'
@@ -3034,7 +3041,7 @@ function _buildPpModeBarHtml(){
   if(allList.length>list.length){
     html+='<span style="font-size:11px;color:'+pal.fg+'">※A/B 以外は登録画面の手入力で受付</span>';
   }
-  html+='<span style="margin-left:auto;font-size:11px;color:'+pal.fg+'">名前をタップで受付</span>';
+  html+='<span style="margin-left:auto;font-size:12px;font-weight:600;color:'+pal.fg+'">② 名前をタップ → '+escapeHtml(ppDenseClsName(active))+'に受付</span>';
   html+='</div>';
   return html;
 }

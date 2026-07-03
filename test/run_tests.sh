@@ -1001,6 +1001,24 @@ else
 fi
 
 # ============================================
+# DAYOF-UX-HINT-001 — 当日アプリの案内強化（作者依頼 2026-07-03）
+#   PP モードバーに手順番号 ①②＋選択中クラス名ヒント／ヘッダに「📖 案内」＝運営サイト（index.html）
+#   への新規タブ参照リンク（rel=noopener・静的・bind 不要）。
+# ============================================
+echo ""
+echo "【DAYOF-UX-HINT-001 — モードバー手順①②＋📖案内リンク】"
+if [ -f "$SCRIPT_DIR/test_dayof_ux_hint_001.js" ]; then
+  if node "$SCRIPT_DIR/test_dayof_ux_hint_001.js" "$TARGET" > /tmp/dayof_ux_hint_out.log 2>&1; then
+    ok "DAYOF-UX-HINT-001 テスト 全PASS ($(tail -1 /tmp/dayof_ux_hint_out.log))"
+  else
+    ng "DAYOF-UX-HINT-001 テスト 失敗"
+    cat /tmp/dayof_ux_hint_out.log
+  fi
+else
+  warn "test_dayof_ux_hint_001.js が見つからない"
+fi
+
+# ============================================
 # CLEANUP-P3-001 — P3 小掃除（旧サマリ撤去・削除日 title 対称・書き出し成功 toast 化・stale コメント追従）
 #   名簿タブ旧サマリ「登録: N名」撤去（シートヘッダサマリと重複）／削除日セル生値 title／
 #   マスタ書き出し成功 alert→showToast（N2・失敗系 showMsg 不変）／pullMembersFromCloud コメント select('*') 追従。
