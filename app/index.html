@@ -61,13 +61,28 @@
     .msg { min-height:1.2em; font-size:13px; color:var(--primary); }
     .org-list { list-style:none; padding:0; margin:10px 0 0; }
     .org-row { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
-    .org-who { font-weight:600; }
+    .org-who { font-weight:600; min-width:9em; }
     .org-meta { color:var(--muted); font-size:12px; }
     .org-actions { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
     .org-actions button { margin-top:0; padding:6px 10px; font-size:13px; }
-    #inviteForm { display:flex; flex-wrap:wrap; gap:8px; align-items:end; }
-    #inviteForm input { flex:1 1 180px; }
-    #inviteForm select, #inviteForm button { flex:0 0 auto; margin-top:0; }
+    /* APP-UX-004B (作者承認 2026-07-03): 幹事管理の整列＋役割説明。招待フォームは
+       .adm-form（コントロール高さ40px統一・役割 select は内容幅＝全幅巨大化解消）。
+       旧 #inviteForm の行組み CSS は .adm-form に置換。 */
+    .adm-form { display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; }
+    .adm-fld { flex:1 1 220px; min-width:0; }
+    .adm-fld label { margin:0 0 4px; }
+    .adm-fld-role { flex:0 0 auto; }
+    .adm-form input[type="email"] { height:40px; padding:6px 10px; font-size:15px; }
+    .adm-form select { width:auto; max-width:100%; height:40px; padding:6px 8px; font-size:15px; }
+    .adm-form button { margin-top:0; height:40px; padding:0 18px; font-size:14px; }
+    .role-help { background:#f4f6f9; border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin:10px 0 0; font-size:12px; color:#556; }
+    .role-help dt { float:left; clear:left; width:4.5em; font-weight:600; color:var(--primary); }
+    .role-help dd { margin:0 0 2px 5em; }
+    .org-role-badge { font-size:11px; border-radius:5px; padding:1px 8px; background:#e6edf7; color:var(--primary); font-weight:600; }
+    .org-role-badge.rb-organizer { background:#eaf3de; color:#27500A; }
+    .org-role-badge.rb-viewer { background:#f1efe8; color:#5f5e5a; }
+    .org-status { font-size:11px; color:var(--muted); }
+    .org-status.st-suspended { color:#BA7517; }
     .member-add { display:flex; flex-wrap:wrap; gap:8px; align-items:end; margin-top:10px; }
     .member-add input, .member-edit input { padding:10px; font-size:16px; border:1px solid var(--line); border-radius:8px; }
     .member-add input { flex:1 1 140px; }
@@ -121,7 +136,7 @@
   <!-- Supabase JS（UMD・global `supabase` を生やす）。publishable key + URL のみ使用。 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js" integrity="sha384-nD3dwv4+ZqdYnmZKe/249ImlV04om7xTCcsoSeQYI+RO+XlKPoqAWaJR1M5SJH9p" crossorigin="anonymous"></script>
   <!-- cache-bust: app/auth.js 変更時に ?v=N をバンプ（app/ は cache-bust が無く旧 JS を握る問題の対策・#343）-->
-  <script src="auth.js?v=29"></script>
+  <script src="auth.js?v=30"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       try { window.ShogiAuth.boot(); }

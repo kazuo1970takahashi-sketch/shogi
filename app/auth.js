@@ -99,14 +99,19 @@
       '</section>';
   }
   function buildOrganizerRowHtml(org, organizers) {
+    // APP-UX-004B (作者承認 2026-07-03): 「役割 / 状態」の連結テキストを役割バッジ＋状態表示に分離
+    //   （名簿シートの mk-badge と同じ設計言語）。data-id・act-* クラス・disabled ガードは全て温存。
     var lastGuard = isLastActiveAdmin(organizers, org);
     var who = esc(org.display_name || org.email || '(無名)');
     var role = ROLE_LABEL[org.role] || org.role;
     var status = STATUS_LABEL[org.status] || org.status;
     var id = esc(org.id);
+    var badgeCls = (org.role === 'organizer') ? ' rb-organizer' : ((org.role === 'viewer') ? ' rb-viewer' : '');
+    var statusCls = (org.status === 'active') ? '' : ' st-suspended';
     var h = '<li class="org-row" data-id="' + id + '">' +
       '<span class="org-who">' + who + '</span>' +
-      '<span class="org-meta">' + esc(role) + ' / ' + esc(status) + '</span>' +
+      '<span class="org-role-badge' + badgeCls + '">' + esc(role) + '</span>' +
+      '<span class="org-status' + statusCls + '">' + esc(status) + '</span>' +
       '<span class="org-actions">';
     if (org.status === 'active') {
       h += '<button type="button" class="act-suspend" data-id="' + id + '"' + (lastGuard ? ' disabled title="最後のオーナー/管理者は停止できません"' : '') + '>一時停止</button>';
@@ -118,24 +123,40 @@
     return h;
   }
   function buildAdminPanelHtml(organizers, summary) {
+    // APP-UX-004B (作者承認 2026-07-03): 幹事管理の整列＋役割説明。
+    //   ①招待フォームを .adm-form 化（高さ40px統一・役割 select は内容幅・「役割」ラベル追加）
+    //   ②adminMsg を一覧の下→フォーム直下へ移動（操作結果はスクロールせず見える位置に出す）
+    //   ③役割説明 .role-help を新設（管理者＝幹事の招待・管理ができる幹事、の整理は作者提示済み）。
+    //   id（inviteForm/inviteEmail/inviteRole/inviteBtn/adminMsg）と bind は全て温存。
     var rows = (organizers || []).map(function (o) { return buildOrganizerRowHtml(o, organizers); }).join('');
     return '' +
       '<section class="card" id="adminPanel">' +
       '<h2>幹事の管理</h2>' +
       '<p class="muted">オーナー/管理者のみ。停止・退任しても会員名簿や履歴は消えません。' +
       'オーナー/管理者は常に1人以上必要です。</p>' +
-      '<form id="inviteForm">' +
+      '<form id="inviteForm" class="adm-form">' +
+      '<div class="adm-fld">' +
       '<label for="inviteEmail">メールで招待</label>' +
       '<input type="email" id="inviteEmail" name="email" autocomplete="off" placeholder="new@example.com" required>' +
+      '</div>' +
+      '<div class="adm-fld adm-fld-role">' +
+      '<label for="inviteRole">役割</label>' +
       '<select id="inviteRole" name="role">' +
       '<option value="organizer">幹事</option>' +
       '<option value="admin">管理者</option>' +
       '<option value="viewer">閲覧</option>' +
       '</select>' +
+      '</div>' +
       '<button type="submit" id="inviteBtn">招待する</button>' +
       '</form>' +
-      '<ul class="org-list">' + rows + '</ul>' +
       '<p id="adminMsg" class="msg" role="status"></p>' +
+      '<dl class="role-help">' +
+      '<dt>オーナー</dt><dd>クラブの代表。管理者と同じ操作ができます。</dd>' +
+      '<dt>管理者</dt><dd>幹事の招待・管理ができる幹事。</dd>' +
+      '<dt>幹事</dt><dd>大会結果・名簿の編集ができます（幹事の管理は不可）。</dd>' +
+      '<dt>閲覧</dt><dd>閲覧のみ。編集はできません。</dd>' +
+      '</dl>' +
+      '<ul class="org-list">' + rows + '</ul>' +
       '</section>';
   }
   // APP-UX-001 (作者依頼 2026-07-02): 「縦一本のカード羅列」をやめ、紺のヘッダバー＋ピル型ナビで
