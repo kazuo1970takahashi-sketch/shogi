@@ -132,6 +132,31 @@
     .cloud-tnt.active { background:var(--primary); color:#fff; border-color:var(--primary); font-weight:600; }
     /* APP-UX-004A2: 大会結果の一覧⇄詳細切替（戻るボタン） */
     .tnt-back { margin:0 0 10px; padding:8px 14px; font-size:13px; color:var(--primary); }
+    /* APP-UX-004C (作者承認 2026-07-03): ①大会一覧の行カード化 ②名簿上部の整理（検索先頭・
+       追加フォーム details 化・40px 統一） ③メッセージ色分け（成功=緑/失敗=赤/中立=従来の紺）。
+       .cloud-tnt.active の再指定は同置＝後勝ちで base の background:#fff に負けないための明示。 */
+    .tnt-list { list-style:none; padding:0; margin:10px 0 0; display:flex; flex-direction:column; gap:8px; }
+    .tnt-list li { margin:0; }
+    .tnt-list .cloud-tnt { display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+                           margin-top:0; padding:12px 14px; border:1px solid var(--line); border-radius:10px;
+                           background:#fff; font-size:14px; min-height:52px; }
+    .tnt-list .cloud-tnt.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+    .cloud-tnt .tnt-date { font-variant-numeric:tabular-nums; color:#556; font-size:13px; white-space:nowrap; }
+    .cloud-tnt .tnt-name { font-weight:600; flex:1; min-width:0; }
+    .cloud-tnt .tnt-season { color:var(--muted); font-size:12px; white-space:nowrap; }
+    .cloud-tnt.active .tnt-date, .cloud-tnt.active .tnt-name, .cloud-tnt.active .tnt-season { color:#fff; }
+    .tnt-status { font-size:11px; border-radius:5px; padding:1px 8px; white-space:nowrap; background:#eaf3de; color:#27500A; }
+    .tnt-status.ts-other { background:#f1efe8; color:#5f5e5a; }
+    .ms-add-details { margin:2px 0 6px; }
+    .ms-add-details summary { cursor:pointer; font-size:14px; font-weight:600; color:var(--primary); padding:6px 0; }
+    .ms-meta-row { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin:8px 0 2px; }
+    .ms-meta-row .muted { margin:0; }
+    .member-add .fld { flex:1 1 160px; min-width:0; }
+    .member-add .fld label { display:block; font-size:12px; color:#556; margin:0 0 4px; }
+    .member-add .fld input { width:100%; height:40px; padding:6px 10px; font-size:15px; }
+    .member-add button { margin-top:0; height:40px; padding:0 18px; font-size:14px; }
+    .msg.msg-ok { color:#1E7A1E; }
+    .msg.msg-err { color:#A32D2D; }
   </style>
 </head>
 <body>
@@ -145,7 +170,7 @@
   <!-- Supabase JS（UMD・global `supabase` を生やす）。publishable key + URL のみ使用。 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js" integrity="sha384-nD3dwv4+ZqdYnmZKe/249ImlV04om7xTCcsoSeQYI+RO+XlKPoqAWaJR1M5SJH9p" crossorigin="anonymous"></script>
   <!-- cache-bust: app/auth.js 変更時に ?v=N をバンプ（app/ は cache-bust が無く旧 JS を握る問題の対策・#343）-->
-  <script src="auth.js?v=34"></script>
+  <script src="auth.js?v=35"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       try { window.ShogiAuth.boot(); }
