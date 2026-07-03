@@ -82,6 +82,8 @@ const MEMBERS = [
   assert(/msCommitPatch\(id, \{ member_kind: v \}\)/.test(AUTH_JS) && /msCommitPatch\(id, \{ grade: v \}\)/.test(AUTH_JS), 'R8 保存経路は従来の msCommitPatch（フラッシュ追跡が効く）');
   assert(/msShowDeleted = !msShowDeleted; renderMemberEditor\(\)/.test(AUTH_JS), 'R9 トグル結線');
   assert(/buildMemberSheetHtml\(membersForEdit, memberSheetSelected, msSearchQuery, msShowDeleted\)/.test(AUTH_JS), 'R10 描画に showDeleted を引き渡す');
+  // L3 P2-1 (#517): iOS ピッカーの多重 change 対策＝one-shot ガード（commit 後の change/keydown/focusout を無視）。
+  assert(/var committed = false;/.test(AUTH_JS) && (AUTH_JS.match(/if \(committed\) return;/g) || []).length >= 3, 'R11 select エディタに one-shot commit ガード');
 })();
 
 console.log('APP-MEMBER-SHEET-UX-001: PASS='+pass+' FAIL='+fail);

@@ -1280,18 +1280,26 @@
     //   でキャンセル。select はネイティブピッカー（スマホ）で選択肢が見える＝誤タップ即確定を排除。
     function msBindSelectEditor(cell, sel, initial, commit) {
       if (!sel || !sel.addEventListener) return;
+      // L3 P2-1 (#517): iOS ネイティブピッカー等では change が複数回発火し得るため one-shot ガード。
+      //   一度 commit したら以降の change/keydown/focusout はすべて無視＝多重書き込みと
+      //   「commit 進行中に focusout キャンセルが再描画する」競合の両方を防ぐ。
+      var committed = false;
       sel.addEventListener('change', function () {
+        if (committed) return;
         var v = sel.value;
         if (v === initial) { msEditing = null; renderMemberEditor(); return; }
+        committed = true;
         commit(v);
       });
       sel.addEventListener('keydown', function (e) {
+        if (committed) return;
         var k = e && (e.key || e.keyCode);
         if (k === 'Escape' || k === 27) { msEditing = null; renderMemberEditor(); }
       });
       cell.addEventListener('focusout', function () {
         setTimeout(function () {
           try {
+            if (committed) return;
             if (!msEditing) return;
             if (cell.contains && doc.activeElement && cell.contains(doc.activeElement)) return;
             msEditing = null; renderMemberEditor();
