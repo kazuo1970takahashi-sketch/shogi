@@ -61,8 +61,19 @@ const A = loadAuth();
     { final_rank:2, 'class':'A', wins:2, losses:1, sos:4, sodos:2, players:{ members:{ name:'二位太郎' } } },
     { final_rank:1, 'class':'A', wins:3, losses:0, sos:5, sodos:4, players:{ members:{ name:'一位太郎' } } }
   ]);
-  assert(et.indexOf('B(SOS)')>=0 && et.indexOf('C(SODOS)')>=0, 'E3 B(SOS)/C(SODOS) 列がある');
+  assert(et.indexOf('sb-table')>=0 && et.indexOf('>B<')>=0 && et.indexOf('>C<')>=0 && et.indexOf('B＝対戦相手の勝数合計')>=0, 'E3 当日順位表同型（sb-table・B/C列・凡例）＝APP-UX-004A');
   assert(et.indexOf('一位太郎') < et.indexOf('二位太郎'), 'E4 クラス内は順位昇順（1位が先）');
+  assert(et.indexOf('sb-row-1')>=0 && et.indexOf('sb-row-1') < et.indexOf('一位太郎'), 'E4b 1位行に sb-row-1 ハイライト');
+  var et2 = A.buildEntryTableHtml([
+    { final_rank:1, 'class':'B', wins:3, losses:1, players:{ members:{ name:'乙一' } } },
+    { final_rank:1, 'class':'A', wins:4, losses:0, players:{ members:{ name:'甲一', yomi:'こういち' } } }
+  ]);
+  assert(et2.indexOf('Aクラス')>=0 && et2.indexOf('Bクラス')>=0 && et2.indexOf('Aクラス') < et2.indexOf('Bクラス'), 'E5 クラスごとのブロック（A→B順）');
+  assert(et2.indexOf('<ruby>甲一<rt>こういち</rt></ruby>')>=0, 'E6 ふりがなはルビ表示（yomi 無しはルビなし）');
+  assert(et2.indexOf('最終結果')>=0, 'E7 クラス見出しに「最終結果」');
+  var th = A.buildTournamentHeadHtml({ id:'t1', name:'六月例会', date:'2026-06-23', season:'2026年度', status:'confirmed' });
+  assert(th.indexOf('2026-06-23')>=0 && th.indexOf('六月例会')>=0 && th.indexOf('2026年度')>=0 && th.indexOf('確定')>=0, 'E8 大会見出し（日付・名称・年度/状態）');
+  assert(A.buildTournamentHeadHtml(null)==='', 'E9 大会不明時は見出しなし（fail-soft）');
 
   // ---- F: fetch ラッパ ----
   var rt = await A.fetchTournaments(okClient([{ id:'t1', name:'x', date:'2026-06-14', season:'2026年度', status:'synced' }]), 'club1');
