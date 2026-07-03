@@ -307,14 +307,21 @@
   function buildTournamentListHtml(tournaments) {
     var list = sortTournamentsDesc(tournaments);
     if (!list.length) return '<p class="muted">クラウドに大会がありません。</p>';
+    // APP-UX-004C① (作者承認 2026-07-03): 行カード化＝日付・名称・年度・状態バッジをボタン内へ
+    //   （行全体タップ）。button の class は 'cloud-tnt' 単独のまま（bindTournamentRows が
+    //   className 直代入で 'cloud-tnt'/'cloud-tnt active' にリセットするため余計な class を足さない）。
     var rows = list.map(function (t) {
-      var st = TSTATUS_LABEL[t && t.status] || esc((t && t.status) || '');
-      return '<li class="org-row">' +
+      var stKey = (t && t.status) || '';
+      var st = TSTATUS_LABEL[stKey] || esc(stKey);
+      var badge = st ? '<span class="tnt-status' + ((stKey === 'confirmed' || stKey === 'synced') ? '' : ' ts-other') + '">' + st + '</span>' : '';
+      return '<li>' +
         '<button type="button" class="cloud-tnt" data-id="' + esc((t && t.id) || '') + '">' +
-        esc((t && t.date) || '') + '　' + esc((t && t.name) || '(名称未設定)') + '</button>' +
-        '<span class="org-meta">' + esc((t && t.season) || '') + '／' + st + '</span></li>';
+        '<span class="tnt-date">' + esc((t && t.date) || '') + '</span>' +
+        '<span class="tnt-name">' + esc((t && t.name) || '(名称未設定)') + '</span>' +
+        '<span class="tnt-season">' + esc((t && t.season) || '') + '</span>' + badge +
+        '</button></li>';
     }).join('');
-    return '<ul class="org-list">' + rows + '</ul>';
+    return '<ul class="tnt-list">' + rows + '</ul>';
   }
   function buildMemberListHtml(members) {
     var list = Array.isArray(members) ? members.slice() : [];
@@ -818,7 +825,7 @@
     h += '</tr>';
     return h;
   }
-  function buildMemberSheetHtml(members, selectedMap, searchQuery, showDeleted) {
+  function buildMemberSheetHtml(members, selectedMap, searchQuery, showDeleted, addOpen) {
     selectedMap = selectedMap || {};
     var list = sortMembersForEdit(members);
     var selLive = [], selDel = [];
@@ -837,25 +844,33 @@
     //   （選択は明示操作の結果であり、フィルタで暗黙解除しない）。value は esc 経由（XSS 安全）。
     var q = normalizeSearchText(searchQuery || '');
     var visible = q ? scope.filter(function (mm) { return memberMatchesSearch(mm, q); }) : scope;
+    // APP-UX-004C② (作者承認 2026-07-03): 上部を「検索→サマリ＋削除済みトグル（1行）→
+    //   ＋会員を追加（details 折りたたみ・ラベル付き40px統一）」に再配置。id・bind は全温存。
+    //   addOpen＝開閉状態（再描画を跨いで保持・省略時 false＝既存テスト互換）。
     var h = '';
-    h += '<form id="memberAddForm" class="member-add" autocomplete="off">' +
-      '<input type="text" id="memberAddName" name="name" placeholder="氏名（必須）" required>' +
-      '<input type="text" id="memberAddYomi" name="yomi" placeholder="ふりがな">' +
-      '<input type="text" id="memberAddCity" name="city" placeholder="市町村">' +
-      '<button type="submit" id="memberAddBtn">追加</button>' +
-      '</form>';
     h += '<div class="ms-search"><input type="search" id="msSearchInput" value="' + esc(searchQuery || '') + '" placeholder="検索（氏名・ふりがな・市町村）" autocomplete="off" aria-label="名簿を検索">'
       + (q ? '<button type="button" id="msSearchClear">クリア</button>' : '')
       + '</div>';
+    var metaInner;
     if (q) {
-      h += '<p class="muted" id="msSearchCount">' + visible.length + '名が一致（有効 ' + activeCount + ' 名／全 ' + list.length + ' 名）。</p>';
+      metaInner = '<p class="muted" id="msSearchCount">' + visible.length + '名が一致（有効 ' + activeCount + ' 名／全 ' + list.length + ' 名）。</p>';
     } else {
-      h += '<p class="muted">有効 ' + activeCount + ' 名／全 ' + list.length + ' 名。セルをタップで編集／削除・復元は左の□で行を選択（論理削除＝復元できます）。</p>';
+      metaInner = '<p class="muted">有効 ' + activeCount + ' 名／全 ' + list.length + ' 名。セルをタップで編集／削除・復元は左の□で行を選択（論理削除＝復元できます）。</p>';
     }
     // APP-MEMBER-SHEET-UX-001: 削除済みトグル（削除済みが存在するときだけ表示・件数併記）。
+    var togHtml = '';
     if (deletedCount > 0) {
-      h += '<div class="ms-del-toggle"><button type="button" id="msShowDeletedBtn">' + (showDeleted ? '削除済みを隠す' : '削除済みを表示（' + deletedCount + '名）') + '</button></div>';
+      togHtml = '<div class="ms-del-toggle"><button type="button" id="msShowDeletedBtn">' + (showDeleted ? '削除済みを隠す' : '削除済みを表示（' + deletedCount + '名）') + '</button></div>';
     }
+    h += '<div class="ms-meta-row">' + metaInner + togHtml + '</div>';
+    h += '<details class="ms-add-details" id="msAddDetails"' + (addOpen ? ' open' : '') + '>' +
+      '<summary>＋ 会員を追加</summary>' +
+      '<form id="memberAddForm" class="member-add" autocomplete="off">' +
+      '<div class="fld"><label for="memberAddName">氏名（必須）</label><input type="text" id="memberAddName" name="name" required placeholder="例）沼津太郎"></div>' +
+      '<div class="fld"><label for="memberAddYomi">ふりがな</label><input type="text" id="memberAddYomi" name="yomi" placeholder="例）ぬまづたろう"></div>' +
+      '<div class="fld"><label for="memberAddCity">市町村</label><input type="text" id="memberAddCity" name="city" placeholder="例）沼津市"></div>' +
+      '<button type="submit" id="memberAddBtn">追加</button>' +
+      '</form></details>';
     var selTotal = selLive.length + selDel.length;
     if (selTotal > 0) {
       h += '<div class="ms-toolbar" id="msToolbar"><span>' + selTotal + '名 選択中</span>';
@@ -866,7 +881,7 @@
       h += '<button type="button" id="msClearBtn">選択解除</button></div>';
     }
     if (!list.length) {
-      h += '<p class="muted">名簿が空です。上のフォームから追加できます。</p>';
+      h += '<p class="muted">名簿が空です。「＋ 会員を追加」から追加できます。</p>';
     } else if (q && !visible.length) {
       h += '<p class="muted">「' + esc(searchQuery || '') + '」に一致する会員がいません。</p>';
     } else if (!visible.length) {
@@ -1103,7 +1118,13 @@
 
     function mount(html) { if (root) root.innerHTML = html; }
     function byId(id) { return doc ? doc.getElementById(id) : null; }
-    function setMsg(id, text) { var el = byId(id); if (el) el.textContent = text || ''; }
+    // APP-UX-004C③ (作者承認 2026-07-03): kind='ok'（緑）/'err'（赤）/省略（従来の紺＝中立・進行中）。
+    //   全 .msg は class="msg" 固定のため className 再構成で安全（textContent のみ・XSS 非増加）。
+    function setMsg(id, text, kind) {
+      var el = byId(id); if (!el) return;
+      el.textContent = text || '';
+      el.className = 'msg' + (kind === 'ok' ? ' msg-ok' : (kind === 'err' ? ' msg-err' : ''));
+    }
 
     function showLogin() { mount(buildLoginViewHtml()); bindLogin(); }
     function showCheckEmail(email) { pendingEmail = email; mount(buildCheckEmailViewHtml(email)); bindCheckEmail(); }
@@ -1117,7 +1138,7 @@
         var email = (byId('emailInput') || {}).value || '';
         setMsg('loginMsg', '送信中…');
         requestMagicLink(client, email).then(function (r) {
-          if (r.ok) showCheckEmail(r.email); else setMsg('loginMsg', r.message);
+          if (r.ok) showCheckEmail(r.email); else setMsg('loginMsg', r.message, 'err');
         });
       });
     }
@@ -1125,7 +1146,7 @@
       var btn = byId('resendBtn');
       if (btn) btn.addEventListener('click', function () {
         setMsg('loginMsg', '再送中…');
-        requestMagicLink(client, pendingEmail).then(function (r) { setMsg('loginMsg', r.message); });
+        requestMagicLink(client, pendingEmail).then(function (r) { setMsg('loginMsg', r.message, r.ok ? 'ok' : 'err'); });
       });
     }
     function bindUnregistered() {
@@ -1176,7 +1197,7 @@
         var email = (byId('inviteEmail') || {}).value || '';
         var role = (byId('inviteRole') || {}).value || 'organizer';
         inviteOrganizer(client, lastSummary.clubId, email, role).then(function (r) {
-          setMsg('adminMsg', r.message); if (r.ok) refreshAdmin();
+          setMsg('adminMsg', r.message, r.ok ? 'ok' : 'err'); if (r.ok) refreshAdmin();
         });
       });
       bindOrgActions();
@@ -1243,6 +1264,8 @@
     var msFlashId = null;
     // APP-MEMBER-SHEET-UX-001: 削除済み行の表示トグル（既定=非表示・再描画/再読込を跨いで保持）。
     var msShowDeleted = false;
+    // APP-UX-004C②: ＋会員を追加（details）の開閉状態（再描画・再読込を跨いで保持・既定=閉）。
+    var msAddOpen = false;
     function msFlashRow(mid) {
       try {
         if (!doc || !doc.querySelector) return;
@@ -1259,7 +1282,7 @@
     function renderMemberEditor() {
       var el = byId('cloudMembers'); if (!el) return;
       msEditing = null;
-      el.innerHTML = buildMemberSheetHtml(membersForEdit, memberSheetSelected, msSearchQuery, msShowDeleted);
+      el.innerHTML = buildMemberSheetHtml(membersForEdit, memberSheetSelected, msSearchQuery, msShowDeleted, msAddOpen);
       bindMemberSheet();
       if (msFlashId) { var fid = msFlashId; msFlashId = null; msFlashRow(fid); }
     }
@@ -1278,7 +1301,7 @@
       setMsg('memberEditMsg', '保存中…');
       updateMemberFields(client, lastSummary.clubId, id, patch).then(function (r) {
         msEditing = null;
-        setMsg('memberEditMsg', r.message);
+        setMsg('memberEditMsg', r.message, r.ok ? 'ok' : 'err');
         // APP-MEMBER-SEARCH-001: 成功時は再読込後にその行へスクロール＋フラッシュ（ソート移動の追跡）。
         if (r.ok) { msFlashId = id; reloadMembers(); } else renderMemberEditor();
       });
@@ -1352,9 +1375,14 @@
                        city: (byId('memberAddCity') || {}).value || '' };
         setMsg('memberEditMsg', '追加中…');
         insertMember(client, lastSummary.clubId, fields).then(function (r) {
-          setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
+          setMsg('memberEditMsg', r.message, r.ok ? 'ok' : 'err'); if (r.ok) reloadMembers();
         });
       });
+      // APP-UX-004C②: 追加 details の開閉を状態変数へ同期（再描画時に open を復元）。
+      var msAddDetails = byId('msAddDetails');
+      if (msAddDetails && msAddDetails.addEventListener) {
+        msAddDetails.addEventListener('toggle', function () { msAddOpen = !!msAddDetails.open; });
+      }
       // APP-MEMBER-SEARCH-001: 検索ボックスの結線。IME 変換中は絞り込まない（composing フラグ＋
       //   e.isComposing の二重ガード・確定は compositionend で反映＝MASTER-SHEET-004 と同方針。
       //   Enter 確定 UI ではないため keyCode 229 判定は不要）。
@@ -1411,7 +1439,7 @@
         setMsg('memberEditMsg', '削除中…');
         setMembersDeletedBulk(client, lastSummary.clubId, s.live, true).then(function (r) {
           if (r.ok) { for (var i = 0; i < s.live.length; i++) delete memberSheetSelected[s.live[i]]; }
-          setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
+          setMsg('memberEditMsg', r.message, r.ok ? 'ok' : 'err'); if (r.ok) reloadMembers();
         });
       });
       var resBtn = byId('msRestoreBtn');
@@ -1422,7 +1450,7 @@
         setMsg('memberEditMsg', '復元中…');
         setMembersDeletedBulk(client, lastSummary.clubId, s.del, false).then(function (r) {
           if (r.ok) { for (var i = 0; i < s.del.length; i++) delete memberSheetSelected[s.del[i]]; }
-          setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
+          setMsg('memberEditMsg', r.message, r.ok ? 'ok' : 'err'); if (r.ok) reloadMembers();
         });
       });
       // APP-MEMBER-HARD-DELETE-001: 完全削除（選択中の削除済み行が対象・出場記録はサーバ確認で自動スキップ）。
@@ -1439,12 +1467,12 @@
         }
         var delPreview = delNames.join('、') + (s.del.length > 5 ? ' 他' : '');
         // L3 P3 (#521): 破壊操作は confirm が使えない環境では実行しない（論理削除/復元より厳格側に倒す）。
-        if (typeof global.confirm !== 'function') { setMsg('memberEditMsg', '確認ダイアログが使えないため完全削除を実行しません。'); return; }
+        if (typeof global.confirm !== 'function') { setMsg('memberEditMsg', '確認ダイアログが使えないため完全削除を実行しません。', 'err'); return; }
         if (!global.confirm(memberHardDeleteConfirmMessage(s.del.length, delPreview))) return;
         setMsg('memberEditMsg', '完全削除中…');
         hardDeleteMembers(client, lastSummary.clubId, s.del).then(function (r) {
           if (r && r.deleted) { for (var i = 0; i < r.deleted.length; i++) delete memberSheetSelected[r.deleted[i]]; }
-          setMsg('memberEditMsg', (r && r.message) || '完全削除に失敗しました。');
+          setMsg('memberEditMsg', (r && r.message) || '完全削除に失敗しました。', (r && r.ok) ? 'ok' : 'err');
           if (r && r.ok) reloadMembers();
         });
       });
@@ -1593,10 +1621,10 @@
         importHistoryToCloud(client, lastSummary.clubId, importPrep.payload, importPrep.resolution).then(function (r) {
           if (r.ok) {
             var c = r.counts;
-            setMsg('importStatus', '取り込み完了：新規会員 ' + c.members_new + ' 名・選手 ' + c.players + ' 名・大会 ' + c.tournaments + ' 件・成績 ' + c.entries + ' 件' + ((c.unresolved || 0) > 0 ? '（未解決 ' + c.unresolved + ' 件）' : ''));
+            setMsg('importStatus', '取り込み完了：新規会員 ' + c.members_new + ' 名・選手 ' + c.players + ' 名・大会 ' + c.tournaments + ' 件・成績 ' + c.entries + ' 件' + ((c.unresolved || 0) > 0 ? '（未解決 ' + c.unresolved + ' 件）' : ''), 'ok');
             loadReadViews();
           } else {
-            setMsg('importStatus', '取り込み失敗（' + (r.step || '') + '）：' + (r.message || '')); run.disabled = false;
+            setMsg('importStatus', '取り込み失敗（' + (r.step || '') + '）：' + (r.message || ''), 'err'); run.disabled = false;
           }
         });
       });
@@ -1641,7 +1669,7 @@
         Array.prototype.forEach.call(nodes, function (n) {
           n.addEventListener('click', function () {
             setOrganizerStatus(client, n.getAttribute('data-id'), status, lastOrganizers)
-              .then(function (r) { setMsg('adminMsg', r.message); if (r.ok) refreshAdmin(); });
+              .then(function (r) { setMsg('adminMsg', r.message, r.ok ? 'ok' : 'err'); if (r.ok) refreshAdmin(); });
           });
         });
       }

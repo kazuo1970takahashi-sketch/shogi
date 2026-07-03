@@ -2004,6 +2004,18 @@ else
   warn "test_guide_time_001.js が見つからない"
 fi
 
+echo ""
+echo "【APP-UX-004C app/ 全体ポリッシュ（大会一覧行カード・名簿上部整理・メッセージ色分け）】"
+if [ -f "$SCRIPT_DIR/test_app_ux_004c.js" ]; then
+  if node "$SCRIPT_DIR/test_app_ux_004c.js" "$TARGET" > /tmp/app_ux_004c_out.log 2>&1; then
+    ok "APP-UX-004C テスト 全PASS ($(tail -1 /tmp/app_ux_004c_out.log))"
+  else
+    ng "APP-UX-004C テスト 失敗"; cat /tmp/app_ux_004c_out.log
+  fi
+else
+  warn "test_app_ux_004c.js が見つからない"
+fi
+
 
 # ============================================
 # 最終結果
