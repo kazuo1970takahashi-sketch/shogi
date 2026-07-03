@@ -1992,6 +1992,19 @@ else
 fi
 
 
+echo ""
+echo "【GUIDE-TIME-001 案内サイトの持ち時間 実値表示（localStorage 読取・fail-soft）】"
+if [ -f "$SCRIPT_DIR/test_guide_time_001.js" ]; then
+  if node "$SCRIPT_DIR/test_guide_time_001.js" "$TARGET" > /tmp/guide_time_out.log 2>&1; then
+    ok "GUIDE-TIME-001 テスト 全PASS ($(tail -1 /tmp/guide_time_out.log))"
+  else
+    ng "GUIDE-TIME-001 テスト 失敗"; cat /tmp/guide_time_out.log
+  fi
+else
+  warn "test_guide_time_001.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
