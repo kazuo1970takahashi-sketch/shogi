@@ -74,6 +74,12 @@ const A = loadAuth();
   var th = A.buildTournamentHeadHtml({ id:'t1', name:'六月例会', date:'2026-06-23', season:'2026年度', status:'confirmed' });
   assert(th.indexOf('2026-06-23')>=0 && th.indexOf('六月例会')>=0 && th.indexOf('2026年度')>=0 && th.indexOf('確定')>=0, 'E8 大会見出し（日付・名称・年度/状態）');
   assert(A.buildTournamentHeadHtml(null)==='', 'E9 大会不明時は見出しなし（fail-soft）');
+  // APP-UX-004A2: 一覧⇄詳細のビュー切替（結果視認性の原則）
+  var av = A.buildAppViewHtml({ isAdmin:false, role:'organizer' }, []);
+  assert(av.indexOf('id="tntListView"')>=0 && av.indexOf('id="tntDetailView"')>=0, 'E10 一覧/詳細の2ビュー構造');
+  assert(/id="tntDetailView"[^>]*display:none/.test(av), 'E11 詳細ビューは初期非表示（一覧が先）');
+  assert(av.indexOf('id="tntBackBtn"')>=0 && av.indexOf('大会一覧へ')>=0, 'E12 詳細に戻るボタン');
+  assert(av.indexOf('id="cloudTournaments"')>=0 && av.indexOf('id="cloudEntries"')>=0, 'E13 既存 id 温存');
 
   // ---- F: fetch ラッパ ----
   var rt = await A.fetchTournaments(okClient([{ id:'t1', name:'x', date:'2026-06-14', season:'2026年度', status:'synced' }]), 'club1');
