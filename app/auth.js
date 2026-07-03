@@ -162,13 +162,21 @@
       '<button type="button" class="nav-pill" data-nav="sec-awards">記録・表彰</button>' +
       (summary.isAdmin ? '<button type="button" class="nav-pill" data-nav="sec-admin">幹事管理</button>' : '') +
       '</nav>';
+    // APP-UX-004A2 (作者FB 2026-07-03「選んでも結果が下に出て見えない」＝結果視認性の原則):
+    //   一覧⇄詳細のビュー切替。大会を選ぶと一覧を隠して結果だけ表示・「← 大会一覧へ」で戻る。
+    //   id（cloudTournaments/cloudEntries）は温存＝既存 render/bind 非接触。
     var resultsSec = '' +
       '<div class="app-sec" id="sec-results">' +
       '<section class="card" id="cloudReadView">' +
+      '<div id="tntListView">' +
       '<h2>過去の大会（クラウド・閲覧）</h2>' +
+      '<p class="muted">大会を選ぶと結果を表示します。</p>' +
       '<div id="cloudTournaments" class="muted">読み込み中…</div>' +
-      '<h2>大会結果</h2>' +
-      '<div id="cloudEntries" class="muted">上の大会を選ぶと結果を表示します。</div>' +
+      '</div>' +
+      '<div id="tntDetailView" style="display:none">' +
+      '<button type="button" id="tntBackBtn" class="tnt-back">← 大会一覧へ</button>' +
+      '<div id="cloudEntries" class="muted"></div>' +
+      '</div>' +
       '</section>' +
       '</div>';
     var membersSec = '' +
@@ -1069,6 +1077,7 @@
         });
       });
       bindOrgActions();
+      bindTntBack();
       loadReadViews();
       bindImport();
     }
@@ -1375,6 +1384,8 @@
           n.className = 'cloud-tnt active';
           var tnt = null;
           for (var ti = 0; ti < lastTournaments.length; ti++) { if (lastTournaments[ti] && String(lastTournaments[ti].id) === String(tid)) { tnt = lastTournaments[ti]; break; } }
+          // APP-UX-004A2: 詳細ビューへ切替（結果視認性の原則＝スクロール不要で結果が見える）。
+          showTntDetail(true);
           var el = byId('cloudEntries'); if (el) el.innerHTML = '<p class="muted">読み込み中…</p>';
           fetchEntries(client, tid, lastSummary.clubId).then(function (r) {
             var e2 = byId('cloudEntries');
@@ -1382,6 +1393,16 @@
           });
         });
       });
+    }
+    // APP-UX-004A2: 一覧⇄詳細の表示切替（display トグルのみ・fail-soft）。
+    function showTntDetail(detail) {
+      var lv = byId('tntListView'), dv = byId('tntDetailView');
+      if (lv) lv.style.display = detail ? 'none' : '';
+      if (dv) dv.style.display = detail ? '' : 'none';
+    }
+    function bindTntBack() {
+      var b = byId('tntBackBtn');
+      if (b) b.addEventListener('click', function () { showTntDetail(false); });
     }
     function bindOrgActions() {
       if (!doc || !doc.querySelectorAll) return;
