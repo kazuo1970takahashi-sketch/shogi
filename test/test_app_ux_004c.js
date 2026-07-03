@@ -116,5 +116,15 @@ const A = loadAuth();
   assert(INDEX_HTML.indexOf('APP-UX-004C')>=0, 'C3 004C コメントマーカー');
 })();
 
+// ===================================================== D. Should-1（Codex #525）: 起動 catch の XSS 面
+(function(){
+  // 起動エラーの動的メッセージは innerHTML 連結せず textContent で流し込む。
+  assert(/boot-err-msg/.test(INDEX_HTML) && /\.boot-err-msg'\)\.textContent/.test(INDEX_HTML),
+    'D1 起動エラーは textContent 経由（boot-err-msg）');
+  // 旧パターン（e.message を innerHTML に直接連結）が残っていない。
+  assert(INDEX_HTML.indexOf("String(e && e.message || e) + '</p>") < 0,
+    'D2 e.message を innerHTML に連結する旧パターンが除去されている');
+})();
+
 console.log('APP-UX-004C: PASS=' + pass + ' FAIL=' + fail);
 process.exit(fail === 0 ? 0 : 1);

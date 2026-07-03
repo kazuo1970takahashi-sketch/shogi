@@ -90,6 +90,17 @@ function samplePayload(){
     var resolved=[r9.idMap['m_p'],r9.idMap['m_q']];
     assert(resolved[0]!==resolved[1],'R9 同名2人が同一既存idに解決しない（injective）');
     assert((resolved[0]==='EX1')!==(resolved[1]==='EX1'),'R10 既存idを流用するのは片方だけ・他方は新規');
+    // ---- Should-2（Codex #525）: 論理削除済み(deleted_at)会員には紐付けず新規扱い＋警告 ----
+    var plD={members:[{member_id:'m_a',name:'甲太郎',city:'沼津市'}],tournaments:[],entries:[]};
+    var rD=A.resolveImportMembers(plD,[{member_id:'DEL_A',name:'甲太郎',city:'沼津市',deleted_at:'2026-07-01T00:00:00Z'}]);
+    assert(rD.idMap['m_a']==='m_a' && rD.newMembers.length===1 && rD.matched===0,'R11 削除済み会員には流用せず新規（tombstone を復活させない）');
+    assert(rD.deletedMatches.length===1 && rD.deletedMatches[0]==='甲太郎','R12 削除済みと同名は deletedMatches に記録（警告対象）');
+    // 生きた同名がいればそちらに一致（削除済みは無視・警告なし）
+    var rD2=A.resolveImportMembers(plD,[{member_id:'DEL_A',name:'甲太郎',city:'沼津市',deleted_at:'2026-07-01T00:00:00Z'},{member_id:'LIVE_A',name:'甲太郎',city:'沼津市'}]);
+    assert(rD2.idMap['m_a']==='LIVE_A' && rD2.matched===1 && rD2.deletedMatches.length===0,'R13 生きた同名が居れば流用・削除済みは無視（警告なし）');
+    // deleted_at 無しの既存はこれまで通り流用（回帰）
+    var rD3=A.resolveImportMembers(plD,[{member_id:'EX_A',name:'甲太郎',city:'沼津市'}]);
+    assert(rD3.idMap['m_a']==='EX_A' && rD3.deletedMatches.length===0,'R14 deleted_at 無しは従来どおり流用（回帰）');
   })();
 
   // P
@@ -101,6 +112,10 @@ function samplePayload(){
     assert(pv.warnings.some(w=>/順位なし/.test(w)),'P2 順位なし(final_rank=null)を警告');
     var res2=A.resolveImportMembers(pl,[{member_id:'X1',name:'甲太郎'},{member_id:'X2',name:'甲 太郎'}]);
     assert(A.buildImportPreview(pl,res2).warnings.some(w=>/同名/.test(w)),'P3 同名曖昧を警告');
+    // Should-2: 削除済みと同名の新規取り込みは警告に出す。
+    var plD={members:[{member_id:'m_a',name:'甲太郎',city:'沼津市'}],tournaments:[],entries:[]};
+    var resD=A.resolveImportMembers(plD,[{member_id:'DEL_A',name:'甲太郎',city:'沼津市',deleted_at:'2026-07-01T00:00:00Z'}]);
+    assert(A.buildImportPreview(plD,resD).warnings.some(w=>/削除済み/.test(w)),'P4 削除済みと同名の新規取り込みを警告');
   })();
 
   // I — orchestration
@@ -161,6 +176,22 @@ function samplePayload(){
     assert(r2.ok===false && r2.step==='tournaments','I9 tournaments エラーは ok:false/step=tournaments');
     var r3=await A.importHistoryToCloud(null,CLUB,pl,res);
     assert(r3.ok===false && r3.step==='init','I10 client 無しは init で弾く');
+  })();
+
+  // I — Should-2: 削除済み会員に一致した payload は新規 id で取り込み、削除済み id には紐付かない
+  await (async function(){
+    var pl={ members:[{member_id:'m_a',name:'甲太郎',city:'沼津市'}],
+      tournaments:[{app_tournament_id:'t_x',date:'2025-04-13',season:'2025年度',name:'月例'}],
+      entries:[{app_tournament_id:'t_x',member_id:'m_a','class':'A',wins:1,losses:0,final_rank:1}] };
+    var res=A.resolveImportMembers(pl,[{member_id:'DEL_A',name:'甲太郎',city:'沼津市',deleted_at:'2026-07-01T00:00:00Z'}]);
+    var c=makeClient();
+    var r=await A.importHistoryToCloud(c,CLUB,pl,res);
+    assert(r.ok===true,'I11 削除済み一致でも取り込み成功');
+    // players/entries は新規 id (m_a) に付き、削除済み DEL_A には一切付かない
+    var pmids=c._calls.players[0].map(x=>x.member_id);
+    assert(pmids.indexOf('m_a')>=0 && pmids.indexOf('DEL_A')<0,'I12 players は新規 m_a のみ・削除済み DEL_A には付けない');
+    var ent=c._calls.entries[0]||[];
+    assert(ent.length===1 && ent[0].player_id==='pid_m_a','I13 entries も新規 player に紐付く（tombstone を復活させない）');
   })();
 
   console.log('  B-4 移行取り込み テスト: PASS '+pass+'件 / FAIL '+fail+'件');
