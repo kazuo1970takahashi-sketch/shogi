@@ -964,6 +964,24 @@ else
   warn "test_app_ux_004b.js が見つからない"
 fi
 
+# ============================================
+# CLEANUP-P3-001 — P3 小掃除（旧サマリ撤去・削除日 title 対称・書き出し成功 toast 化・stale コメント追従）
+#   名簿タブ旧サマリ「登録: N名」撤去（シートヘッダサマリと重複）／削除日セル生値 title／
+#   マスタ書き出し成功 alert→showToast（N2・失敗系 showMsg 不変）／pullMembersFromCloud コメント select('*') 追従。
+# ============================================
+echo ""
+echo "【CLEANUP-P3-001 — P3 小掃除（旧サマリ撤去・削除日 title・書き出し toast・コメント追従）】"
+if [ -f "$SCRIPT_DIR/test_cleanup_p3_001.js" ]; then
+  if node "$SCRIPT_DIR/test_cleanup_p3_001.js" "$TARGET" > /tmp/cleanup_p3_001_out.log 2>&1; then
+    ok "CLEANUP-P3-001 テスト 全PASS ($(tail -1 /tmp/cleanup_p3_001_out.log))"
+  else
+    ng "CLEANUP-P3-001 テスト 失敗"
+    cat /tmp/cleanup_p3_001_out.log
+  fi
+else
+  warn "test_cleanup_p3_001.js が見つからない"
+fi
+
 echo ""
 echo "【DATA-PERSISTENCE-PHASE2 Stage B-1 — クラウド read-only 閲覧（app/auth.js・過去大会/結果/名簿・mock client）】"
 if [ -f "$SCRIPT_DIR/test_stageb_read.js" ]; then
