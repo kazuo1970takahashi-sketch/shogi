@@ -810,13 +810,15 @@
     var h = '<tr class="ms-row' + (isDel ? ' ms-row-deleted' : '') + '" data-id="' + mid + '">';
     h += '<td class="ms-check-cell"><input type="checkbox" class="ms-check" data-id="' + mid + '"' + (selected ? ' checked' : '') + ' aria-label="' + esc((m && m.name) || '') + 'を選択"></td>';
     h += '<td' + (isDel ? '' : ' class="ms-name-cell" data-id="' + mid + '" title="タップで氏名・ふりがなを編集"') + ' style="text-align:left">' + yomiHtml + '<span class="ms-name">' + esc((m && m.name) || '') + '</span>' + (isDel ? ' <span class="ms-del-tag">（削除済）</span>' : '') + '</td>';
-    h += '<td class="ms-c' + (isDel ? '' : ' ms-kind-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで切替"') + '>' + memberKindBadgeHtml(m && m.member_kind) + '</td>';
-    h += '<td class="ms-c' + (isDel ? '' : ' ms-grade-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで切替"') + '>' + esc(gradeShortLabel(m && m.grade)) + '</td>';
+    // APP-MEMBER-SHEET-UX-001: 区分セルは「タップで選択肢が開く」ことを ▾ で示す（循環切替は廃止）。
+    var caret = isDel ? '' : ' <span class="ms-caret" aria-hidden="true">▾</span>';
+    h += '<td class="ms-c' + (isDel ? '' : ' ms-kind-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで選択"') + '>' + memberKindBadgeHtml(m && m.member_kind) + caret + '</td>';
+    h += '<td class="ms-c' + (isDel ? '' : ' ms-grade-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで選択"') + '>' + esc(gradeShortLabel(m && m.grade)) + caret + '</td>';
     h += '<td class="ms-c' + (isDel ? '' : ' ms-city-cell') + '" data-id="' + mid + '"' + (isDel ? '' : ' title="タップで編集"') + '>' + esc((m && m.city) || '－') + '</td>';
     h += '</tr>';
     return h;
   }
-  function buildMemberSheetHtml(members, selectedMap, searchQuery) {
+  function buildMemberSheetHtml(members, selectedMap, searchQuery, showDeleted) {
     selectedMap = selectedMap || {};
     var list = sortMembersForEdit(members);
     var selLive = [], selDel = [];
@@ -825,11 +827,16 @@
       if (m && selectedMap[m.member_id]) { (m.deleted_at ? selDel : selLive).push(m.member_id); }
     }
     var activeCount = list.filter(function (mm) { return !(mm && mm.deleted_at); }).length;
+    // APP-MEMBER-SHEET-UX-001: 削除済みは既定で非表示（当日アプリ名簿タブの 🗑️トグルと同型）。
+    //   showDeleted=true のときだけ末尾に表示する。論理削除行は自動では消えないため、常時表示だと
+    //   一覧が汚れる（作者FB 2026-07-03）。復元はトグルで表示してから行選択→ツールバー。
+    var deletedCount = list.length - activeCount;
+    var scope = showDeleted ? list : list.filter(function (mm) { return !(mm && mm.deleted_at); });
     // APP-MEMBER-SEARCH-001: 氏名・ふりがな・市町村の部分一致フィルタ。表示行のみ絞り込み、
     //   選択状態（selectedMap）とツールバー件数は全会員基準のまま＝絞り込み中に隠れた選択も削除/復元対象
     //   （選択は明示操作の結果であり、フィルタで暗黙解除しない）。value は esc 経由（XSS 安全）。
     var q = normalizeSearchText(searchQuery || '');
-    var visible = q ? list.filter(function (mm) { return memberMatchesSearch(mm, q); }) : list;
+    var visible = q ? scope.filter(function (mm) { return memberMatchesSearch(mm, q); }) : scope;
     var h = '';
     h += '<form id="memberAddForm" class="member-add" autocomplete="off">' +
       '<input type="text" id="memberAddName" name="name" placeholder="氏名（必須）" required>' +
@@ -845,6 +852,10 @@
     } else {
       h += '<p class="muted">有効 ' + activeCount + ' 名／全 ' + list.length + ' 名。セルをタップで編集／削除・復元は左の□で行を選択（論理削除＝復元できます）。</p>';
     }
+    // APP-MEMBER-SHEET-UX-001: 削除済みトグル（削除済みが存在するときだけ表示・件数併記）。
+    if (deletedCount > 0) {
+      h += '<div class="ms-del-toggle"><button type="button" id="msShowDeletedBtn">' + (showDeleted ? '削除済みを隠す' : '削除済みを表示（' + deletedCount + '名）') + '</button></div>';
+    }
     var selTotal = selLive.length + selDel.length;
     if (selTotal > 0) {
       h += '<div class="ms-toolbar" id="msToolbar"><span>' + selTotal + '名 選択中</span>';
@@ -856,6 +867,8 @@
       h += '<p class="muted">名簿が空です。上のフォームから追加できます。</p>';
     } else if (q && !visible.length) {
       h += '<p class="muted">「' + esc(searchQuery || '') + '」に一致する会員がいません。</p>';
+    } else if (!visible.length) {
+      h += '<p class="muted">有効な会員がいません（削除済み ' + deletedCount + ' 名は非表示）。</p>';
     } else {
       h += '<div class="ms-wrap"><table class="ms-table"><thead><tr>' +
         '<th class="ms-th-check">選択</th><th class="ms-th-name">氏名（ふりがな）</th><th>支部員</th><th>会費</th><th>市町村</th>' +
@@ -1193,6 +1206,8 @@
     //   追跡フラッシュする行の member_id（MASTER-SHEET-003 の app/ 移植＝ソートで行が飛んでも見失わない）。
     var msSearchQuery = '';
     var msFlashId = null;
+    // APP-MEMBER-SHEET-UX-001: 削除済み行の表示トグル（既定=非表示・再描画/再読込を跨いで保持）。
+    var msShowDeleted = false;
     function msFlashRow(mid) {
       try {
         if (!doc || !doc.querySelector) return;
@@ -1209,7 +1224,7 @@
     function renderMemberEditor() {
       var el = byId('cloudMembers'); if (!el) return;
       msEditing = null;
-      el.innerHTML = buildMemberSheetHtml(membersForEdit, memberSheetSelected, msSearchQuery);
+      el.innerHTML = buildMemberSheetHtml(membersForEdit, memberSheetSelected, msSearchQuery, msShowDeleted);
       bindMemberSheet();
       if (msFlashId) { var fid = msFlashId; msFlashId = null; msFlashRow(fid); }
     }
@@ -1259,6 +1274,31 @@
         }, 0);
       });
       if (inputs && inputs.length && inputs[inputs.length - 1].focus) inputs[inputs.length - 1].focus();
+    }
+    // APP-MEMBER-SHEET-UX-001: 区分セルの select エディタ結線（タップ循環の置き換え）。
+    //   change で選んだ値だけ保存・現在値と同じ選択は書き込まずキャンセル・Escape/外タップ（focusout）
+    //   でキャンセル。select はネイティブピッカー（スマホ）で選択肢が見える＝誤タップ即確定を排除。
+    function msBindSelectEditor(cell, sel, initial, commit) {
+      if (!sel || !sel.addEventListener) return;
+      sel.addEventListener('change', function () {
+        var v = sel.value;
+        if (v === initial) { msEditing = null; renderMemberEditor(); return; }
+        commit(v);
+      });
+      sel.addEventListener('keydown', function (e) {
+        var k = e && (e.key || e.keyCode);
+        if (k === 'Escape' || k === 27) { msEditing = null; renderMemberEditor(); }
+      });
+      cell.addEventListener('focusout', function () {
+        setTimeout(function () {
+          try {
+            if (!msEditing) return;
+            if (cell.contains && doc.activeElement && cell.contains(doc.activeElement)) return;
+            msEditing = null; renderMemberEditor();
+          } catch (e2) {}
+        }, 0);
+      });
+      if (sel.focus) sel.focus();
     }
     function bindMemberSheet() {
       var addForm = byId('memberAddForm');
@@ -1367,17 +1407,39 @@
         }); });
       }
       bindTextCell('.ms-city-cell', 'city', 'msEditCity');
-      each('.ms-kind-cell', function (cell) { cell.addEventListener('click', function () {
+      // APP-MEMBER-SHEET-UX-001: 区分セルはタップ循環を廃止し select 選択に（作者FB 2026-07-03
+      //   「選択肢が見えない・こんな操作普通じゃない」）。世の中の一覧編集の定石（スプレッドシート/
+      //   Airtable 等のセル内ドロップダウン）に合わせる。保存経路は従来と同じ msCommitPatch。
+      each('.ms-kind-cell', function (cell) { cell.addEventListener('click', function (e) {
+        if (e && e.target && (e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION')) return;
         if (msEditing) return;
         var id = cell.getAttribute('data-id'); var m = msFind(id); if (!m) return;
-        msCommitPatch(id, { member_kind: (m.member_kind === 'other') ? 'member' : 'other' });
+        msEditing = { id: id, kind: 'kind' };
+        var cur = (m.member_kind === 'other') ? 'other' : 'member';
+        cell.innerHTML = '<select class="ms-in ms-in-select" id="msEditKind" aria-label="支部員区分を選択">'
+          + '<option value="member"' + (cur === 'member' ? ' selected' : '') + '>支部員</option>'
+          + '<option value="other"' + (cur === 'other' ? ' selected' : '') + '>支部員以外</option>'
+          + '</select>';
+        msBindSelectEditor(cell, byId('msEditKind'), cur, function (v) { msCommitPatch(id, { member_kind: v }); });
       }); });
-      each('.ms-grade-cell', function (cell) { cell.addEventListener('click', function () {
+      each('.ms-grade-cell', function (cell) { cell.addEventListener('click', function (e) {
+        if (e && e.target && (e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION')) return;
         if (msEditing) return;
         var id = cell.getAttribute('data-id'); var m = msFind(id); if (!m) return;
+        msEditing = { id: id, kind: 'grade' };
         var cur = (m.grade === 'chu' || m.grade === 'josei') ? m.grade : 'ippan';
-        msCommitPatch(id, { grade: (cur === 'ippan') ? 'chu' : (cur === 'chu' ? 'josei' : 'ippan') });
+        cell.innerHTML = '<select class="ms-in ms-in-select" id="msEditGrade" aria-label="会費区分を選択">'
+          + '<option value="ippan"' + (cur === 'ippan' ? ' selected' : '') + '>一般</option>'
+          + '<option value="chu"' + (cur === 'chu' ? ' selected' : '') + '>中学生以下</option>'
+          + '<option value="josei"' + (cur === 'josei' ? ' selected' : '') + '>女性</option>'
+          + '</select>';
+        msBindSelectEditor(cell, byId('msEditGrade'), cur, function (v) { msCommitPatch(id, { grade: v }); });
       }); });
+      // APP-MEMBER-SHEET-UX-001: 削除済み表示トグル。
+      var msShowDelBtn = byId('msShowDeletedBtn');
+      if (msShowDelBtn && msShowDelBtn.addEventListener) {
+        msShowDelBtn.addEventListener('click', function () { msShowDeleted = !msShowDeleted; renderMemberEditor(); });
+      }
     }
     function bindMemberEditor() {
       var addForm = byId('memberAddForm');

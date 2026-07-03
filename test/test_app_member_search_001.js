@@ -92,7 +92,8 @@ const A = loadAuth();
   assert(/msFlashId = id; reloadMembers\(\)/.test(AUTH_JS), 'R4 msCommitPatch 成功時にフラッシュ対象を記録');
   assert(/msSearchInput[\s\S]{0,800}compositionstart/.test(AUTH_JS), 'R5 検索 input に composition ガード');
   assert(/setSelectionRange/.test(AUTH_JS), 'R6 再描画後の refocus（カーソル末尾）');
-  assert(/buildMemberSheetHtml\(membersForEdit, memberSheetSelected, msSearchQuery\)/.test(AUTH_JS), 'R7 描画にクエリを引き渡す');
+  // APP-MEMBER-SHEET-UX-001: 第4引数 msShowDeleted が増えたため pin 更新（クエリ引き渡し自体は不変）。
+  assert(/buildMemberSheetHtml\(membersForEdit, memberSheetSelected, msSearchQuery, msShowDeleted\)/.test(AUTH_JS), 'R7 描画にクエリを引き渡す');
   assert(/msSearchClear/.test(AUTH_JS) && /msSearchQuery = ''; renderMemberEditor\(\)/.test(AUTH_JS), 'R8 クリアで解除');
 })();
 

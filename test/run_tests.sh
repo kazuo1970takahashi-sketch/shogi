@@ -983,6 +983,24 @@ else
 fi
 
 # ============================================
+# APP-MEMBER-SHEET-UX-001 — app/ 名簿シートの編集 UX（作者FB 2026-07-03）
+#   区分セルのタップ循環→セル内 select（▾ヒント・同値/Escape/外タップでキャンセル）／
+#   削除済み行は既定非表示＋「削除済みを表示（N名）」トグル（当日アプリと同型）。
+# ============================================
+echo ""
+echo "【APP-MEMBER-SHEET-UX-001 — 区分セル select 化＋削除済みトグル】"
+if [ -f "$SCRIPT_DIR/test_app_member_sheet_ux_001.js" ]; then
+  if node "$SCRIPT_DIR/test_app_member_sheet_ux_001.js" "$TARGET" > /tmp/app_member_sheet_ux_out.log 2>&1; then
+    ok "APP-MEMBER-SHEET-UX-001 テスト 全PASS ($(tail -1 /tmp/app_member_sheet_ux_out.log))"
+  else
+    ng "APP-MEMBER-SHEET-UX-001 テスト 失敗"
+    cat /tmp/app_member_sheet_ux_out.log
+  fi
+else
+  warn "test_app_member_sheet_ux_001.js が見つからない"
+fi
+
+# ============================================
 # CLEANUP-P3-001 — P3 小掃除（旧サマリ撤去・削除日 title 対称・書き出し成功 toast 化・stale コメント追従）
 #   名簿タブ旧サマリ「登録: N名」撤去（シートヘッダサマリと重複）／削除日セル生値 title／
 #   マスタ書き出し成功 alert→showToast（N2・失敗系 showMsg 不変）／pullMembersFromCloud コメント select('*') 追従。
