@@ -60,6 +60,7 @@ assert(h.indexOf('class="role-help"') >= 0, 'R1 役割説明ボックスあり')
   assert(h.indexOf('<dt>' + r + '</dt>') >= 0, 'R2 役割説明: ' + r);
 });
 assert(h.indexOf('幹事の招待・管理ができる幹事') >= 0, 'R3 管理者の説明文（作者提示の整理）');
+assert(h.indexOf('他の幹事の招待・停止はできません') >= 0, 'R3b 幹事の説明文（作者FB 2026-07-03: 「幹事の管理は不可」が不明瞭→具体操作を明記・案A）');
 const iHelp = h.indexOf('class="role-help"');
 assert(iHelp > iMsg && iHelp < iList, 'R4 役割説明はフォーム下・一覧より前');
 
