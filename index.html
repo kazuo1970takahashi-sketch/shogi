@@ -197,7 +197,33 @@ th.cell-amt{text-align:right}
     </ol>
 
     <h3>持ち時間</h3>
-    <p>総平手25分切れ負け（時間不足の場合は20分）</p>
+    <p id="timeControlLine">大会により異なります（当日の報告書に記載）。持ち時間は「切れ負け」または「秒読み（切れたら一手N秒）」から設定します。</p>
+    <!-- GUIDE-TIME-001 (作者依頼 2026-07-03): 当日アプリと同一端末なら localStorage の大会データ
+         （state.report の持ち時間）を実値表示（案A=置き換え）。読めない端末は上の一般文言のまま（fail-soft）。
+         textContent 代入のみ＝innerHTML 不使用（XSS 非増加）。数値は parseInt で正規化。 -->
+    <script>
+    (function(){
+      try{
+        var raw=localStorage.getItem('shogi_v4');
+        if(!raw)return;
+        var st=JSON.parse(raw);
+        var r=st&&st.report;
+        if(!r)return;
+        var m=parseInt(r.timeMain,10);
+        if(!(m>0))return;
+        var s;
+        if(r.timeType==='byoyomi'){
+          var b=parseInt(r.timeByoyomi,10);
+          if(!(b>0))b=30;
+          s=m+'分（切れたら一手'+b+'秒）';
+        }else{
+          s=m+'分切れ負け';
+        }
+        var el=document.getElementById('timeControlLine');
+        if(el)el.textContent='今大会：'+s+'（当日アプリの入力から自動表示）';
+      }catch(e){}
+    })();
+    </script>
   </div>
 
   <!-- 注意事項 -->
