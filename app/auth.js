@@ -780,6 +780,26 @@
       : '<span class="mk-badge mk-member">支部員</span>';
   }
   function gradeShortLabel(g) { return g === 'chu' ? '中学' : (g === 'josei' ? '女性' : '一般'); }
+  // APP-MEMBER-SEARCH-001: 検索用正規化（純）。小文字化・カタカナ→ひらがな・空白（半角/全角）除去。
+  //   ふりがな検索でカナ/かなの揺れを吸収する（当日アプリの検索と同趣旨・依存なしの自前実装）。
+  function normalizeSearchText(s) {
+    var t = String(s == null ? '' : s).toLowerCase();
+    var out = '';
+    for (var i = 0; i < t.length; i++) {
+      var c = t.charCodeAt(i);
+      if (c >= 0x30A1 && c <= 0x30F6) out += String.fromCharCode(c - 0x60);
+      else out += t.charAt(i);
+    }
+    return out.replace(/[\s　]+/g, '');
+  }
+  // APP-MEMBER-SEARCH-001: 会員が正規化済みクエリに部分一致するか（純）。氏名・ふりがな・市町村を対象。
+  function memberMatchesSearch(m, normQuery) {
+    if (!normQuery) return true;
+    if (!m) return false;
+    return normalizeSearchText(m.name).indexOf(normQuery) >= 0
+      || normalizeSearchText(m.yomi).indexOf(normQuery) >= 0
+      || normalizeSearchText(m.city).indexOf(normQuery) >= 0;
+  }
   function buildMemberSheetRowHtml(m, selected) {
     var mid = esc((m && m.member_id) || '');
     var isDel = !!(m && m.deleted_at);
@@ -796,7 +816,7 @@
     h += '</tr>';
     return h;
   }
-  function buildMemberSheetHtml(members, selectedMap) {
+  function buildMemberSheetHtml(members, selectedMap, searchQuery) {
     selectedMap = selectedMap || {};
     var list = sortMembersForEdit(members);
     var selLive = [], selDel = [];
@@ -805,6 +825,11 @@
       if (m && selectedMap[m.member_id]) { (m.deleted_at ? selDel : selLive).push(m.member_id); }
     }
     var activeCount = list.filter(function (mm) { return !(mm && mm.deleted_at); }).length;
+    // APP-MEMBER-SEARCH-001: 氏名・ふりがな・市町村の部分一致フィルタ。表示行のみ絞り込み、
+    //   選択状態（selectedMap）とツールバー件数は全会員基準のまま＝絞り込み中に隠れた選択も削除/復元対象
+    //   （選択は明示操作の結果であり、フィルタで暗黙解除しない）。value は esc 経由（XSS 安全）。
+    var q = normalizeSearchText(searchQuery || '');
+    var visible = q ? list.filter(function (mm) { return memberMatchesSearch(mm, q); }) : list;
     var h = '';
     h += '<form id="memberAddForm" class="member-add" autocomplete="off">' +
       '<input type="text" id="memberAddName" name="name" placeholder="氏名（必須）" required>' +
@@ -812,7 +837,14 @@
       '<input type="text" id="memberAddCity" name="city" placeholder="市町村">' +
       '<button type="submit" id="memberAddBtn">追加</button>' +
       '</form>';
-    h += '<p class="muted">有効 ' + activeCount + ' 名／全 ' + list.length + ' 名。セルをタップで編集／削除・復元は左の□で行を選択（論理削除＝復元できます）。</p>';
+    h += '<div class="ms-search"><input type="search" id="msSearchInput" value="' + esc(searchQuery || '') + '" placeholder="検索（氏名・ふりがな・市町村）" autocomplete="off" aria-label="名簿を検索">'
+      + (q ? '<button type="button" id="msSearchClear">クリア</button>' : '')
+      + '</div>';
+    if (q) {
+      h += '<p class="muted" id="msSearchCount">' + visible.length + '名が一致（有効 ' + activeCount + ' 名／全 ' + list.length + ' 名）。</p>';
+    } else {
+      h += '<p class="muted">有効 ' + activeCount + ' 名／全 ' + list.length + ' 名。セルをタップで編集／削除・復元は左の□で行を選択（論理削除＝復元できます）。</p>';
+    }
     var selTotal = selLive.length + selDel.length;
     if (selTotal > 0) {
       h += '<div class="ms-toolbar" id="msToolbar"><span>' + selTotal + '名 選択中</span>';
@@ -822,11 +854,13 @@
     }
     if (!list.length) {
       h += '<p class="muted">名簿が空です。上のフォームから追加できます。</p>';
+    } else if (q && !visible.length) {
+      h += '<p class="muted">「' + esc(searchQuery || '') + '」に一致する会員がいません。</p>';
     } else {
       h += '<div class="ms-wrap"><table class="ms-table"><thead><tr>' +
         '<th class="ms-th-check">選択</th><th class="ms-th-name">氏名（ふりがな）</th><th>支部員</th><th>会費</th><th>市町村</th>' +
         '</tr></thead><tbody>';
-      for (var r = 0; r < list.length; r++) { h += buildMemberSheetRowHtml(list[r], !!(list[r] && selectedMap[list[r].member_id])); }
+      for (var r = 0; r < visible.length; r++) { h += buildMemberSheetRowHtml(visible[r], !!(visible[r] && selectedMap[visible[r].member_id])); }
       h += '</tbody></table></div>';
     }
     h += '<p id="memberEditMsg" class="msg" role="status"></p>';
@@ -1155,11 +1189,29 @@
     // APP-UX-002: 描画はシート型（旧 buildMemberEditPanelHtml/bindMemberEditor は回帰資産として温存・未結線）。
     var memberSheetSelected = {};
     var msEditing = null; // {id,kind}（インライン編集中のセル）
+    // APP-MEMBER-SEARCH-001: 検索クエリ（再描画・reloadMembers を跨いで保持）と、編集確定後に
+    //   追跡フラッシュする行の member_id（MASTER-SHEET-003 の app/ 移植＝ソートで行が飛んでも見失わない）。
+    var msSearchQuery = '';
+    var msFlashId = null;
+    function msFlashRow(mid) {
+      try {
+        if (!doc || !doc.querySelector) return;
+        var tr = doc.querySelector('tr.ms-row[data-id="' + mid + '"]');
+        if (!tr) return;
+        if (tr.scrollIntoView) { try { tr.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e0) { tr.scrollIntoView(); } }
+        if (tr.style) {
+          tr.style.transition = 'background-color 0.3s';
+          tr.style.backgroundColor = '#fff3bf';
+          setTimeout(function () { try { tr.style.backgroundColor = ''; } catch (e1) {} }, 1500);
+        }
+      } catch (e) {}
+    }
     function renderMemberEditor() {
       var el = byId('cloudMembers'); if (!el) return;
       msEditing = null;
-      el.innerHTML = buildMemberSheetHtml(membersForEdit, memberSheetSelected);
+      el.innerHTML = buildMemberSheetHtml(membersForEdit, memberSheetSelected, msSearchQuery);
       bindMemberSheet();
+      if (msFlashId) { var fid = msFlashId; msFlashId = null; msFlashRow(fid); }
     }
     function loadMemberEditor() {
       if (!lastSummary) return;
@@ -1177,7 +1229,8 @@
       updateMemberFields(client, lastSummary.clubId, id, patch).then(function (r) {
         msEditing = null;
         setMsg('memberEditMsg', r.message);
-        if (r.ok) reloadMembers(); else renderMemberEditor();
+        // APP-MEMBER-SEARCH-001: 成功時は再読込後にその行へスクロール＋フラッシュ（ソート移動の追跡）。
+        if (r.ok) { msFlashId = id; reloadMembers(); } else renderMemberEditor();
       });
     }
     function msBindEditorInputs(cell, commit) {
@@ -1219,6 +1272,34 @@
           setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
         });
       });
+      // APP-MEMBER-SEARCH-001: 検索ボックスの結線。IME 変換中は絞り込まない（composing フラグ＋
+      //   e.isComposing の二重ガード・確定は compositionend で反映＝MASTER-SHEET-004 と同方針。
+      //   Enter 確定 UI ではないため keyCode 229 判定は不要）。
+      //   再描画で input が作り直されるため、反映後に refocus（カーソル末尾）して連続入力を保つ。
+      var msSearchInput = byId('msSearchInput');
+      if (msSearchInput && msSearchInput.addEventListener) {
+        var msComposing = false;
+        var applyMsSearch = function () {
+          var el2 = byId('msSearchInput');
+          msSearchQuery = (el2 && el2.value) || '';
+          renderMemberEditor();
+          var el3 = byId('msSearchInput');
+          if (el3 && el3.focus) {
+            el3.focus();
+            try { var L = (el3.value || '').length; if (el3.setSelectionRange) el3.setSelectionRange(L, L); } catch (e4) {}
+          }
+        };
+        msSearchInput.addEventListener('compositionstart', function () { msComposing = true; });
+        msSearchInput.addEventListener('compositionend', function () { msComposing = false; applyMsSearch(); });
+        msSearchInput.addEventListener('input', function (e) {
+          if (msComposing || (e && e.isComposing)) return;
+          applyMsSearch();
+        });
+      }
+      var msSearchClear = byId('msSearchClear');
+      if (msSearchClear && msSearchClear.addEventListener) {
+        msSearchClear.addEventListener('click', function () { msSearchQuery = ''; renderMemberEditor(); });
+      }
       if (!doc || !doc.querySelectorAll) return;
       function each(sel, fn) { var n = doc.querySelectorAll(sel); if (!n) return; Array.prototype.forEach.call(n, fn); }
       each('.ms-check', function (cb) { cb.addEventListener('change', function () {
@@ -1557,6 +1638,9 @@
     gradeShortLabel: gradeShortLabel,
     buildMemberSheetRowHtml: buildMemberSheetRowHtml,
     buildMemberSheetHtml: buildMemberSheetHtml,
+    // APP-MEMBER-SEARCH-001
+    normalizeSearchText: normalizeSearchText,
+    memberMatchesSearch: memberMatchesSearch,
     memberBulkConfirmMessage: memberBulkConfirmMessage,
     updateMemberFields: updateMemberFields,
     setMembersDeletedBulk: setMembersDeletedBulk,
