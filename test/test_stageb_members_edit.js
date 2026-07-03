@@ -194,7 +194,8 @@ const CLUB = 'cccccccc-0000-0000-0000-000000000001';
   await (async function(){
     var row = A.buildMemberSheetRowHtml({ member_id:'m1', name:'架空太郎', yomi:'かくうたろう', member_kind:'other', grade:'josei', city:'沼津市', branch:'沼津', deleted_at:null }, false);
     assert(row.indexOf('かくうたろう')>=0 && row.indexOf('かくうたろう')<row.indexOf('架空太郎</span>'), 'S1 ふりがなは氏名の上（ルビ位置・checkbox aria-label は除外して比較）');
-    assert(row.indexOf('mk-other')>=0 && row.indexOf('>女性<')>=0 && row.indexOf('沼津市')>=0, 'S2 区分バッジ・会費・市町村を表示');
+    // APP-MEMBER-SHEET-UX-001: 区分セルに ▾ ヒントが付いたため '>女性<' → '>女性 ' に pin 更新（表示自体は不変）。
+    assert(row.indexOf('mk-other')>=0 && row.indexOf('>女性 ')>=0 && row.indexOf('沼津市')>=0, 'S2 区分バッジ・会費・市町村を表示');
     assert(row.indexOf('ms-name-cell')>=0 && row.indexOf('ms-kind-cell')>=0 && row.indexOf('ms-grade-cell')>=0 && row.indexOf('ms-check')>=0, 'S3 編集セル class＋選択 checkbox');
     assert(row.indexOf('m-edit')<0 && row.indexOf('m-delete')<0, 'S4 行の編集/削除ボタンは無い');
     var delRow = A.buildMemberSheetRowHtml({ member_id:'m2', name:'削除架空', yomi:'さくじょ', deleted_at:'2026-06-15T00:00:00Z' }, true);
