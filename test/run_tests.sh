@@ -946,6 +946,24 @@ else
   warn "test_stagea_login.js が見つからない"
 fi
 
+# ============================================
+# APP-UX-004B — 幹事管理の整列＋役割説明（app/auth.js + app/index.html・作者承認 2026-07-03）
+#   招待フォーム .adm-form 化（40px統一・役割select内容幅）／adminMsg フォーム直下（結果視認性）／
+#   役割説明 .role-help／一覧の役割バッジ化。id・bind・act-* は全温存。
+# ============================================
+echo ""
+echo "【APP-UX-004B — 幹事管理の整列＋役割説明（招待フォーム統一・adminMsg 直下・役割バッジ）】"
+if [ -f "$SCRIPT_DIR/test_app_ux_004b.js" ]; then
+  if node "$SCRIPT_DIR/test_app_ux_004b.js" "$TARGET" > /tmp/app_ux_004b_out.log 2>&1; then
+    ok "APP-UX-004B テスト 全PASS ($(tail -1 /tmp/app_ux_004b_out.log))"
+  else
+    ng "APP-UX-004B テスト 失敗"
+    cat /tmp/app_ux_004b_out.log
+  fi
+else
+  warn "test_app_ux_004b.js が見つからない"
+fi
+
 echo ""
 echo "【DATA-PERSISTENCE-PHASE2 Stage B-1 — クラウド read-only 閲覧（app/auth.js・過去大会/結果/名簿・mock client）】"
 if [ -f "$SCRIPT_DIR/test_stageb_read.js" ]; then
