@@ -3665,14 +3665,11 @@ function buildMasterTabHtml(master){
   // HELP-UX-005 (#342): 見出し脇に「？ ヘルプ」（id=helpBtnMaster）。click は bindMasterTabEvents 側で
   //   openHelpModal('master') へ結線（renderMasterTab 後に毎回 bind・#309/#323 と同じ build/bind 分離）。
   var html='<div class="section"><div style="display:flex;align-items:center;gap:8px"><h2 style="margin:0">沼津支部 参加者マスタ</h2><button type="button" id="helpBtnMaster" class="btn-sm" title="支部マスタの使い方をヘルプで表示します" aria-label="支部マスタヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button></div>';
-  // A-4 §3.5.2: 登録数 + ふりがな未入力数のサマリー
+  // A-4 §3.5.2 → CLEANUP-P3-001: 旧サマリ行「登録: N名（うちふりがな未入力: N名）」は撤去（MASTER-SHEET-002 の
+  //   シートヘッダサマリ「名簿 N名（ふりがな未入力 N名）」と重複＝?v=61 P3 申し送りの消化）。noYomiCount の算出は
+  //   ヘッダサマリ側（下記）で使うため維持。
   var noYomiCount=0;
   for(var ny=0;ny<liveMembers.length;ny++){if(isNoYomiMember(liveMembers[ny]))noYomiCount++;}
-  var summaryHtml='登録: <strong>'+liveMembers.length+'名</strong>';
-  if(liveMembers.length>0){
-    summaryHtml+='<span id="master-no-yomi-summary" style="color:#888;margin-left:8px">（うちふりがな未入力: <strong>'+noYomiCount+'名</strong>）</span>';
-  }
-  html+='<div style="margin-bottom:12px;font-size:14px">'+summaryHtml+'</div>';
   // ⑪ 名簿タブのボタン整理: 当日に使う「☁ クラウドから取得」だけ常時表示。準備/保守系（統合・入出力・削除済み表示・リセット）は
   //   <details>「⚙ 名簿のメンテナンス」へ格納し画面圧迫と誤タップ（特に赤いリセット）を減らす。各ボタンの id は不変＝既存 bind を温存。
   html+='<div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:8px">';
@@ -3760,7 +3757,8 @@ function buildMasterTabHtml(master){
       html+='<td'+(isDel?'':' class="master-cell-grade" data-mid="'+mid+'" title="タップで切替"')+' style="text-align:center;padding:4px 2px;font-size:12px'+(isDel?'':';cursor:pointer')+'">'+escapeHtml(gradeLabel)+'</td>';
       html+='<td style="text-align:center;padding:4px 2px;font-size:12px">'+escapeHtml(lastCls)+'</td>';
       if(isDel){
-        html+='<td style="text-align:center;padding:4px 2px;font-size:10px;color:#888;text-decoration:none">削除:'+escapeHtml(_masterSheetFmtDate(m.deleted_at))+'</td>';
+        // CLEANUP-P3-001: 削除日セルにも生値 title を付与（最終参加セルと対称＝?v=61 P3「削除日の title 非対称」の消化）。
+        html+='<td style="text-align:center;padding:4px 2px;font-size:10px;color:#888;text-decoration:none" title="'+escapeHtml(m.deleted_at||'')+'">削除:'+escapeHtml(_masterSheetFmtDate(m.deleted_at))+'</td>';
       }else{
         html+='<td style="text-align:center;padding:4px 2px;font-size:11px;color:#888" title="'+escapeHtml(m.last_attended||'')+'">'+escapeHtml(_masterSheetFmtDate(m.last_attended))+'</td>';
       }
@@ -4625,7 +4623,9 @@ function bindMasterTabEvents(){
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      alert(filename+' に保存しました（端末のダウンロードフォルダ）。\n\n端末移行や誤削除に備えて、安全な場所に保管してください。');
+      // CLEANUP-P3-001 (NOTIFY-N2 第2スライス・#476 L3 申し送りの消化): 成功通知を alert → showToast に
+      //   （STYLE-GUIDE 通知4分類 N2=成功は toast・成功に alert 禁止）。失敗系 showMsg('err') は不変。
+      showToast(filename+' に保存しました');
     }catch(e){
       if(typeof showMsg==='function')showMsg('マスタの書き出しに失敗しました','err');
     }
@@ -9546,7 +9546,7 @@ function syncTournamentToCloud(client, master, opts){
 //   syncTournamentToCloud（送信）と対称の読み取りオーケストレーション。client は注入（mock 可）。
 //   throw せず {ok,...} を返す（当日運営を止めない）。全クラウド操作は任意・非ブロッキング・失敗は通知のみ。
 //   opts: { clubId（必須）, master（省略時 loadBranchMaster()） }。
-//   - members を select('member_id,name,yomi,branch,deleted_at').eq('club_id',clubId) で取得。
+//   - members を select('*').eq('club_id',clubId) で取得（CLOUD-MEMBER-FIELDS-001 で明示列挙から変更・CLEANUP-P3-001 でコメント追従）。
 //     deleted_at 非 null はクラウド側の論理削除（app/ B-5）→ merge でローカル tombstone 反映（B-3b-tombstone）。
 //   - 変更が無ければ保存しない（保存失敗での誤通知を避ける）。
 //   - 戻り: {ok, step?, counts:{fetched,added,updated,skipped}, saved, master, message?}。
