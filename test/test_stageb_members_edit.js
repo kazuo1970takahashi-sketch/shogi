@@ -245,7 +245,8 @@ const CLUB = 'cccccccc-0000-0000-0000-000000000001';
     assert(row.indexOf('ms-branch-cell')<0 && row.indexOf('（旧市町村データ）')<0, 'U16 シート行に支部セルは無い（branch は表示しない）');
     var sheet = A.buildMemberSheetHtml([{ member_id:'m1', name:'甲', yomi:'こ', deleted_at:null }], {});
     assert(sheet.indexOf('<th>支部</th>')<0 && sheet.indexOf('<th>市町村</th>')>=0, 'U17 ヘッダは市町村のみ（支部列撤去）');
-    assert(sheet.indexOf('memberAddCity')>=0 && sheet.indexOf('memberAddBranch')<0 && sheet.indexOf('placeholder="市町村"')>=0, 'U18 追加フォームは市町村入力（branch 入力撤去）');
+    // APP-UX-004C: placeholder はラベル＋例示（例）沼津市）に変更＝pin を label 基準へ現実追従（市町村入力の intent 不変）。
+    assert(sheet.indexOf('memberAddCity')>=0 && sheet.indexOf('memberAddBranch')<0 && sheet.indexOf('<label for="memberAddCity">市町村</label>')>=0, 'U18 追加フォームは市町村入力（branch 入力撤去）');
     var cI = makeClient({});
     await A.insertMember(cI, CLUB, { name:'新規 花子', yomi:'', city:' 三島市 ' }, function(){ return 'dddddddd-eeee-ffff-0000-111111111111'; });
     var payI = cI._calls.insert[0].payload;
