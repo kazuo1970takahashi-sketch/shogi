@@ -1001,6 +1001,24 @@ else
 fi
 
 # ============================================
+# APP-MEMBER-HARD-DELETE-001 — 名簿の完全削除（物理削除・第2弾）
+#   削除済み行の選択時のみ「完全削除」ボタン／players をサーバ確認し出場記録ゼロだけ削除
+#   （FK CASCADE による成績連鎖消滅を構造的に防止）／RLS 0行削除は権限エラー／強 confirm。
+# ============================================
+echo ""
+echo "【APP-MEMBER-HARD-DELETE-001 — 完全削除（出場記録ゼロ限定・サーバ確認）】"
+if [ -f "$SCRIPT_DIR/test_app_member_hard_delete_001.js" ]; then
+  if node "$SCRIPT_DIR/test_app_member_hard_delete_001.js" "$TARGET" > /tmp/app_member_hard_delete_out.log 2>&1; then
+    ok "APP-MEMBER-HARD-DELETE-001 テスト 全PASS ($(tail -1 /tmp/app_member_hard_delete_out.log))"
+  else
+    ng "APP-MEMBER-HARD-DELETE-001 テスト 失敗"
+    cat /tmp/app_member_hard_delete_out.log
+  fi
+else
+  warn "test_app_member_hard_delete_001.js が見つからない"
+fi
+
+# ============================================
 # DAYOF-UX-HINT-001 — 当日アプリの案内強化（作者依頼 2026-07-03）
 #   PP モードバーに手順番号 ①②＋選択中クラス名ヒント／ヘッダに「📖 案内」＝運営サイト（index.html）
 #   への新規タブ参照リンク（rel=noopener・静的・bind 不要）。
