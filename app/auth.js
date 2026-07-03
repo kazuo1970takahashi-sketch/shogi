@@ -943,22 +943,25 @@
   function hardDeleteMembers(client, clubId, memberIds) {
     var ids = Array.isArray(memberIds) ? memberIds.filter(function (x) { return !!x; }) : [];
     if (!clubId || !ids.length) return Promise.resolve({ ok: false, deleted: [], skipped: [], message: '対象を特定できません。' });
-    return client.from('players').select('member_id').eq('club_id', clubId).in('member_id', ids).then(function (pr) {
-      if (pr && pr.error) return { ok: false, deleted: [], skipped: [], message: '出場記録の確認に失敗しました: ' + pr.error.message };
-      var has = {}; var rows = (pr && pr.data) || [];
-      for (var i = 0; i < rows.length; i++) { if (rows[i] && rows[i].member_id) has[rows[i].member_id] = true; }
-      var eligible = [], skipped = [];
-      for (var k = 0; k < ids.length; k++) { (has[ids[k]] ? skipped : eligible).push(ids[k]); }
-      if (!eligible.length) return { ok: false, deleted: [], skipped: skipped, message: '選択した会員には出場記録があるため完全削除できません（論理削除のまま保持します）。' };
-      return client.from('members').delete().eq('club_id', clubId).in('member_id', eligible).select('member_id').then(function (dr) {
-        if (dr && dr.error) return { ok: false, deleted: [], skipped: skipped, message: '完全削除に失敗しました: ' + dr.error.message };
-        var deleted = []; var drows = (dr && dr.data) || [];
-        for (var d = 0; d < drows.length; d++) { if (drows[d] && drows[d].member_id) deleted.push(drows[d].member_id); }
-        if (!deleted.length) return { ok: false, deleted: [], skipped: skipped, message: '完全削除できませんでした（幹事（管理者）の権限が必要です）。' };
-        var msg = deleted.length + '名を完全に削除しました。';
-        if (skipped.length) msg += '（出場記録のある ' + skipped.length + '名はスキップ＝論理削除のまま）';
-        return { ok: true, deleted: deleted, skipped: skipped, message: msg };
-      });
+    // HARD-DELETE-ATOMIC-001 (Codex 監査 #525 Must-1): 旧実装の2リクエスト
+    //   （players select → members delete）は間に players/entries が挿入されると
+    //   ON DELETE CASCADE で成績を巻き込むレース窓があった。単一トランザクションの
+    //   RPC（members 行 FOR UPDATE ロック → 出場記録の再確認 → 論理削除済みだけ delete）
+    //   に置き換え、判定と削除をサーバ側で原子的に確定する。
+    //   RPC は SECURITY INVOKER（RLS 有効のまま）＋ app_is_admin 明示チェック
+    //   （非管理者・削除済み行以外は raise → error 経路で通知）。
+    return client.rpc('app_hard_delete_members', { p_club: clubId, p_member_ids: ids }).then(function (res) {
+      if (res && res.error) return { ok: false, deleted: [], skipped: [], message: '完全削除に失敗しました: ' + res.error.message };
+      var d = (res && res.data) || {};
+      var deleted = Array.isArray(d.deleted) ? d.deleted : [];
+      var skipped = Array.isArray(d.skipped) ? d.skipped : [];
+      if (!deleted.length) {
+        if (skipped.length) return { ok: false, deleted: [], skipped: skipped, message: '選択した会員には出場記録があるため完全削除できません（論理削除のまま保持します）。' };
+        return { ok: false, deleted: [], skipped: [], message: '完全削除できませんでした（対象が見つからないか、削除済み行ではありません）。' };
+      }
+      var msg = deleted.length + '名を完全に削除しました。';
+      if (skipped.length) msg += '（出場記録のある ' + skipped.length + '名はスキップ＝論理削除のまま）';
+      return { ok: true, deleted: deleted, skipped: skipped, message: msg };
     });
   }
 
