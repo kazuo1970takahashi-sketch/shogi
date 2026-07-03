@@ -322,6 +322,13 @@
       sodos: (e && e.sodos != null) ? e.sodos : ''
     };
   }
+  // APP-UX-004A (作者依頼 2026-07-03「当日アプリの順位表と同じUIに」): クラスごとのブロック・
+  //   ふりがなルビ・1位ハイライト・凡例を当日 buildScoreboardClassTableHtml と同型に。
+  //   回戦別の○×列はクラウドに一局データが無いため出せない（entries は集計値のみ・将来拡張候補）。
+  function _entryNameRubyHtml(name, yomi) {
+    var n = esc(name || '');
+    return (typeof yomi === 'string' && yomi) ? '<ruby>' + n + '<rt>' + esc(yomi) + '</rt></ruby>' : n;
+  }
   function buildEntryTableHtml(entries) {
     var list = (Array.isArray(entries) ? entries : []).map(shapeEntryRow);
     if (!list.length) return '<p class="muted">この大会の結果がありません。</p>';
@@ -331,12 +338,39 @@
       var ra = (a.rank == null) ? 9999 : a.rank, rb = (b.rank == null) ? 9999 : b.rank;
       return ra - rb;
     });
-    var rows = list.map(function (r) {
-      return '<tr><td>' + esc(r.cls) + '</td><td>' + (r.rank == null ? '-' : esc(String(r.rank))) + '</td>' +
-        '<td>' + esc(r.name) + '</td><td>' + esc(String(r.wins)) + '</td><td>' + esc(String(r.losses)) + '</td>' +
-        '<td>' + esc(String(r.sos)) + '</td><td>' + esc(String(r.sodos)) + '</td></tr>';
-    }).join('');
-    return '<table class="cloud-entries"><thead><tr><th>クラス</th><th>順位</th><th>氏名</th><th>勝</th><th>負</th><th>B(SOS)</th><th>C(SODOS)</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    var order = [], byCls = {};
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i].cls || '';
+      if (!byCls[c]) { byCls[c] = []; order.push(c); }
+      byCls[c].push(list[i]);
+    }
+    var html = '';
+    for (var k = 0; k < order.length; k++) {
+      var cls = order[k], rows = byCls[cls];
+      html += '<div class="sb-class">';
+      html += '<div class="sb-class-h">' + esc(cls ? cls + 'クラス' : '（クラスなし）') + '　<span class="sb-sub">最終結果</span></div>';
+      html += '<table class="sb-table"><thead><tr><th class="sb-col-rank">順位</th><th class="sb-col-name">氏名</th><th>勝</th><th>負</th><th>B</th><th>C</th></tr></thead><tbody>';
+      for (var j = 0; j < rows.length; j++) {
+        var r = rows[j];
+        html += '<tr' + (r.rank === 1 ? ' class="sb-row-1"' : '') + '>' +
+          '<td class="sb-col-rank">' + (r.rank == null ? '-' : esc(String(r.rank))) + '</td>' +
+          '<td class="sb-col-name">' + _entryNameRubyHtml(r.name, r.yomi) + '</td>' +
+          '<td class="sb-wins">' + esc(String(r.wins)) + '</td>' +
+          '<td class="sb-metric">' + esc(String(r.losses)) + '</td>' +
+          '<td class="sb-metric">' + esc(String(r.sos)) + '</td>' +
+          '<td class="sb-metric">' + esc(String(r.sodos)) + '</td></tr>';
+      }
+      html += '</tbody></table></div>';
+    }
+    html += '<div class="sb-legend">勝・負＝勝敗数　・　B＝対戦相手の勝数合計／C＝勝った相手の勝数合計（順位判定の主要指標）</div>';
+    return html;
+  }
+  // APP-UX-004A: 選択中大会の見出し（大会結果の上に大会名・日付・年度/状態を表示）。
+  function buildTournamentHeadHtml(t) {
+    if (!t) return '';
+    var st = TSTATUS_LABEL[t.status] || esc((t && t.status) || '');
+    return '<div class="sb-tnt-head">' + esc(t.date || '') + '　' + esc(t.name || '(名称未設定)') +
+      '<span class="sb-tnt-meta">' + esc(t.season || '') + '／' + st + '</span></div>';
   }
   function fetchTournaments(client, clubId) {
     return client.from('tournaments').select('id,name,date,season,status').eq('club_id', clubId).then(function (res) {
@@ -1038,9 +1072,11 @@
       loadReadViews();
       bindImport();
     }
+    var lastTournaments = [];
     function loadReadViews() {
       if (!lastSummary) return;
       fetchTournaments(client, lastSummary.clubId).then(function (r) {
+        lastTournaments = (r.ok && r.tournaments) || [];
         var el = byId('cloudTournaments');
         if (el) el.innerHTML = r.ok ? buildTournamentListHtml(r.tournaments) : '<p class="muted">' + esc(r.message) + '</p>';
         bindTournamentRows();
@@ -1333,10 +1369,16 @@
       Array.prototype.forEach.call(nodes, function (n) {
         n.addEventListener('click', function () {
           var tid = n.getAttribute('data-id');
+          // APP-UX-004A: 選択中の大会ボタンを active 表示（className 直接更新＝ES5）。
+          var all = doc.querySelectorAll('.cloud-tnt');
+          Array.prototype.forEach.call(all, function (b) { b.className = 'cloud-tnt'; });
+          n.className = 'cloud-tnt active';
+          var tnt = null;
+          for (var ti = 0; ti < lastTournaments.length; ti++) { if (lastTournaments[ti] && String(lastTournaments[ti].id) === String(tid)) { tnt = lastTournaments[ti]; break; } }
           var el = byId('cloudEntries'); if (el) el.innerHTML = '<p class="muted">読み込み中…</p>';
           fetchEntries(client, tid, lastSummary.clubId).then(function (r) {
             var e2 = byId('cloudEntries');
-            if (e2) e2.innerHTML = r.ok ? buildEntryTableHtml(r.entries) : '<p class="muted">' + esc(r.message) + '</p>';
+            if (e2) e2.innerHTML = r.ok ? (buildTournamentHeadHtml(tnt) + buildEntryTableHtml(r.entries)) : '<p class="muted">' + esc(r.message) + '</p>';
           });
         });
       });
@@ -1436,6 +1478,7 @@
     buildMemberListHtml: buildMemberListHtml,
     shapeEntryRow: shapeEntryRow,
     buildEntryTableHtml: buildEntryTableHtml,
+    buildTournamentHeadHtml: buildTournamentHeadHtml,
     fetchTournaments: fetchTournaments,
     fetchMembers: fetchMembers,
     fetchEntries: fetchEntries,
