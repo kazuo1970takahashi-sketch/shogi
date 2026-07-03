@@ -1429,8 +1429,18 @@
       var hardBtn = byId('msHardDeleteBtn');
       if (hardBtn) hardBtn.addEventListener('click', function () {
         var s = selectedSplit(); if (!s.del.length) return;
-        var ask = (typeof global.confirm === 'function') ? global.confirm : null;
-        if (ask && !ask(memberHardDeleteConfirmMessage(s.del.length, s.preview))) return;
+        // L3 P2 (#521): confirm の氏名プレビューは削除対象（削除済み行）だけに絞る。selectedSplit の
+        //   preview は live/del 混在の先頭5名のため、混在選択時に「削除されない有効会員の氏名」が
+        //   破壊 confirm に出てしまう誤表示を防ぐ。
+        var delNames = [];
+        for (var dn = 0; dn < membersForEdit.length && delNames.length < 5; dn++) {
+          var dm = membersForEdit[dn];
+          if (dm && dm.deleted_at && memberSheetSelected[dm.member_id]) delNames.push(dm.name || '');
+        }
+        var delPreview = delNames.join('、') + (s.del.length > 5 ? ' 他' : '');
+        // L3 P3 (#521): 破壊操作は confirm が使えない環境では実行しない（論理削除/復元より厳格側に倒す）。
+        if (typeof global.confirm !== 'function') { setMsg('memberEditMsg', '確認ダイアログが使えないため完全削除を実行しません。'); return; }
+        if (!global.confirm(memberHardDeleteConfirmMessage(s.del.length, delPreview))) return;
         setMsg('memberEditMsg', '完全削除中…');
         hardDeleteMembers(client, lastSummary.clubId, s.del).then(function (r) {
           if (r && r.deleted) { for (var i = 0; i < r.deleted.length; i++) delete memberSheetSelected[r.deleted[i]]; }

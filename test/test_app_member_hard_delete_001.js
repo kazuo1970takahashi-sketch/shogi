@@ -110,7 +110,11 @@ function makeClient(opts){
 
   // ================================================= R. RAW pin（結線）
   (function(){
-    assert(/msHardDeleteBtn[\s\S]{0,600}memberHardDeleteConfirmMessage/.test(AUTH_JS), 'R1 confirm を経由して実行');
+    assert(/msHardDeleteBtn[\s\S]{0,1600}memberHardDeleteConfirmMessage/.test(AUTH_JS), 'R1 confirm を経由して実行');
+    // L3 P2 (#521): 混在選択時に有効会員の氏名が破壊 confirm に出ないよう、削除済み行だけの preview を組む。
+    assert(/dm\.deleted_at && memberSheetSelected\[dm\.member_id\]/.test(AUTH_JS), 'R5 confirm プレビューは削除済み行に限定');
+    // L3 P3 (#521): confirm が使えない環境では実行しない（厳格側）。
+    assert(/確認ダイアログが使えないため完全削除を実行しません/.test(AUTH_JS), 'R6 confirm 不在は中止');
     assert(/hardDeleteMembers\(client, lastSummary\.clubId, s\.del\)/.test(AUTH_JS), 'R2 対象は選択中の削除済み行');
     assert(/r\.deleted\.length; i\+\+\) delete memberSheetSelected\[r\.deleted\[i\]\]/.test(AUTH_JS), 'R3 実削除分だけ選択解除（skip 分は選択維持）');
     assert(/hardDeleteMembers\(client[\s\S]{0,400}reloadMembers\(\)/.test(AUTH_JS), 'R4 成功時は再読込');
