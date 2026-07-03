@@ -425,7 +425,7 @@
   function fetchEntries(client, tournamentId, clubId) {
     return client.from('entries')
       .select('final_rank,class,wins,losses,sos,sodos,participated,player_id')
-      .eq('tournament_id', tournamentId).then(function (res) {
+      .eq('tournament_id', tournamentId).eq('club_id', clubId).then(function (res) {
         if (res.error) return { ok:false, message:'結果の読み込みに失敗しました', entries:[] };
         var rows = res.data || [];
         return client.from('players').select('id,member_id,members(name,yomi)').eq('club_id', clubId).then(function (pr) {
@@ -992,14 +992,18 @@
   //   同名が複数いる場合は曖昧として新規扱い＋警告（誤った別人への紐付けを避ける）。
   function resolveImportMembers(payload, existingMembers) {
     var existing = Array.isArray(existingMembers) ? existingMembers : [];
-    var byNameBranch = {}, byName = {};
+    // Should-2（Codex #525）: 論理削除済み（deleted_at set）の既存会員は突き合わせ候補から除外する。
+    //   削除済み会員に players/entries を紐付けると完全削除不能・集計再露出になるため（tombstone を復活させない）。
+    //   削除済みと同名の payload 会員は「新規」として取り込み（別の生きた会員）＋プレビューで警告し明示復元を促す。
+    var byNameBranch = {}, byName = {}, deletedNameSet = {};
     for (var i = 0; i < existing.length; i++) {
       var em = existing[i]; if (!em || !em.name) continue;
       var nk = impSquash(em.name);
+      if (em.deleted_at) { deletedNameSet[nk] = 1; continue; }  // 削除済みは match 候補にしない
       byNameBranch[nk + '\u0001' + impSquash(em.city || em.branch || '')] = em;
       (byName[nk] = byName[nk] || []).push(em);
     }
-    var idMap = {}, newMembers = [], matched = 0, ambiguous = [], used = {};
+    var idMap = {}, newMembers = [], matched = 0, ambiguous = [], deletedMatches = [], used = {};
     var ms = Array.isArray(payload.members) ? payload.members : [];
     for (var m = 0; m < ms.length; m++) {
       var pm = ms[m], nk = impSquash(pm.name), match = null;
@@ -1015,14 +1019,19 @@
       }
       // ③ 一致は既存 id を流用（同一既存会員を二重に使わない＝injective）。未一致は新規。
       if (match) { idMap[pm.member_id] = match.member_id; used[match.member_id] = 1; matched++; }
-      else { idMap[pm.member_id] = pm.member_id; newMembers.push(pm); }
+      else {
+        idMap[pm.member_id] = pm.member_id; newMembers.push(pm);
+        // 生きた会員に一致せず、かつ削除済み会員と同名 → 新規扱いだが警告対象（削除済みには紐付けない）。
+        if (deletedNameSet[nk]) deletedMatches.push(pm.name);
+      }
     }
-    return { idMap: idMap, newMembers: newMembers, matched: matched, ambiguous: ambiguous };
+    return { idMap: idMap, newMembers: newMembers, matched: matched, ambiguous: ambiguous, deletedMatches: deletedMatches };
   }
 
   function buildImportPreview(payload, resolution) {
     var warnings = [];
     if (resolution.ambiguous && resolution.ambiguous.length) warnings.push('クラウドに同名が複数いる会員 ' + resolution.ambiguous.length + ' 名は新規として扱います（要確認）: ' + resolution.ambiguous.slice(0, 5).join('、'));
+    if (resolution.deletedMatches && resolution.deletedMatches.length) warnings.push('削除済み（退会/統合）会員と同名の ' + resolution.deletedMatches.length + ' 名は新規として取り込みます（削除済み会員には紐付けません）。復元したい場合は先に名簿で復元してください: ' + resolution.deletedMatches.slice(0, 5).join('、'));
     var noRank = 0, es = Array.isArray(payload.entries) ? payload.entries : [];
     for (var i = 0; i < es.length; i++) { if (es[i].final_rank == null) noRank++; }
     if (noRank) warnings.push('順位なしの成績 ' + noRank + ' 件（※参考 等・そのまま取り込み）');
