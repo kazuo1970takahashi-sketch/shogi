@@ -110,7 +110,9 @@ const A = loadAuth();
    '\.ms-add-details summary','\.ms-meta-row \{','\.member-add \.fld \{','\.msg\.msg-ok','\.msg\.msg-err'].forEach(function(p){
     assert(new RegExp(p).test(INDEX_HTML), 'C1 CSS: '+p);
   });
-  assert(INDEX_HTML.indexOf('auth.js?v=20')>=0, 'C2 cache-bust ?v=20（orphan 系譜）');
+  // HARD-DELETE-ATOMIC-001: 後続バンプで壊れないよう「?v=20 以上」に pin を一般化（004C 時点=20）。
+  var vm2 = INDEX_HTML.match(/auth\.js\?v=(\d+)/);
+  assert(!!vm2 && parseInt(vm2[1], 10) >= 20, 'C2 cache-bust ?v>=20（orphan 系譜・004C 以降）');
   assert(INDEX_HTML.indexOf('APP-UX-004C')>=0, 'C3 004C コメントマーカー');
 })();
 
