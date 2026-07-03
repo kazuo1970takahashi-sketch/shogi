@@ -861,6 +861,8 @@
       h += '<div class="ms-toolbar" id="msToolbar"><span>' + selTotal + '名 選択中</span>';
       if (selLive.length > 0) h += '<button type="button" id="msDeleteBtn" class="ms-danger">論理削除（' + selLive.length + '名）</button>';
       if (selDel.length > 0) h += '<button type="button" id="msRestoreBtn">復元（' + selDel.length + '名）</button>';
+      // APP-MEMBER-HARD-DELETE-001: 完全削除は削除済み行の選択時のみ（出場記録の有無は実行時にサーバ確認）。
+      if (selDel.length > 0) h += '<button type="button" id="msHardDeleteBtn" class="ms-danger">完全削除（' + selDel.length + '名）</button>';
       h += '<button type="button" id="msClearBtn">選択解除</button></div>';
     }
     if (!list.length) {
@@ -909,6 +911,39 @@
     return client.from('members').update(patch).eq('club_id', clubId).in('member_id', ids).then(function (res) {
       if (res && res.error) return { ok: false, message: (deleted ? '削除' : '復元') + 'できませんでした: ' + res.error.message };
       return { ok: true, message: ids.length + '名を' + (deleted ? '論理削除しました（復元できます）' : '復元しました') + '。' };
+    });
+  }
+  // APP-MEMBER-HARD-DELETE-001: 完全削除の confirm 文言（純）。破壊操作＝復元不可・端末復活の注意を明示。
+  function memberHardDeleteConfirmMessage(count, namesPreview) {
+    return count + '名（' + namesPreview + '）をクラウドから完全に削除します。復元できません。\n'
+      + '出場記録（大会成績）のある会員は自動でスキップされ、論理削除のまま残ります。\n\n'
+      + '※端末側の名簿に同じ会員が残っていると、次の「名簿全体をクラウドへ一括送信」で復活します。'
+      + '先に各端末で「☁ クラウドから取得」を済ませてください。\n\nよろしいですか？';
+  }
+  // APP-MEMBER-HARD-DELETE-001: 完全削除（物理削除）。スキーマの FK は players→members・entries→players
+  //   とも ON DELETE CASCADE のため、出場記録を持つ会員を消すと大会成績が連鎖消滅する。よって
+  //   「players 行ゼロ」の会員だけをサーバ側で確認してから削除する（UI の見た目でなく DB を真実とする）。
+  //   RLS: members_delete は app_is_admin のみ＝非管理者は 0 行削除になるため .select で実削除数を検証する。
+  //   throw せず {ok, deleted, skipped, message} を返す（当日運営を止めない・client 注入）。
+  function hardDeleteMembers(client, clubId, memberIds) {
+    var ids = Array.isArray(memberIds) ? memberIds.filter(function (x) { return !!x; }) : [];
+    if (!clubId || !ids.length) return Promise.resolve({ ok: false, deleted: [], skipped: [], message: '対象を特定できません。' });
+    return client.from('players').select('member_id').eq('club_id', clubId).in('member_id', ids).then(function (pr) {
+      if (pr && pr.error) return { ok: false, deleted: [], skipped: [], message: '出場記録の確認に失敗しました: ' + pr.error.message };
+      var has = {}; var rows = (pr && pr.data) || [];
+      for (var i = 0; i < rows.length; i++) { if (rows[i] && rows[i].member_id) has[rows[i].member_id] = true; }
+      var eligible = [], skipped = [];
+      for (var k = 0; k < ids.length; k++) { (has[ids[k]] ? skipped : eligible).push(ids[k]); }
+      if (!eligible.length) return { ok: false, deleted: [], skipped: skipped, message: '選択した会員には出場記録があるため完全削除できません（論理削除のまま保持します）。' };
+      return client.from('members').delete().eq('club_id', clubId).in('member_id', eligible).select('member_id').then(function (dr) {
+        if (dr && dr.error) return { ok: false, deleted: [], skipped: skipped, message: '完全削除に失敗しました: ' + dr.error.message };
+        var deleted = []; var drows = (dr && dr.data) || [];
+        for (var d = 0; d < drows.length; d++) { if (drows[d] && drows[d].member_id) deleted.push(drows[d].member_id); }
+        if (!deleted.length) return { ok: false, deleted: [], skipped: skipped, message: '完全削除できませんでした（幹事（管理者）の権限が必要です）。' };
+        var msg = deleted.length + '名を完全に削除しました。';
+        if (skipped.length) msg += '（出場記録のある ' + skipped.length + '名はスキップ＝論理削除のまま）';
+        return { ok: true, deleted: deleted, skipped: skipped, message: msg };
+      });
     });
   }
 
@@ -1390,6 +1425,29 @@
           setMsg('memberEditMsg', r.message); if (r.ok) reloadMembers();
         });
       });
+      // APP-MEMBER-HARD-DELETE-001: 完全削除（選択中の削除済み行が対象・出場記録はサーバ確認で自動スキップ）。
+      var hardBtn = byId('msHardDeleteBtn');
+      if (hardBtn) hardBtn.addEventListener('click', function () {
+        var s = selectedSplit(); if (!s.del.length) return;
+        // L3 P2 (#521): confirm の氏名プレビューは削除対象（削除済み行）だけに絞る。selectedSplit の
+        //   preview は live/del 混在の先頭5名のため、混在選択時に「削除されない有効会員の氏名」が
+        //   破壊 confirm に出てしまう誤表示を防ぐ。
+        var delNames = [];
+        for (var dn = 0; dn < membersForEdit.length && delNames.length < 5; dn++) {
+          var dm = membersForEdit[dn];
+          if (dm && dm.deleted_at && memberSheetSelected[dm.member_id]) delNames.push(dm.name || '');
+        }
+        var delPreview = delNames.join('、') + (s.del.length > 5 ? ' 他' : '');
+        // L3 P3 (#521): 破壊操作は confirm が使えない環境では実行しない（論理削除/復元より厳格側に倒す）。
+        if (typeof global.confirm !== 'function') { setMsg('memberEditMsg', '確認ダイアログが使えないため完全削除を実行しません。'); return; }
+        if (!global.confirm(memberHardDeleteConfirmMessage(s.del.length, delPreview))) return;
+        setMsg('memberEditMsg', '完全削除中…');
+        hardDeleteMembers(client, lastSummary.clubId, s.del).then(function (r) {
+          if (r && r.deleted) { for (var i = 0; i < r.deleted.length; i++) delete memberSheetSelected[r.deleted[i]]; }
+          setMsg('memberEditMsg', (r && r.message) || '完全削除に失敗しました。');
+          if (r && r.ok) reloadMembers();
+        });
+      });
       each('.ms-name-cell', function (cell) { cell.addEventListener('click', function (e) {
         if (e && e.target && e.target.tagName === 'INPUT') return;
         if (msEditing) return;
@@ -1714,6 +1772,9 @@
     memberBulkConfirmMessage: memberBulkConfirmMessage,
     updateMemberFields: updateMemberFields,
     setMembersDeletedBulk: setMembersDeletedBulk,
+    // APP-MEMBER-HARD-DELETE-001
+    hardDeleteMembers: hardDeleteMembers,
+    memberHardDeleteConfirmMessage: memberHardDeleteConfirmMessage,
     // B-4 移行取り込み（#343）
     validateImportPayload: validateImportPayload,
     resolveImportMembers: resolveImportMembers,
