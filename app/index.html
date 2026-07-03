@@ -106,6 +106,8 @@
     .sb-tnt-head { font-size:15px; font-weight:600; color:var(--fg); margin:8px 0 2px; }
     .sb-tnt-head .sb-tnt-meta { font-weight:400; font-size:12px; color:var(--muted); margin-left:8px; }
     .cloud-tnt.active { background:var(--primary); color:#fff; border-color:var(--primary); font-weight:600; }
+    /* APP-UX-004A2: 大会結果の一覧⇄詳細切替（戻るボタン） */
+    .tnt-back { margin:0 0 10px; padding:8px 14px; font-size:13px; color:var(--primary); }
   </style>
 </head>
 <body>
@@ -119,7 +121,7 @@
   <!-- Supabase JS（UMD・global `supabase` を生やす）。publishable key + URL のみ使用。 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js" integrity="sha384-nD3dwv4+ZqdYnmZKe/249ImlV04om7xTCcsoSeQYI+RO+XlKPoqAWaJR1M5SJH9p" crossorigin="anonymous"></script>
   <!-- cache-bust: app/auth.js 変更時に ?v=N をバンプ（app/ は cache-bust が無く旧 JS を握る問題の対策・#343）-->
-  <script src="auth.js?v=28"></script>
+  <script src="auth.js?v=29"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       try { window.ShogiAuth.boot(); }
