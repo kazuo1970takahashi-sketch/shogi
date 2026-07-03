@@ -30,6 +30,10 @@
     .card-grid .card { margin:0; }
     #loginView, #checkEmailView, #unregisteredView { max-width:420px; margin:8vh auto 0; }
     /* APP-UX-002: 名簿シート（当日アプリ MASTER-SHEET と同型）。 */
+    /* APP-MEMBER-SEARCH-001: 名簿検索ボックス（氏名・ふりがな・市町村の部分一致）。 */
+    .ms-search { display:flex; gap:8px; margin-top:10px; }
+    .ms-search input { flex:1; min-height:40px; padding:8px 12px; font-size:16px; border:1px solid var(--line); border-radius:8px; }
+    .ms-search button { min-height:40px; padding:0 14px; font-size:13px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--primary); cursor:pointer; }
     .ms-wrap { border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-top:4px; }
     .ms-table { width:100%; border-collapse:collapse; font-size:13px; }
     .ms-table thead tr { background:#f4f6f9; }
@@ -136,7 +140,7 @@
   <!-- Supabase JS（UMD・global `supabase` を生やす）。publishable key + URL のみ使用。 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js" integrity="sha384-nD3dwv4+ZqdYnmZKe/249ImlV04om7xTCcsoSeQYI+RO+XlKPoqAWaJR1M5SJH9p" crossorigin="anonymous"></script>
   <!-- cache-bust: app/auth.js 変更時に ?v=N をバンプ（app/ は cache-bust が無く旧 JS を握る問題の対策・#343）-->
-  <script src="auth.js?v=31"></script>
+  <script src="auth.js?v=32"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       try { window.ShogiAuth.boot(); }
