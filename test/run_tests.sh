@@ -965,6 +965,24 @@ else
 fi
 
 # ============================================
+# APP-MEMBER-SEARCH-001 — app/ 名簿シートの検索＋編集行フラッシュ追跡（作者依頼 2026-07-03）
+#   氏名・ふりがな・市町村の部分一致（カナ/かな同一視・IME ガード・refocus）／
+#   編集確定後に行へスクロール＋フラッシュ（MASTER-SHEET-003 の app/ 移植）。
+# ============================================
+echo ""
+echo "【APP-MEMBER-SEARCH-001 — app/ 名簿検索＋編集行フラッシュ】"
+if [ -f "$SCRIPT_DIR/test_app_member_search_001.js" ]; then
+  if node "$SCRIPT_DIR/test_app_member_search_001.js" "$TARGET" > /tmp/app_member_search_out.log 2>&1; then
+    ok "APP-MEMBER-SEARCH-001 テスト 全PASS ($(tail -1 /tmp/app_member_search_out.log))"
+  else
+    ng "APP-MEMBER-SEARCH-001 テスト 失敗"
+    cat /tmp/app_member_search_out.log
+  fi
+else
+  warn "test_app_member_search_001.js が見つからない"
+fi
+
+# ============================================
 # CLEANUP-P3-001 — P3 小掃除（旧サマリ撤去・削除日 title 対称・書き出し成功 toast 化・stale コメント追従）
 #   名簿タブ旧サマリ「登録: N名」撤去（シートヘッダサマリと重複）／削除日セル生値 title／
 #   マスタ書き出し成功 alert→showToast（N2・失敗系 showMsg 不変）／pullMembersFromCloud コメント select('*') 追従。
