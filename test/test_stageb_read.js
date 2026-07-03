@@ -33,6 +33,16 @@ function errClient(){
     b.then=function(res,rej){ return Promise.resolve({ data:null, error:{ message:'boom' } }).then(res,rej); }; return b; }
   return { from(){ return { select:()=>builder() }; } };
 }
+// NTH-2（Codex #525）: .eq(col,val) 呼び出しを table 別に記録する mock（読み取りスコープの検証用）。
+function recEqClient(byTable){
+  const eqs={};
+  function builder(t){ const b={}; eqs[t]=eqs[t]||[];
+    b.select=function(){return this;};
+    b.eq=function(col,val){ eqs[t].push([col,val]); return this; };
+    b.then=function(res,rej){ return Promise.resolve({data:(byTable[t]!==undefined?byTable[t]:[]),error:null}).then(res,rej); };
+    return b; }
+  return { _eqs:eqs, from(t){ return { select:()=>builder(t) }; } };
+}
 const A = loadAuth();
 
 (async function(){
@@ -93,6 +103,13 @@ const A = loadAuth();
   assert(rerr.ok===false && rerr.tournaments.length===0, 'F4 fetchTournaments error 経路は ok:false');
   var rerr2 = await A.fetchEntries(errClient(), 't1', 'club1');
   assert(rerr2.ok===false, 'F5 fetchEntries error 経路は ok:false');
+  // NTH-2: fetchEntries の entries クエリは tournament_id と club_id の両方でスコープする。
+  var rec = recEqClient({entries:[{final_rank:1,'class':'A',player_id:'p1'}],players:[{id:'p1',member_id:'m1',members:{name:'甲'}}]});
+  await A.fetchEntries(rec, 't1', 'club9');
+  var entEqs = (rec._eqs.entries||[]);
+  assert(entEqs.some(function(e){return e[0]==='tournament_id'&&e[1]==='t1';}), 'F6 fetchEntries は tournament_id でスコープ');
+  assert(entEqs.some(function(e){return e[0]==='club_id'&&e[1]==='club9';}), 'F6b fetchEntries は club_id でもスコープ（NTH-2）');
+  assert((rec._eqs.players||[]).some(function(e){return e[0]==='club_id'&&e[1]==='club9';}), 'F6c players 取得も club_id スコープ（既存）');
 
   // ---- X: XSS ----
   var xt = A.buildTournamentListHtml([{ id:'t<x', name:'<script>alert(1)</script>', date:'2026-06-14', season:'s', status:'synced' }]);

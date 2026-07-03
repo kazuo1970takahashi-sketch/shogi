@@ -170,13 +170,15 @@
   <!-- Supabase JS（UMD・global `supabase` を生やす）。publishable key + URL のみ使用。 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js" integrity="sha384-nD3dwv4+ZqdYnmZKe/249ImlV04om7xTCcsoSeQYI+RO+XlKPoqAWaJR1M5SJH9p" crossorigin="anonymous"></script>
   <!-- cache-bust: app/auth.js 変更時に ?v=N をバンプ（app/ は cache-bust が無く旧 JS を握る問題の対策・#343）-->
-  <script src="auth.js?v=21"></script>
+  <script src="auth.js?v=22"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       try { window.ShogiAuth.boot(); }
       catch (e) {
-        document.getElementById('app-root').innerHTML =
-          '<section class="card"><h1>起動エラー</h1><p>' + String(e && e.message || e) + '</p></section>';
+        // Should-1/Codex #525: 動的なエラーメッセージは innerHTML 連結せず textContent で流し込む（HTML/XSS 注入面を塞ぐ）。
+        var root = document.getElementById('app-root');
+        root.innerHTML = '<section class="card"><h1>起動エラー</h1><p class="boot-err-msg"></p></section>';
+        root.querySelector('.boot-err-msg').textContent = String(e && e.message || e);
       }
     });
   </script>
