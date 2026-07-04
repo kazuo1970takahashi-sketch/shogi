@@ -2029,6 +2029,20 @@ else
 fi
 
 
+
+echo ""
+echo "【CLASS-SPLIT-CLOUD-MERGE-001 Phase1 共有セットアップ（大会IDの共有・normalize/apply/静的HTML/結線）】"
+if [ -f "$SCRIPT_DIR/test_class_split_tid_share.js" ]; then
+  if node "$SCRIPT_DIR/test_class_split_tid_share.js" "$TARGET" > /tmp/class_split_tid_share_out.log 2>&1; then
+    ok "CLASS-SPLIT tid共有 テスト 全PASS ($(tail -1 /tmp/class_split_tid_share_out.log))"
+  else
+    ng "CLASS-SPLIT tid共有 テスト 失敗"; cat /tmp/class_split_tid_share_out.log
+  fi
+else
+  warn "test_class_split_tid_share.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
