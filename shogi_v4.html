@@ -3584,7 +3584,8 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi){
   for(var p=0;p<picked.length;p++){
     var m=picked[p];
     if(existingMids[m.id]||existingNames[m.name]){skipped++;continue;}
-    var cls=(m.last_class==='A'||m.last_class==='B')?m.last_class:'A';
+    // PRESET-REMOVE-001 (#551 派生): 前回クラス(last_class)による自動割当は廃止。中立既定(A)で追加する。
+    var cls='A';
     var pid='p'+Date.now()+Math.floor(Math.random()*1000)+'_'+p;
     // PAST-ADD-FEE-INHERIT-001: 旧実装は member:'member'/grade:'ippan' をハードコードし、中学生以下・女性・
     //   支部員以外の会費区分を取りこぼしていた。単発 addPlayerFromMaster と同じ normalizeMasterFeeFields で
@@ -6206,11 +6207,12 @@ function renderSuggestList(suggestions){
         onSuggestTap(m);
       });
       // A-4.2 §3.2.3: A/B ボタン（行本体タップとは独立、stopPropagation で二重発火回避）
-      // A-4.2 §3.4.1: last_class のボタンを強調（太字 + 背景色 #FFD580）
+      // PRESET-REMOVE-001 (#551 派生): 前回クラス(last_class)による A/B ボタン強調は廃止（毎回手動選択）。
+      //   前回クラスは上の「前回:Xクラス」テキストで参考提示のみ・ボタンは常に中立表示。
       var classes=['A','B'];
       for(var ci=0;ci<classes.length;ci++){
         (function(cls){
-          var highlight=(m.last_class===cls);
+          var highlight=false;
           var btn=document.createElement('button');
           btn.type='button';
           btn.className='suggest-add-btn'+(highlight?' suggest-add-btn-highlight':'');
@@ -6378,7 +6380,8 @@ function onSuggestTap(member){
   var inpClass=document.getElementById('inp-class');
   var inpYomi=document.getElementById('inp-yomi');
   if(inpName)inpName.value=member.name||'';
-  if(inpClass&&(member.last_class==='A'||member.last_class==='B'))inpClass.value=member.last_class;
+  // PRESET-REMOVE-001 (#551 派生): 前回クラス(last_class)によるクラス自動設定は廃止（毎回手動選択）。
+  //   氏名・ふりがなの自動入力は維持。前回クラスはサジェスト行の「前回:Xクラス」表示で参考提示のみ。
   // A-4 §3.1.3: サジェスト由来は yomi 欄にもマスタ値を反映。
   // _yomiManuallyEdited は false のまま（手動編集扱いにしない）。
   if(inpYomi)inpYomi.value=member.yomi||'';
@@ -12515,6 +12518,25 @@ function deleteArchiveTournamentUI(tid){
   return true;
 }
 
+// HISTORY-DELETE-001 (#550): 大会履歴を全削除（二段階確認）。当日 state・支部マスタ・クラウドには触れない。
+//   deleteArchiveTournamentUI と同型の防御（失敗時は alert のみ・当日 state 無傷）。全リセット(resetAll)とは独立。
+function clearAllArchiveHistory(){
+  var archive=loadArchive();
+  var n=(archive&&Array.isArray(archive.tournaments))?archive.tournaments.length:0;
+  if(n===0){ alert('削除できる履歴がありません。'); return false; }
+  if(!confirm('この端末に保管した大会履歴 '+n+' 件をすべて削除します。\nこの端末からのみ削除され、元に戻せません。\n（クラウドの過去大会・当日の大会データ・名簿には影響しません）\n\n続けますか？'))return false;
+  if(!confirm('本当に全 '+n+' 件を削除しますか？'))return false;
+  var next={schema_version:ARCHIVE_SCHEMA_VERSION,updated_at:archiveNowIso(),tournaments:[]};
+  try{
+    localStorage.setItem(ARCHIVE_KEY,JSON.stringify(next));
+  }catch(e){
+    alert('履歴を削除できませんでした。もう一度お試しください。');
+    return false;
+  }
+  renderHistoryList('🗑 大会履歴をすべて削除しました（'+n+'件）。');
+  return true;
+}
+
 // 一覧表示順（§5）: 開催日 desc → 保存日時 desc（新しい大会が上）。heldDate は YYYY-MM-DD で辞書順=日付順。
 function sortArchiveTournaments(list){
   var arr=(Array.isArray(list)?list:[]).slice();
@@ -12810,11 +12832,17 @@ function renderHistoryList(flashMessage){
       var champ=buildArchiveChampionLabel(id.champions);
       var saved=escapeHtml(formatArchiveSavedAt(e&&e.savedAt));
       var tidAttr=escapeHtml(id.tournament_id||'');
-      html+='<button type="button" class="history-row" data-tid="'+tidAttr+'" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid #d3dbe5;border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer">';
+      // HISTORY-DELETE-001 (#550): 行本体（詳細遷移）と削除ボタンを横並びの兄弟要素にする（button 入れ子回避）。
+      html+='<div style="display:flex;align-items:stretch;gap:6px;margin-bottom:8px">';
+      html+='<button type="button" class="history-row" data-tid="'+tidAttr+'" style="flex:1;min-width:0;display:block;text-align:left;background:#fff;border:1px solid #d3dbe5;border-radius:8px;padding:10px 12px;cursor:pointer">';
       html+='<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="font-weight:600;color:#1F3864">'+month+'　'+ttl+'</span><span style="font-size:11px;color:#999">保存 '+saved+'</span></div>';
       html+='<div style="font-size:12px;color:#555;margin-top:4px">開催日 '+held+'　/　'+clsCount+'クラス　/　'+pcount+'名'+(champ?'　/　優勝 '+champ:'')+'</div>';
       html+='</button>';
+      html+='<button type="button" class="history-del-btn" data-tid="'+tidAttr+'" aria-label="この大会履歴を削除" title="この履歴を削除" style="flex-shrink:0;min-width:44px;background:#fff;border:1px solid #c33;color:#c33;border-radius:8px;font-size:16px;cursor:pointer">🗑</button>';
+      html+='</div>';
     }
+    // HISTORY-DELETE-001 (#550): 全削除（二段階確認）。リスト末尾・右寄せの控えめ配置で誤タップを抑制。
+    html+='<div style="text-align:right;margin:2px 0 4px"><button type="button" class="btn-sm" id="history-clear-all" style="background:#fff;border:1px solid #c33;color:#c33;font-weight:400">🗑 履歴をすべて削除</button></div>';
   }
   // HISTORY-CLOUD: クラウドの過去大会セクション（別セクション・①案）。読み込みは押下時（fail-soft）。
   html+='<hr class="separator">';
@@ -12830,6 +12858,13 @@ function renderHistoryList(flashMessage){
   for(var r=0;r<rows.length;r++){
     rows[r].addEventListener('click',function(){renderHistoryDetail(this.getAttribute('data-tid'));});
   }
+  // HISTORY-DELETE-001 (#550): 各行の🗑削除ボタン・全削除ボタンを結線（動的描画のため描画直後に bind）。
+  var delBtns=host.querySelectorAll('.history-del-btn');
+  for(var d=0;d<delBtns.length;d++){
+    delBtns[d].addEventListener('click',function(){deleteArchiveTournamentUI(this.getAttribute('data-tid'));});
+  }
+  var clearAllBtn=document.getElementById('history-clear-all');
+  if(clearAllBtn)clearAllBtn.addEventListener('click',clearAllArchiveHistory);
   var cloudLoadBtn=document.getElementById('history-cloud-load');
   if(cloudLoadBtn)cloudLoadBtn.addEventListener('click',function(){
     loadCloudPastTournamentsUI(function(msg){ if(typeof applyCloudStatus==='function')applyCloudStatus(document.getElementById('history-cloud-status'),msg); else { var el=document.getElementById('history-cloud-status'); if(el)el.textContent=msg; } });
