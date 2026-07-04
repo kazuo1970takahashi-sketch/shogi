@@ -493,6 +493,8 @@ body.sb-active{overflow:hidden}
       <button type="button" id="helpBtnCloud" class="btn-sm" title="クラウド送信・取得の意味をヘルプで表示します" aria-label="クラウド送信・取得ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
       <button type="button" id="cloudSendBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ クラウドへ送信（任意）</button>
       <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
+      <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 送信対象級の明示（players を持つ級・複数級は⚠）。textContent のみ・refreshSendTargetClasses が更新。 -->
+      <div id="sendTargetLine" class="no-print" style="font-size:12px;margin-top:2px;color:#555;min-height:1.1em"></div>
     </div>
     <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): 共有セットアップ（大会IDの共有）。A級/B級を別端末で分担する運用向け。
          追加のみ・当日運営フローは無改変（押さなければ従来通り）。click は bindReportEvents で結線。 -->
@@ -5598,7 +5600,7 @@ function showTab(t){
   var tm=document.getElementById('tab-master');if(tm)tm.className='tab'+(t==='master'?' active':'');
   var th=document.getElementById('tab-history');if(th)th.className='tab'+(t==='history'?' active':'');
   try{window.scrollTo(0,0);}catch(e){}
-  if(t==='result')renderResults();
+  if(t==='result'){renderResults();if(typeof refreshSendTargetClasses==='function')refreshSendTargetClasses();}
   // ROUND-CLASS-START-005 (spec §15.1 row 1): tournament タブ表示時は
   //   state.classes を走査して renderTournament(c.id) を呼ぶ（A/B literal 解消）。
   //   ensureClassPaneDomNodes() で pane-{classId} 不足分を補完してから描画する。
@@ -9575,8 +9577,11 @@ function buildCloudSyncPayload(master, opts){
   function stamp(o){ if(clubId)o.club_id=clubId; return o; }
   var membersOut={}, playersOut={}, entries=[], skipped=[];
   var classes=(st&&Array.isArray(st.classes))?st.classes:[];
+  // CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): opt-in 送信級フィルタ。非空配列のときのみ対象級に絞る（既定＝未指定/空は全級＝挙動不変）。
+  var _classesFilter=(opts.classesFilter&&opts.classesFilter.length)?opts.classesFilter:null;
   for(var ci=0;ci<classes.length;ci++){
     var cls=classes[ci]&&classes[ci].id; if(!cls)continue;
+    if(_classesFilter&&_classesFilter.indexOf(cls)<0)continue;
     var players=(st.players&&Array.isArray(st.players[cls]))?st.players[cls]:[]; if(!players.length)continue;
     var finals=calcFinal(cls); var ranks=computeDisplayRanks(finals,cls);
     for(var fi=0;fi<finals.length;fi++){
@@ -9699,7 +9704,7 @@ function syncTournamentToCloud(client, master, opts){
   var clubId=opts.clubId;
   if(!client||!client.from)return Promise.resolve({ok:false,step:'init',message:'クラウドに接続していません'});
   if(!clubId)return Promise.resolve({ok:false,step:'club',message:'送信先クラブが特定できません（ログインを確認してください）'});
-  var payload=buildCloudSyncPayload(master,{clubId:clubId});
+  var payload=buildCloudSyncPayload(master,{clubId:clubId, classesFilter:opts.classesFilter});
   if(!payload.tournament.app_tournament_id)return Promise.resolve({ok:false,step:'tournament',message:'大会IDが未設定です'});
   var counts={members:payload.members.length,players:payload.players.length,entries:payload.entries.length,skipped:payload.skipped.length,unresolved:0};
   function fail(step,res){ return {ok:false,step:step,counts:counts,message:((res&&res.error&&res.error.message)||'クラウド送信に失敗しました')+'（'+step+'）'}; }
@@ -10049,6 +10054,30 @@ function applySpecifiedTournamentId(raw,setStatus){
   if(setStatus)setStatus('この端末の大会IDを設定しました（'+id+'）。相手端末と同じIDで送信すると1つの大会に統合されます');
   return {ok:true,tournament_id:id};
 }
+// CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 送信対象＝players を持つ級の一覧（純関数）。
+//   getReportClassLabel で級ラベル化。state を引数で受け副作用なし（テスト可能）。
+function sendTargetClasses(st){
+  var out=[];
+  if(!st||Object.prototype.toString.call(st.classes)!=='[object Array]')return out;
+  for(var i=0;i<st.classes.length;i++){
+    var c=st.classes[i]; if(!c||typeof c.id!=='string'||!c.id)continue;
+    var arr=(st.players&&Object.prototype.toString.call(st.players[c.id])==='[object Array]')?st.players[c.id]:[];
+    if(!arr.length)continue;
+    out.push({id:c.id,label:getReportClassLabel(c),count:arr.length});
+  }
+  return out;
+}
+// 送信対象級の明示表示を更新（DOM 反映・textContent のみ・要素が無ければ no-op）。
+function refreshSendTargetClasses(){
+  var el=(typeof document!=='undefined')?document.getElementById('sendTargetLine'):null;
+  if(!el)return;
+  var t=(typeof state!=='undefined'&&state)?sendTargetClasses(state):[];
+  if(!t.length){ el.textContent=''; return; }
+  var names=[]; for(var i=0;i<t.length;i++)names.push(t[i].label);
+  var msg='送信対象: '+names.join('・');
+  if(t.length>1)msg+='（⚠ '+t.length+'クラス）';
+  el.textContent=msg;
+}
 // MASTER-CLOUD-PUSH-001 (作者要望 2026-07-02): 名簿タブの氏名・ふりがな編集を、ログイン中なら
 //   クラウド members にもその場で upsert する（巻き戻り防止＝☁取得/起動時自動取得がクラウドの古い表記で
 //   端末修正を上書きする非対称の解消）。設計:
@@ -10208,6 +10237,17 @@ function pushAllMembersToCloud(setStatus){
 
 function sendTournamentToCloud(setStatus){
   setStatus=setStatus||function(){};
+  // CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 複数級を持つ端末の誤送信ガード（明示＋確認）。
+  //   送信対象が2級以上なら級名を挙げて confirm。キャンセルで中止（fail-soft・当日運営は続行）。
+  try{
+    var _tg=(typeof sendTargetClasses==='function')?sendTargetClasses((typeof state!=='undefined')?state:null):[];
+    if(_tg.length>1){
+      var _nm=[]; for(var _i=0;_i<_tg.length;_i++)_nm.push(_tg[_i].label+'（'+_tg[_i].count+'名）');
+      var _msg='この端末には '+_nm.join('・')+' の'+_tg.length+'クラスが入っています。\nこの大会IDで全クラスを送信しますか？\n（分担運用で相手の級も持っている場合は「キャンセル」してください）';
+      var _okc=true; try{ _okc=(typeof confirm==='function')?confirm(_msg):true; }catch(e){ _okc=true; }
+      if(!_okc){ setStatus('送信を中止しました（'+_tg.length+'クラス・分担運用では自分の級だけを持つ端末から送信してください）'); return Promise.resolve({ok:false,step:'cancelled'}); }
+    }
+  }catch(e){}
   setStatus('クラウドへ送信中…');
   return loadCloudDeps().then(function(dep){
     if(dep.offline){ setStatus('オフラインのため送信できません（ネット接続後に再度お試しください・運営は続行できます）'); return {ok:false,step:'offline'}; }
@@ -12283,6 +12323,8 @@ function bindReportEvents(){
     var inp=document.getElementById('tidInput');
     applySpecifiedTournamentId(inp?inp.value:'',function(msg){ applyCloudStatus(st,msg); });
   });
+  // CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 初期表示時に送信対象級を反映（以後は showTab('result') で更新）。
+  if(typeof refreshSendTargetClasses==='function')refreshSendTargetClasses();
 }
 
 // 全体として大会が完了しているか(参加者のいるクラスが全て全ラウンド消化済みか)
@@ -12343,6 +12385,114 @@ function initApp(){
       showTab('tournament');
     }
   }
+}
+
+// ============================================================
+// LIVE-BROADCAST-001 Phase 1: 参加者向けライブ配信の公開スナップショット（純関数）
+//   現 state から「公開範囲に絞った state 部分集合」を返す純関数。配信路(polling/Realtime)に依存しない。
+//   設計 = docs/specs/20260704_live_broadcast_001_participant_realtime_design.md（§3.1）。
+//   - slug / version / updated_at は含めない（配信 envelope の責務。§3.1・P2/P1-2）
+//   - players はフィールド単位ホワイトリスト（id/name/yomi/entry_no のみ。member/grade/会費区分等は出さない）
+//   - match は {p1,p2,winner} のみ（sanitizeMatch 正準形の lastModifiedBy は wire に載せない・P2-2）
+//   - state.rounds と classes[].rounds を含める（roundsForClass の 4回戦フォールバック回避・P1-1）
+//   保存スキーマは触らない（引数を読むだけ・REFERENCE §3）。ES5 / 純関数（副作用なし）。
+// ============================================================
+function buildPublicLiveSnapshot(src){
+  var s=(src&&typeof src==='object')?src:{};
+  var out={schema_version:1,meta:{},state:{rounds:4,classes:[],players:{},results:{},pairings:{}}};
+
+  // meta.title: report.title があれば正規化して使う。無ければ既定名。
+  var title='';
+  try{
+    if(typeof normalizeReportTitle==='function')title=normalizeReportTitle(s.report&&s.report.title);
+    else if(s.report&&typeof s.report.title==='string')title=s.report.title;
+  }catch(e){title='';}
+  out.meta.title=title||'将棋大会';
+
+  // state.rounds: 正の整数のみ（roundsForClass と同基準）。無ければ 4。
+  var g=Math.floor(Number(s.rounds));
+  out.state.rounds=(!isNaN(g)&&g>=1)?g:4;
+
+  // classes: id/name/started/rounds のみ。
+  var classes=Array.isArray(s.classes)?s.classes:[];
+  for(var i=0;i<classes.length;i++){
+    var c=classes[i];
+    if(!c||typeof c.id!=='string'||!c.id)continue;
+    var oc={id:c.id};
+    if(typeof c.name==='string'&&c.name)oc.name=c.name;
+    if(c.started!==undefined)oc.started=!!c.started;
+    var cr=(c.rounds!=null)?Math.floor(Number(c.rounds)):NaN;
+    if(!isNaN(cr)&&cr>=1)oc.rounds=cr;
+    out.state.classes.push(oc);
+  }
+
+  // players: ホワイトリスト（id/name/yomi/entry_no）。member/grade 等は出さない。
+  var players=(s.players&&typeof s.players==='object')?s.players:{};
+  for(var pcls in players){
+    if(!Object.prototype.hasOwnProperty.call(players,pcls))continue;
+    var arr=Array.isArray(players[pcls])?players[pcls]:[];
+    var op=[];
+    for(var j=0;j<arr.length;j++){
+      var p=arr[j];
+      if(!p||typeof p.id!=='string'||!p.id)continue;
+      var pub={id:p.id};
+      if(typeof p.name==='string')pub.name=p.name;
+      if(typeof p.yomi==='string'&&p.yomi)pub.yomi=p.yomi;
+      if(p.entry_no!=null)pub.entry_no=p.entry_no;
+      op.push(pub);
+    }
+    out.state.players[pcls]=op;
+  }
+
+  // match ホワイトリスト: {p1,p2,winner} のみ（lastModifiedBy は載せない）。
+  function pubMatch(m){
+    if(!m||typeof m!=='object')return null;
+    var a=(typeof m.p1==='string')?m.p1:'';
+    var b=(typeof m.p2==='string')?m.p2:'';
+    if(!a||!b)return null;
+    var w=(m.winner===a||m.winner===b)?m.winner:null;
+    return {p1:a,p2:b,winner:w};
+  }
+
+  // results[cls] = 確定ラウンド配列 [[match,...],...]
+  var results=(s.results&&typeof s.results==='object')?s.results:{};
+  for(var rcls in results){
+    if(!Object.prototype.hasOwnProperty.call(results,rcls))continue;
+    var rounds=Array.isArray(results[rcls])?results[rcls]:[];
+    var orounds=[];
+    for(var ri=0;ri<rounds.length;ri++){
+      var round=Array.isArray(rounds[ri])?rounds[ri]:[];
+      var om=[];
+      for(var mi=0;mi<round.length;mi++){var pm=pubMatch(round[mi]);if(pm)om.push(pm);}
+      orounds.push(om);
+    }
+    out.state.results[rcls]=orounds;
+  }
+
+  // pairings[cls] = 現手合せ配列 [match,...]
+  var pairings=(s.pairings&&typeof s.pairings==='object')?s.pairings:{};
+  for(var qcls in pairings){
+    if(!Object.prototype.hasOwnProperty.call(pairings,qcls))continue;
+    var pa=Array.isArray(pairings[qcls])?pairings[qcls]:[];
+    var opa=[];
+    for(var pi=0;pi<pa.length;pi++){var pm2=pubMatch(pa[pi]);if(pm2)opa.push(pm2);}
+    out.state.pairings[qcls]=opa;
+  }
+
+  // meta.status: 参加者の居るクラスが全て確定ラウンド数>=回戦数なら final、それ以外 in_progress。
+  var anyClass=false,allDone=true;
+  for(var ci=0;ci<out.state.classes.length;ci++){
+    var cid=out.state.classes[ci].id;
+    var ps=out.state.players[cid]||[];
+    if(!ps.length)continue;
+    anyClass=true;
+    var rr=(out.state.classes[ci].rounds!=null)?out.state.classes[ci].rounds:out.state.rounds;
+    var doneN=(out.state.results[cid]||[]).length;
+    if(doneN<rr){allDone=false;break;}
+  }
+  out.meta.status=(anyClass&&allDone)?'final':'in_progress';
+
+  return out;
 }
 
 // ============================================================
