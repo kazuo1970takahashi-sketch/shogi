@@ -1003,6 +1003,9 @@ function normalizeState(raw){
       // WITHDRAW-001: 棄権フラグ（任意・既定なし＝在籍）。true のときのみ保持（member_id と同じ default 補完パターン）。
       //   棄権者は generatePairing の対象外（以降の組み合わせに入らない）＝成績はそのまま順位表に残す。
       if(p&&p.withdrawn===true)pp.withdrawn=true;
+      // YOMI-SYNC-OVERWRITE-001 (Codex P2b): 当日ふりがな編集の意図フラグを永続化。reload/PWA eviction 後も
+      //   「名簿を更新」時の非空マスタ上書き対象を復元する。true のときのみ保持（withdrawn と同じ default 補完）。
+      if(p&&p.yomiDirty===true)pp.yomiDirty=true;
       return pp;
     }).filter(function(p){return p.name;});
     // #276: クラス内 entry_no を「正の整数・一意」に正規化。明示の有効・一意値は保持し、
@@ -4544,7 +4547,9 @@ function bindMasterEditPanel(){
 }
 function masterSheetStartNameEdit(mid){
   if(_masterEditingMid===mid)return;
-  if(_masterEditingMid)masterSheetCancelNameEdit();
+  // YOMI/MASTER-EDIT-UX-001 (Codex P2a): 別会員へ切替時は未保存入力を破棄せず commit（旧セル方式の focusout
+  //   commit 相当を復元）。空名など commit 失敗時は alert 済み＝そのまま新パネルへ進む（旧挙動踏襲）。
+  if(_masterEditingMid)masterSheetCommitNameEdit();
   var master=loadBranchMaster();
   var m=_masterSheetFindMember(mid,master);
   if(!m||m.deleted===true)return;
@@ -6397,6 +6402,7 @@ function addPlayer(){
     }
   }else if(yomiForMaster){
     _pendingNewYomi[id]=yomiForMaster;
+    newPlayer.yomiDirty=true;   // Codex P2b: reload 後も上書き対象を復元
   }
 
   inpName.value='';
@@ -7173,6 +7179,7 @@ function editPlayerYomi(id,cls){
   if(input===null)return;                 // キャンセルは変更しない
   var normalized=normalizeYomi(input);
   if(normalized===cur)return;             // 変更なしは保存しない
+  p.yomiDirty=true;                       // YOMI-SYNC-OVERWRITE-001 (Codex P2b): 当日編集の意図を state に永続化（reload後も上書き対象を復元）
   updateField(id,cls,'yomi',normalized);  // save() + 保存検証(SAVE-003b) + renderRegList は updateField 側に委譲
   // YOMI-SYNC-OVERWRITE-001: 当日その場で編集した意図を記録し、「名簿を更新」時の非空マスタ上書き対象にする。
   //   登録時にマスタからコピーしただけの player.yomi（＝古い値の残存）を誤検知しないよう、明示編集のみ印を付ける。
@@ -10126,7 +10133,7 @@ function syncBranchMasterOnSave(){
         for(var _pi=0;_pi<_arr.length;_pi++){
           var _pp=_arr[_pi]; if(!_pp||typeof _pp.member_id!=='string'||!_pp.member_id)continue;
           var _mem=_yById[_pp.member_id]; if(!_mem||_mem.deleted===true||_yseen[_mem.id])continue;
-          var _dy=normalizeYomi((_pendingNewYomi&&typeof _pendingNewYomi[_pp.id]==='string')?_pendingNewYomi[_pp.id]:'');  // YOMI-SYNC-OVERWRITE-001: 当日明示編集(_pendingNewYomi)のみ。p.yomi フォールバックは登録時コピー=マスタの新しい修正を巻き戻す誤検知源のため撤去。
+          var _dy=normalizeYomi((_pendingNewYomi&&typeof _pendingNewYomi[_pp.id]==='string')?_pendingNewYomi[_pp.id]:(_pp.yomiDirty===true&&typeof _pp.yomi==='string'?_pp.yomi:''));  // YOMI-SYNC-OVERWRITE-001: 当日明示編集(_pendingNewYomi in-memory / yomiDirty 永続)のみ。無印の player.yomi(登録時コピー)は巻き戻し誤検知源のため対象外。
           var _my=normalizeYomi(_mem.yomi||'');
           if(_dy&&_my&&_dy!==_my){ _ydiffs.push({mem:_mem,name:String(_mem.name||_pp.name||''),from:_my,to:_dy}); _yseen[_mem.id]=true; }
         }
@@ -10142,6 +10149,8 @@ function syncBranchMasterOnSave(){
     if(masterSaved!==false){
       // 反映済みのため一時マップをクリア（保存成功時のみ。失敗時は次回 saveData での再試行に備えて保持）。
       _pendingNewYomi={};
+      // YOMI-SYNC-OVERWRITE-001 (Codex P2b): 永続マーカーも解除（解決済みを次回「名簿を更新」で再prompt しない）。
+      try{var _yck=(state&&state.players)?Object.keys(state.players):[];for(var _yk=0;_yk<_yck.length;_yk++){var _yar=state.players[_yck[_yk]];if(Array.isArray(_yar)){for(var _yj=0;_yj<_yar.length;_yj++){if(_yar[_yj]&&_yar[_yj].yomiDirty)delete _yar[_yj].yomiDirty;}}}}catch(_yce){}
       // SAVE-STATUS-BAR-001: 名簿同期成功の時刻を記録（fail-soft・破損スキップ/保存失敗時は記録しない）。
       markSaveStatus('meibo');
     }
