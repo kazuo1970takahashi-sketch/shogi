@@ -10082,6 +10082,31 @@ function syncBranchMasterOnSave(){
     //   後続表示）は native alert で別経路のため、この inline 警告は上書きされない。よって二重通知は避け、
     //   ここでは戻り値を受けて「保存できなかった一時マップ（_pendingNewYomi）を破棄しない」ことで
     //   ふりがなの反映漏れを握り潰さない（成功時のみクリアして次回再試行に委ねる）。
+    // YOMI-SYNC-OVERWRITE-001: 当日編集したふりがなが、マスタの既存(非空)ふりがなと異なる会員について
+    //   1回だけ確認して上書きする（#333「空のときだけ補完」を、明示編集時は反映へ緩める）。
+    //   純粋マージ updateBranchMasterFromTournament は不変。ここ(オーケストレータ)で追加検知する。
+    try{
+      var _yById={};
+      for(var _mi=0;_mi<master.members.length;_mi++){ if(master.members[_mi]&&master.members[_mi].id) _yById[master.members[_mi].id]=master.members[_mi]; }
+      var _ydiffs=[]; var _yseen={};
+      var _yck=(state&&state.players&&typeof state.players==='object')?Object.keys(state.players):[];
+      for(var _ci=0;_ci<_yck.length;_ci++){
+        var _arr=state.players[_yck[_ci]]; if(!Array.isArray(_arr))continue;
+        for(var _pi=0;_pi<_arr.length;_pi++){
+          var _pp=_arr[_pi]; if(!_pp||typeof _pp.member_id!=='string'||!_pp.member_id)continue;
+          var _mem=_yById[_pp.member_id]; if(!_mem||_mem.deleted===true||_yseen[_mem.id])continue;
+          var _dy=normalizeYomi((_pendingNewYomi&&typeof _pendingNewYomi[_pp.id]==='string')?_pendingNewYomi[_pp.id]:(typeof _pp.yomi==='string'?_pp.yomi:''));
+          var _my=normalizeYomi(_mem.yomi||'');
+          if(_dy&&_my&&_dy!==_my){ _ydiffs.push({mem:_mem,name:String(_mem.name||_pp.name||''),from:_my,to:_dy}); _yseen[_mem.id]=true; }
+        }
+      }
+      if(_ydiffs.length>0&&typeof confirm==='function'){
+        var _lines=[]; for(var _li=0;_li<_ydiffs.length;_li++){ _lines.push(_ydiffs[_li].name+'：'+_ydiffs[_li].from+' → '+_ydiffs[_li].to); }
+        if(confirm('当日編集したふりがなが名簿と異なる会員がいます。名簿のふりがなを次のとおり更新しますか？\n\n'+_lines.join('\n')+'\n\n（キャンセルすると名簿のふりがなは変更しません）')){
+          for(var _ai=0;_ai<_ydiffs.length;_ai++){ _ydiffs[_ai].mem.yomi=_ydiffs[_ai].to; }
+        }
+      }
+    }catch(_ye){ if(typeof console!=='undefined'&&console.warn)console.warn('YOMI-SYNC-OVERWRITE-001 skip',_ye); }
     var masterSaved=saveBranchMaster(master);
     if(masterSaved!==false){
       // 反映済みのため一時マップをクリア（保存成功時のみ。失敗時は次回 saveData での再試行に備えて保持）。
