@@ -5,7 +5,7 @@
 | ID | CLASS-SPLIT-CLOUD-MERGE-001 |
 | 種別 | 設計（docs-only / 実装前） |
 | 作成日 | 2026-07-04 |
-| ステータス | Draft（設計メモ・実装は後続 IMPL 群・Draft PR で人間承認まで停止） |
+| ステータス | Draft（設計メモ・実装は後続 IMPL 群・Draft PR で人間承認まで停止）／design-review = conditional-go（#538）反映済み |
 | base | orphan clean base `chore/shogi-tour-apphq-003h-2d-orphan-clean-base`（`main` を base にしない） |
 | 対象ファイル（実装は別PR） | `shogi_v4.html`（既存クラウドグルーの拡張）。スキーマは既存 `supabase/migrations/` を流用（原則追補なし） |
 | 親機能 | DATA-PERSISTENCE-PHASE2 Stage A（スキーマ+RLS+ログイン）／CLOUD SYNC B-2a/B-2b/B-3a/B-3b（#343・送信/取得導入済み） |
@@ -61,7 +61,7 @@
 
 ### 2.3 取得（クラウド → ローカル）
 - 名簿: `pullMembersFromCloud` + `mergeCloudMembersIntoMaster`（非空ガード付き last-writer-wins・tombstone 反映・同名別人は member_id 不一致で誤統合しない）。
-- 大会+成績: `fetchCloudTournaments(client, clubId)`（`tournaments` を select）と entries 読取 `from('entries').select('final_rank,class,wins,losses,sos,sodos,player_id').eq('tournament_id',tid)`（大会履歴タブで使用）。**class 込みで両級を一括で読める**。
+- 大会+成績: `fetchCloudTournaments(client, clubId)`（`tournaments` を select）と `fetchCloudEntriesForTournament(client, tid, clubId)`（entries を `select('final_rank,class,wins,losses,sos,sodos,player_id').eq('tournament_id',tid)` で読取・大会履歴タブで使用）。**class 込みで両級を一括で読める**。
 
 ---
 
@@ -82,12 +82,13 @@
 
 - 根拠: スキーマの `entries.class` はまさにこの用途。統合レポートは同一 `tournament_id` の entries を class で仕分けるだけで済む。別大会にすると「報告書段階での大会マージ」という余計な結合が増える。
 - 注意: `state.classes` は CLASS-VARIABLE-001 で runtime 可変（A/B 固定ではない）。設計は「担当端末が持つ級だけ送る」で一般化し、A/B に限定しない。
+- **前提不変条件（"衝突なし" の土台・design-review Should①）**: cloud の `player_id` は `(club_id, member_id)` 由来＝**会員単位（級ではない）**。したがって `entries` のキー `(tournament_id, player_id)` は「1大会・1会員・1行」。「各担当が自分の級だけ書けば別行＝衝突なし」は **「同一会員は1大会で1級のみ」** が成り立つ限りで保証される。同じ member_id が A級端末と B級端末の双方の state に入ると、両者が同一 `(tournament_id, player_id)` を別 class で書き→ last-writer-wins で片方の entry が消える。運用上「1人1級」で通常満たされるが、設計の土台なので明記する（**同一会員の二重登録を UI/運用で禁止**）。
 
 ### 3.3 送信規律（新規・ガード）
 「各端末は自分の級だけ送る」を**仕組みで担保**する。`buildCloudSyncPayload` は `state.classes` 全走査なので、端末に相手級のデータが載っていると相手行まで送ってしまう（RLS は同 club なら書けてしまう＝上書きの余地）。対策の候補:
 
 - (推奨) **端末が自分の級のデータしか持たない運用**を基本とし、送信前に「送信対象の級＝{A} のみ」を明示表示して確認させる（誤って両級持ちの端末が全送信するのを人が気づける）。
-- (任意・堅牢化) 送信時に `opts.classesFilter` を受け取り、payload の entries を対象級に絞る薄い引数追加（**動作を変えるリファクタではなく引数追加＝CLAUDE.md 9ルール①許容範囲**）。tournament 行の name/date は両担当で一致する前提（§3.1）なので last-writer-wins でも実害なし。
+- (任意・堅牢化) 送信時に `opts.classesFilter` を受け取り、payload の entries を対象級に絞る薄い引数追加。**既定挙動は不変で、opt-in（`classesFilter` 指定時のみ）で新挙動を gate する**追加＝デフォルト経路が変わらないため CLAUDE.md 9ルール①（動作を変えるリファクタ禁止）に抵触しない（design-review Nice 反映）。tournament 行の name/date は両担当で一致する前提（§3.1）なので last-writer-wins でも実害なし。
 
 ### 3.4 取得（既存経路の再利用）
 成績発表時は、どちらか1台（または双方）が `fetchCloudTournaments`→当該大会の entries 読取で**両級まとめて**取得する。ここは既存の大会履歴読取がそのまま該当。ローカル state への書き戻しは必須ではなく、**読み取り専用の統合ビュー**として描画すれば当日運営 state を汚さない（安全側）。
@@ -97,6 +98,7 @@
 
 - **成果物＝級ごとに成績表を並べた1つの報告書（確定）**。単純結合・順位は各級内で確定済みの `final_rank` をそのまま使用。既存の成績カード/テーブル生成（`_cloudResultCardsHtml`/`_cloudResultTableHtml` 相当）を class でグルーピングして再利用するだけで済む＝**順位ロジックの新規追加は不要**。
 - 級をまたいだ総合順位は**やらない**（本設計のスコープ外）。将来必要になったら別スライスとして切る。
+- **既知の限界（upsert-only の残留 entry・design-review Should②）**: 送信は upsert のみで、一度送った後に棄権/削除で人数が減っても旧 `entry` 行は消えない。全 class の entries を読む統合ビューに残留行が混じり得る（単機運用でも同じ既存挙動）。統合レポートの正確性に関わるため、実装フェーズで「最新送信に含まれない entry の扱い（表示除外 or 明示）」を検討する（§8-6）。
 
 ---
 
@@ -134,7 +136,7 @@
 
 | # | ルール | 本設計での扱い |
 |---|---|---|
-| 1 | 動作を変えるリファクタ禁止（引数整理は許容） | §3.3 の `classesFilter` は引数追加のみ。挙動変更なし |
+| 1 | 動作を変えるリファクタ禁止（引数整理は許容） | §3.3 の `classesFilter` は opt-in gate（既定不変・引数追加のみ）。挙動変更なし |
 | 2 | build/bind/coordinator 維持 | 新規は既存グルー（`sendTournamentToCloud`/bindReportEvents）に薄く結線 |
 | 3 | CSS 動作を変えない | 表示層は既存カード/テーブル CSS を再利用。`.section` 閉じタグ省略は触らない |
 | 4 | ES5/クロージャ/グローバル state 維持 | 新規関数も同流儀・フレームワーク化しない |
@@ -162,3 +164,16 @@
 3. ~~`tournaments.app_tournament_id` 列の有無~~ → **確認済み・存在**（`supabase/migrations/20260623150000_stageb_tournaments_app_id.sql`＋`..160000_..._fix.sql`）。冪等キー `(club_id, app_tournament_id)` はそのまま使える＝スキーマ追補不要。
 4. 送信規律を運用（人の確認）だけで足りるか、`classesFilter` 実装まで入れるか。
 5. ~~（LIVE-BROADCAST-001 と共有）SoT 前提の決着~~ → **決定・案②**（参加者は常に1つの合体スナップショットを読む。1台運営は現行設計のまま・2台ライブ合体は将来拡張・成績発表の統合は entries 行レベルで自動＝2026-07-04 髙橋確認・#538/#533 記録済み）。詳細 §5.2。
+6. **（design-review Should②）upsert-only の残留 entry**: 棄権/削除後に旧 entry 行が残り、統合レポートに混じり得る。実装フェーズで「最新送信に含まれない entry の扱い」を決める（§3.5）。
+
+---
+
+## 9. design-review 反映（#538 / verdict: conditional-go）
+
+別セッションの独立 Claude Code レビュアー（`reviewer: claude-code:independent-review-session`）による design-review（L3）を反映。**事実主張（既存関数・onConflict キー・`entries.class`・`app_tournament_id` 列・class 込み entries 読取・カード/テーブル再利用）は全て実コードと一致**と確認され、コア論理（別行＝衝突なし／同一大会ID相乗り／既存読取の再利用）は妥当と評価された（verdict: conditional-go・P0/P1 なし）。Should 反映:
+
+1. §3.2 に **「同一会員は1大会で1級のみ」** の前提不変条件を明文化（`player_id`=会員単位のため）。
+2. §3.5 / §8-6 に **upsert-only の残留 entry** の限界を注記（実装フェーズで扱いを決定）。
+3. §2.3 / §3.4 の entries 読取を実関数 `fetchCloudEntriesForTournament` に精緻化。§3.3 の `classesFilter` を **opt-in gate（既定不変）** 表現へ修正（Nice 反映）。
+
+Phase 1（#540）実装着手は conditional-go により可（上記 Should を設計へ反映済み）。
