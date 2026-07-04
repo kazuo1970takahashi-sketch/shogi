@@ -55,6 +55,8 @@ ok(RAW.indexOf('大会IDをコピー')>=0&&RAW.indexOf('大会IDを指定して�
 ok(RAW.indexOf("getElementById('copyTidBtn')")>=0&&RAW.indexOf('copyCurrentTournamentId(')>=0,'H6 copy 結線');
 ok(RAW.indexOf("getElementById('applyTidBtn')")>=0&&RAW.indexOf('applySpecifiedTournamentId(')>=0,'H7 apply 結線');
 ok(RAW.indexOf('id="copyTidBtn"')>RAW.indexOf('id="cloudSendBtn"'),'H8 クラウド送信近傍（cloudSend 後）に配置');
+ok(RAW.indexOf('2台で分担して入力するとき用')>=0,'H9 大会ID行に用途の補足一行がある');
+ok(RAW.indexOf('2台で分担して入力するとき用')<RAW.indexOf('id="copyTidBtn"'),'H10 補足はコピーボタンの前（見出し的に上）');
 
 console.log('\nPASS='+pass+' FAIL='+fail);
 process.exit(fail>0?1:0);

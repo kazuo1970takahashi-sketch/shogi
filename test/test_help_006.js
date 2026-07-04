@@ -116,8 +116,9 @@ assert(jt.indexOf('棄権')>=0 && jt.indexOf('成績は残ります')>=0, 'R8 �
 assert(jt.indexOf('印刷')>=0, 'R9 組み合わせ印刷の説明を含む');
 const ct = env.HELP_TEXTS && env.HELP_TEXTS['cloud'];
 assert(!!ct && ct.title==='クラウド送信・取得ヘルプ', 'R10 cloud の title が「クラウド送信・取得ヘルプ」');
-assert(ct && Array.isArray(ct.lines) && ct.lines.length===6, 'R11 cloud の lines が6項目の配列');
+assert(ct && Array.isArray(ct.lines) && ct.lines.length===7, 'R11 cloud の lines が7項目の配列（ID共有説明追加）');
 const jc = ct ? ct.lines.join('\n') : '';
+assert(jc.indexOf('大会IDを指定して開始')>=0 && jc.indexOf('１つの大会にまとまります')>=0, 'R11b cloud ヘルプに2台分担のID共有手順を含む');
 assert(jc.indexOf('任意')>=0, 'R12 クラウドは任意（運営に影響しない）の説明を含む');
 assert(jc.indexOf('ログイン')>=0, 'R13 送信にはログインが必要の説明を含む');
 assert(jc.indexOf('二重にはなりません')>=0, 'R14 再送信しても二重にならない説明を含む');
