@@ -129,6 +129,15 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .rep-form input[type=date],.rep-form input[type=time]{max-width:180px}
 .rep-form input[type=number]{max-width:180px;text-align:right;-moz-appearance:textfield}
 .rep-form input[type=number]::-webkit-outer-spin-button,.rep-form input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+/* MASTER-EDIT-UX-001: 氏名/ふりがな編集の全幅パネル（行直下）。見た目のみ・既存意味色のみ。 */
+.master-edit-row>td{padding:0;background:#eef4fb;border-bottom:1px solid #d8e4f2}
+.master-edit-panel{padding:12px 14px}
+.master-edit-panel .mep-fld{margin-bottom:10px}
+.master-edit-panel label{display:block;font-size:11px;color:#556;margin-bottom:3px}
+.master-edit-panel input{width:100%;box-sizing:border-box;font-size:16px;padding:9px 11px;border:1px solid #185FA5;border-radius:8px;background:#fff}
+.master-edit-panel .mep-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:4px}
+.master-edit-panel .mep-actions button{min-height:44px;padding:0 18px;border-radius:8px;font-size:15px}
+.master-edit-panel .mep-hint{font-size:11px;color:#889;margin-top:8px}
 .rep-form textarea{height:auto;min-height:56px;resize:vertical;line-height:1.5}
 .rep-form .rep-g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 @media(max-width:700px){.rep-form .rep-g2{grid-template-columns:1fr}}
@@ -4500,23 +4509,23 @@ function masterSheetCycleGrade(mid){
 }
 // 氏名セルのインライン編集: タップ→セル内を ふりがな/氏名 の2入力に差し替え。Enter=確定・Esc=取消・
 //   セル外へ focus が出たら確定（スプレッドシートの流儀）。確定は applyMasterMemberEdit（正規化・ガード込み）。
-function masterSheetStartNameEdit(mid){
-  if(_masterEditingMid===mid)return;
-  if(_masterEditingMid)masterSheetCommitNameEdit();
-  // L3 P2-1: 強制 commit が失敗（空氏名 alert 等）して編集が継続中なら、新しいセルの編集を開始しない。
-  //   旧エディタが DOM に残ったまま同 id 入力を二重注入し、別会員へ誤保存し得る経路を塞ぐ。
-  if(_masterEditingMid)return;
-  var master=loadBranchMaster();
-  var m=_masterSheetFindMember(mid,master);
-  if(!m||m.deleted===true)return;
-  var cell=(typeof document!=='undefined'&&document.querySelector)?document.querySelector('.master-cell-name[data-mid="'+mid+'"]'):null;
-  if(!cell)return;
-  _masterEditingMid=mid;
-  cell.innerHTML='<input type="text" id="ms-edit-yomi" value="'+escapeHtml(m.yomi||'')+'" placeholder="ふりがな" style="width:96%;font-size:13px;padding:3px 6px;border:1px solid #185FA5;border-radius:4px;margin-bottom:2px;box-sizing:border-box">'
-    +'<input type="text" id="ms-edit-name" value="'+escapeHtml(m.name||'')+'" placeholder="氏名" style="width:96%;font-size:15px;font-weight:500;padding:3px 6px;border:1px solid #185FA5;border-radius:4px;box-sizing:border-box">';
-  // MASTER-SHEET-004 (作者FB 2026-07-02): IME 変換ガード。変換確定の Enter を「編集確定」と誤解釈して
-  //   変換した瞬間に更新される問題を解消＝composing 中（compositionstart〜end・isComposing・keyCode 229）は
-  //   Enter/Esc とも無視し、focusout の自動確定も抑止する（pp-search の composition ガードと同方針）。
+// MASTER-EDIT-UX-001: 氏名/ふりがな編集を、狭いセル内ではなく「行直下の全幅パネル」で行う。
+//   保存/取消は既存 masterSheetCommitNameEdit / masterSheetCancelNameEdit（#ms-edit-name/#ms-edit-yomi を
+//   ID で読む）をそのまま再利用＝データ層 applyMasterMemberEdit は不変。会員/級は従来どおりセルの tap 切替。
+function buildMasterEditPanelHtml(m){
+  var y=escapeHtml((m&&m.yomi)||'');
+  var n=escapeHtml((m&&m.name)||'');
+  return '<div class="master-edit-panel">'
+    +'<div class="mep-fld"><label for="ms-edit-yomi">ふりがな</label>'
+    +'<input type="text" id="ms-edit-yomi" inputmode="kana" value="'+y+'" placeholder="ふりがな"></div>'
+    +'<div class="mep-fld"><label for="ms-edit-name">氏名</label>'
+    +'<input type="text" id="ms-edit-name" value="'+n+'" placeholder="氏名"></div>'
+    +'<div class="mep-actions"><button type="button" id="ms-edit-cancel">キャンセル</button>'
+    +'<button type="button" class="btn-primary" id="ms-edit-save">保存</button></div>'
+    +'<div class="mep-hint">会員区分・級は右の各セルをタップして切り替えます。</div>'
+    +'</div>';
+}
+function bindMasterEditPanel(){
   var composing=false;
   var onComp=function(on){ return function(){ composing=on; }; };
   var onKey=function(e){
@@ -4525,21 +4534,36 @@ function masterSheetStartNameEdit(mid){
     if(k==='Enter'||k===13){ if(e&&e.preventDefault)e.preventDefault(); masterSheetCommitNameEdit(); }
     else if(k==='Escape'||k===27){ masterSheetCancelNameEdit(); }
   };
-  var yi=document.getElementById('ms-edit-yomi');
-  var ni=document.getElementById('ms-edit-name');
-  if(yi){ yi.addEventListener('compositionstart',onComp(true)); yi.addEventListener('compositionend',onComp(false)); yi.addEventListener('keydown',onKey); }
-  if(ni){ ni.addEventListener('compositionstart',onComp(true)); ni.addEventListener('compositionend',onComp(false)); ni.addEventListener('keydown',onKey); }
-  cell.addEventListener('focusout',function(){
-    setTimeout(function(){
-      try{
-        if(composing)return; // MASTER-SHEET-004: 変換中の一時的な focus 移動では確定しない
-        if(_masterEditingMid!==mid)return;
-        if(cell.contains&&document.activeElement&&cell.contains(document.activeElement))return;
-        masterSheetCommitNameEdit();
-      }catch(e){}
-    },0);
-  });
-  if(ni&&ni.focus)ni.focus();
+  var ids=['ms-edit-yomi','ms-edit-name'];
+  for(var i=0;i<ids.length;i++){
+    var el=document.getElementById(ids[i]);
+    if(el){ el.addEventListener('compositionstart',onComp(true)); el.addEventListener('compositionend',onComp(false)); el.addEventListener('keydown',onKey); }
+  }
+  var sv=document.getElementById('ms-edit-save'); if(sv)sv.addEventListener('click',function(){ masterSheetCommitNameEdit(); });
+  var cn=document.getElementById('ms-edit-cancel'); if(cn)cn.addEventListener('click',function(){ masterSheetCancelNameEdit(); });
+}
+function masterSheetStartNameEdit(mid){
+  if(_masterEditingMid===mid)return;
+  if(_masterEditingMid)masterSheetCancelNameEdit();
+  var master=loadBranchMaster();
+  var m=_masterSheetFindMember(mid,master);
+  if(!m||m.deleted===true)return;
+  if(typeof document==='undefined'||!document.querySelector)return;
+  var row=document.querySelector('.master-sheet-row[data-mid="'+mid+'"]');
+  if(!row)return;
+  var old=document.querySelector('.master-edit-row'); if(old&&old.parentNode)old.parentNode.removeChild(old);
+  _masterEditingMid=mid;
+  var tr=document.createElement('tr');
+  tr.className='master-edit-row';
+  tr.setAttribute('data-mid',mid);
+  var td=document.createElement('td');
+  td.colSpan=(row.cells&&row.cells.length)?row.cells.length:4;
+  td.className='master-edit-cell';
+  td.innerHTML=buildMasterEditPanelHtml(m);
+  tr.appendChild(td);
+  if(row.parentNode)row.parentNode.insertBefore(tr,row.nextSibling);
+  bindMasterEditPanel();
+  var ni=document.getElementById('ms-edit-name'); if(ni&&ni.focus)ni.focus();
 }
 function masterSheetCommitNameEdit(){
   if(!_masterEditingMid)return;
