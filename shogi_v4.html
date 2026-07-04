@@ -478,6 +478,16 @@ body.sb-active{overflow:hidden}
       <button type="button" id="cloudSendBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ クラウドへ送信（任意）</button>
       <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
     </div>
+    <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): 共有セットアップ（大会IDの共有）。A級/B級を別端末で分担する運用向け。
+         追加のみ・当日運営フローは無改変（押さなければ従来通り）。click は bindReportEvents で結線。 -->
+    <div style="margin-top:8px;text-align:right" class="no-print">
+      <button type="button" id="copyTidBtn" class="btn-sm" title="この端末の大会IDをコピーして相手端末に共有します" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">大会IDをコピー</button>
+      <span style="display:inline-flex;gap:4px;align-items:center;margin-left:6px">
+        <input type="text" id="tidInput" inputmode="text" autocomplete="off" placeholder="例: t_2026_07_04" aria-label="共有された大会IDを入力" style="font-size:12px;padding:4px 6px;max-width:150px;border:1px solid #c3ccd8;border-radius:4px">
+        <button type="button" id="applyTidBtn" class="btn-sm" title="共有された大会IDでこの端末を同じ大会に揃えます" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">大会IDを指定して開始</button>
+      </span>
+      <div id="tidShareStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
+    </div>
     <div class="section no-print rep-form" style="margin-top:16px">
       <!-- HELP-UX-002 (#322): 見出し脇「？ ヘルプ」。click は bindReportEvents で openHelpModal('report') に結線。 -->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
@@ -2437,6 +2447,18 @@ function ensureTournamentId(state,master,tournamentDate){
   }
   if(state)state.tournament_id=id;
   return id;
+}
+
+// CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): 共有セットアップ＝大会IDの共有（受理側の検証）。
+//   A級/B級を別端末で分担する運用で、一方の大会ID（app_tournament_id）を他方が「指定して開始」できるようにする。
+//   本関数は貼り付け値を検証・正規化する純関数。前後空白（半角/全角）を除去し、生成規則 ensureTournamentId と
+//   同形（t_YYYY_MM_DD[_n]）に一致する時のみ返す。生成規則そのものは無改変（本関数は受理側の形式チェックのみ）。
+function normalizeTournamentIdInput(raw){
+  var s=(raw==null)?'':String(raw);
+  s=s.replace(/^[\s　]+|[\s　]+$/g,'');
+  if(!s)return '';
+  if(!/^t_\d{4}_\d{2}_\d{2}(?:_\d+)?$/.test(s))return '';
+  return s;
 }
 
 function attachMemberIdToPlayer(player,member){
@@ -9626,6 +9648,43 @@ function applyCloudStatus(el,msg){
   el.textContent=s;
   el.className='cloud-status cloud-status-'+classifyCloudStatusKind(s);
 }
+// CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): クリップボードコピー（navigator.clipboard 優先・execCommand フォールバック・失敗は cb(false)）。
+function copyTextToClipboard(text,cb){
+  var t=String(text==null?'':text);
+  try{
+    if(typeof navigator!=='undefined'&&navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(function(){if(cb)cb(true);},function(){if(cb)cb(false);});
+      return;
+    }
+  }catch(e){}
+  try{
+    var ta=document.createElement('textarea');
+    ta.value=t; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.left='-9999px';
+    document.body.appendChild(ta); ta.select();
+    var okc=false; try{okc=document.execCommand('copy');}catch(e2){okc=false;}
+    document.body.removeChild(ta);
+    if(cb)cb(!!okc);
+  }catch(e3){ if(cb)cb(false); }
+}
+// 大会IDを確定（未生成なら ensureTournamentId で生成）してコピー。setStatus に結果文言。
+function copyCurrentTournamentId(setStatus){
+  var master=(typeof loadBranchMaster==='function')?loadBranchMaster():null;
+  var tid=ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report));
+  copyTextToClipboard(tid,function(okc){
+    if(setStatus)setStatus(okc?('大会IDをコピーしました（'+tid+'）'):('⚠ コピーできませんでした。大会ID '+tid+' を手入力で共有してください'));
+  });
+  return tid;
+}
+// 貼り付けた大会IDを検証して state.tournament_id にセット（＝相手端末と同じ大会に相乗り）。setStatus に結果。
+function applySpecifiedTournamentId(raw,setStatus){
+  var id=normalizeTournamentIdInput(raw);
+  if(!id){ if(setStatus)setStatus('⚠ 大会IDの形式が正しくありません（例: t_2026_07_04）'); return {ok:false}; }
+  if(typeof state==='undefined'||!state){ if(setStatus)setStatus('⚠ 大会データがありません'); return {ok:false}; }
+  state.tournament_id=id;
+  if(typeof saveData==='function'){ try{saveData();}catch(e){} }
+  if(setStatus)setStatus('この端末の大会IDを設定しました（'+id+'）。相手端末と同じIDで送信すると1つの大会に統合されます');
+  return {ok:true,tournament_id:id};
+}
 // MASTER-CLOUD-PUSH-001 (作者要望 2026-07-02): 名簿タブの氏名・ふりがな編集を、ログイン中なら
 //   クラウド members にもその場で upsert する（巻き戻り防止＝☁取得/起動時自動取得がクラウドの古い表記で
 //   端末修正を上書きする非対称の解消）。設計:
@@ -11793,6 +11852,18 @@ function bindReportEvents(){
   if(cloudSendBtn)cloudSendBtn.addEventListener('click',function(){
     var st=document.getElementById('cloudSendStatus');
     sendTournamentToCloud(function(msg){ applyCloudStatus(st,msg); });
+  });
+  // CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): 大会IDのコピー / 指定して開始（共有セットアップ・追加のみ）。
+  var copyTidBtn=document.getElementById('copyTidBtn');
+  if(copyTidBtn)copyTidBtn.addEventListener('click',function(){
+    var st=document.getElementById('tidShareStatus');
+    copyCurrentTournamentId(function(msg){ applyCloudStatus(st,msg); });
+  });
+  var applyTidBtn=document.getElementById('applyTidBtn');
+  if(applyTidBtn)applyTidBtn.addEventListener('click',function(){
+    var st=document.getElementById('tidShareStatus');
+    var inp=document.getElementById('tidInput');
+    applySpecifiedTournamentId(inp?inp.value:'',function(msg){ applyCloudStatus(st,msg); });
   });
 }
 
