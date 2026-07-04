@@ -3735,6 +3735,8 @@ function buildMasterTabHtml(master){
   html+='<summary style="cursor:pointer;font-size:13px;color:#1F3864;padding:6px 0">⚙ 名簿のメンテナンス（バックアップ・クラウド一括送信・削除済み・リセット）</summary>';
   html+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
   html+='<button type="button" id="masterBulkPushBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ 名簿全体をクラウドへ一括送信</button>';
+  // MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): クラウドの大会記録から前回クラス/最終参加/参加履歴を再計算して名簿へ反映（既存☁取得は軽いまま）。
+  html+='<button type="button" id="masterRebuildBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ クラウドから完全再構築（参加履歴も再計算）</button>';
   html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
   html+='<button type="button" id="masterImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📂 マスタをインポート</button>';
   // A-4 §3.4.1: 削除済み表示トグル
@@ -4729,6 +4731,12 @@ function bindMasterTabEvents(){
     var n=(master&&Array.isArray(master.members))?master.members.length:0;
     if(!confirm('名簿 '+n+'名をクラウドへ一括送信します。\nクラウド側の氏名・ふりがな・区分・市町村は、この端末の名簿の内容で上書きされます。\n\nよろしいですか？'))return;
     pushAllMembersToCloud(_masterCloudStatusFn());
+  });
+  // MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): 「☁ クラウドから完全再構築」→ confirm 後に rebuildMasterFromCloudUI（fail-soft・status のみ）。
+  var rebuildBtn=document.getElementById('masterRebuildBtn');
+  if(rebuildBtn)rebuildBtn.addEventListener('click',function(){
+    if(!confirm('クラウドの大会記録から、各会員の「前回クラス・最終参加・参加履歴」を再計算して名簿へ反映します。\n氏名・ふりがな・区分・市町村・削除状態は変更しません。\n端末に未送信の直近の参加記録は巻き戻しません。\n\n再構築しますか？'))return;
+    rebuildMasterFromCloudUI(_masterCloudStatusFn());
   });
   var importBtn=document.getElementById('masterImportBtn');
   if(importBtn)importBtn.addEventListener('click',openMasterImportModal);
@@ -9872,6 +9880,78 @@ function pullMembersFromCloud(client, opts){
   });
 }
 
+// MASTER-REBUILD-FROM-CLOUD-001 Phase 2 (#551): クラウドから名簿を完全再構築する in-memory
+//   オーケストレーション（設計 v2 §2）。client は注入（mock 可）・throw しない・{ok,counts,...} を返す
+//   （当日運営を止めない・全クラウド操作は任意/非ブロッキング/失敗は通知のみ）。
+//   手順: (1) pullMembersFromCloud で members を in-memory master へマージ（戻り値 res.master を使い
+//         reload を挟まない＝Must-1: normalize の today フォールバックを避ける）。
+//         (2) tournaments (3) players (4) entries を club_id で取得（entries は 100 件チャンクで in()）。
+//         (5) buildDerivedMemberStatsFromCloud で導出 (6) mergeDerivedStatsIntoMaster で同 master へマージ
+//         (7) 履歴に変更があれば saveBranchMaster で 1 回だけ保存（保存は導出マージ後）。
+//   opts: { clubId（必須） }。戻り: {ok, step?, counts:{members,tournaments,players,entries,historyUpdated},
+//         saved, master, message?}。
+function rebuildMasterFromCloud(client, opts){
+  opts=opts||{};
+  var clubId=opts.clubId;
+  if(!client||!client.from)return Promise.resolve({ok:false,step:'init',message:'クラウドに接続していません'});
+  if(!clubId)return Promise.resolve({ok:false,step:'club',message:'取得元クラブが特定できません（ログインを確認してください）'});
+  // (1) members: 既存 pull の in-memory 戻り master をそのまま使う（reload しない＝Must-1）。
+  return pullMembersFromCloud(client,{clubId:clubId}).then(function(mres){
+    if(!mres||mres.ok===false)return {ok:false,step:'members',message:(mres&&mres.message)||'名簿の取得に失敗しました',master:mres&&mres.master};
+    var master=mres.master||((typeof loadBranchMaster==='function')?loadBranchMaster():{schema_version:1,updated_at:new Date().toISOString(),members:[]});
+    var memberCount=(mres.counts&&mres.counts.fetched)||0;
+    // (2) tournaments
+    return client.from('tournaments').select('id,app_tournament_id,date,season').eq('club_id',clubId).then(function(tr){
+      if(tr&&tr.error)return {ok:false,step:'tournaments',message:'大会の読み込みに失敗しました（'+cloudErrDetail(tr.error)+'）',master:master};
+      var tournaments=(tr&&Array.isArray(tr.data))?tr.data:[];
+      // (3) players
+      return client.from('players').select('id,member_id').eq('club_id',clubId).then(function(pr){
+        if(pr&&pr.error)return {ok:false,step:'players',message:'選手情報の読み込みに失敗しました（'+cloudErrDetail(pr.error)+'）',master:master};
+        var players=(pr&&Array.isArray(pr.data))?pr.data:[];
+        // (4) entries: tournament の DB id を 100 件チャンクで in() 取得（設計 v2 §2-4・§5）。
+        var ids=[]; for(var i=0;i<tournaments.length;i++){ var t=tournaments[i]; if(t&&t.id!=null)ids.push(t.id); }
+        return _fetchCloudEntriesChunked(client,clubId,ids).then(function(er){
+          if(!er.ok)return {ok:false,step:'entries',message:er.message,master:master};
+          var entries=er.entries;
+          // (5) 導出 (6) 同 master へマージ（Phase 1 純関数）。
+          var stats=buildDerivedMemberStatsFromCloud(tournaments,players,entries);
+          var dres=mergeDerivedStatsIntoMaster(master,stats);
+          var counts={members:memberCount,tournaments:tournaments.length,players:players.length,entries:entries.length,historyUpdated:dres.updated};
+          // (7) 履歴に変更があれば 1 回だけ保存。
+          var saved=false;
+          if(dres.updated>0){
+            saved=(typeof saveBranchMaster==='function')?saveBranchMaster(master):true;
+            if(saved===false)return {ok:false,step:'save',counts:counts,message:'名簿の保存に失敗しました（取得は成功・再実行できます）',master:master};
+          }
+          return {ok:true,counts:counts,saved:saved,master:master};
+        });
+      });
+    });
+  }).catch(function(e){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 再構築例外:',(e&&e.message)||e); return {ok:false,step:'exception',message:'クラウドからの再構築に失敗しました（通信状態を確認してください・運営は続行できます）'}; });
+}
+
+// entries を tournament の DB id で 100 件チャンクに分けて順に取得し連結（設計 v2 §2-4・§5）。
+//   fail-soft: いずれかのチャンクが error なら {ok:false,message}。ids が空なら即 {ok:true,entries:[]}。
+function _fetchCloudEntriesChunked(client, clubId, ids){
+  var CHUNK=100;
+  var all=[];
+  var chunks=[];
+  for(var i=0;i<ids.length;i+=CHUNK)chunks.push(ids.slice(i,i+CHUNK));
+  if(chunks.length===0)return Promise.resolve({ok:true,entries:[]});
+  var idx=0;
+  function next(){
+    if(idx>=chunks.length)return Promise.resolve({ok:true,entries:all});
+    var c=chunks[idx++];
+    return client.from('entries').select('tournament_id,player_id,class').eq('club_id',clubId).in('tournament_id',c).then(function(r){
+      if(r&&r.error)return {ok:false,message:'参加記録の読み込みに失敗しました（'+cloudErrDetail(r.error)+'）'};
+      var rows=(r&&Array.isArray(r.data))?r.data:[];
+      for(var j=0;j<rows.length;j++)all.push(rows[j]);
+      return next();
+    });
+  }
+  return next();
+}
+
 // CLOUD SYNC (B-2b-wire / #343): 当日アプリ→クラウド送信のブラウザ・グルー。
 //   全クラウド操作は任意・非ブロッキング・失敗は status 表示のみ（押さなければ従来通り・ネット不要）。
 //   supabase-js / app/config.js は click 時のみ遅延ロード（既定では外部依存ゼロ）。
@@ -10185,6 +10265,39 @@ function pullMembersToMasterUI(setStatus){
       });
     });
   }).catch(function(e){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 取得例外:',(e&&e.message)||e); setStatus('クラウドの取得に失敗しました。通信状態を確認して、もう一度お試しください（ログインが必要な場合があります）。'); return {ok:false,step:'exception'}; });
+}
+// MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): 「☁ クラウドから完全再構築」ボタンのブラウザ・グルー。
+//   pullMembersToMasterUI と同じ deps/auth/claim 経路で client を作り rebuildMasterFromCloud を呼ぶ。
+//   任意・非ブロッキング・fail-soft（当日運営を止めない）。進行/結果は masterCloudPullStatus に表示
+//   （[[ui-result-visibility-principle]] 準拠＝押下位置直下の status 行）。
+function rebuildMasterFromCloudUI(setStatus){
+  setStatus=setStatus||function(){};
+  setStatus('クラウドから再構築中…');
+  return loadCloudDeps().then(function(dep){
+    if(dep&&dep.offline){ setStatus('オフラインのため再構築できません（ネット接続後に再度お試しください・運営は続行できます）'); return {ok:false,step:'offline'}; }
+    if(!dep.cfg){ setStatus('クラウド設定がありません（再構築は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
+    if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
+    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+    if(!client||!client.auth){ setStatus('クラウドに接続できませんでした'); return {ok:false,step:'client'}; }
+    return client.auth.getSession().then(function(r){
+      var session=r&&r.data&&r.data.session;
+      if(!session){ setStatus('クラウド管理ページ（app/）でログインしてから再構築してください'); return {ok:false,step:'auth'}; }
+      return client.rpc('claim_organizer_seat').then(function(rc){
+        var clubId=pickActiveClubId((rc&&rc.data)||[]);
+        if(!clubId){ setStatus('取得元クラブを一意に特定できません（有効な幹事クラブが無い／複数所属の可能性・管理ページを確認してください）'); return {ok:false,step:'club'}; }
+        return rebuildMasterFromCloud(client,{clubId:clubId}).then(function(res){
+          if(res&&res.ok){
+            var c=res.counts||{};
+            try{ if(typeof renderMasterTab==='function')renderMasterTab(); }catch(eR){}
+            setStatus('再構築しました（会員 '+(c.members||0)+' 名・履歴反映 '+(c.historyUpdated||0)+' 名・大会 '+(c.tournaments||0)+' 件）');
+          }else{
+            setStatus('再構築に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再実行できます）');
+          }
+          return res;
+        });
+      });
+    });
+  }).catch(function(e){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 再構築例外:',(e&&e.message)||e); setStatus('クラウドからの再構築に失敗しました。通信状態を確認して、もう一度お試しください（ログインが必要な場合があります）。'); return {ok:false,step:'exception'}; });
 }
 // CLOUD PULL (B-3c-auto / #343): 起動時 auto-pull。全て任意・非ブロッキング・無音・fail-soft。
 //   config 検出かつ既存ログインセッションがあるときだけ背景で名簿 pull（B-3c-wire の手動ボタンと同経路）。

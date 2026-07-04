@@ -2090,6 +2090,18 @@ else
   warn "test_master_rebuild_from_cloud_001.js が見つからない"
 fi
 
+echo ""
+echo "【MASTER-REBUILD-FROM-CLOUD-001 Phase2 オーケストレーション（rebuildMasterFromCloud）】"
+if [ -f "$SCRIPT_DIR/test_master_rebuild_from_cloud_001_phase2.js" ]; then
+  if node "$SCRIPT_DIR/test_master_rebuild_from_cloud_001_phase2.js" "$TARGET" > /tmp/master_rebuild_from_cloud_001_phase2_out.log 2>&1; then
+    ok "MASTER-REBUILD-FROM-CLOUD Phase2 テスト 全PASS ($(tail -1 /tmp/master_rebuild_from_cloud_001_phase2_out.log))"
+  else
+    ng "MASTER-REBUILD-FROM-CLOUD Phase2 テスト 失敗"; cat /tmp/master_rebuild_from_cloud_001_phase2_out.log
+  fi
+else
+  warn "test_master_rebuild_from_cloud_001_phase2.js が見つからない"
+fi
+
 # ============================================
 # 最終結果
 # ============================================
