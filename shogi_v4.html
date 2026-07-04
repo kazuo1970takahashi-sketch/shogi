@@ -10719,7 +10719,7 @@ function buildPrintResultsHtml(){
     +buildPdfDocHeaderHtml('対戦成績')
     +'<h2>スイス式トーナメント　対戦成績</h2>'
     +tablesHtml
-    +'</body></html>';
+    +'<script>window.addEventListener("load",function(){try{window.focus();}catch(e){}setTimeout(function(){window.print();},300);});window.onafterprint=function(){window.close();};<\/script></body></html>';
   return html;
 }
 
@@ -10748,10 +10748,8 @@ function printResults(){
   if(!win){URL.revokeObjectURL(url);alert('ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。');return;}
   win.focus();
   // B05: setTimeout(800) → load イベント、B08: 印刷後に afterprint で win.close()
-  win.addEventListener('load',function(){
-    win.addEventListener('afterprint',function(){win.close();});
-    win.print();
-  });
+  // PRINT-IOS-SELFPRINT-001: 印刷トリガ(load→print)と afterprint→close は印刷文書内の自己印刷
+  //   スクリプトへ移設（親→別タブBlobの win.print() が iOS Safari「未読込」警告を出すため）。
   setTimeout(function(){URL.revokeObjectURL(url);},60000);
 }
 
@@ -10858,7 +10856,7 @@ function printPairings(){
     +'</div>'
     +'<div class="doc-sub">現在の組み合わせ</div>'
     +sectionsHtml
-    +'</body></html>';
+    +'<script>window.addEventListener("load",function(){try{window.focus();}catch(e){}setTimeout(function(){window.print();},300);});window.onafterprint=function(){window.close();};<\/script></body></html>';
 
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob);
@@ -10866,10 +10864,8 @@ function printPairings(){
   if(!win){URL.revokeObjectURL(url);alert('ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。');return;}
   win.focus();
   // downloadReport/printResults と同じ load → print → afterprint→close パターン。
-  win.addEventListener('load',function(){
-    win.addEventListener('afterprint',function(){win.close();});
-    win.print();
-  });
+  // PRINT-IOS-SELFPRINT-001: 印刷トリガ(load→print)と afterprint→close は印刷文書内の自己印刷
+  //   スクリプトへ移設（親→別タブBlobの win.print() が iOS Safari「未読込」警告を出すため）。
   setTimeout(function(){URL.revokeObjectURL(url);},60000);
 }
 
@@ -11083,7 +11079,7 @@ function buildReportHtml(){
     +'<br>'
     // REPORT-REFACTOR-B5C: 申し送り table 〜 footer <p>2つ を buildReportFooterHtml() へ移動（byte 同値）。
     +buildReportFooterHtml()
-    +'</body></html>';
+    +'<script>window.addEventListener("load",function(){try{window.focus();}catch(e){}setTimeout(function(){window.print();},300);});window.onafterprint=function(){window.close();};<\/script></body></html>';
 
   // REPORT-UX-001: ファイル名用の日付文字列。新 type="date" の YYYY-MM-DD / 旧テキストの
   //   YYYY年MM月DD日 の両方からハイフン・和暦区切りを除去し YYYYMMDD 風にする。
@@ -11112,10 +11108,8 @@ function downloadReport(){
   if(!win){URL.revokeObjectURL(url);alert('ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。');return;}
   win.focus();
   // B05: setTimeout(800) → load イベント、B08: 印刷後に afterprint で win.close()
-  win.addEventListener('load',function(){
-    win.addEventListener('afterprint',function(){win.close();});
-    win.print();
-  });
+  // PRINT-IOS-SELFPRINT-001: 印刷トリガ(load→print)と afterprint→close は印刷文書内の自己印刷
+  //   スクリプトへ移設（親→別タブBlobの win.print() が iOS Safari「未読込」警告を出すため）。
   setTimeout(function(){URL.revokeObjectURL(url);},60000);
 }
 
