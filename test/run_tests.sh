@@ -1072,6 +1072,22 @@ else
   warn "test_master_list_ux_001.js が見つからない"
 fi
 
+# ============================================
+# HISTORY-DELETE-001 — 大会履歴の削除導線（req #550・詳細ビュー🗑＋confirm＋shogi_archive のみ更新）
+# ============================================
+echo ""
+echo "【HISTORY-DELETE-001 — 大会履歴の削除（純関数・confirm・当日 state 無接触）】"
+if [ -f "$SCRIPT_DIR/test_history_delete_001.js" ]; then
+  if node "$SCRIPT_DIR/test_history_delete_001.js" "$TARGET" > /tmp/history_delete_001_out.log 2>&1; then
+    ok "HISTORY-DELETE-001 テスト 全PASS ($(tail -1 /tmp/history_delete_001_out.log))"
+  else
+    ng "HISTORY-DELETE-001 テスト 失敗"
+    cat /tmp/history_delete_001_out.log
+  fi
+else
+  warn "test_history_delete_001.js が見つからない"
+fi
+
 echo ""
 echo "【DATA-PERSISTENCE-PHASE2 Stage B-1 — クラウド read-only 閲覧（app/auth.js・過去大会/結果/名簿・mock client）】"
 if [ -f "$SCRIPT_DIR/test_stageb_read.js" ]; then

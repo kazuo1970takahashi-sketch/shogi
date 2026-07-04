@@ -12482,6 +12482,39 @@ function findArchiveEntryByTid(archive,tid){
   return null;
 }
 
+// HISTORY-DELETE-001 (#550): 履歴1件を tid で取り除く純関数。tid 不一致/空は無変化（removed=0）。
+//   normalizeArchive 経由で常に正規形を返す。この端末の shogi_archive のみが対象＝クラウド/当日 state 無接触。
+function removeArchiveEntryByTid(archive,tid){
+  var arc=normalizeArchive(archive);
+  var next=[];var removed=0;
+  for(var i=0;i<arc.tournaments.length;i++){
+    var e=arc.tournaments[i];
+    if(tid&&e&&e.identity&&e.identity.tournament_id===tid){removed++;continue;}
+    next.push(e);
+  }
+  return {archive:{schema_version:ARCHIVE_SCHEMA_VERSION,updated_at:removed?archiveNowIso():arc.updated_at,tournaments:next},removed:removed};
+}
+
+// HISTORY-DELETE-001: 削除の実行（confirm→setItem・失敗時は alert のみ＝当日 state 無傷・persistArchiveEntry と同型の防御）。
+function deleteArchiveTournamentUI(tid){
+  var archive=loadArchive();
+  var entry=findArchiveEntryByTid(archive,tid);
+  if(!entry){renderHistoryList();return false;}
+  var id=entry.identity||{};
+  var label=(id.targetMonthLabel||id.title||'この大会')+(id.heldDate?('（開催日 '+id.heldDate+'）'):'');
+  if(!confirm('「'+label+'」を大会履歴から削除します。\nこの端末からのみ削除され、元に戻せません。\n（クラウドの過去大会・当日の大会データには影響しません）\n\n削除しますか？'))return false;
+  var res=removeArchiveEntryByTid(archive,tid);
+  if(!res.removed){renderHistoryList();return false;}
+  try{
+    localStorage.setItem(ARCHIVE_KEY,JSON.stringify(res.archive));
+  }catch(e){
+    alert('履歴を削除できませんでした。もう一度お試しください。');
+    return false;
+  }
+  renderHistoryList('🗑 「'+label+'」を履歴から削除しました。');
+  return true;
+}
+
 // 一覧表示順（§5）: 開催日 desc → 保存日時 desc（新しい大会が上）。heldDate は YYYY-MM-DD で辞書順=日付順。
 function sortArchiveTournaments(list){
   var arr=(Array.isArray(list)?list:[]).slice();
@@ -12823,7 +12856,8 @@ function renderHistoryDetail(tid){
   var id=entry.identity||{};
   var snap=entry.snapshot||{};
   var html='';
-  html+='<div style="margin-bottom:10px"><button type="button" class="btn-sm" id="history-back-btn" style="background:#fff;color:#444;font-size:13px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← 履歴一覧へ戻る</button></div>';
+  // HISTORY-DELETE-001 (#550): 戻ると同じ上部バーに削除導線（危険色・confirm はハンドラ側）。
+  html+='<div style="margin-bottom:10px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><button type="button" class="btn-sm" id="history-back-btn" style="background:#fff;color:#444;font-size:13px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← 履歴一覧へ戻る</button><button type="button" class="btn-sm" id="history-delete-btn" style="background:#fff;color:#A32D2D;font-size:13px;padding:6px 12px;border:1px solid #A32D2D;border-radius:6px;cursor:pointer">🗑 この履歴を削除</button></div>';
   html+='<div style="background:#fff3cd;border:1px solid #ffe08a;color:#7a5b00;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">閲覧専用：過去の大会です（編集できません）</div>';
   html+='<div style="margin-bottom:10px">';
   html+='<div style="font-size:16px;font-weight:700;color:#1F3864">'+escapeHtml(id.title||'（大会名未設定）')+'</div>';
@@ -12845,6 +12879,8 @@ function renderHistoryDetail(tid){
   host.innerHTML=html;
   var back=document.getElementById('history-back-btn');
   if(back)back.addEventListener('click',function(){renderHistoryList();});
+  var delBtn=document.getElementById('history-delete-btn');
+  if(delBtn)delBtn.addEventListener('click',function(){deleteArchiveTournamentUI(tid);});
 }
 
 // 当日UX: localStorage の自動退避（eviction）を抑止＝大会途中の消失耐性。失敗は無視。起動時に一度要求（DOM 非依存）。
