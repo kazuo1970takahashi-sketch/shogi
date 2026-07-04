@@ -174,8 +174,8 @@ assert(barW._listeners.keydown&&barW._listeners.keydown.length>0, 'W6 keydown（
 // K 4フックの存在（ソース検証）
 const saveSrc=RAW.slice(RAW.indexOf('function save()'),RAW.indexOf('function save()')+900);
 assert(saveSrc.indexOf('markAutosaveStatus()')>=0, 'K1 save() 成功パスで markAutosaveStatus');
-const syncSrc=RAW.slice(RAW.indexOf('function syncBranchMasterOnSave'),RAW.indexOf('function syncBranchMasterOnSave')+2600);
-assert(/masterSaved!==false\)\{[\s\S]{0,400}markSaveStatus\('meibo'\)/.test(syncSrc), 'K2 名簿同期成功時のみ meibo 記録');
+const syncSrc=RAW.slice(RAW.indexOf('function syncBranchMasterOnSave'),RAW.indexOf('function saveData'));  // YOMI-SYNC-OVERWRITE-001 で関数が伸びたため関数全体を対象に
+assert(/masterSaved!==false\)\{[\s\S]{0,1200}markSaveStatus\('meibo'\)/.test(syncSrc), 'K2 名簿同期成功時のみ meibo 記録');  // YOMI-SYNC-OVERWRITE-001 で成功分岐に yomiDirty 解除が入り窓を拡張
 const expSrc=RAW.slice(RAW.indexOf('function exportTournamentBackup'),RAW.indexOf('function exportTournamentBackup')+1400);
 assert(expSrc.indexOf("markSaveStatus('backup')")>=0&&expSrc.indexOf("markSaveStatus('backup')")<expSrc.indexOf('return true;')+30, 'K3 バックアップ成功時に backup 記録');
 const cloudSrc=RAW.slice(RAW.indexOf('function sendTournamentToCloud'),RAW.indexOf('function sendTournamentToCloud')+3600);

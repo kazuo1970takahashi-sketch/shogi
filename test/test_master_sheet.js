@@ -180,6 +180,9 @@ assert(afterEdit.name==='架空改名'&&afterEdit.yomi==='かくうかいめい'
 assert(String(c5._ctx._elements['app-toast'].textContent).indexOf('更新しました')>=0, 'C11 更新を toast 通知');
 const c6=envWithFix();
 c6._setEditingMid('m-ka');
+// MASTER-EDIT-FORM-001: 編集有無は data-init（初期値）比較で判定するため、初期値を明示して「空にした」編集を表す
+c6._ctx.document.getElementById('ms-edit-name').setAttribute('data-init','架空太郎');
+c6._ctx.document.getElementById('ms-edit-yomi').setAttribute('data-init','かくうたろう');
 c6._ctx.document.getElementById('ms-edit-name').value='';
 c6._ctx.document.getElementById('ms-edit-yomi').value='';
 c6.masterSheetCommitNameEdit();
@@ -209,13 +212,14 @@ const commitSrc0=RAW.slice(RAW.indexOf('function masterSheetCommitNameEdit'),RAW
 assert(/renderMasterTab\(\);[\s\S]{0,200}masterSheetFlashRow\(mid\)/.test(commitSrc0), 'F3 commit 成功→再描画直後に追跡を呼ぶ');
 
 // I: MASTER-SHEET-004（IME 変換ガード＝変換確定の Enter で更新しない）
-const startSrc4=RAW.slice(RAW.indexOf('function masterSheetStartNameEdit'),RAW.indexOf('function masterSheetCommitNameEdit'));
+// MASTER-EDIT-FORM-001: composition ガードは編集パネルの bindMasterEditPanel へ移動（focusout 自動確定は廃止＝確定は保存ボタン/Enter の明示操作のみ）
+const startSrc4=RAW.slice(RAW.indexOf('function bindMasterEditPanel'),RAW.indexOf('function masterSheetStartNameEdit'));
 assert(startSrc4.indexOf("addEventListener('compositionstart'")>=0&&startSrc4.indexOf("addEventListener('compositionend'")>=0, 'I1 両入力に composition イベントを結線');
 assert(/if\(composing\|\|\(e&&e\.isComposing\)\|\|\(e&&e\.keyCode===229\)\)return;/.test(startSrc4), 'I2 変換中は Enter/Esc を無視（isComposing・keyCode 229 の後方互換込み）');
-assert(/if\(composing\)return;[\s\S]{0,80}_masterEditingMid!==mid/.test(startSrc4), 'I3 変換中は focusout の自動確定も抑止');
+assert(startSrc4.indexOf("getElementById('ms-edit-save')")>=0&&startSrc4.indexOf("getElementById('ms-edit-cancel')")>=0, 'I3 確定/取消は明示ボタン（focusout 自動確定は廃止＝MASTER-EDIT-FORM-001）');
 
 // P: MASTER-CLOUD-PUSH-001（氏名・ふりがな編集のクラウド即時反映・fail-soft）
-const commitSrc=RAW.slice(RAW.indexOf('function masterSheetCommitNameEdit'),RAW.indexOf('function masterSheetCommitNameEdit')+1800);
+const commitSrc=RAW.slice(RAW.indexOf('function masterSheetCommitNameEdit'),RAW.indexOf('function masterSheetCancelNameEdit'));
 assert(commitSrc.indexOf('pushMemberEditToCloud')>=0, 'P1 commit 成功パスからクラウド push を呼ぶ');
 const pushSrc=RAW.slice(RAW.indexOf('function pushMemberEditToCloud'),RAW.indexOf('function pushMemberEditToCloud')+3000);
 assert(pushSrc.indexOf("onConflict:'club_id,member_id'")>=0, 'P2 upsert は club_id,member_id で冪等（既存 sync と同一）');
