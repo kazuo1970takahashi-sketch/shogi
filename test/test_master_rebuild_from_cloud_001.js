@@ -258,6 +258,50 @@ assert(typeof env.mergeDerivedStatsIntoMaster==='function','SETUP mergeDerivedSt
 }
 
 // ============================================================
+// ============================================================
+// BUILD-ALLDATENULL (P3): 全大会 date 無効 → last/first_attended は ''（app_tid 有効なら tids は算入）。
+// ============================================================
+{
+  var tournaments=[
+    {id:'T1',app_tournament_id:'t_x1',date:''},
+    {id:'T2',app_tournament_id:'t_x2',date:'not-a-date'}
+  ];
+  var players=[{id:'P1',member_id:'mG'}];
+  var entries=[
+    {tournament_id:'T1',player_id:'P1','class':'A'},
+    {tournament_id:'T2',player_id:'P1','class':'B'}
+  ];
+  var stats=env.buildDerivedMemberStatsFromCloud(tournaments,players,entries);
+  assert(stats.mG.last_attended===''&&stats.mG.first_attended==='','BUILD-ALLDATENULL-1 全大会 date 無効 → last/first_attended は \'\'');
+  assert(stats.mG.tournament_ids.length===2,'BUILD-ALLDATENULL-2 app_tid 有効なら date 無効でも tournament_ids へ算入');
+}
+
+// ============================================================
+// MERGE-NOCHANGE (P3): 導出が既存と完全一致 → updated=0 かつ updated_at 非更新（回帰防止）。
+// ============================================================
+{
+  var master={schema_version:1,updated_at:'ORIG',members:[member('mA',{last_class:'A',last_attended:'2026-06-14',first_attended:'2026-06-14',
+    tournament_ids:['t_2026_06_14'],attendance_count:1})]};
+  var stats={mA:{member_id:'mA',last_class:'A',last_attended:'2026-06-14',first_attended:'2026-06-14',tournament_ids:['t_2026_06_14']}};
+  var r=env.mergeDerivedStatsIntoMaster(master,stats);
+  assert(r.updated===0,'MERGE-NOCHANGE-1 完全一致は updated=0');
+  assert(master.updated_at==='ORIG','MERGE-NOCHANGE-2 無変更なら updated_at 非更新');
+}
+
+// ============================================================
+// MERGE-LOCALINVALID (P3): 非空でもローカル last_attended が無効('') → 導出(有効)で上書きされる分岐。
+// ============================================================
+{
+  var master={schema_version:1,updated_at:'x',members:[member('mA',{last_class:null,last_attended:'',first_attended:'',
+    tournament_ids:['t_legacy'],attendance_count:1})]};
+  var stats={mA:{member_id:'mA',last_class:'B',last_attended:'2026-06-14',first_attended:'2026-06-14',tournament_ids:['t_2026_06_14']}};
+  env.mergeDerivedStatsIntoMaster(master,stats);
+  var m=master.members[0];
+  assert(m.last_class==='B'&&m.last_attended==='2026-06-14','MERGE-LOCALINVALID-1 非空でもローカル last_attended 無効なら導出で上書き');
+  assert(m.first_attended==='2026-06-14','MERGE-LOCALINVALID-2 ローカル first_attended 無効なら導出を採用');
+  assert(m.tournament_ids.length===2,'MERGE-LOCALINVALID-3 union は行う');
+}
+
 // ROBUST: 破損・空入力で throw しない。
 // ============================================================
 {
