@@ -12346,6 +12346,114 @@ function initApp(){
 }
 
 // ============================================================
+// LIVE-BROADCAST-001 Phase 1: 参加者向けライブ配信の公開スナップショット（純関数）
+//   現 state から「公開範囲に絞った state 部分集合」を返す純関数。配信路(polling/Realtime)に依存しない。
+//   設計 = docs/specs/20260704_live_broadcast_001_participant_realtime_design.md（§3.1）。
+//   - slug / version / updated_at は含めない（配信 envelope の責務。§3.1・P2/P1-2）
+//   - players はフィールド単位ホワイトリスト（id/name/yomi/entry_no のみ。member/grade/会費区分等は出さない）
+//   - match は {p1,p2,winner} のみ（sanitizeMatch 正準形の lastModifiedBy は wire に載せない・P2-2）
+//   - state.rounds と classes[].rounds を含める（roundsForClass の 4回戦フォールバック回避・P1-1）
+//   保存スキーマは触らない（引数を読むだけ・REFERENCE §3）。ES5 / 純関数（副作用なし）。
+// ============================================================
+function buildPublicLiveSnapshot(src){
+  var s=(src&&typeof src==='object')?src:{};
+  var out={schema_version:1,meta:{},state:{rounds:4,classes:[],players:{},results:{},pairings:{}}};
+
+  // meta.title: report.title があれば正規化して使う。無ければ既定名。
+  var title='';
+  try{
+    if(typeof normalizeReportTitle==='function')title=normalizeReportTitle(s.report&&s.report.title);
+    else if(s.report&&typeof s.report.title==='string')title=s.report.title;
+  }catch(e){title='';}
+  out.meta.title=title||'将棋大会';
+
+  // state.rounds: 正の整数のみ（roundsForClass と同基準）。無ければ 4。
+  var g=Math.floor(Number(s.rounds));
+  out.state.rounds=(!isNaN(g)&&g>=1)?g:4;
+
+  // classes: id/name/started/rounds のみ。
+  var classes=Array.isArray(s.classes)?s.classes:[];
+  for(var i=0;i<classes.length;i++){
+    var c=classes[i];
+    if(!c||typeof c.id!=='string'||!c.id)continue;
+    var oc={id:c.id};
+    if(typeof c.name==='string'&&c.name)oc.name=c.name;
+    if(c.started!==undefined)oc.started=!!c.started;
+    var cr=(c.rounds!=null)?Math.floor(Number(c.rounds)):NaN;
+    if(!isNaN(cr)&&cr>=1)oc.rounds=cr;
+    out.state.classes.push(oc);
+  }
+
+  // players: ホワイトリスト（id/name/yomi/entry_no）。member/grade 等は出さない。
+  var players=(s.players&&typeof s.players==='object')?s.players:{};
+  for(var pcls in players){
+    if(!Object.prototype.hasOwnProperty.call(players,pcls))continue;
+    var arr=Array.isArray(players[pcls])?players[pcls]:[];
+    var op=[];
+    for(var j=0;j<arr.length;j++){
+      var p=arr[j];
+      if(!p||typeof p.id!=='string'||!p.id)continue;
+      var pub={id:p.id};
+      if(typeof p.name==='string')pub.name=p.name;
+      if(typeof p.yomi==='string'&&p.yomi)pub.yomi=p.yomi;
+      if(p.entry_no!=null)pub.entry_no=p.entry_no;
+      op.push(pub);
+    }
+    out.state.players[pcls]=op;
+  }
+
+  // match ホワイトリスト: {p1,p2,winner} のみ（lastModifiedBy は載せない）。
+  function pubMatch(m){
+    if(!m||typeof m!=='object')return null;
+    var a=(typeof m.p1==='string')?m.p1:'';
+    var b=(typeof m.p2==='string')?m.p2:'';
+    if(!a||!b)return null;
+    var w=(m.winner===a||m.winner===b)?m.winner:null;
+    return {p1:a,p2:b,winner:w};
+  }
+
+  // results[cls] = 確定ラウンド配列 [[match,...],...]
+  var results=(s.results&&typeof s.results==='object')?s.results:{};
+  for(var rcls in results){
+    if(!Object.prototype.hasOwnProperty.call(results,rcls))continue;
+    var rounds=Array.isArray(results[rcls])?results[rcls]:[];
+    var orounds=[];
+    for(var ri=0;ri<rounds.length;ri++){
+      var round=Array.isArray(rounds[ri])?rounds[ri]:[];
+      var om=[];
+      for(var mi=0;mi<round.length;mi++){var pm=pubMatch(round[mi]);if(pm)om.push(pm);}
+      orounds.push(om);
+    }
+    out.state.results[rcls]=orounds;
+  }
+
+  // pairings[cls] = 現手合せ配列 [match,...]
+  var pairings=(s.pairings&&typeof s.pairings==='object')?s.pairings:{};
+  for(var qcls in pairings){
+    if(!Object.prototype.hasOwnProperty.call(pairings,qcls))continue;
+    var pa=Array.isArray(pairings[qcls])?pairings[qcls]:[];
+    var opa=[];
+    for(var pi=0;pi<pa.length;pi++){var pm2=pubMatch(pa[pi]);if(pm2)opa.push(pm2);}
+    out.state.pairings[qcls]=opa;
+  }
+
+  // meta.status: 参加者の居るクラスが全て確定ラウンド数>=回戦数なら final、それ以外 in_progress。
+  var anyClass=false,allDone=true;
+  for(var ci=0;ci<out.state.classes.length;ci++){
+    var cid=out.state.classes[ci].id;
+    var ps=out.state.players[cid]||[];
+    if(!ps.length)continue;
+    anyClass=true;
+    var rr=(out.state.classes[ci].rounds!=null)?out.state.classes[ci].rounds:out.state.rounds;
+    var doneN=(out.state.results[cid]||[]).length;
+    if(doneN<rr){allDone=false;break;}
+  }
+  out.meta.status=(anyClass&&allDone)?'final':'in_progress';
+
+  return out;
+}
+
+// ============================================================
 // LIVE-MOBILE-SCOREBOARD-001 §1 スマホ閲覧用リアルタイム星取表ビュー
 //   運営画面（.header / .container）とは分離した閲覧専用フルスクリーンビュー。
 //   #scoreboard / #viewer / #mobile-standings hash で起動する。操作UI（入力/保存/編集/
