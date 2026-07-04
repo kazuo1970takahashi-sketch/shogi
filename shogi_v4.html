@@ -4502,6 +4502,15 @@ function _msSegState(id){
   var sel=(selEl&&selEl.getAttribute)?selEl.getAttribute('data-val'):null;
   return {init:init,sel:sel};
 }
+// MASTER-EDIT-FORM-001 (Codex P1/4849): 氏名/ふりがな入力の {el, 初期値 data-init, 現在値} を返す。
+//   「初期値から変わったか」で編集有無を判定し、未編集フィールドは現在のマスタ値を使う＝パネルを開いたまま
+//   ☁取得でマスタが更新されても、触っていない氏名/ふりがなを古い表示値で巻き戻さない（区分/級の data-init と同型）。
+function _msInputState(id){
+  if(typeof document==='undefined'||!document.getElementById)return null;
+  var el=document.getElementById(id); if(!el)return null;
+  var init=el.getAttribute?el.getAttribute('data-init'):null;
+  return {el:el, init:(init==null?'':init), val:(typeof el.value==='string')?el.value:''};
+}
 // MASTER-EDIT-FORM-001: 以下2関数はセル結線を外し未使用（編集はフォームに集約）。互換のため残置。
 function masterSheetCycleMember(mid){
   var master=loadBranchMaster();
@@ -4545,9 +4554,9 @@ function buildMasterEditPanelHtml(m){
   }
   return '<div class="master-edit-panel">'
     +'<div class="mep-fld"><label for="ms-edit-yomi">ふりがな</label>'
-    +'<input type="text" id="ms-edit-yomi" inputmode="kana" value="'+y+'" placeholder="ふりがな"></div>'
+    +'<input type="text" id="ms-edit-yomi" inputmode="kana" value="'+y+'" data-init="'+y+'" placeholder="ふりがな"></div>'
     +'<div class="mep-fld"><label for="ms-edit-name">氏名</label>'
-    +'<input type="text" id="ms-edit-name" value="'+n+'" placeholder="氏名"></div>'
+    +'<input type="text" id="ms-edit-name" value="'+n+'" data-init="'+n+'" placeholder="氏名"></div>'
     +'<div class="mep-fld"><label>支部員区分</label>'
     +'<div class="mep-seg" id="ms-edit-member" data-init="'+mem+'" role="group" aria-label="支部員区分">'+segBtn('member','支部員',mem)+segBtn('other','その他',mem)+'</div></div>'
     +'<div class="mep-fld"><label>級（会費区分）</label>'
@@ -4626,7 +4635,15 @@ function masterSheetCommitNameEdit(){
   var opts={};
   var _segM=_msSegState('ms-edit-member'); if(_segM&&_segM.sel&&_segM.sel!==_segM.init&&(_segM.sel==='member'||_segM.sel==='other'))opts.member=_segM.sel;
   var _segG=_msSegState('ms-edit-grade'); if(_segG&&_segG.sel&&_segG.sel!==_segG.init&&(_segG.sel==='ippan'||_segG.sel==='chu'||_segG.sel==='josei'))opts.grade=_segG.sel;
-  var r=applyMasterMemberEdit(mid,nameEl.value,yomiEl?yomiEl.value:'',master,opts);
+  // MASTER-EDIT-FORM-001 (Codex P1/4849): 氏名/ふりがなも「初期値(data-init)から変わったフィールドだけ」適用。
+  //   未編集のフィールドは現在のマスタ値を使い、パネルを開いたまま☁取得された値を古い表示値で巻き戻さない。
+  var _nmSt=_msInputState('ms-edit-name'); var _yoSt=_msInputState('ms-edit-yomi');
+  var _curM=_masterSheetFindMember(mid,master);
+  var _nameChanged=!!_nmSt && String(_nmSt.val)!==String(_nmSt.init);
+  var _yomiChanged=!!_yoSt && normalizeYomi(_yoSt.val)!==normalizeYomi(_yoSt.init);
+  var _effName=_nameChanged?_nmSt.val:(_curM?(_curM.name||''):(_nmSt?_nmSt.val:nameEl.value));
+  var _effYomi=_yomiChanged?(_yoSt?_yoSt.val:''):(_curM?(_curM.yomi||''):(_yoSt?_yoSt.val:''));
+  var r=applyMasterMemberEdit(mid,_effName,_effYomi,master,opts);
   if(!r||!r.success){
     if(r&&r.error==='empty_name'){ alert('氏名を入力してください'); if(nameEl.focus)nameEl.focus(); return; }
     alert('更新できませんでした。入力内容を確認してください');
@@ -4841,12 +4858,14 @@ function renderMasterTab(){
   if(_masterEditingMid && !_masterEditFlushing && typeof document!=='undefined' && document.getElementById){
     var _ne=document.getElementById('ms-edit-name'), _ye=document.getElementById('ms-edit-yomi');
     if(_ne){
-      var _mm=_masterSheetFindMember(_masterEditingMid,loadBranchMaster());
-      // MASTER-EDIT-FORM-001 (Fable P1-1): 区分/級のみ変更した状態で外部再描画されても捨てないよう、
-      //   セグメントの初期値からの変化も dirty に含める。
+      // MASTER-EDIT-FORM-001 (Fable P1-1 / Codex P1-4849): dirty は「ユーザーがパネルで初期値(data-init)から
+      //   変えたか」で判定する。現在マスタとの比較にすると、開いたまま☁取得でマスタが更新された未編集フィールドを
+      //   dirty 誤判定して巻き戻すため（氏名/ふりがな/区分/級すべて初期値基準に統一）。
+      var _niInit=_ne.getAttribute?_ne.getAttribute('data-init'):null;
+      var _yiInit=(_ye&&_ye.getAttribute)?_ye.getAttribute('data-init'):null;
       var _segM2=_msSegState('ms-edit-member'); var _segG2=_msSegState('ms-edit-grade');
       var _segDirty=(_segM2&&_segM2.sel&&_segM2.sel!==_segM2.init)||(_segG2&&_segG2.sel&&_segG2.sel!==_segG2.init);
-      var _dirty=!!_mm && ( String(_ne.value)!==String((_mm.name)||'') || (_ye? normalizeYomi(_ye.value)!==normalizeYomi((_mm.yomi)||'') : false) || !!_segDirty );
+      var _dirty=( String(_ne.value)!==String(_niInit==null?'':_niInit) || (_ye? normalizeYomi(_ye.value)!==normalizeYomi(_yiInit==null?'':_yiInit) : false) || !!_segDirty );
       if(_dirty){
         _masterEditFlushing=true;
         try{ masterSheetCommitNameEdit(); }catch(_fe){}
