@@ -102,17 +102,28 @@
     // APP-UX-004B (作者承認 2026-07-03): 「役割 / 状態」の連結テキストを役割バッジ＋状態表示に分離
     //   （名簿シートの mk-badge と同じ設計言語）。data-id・act-* クラス・disabled ガードは全て温存。
     var lastGuard = isLastActiveAdmin(organizers, org);
-    var who = esc(org.display_name || org.email || '(無名)');
+    var who = esc(org.display_name || '（氏名未登録）');
+    var email = esc(org.email || '（メール未登録）');
+    var nameRaw = esc(org.display_name || '');
     var role = ROLE_LABEL[org.role] || org.role;
     var status = STATUS_LABEL[org.status] || org.status;
     var id = esc(org.id);
     var badgeCls = (org.role === 'organizer') ? ' rb-organizer' : ((org.role === 'viewer') ? ' rb-viewer' : '');
     var statusCls = (org.status === 'active') ? '' : ' st-suspended';
     var h = '<li class="org-row" data-id="' + id + '">' +
-      '<span class="org-who">' + who + '</span>' +
+      '<span class="org-id">' +
+      '<span class="org-who" data-id="' + id + '">' + who + '</span>' +
+      '<span class="org-email">' + email + '</span>' +
+      '<span class="org-name-edit" data-id="' + id + '" style="display:none">' +
+      '<input type="text" class="org-name-input" data-id="' + id + '" value="' + nameRaw + '" placeholder="氏名（例：髙橋 一雄）">' +
+      '<button type="button" class="act-name-save" data-id="' + id + '">保存</button>' +
+      '<button type="button" class="act-name-cancel" data-id="' + id + '">やめる</button>' +
+      '</span>' +
+      '</span>' +
       '<span class="org-role-badge' + badgeCls + '">' + esc(role) + '</span>' +
       '<span class="org-status' + statusCls + '">' + esc(status) + '</span>' +
       '<span class="org-actions">';
+    h += '<button type="button" class="act-rename" data-id="' + id + '">氏名編集</button>';
     if (org.status === 'active') {
       h += '<button type="button" class="act-suspend" data-id="' + id + '"' + (lastGuard ? ' disabled title="最後のオーナー/管理者は停止できません"' : '') + '>一時停止</button>';
       h += '<button type="button" class="act-retire"  data-id="' + id + '"' + (lastGuard ? ' disabled title="最後のオーナー/管理者は退任にできません"' : '') + '>退任</button>';
@@ -135,6 +146,10 @@
       '<p class="muted">オーナー/管理者のみ。停止・退任しても会員名簿や履歴は消えません。' +
       'オーナー/管理者は常に1人以上必要です。</p>' +
       '<form id="inviteForm" class="adm-form">' +
+      '<div class="adm-fld">' +
+      '<label for="inviteName">お名前</label>' +
+      '<input type="text" id="inviteName" name="name" autocomplete="off" placeholder="お名前（例：髙橋 一雄）">' +
+      '</div>' +
       '<div class="adm-fld">' +
       '<label for="inviteEmail">メールで招待</label>' +
       '<input type="email" id="inviteEmail" name="email" autocomplete="off" placeholder="new@example.com" required>' +
@@ -267,14 +282,28 @@
         return { organizers: Array.isArray(res.data) ? res.data : [] };
       });
   }
-  function inviteOrganizer(client, clubId, email, role) {
+  function inviteOrganizer(client, clubId, email, role, name) {
     var addr = (email || '').trim();
     if (!isValidEmail(addr)) return Promise.resolve({ ok: false, message: 'メールアドレスの形式が正しくありません。' });
     var r = (['owner', 'admin', 'organizer', 'viewer'].indexOf(role) >= 0) ? role : 'organizer';
-    return client.from('organizers').insert({ club_id: clubId, email: addr, role: r, status: 'active' })
+    var row = { club_id: clubId, email: addr, role: r, status: 'active' };
+    var nm = (name || '').trim();
+    if (nm) row.display_name = nm;
+    return client.from('organizers').insert(row)
       .then(function (res) {
         if (res && res.error) return { ok: false, message: '招待できませんでした（権限/重複の可能性）: ' + res.error.message };
-        return { ok: true, message: addr + ' を招待しました。本人がメールのリンクからログインすると有効になります。' };
+        return { ok: true, message: (nm ? nm + '（' + addr + '）' : addr) + ' を招待しました。本人がメールのリンクからログインすると有効になります。' };
+      });
+  }
+  // 既存の席の氏名（display_name）を設定/変更する。RLS 上 organizers_update は owner/admin のみ許可。
+  //   status/role/user_id は変えないので「最後の admin ガード」トリガにも掛からない。
+  function updateOrganizerName(client, id, name) {
+    var nm = (name || '').trim();
+    if (!nm) return Promise.resolve({ ok: false, message: '氏名を入力してください。' });
+    return client.from('organizers').update({ display_name: nm }).eq('id', id)
+      .then(function (res) {
+        if (res && res.error) return { ok: false, message: '氏名を保存できませんでした（権限の可能性）: ' + res.error.message };
+        return { ok: true, message: '氏名を「' + nm + '」に保存しました。' };
       });
   }
   // status 変更（suspend/retire/active）。最後の active owner/admin を消す操作はクライアントでも弾く。
@@ -1226,7 +1255,8 @@
         if (e && e.preventDefault) e.preventDefault();
         var email = (byId('inviteEmail') || {}).value || '';
         var role = (byId('inviteRole') || {}).value || 'organizer';
-        inviteOrganizer(client, lastSummary.clubId, email, role).then(function (r) {
+        var name = (byId('inviteName') || {}).value || '';
+        inviteOrganizer(client, lastSummary.clubId, email, role, name).then(function (r) {
           setMsg('adminMsg', r.message, r.ok ? 'ok' : 'err'); if (r.ok) refreshAdmin();
         });
       });
@@ -1706,6 +1736,30 @@
       wire('.act-suspend', 'suspended');
       wire('.act-retire', 'retired');
       wire('.act-reactivate', 'active');
+
+      // 氏名編集トグル（開く/やめる）と保存の結線。
+      function first(sel) { var ns = doc.querySelectorAll(sel); return (ns && ns[0]) || null; }
+      function toggleEdit(id, editing) {
+        var editBox = first('.org-name-edit[data-id="' + id + '"]');
+        var whoEl = first('.org-who[data-id="' + id + '"]');
+        var renameBtn = first('.act-rename[data-id="' + id + '"]');
+        if (editBox) editBox.style.display = editing ? '' : 'none';
+        if (whoEl) whoEl.style.display = editing ? 'none' : '';
+        if (renameBtn) renameBtn.style.display = editing ? 'none' : '';
+        if (editing) { var inp = first('.org-name-input[data-id="' + id + '"]'); if (inp && inp.focus) inp.focus(); }
+      }
+      function eachN(sel, fn) { var ns = doc.querySelectorAll(sel); if (!ns) return; Array.prototype.forEach.call(ns, fn); }
+      eachN('.act-rename', function (n) { n.addEventListener('click', function () { toggleEdit(n.getAttribute('data-id'), true); }); });
+      eachN('.act-name-cancel', function (n) { n.addEventListener('click', function () { toggleEdit(n.getAttribute('data-id'), false); }); });
+      eachN('.act-name-save', function (n) {
+        n.addEventListener('click', function () {
+          var id = n.getAttribute('data-id');
+          var inp = first('.org-name-input[data-id="' + id + '"]');
+          var nm = inp ? inp.value : '';
+          updateOrganizerName(client, id, nm)
+            .then(function (r) { setMsg('adminMsg', r.message, r.ok ? 'ok' : 'err'); if (r.ok) refreshAdmin(); });
+        });
+      });
     }
     function refreshAdmin() {
       if (!lastSummary || !lastSummary.isAdmin) return Promise.resolve();
@@ -1794,6 +1848,7 @@
     claimAndLoadMemberships: claimAndLoadMemberships,
     fetchOrganizers: fetchOrganizers,
     inviteOrganizer: inviteOrganizer,
+    updateOrganizerName: updateOrganizerName,
     setOrganizerStatus: setOrganizerStatus,
     signOut: signOut,
     // B-1 read-only（#343）
