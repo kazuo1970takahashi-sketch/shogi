@@ -499,6 +499,8 @@ body.sb-active{overflow:hidden}
     <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): 共有セットアップ（大会IDの共有）。A級/B級を別端末で分担する運用向け。
          追加のみ・当日運営フローは無改変（押さなければ従来通り）。click は bindReportEvents で結線。 -->
     <div style="margin-top:8px;text-align:right" class="no-print">
+      <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 補足: 用途の一言（分担運用向け）。static・no-print・挙動不変。 -->
+      <div class="no-print" style="font-size:12px;margin-top:2px;margin-bottom:4px;color:#555">▷ A級・B級を2台で分担して入力するとき用（1台で運営するなら操作不要）</div>
       <button type="button" id="copyTidBtn" class="btn-sm" title="この端末の大会IDをコピーして相手端末に共有します" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">大会IDをコピー</button>
       <span style="display:inline-flex;gap:4px;align-items:center;margin-left:6px">
         <input type="text" id="tidInput" inputmode="text" autocomplete="off" placeholder="例: t_2026_07_04" aria-label="共有された大会IDを入力" style="font-size:12px;padding:4px 6px;max-width:150px;border:1px solid #c3ccd8;border-radius:4px">
@@ -9135,7 +9137,8 @@ var HELP_TEXTS={
       '同じ大会を何度送信しても二重にはなりません。',
       '送信に失敗しても当日のデータは端末に残っています。運営はそのまま続けて、あとで再送信できます。',
       '「大会履歴」タブの「☁ クラウドの過去大会」→「読み込む」で、共有された過去大会の結果を見られます。',
-      'クラウドはバックアップの代わりではありません。端末の控えは「バックアップ」ボタンで保存してください。'
+      'クラウドはバックアップの代わりではありません。端末の控えは「バックアップ」ボタンで保存してください。',
+      '【A級・B級を2台で分担する場合】1台目で「大会IDをコピー」→２台目の入力欄に貼って「大会IDを指定して開始」を押すと、両方の送信が同じ１つの大会にまとまります。各端末は自分の級だけを送るのがコツです。１台で運営するなら操作は不要です。'
     ]
   },
   // SAVE-STATUS-BAR-001 (STYLE-GUIDE §9 M3): ヘッダ直下の保存状態バーから開く保存4系統の説明。
