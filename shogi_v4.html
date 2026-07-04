@@ -494,6 +494,16 @@ body.sb-active{overflow:hidden}
       <button type="button" id="cloudSendBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ クラウドへ送信（任意）</button>
       <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
     </div>
+    <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): 共有セットアップ（大会IDの共有）。A級/B級を別端末で分担する運用向け。
+         追加のみ・当日運営フローは無改変（押さなければ従来通り）。click は bindReportEvents で結線。 -->
+    <div style="margin-top:8px;text-align:right" class="no-print">
+      <button type="button" id="copyTidBtn" class="btn-sm" title="この端末の大会IDをコピーして相手端末に共有します" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">大会IDをコピー</button>
+      <span style="display:inline-flex;gap:4px;align-items:center;margin-left:6px">
+        <input type="text" id="tidInput" inputmode="text" autocomplete="off" placeholder="例: t_2026_07_04" aria-label="共有された大会IDを入力" style="font-size:12px;padding:4px 6px;max-width:150px;border:1px solid #c3ccd8;border-radius:4px">
+        <button type="button" id="applyTidBtn" class="btn-sm" title="共有された大会IDでこの端末を同じ大会に揃えます" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">大会IDを指定して開始</button>
+      </span>
+      <div id="tidShareStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
+    </div>
     <div class="section no-print rep-form" style="margin-top:16px">
       <!-- HELP-UX-002 (#322): 見出し脇「？ ヘルプ」。click は bindReportEvents で openHelpModal('report') に結線。 -->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
@@ -2459,6 +2469,18 @@ function ensureTournamentId(state,master,tournamentDate){
   return id;
 }
 
+// CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): 共有セットアップ＝大会IDの共有（受理側の検証）。
+//   A級/B級を別端末で分担する運用で、一方の大会ID（app_tournament_id）を他方が「指定して開始」できるようにする。
+//   本関数は貼り付け値を検証・正規化する純関数。前後空白（半角/全角）を除去し、生成規則 ensureTournamentId と
+//   同形（t_YYYY_MM_DD[_n]）に一致する時のみ返す。生成規則そのものは無改変（本関数は受理側の形式チェックのみ）。
+function normalizeTournamentIdInput(raw){
+  var s=(raw==null)?'':String(raw);
+  s=s.replace(/^[\s　]+|[\s　]+$/g,'');
+  if(!s)return '';
+  if(!/^t_\d{4}_\d{2}_\d{2}(?:_\d+)?$/.test(s))return '';
+  return s;
+}
+
 function attachMemberIdToPlayer(player,member){
   if(!player||!member)return;
   player.member_id=member.id;
@@ -3751,44 +3773,47 @@ function buildMasterTabHtml(master){
     // MASTER-SHEET-002: 角丸カードで包む（モック承認時の密度・overflow-x は狭幅端末のフォールバック）。
     html+='<div style="overflow-x:auto"><div style="border:1px solid #d3dbe5;border-radius:10px;overflow:hidden"><table id="master-sheet" style="width:100%;border-collapse:collapse;font-size:13px">';
     html+='<thead><tr style="background:#f4f6f9">'
-      +'<th style="width:34px;padding:6px 2px;font-weight:400;font-size:11px;color:#888">選択</th>'
+      +'<th style="width:38px;padding:6px 2px;font-weight:400;font-size:11px;color:#888">選択</th>'
       +'<th style="text-align:left;padding:6px 8px;font-size:12px;color:#556;font-weight:600">氏名（ふりがな）</th>'
-      +'<th style="width:58px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">支部員</th>'
-      +'<th style="width:50px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">会費</th>'
-      +'<th style="width:42px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">前回</th>'
-      +'<th style="width:86px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">最終参加</th>'
+      +'<th style="width:64px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">支部員</th>'
+      +'<th style="width:78px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">会費</th>'
       +'</tr></thead><tbody>';
     for(var i=0;i<members.length;i++){
       var m=members[i];
       var mid=escapeHtml(m.id||'');
       var isDel=(m.deleted===true);
       var checked=_masterSelected[m.id]?' checked':'';
-      var gradeLabel=(m.grade==='chu')?'中学':(m.grade==='josei')?'女性':'一般';
+      var gradeLabel=(m.grade==='chu')?'中学以下':(m.grade==='josei')?'女性':'一般';
       var lastCls=(m.last_class==='A'||m.last_class==='B')?m.last_class:'－';
       var rowStyle=isDel?'background:#f5f5f5;color:#888;text-decoration:line-through':'';
       // MASTER-SHEET-003: tr に data-mid を付与（更新後の行追跡＝scroll＋ハイライトのフック）。
       html+='<tr class="master-sheet-row'+(isDel?' master-row-deleted':'')+'" data-mid="'+mid+'" style="border-bottom:1px solid #eef1f5;'+rowStyle+'">';
-      html+='<td style="text-align:center;padding:4px 2px"><input type="checkbox" class="master-row-check" data-mid="'+mid+'"'+checked+' aria-label="'+escapeHtml(m.name||'')+'を選択" style="width:18px;height:18px"></td>';
+      html+='<td style="text-align:center;padding:8px 2px"><input type="checkbox" class="master-row-check" data-mid="'+mid+'"'+checked+' aria-label="'+escapeHtml(m.name||'')+'を選択" style="width:20px;height:20px"></td>';
       // 氏名セル（ふりがなはルビ位置）。live 行のみ editable（class 付与＝bind 対象）。
       var yomiN=normalizeYomi(m.yomi);
       var yomiHtml=yomiN
         ?'<span style="font-size:10px;color:'+(isDel?'#aaa':'#888')+';display:block;line-height:1.15">'+escapeHtml(yomiN)+'</span>'
         :'<span style="font-size:10px;color:'+(isDel?'#aaa':'#BA7517')+';display:block;line-height:1.15">（ふりがな未入力）</span>';
-      html+='<td'+(isDel?'':' class="master-cell-name" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:left;padding:5px 8px'+(isDel?'':';cursor:pointer')+'">'+yomiHtml+'<span style="font-weight:500">'+escapeHtml(m.name||'')+'</span></td>';
+      // MASTER-LIST-UX-001: 前回クラス/最終参加/削除日は独立列をやめ、氏名セル内のサブ情報行（固定位置・
+      //   空欄は「－」＝行高不変）に集約。削除行は同じ位置を「削除:日付」に差し替え（列構造は不変・
+      //   取り消し線は text-decoration:none で解除＝旧削除日セルの挙動を踏襲）。title 生値も踏襲。
+      var subInfo=isDel
+        ?'<span style="font-size:10.5px;color:#aaa;display:block;line-height:1.4;text-decoration:none" title="'+escapeHtml(m.deleted_at||'')+'">削除:'+escapeHtml(_masterSheetFmtDate(m.deleted_at))+'</span>'
+        :'<span style="font-size:10.5px;color:#888;display:block;line-height:1.4" title="'+escapeHtml(m.last_attended||'')+'">前回:'+escapeHtml(lastCls)+' ・ 最終:'+escapeHtml(_masterSheetFmtDate(m.last_attended))+'</span>';
+      html+='<td'+(isDel?'':' class="master-cell-name" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:left;padding:5px 8px'+(isDel?'':';cursor:pointer')+'">'+yomiHtml+'<span style="font-weight:500">'+escapeHtml(m.name||'')+'</span>'+subInfo+'</td>';
       // 支部員セル（タップで編集フォームを開く）。MASTER-EDIT-FORM-001: 循環切替は廃止。
       var memberBadge=(m.member==='other')
-        ?'<span style="font-size:11px;background:#f1efe8;color:#5f5e5a;border-radius:5px;padding:1px 6px">他</span>'
-        :'<span style="font-size:11px;background:#eaf3de;color:#27500A;border-radius:5px;padding:1px 6px">支部員</span>';
+        ?'<span style="font-size:11px;background:#f1efe8;color:#5f5e5a;border-radius:5px;padding:2px 7px">その他</span>'
+        :'<span style="font-size:11px;background:#eaf3de;color:#27500A;border-radius:5px;padding:2px 7px">支部員</span>';
       html+='<td'+(isDel?'':' class="master-cell-member" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:center;padding:4px 2px'+(isDel?'':';cursor:pointer')+'">'+memberBadge+'</td>';
       // 会費(級)セル（タップで編集フォームを開く）。MASTER-EDIT-FORM-001: 循環切替は廃止。
-      html+='<td'+(isDel?'':' class="master-cell-grade" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:center;padding:4px 2px;font-size:12px'+(isDel?'':';cursor:pointer')+'">'+escapeHtml(gradeLabel)+'</td>';
-      html+='<td style="text-align:center;padding:4px 2px;font-size:12px">'+escapeHtml(lastCls)+'</td>';
-      if(isDel){
-        // CLEANUP-P3-001: 削除日セルにも生値 title を付与（最終参加セルと対称＝?v=61 P3「削除日の title 非対称」の消化）。
-        html+='<td style="text-align:center;padding:4px 2px;font-size:10px;color:#888;text-decoration:none" title="'+escapeHtml(m.deleted_at||'')+'">削除:'+escapeHtml(_masterSheetFmtDate(m.deleted_at))+'</td>';
-      }else{
-        html+='<td style="text-align:center;padding:4px 2px;font-size:11px;color:#888" title="'+escapeHtml(m.last_attended||'')+'">'+escapeHtml(_masterSheetFmtDate(m.last_attended))+'</td>';
-      }
+      // MASTER-LIST-UX-001: 会費も支部員と同型の文字入りチップに（色だけに頼らない・一般=グレー枠/中学以下=青地/女性=アンバー地）。
+      var gradeChip=(m.grade==='chu')
+        ?'<span style="font-size:11px;background:#E6F1FB;color:#0C447C;border-radius:5px;padding:2px 7px">'+gradeLabel+'</span>'
+        :(m.grade==='josei')
+        ?'<span style="font-size:11px;background:#FAEEDA;color:#633806;border-radius:5px;padding:2px 7px">'+gradeLabel+'</span>'
+        :'<span style="font-size:11px;background:#f4f6f9;color:#556;border:1px solid #dde3ea;border-radius:5px;padding:2px 7px">'+gradeLabel+'</span>';
+      html+='<td'+(isDel?'':' class="master-cell-grade" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:center;padding:4px 2px'+(isDel?'':';cursor:pointer')+'">'+gradeChip+'</td>';
       html+='</tr>';
     }
     html+='</tbody></table></div></div>';
@@ -9762,6 +9787,43 @@ function applyCloudStatus(el,msg){
   el.textContent=s;
   el.className='cloud-status cloud-status-'+classifyCloudStatusKind(s);
 }
+// CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): クリップボードコピー（navigator.clipboard 優先・execCommand フォールバック・失敗は cb(false)）。
+function copyTextToClipboard(text,cb){
+  var t=String(text==null?'':text);
+  try{
+    if(typeof navigator!=='undefined'&&navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(function(){if(cb)cb(true);},function(){if(cb)cb(false);});
+      return;
+    }
+  }catch(e){}
+  try{
+    var ta=document.createElement('textarea');
+    ta.value=t; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.left='-9999px';
+    document.body.appendChild(ta); ta.select();
+    var okc=false; try{okc=document.execCommand('copy');}catch(e2){okc=false;}
+    document.body.removeChild(ta);
+    if(cb)cb(!!okc);
+  }catch(e3){ if(cb)cb(false); }
+}
+// 大会IDを確定（未生成なら ensureTournamentId で生成）してコピー。setStatus に結果文言。
+function copyCurrentTournamentId(setStatus){
+  var master=(typeof loadBranchMaster==='function')?loadBranchMaster():null;
+  var tid=ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report));
+  copyTextToClipboard(tid,function(okc){
+    if(setStatus)setStatus(okc?('大会IDをコピーしました（'+tid+'）'):('⚠ コピーできませんでした。大会ID '+tid+' を手入力で共有してください'));
+  });
+  return tid;
+}
+// 貼り付けた大会IDを検証して state.tournament_id にセット（＝相手端末と同じ大会に相乗り）。setStatus に結果。
+function applySpecifiedTournamentId(raw,setStatus){
+  var id=normalizeTournamentIdInput(raw);
+  if(!id){ if(setStatus)setStatus('⚠ 大会IDの形式が正しくありません（例: t_2026_07_04）'); return {ok:false}; }
+  if(typeof state==='undefined'||!state){ if(setStatus)setStatus('⚠ 大会データがありません'); return {ok:false}; }
+  state.tournament_id=id;
+  if(typeof saveData==='function'){ try{saveData();}catch(e){} }
+  if(setStatus)setStatus('この端末の大会IDを設定しました（'+id+'）。相手端末と同じIDで送信すると1つの大会に統合されます');
+  return {ok:true,tournament_id:id};
+}
 // MASTER-CLOUD-PUSH-001 (作者要望 2026-07-02): 名簿タブの氏名・ふりがな編集を、ログイン中なら
 //   クラウド members にもその場で upsert する（巻き戻り防止＝☁取得/起動時自動取得がクラウドの古い表記で
 //   端末修正を上書きする非対称の解消）。設計:
@@ -11950,6 +12012,18 @@ function bindReportEvents(){
   if(cloudSendBtn)cloudSendBtn.addEventListener('click',function(){
     var st=document.getElementById('cloudSendStatus');
     sendTournamentToCloud(function(msg){ applyCloudStatus(st,msg); });
+  });
+  // CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): 大会IDのコピー / 指定して開始（共有セットアップ・追加のみ）。
+  var copyTidBtn=document.getElementById('copyTidBtn');
+  if(copyTidBtn)copyTidBtn.addEventListener('click',function(){
+    var st=document.getElementById('tidShareStatus');
+    copyCurrentTournamentId(function(msg){ applyCloudStatus(st,msg); });
+  });
+  var applyTidBtn=document.getElementById('applyTidBtn');
+  if(applyTidBtn)applyTidBtn.addEventListener('click',function(){
+    var st=document.getElementById('tidShareStatus');
+    var inp=document.getElementById('tidInput');
+    applySpecifiedTournamentId(inp?inp.value:'',function(msg){ applyCloudStatus(st,msg); });
   });
 }
 
