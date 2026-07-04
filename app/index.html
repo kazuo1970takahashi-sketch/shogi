@@ -71,6 +71,12 @@
     .org-list { list-style:none; padding:0; margin:10px 0 0; }
     .org-row { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
     .org-who { font-weight:600; min-width:9em; }
+    .org-id { display:flex; flex-direction:column; gap:2px; min-width:9em; }
+    .org-email { color:var(--muted); font-size:12px; word-break:break-all; }
+    .org-name-edit { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:2px; }
+    .org-name-edit input { margin:0; padding:6px 8px; font-size:14px; }
+    .org-name-edit button { margin-top:0; padding:6px 10px; font-size:13px; }
+    .act-rename { background:#eef2f8; color:var(--primary,#1F3864); border:1px solid var(--line); }
     .org-meta { color:var(--muted); font-size:12px; }
     .org-actions { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
     .org-actions button { margin-top:0; padding:6px 10px; font-size:13px; }
@@ -170,7 +176,7 @@
   <!-- Supabase JS（UMD・global `supabase` を生やす）。publishable key + URL のみ使用。 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js" integrity="sha384-nD3dwv4+ZqdYnmZKe/249ImlV04om7xTCcsoSeQYI+RO+XlKPoqAWaJR1M5SJH9p" crossorigin="anonymous"></script>
   <!-- cache-bust: app/auth.js 変更時に ?v=N をバンプ（app/ は cache-bust が無く旧 JS を握る問題の対策・#343）-->
-  <script src="auth.js?v=37"></script>
+  <script src="auth.js?v=38"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       try { window.ShogiAuth.boot(); }
