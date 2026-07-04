@@ -1348,6 +1348,7 @@ var _masterShowDeleted=false;
 var _masterSortMode='yomi';   // 'yomi'（既定・ふりがな順）| 'recent'（最終参加順）
 var _masterSelected={};       // 選択中 member id → true（削除/復元ツールバー用）
 var _masterEditingMid=null;   // 氏名セルのインライン編集中 member id
+var _masterEditFlushing=false; // renderMasterTab からの commit 再入ガード（Codex 追P2/4790）
 
 function createEmptyBranchMaster(){
   return {schema_version:BRANCH_MASTER_SCHEMA_VERSION,updated_at:new Date().toISOString(),members:[]};
@@ -4784,9 +4785,26 @@ function bindMasterTabEvents(){
 }
 
 function renderMasterTab(){
-  // MASTER-EDIT-UX-001: 全再描画で編集パネル(.master-edit-row)DOM は必ず失われる。編集状態フラグも
-  //   同時に解除し、外部経路(級/会員区分/選択チェック/ソート/タブ往復/クラウド取得)の再描画後に
-  //   同一会員の氏名編集が二度と開けなくなる残留デッドロックを防ぐ(start 冒頭の同一midガード対策)。
+  // MASTER-EDIT-UX-001 (Codex 追P2/4790): 全再描画で編集パネル(.master-edit-row)DOM は必ず失われる。
+  //   (a) 外部経路(級/会員区分/選択チェック/ソート/タブ往復/クラウド取得)の再描画時、パネルに未保存の変更が
+  //       あれば描画前に commit してから畳む（旧 focusout auto-commit 相当・入力の黙殺を防ぐ）。変更が無ければ
+  //       保存もクラウド書込もせず畳むだけ（無駄書き防止）。commit も renderMasterTab を呼ぶため
+  //       _masterEditFlushing で再入を防ぎ、成功時は二重描画を避けて早期 return。
+  //   (b) 続けて編集状態フラグを解除し、残留デッドロック(start 冒頭の同一midガード)を防ぐ。
+  if(_masterEditingMid && !_masterEditFlushing && typeof document!=='undefined' && document.getElementById){
+    var _ne=document.getElementById('ms-edit-name'), _ye=document.getElementById('ms-edit-yomi');
+    if(_ne){
+      var _mm=_masterSheetFindMember(_masterEditingMid,loadBranchMaster());
+      var _dirty=!!_mm && ( String(_ne.value)!==String((_mm.name)||'') || (_ye? normalizeYomi(_ye.value)!==normalizeYomi((_mm.yomi)||'') : false) );
+      if(_dirty){
+        _masterEditFlushing=true;
+        try{ masterSheetCommitNameEdit(); }catch(_fe){}
+        _masterEditFlushing=false;
+        if(!_masterEditingMid)return;   // commit 成功＝内部で再描画済み・二重描画回避
+        // commit 失敗(空名で mid 残存)は下へ流し、パネルを畳んで通常描画（空名は保存不可＝破棄が妥当）
+      }
+    }
+  }
   _masterEditingMid=null;
   var el=document.getElementById('pane-master');
   if(!el)return;
