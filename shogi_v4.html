@@ -9606,7 +9606,7 @@ function mergeCloudMembersIntoMaster(master, cloudMembers, opts){
   opts=opts||{};
   // possibleDuplicates: クラウド新規会員が、ローカルの「同名・同ふりがな・別 member_id・非削除」と
   //   重なるケースの検知数（A-1 / SYSTEM-REVIEW）。自動統合はしない（既存方針「同名非統合」維持）。
-  var res={master:master, added:0, updated:0, skipped:0, possibleDuplicates:0};
+  var res={master:master, added:0, updated:0, skipped:0, possibleDuplicates:0, restored:0};
   if(!master||!Array.isArray(master.members))return res;
   if(!Array.isArray(cloudMembers))return res;
   function nonEmpty(s){ return typeof s==='string'&&s.length>0; }
@@ -9646,6 +9646,10 @@ function mergeCloudMembersIntoMaster(master, cloudMembers, opts){
       if(cGrade&&existing.grade!==cGrade){ existing.grade=cGrade; didChange=true; }
       if(cCity&&existing.city!==cCity){ existing.city=cCity; didChange=true; }
       if(cDeleted&&existing.deleted!==true){ existing.deleted=true; if(cDeletedAt&&!existing.deleted_at)existing.deleted_at=cDeletedAt; didChange=true; }
+      // MERGE-UNDELETE-001 (#549): クラウドで有効（deleted_at=null かつ deleted!==true）なのにローカル削除済み
+      //   の会員は復元する（クラウド=削除状態の正本・?v=65 の削除/復元 push と対称の下り）。トレードオフ:
+      //   削除 push 未達のまま☁取得すると削除が巻き戻る窓があるが、再削除で再 push される＝正本優先。
+      if(!cDeleted&&existing.deleted===true){ existing.deleted=false; if(existing.deleted_at)existing.deleted_at=null; didChange=true; res.restored++; }
       if(didChange){ res.updated++; changed=true; }
     }else{
       // 新規追加には有効な氏名が必須（normalizeBranchMaster の id&name 必須に整合）。
@@ -9730,7 +9734,7 @@ function pullMembersFromCloud(client, opts){
     var master=(opts.master&&Array.isArray(opts.master.members))?opts.master
               :((typeof loadBranchMaster==='function')?loadBranchMaster():{schema_version:1,updated_at:new Date().toISOString(),members:[]});
     var mres=mergeCloudMembersIntoMaster(master,rows,{});
-    var counts={fetched:rows.length,added:mres.added,updated:mres.updated,skipped:mres.skipped,possibleDuplicates:mres.possibleDuplicates||0};
+    var counts={fetched:rows.length,added:mres.added,updated:mres.updated,skipped:mres.skipped,possibleDuplicates:mres.possibleDuplicates||0,restored:mres.restored||0};
     if(mres.added===0&&mres.updated===0)return {ok:true,counts:counts,saved:false,master:master};
     var saved=(typeof saveBranchMaster==='function')?saveBranchMaster(master):true;
     if(saved===false)return {ok:false,step:'save',counts:counts,message:'名簿の保存に失敗しました（取得は成功・再取得できます）',master:master};
@@ -10042,7 +10046,7 @@ function pullMembersToMasterUI(setStatus){
           if(res&&res.ok){
             var c=res.counts||{};
             try{ if(typeof renderMasterTab==='function')renderMasterTab(); }catch(eR){}
-            setStatus('取得しました（新規 '+(c.added||0)+' 名・更新 '+(c.updated||0)+' 名／クラウド '+(c.fetched||0)+' 名）'+((c.possibleDuplicates||0)>0?'　⚠ 同名別IDの会員が '+c.possibleDuplicates+' 件。重複の可能性があるので app/ で確認してください':''));
+            setStatus('取得しました（新規 '+(c.added||0)+' 名・更新 '+(c.updated||0)+' 名'+((c.restored||0)>0?'・復元 '+c.restored+' 名':'')+'／クラウド '+(c.fetched||0)+' 名）'+((c.possibleDuplicates||0)>0?'　⚠ 同名別IDの会員が '+c.possibleDuplicates+' 件。重複の可能性があるので app/ で確認してください':''));
           }else{
             setStatus('取得に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再取得できます）');
           }
@@ -10078,7 +10082,7 @@ function autoPullMembersOnStartup(){
                 if(masterActive&&typeof renderMasterTab==='function'){
                   renderMasterTab();
                   var el=document.getElementById('masterCloudPullStatus');
-                  applyCloudStatus(el,'クラウドから自動取得しました（新規 '+(res.counts.added||0)+' 名・更新 '+(res.counts.updated||0)+' 名）'+((res.counts.possibleDuplicates||0)>0?'　⚠ 同名別IDの会員 '+res.counts.possibleDuplicates+' 件（app/ で確認）':''));
+                  applyCloudStatus(el,'クラウドから自動取得しました（新規 '+(res.counts.added||0)+' 名・更新 '+(res.counts.updated||0)+' 名'+((res.counts.restored||0)>0?'・復元 '+res.counts.restored+' 名':'')+'）'+((res.counts.possibleDuplicates||0)>0?'　⚠ 同名別IDの会員 '+res.counts.possibleDuplicates+' 件（app/ で確認）':''));
                 }
               }catch(eR){}
             }
