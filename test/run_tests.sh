@@ -2114,6 +2114,19 @@ else
   warn "test_master_rebuild_from_cloud_001_phase2.js が見つからない"
 fi
 
+
+echo ""
+echo "【LIVE-BROADCAST-001 Phase1 buildPublicLiveSnapshot 純関数（公開範囲/回戦数/match形/純粋/描画）】"
+if [ -f "$SCRIPT_DIR/test_live_broadcast_snapshot_001.js" ]; then
+  if node "$SCRIPT_DIR/test_live_broadcast_snapshot_001.js" "$TARGET" > /tmp/live_broadcast_snapshot_out.log 2>&1; then
+    ok "LIVE-BROADCAST snapshot テスト 全PASS ($(tail -1 /tmp/live_broadcast_snapshot_out.log))"
+  else
+    ng "LIVE-BROADCAST snapshot テスト 失敗"; cat /tmp/live_broadcast_snapshot_out.log
+  fi
+else
+  warn "test_live_broadcast_snapshot_001.js が見つからない"
+fi
+
 # ============================================
 # 最終結果
 # ============================================
