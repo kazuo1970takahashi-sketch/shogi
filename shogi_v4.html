@@ -4522,7 +4522,7 @@ function buildMasterEditPanelHtml(m){
     +'<input type="text" id="ms-edit-name" value="'+n+'" placeholder="氏名"></div>'
     +'<div class="mep-actions"><button type="button" id="ms-edit-cancel">キャンセル</button>'
     +'<button type="button" class="btn-primary" id="ms-edit-save">保存</button></div>'
-    +'<div class="mep-hint">会員区分・級は右の各セルをタップして切り替えます。</div>'
+    +'<div class="mep-hint">会員区分・級は、保存してから各セルのタップで切り替えます。</div>'
     +'</div>';
 }
 function bindMasterEditPanel(){
@@ -4778,6 +4778,10 @@ function bindMasterTabEvents(){
 }
 
 function renderMasterTab(){
+  // MASTER-EDIT-UX-001: 全再描画で編集パネル(.master-edit-row)DOM は必ず失われる。編集状態フラグも
+  //   同時に解除し、外部経路(級/会員区分/選択チェック/ソート/タブ往復/クラウド取得)の再描画後に
+  //   同一会員の氏名編集が二度と開けなくなる残留デッドロックを防ぐ(start 冒頭の同一midガード対策)。
+  _masterEditingMid=null;
   var el=document.getElementById('pane-master');
   if(!el)return;
   var master=loadBranchMaster();
@@ -7170,6 +7174,9 @@ function editPlayerYomi(id,cls){
   var normalized=normalizeYomi(input);
   if(normalized===cur)return;             // 変更なしは保存しない
   updateField(id,cls,'yomi',normalized);  // save() + 保存検証(SAVE-003b) + renderRegList は updateField 側に委譲
+  // YOMI-SYNC-OVERWRITE-001: 当日その場で編集した意図を記録し、「名簿を更新」時の非空マスタ上書き対象にする。
+  //   登録時にマスタからコピーしただけの player.yomi（＝古い値の残存）を誤検知しないよう、明示編集のみ印を付ける。
+  _pendingNewYomi[id]=normalized;
   showMsg(displayName+' のふりがなを更新しました','ok');
 }
 
@@ -10119,7 +10126,7 @@ function syncBranchMasterOnSave(){
         for(var _pi=0;_pi<_arr.length;_pi++){
           var _pp=_arr[_pi]; if(!_pp||typeof _pp.member_id!=='string'||!_pp.member_id)continue;
           var _mem=_yById[_pp.member_id]; if(!_mem||_mem.deleted===true||_yseen[_mem.id])continue;
-          var _dy=normalizeYomi((_pendingNewYomi&&typeof _pendingNewYomi[_pp.id]==='string')?_pendingNewYomi[_pp.id]:(typeof _pp.yomi==='string'?_pp.yomi:''));
+          var _dy=normalizeYomi((_pendingNewYomi&&typeof _pendingNewYomi[_pp.id]==='string')?_pendingNewYomi[_pp.id]:'');  // YOMI-SYNC-OVERWRITE-001: 当日明示編集(_pendingNewYomi)のみ。p.yomi フォールバックは登録時コピー=マスタの新しい修正を巻き戻す誤検知源のため撤去。
           var _my=normalizeYomi(_mem.yomi||'');
           if(_dy&&_my&&_dy!==_my){ _ydiffs.push({mem:_mem,name:String(_mem.name||_pp.name||''),from:_my,to:_dy}); _yseen[_mem.id]=true; }
         }
