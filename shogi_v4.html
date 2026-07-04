@@ -4547,9 +4547,10 @@ function bindMasterEditPanel(){
 }
 function masterSheetStartNameEdit(mid){
   if(_masterEditingMid===mid)return;
-  // YOMI/MASTER-EDIT-UX-001 (Codex P2a): 別会員へ切替時は未保存入力を破棄せず commit（旧セル方式の focusout
-  //   commit 相当を復元）。空名など commit 失敗時は alert 済み＝そのまま新パネルへ進む（旧挙動踏襲）。
-  if(_masterEditingMid)masterSheetCommitNameEdit();
+  // YOMI/MASTER-EDIT-UX-001 (Codex P2a/追P2): 別会員へ切替時は未保存入力を破棄せず commit（旧セル方式の
+  //   focusout commit 相当）。commit が空名等で失敗すると _masterEditingMid が旧midのまま残る。その場合は
+  //   ここで return して旧エディタ（.master-edit-row）を維持し、alert だけ出して入力を捨てる事故を防ぐ。
+  if(_masterEditingMid){ masterSheetCommitNameEdit(); if(_masterEditingMid)return; }
   var master=loadBranchMaster();
   var m=_masterSheetFindMember(mid,master);
   if(!m||m.deleted===true)return;
@@ -6399,6 +6400,11 @@ function addPlayer(){
         yomiMasterSaveFailed=true;
         if(typeof console!=='undefined'&&console.warn)console.warn('ふりがなのマスタ反映に失敗（参加者登録は継続）',e);
       }
+    } else if(yomiForMaster && normalizeYomi(suggestSelected.yomi||'') && yomiForMaster!==normalizeYomi(suggestSelected.yomi||'')){
+      // Codex 追P2-1: 既存マスタ候補を選びつつ、登録欄で非空マスタ yomi と異なるふりがなに手修正した場合。
+      //   直接上書きはせず dirty 印を立て、「名簿を更新」時の confirm 上書き対象に載せる（誤上書き防止＋反映漏れ防止）。
+      _pendingNewYomi[id]=yomiForMaster;
+      newPlayer.yomiDirty=true;
     }
   }else if(yomiForMaster){
     _pendingNewYomi[id]=yomiForMaster;
