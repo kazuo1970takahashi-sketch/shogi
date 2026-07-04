@@ -9725,6 +9725,136 @@ function syncTournamentToCloud(client, master, opts){
   });
 }
 
+// MASTER-REBUILD-FROM-CLOUD-001 (#551 Phase 1 / 設計 v2 §2・§3): 端末クリーン運用で
+//   「マスタをリセット→☁取得」しても戻らない 前回クラス・最終参加・参加履歴 を、クラウドの
+//   tournaments/players/entries から再導出する純関数 2 本（fetch=Phase 2 / UI=Phase 3）。
+//   導出値はクラウドに列として持たない（?v=66 決定の維持）＝entries から毎回再計算する「下り」。
+//
+// buildDerivedMemberStatsFromCloud(tournaments, players, entries) → { member_id: stat }
+//   tournaments: [{ id, app_tournament_id, date, season }]（id=DB uuid・app_tournament_id=t_YYYY_MM_DD[_n]）
+//   players:     [{ id, member_id }]（id=DB uuid・member_id=ローカル member.id）
+//   entries:     [{ tournament_id, player_id, class }]（tournament_id/player_id=DB uuid）
+//   stat = { member_id, last_class(A/B/null), last_attended(ymd|''), first_attended(ymd|''), tournament_ids:[app_tid…] }
+//   規則（設計 v2 §2-5）:
+//     - 決定的 tie-break: date 昇順 → app_tournament_id 昇順（null/'' は先頭）で並べた最後を「最新」。
+//     - last_class = 最新大会の class を A/B のみ採用しそれ以外は null（#273 不変条件「非 A/B は null」と同義）。
+//     - last_attended = 最新大会の date（有効 ymd のみ・全て無効なら ''）／ first_attended = 最古の有効 date。
+//     - date 無効（''/非 ymd）の大会は日付導出から除外するが tie-break・last_class 算入には残す。
+//     - tournament_ids = 参加大会の app_tournament_id（NULL/'' の大会は skip・重複除去）。
+//       attendance_count はマージ側で tournament_ids.length として再計算（Should-3）。
+function buildDerivedMemberStatsFromCloud(tournaments, players, entries){
+  var i, t, p, e;
+  var tourById={}, tlist=Array.isArray(tournaments)?tournaments:[];
+  for(i=0;i<tlist.length;i++){
+    t=tlist[i]; if(!t||t.id==null)continue;
+    var appTid=(typeof t.app_tournament_id==='string'&&t.app_tournament_id)?t.app_tournament_id:'';
+    var tdate=isValidYmd(t.date)?t.date:'';
+    tourById[String(t.id)]={app_tid:appTid,date:tdate};
+  }
+  var memberByPlayer={}, plist=Array.isArray(players)?players:[];
+  for(i=0;i<plist.length;i++){
+    p=plist[i]; if(!p||p.id==null)continue;
+    if(typeof p.member_id==='string'&&p.member_id)memberByPlayer[String(p.id)]=p.member_id;
+  }
+  // 会員ごとに参加大会（tie-break 用の {date,app_tid,cls}）を収集。
+  var attByMember={}, elist=Array.isArray(entries)?entries:[];
+  for(i=0;i<elist.length;i++){
+    e=elist[i]; if(!e)continue;
+    var mid=memberByPlayer[String(e.player_id)];
+    if(!mid)continue;
+    var tt=tourById[String(e.tournament_id)];
+    if(!tt)continue;
+    var cls=(e['class']==='A'||e['class']==='B')?e['class']:null;
+    if(!attByMember[mid])attByMember[mid]=[];
+    attByMember[mid].push({date:tt.date,app_tid:tt.app_tid,cls:cls});
+  }
+  // date 昇順 → app_tid 昇順（''/null は最小＝先頭）で決定的に並べる。
+  function cmp(a,b){
+    if(a.date!==b.date)return a.date<b.date?-1:1;
+    if(a.app_tid!==b.app_tid)return a.app_tid<b.app_tid?-1:1;
+    return 0;
+  }
+  var stats={};
+  for(var m in attByMember){
+    if(!Object.prototype.hasOwnProperty.call(attByMember,m))continue;
+    var arr=attByMember[m].slice().sort(cmp);
+    var latest=arr[arr.length-1];
+    var first_attended='';
+    var tidSeen={}, tids=[];
+    for(i=0;i<arr.length;i++){
+      var d=arr[i].date;
+      if(d&&(!first_attended||d<first_attended))first_attended=d;
+      var at=arr[i].app_tid;
+      if(at&&!tidSeen[at]){tidSeen[at]=true;tids.push(at);}
+    }
+    stats[m]={
+      member_id:m,
+      last_class:latest.cls,          // 収集時に非 A/B→null 済み
+      last_attended:latest.date||'',  // 全て '' なら ''
+      first_attended:first_attended,
+      tournament_ids:tids
+    };
+  }
+  return stats;
+}
+
+// mergeDerivedStatsIntoMaster(master, stats) → { updated:件数 }
+//   stats は build… の戻り（{member_id:stat}）または stat 配列。master.members を id で突合し §3 のマージ:
+//     - ローカルが「空」（tournament_ids.length===0＝端末実績なし・リセット直後）→ 導出値で
+//       last_class/last_attended/first_attended/tournament_ids を全上書き
+//       （Must-1: 「空」判定は last_attended でなく tournament_ids で行う。normalize が日付に today を埋めるため）。
+//     - ローカルが非空（端末実績あり）→ 導出の最新 date がローカル last_attended より新しい時のみ
+//       last_class/last_attended を上書き（☁未送信の直近実績を巻き戻さない）。first_attended はより古ければ採用。
+//     - tournament_ids は常に和集合（重複除去）／attendance_count は union 後に length で再計算。
+//   氏名/ふりがな/区分/市町村/削除状態は本関数では触らない（手順1の members マージの責務）。
+function mergeDerivedStatsIntoMaster(master, stats){
+  var updated=0;
+  if(!master||!Array.isArray(master.members))return {updated:0};
+  var byId={};
+  if(Array.isArray(stats)){
+    for(var si=0;si<stats.length;si++){ var s0=stats[si]; if(s0&&s0.member_id)byId[s0.member_id]=s0; }
+  }else if(stats&&typeof stats==='object'){
+    byId=stats;
+  }
+  for(var i=0;i<master.members.length;i++){
+    var m=master.members[i];
+    if(!m||!m.id)continue;
+    var st=byId[m.id];
+    if(!st)continue;
+    var changed=false;
+    var localTids=Array.isArray(m.tournament_ids)?m.tournament_ids:[];
+    var dTids=Array.isArray(st.tournament_ids)?st.tournament_ids:[];
+    var dLastClass=(st.last_class==='A'||st.last_class==='B')?st.last_class:null;
+    var dLast=isValidYmd(st.last_attended)?st.last_attended:'';
+    var dFirst=isValidYmd(st.first_attended)?st.first_attended:'';
+    if(localTids.length===0){
+      // 端末実績なし → 導出値で全上書き。
+      if(m.last_class!==dLastClass){m.last_class=dLastClass;changed=true;}
+      if((m.last_attended||'')!==dLast){m.last_attended=dLast;changed=true;}
+      if((m.first_attended||'')!==dFirst){m.first_attended=dFirst;changed=true;}
+    }else{
+      // 端末実績あり → 巻き戻さない（導出が厳密に新しい date の時のみ last_* 更新）。
+      if(dLast&&(!isValidYmd(m.last_attended)||dLast>m.last_attended)){
+        if(m.last_class!==dLastClass){m.last_class=dLastClass;changed=true;}
+        if((m.last_attended||'')!==dLast){m.last_attended=dLast;changed=true;}
+      }
+      if(dFirst&&(!isValidYmd(m.first_attended)||dFirst<m.first_attended)){m.first_attended=dFirst;changed=true;}
+    }
+    // tournament_ids 和集合（順序: ローカル既存 → 導出の新規・重複除去）。
+    var seen={}, union=[], k;
+    for(k=0;k<localTids.length;k++){ var a=localTids[k]; if(typeof a==='string'&&a&&!seen[a]){seen[a]=true;union.push(a);} }
+    for(k=0;k<dTids.length;k++){ var b=dTids[k]; if(typeof b==='string'&&b&&!seen[b]){seen[b]=true;union.push(b);} }
+    var same=(union.length===localTids.length);
+    if(same){ for(k=0;k<union.length;k++){ if(union[k]!==localTids[k]){same=false;break;} } }
+    if(!same)changed=true;
+    m.tournament_ids=union;
+    if(m.attendance_count!==union.length){m.attendance_count=union.length;changed=true;}
+    if(changed)updated++;
+  }
+  if(updated>0)master.updated_at=new Date().toISOString();
+  return {updated:updated};
+}
+
 // CLOUD PULL (B-3b / #343): クラウド members（正本）読み取り → mergeCloudMembersIntoMaster → saveBranchMaster。
 //   syncTournamentToCloud（送信）と対称の読み取りオーケストレーション。client は注入（mock 可）。
 //   throw せず {ok,...} を返す（当日運営を止めない）。全クラウド操作は任意・非ブロッキング・失敗は通知のみ。
