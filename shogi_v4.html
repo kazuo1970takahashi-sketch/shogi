@@ -3773,44 +3773,47 @@ function buildMasterTabHtml(master){
     // MASTER-SHEET-002: 角丸カードで包む（モック承認時の密度・overflow-x は狭幅端末のフォールバック）。
     html+='<div style="overflow-x:auto"><div style="border:1px solid #d3dbe5;border-radius:10px;overflow:hidden"><table id="master-sheet" style="width:100%;border-collapse:collapse;font-size:13px">';
     html+='<thead><tr style="background:#f4f6f9">'
-      +'<th style="width:34px;padding:6px 2px;font-weight:400;font-size:11px;color:#888">選択</th>'
+      +'<th style="width:38px;padding:6px 2px;font-weight:400;font-size:11px;color:#888">選択</th>'
       +'<th style="text-align:left;padding:6px 8px;font-size:12px;color:#556;font-weight:600">氏名（ふりがな）</th>'
-      +'<th style="width:58px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">支部員</th>'
-      +'<th style="width:50px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">会費</th>'
-      +'<th style="width:42px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">前回</th>'
-      +'<th style="width:86px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">最終参加</th>'
+      +'<th style="width:64px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">支部員</th>'
+      +'<th style="width:78px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">会費</th>'
       +'</tr></thead><tbody>';
     for(var i=0;i<members.length;i++){
       var m=members[i];
       var mid=escapeHtml(m.id||'');
       var isDel=(m.deleted===true);
       var checked=_masterSelected[m.id]?' checked':'';
-      var gradeLabel=(m.grade==='chu')?'中学':(m.grade==='josei')?'女性':'一般';
+      var gradeLabel=(m.grade==='chu')?'中学以下':(m.grade==='josei')?'女性':'一般';
       var lastCls=(m.last_class==='A'||m.last_class==='B')?m.last_class:'－';
       var rowStyle=isDel?'background:#f5f5f5;color:#888;text-decoration:line-through':'';
       // MASTER-SHEET-003: tr に data-mid を付与（更新後の行追跡＝scroll＋ハイライトのフック）。
       html+='<tr class="master-sheet-row'+(isDel?' master-row-deleted':'')+'" data-mid="'+mid+'" style="border-bottom:1px solid #eef1f5;'+rowStyle+'">';
-      html+='<td style="text-align:center;padding:4px 2px"><input type="checkbox" class="master-row-check" data-mid="'+mid+'"'+checked+' aria-label="'+escapeHtml(m.name||'')+'を選択" style="width:18px;height:18px"></td>';
+      html+='<td style="text-align:center;padding:8px 2px"><input type="checkbox" class="master-row-check" data-mid="'+mid+'"'+checked+' aria-label="'+escapeHtml(m.name||'')+'を選択" style="width:20px;height:20px"></td>';
       // 氏名セル（ふりがなはルビ位置）。live 行のみ editable（class 付与＝bind 対象）。
       var yomiN=normalizeYomi(m.yomi);
       var yomiHtml=yomiN
         ?'<span style="font-size:10px;color:'+(isDel?'#aaa':'#888')+';display:block;line-height:1.15">'+escapeHtml(yomiN)+'</span>'
         :'<span style="font-size:10px;color:'+(isDel?'#aaa':'#BA7517')+';display:block;line-height:1.15">（ふりがな未入力）</span>';
-      html+='<td'+(isDel?'':' class="master-cell-name" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:left;padding:5px 8px'+(isDel?'':';cursor:pointer')+'">'+yomiHtml+'<span style="font-weight:500">'+escapeHtml(m.name||'')+'</span></td>';
+      // MASTER-LIST-UX-001: 前回クラス/最終参加/削除日は独立列をやめ、氏名セル内のサブ情報行（固定位置・
+      //   空欄は「－」＝行高不変）に集約。削除行は同じ位置を「削除:日付」に差し替え（列構造は不変・
+      //   取り消し線は text-decoration:none で解除＝旧削除日セルの挙動を踏襲）。title 生値も踏襲。
+      var subInfo=isDel
+        ?'<span style="font-size:10.5px;color:#aaa;display:block;line-height:1.4;text-decoration:none" title="'+escapeHtml(m.deleted_at||'')+'">削除:'+escapeHtml(_masterSheetFmtDate(m.deleted_at))+'</span>'
+        :'<span style="font-size:10.5px;color:#888;display:block;line-height:1.4" title="'+escapeHtml(m.last_attended||'')+'">前回:'+escapeHtml(lastCls)+' ・ 最終:'+escapeHtml(_masterSheetFmtDate(m.last_attended))+'</span>';
+      html+='<td'+(isDel?'':' class="master-cell-name" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:left;padding:5px 8px'+(isDel?'':';cursor:pointer')+'">'+yomiHtml+'<span style="font-weight:500">'+escapeHtml(m.name||'')+'</span>'+subInfo+'</td>';
       // 支部員セル（タップで編集フォームを開く）。MASTER-EDIT-FORM-001: 循環切替は廃止。
       var memberBadge=(m.member==='other')
-        ?'<span style="font-size:11px;background:#f1efe8;color:#5f5e5a;border-radius:5px;padding:1px 6px">他</span>'
-        :'<span style="font-size:11px;background:#eaf3de;color:#27500A;border-radius:5px;padding:1px 6px">支部員</span>';
+        ?'<span style="font-size:11px;background:#f1efe8;color:#5f5e5a;border-radius:5px;padding:2px 7px">その他</span>'
+        :'<span style="font-size:11px;background:#eaf3de;color:#27500A;border-radius:5px;padding:2px 7px">支部員</span>';
       html+='<td'+(isDel?'':' class="master-cell-member" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:center;padding:4px 2px'+(isDel?'':';cursor:pointer')+'">'+memberBadge+'</td>';
       // 会費(級)セル（タップで編集フォームを開く）。MASTER-EDIT-FORM-001: 循環切替は廃止。
-      html+='<td'+(isDel?'':' class="master-cell-grade" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:center;padding:4px 2px;font-size:12px'+(isDel?'':';cursor:pointer')+'">'+escapeHtml(gradeLabel)+'</td>';
-      html+='<td style="text-align:center;padding:4px 2px;font-size:12px">'+escapeHtml(lastCls)+'</td>';
-      if(isDel){
-        // CLEANUP-P3-001: 削除日セルにも生値 title を付与（最終参加セルと対称＝?v=61 P3「削除日の title 非対称」の消化）。
-        html+='<td style="text-align:center;padding:4px 2px;font-size:10px;color:#888;text-decoration:none" title="'+escapeHtml(m.deleted_at||'')+'">削除:'+escapeHtml(_masterSheetFmtDate(m.deleted_at))+'</td>';
-      }else{
-        html+='<td style="text-align:center;padding:4px 2px;font-size:11px;color:#888" title="'+escapeHtml(m.last_attended||'')+'">'+escapeHtml(_masterSheetFmtDate(m.last_attended))+'</td>';
-      }
+      // MASTER-LIST-UX-001: 会費も支部員と同型の文字入りチップに（色だけに頼らない・一般=グレー枠/中学以下=青地/女性=アンバー地）。
+      var gradeChip=(m.grade==='chu')
+        ?'<span style="font-size:11px;background:#E6F1FB;color:#0C447C;border-radius:5px;padding:2px 7px">'+gradeLabel+'</span>'
+        :(m.grade==='josei')
+        ?'<span style="font-size:11px;background:#FAEEDA;color:#633806;border-radius:5px;padding:2px 7px">'+gradeLabel+'</span>'
+        :'<span style="font-size:11px;background:#f4f6f9;color:#556;border:1px solid #dde3ea;border-radius:5px;padding:2px 7px">'+gradeLabel+'</span>';
+      html+='<td'+(isDel?'':' class="master-cell-grade" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:center;padding:4px 2px'+(isDel?'':';cursor:pointer')+'">'+gradeChip+'</td>';
       html+='</tr>';
     }
     html+='</tbody></table></div></div>';
