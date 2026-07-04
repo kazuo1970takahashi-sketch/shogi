@@ -140,5 +140,11 @@ assert(SRC.indexOf("前"+"'+escapeHtml(fm.last_class)")>=0||/前'\+escapeHtml\(f
   assert(res===false&&after.tournaments.length===1,'HIST-DEL1-2 確認キャンセルで無変化');
 }
 
+// ============================================================
+// PP-REFRESH-ON-IMPORT-001: 候補マスタ取込直後・受付タブ表示時に受付パネルを再描画（ボタン即時反映）。
+// ============================================================
+assert((SRC.match(/PP-REFRESH-ON-IMPORT-001/g)||[]).length>=3,'PPREFRESH-1 取込2経路＋showTab に PP-REFRESH マーカーがある');
+assert(/if\(t==='reg'&&typeof renderPastParticipantsPanel==='function'\)renderPastParticipantsPanel\(\);/.test(SRC),'PPREFRESH-2 showTab(reg) で受付パネルを再描画する');
+
 console.log('PRESET-REMOVE-001 / HISTORY-DELETE-001(list): pass='+pass+' fail='+fail);
 process.exit(fail>0?1:0);

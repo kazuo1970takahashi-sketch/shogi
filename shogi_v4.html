@@ -4245,6 +4245,9 @@ function processMasterImportText(text,mode,setStatus){
     //   受付で「過去参加者から選ぶ」を通じて当日参加者を選択する候補であることを明示する。
     if(saved&&typeof showMsg==='function')showMsg('参加者マスタを読み込みました（'+result.newMaster.members.length+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
     renderMasterTab();
+    // PP-REFRESH-ON-IMPORT-001: 受付タブの「📋 名簿から受付」ボタン表示（#past-participants-section）は
+    //   マスタ会員数に依存するため、取込直後に再描画して即時反映する（従来はリロードまで非表示のままだった）。
+    if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
     return;
   }
 
@@ -4273,6 +4276,8 @@ function processMasterImportText(text,mode,setStatus){
     // MEMBERS-CANDIDATE-MASTER-RECUT-001: 候補マスタへのマージ完了通知（上記と同趣旨）。
     if(saved&&typeof showMsg==='function')showMsg('参加者マスタにマージしました（新規 '+mr.summary.added+'名 / 統合 '+mr.summary.merged+'名 / 合計 '+mr.summary.total+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
     renderMasterTab();
+    // PP-REFRESH-ON-IMPORT-001: 上と同旨（マージ取込直後に受付ボタンを即時反映）。
+    if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
     return;
   }
 }
@@ -5599,6 +5604,9 @@ function showTab(t){
       }
     }
   }
+  // PP-REFRESH-ON-IMPORT-001: 受付タブ表示時に「📋 名簿から受付」ボタンの表示状態を最新のマスタで再判定
+  //   （別タブでの取込・削除・復元の後に受付タブへ戻った場合も即座に反映する安全網）。
+  if(t==='reg'&&typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
   if(t==='master')renderMasterTab();
   if(t==='history'&&typeof renderHistoryList==='function')renderHistoryList();
 }
