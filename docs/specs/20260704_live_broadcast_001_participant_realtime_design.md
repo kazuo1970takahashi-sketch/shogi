@@ -5,7 +5,7 @@
 | ID | LIVE-BROADCAST-001 |
 | 種別 | 設計（docs-only / 実装前） |
 | 作成日 | 2026-07-04 |
-| ステータス | Draft（設計レビュー conditional-go の Must Fix 2件反映済み・実装は後続 LIVE-BROADCAST-IMPL 群） |
+| ステータス | Draft（設計レビュー P1×3/P2×2 反映済み・実装は後続 LIVE-BROADCAST-IMPL 群） |
 | base | orphan clean base `chore/shogi-tour-apphq-003h-2d-orphan-clean-base`（HEAD は branch ref を正とする） |
 | 対象ファイル（実装は別PR） | `shogi_v4.html`（配信送信グルー・公開ビュー経路）。参加者ビューは既存 `#scoreboard` レンダラを再利用（新規 `live.html` は作らない＝§5.2） |
 | 親機能 | LIVE-MOBILE-SCOREBOARD-001（`#scoreboard` 閲覧ビュー・`withSourceState` データ源差し替え）／CLOUD SYNC B-2b（#343・supabase-js v2 遅延ロード・fail-soft）／DATA-PERSISTENCE-PHASE2 Stage A |
@@ -92,7 +92,7 @@
 {
   "schema_version": 1,
   "slug": "numazu-2607-x8f3q7k2",     // 高エントロピー（推測困難）＝実質 bearer secret（§4.2）
-  "version": 42,                       // 単調増加。取りこぼし検知・キャッシュ回避に使う
+  "version": 42,                       // ← 純関数は採番しない。publish RPC がサーバ側で atomic 採番（§4.3）
   "updated_at": "2026-07-04T05:12:30Z",
   "meta": { "title": "沼津支部月例将棋大会", "status": "in_progress|final" },
   "state": {                           // ← レンダラが食える state 形（normalizeState 往復で不変）
@@ -106,6 +106,7 @@
 
 - `players[cls]` は **表示に必要なフィールドのみ**（`id`＝当日 tournament 内 id〔非PII〕/ `name` / 任意 `yomi` / `entry_no`）。`member`（支部マスタ linkage）/ `grade` / 会費区分など**非公開項目は含めない**。
 - viewer は `snapshot.state` を `normalizeState` に通してから `withSourceState` へ渡す（欠落フィールド補完・往復恒等＝FRP-IMPL-004A）。順位/星取/相手名は既存関数が再計算。
+- **`version` は純関数の出力に含めない（P1-b 反映）**。`buildPublicLiveSnapshot` は保存スキーマを触らない純関数ゆえローカルでは単調性を保証できない。**採番は DB 側 publish RPC（§4.3）が atomic に行い**、返り値/保存行の version を正とする（リロード後も端末に依存せず単調）。
 
 ### 3.2 公開範囲（プライバシー）
 
@@ -129,8 +130,8 @@
 |---|---|---|
 | `slug` | text (PK) | 公開識別子。QR/URL に載る。大会ごとに無効化可能 |
 | `club_id` | uuid | 既存 club スコープ（RLS 用） |
-| `version` | int | 単調増加 |
-| `payload` | jsonb | §3.1 の公開スナップショット |
+| `version` | int | 単調増加（publish RPC が atomic 採番・§4.3） |
+| `payload` | jsonb | §3.1 の公開スナップショット（`state` 部分集合） |
 | `is_public` | bool | 配信 ON/OFF（停止で false） |
 | `updated_at` | timestamptz | 最終更新 |
 
@@ -139,11 +140,21 @@
 > **Must Fix #1 反映（設計レビュー #533 / conditional-go）**: 当初案の「anon は `is_public=true` の行を read」だと、**slug が推測困難でも anon が公開中 snapshot を全件 SELECT で列挙できる**（他大会・他 club の公開分まで一覧できてしまう）。これを塞ぐ。
 
 - **anon にテーブル直 SELECT を与えない**。読み取りは **`SECURITY DEFINER` の RPC `get_live_snapshot(slug text)`** 経由に限定する。この関数は **`slug` 完全一致かつ `is_public=true` の1行の payload だけ**を返す（一覧・全文 SELECT 不可＝**列挙不可**）。anon には関数 EXECUTE のみ付与し、`public_live_snapshots` テーブルには GRANT/RLS SELECT を与えない。
+- **RPC 実装ガード（P1-a・受入条件化＝§8-11）**: `SECURITY DEFINER` の常道の落とし穴を塞ぐ。① `SET search_path = pg_catalog, public`（または空）で**固定**、② テーブル参照は `public.public_live_snapshots` と**完全修飾**、③ **dynamic SQL 禁止**（`slug` は引数バインドのみ・文字列連結しない）、④ `REVOKE EXECUTE ON FUNCTION get_live_snapshot(text) FROM PUBLIC;` → `GRANT EXECUTE ... TO anon;`（PUBLIC への暗黙付与を外す）。⑤ 返すのは `payload`（と `version`）だけで、他 club/他 slug へ波及する引数を取らない。
 - `slug` は **高エントロピー（推測困難）＝実質 bearer secret**。大会ごとに発行し、終了で無効化（`is_public=false`）。QR/URL に載るのはこの slug。ローテーション（再発行で旧 slug 失効）も可能。
 - **write** は運営者（authenticated・当該 `club_id`）だけ（RLS で club スコープ）。
-- **Realtime**: subscribe する Broadcast チャネル名も **slug をそのまま使う**（know-the-slug の bearer モデルと一貫・チャネル名を知らなければ購読不可）。public チャネルへ**参加者から publish はさせない**（発火は運営の authenticated write 起点＝DB trigger→Realtime、または write 直後に運営クライアントから `channel.send`）。
+- **Realtime 送信権限（P2-a 反映）**: subscribe するチャネル名は **slug**（know-the-slug で購読可）だが、**slug を知る anon viewer が同じチャネルへ送信できてはならない**。よって **Realtime Authorization（private channel）を前提**とし、**送信は運営者（authenticated）または DB trigger/RPC 起点に限定**、anon は **subscribe のみ**（send 権限なし）。最小構成は **DB trigger/publish RPC 起点の broadcast に限定**し、クライアント `channel.send` を使う場合も送信元を authenticated 運営に絞る。
 - **代替（ポーリング専用なら）**: Supabase Storage に `snapshots/<slug>.json` を put（**バケットの list を無効化**・オブジェクトのみ public-read）。key=slug が bearer secret になり**列挙不可**。RPC を立てずに済むが Realtime は別途。
-- `publishableKey` のフロント露出は、anon 権限が **関数 EXECUTE（or storage object read）のみ**に限定されるため許容（テーブル全走査も列挙もできない）。
+- `publishableKey`（anon/publishable key）のフロント露出は、anon 権限が **関数 EXECUTE（or storage object read）＋ private channel の subscribe のみ**に限定されるため許容（テーブル全走査も列挙も送信もできない）。この key の**公開ページへの配布方法は §5.2 で定義**（P1-c）。
+
+### 4.3 publish（書き込み）RPC — `version` を atomic 採番（P1-b 反映）
+
+`buildPublicLiveSnapshot` は純関数で version を持たないため、**採番と upsert は DB 側の `SECURITY DEFINER` RPC `publish_live_snapshot(slug text, payload jsonb)`** が担う:
+
+- 1つのトランザクションで `INSERT ... ON CONFLICT (slug) DO UPDATE SET payload=excluded.payload, version = public.public_live_snapshots.version + 1, updated_at = now()`（新規は version=1）＝**atomic increment**。返り値に新 version を返す（クライアントはローカルに version を持たない）。
+- 実行権限は **authenticated かつ当該 `club_id` の運営者のみ**（`REVOKE ... FROM PUBLIC` → `GRANT EXECUTE TO authenticated`、関数内で `club_id` 所有を検査）。anon には付与しない。
+- read RPC と同じ実装ガード（`SET search_path` 固定・完全修飾・dynamic SQL 禁止）。
+- 更新経路をこの RPC に一本化することで、version の単調性はリロード・複数タブ・再送に対して**サーバ側で保証**される（§7-1 の取りこぼし検知が成立）。
 
 ---
 
@@ -154,7 +165,7 @@
 - **`buildPublicLiveSnapshot(state)`**: 追加・純関数（§3.1）。テスト対象。
 - **配信トグル `📡 ライブ配信`**: 明示オプトイン。ON にした時だけ `loadCloudDeps()` で supabase-js を遅延ロード（既存パターン流用）。**OFF 時の保存経路は現状と完全不変**（拘束ルール1/7・ローカルファースト不変）。
 - **「📡 配信中」状態表示（J1 の担保）**: 配信 ON の間、ヘッダに配信中バッジと最終送信時刻・成否を常時表示（`setStatus` N4）。**運営者が「配信が切れている/OFFのまま」に気づける**こと自体が参加者体験の前提。停止操作もここから。
-- **publish 発火点の throttle**: 「一手ごと」ではなく **確定状態**（手合せ確定・結果入力・ラウンド確定・保存）後にまとめて upsert。連打・編集中の中間状態は送らない（メッセージ数と課金の抑制）。
+- **publish 発火点の throttle**: 「一手ごと」ではなく **確定状態**（手合せ確定・結果入力・ラウンド確定・保存）後にまとめて **publish RPC `publish_live_snapshot`（§4.3・version は DB 採番）** を呼ぶ。連打・編集中の中間状態は送らない（メッセージ数と課金の抑制）。
 - 全て **fail-soft**: 送信失敗は status 表示のみ（既存クラウド送信と同じ・`setStatus` N4・STYLE-GUIDE §3）。運営アプリは無影響。
 
 ### 5.2 参加者側（公開ビュー・既存レンダラ再利用）
@@ -163,13 +174,14 @@
 - live ルート時は、`renderScoreboard` のデータ源を **公開スナップショットの `state` 部分集合**にする（`withSourceState(normalizeState(snapshot.state), ...)` で `buildScoreboardClassTableHtml` / `calcFinal` / `computeDisplayRanks` を駆動）。→ 順位/星取ロジックの複製ゼロ（拘束ルール2・親機能の「ロジック複製しない」方針）。
 - **read-only 徹底**: 運営画面への導線・操作UIを一切出さない（親機能 Codex Must Fix 1 の不変条件）。
 - 取得: 初回 **RPC `get_live_snapshot(slug)`** 取得（§4.2・列挙不可）→ 5秒ポーリング（Phase 3）→ Broadcast 受信で即再取得/反映（Phase 4）。「最終更新」時刻を常時表示（既存 `sbFormatUpdateTime` 流用）。
+- **公開 config の配布（P1-c 反映）**: viewer は Supabase の `url` ＋ `publishableKey`（anon/publishable key）を知る必要があるが、既存運用は**gitignore 済みの `app/config.js`**（`shogi_v4.html` L9605 が click 時に読む＝運営/authenticated 用）で、**GitHub Pages には配信されない**。よって QR で開く公開ページ用に **read-only の公開 config を別途コミットして Pages で配信する**（例 `app/config.public.js` に `{ url, publishableKey }` のみ）。この key の権限は §4.2 で **RPC `get_live_snapshot` の EXECUTE ＋ private channel の subscribe のみ**に限定されるため、テーブル走査・列挙・送信はできず**露出は許容**（Supabase の publishable key は公開前提の設計）。運営用 `app/config.js`（gitignore・authenticated 経路）とは**別ファイルに分離**する。live ルート判定時のみ公開 config を読み、`buildScoreboardClassTableHtml` 等の描画へ進む（J3/J4 が落ちないための必須要件）。
 
 ### 5.3 受付タブレット（キオスク）— スマホを持たない参加者への担保
 
 スマホを持たない参加者のため、**受付に共有タブレットを1台常設**し、そこでも戦況・自分の状況を確認できるようにする。技術的には**参加者ビューと同一**（`?live=<slug>#scoreboard` を開くだけ）で、追加の配信基盤は不要。ただし「複数人が入れ替わり触る共有画面」ゆえのキオスク固有の配慮を足す:
 
 - **既定は全体星取表**。誰かが検索/行タップで個人ビューに入っても、**無操作が一定時間（既定60秒・受付運用に合わせ調整可）続いたら自動で星取表へ戻す**（次の人が前の人のビューのまま詰まらない）。選択は memory-only（MY-VIEW-001 と整合）なので、リロード/タイムアウトで自然に戻る。
-- **画面を消さない**: 常時点灯（Screen Wake Lock API・非対応環境は定期再描画で代替）。
+- **画面を消さない（P2-b 反映・過信しない）**: 対応端末は Screen Wake Lock API で常時点灯。ただし **定期再描画は画面ロックを防げない**ため、非対応環境やロック防止を確実にしたい場合は **端末側で自動ロックを無効化し、iOS ガイドアクセス / Android 画面固定で運用する**ことを**運用条件**とする（保証文言は「対応端末で点灯維持・非対応時は端末設定で担保」に留める）。
 - **タップ目標を大きく**: セレクタ・行を指で選びやすく（STYLE-GUIDE §2.2 の 44px 目標を優先適用）。
 - **迷子防止**: read-only 徹底（運営UI・アドレスバー誘導なし）。可能ならブラウザのフルスクリーン/ガイドアクセスで固定（運用手順として `docs/` に記載）。
 - **回線**: 受付タブレットは会場 Wi-Fi かセルラーで公開ビューへ接続（運営端末の localStorage には依存しない＝別端末でも同じ公開スナップショットを見る）。
@@ -179,6 +191,7 @@
 
 - 保存スキーマ・`sanitizeMatch`・`normalizeState`（新規保存フィールドを足さない・REFERENCE §3。viewer での normalizeState は read-only 利用で挙動変更なし）。
 - 既存クラウド送信（名簿 upsert）経路。配信は別テーブル・別関数で独立。
+- 既存 `app/config.js`（gitignore・運営 authenticated 用）は変えない。公開ページ用 read-only config は**別ファイル追加**（§5.2 P1-c）。
 - `index.html` / `.github` / `package*`（拘束ルール8）。CSS 挙動（ルール3）。
 
 ---
@@ -191,7 +204,7 @@
 |---|---|---|---|
 | **1** | `buildPublicLiveSnapshot(state)` 純関数＋単体テスト | 公開形の確定（配信路に依存しない） | 読むだけ・ゼロ改変 |
 | **2** | `#scoreboard` に live ルート＋ローカル fixture 描画＋**検索/行タップ個人ビュー(MY-VIEW-001)同梱** | fixture で **星取表＋個人ビュー（相手名）**まで確認できる（J4/J5） | 追加経路のみ |
-| **3（実用）** | Supabase upsert（運営「配信更新」＋**📡配信中表示**）＋参加者ポーリング＋**QR/短縮コード掲示物**＋**受付タブレット(キオスク)対応** | **誰でも入口に到達し（J2）自分を把握でき（J5）、スマホ非所持でも受付端末で見られる** | 保存末尾に throttle 付き upsert（トグル ON 時のみ）＋掲示/キオスク運用手順 |
+| **3（実用）** | Supabase upsert（運営「配信更新」＋**📡配信中表示**）＋参加者ポーリング＋**QR/短縮コード掲示物**＋**受付タブレット(キオスク)対応** | **誰でも入口に到達し（J2）自分を把握でき（J5）、スマホ非所持でも受付端末で見られる** | 保存末尾に throttle 付き publish RPC（トグル ON 時のみ）＋掲示/キオスク運用手順 |
 | **4** | Realtime Broadcast 追加（受信→再取得／切断時ポーリング継続） | ~1秒即時 | 受信ハンドラ追加 |
 | **5** | 通信状態インジケータ・差分送信・公開範囲監査・会場負荷テスト | 運用 polish | UI/運用 追加 |
 
@@ -201,7 +214,7 @@
 
 ## 7. 落とし穴（レビュー2件の合流・実装時チェック）
 
-1. **初回取得と subscribe の隙間**: `version` を持ち、subscribe 後に必ず最新を再取得。Broadcast だけを真実源にしない。
+1. **初回取得と subscribe の隙間**: `version` を持ち、subscribe 後に必ず最新を再取得。Broadcast だけを真実源にしない（`version` は publish RPC が DB 側で atomic 採番＝§4.3・ローカル非依存）。
 2. **iOS バックグラウンド**: timer/WebSocket が止まる → 画面復帰（focus/visibilitychange）で再取得（親機能の focus 保険と同型）。
 3. **会場 Wi-Fi**: 一斉接続で WS 切断多発 → 常に **ポーリング fallback**。「最終更新」表示で鮮度を可視化。
 4. **CDN/ブラウザキャッシュ**: `Cache-Control: no-store` 相当 or `?v=version` を付す。
@@ -213,20 +226,24 @@
 ## 8. 受入条件（実用フェーズ＝Phase 3 時点・体験基準 J1〜J7 に対応）
 
 1. 配信 OFF（既定）では、保存・運営動作が現状と**完全一致**（外部通信ゼロ）。
-2. 運営者が「📡 ライブ配信」を ON にし更新すると、`public_live_snapshots` の当該 slug 行が upsert され、**ヘッダに「📡 配信中」と最終送信時刻/成否が出る**（J1）。
+2. 運営者が「📡 ライブ配信」を ON にし更新すると、`public_live_snapshots` の当該 slug 行が publish RPC で upsert され、**ヘッダに「📡 配信中」と最終送信時刻/成否が出る**（J1）。
 3. **入口（J2）**: 会場に掲示する **QR/短縮URL から**、参加者が `?live=<slug>#scoreboard` に到達できる（手打ち不要）。
 4. 参加者ページを開くと順位・星取・現在の手合せが表示され、5秒周期で更新される。「最終更新」時刻を表示（J4/J6）。
 5. **星取表＋個人ビュー（J5）**: 既定は**相手が見える星取表**（升目=○/×＋相手番号・氏名列 sticky）。クラス絞り込み＋番号/名前検索で対局者を引け、**行タップで個人ビュー**が開き、現在順位・勝敗・**次の対戦（卓・相手名）**・**これまでの対戦（相手名）**が出る（MY-VIEW-001 同梱）。
 6. 参加者ビューに運営UI・戻り導線が**一切出ない**（read-only 不変）。anon は **RPC `get_live_snapshot(slug)` で slug 一致の1行のみ取得でき、公開 snapshot を列挙できない**・write 不可（§4.2 Must Fix #1）。
 7. 公開 `state` 部分集合に `member`/email/`grade`/会費区分/内部メモが**含まれない**（`players[cls]` は `id`/`name`/`yomi`/`entry_no` のみ）。`normalizeState` 往復で除外項目が**再導入されない**（Must Fix #2 の帰結・§3.1/§3.2）。
-8. **キオスク（J2/J5・スマホ非所持者）**: 受付タブレットで同じ `?live` を開いて星取表を閲覧・検索/行タップで個人ビューを開け、**無操作60秒で星取表へ自動リセット**、画面が消えない（Wake Lock か定期再描画）。
+8. **キオスク（J2/J5・スマホ非所持者）**: 受付タブレットで同じ `?live` を開いて星取表を閲覧・検索/行タップで個人ビューを開け、**無操作60秒で星取表へ自動リセット**、画面が消えない（対応端末は Wake Lock、非対応時は端末の自動ロック無効/ガイドアクセスを運用条件＝P2-b）。
 9. 配信失敗・オフライン・pause・キオスク回線断でも運営アプリは動作継続（fail-soft・status 表示のみ）。
-10. `bash test/run_tests.sh shogi_v4.html` が **WARN=0**。純関数テスト: `buildPublicLiveSnapshot`（**出力が `state` 形＝`normalizeState`→`buildScoreboardClassTableHtml` で描ける**／`players` が `id`/`name`/`yomi`/`entry_no` のみ＝除外項目を含まない／version 単調増加／空・最終結果分岐）＋キオスク無操作リセット。**Supabase 側（Phase 3）**は RPC `get_live_snapshot` が slug 一致１行のみ返し、anon のテーブル直 SELECT が拒否される（列挙不可）ことをマイグレーション/ポリシーテストで確認。
+10. `bash test/run_tests.sh shogi_v4.html` が **WARN=0**。純関数テスト: `buildPublicLiveSnapshot`（**出力が `state` 形＝`normalizeState`→`buildScoreboardClassTableHtml` で描ける**／`players` が `id`/`name`/`yomi`/`entry_no` のみ＝除外項目を含まない／`version` を出力に含めない／空・最終結果分岐）＋キオスク無操作リセット。
+11. **RPC 実装ガード（P1-a）**: `get_live_snapshot` / `publish_live_snapshot` とも `SET search_path` 固定・`public.` 完全修飾・dynamic SQL 禁止・`REVOKE EXECUTE FROM PUBLIC`（read は `GRANT TO anon` / publish は `GRANT TO authenticated`）をマイグレーション/ポリシーテストで確認。anon のテーブル直 SELECT が拒否され、`get_live_snapshot` は slug 一致１行のみ返す（列挙不可）。
+12. **version 単調性（P1-b）**: publish は RPC `publish_live_snapshot` の atomic increment で採番され、リロード・複数タブ・再送でも version が単調（クライアントは version を持たない）。
+13. **公開 config 配布（P1-c）**: GitHub Pages に read-only 公開 config（`url`＋publishable key）が配信され、live ルートで読めて描画へ到達する（J3/J4）。key 権限は RPC EXECUTE ＋ private channel subscribe のみ（テーブル/列挙/送信不可）。運営用 `app/config.js`（gitignore）と分離。
+14. **Broadcast 送信権限（P2-a）**: slug を知る anon viewer は subscribe のみ可・**同チャネルへ送信できない**（private/authorized・送信は運営 authenticated か DB trigger/RPC 起点）。
 
 ## 9. 工程・ロールアウト
 
 - 本書 = 設計（docs-only / L1–L2）。GitHub へ定型ヘッダ＋凍結マーカー（`verdict:`）を書き戻して1工程完了（`docs/ai-ops/AI-DEV-PIPELINE.md`）。
-- レビュー: 別セッション・別素性（L4 code-review は Codex）。UI/クラウド/セキュリティ（RLS・公開範囲）を観点に含める。
+- レビュー: 別セッション・別素性（L4 code-review は Codex）。UI/クラウド/セキュリティ（RLS・RPC・公開範囲）を観点に含める。
 - 実装（LIVE-BROADCAST-IMPL Phase1..）: **追加/最小改変中心**・Phase ごと Draft PR で停止（Ready化/merge/production は人間の明示承認まで未実施）。secret/実データ不使用（テスト fixture は架空のみ）。
 - production 反映時: `index.html` + `shogi_v4.html` を公開し **`?v=N` インクリメント**（拘束ルール9）。Supabase 側（テーブル/RLS/RPC）はマイグレーションを別途記録。
 
