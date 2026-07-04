@@ -2079,6 +2079,18 @@ fi
 
 
 echo ""
+echo "【PRESET-REMOVE-001 / HISTORY-DELETE-001(list) 前回クラス自動プリセット廃止＋履歴タブ一覧削除】"
+if [ -f "$SCRIPT_DIR/test_registration_preset_and_history_delete_001.js" ]; then
+  if node "$SCRIPT_DIR/test_registration_preset_and_history_delete_001.js" "$TARGET" > /tmp/registration_preset_history_delete_001_out.log 2>&1; then
+    ok "PRESET-REMOVE/HISTORY-DELETE(list) テスト 全PASS ($(tail -1 /tmp/registration_preset_history_delete_001_out.log))"
+  else
+    ng "PRESET-REMOVE/HISTORY-DELETE(list) テスト 失敗"; cat /tmp/registration_preset_history_delete_001_out.log
+  fi
+else
+  warn "test_registration_preset_and_history_delete_001.js が見つからない"
+fi
+
+echo ""
 echo "【MASTER-REBUILD-FROM-CLOUD-001 Phase1 純関数（buildDerivedMemberStatsFromCloud / mergeDerivedStatsIntoMaster）】"
 if [ -f "$SCRIPT_DIR/test_master_rebuild_from_cloud_001.js" ]; then
   if node "$SCRIPT_DIR/test_master_rebuild_from_cloud_001.js" "$TARGET" > /tmp/master_rebuild_from_cloud_001_out.log 2>&1; then
