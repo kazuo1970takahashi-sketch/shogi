@@ -2077,6 +2077,19 @@ else
 fi
 
 
+echo ""
+echo "【CLASS-SPLIT-CLOUD-MERGE-001 Phase2 送信規律ガード（classesFilter/sendTargetClasses/静的HTML/結線）】"
+if [ -f "$SCRIPT_DIR/test_class_split_send_guard.js" ]; then
+  if node "$SCRIPT_DIR/test_class_split_send_guard.js" "$TARGET" > /tmp/class_split_send_guard_out.log 2>&1; then
+    ok "CLASS-SPLIT 送信規律 テスト 全PASS ($(tail -1 /tmp/class_split_send_guard_out.log))"
+  else
+    ng "CLASS-SPLIT 送信規律 テスト 失敗"; cat /tmp/class_split_send_guard_out.log
+  fi
+else
+  warn "test_class_split_send_guard.js が見つからない"
+fi
+
+
 
 echo ""
 echo "【PRESET-REMOVE-001 / HISTORY-DELETE-001(list) 前回クラス自動プリセット廃止＋履歴タブ一覧削除】"
