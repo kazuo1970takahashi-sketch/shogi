@@ -63,27 +63,38 @@ var d1=byId(mD,'m1');
 ok(d1.last_class==='A'&&d1.last_attended==='2026-05-10'&&d1.first_attended==='2025-01-01','D1 last_class/出席日 温存');
 ok(d1.tournament_ids.length===2&&d1.member==='member'&&d1.grade==='chu'&&d1.city==='沼津'&&d1.note==='メモ','D2 tournament_ids/member/grade/city/note 温存');
 
-console.log('=== E: tombstone（deleted=true 反映・false で復元しない）===');
+console.log('=== E: tombstone（deleted=true 反映・クラウド有効なら復元＝MERGE-UNDELETE-001 #549）===');
 var mE=mkMaster();
 var rE=env.mergeCloudMembersIntoMaster(mE,[{member_id:'m1',name:'山田太郎',yomi:'やまだ',deleted:true,deleted_at:'2026-06-20T00:00:00.000Z'}]);
 ok(byId(mE,'m1').deleted===true&&byId(mE,'m1').deleted_at==='2026-06-20T00:00:00.000Z','E1 cloud deleted=true をローカルへ反映');
-// 既に deleted=true のものを cloud deleted=false で復元しない
+// MERGE-UNDELETE-001 (#549): クラウドで有効ならローカル deleted=true を復元する（意図的挙動変更・旧 pin 反転）。
 var mE2={schema_version:1,updated_at:'2026-06-01T00:00:00.000Z',members:[{id:'mz',name:'削除済',yomi:'',deleted:true,deleted_at:'2026-05-01T00:00:00.000Z',tournament_ids:[]}]};
-env.mergeCloudMembersIntoMaster(mE2,[{member_id:'mz',name:'削除済',yomi:'',deleted:false}]);
-ok(byId(mE2,'mz').deleted===true,'E2 cloud deleted=false でローカル deleted=true を復元しない');
+var rE2=env.mergeCloudMembersIntoMaster(mE2,[{member_id:'mz',name:'削除済',yomi:'',deleted:false}]);
+ok(byId(mE2,'mz').deleted===false&&byId(mE2,'mz').deleted_at===null,'E2 cloud deleted=false でローカル削除を復元（deleted=false・deleted_at=null）');
+ok(rE2.restored===1&&rE2.updated===1,'E2b restored=1（復元は updated にも計上＝didChange semantics）');
 
 // B-3b-tombstone: 実クラウド members は deleted boolean を持たず deleted_at のみ（app/ B-5 が書く）。
 //   deleted_at 非 null だけで tombstone を反映できること（deleted フィールドは存在しない）。
 var mE3=mkMaster();
 env.mergeCloudMembersIntoMaster(mE3,[{member_id:'m1',name:'山田太郎',yomi:'やまだ',branch:'沼津',deleted_at:'2026-06-24T00:00:00.000Z'}]);
 ok(byId(mE3,'m1').deleted===true&&byId(mE3,'m1').deleted_at==='2026-06-24T00:00:00.000Z','E3 deleted_at のみ（deleted 欠落）で既存会員を tombstone 反映');
-// deleted_at が null（クラウドで有効）ならローカルを削除しない・既存 deleted も復元しない
+// deleted_at が null（クラウドで有効）ならローカルを削除しない
 var mE4=mkMaster();
 env.mergeCloudMembersIntoMaster(mE4,[{member_id:'m1',name:'山田太郎',yomi:'やまだ',deleted_at:null}]);
 ok(byId(mE4,'m1').deleted!==true,'E4 deleted_at=null（クラウドで有効）はローカルを tombstone しない');
 var mE5={schema_version:1,updated_at:'2026-06-01T00:00:00.000Z',members:[{id:'mz',name:'削除済',yomi:'',deleted:true,deleted_at:'2026-05-01T00:00:00.000Z',tournament_ids:[]}]};
-env.mergeCloudMembersIntoMaster(mE5,[{member_id:'mz',name:'削除済',yomi:'',deleted_at:null}]);
-ok(byId(mE5,'mz').deleted===true,'E5 deleted_at=null でローカル deleted=true を復元しない（非復元・実クラウド形）');
+var rE5=env.mergeCloudMembersIntoMaster(mE5,[{member_id:'mz',name:'削除済',yomi:'',deleted_at:null}]);
+ok(byId(mE5,'mz').deleted===false&&byId(mE5,'mz').deleted_at===null,'E5 deleted_at=null（実クラウド形）でローカル削除を復元＝MERGE-UNDELETE-001');
+ok(rE5.restored===1,'E5b counts.restored=1');
+// 復元は他フィールドを壊さない（tombstone 以外は非空ガード付き通常マージのまま）
+var mE7={schema_version:1,updated_at:'2026-06-01T00:00:00.000Z',members:[{id:'mz',name:'削除済',yomi:'よみ',member:'member',grade:'chu',last_class:'B',tournament_ids:['t1'],deleted:true,deleted_at:'2026-05-01T00:00:00.000Z'}]};
+env.mergeCloudMembersIntoMaster(mE7,[{member_id:'mz',name:'削除済',yomi:'よみ',deleted_at:null}]);
+var e7=byId(mE7,'mz');
+ok(e7.deleted===false&&e7.last_class==='B'&&e7.tournament_ids.length===1&&e7.grade==='chu','E7 復元しても last_class/参加履歴/区分は温存');
+// 両方削除済み（cloud tombstone・local deleted）は現状維持＝restored に数えない
+var mE8={schema_version:1,updated_at:'2026-06-01T00:00:00.000Z',members:[{id:'mz',name:'削除済',yomi:'',deleted:true,deleted_at:'2026-05-01T00:00:00.000Z',tournament_ids:[]}]};
+var rE8=env.mergeCloudMembersIntoMaster(mE8,[{member_id:'mz',name:'削除済',yomi:'',deleted_at:'2026-06-01T00:00:00.000Z'}]);
+ok(byId(mE8,'mz').deleted===true&&rE8.restored===0,'E8 双方削除済みは現状維持（restored=0）');
 // 新規会員が deleted_at 付きで来たら deleted=true で追加
 var mE6=mkMaster();
 env.mergeCloudMembersIntoMaster(mE6,[{member_id:'mNew',name:'新削除',yomi:'しん',deleted_at:'2026-06-24T00:00:00.000Z'}]);
