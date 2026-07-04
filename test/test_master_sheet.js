@@ -116,7 +116,7 @@ console.log('\n【MASTER-SHEET-001 会員名簿 スプレッドシート型一�
 // B: build
 const eb=loadEnv();
 const h=eb.buildMasterTabHtml(JSON.parse(fixJson()));
-assert(h.indexOf('氏名（ふりがな）')>=0&&h.indexOf('>支部員</th>')>=0&&h.indexOf('>会費</th>')>=0&&h.indexOf('>前回</th>')>=0&&h.indexOf('>最終参加</th>')>=0, 'B1 新ヘッダ列（氏名(ふりがな)/支部員/会費/前回/最終参加）');
+assert(h.indexOf('氏名（ふりがな）')>=0&&h.indexOf('>支部員</th>')>=0&&h.indexOf('>会費</th>')>=0&&h.indexOf('>前回</th>')<0&&h.indexOf('>最終参加</th>')<0, 'B1 ヘッダは4列（前回/最終参加は氏名セル内サブ情報へ移設＝MASTER-LIST-UX-001）');
 assert(h.indexOf('master-edit-btn')<0&&h.indexOf('master-delete-btn')<0&&h.indexOf('master-restore-btn')<0, 'B2 行の編集/削除/復元ボタンは全廃');
 assert(h.indexOf('master-row-check')>=0&&h.indexOf('data-mid="m-ka"')>=0, 'B3 行選択 checkbox（data-mid 付き）');
 const iAn=h.indexOf('安藤架空'),iKa=h.indexOf('架空太郎'),iNo=h.indexOf('読無架空');

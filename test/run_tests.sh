@@ -1054,6 +1054,24 @@ else
   warn "test_cleanup_p3_001.js が見つからない"
 fi
 
+# ============================================
+# MASTER-LIST-UX-001 — マスタ一覧の読み取り専用化＋スマホ列絞り（req #544・設計 #545 go）
+#   4列固定（選択/氏名/支部員/会費）／前回・最終参加・削除日は氏名セル内サブ情報行（空欄「－」）／
+#   支部員・会費は文字入りチップ／編集導線=行タップ→全幅フォーム（v70）無改変。
+# ============================================
+echo ""
+echo "【MASTER-LIST-UX-001 — マスタ一覧4列化（サブ情報行・チップ・読み取り専用）】"
+if [ -f "$SCRIPT_DIR/test_master_list_ux_001.js" ]; then
+  if node "$SCRIPT_DIR/test_master_list_ux_001.js" "$TARGET" > /tmp/master_list_ux_001_out.log 2>&1; then
+    ok "MASTER-LIST-UX-001 テスト 全PASS ($(tail -1 /tmp/master_list_ux_001_out.log))"
+  else
+    ng "MASTER-LIST-UX-001 テスト 失敗"
+    cat /tmp/master_list_ux_001_out.log
+  fi
+else
+  warn "test_master_list_ux_001.js が見つからない"
+fi
+
 echo ""
 echo "【DATA-PERSISTENCE-PHASE2 Stage B-1 — クラウド read-only 閲覧（app/auth.js・過去大会/結果/名簿・mock client）】"
 if [ -f "$SCRIPT_DIR/test_stageb_read.js" ]; then
