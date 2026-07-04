@@ -1153,6 +1153,7 @@
       try { if (global.location) { global.location.href = url; } } catch (e2) {}
     }
     function goToPortalAfterLogin() {
+      if (redirected) return; // L3 P3: init 直呼びと onAuthStateChange の evaluate 競合での二重発火を閉じる。
       redirected = true;
       mount('<section class="card"><h1>ログインしました</h1><p class="muted">運営サイトへ移動します…</p></section>');
       var target = '../index.html';
