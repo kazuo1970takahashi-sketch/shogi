@@ -125,6 +125,10 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .rep-form label{font-size:12px;color:#666;display:block;margin-bottom:4px}
 .rep-form .rep-fld{margin-bottom:12px}
 .rep-form input,.rep-form select,.rep-form textarea{width:100%;box-sizing:border-box;height:40px;border:1px solid #ccc;border-radius:8px;padding:8px 10px;font-size:16px;background:#fff;font-family:inherit;color:#222}
+/* REPORT-FORM-UI-002 (モバイル慣例/NN-g): 日付・時刻・金額は内容幅に収め全幅ストレッチを避ける。金額は右寄せ＋数字スピナー除去。見た目のみ・.rep-form スコープ。 */
+.rep-form input[type=date],.rep-form input[type=time]{max-width:180px}
+.rep-form input[type=number]{max-width:180px;text-align:right;-moz-appearance:textfield}
+.rep-form input[type=number]::-webkit-outer-spin-button,.rep-form input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .rep-form textarea{height:auto;min-height:56px;resize:vertical;line-height:1.5}
 .rep-form .rep-g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 @media(max-width:700px){.rep-form .rep-g2{grid-template-columns:1fr}}
