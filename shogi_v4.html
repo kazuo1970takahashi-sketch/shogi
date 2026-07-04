@@ -138,6 +138,9 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .master-edit-panel .mep-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:4px}
 .master-edit-panel .mep-actions button{min-height:44px;padding:0 18px;border-radius:8px;font-size:15px}
 .master-edit-panel .mep-hint{font-size:11px;color:#889;margin-top:8px}
+.master-edit-panel .mep-seg{display:flex;gap:6px}
+.master-edit-panel .mep-seg button{flex:1;min-height:44px;font-size:14px;border:2px solid #dfe6ee;border-radius:8px;background:#fff;color:#556}
+.master-edit-panel .mep-seg button.mep-seg-on{border:2px solid #185FA5;background:#E6F1FB;color:#0C447C;font-weight:600}
 .rep-form textarea{height:auto;min-height:56px;resize:vertical;line-height:1.5}
 .rep-form .rep-g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 @media(max-width:700px){.rep-form .rep-g2{grid-template-columns:1fr}}
@@ -3771,14 +3774,14 @@ function buildMasterTabHtml(master){
       var yomiHtml=yomiN
         ?'<span style="font-size:10px;color:'+(isDel?'#aaa':'#888')+';display:block;line-height:1.15">'+escapeHtml(yomiN)+'</span>'
         :'<span style="font-size:10px;color:'+(isDel?'#aaa':'#BA7517')+';display:block;line-height:1.15">（ふりがな未入力）</span>';
-      html+='<td'+(isDel?'':' class="master-cell-name" data-mid="'+mid+'" title="タップで氏名・ふりがなを編集"')+' style="text-align:left;padding:5px 8px'+(isDel?'':';cursor:pointer')+'">'+yomiHtml+'<span style="font-weight:500">'+escapeHtml(m.name||'')+'</span></td>';
-      // 支部員セル（タップで 支部員⇄他）。
+      html+='<td'+(isDel?'':' class="master-cell-name" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:left;padding:5px 8px'+(isDel?'':';cursor:pointer')+'">'+yomiHtml+'<span style="font-weight:500">'+escapeHtml(m.name||'')+'</span></td>';
+      // 支部員セル（タップで編集フォームを開く）。MASTER-EDIT-FORM-001: 循環切替は廃止。
       var memberBadge=(m.member==='other')
         ?'<span style="font-size:11px;background:#f1efe8;color:#5f5e5a;border-radius:5px;padding:1px 6px">他</span>'
         :'<span style="font-size:11px;background:#eaf3de;color:#27500A;border-radius:5px;padding:1px 6px">支部員</span>';
-      html+='<td'+(isDel?'':' class="master-cell-member" data-mid="'+mid+'" title="タップで切替"')+' style="text-align:center;padding:4px 2px'+(isDel?'':';cursor:pointer')+'">'+memberBadge+'</td>';
-      // 会費セル（タップで 一般→中学→女性）。
-      html+='<td'+(isDel?'':' class="master-cell-grade" data-mid="'+mid+'" title="タップで切替"')+' style="text-align:center;padding:4px 2px;font-size:12px'+(isDel?'':';cursor:pointer')+'">'+escapeHtml(gradeLabel)+'</td>';
+      html+='<td'+(isDel?'':' class="master-cell-member" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:center;padding:4px 2px'+(isDel?'':';cursor:pointer')+'">'+memberBadge+'</td>';
+      // 会費(級)セル（タップで編集フォームを開く）。MASTER-EDIT-FORM-001: 循環切替は廃止。
+      html+='<td'+(isDel?'':' class="master-cell-grade" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:center;padding:4px 2px;font-size:12px'+(isDel?'':';cursor:pointer')+'">'+escapeHtml(gradeLabel)+'</td>';
       html+='<td style="text-align:center;padding:4px 2px;font-size:12px">'+escapeHtml(lastCls)+'</td>';
       if(isDel){
         // CLEANUP-P3-001: 削除日セルにも生値 title を付与（最終参加セルと対称＝?v=61 P3「削除日の title 非対称」の消化）。
@@ -4488,6 +4491,18 @@ function _masterSheetFindMember(mid,master){
   for(var i=0;i<members.length;i++){ if(members[i]&&members[i].id===mid)return members[i]; }
   return null;
 }
+// MASTER-EDIT-FORM-001: 編集パネルの区分/級セグメントの {初期値, 選択値} を返す（Fable P1-1/P1-3）。
+//   これで「初期値から変わったグループだけ」を保存対象/フラッシュcommit対象にでき、未変更項目の誤上書きと
+//   区分/級のみ変更の無警告破棄の双方を防ぐ。DOM 欠落時は null（＝変更なし扱い）。
+function _msSegState(id){
+  if(typeof document==='undefined'||!document.getElementById)return null;
+  var g=document.getElementById(id); if(!g)return null;
+  var init=g.getAttribute?g.getAttribute('data-init'):null;
+  var selEl=g.querySelector?g.querySelector('.mep-seg-on'):null;
+  var sel=(selEl&&selEl.getAttribute)?selEl.getAttribute('data-val'):null;
+  return {init:init,sel:sel};
+}
+// MASTER-EDIT-FORM-001: 以下2関数はセル結線を外し未使用（編集はフォームに集約）。互換のため残置。
 function masterSheetCycleMember(mid){
   var master=loadBranchMaster();
   var m=_masterSheetFindMember(mid,master);
@@ -4517,16 +4532,28 @@ function masterSheetCycleGrade(mid){
 //   保存/取消は既存 masterSheetCommitNameEdit / masterSheetCancelNameEdit（#ms-edit-name/#ms-edit-yomi を
 //   ID で読む）をそのまま再利用＝データ層 applyMasterMemberEdit は不変。会員/級は従来どおりセルの tap 切替。
 function buildMasterEditPanelHtml(m){
+  // MASTER-EDIT-FORM-001: 氏名/ふりがな/支部員区分/級 を1枚のフォームで明示編集（表のセルは表示専用化）。
+  //   区分・級はタップ循環をやめ、押した状態が見えるセグメント選択に。commit で applyMasterMemberEdit の
+  //   options.member/grade に渡す（apply は既に両者を検証付きで受理・データ層不変）。
   var y=escapeHtml((m&&m.yomi)||'');
   var n=escapeHtml((m&&m.name)||'');
+  var mem=(m&&m.member==='other')?'other':'member';
+  var grd=(m&&(m.grade==='chu'||m.grade==='josei'))?m.grade:'ippan';
+  function segBtn(v,label,cur){
+    var on=(v===cur)?' mep-seg-on':'';
+    return '<button type="button" data-val="'+v+'" class="mep-seg-btn'+on+'" aria-pressed="'+(v===cur?'true':'false')+'">'+label+'</button>';
+  }
   return '<div class="master-edit-panel">'
     +'<div class="mep-fld"><label for="ms-edit-yomi">ふりがな</label>'
     +'<input type="text" id="ms-edit-yomi" inputmode="kana" value="'+y+'" placeholder="ふりがな"></div>'
     +'<div class="mep-fld"><label for="ms-edit-name">氏名</label>'
     +'<input type="text" id="ms-edit-name" value="'+n+'" placeholder="氏名"></div>'
+    +'<div class="mep-fld"><label>支部員区分</label>'
+    +'<div class="mep-seg" id="ms-edit-member" data-init="'+mem+'" role="group" aria-label="支部員区分">'+segBtn('member','支部員',mem)+segBtn('other','その他',mem)+'</div></div>'
+    +'<div class="mep-fld"><label>級（会費区分）</label>'
+    +'<div class="mep-seg" id="ms-edit-grade" data-init="'+grd+'" role="group" aria-label="級">'+segBtn('ippan','一般',grd)+segBtn('chu','中学生以下',grd)+segBtn('josei','女性',grd)+'</div></div>'
     +'<div class="mep-actions"><button type="button" id="ms-edit-cancel">キャンセル</button>'
     +'<button type="button" class="btn-primary" id="ms-edit-save">保存</button></div>'
-    +'<div class="mep-hint">会員区分・級は、保存してから各セルのタップで切り替えます。</div>'
     +'</div>';
 }
 function bindMasterEditPanel(){
@@ -4542,6 +4569,20 @@ function bindMasterEditPanel(){
   for(var i=0;i<ids.length;i++){
     var el=document.getElementById(ids[i]);
     if(el){ el.addEventListener('compositionstart',onComp(true)); el.addEventListener('compositionend',onComp(false)); el.addEventListener('keydown',onKey); }
+  }
+  // MASTER-EDIT-FORM-001: 区分/級セグメントの単一選択トグル（グループ内で1つだけ mep-seg-on）。
+  if(document.querySelectorAll){
+    var segGroups=document.querySelectorAll('.master-edit-panel .mep-seg');
+    for(var si=0;si<segGroups.length;si++){
+      (function(grp){
+        var btns=grp.getElementsByTagName?grp.getElementsByTagName('button'):[];
+        var onPick=function(){
+          for(var c=0;c<btns.length;c++){ btns[c].className=btns[c].className.replace(/\s*mep-seg-on/g,''); if(btns[c].setAttribute)btns[c].setAttribute('aria-pressed','false'); }
+          this.className=this.className+' mep-seg-on'; if(this.setAttribute)this.setAttribute('aria-pressed','true');
+        };
+        for(var b=0;b<btns.length;b++){ btns[b].addEventListener('click',onPick); }
+      })(segGroups[si]);
+    }
   }
   var sv=document.getElementById('ms-edit-save'); if(sv)sv.addEventListener('click',function(){ masterSheetCommitNameEdit(); });
   var cn=document.getElementById('ms-edit-cancel'); if(cn)cn.addEventListener('click',function(){ masterSheetCancelNameEdit(); });
@@ -4579,7 +4620,13 @@ function masterSheetCommitNameEdit(){
   var yomiEl=document.getElementById('ms-edit-yomi');
   if(!nameEl){_masterEditingMid=null;return;}
   var master=loadBranchMaster();
-  var r=applyMasterMemberEdit(mid,nameEl.value,yomiEl?yomiEl.value:'',master,{});
+  // MASTER-EDIT-FORM-001: パネルの区分/級セグメント選択を options に反映（未選択時は変更しない）。
+  // MASTER-EDIT-FORM-001 (Fable P1-3): 初期値から変わったグループのみ options に載せる（未変更は「変更しない」＝
+  //   開いたまま☁取得等で更新された区分/級を古い表示値で巻き戻さない）。値は whitelist で二重検証。
+  var opts={};
+  var _segM=_msSegState('ms-edit-member'); if(_segM&&_segM.sel&&_segM.sel!==_segM.init&&(_segM.sel==='member'||_segM.sel==='other'))opts.member=_segM.sel;
+  var _segG=_msSegState('ms-edit-grade'); if(_segG&&_segG.sel&&_segG.sel!==_segG.init&&(_segG.sel==='ippan'||_segG.sel==='chu'||_segG.sel==='josei'))opts.grade=_segG.sel;
+  var r=applyMasterMemberEdit(mid,nameEl.value,yomiEl?yomiEl.value:'',master,opts);
   if(!r||!r.success){
     if(r&&r.error==='empty_name'){ alert('氏名を入力してください'); if(nameEl.focus)nameEl.focus(); return; }
     alert('更新できませんでした。入力内容を確認してください');
@@ -4744,14 +4791,14 @@ function bindMasterTabEvents(){
   for(var mc=0;mc<memberCells.length;mc++){
     memberCells[mc].addEventListener('click',function(e){
       var t=e.currentTarget||e.target;
-      masterSheetCycleMember(t&&t.getAttribute?t.getAttribute('data-mid'):null);
+      masterSheetStartNameEdit(t&&t.getAttribute?t.getAttribute('data-mid'):null);   // MASTER-EDIT-FORM-001: 循環切替を廃止し編集フォームを開く
     });
   }
   var gradeCells=document.querySelectorAll('.master-cell-grade');
   for(var gc=0;gc<gradeCells.length;gc++){
     gradeCells[gc].addEventListener('click',function(e){
       var t=e.currentTarget||e.target;
-      masterSheetCycleGrade(t&&t.getAttribute?t.getAttribute('data-mid'):null);
+      masterSheetStartNameEdit(t&&t.getAttribute?t.getAttribute('data-mid'):null);   // MASTER-EDIT-FORM-001: 循環切替を廃止し編集フォームを開く
     });
   }
   // A-4 §3.4.3: 復元ボタン
@@ -4795,7 +4842,11 @@ function renderMasterTab(){
     var _ne=document.getElementById('ms-edit-name'), _ye=document.getElementById('ms-edit-yomi');
     if(_ne){
       var _mm=_masterSheetFindMember(_masterEditingMid,loadBranchMaster());
-      var _dirty=!!_mm && ( String(_ne.value)!==String((_mm.name)||'') || (_ye? normalizeYomi(_ye.value)!==normalizeYomi((_mm.yomi)||'') : false) );
+      // MASTER-EDIT-FORM-001 (Fable P1-1): 区分/級のみ変更した状態で外部再描画されても捨てないよう、
+      //   セグメントの初期値からの変化も dirty に含める。
+      var _segM2=_msSegState('ms-edit-member'); var _segG2=_msSegState('ms-edit-grade');
+      var _segDirty=(_segM2&&_segM2.sel&&_segM2.sel!==_segM2.init)||(_segG2&&_segG2.sel&&_segG2.sel!==_segG2.init);
+      var _dirty=!!_mm && ( String(_ne.value)!==String((_mm.name)||'') || (_ye? normalizeYomi(_ye.value)!==normalizeYomi((_mm.yomi)||'') : false) || !!_segDirty );
       if(_dirty){
         _masterEditFlushing=true;
         try{ masterSheetCommitNameEdit(); }catch(_fe){}
