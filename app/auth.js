@@ -1127,6 +1127,9 @@
     //   アクティブタブを closure に保持し bindApp で復元する（幹事管理の操作結果が見えたまま残る）。
     var activeSec = 'sec-results';
     var lastOrganizers = [];
+    // ADMIN-ENTRY-REDIRECT: マジックリンク帰着時のみ true（boot が URL から判定して注入）。
+    var fromMagicLink = !!opts.fromMagicLink;
+    var redirected = false;
 
     function mount(html) { if (root) root.innerHTML = html; }
     function byId(id) { return doc ? doc.getElementById(id) : null; }
@@ -1142,6 +1145,20 @@
     function showCheckEmail(email) { pendingEmail = email; mount(buildCheckEmailViewHtml(email)); bindCheckEmail(); }
     function showUnregistered(email) { mount(buildUnregisteredViewHtml(email)); bindUnregistered(); }
     function showApp(summary, organizers) { lastSummary = summary; lastOrganizers = organizers || []; mount(buildAppViewHtml(summary, lastOrganizers)); bindApp(); }
+
+    // ADMIN-ENTRY-REDIRECT: マジックリンクでログイン確立後、運営ポータル(../index.html)へ同一ウィンドウ遷移。
+    //   管理画面は従来通りポータル/当日アプリ内のリンクから到達可能（直接 app/ を開いた場合は転送しない）。
+    function navTo(url) {
+      try { if (global.location && global.location.replace) { global.location.replace(url); return; } } catch (e) {}
+      try { if (global.location) { global.location.href = url; } } catch (e2) {}
+    }
+    function goToPortalAfterLogin() {
+      redirected = true;
+      mount('<section class="card"><h1>ログインしました</h1><p class="muted">運営サイトへ移動します…</p></section>');
+      var target = '../index.html';
+      try { if (global.setTimeout) { global.setTimeout(function () { navTo(target); }, 200); return; } } catch (e) {}
+      navTo(target);
+    }
 
     function bindLogin() {
       var form = byId('magicForm');
@@ -1698,12 +1715,15 @@
 
     // ログイン状態を評価して適切なビューを出す（セッション復元・claim・未登録分岐）。
     function evaluate() {
+      if (redirected) return Promise.resolve();
       return loadSession(client).then(function (session) {
         if (!session) { showLogin(); return; }
         var email = (session.user && session.user.email) || '';
         return claimAndLoadMemberships(client).then(function (r) {
           var summary = summarizeMemberships(r.memberships);
           if (!summary.isRegistered || !summary.isActive) { showUnregistered(email); return; }
+          // ADMIN-ENTRY-REDIRECT: マジックリンク帰着かつ登録済み・有効ならポータルへ転送（管理画面は素通り）。
+          if (fromMagicLink && !redirected) { goToPortalAfterLogin(); return; }
           if (summary.isAdmin) {
             return fetchOrganizers(client, summary.clubId).then(function (o) { showApp(summary, o.organizers); });
           }
@@ -1728,6 +1748,16 @@
     };
   }
 
+  // ADMIN-ENTRY-REDIRECT: マジックリンク帰着（URL に認証トークンを含む着地）かを判定する。
+  //   supabase-js が detectSessionInUrl で URL を消す前に、createClient より先に捕捉する必要がある。
+  function detectAuthCallback() {
+    try {
+      var loc = global.location || {};
+      var blob = String(loc.hash || '') + '&' + String(loc.search || '');
+      return /access_token=|refresh_token=|[?&]code=|type=magiclink|type=recovery|type=signup/.test(blob);
+    } catch (e) { return false; }
+  }
+
   // 実ページ用のブートストラップ（config から client を作って init）。
   function boot() {
     var cfg = global.SHOGI_CLOUD_CONFIG;
@@ -1737,8 +1767,10 @@
       fail('app/config.js が未設定です。app/config.example.js を複製して URL と publishable key を設定してください。'); return;
     }
     if (!global.supabase || !global.supabase.createClient) { fail('supabase-js を読み込めませんでした。'); return; }
+    // ADMIN-ENTRY-REDIRECT: createClient 前に判定（hash 消去前に捕捉）。ログイン確立後にポータルへ転送する。
+    var fromMagicLink = detectAuthCallback();
     var client = global.supabase.createClient(cfg.url, cfg.publishableKey);
-    var ctrl = makeController({ client: client, document: doc });
+    var ctrl = makeController({ client: client, document: doc, fromMagicLink: fromMagicLink });
     ctrl.init();
   }
 
