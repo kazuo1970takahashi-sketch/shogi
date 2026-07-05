@@ -262,6 +262,43 @@ body.sb-active{overflow:hidden}
 .sb-metric{color:#555;font-size:12px}
 .sb-empty{padding:28px 16px;text-align:center;color:#888;font-size:13px;line-height:1.6}
 .sb-legend{padding:6px 12px 0;font-size:11px;color:#667}
+/* LIVE-BROADCAST-001 Phase2 / SCOREBOARD-MY-VIEW-001: 対局者を探す＋個人ビュー＋live ルート。
+   新規 class のみ追加（既存 .sb-* の挙動は変えない・拘束ルール3）。色は既存の意味色
+   （primary #1F3864 / 青 #2E75B6 / 勝 #1b7a2e / 負 #b23030 / 強調 #fde7c4）に限定し新色を足さない。 */
+.sb-finder{padding:8px 12px;background:#dde7f2;border-bottom:1px solid #d3dbe5}
+.sb-search{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #2E75B6;border-radius:8px;font-size:14px;font-family:inherit;background:#fff;color:#333}
+.sb-fres{margin-top:0}
+.sb-fres-item{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;text-align:left;padding:10px 12px;margin-top:6px;border:1px solid #c7d4e4;border-radius:8px;background:#fff;color:#1F3864;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer}
+.sb-fres-no{font-size:11px;color:#777;font-weight:400}
+.sb-fres-cls{margin-left:auto;font-size:11px;color:#2E75B6;font-weight:400}
+.sb-fres-none{padding:8px 2px 2px;font-size:12px;color:#667}
+.sb-row-tap{cursor:pointer}
+.sb-row-me .sb-col-name{background:#fde7c4}
+/* LIVE-BROADCAST-001 Phase3 (§5.1/§5.3): 配信中バー（運営ヘッダ直下）とキオスク用タップ目標。
+   新規 id/class のみ追加（既存セレクタ無変更・拘束ルール3）。色は既存の意味色（#1F3864/#2E75B6/#2b6cb0/#b23030）に限定し新色なし。 */
+#live-bar{display:none;align-items:center;gap:10px;flex-wrap:wrap;background:#eaf1f8;border-bottom:1px solid #d3dbe5;color:#1F3864;padding:6px 14px;font-size:12px}
+#live-bar .live-bar-badge{font-weight:600;color:#1F3864}
+.sb-active #live-bar{display:none !important} /* 閲覧ビュー（#scoreboard）では運営向けバーを出さない（read-only 徹底） */
+.sb-kiosk .sb-tab{min-height:44px}
+.sb-kiosk .sb-search{min-height:44px}
+.sb-kiosk .sb-fres-item{min-height:44px}
+.sb-kiosk .sb-row-tap td{padding-top:12px;padding-bottom:12px}
+.sb-player{background:#fff;margin:0 0 16px;border-top:1px solid #d3dbe5;border-bottom:1px solid #d3dbe5}
+.sb-pv-head{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #e0e6ee}
+.sb-pv-back{padding:9px 14px;border:1px solid #2E75B6;border-radius:16px;background:#fff;color:#2E75B6;font-size:13px;font-family:inherit;cursor:pointer;flex-shrink:0}
+.sb-pv-name{font-size:17px;font-weight:600;color:#1F3864;line-height:1.3}
+.sb-pv-sub{font-size:12px;color:#667;margin-top:2px}
+.sb-pv-stats{display:flex;gap:18px;padding:10px 12px;font-size:13px;color:#333;border-bottom:1px solid #eef1f5}
+.sb-pv-stats b{font-size:18px;color:#1F3864}
+.sb-next{margin:10px 12px;padding:12px;border-radius:10px;background:#eef3f9;border:1px solid #c7d4e4}
+.sb-next-h{font-size:12px;color:#1F3864;font-weight:600;margin-bottom:4px}
+.sb-next-b{font-size:16px;font-weight:600;color:#1F3864;line-height:1.4}
+.sb-next-none{font-size:13px;color:#667}
+.sb-history{padding:0 12px 12px}
+.sb-history-h{font-size:12px;color:#1F3864;font-weight:600;padding:6px 0 2px}
+.sb-hrow{display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid #eef1f5;font-size:14px;color:#333}
+.sb-hrow-r{font-size:11px;color:#777;width:44px;flex-shrink:0}
+.sb-hrow-no{margin-left:auto;font-size:11px;color:#777}
 </style>
 </head>
 <body>
@@ -308,6 +345,14 @@ body.sb-active{overflow:hidden}
      最終実行時刻を常時1行表示し「保存されているか不安」を見える化する。時刻は localStorage 別キー（SAVE_STATUS_KEY）＝state スキーマ非接触。
      文言は renderSaveStatusBar が textContent で書く（innerHTML 不使用）。タップ/Enter/Space で openHelpModal('save-systems')（bindHeaderEvents で結線）。 -->
 <div id="save-status-bar" class="no-print" role="button" tabindex="0" title="押すと保存の仕組みを表示します" aria-label="保存状態（押すと説明を表示）" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:#f4f6f9;border-bottom:1px solid #d3dbe5;color:#555;padding:4px 14px;font-size:12px;cursor:pointer"></div>
+<!-- LIVE-BROADCAST-001 Phase3 (§5.1 / J1): 📡 配信中バー。ライブ配信 ON の間だけ表示し、最終送信時刻・成否と停止ボタンを
+     スクロールせず見える位置に常時出す（[[ui-result-visibility-principle]]・「配信が切れている/OFFのまま」に運営が気づける）。
+     文言は liveUpdateBar が textContent で書く（innerHTML 不使用）。停止は liveStopBroadcastUI（bindReportEvents で結線）。 -->
+<div id="live-bar" class="no-print" role="status" aria-live="polite">
+  <span class="live-bar-badge">📡 配信中</span>
+  <span id="live-bar-status"></span>
+  <button type="button" class="btn-sm no-print" id="liveBarStopBtn" style="min-height:32px;background:#fff;border:1px solid #2b6cb0;color:#2b6cb0">⏹ 配信を停止</button>
+</div>
 <!-- BACKUP-NUDGE (当日第2弾⑫): 節目（大会開始/クラス完了/全終了）で「今ひかえますか？」を非ブロッキングで促す。既定非表示・あとで可・端末事故の全損防止。 -->
 <div id="backup-nudge" class="no-print" role="status" aria-live="polite" style="display:none;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#faeeda;border:1px solid #EF9F27;color:#633806;padding:10px 14px;margin:0 12px 0;border-radius:0 0 8px 8px;font-size:13px">
   <span id="backup-nudge-msg"></span>
@@ -531,6 +576,31 @@ body.sb-active{overflow:hidden}
       <button type="button" id="cloudMergedReportBtn" class="btn-sm" title="現在の大会IDでクラウドから両級（全クラス）の結果をまとめて表示します（閲覧専用）" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ 両級まとめて表示（統合レポート）</button>
       <div id="cloudMergedReportStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
       <div id="cloudMergedReport" style="margin-top:8px;text-align:left"></div>
+    </div>
+    <!-- LIVE-BROADCAST-001 Phase3 (§5.1/§6): 参加者向けライブ配信（任意・明示オプトイン）。
+         click は bindReportEvents で liveToggleBroadcastUI に結線。OFF（既定）では外部通信ゼロ＝当日運営は現状と完全一致（受入 §8-1）。
+         表示名（§3.2・受入 #17・未成年参加前提）: 既定選択は「姓＋番号のみ」＝氏名公開を暗黙の既定にしない。フルネーム公開は
+         主催者の明示決定（告知・同意運用込み）。運用手順・決定記録 = docs/notes/20260705_live_broadcast_phase3_runbook_001.md。 -->
+    <div class="section no-print" style="margin-top:16px;text-align:left">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h2 style="margin:0;font-size:16px">📡 参加者向けライブ配信（任意）</h2>
+      </div>
+      <div style="font-size:12px;color:#555;margin-top:4px">参加者が自分のスマホで順位・星取・手合せを見られるようにします（インターネット公開）。使わなくても大会運営・報告書には影響しません。QRの掲示物には「氏名・成績をインターネット公開する」旨の告知を含めてください。</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <label for="liveDisplayMode" style="font-size:12px;color:#333">表示名</label>
+        <select id="liveDisplayMode" style="font-size:13px;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-family:inherit">
+          <option value="given+no" selected>姓＋番号のみ（おすすめ）</option>
+          <option value="full">フルネーム（主催者が告知・同意運用を決定済みの場合）</option>
+        </select>
+        <button type="button" id="liveToggleBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">📡 ライブ配信を開始</button>
+      </div>
+      <div id="liveStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
+      <div id="liveQrBox" style="display:none;margin-top:8px;padding:10px;border:1px dashed #2b6cb0;border-radius:8px;background:#fff;text-align:center">
+        <div id="liveQr" style="margin:0 auto"></div>
+        <div id="liveUrlText" style="font-size:12px;word-break:break-all;margin-top:6px;color:#333"></div>
+        <button type="button" id="liveCopyUrlBtn" class="btn-sm" style="margin-top:6px;border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">URLをコピー</button>
+        <div style="font-size:11px;color:#777;margin-top:6px">このQRを印刷して会場に掲示してください。受付タブレット（キオスク）はURL末尾に <code>&amp;kiosk=1</code> を付けて開きます（無操作60秒で星取表へ自動リセット）。</div>
+      </div>
     </div>
     <div class="section no-print rep-form" style="margin-top:16px">
       <!-- HELP-UX-002 (#322): 見出し脇「？ ヘルプ」。click は bindReportEvents で openHelpModal('report') に結線。 -->
@@ -1315,6 +1385,9 @@ function save(){
     // SAVE-STATUS-BAR-001: 自動保存成功（setItem が throw しなかった）時刻を記録（分単位スロットル・fail-soft）。
     //   iOS プライベート等「書けたのに残らない」ケースは検知対象外（既存の ⚠ピル/storage-warn が担当）。
     markAutosaveStatus();
+    // LIVE-BROADCAST-001 Phase3 §5.1: 配信 ON のときだけ確定状態を throttle 付きで publish。
+    //   OFF（既定）では liveIsActive()=false で即 return＝保存経路は現状と完全不変（受入 §8-1・fail-soft）。
+    try{ if(typeof liveSchedulePublish==='function')liveSchedulePublish(); }catch(eLive){}
   }catch(e){
     // SAVE-UX-QUOTA-HANDLING-IMPL: quota の場合は storage-quota 系統に分岐。
     //   alert は容量問題を user に確実に認知させるため維持。
@@ -12525,6 +12598,28 @@ function bindReportEvents(){
     var st=document.getElementById('cloudMergedReportStatus');
     loadCloudMergedReportUI(function(msg){ applyCloudStatus(st,msg); });
   });
+  // LIVE-BROADCAST-001 Phase3 (§5.1): 「📡 ライブ配信」トグル（静的・id=liveToggleBtn）→ liveToggleBroadcastUI。
+  //   結果は押下位置直下の #liveStatus（applyCloudStatus で色分け・[[ui-result-visibility-principle]]）。
+  var liveToggleBtn=document.getElementById('liveToggleBtn');
+  if(liveToggleBtn)liveToggleBtn.addEventListener('click',function(){
+    var st=document.getElementById('liveStatus');
+    liveToggleBroadcastUI(function(msg){ applyCloudStatus(st,msg); }).then(function(){ liveRefreshToggleUI(); });
+  });
+  // 配信中バー（静的・id=liveBarStopBtn）の停止 → liveStopBroadcastUI（結果は #liveStatus と共通）。
+  var liveBarStopBtn=document.getElementById('liveBarStopBtn');
+  if(liveBarStopBtn)liveBarStopBtn.addEventListener('click',function(){
+    var st=document.getElementById('liveStatus');
+    liveStopBroadcastUI(function(msg){ applyCloudStatus(st,msg); }).then(function(){ liveRefreshToggleUI(); });
+  });
+  // 参加者ビュー URL のコピー（既存 copyTextToClipboard 再利用・失敗は案内のみ）。
+  var liveCopyUrlBtn=document.getElementById('liveCopyUrlBtn');
+  if(liveCopyUrlBtn)liveCopyUrlBtn.addEventListener('click',function(){
+    var urlEl=document.getElementById('liveUrlText');
+    var st=document.getElementById('liveStatus');
+    copyTextToClipboard((urlEl&&urlEl.textContent)||'',function(okc){
+      applyCloudStatus(st,okc?'URLをコピーしました':'コピーできませんでした（URLを長押しで選択してください）');
+    });
+  });
   // CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 初期表示時に送信対象級を反映（以後は showTab('result') で更新）。
   if(typeof refreshSendTargetClasses==='function')refreshSendTargetClasses();
 }
@@ -12599,8 +12694,14 @@ function initApp(){
 //   - state.rounds と classes[].rounds を含める（roundsForClass の 4回戦フォールバック回避・P1-1）
 //   保存スキーマは触らない（引数を読むだけ・REFERENCE §3）。ES5 / 純関数（副作用なし）。
 // ============================================================
-function buildPublicLiveSnapshot(src){
+function buildPublicLiveSnapshot(src,opts){
   var s=(src&&typeof src==='object')?src:{};
+  // LIVE-BROADCAST-001 Phase3（受入 #17・§3.2）: 表示名の匿名度 display_mode。
+  //   'full'（既定・Phase1 互換＝opts 省略時の出力は完全不変）… name/yomi をそのまま公開。
+  //   'given+no' … 姓＋番号のみ公開（yomi は出さない）。姓 = 空白（半角/全角）区切りの先頭トークン。
+  //                空白なしで登録された氏名は先頭1文字のみ（下の名前を漏らさない安全側）＋番号。
+  //   既定値の決定（氏名公開の扱い・告知/同意運用）は主催者（人間）の明示決定＝runbook に記録。
+  var mode=(opts&&typeof opts==='object'&&opts.display_mode==='given+no')?'given+no':'full';
   var out={schema_version:1,meta:{},state:{rounds:4,classes:[],players:{},results:{},pairings:{}}};
 
   // meta.title: report.title があれば正規化して使う。無ければ既定名。
@@ -12638,8 +12739,16 @@ function buildPublicLiveSnapshot(src){
       var p=arr[j];
       if(!p||typeof p.id!=='string'||!p.id)continue;
       var pub={id:p.id};
-      if(typeof p.name==='string')pub.name=p.name;
-      if(typeof p.yomi==='string'&&p.yomi)pub.yomi=p.yomi;
+      if(mode==='given+no'){
+        // 受入 #17: 姓＋番号のみを wire に載せる（フルネーム/よみは公開しない）。
+        var nm=(typeof p.name==='string')?p.name:'';
+        var sei=nm?nm.split(/[\s　]+/)[0]:'';
+        if(sei===nm&&nm.length>1)sei=nm.slice(0,1); // 空白なし登録は先頭1文字のみ（安全側）
+        pub.name=(sei||'選手')+((p.entry_no!=null)?'（'+p.entry_no+'）':'');
+      }else{
+        if(typeof p.name==='string')pub.name=p.name;
+        if(typeof p.yomi==='string'&&p.yomi)pub.yomi=p.yomi;
+      }
       if(p.entry_no!=null)pub.entry_no=p.entry_no;
       op.push(pub);
     }
@@ -12710,6 +12819,11 @@ function buildPublicLiveSnapshot(src){
 // 表示中のクラスフィルタ（'all' または classId）。memory-only、保存しない。
 var _sbClassFilter='all';
 
+// SCOREBOARD-MY-VIEW-001 §5: 選択中の対局者・検索語（memory-only・保存しない。_sbClassFilter と同格）。
+var _sbFocusCls=null;
+var _sbFocusId=null;
+var _sbSearch='';
+
 // LIVE-MOBILE-SCOREBOARD-001 §1: 最終更新時刻。
 //   閲覧ビューが state を最後に読み込んだ時刻を保持する（memory-only / 非保存・保存データ構造は不変）。
 //   タブ切替などの単なる再描画では更新せず、データ再読込時（route 突入 / storage / focus）のみ更新する。
@@ -12740,6 +12854,377 @@ function isScoreboardRoute(){
   return !!tokens[v];
 }
 
+// ============================================================
+// LIVE-BROADCAST-001 Phase2 §5.2: live ルート（?live=<slug>#scoreboard）
+//   参加者/受付端末が公開スナップショット（state 部分集合）を閲覧する追加経路。
+//   Phase2 はローカル fixture / sbSetLiveEnvelope() で描画まで（配信路は Phase3 で
+//   get_live_snapshot ポーリング、Phase4 で Realtime を上乗せ・設計 §6）。
+//   通常の #scoreboard（同一端末 localStorage 追従）の挙動には影響しない（追加のみ）。
+// ============================================================
+
+// URL の ?live=<slug> を返す（無ければ ''）。
+function sbLiveSlug(){
+  var m=(location.search||'').match(/[?&]live=([^&#]*)/i);
+  if(!m)return '';
+  try{return decodeURIComponent(m[1]);}catch(e){return m[1];}
+}
+
+// live ルート判定（閲覧ルート かつ ?live= あり）。
+function sbIsLiveRoute(){return isScoreboardRoute()&&!!sbLiveSlug();}
+
+// 配信 envelope とビュー用 state（memory-only・保存しない）。
+var _sbLiveEnvelope=null;
+var _sbLiveViewState=null;
+// live ルートの待機表示に添える補足（配信設定なし・取得失敗など。memory-only・fail-soft）。
+var _sbLiveNote='';
+
+// LIVE-BROADCAST-001 Phase3（#598 code-review Nice 1）: envelope 受入判定の純関数。
+//   'ok' = 受入 ／ 'invalid' = 構造不正（破棄して待機へ・Phase2 と同挙動）／
+//   'slug' = slug 不一致（無視＝既存表示を保持）／ 'stale' = version 巻き戻り（無視＝古い envelope で上書きしない）。
+//   slug は env.slug と期待 slug の両方が非空文字列のときだけ照合する（fixture 互換）。
+function sbLiveAcceptEnvelope(env,expectSlug,curVersion){
+  if(!env||typeof env!=='object'||!env.payload||typeof env.payload!=='object'
+     ||!env.payload.state||typeof env.payload.state!=='object')return 'invalid';
+  if(expectSlug&&typeof env.slug==='string'&&env.slug&&env.slug!==expectSlug)return 'slug';
+  if(typeof curVersion==='number'&&typeof env.version==='number'&&env.version<curVersion)return 'stale';
+  return 'ok';
+}
+
+// 配信 envelope（{slug,version,updated_at,payload:{schema_version,meta,state}}・設計 §3.1）を受け取り、
+//   ビュー用 state を用意して live ルート表示中なら再描画する。payload.state は normalizeState で
+//   補完し、meta.title を report.title へ反映して既存ヘッダ描画を再利用する。
+//   不正な envelope は破棄して待機表示へ戻す（fail-soft・受入 §8-9）。
+//   Phase3（Nice 1/2）: slug 不一致・version 巻き戻りは「無視」（既存表示を保持）。normalizeState は
+//   try/catch で包み、失敗時は直前の正常表示を保持する（正常表示が無ければ待機へ）＝fail-soft の無条件保証。
+function sbSetLiveEnvelope(env){
+  var curV=(_sbLiveEnvelope&&typeof _sbLiveEnvelope.version==='number')?_sbLiveEnvelope.version:undefined;
+  var acc=sbLiveAcceptEnvelope(env,sbLiveSlug(),curV);
+  if(acc==='slug'||acc==='stale'){
+    // 無視（既存表示を保持）。
+  }else if(acc!=='ok'){
+    _sbLiveEnvelope=null;_sbLiveViewState=null;
+  }else{
+    var vs=null;
+    try{vs=normalizeState(env.payload.state);}catch(eN){vs=null;}
+    if(!vs||typeof vs!=='object'){
+      if(!_sbLiveViewState){_sbLiveEnvelope=null;_sbLiveViewState=null;}
+      // 直前の正常表示があればそのまま保持（巻き戻さない・fail-soft）。
+    }else{
+      if(env.payload.meta&&typeof env.payload.meta.title==='string'&&env.payload.meta.title){
+        if(!vs.report||typeof vs.report!=='object')vs.report={};
+        vs.report.title=env.payload.meta.title;
+      }
+      _sbLiveEnvelope=env;
+      _sbLiveViewState=vs;
+      _sbLiveNote='';
+    }
+  }
+  if(sbIsLiveRoute())renderScoreboard();
+}
+
+// ============================================================
+// LIVE-BROADCAST-001 Phase 3 §5.2: 参加者ポーリング（get_live_snapshot・5秒・fail-soft）
+//   read は SECURITY DEFINER RPC get_live_snapshot(slug) のみ（§4.2・列挙不可・anon は EXECUTE のみ）。
+//   supabase-js は読み込まず PostgREST /rest/v1/rpc へ fetch する（閲覧スマホに余計な依存を足さない）。
+//   公開 config（app/config.public.js・§5.2 P1-c・ひな形 = app/config.public.example.js）は live ルートで
+//   のみ遅延ロードする。運営用 app/config.js（gitignore・authenticated 用）とは別ファイル（§5.4）。
+//   取得失敗・オフラインでも既存表示を保持して自動再試行（受入 §8-9）。
+// ============================================================
+var LIVE_POLL_MS=5000;
+var _sbLivePollTimer=null;
+var _sbLiveFetching=false;
+
+function _livePublicCfgReady(){
+  return (typeof window!=='undefined')&&!!window.SHOGI_LIVE_PUBLIC_CONFIG
+    &&typeof window.SHOGI_LIVE_PUBLIC_CONFIG.url==='string'&&!!window.SHOGI_LIVE_PUBLIC_CONFIG.url
+    &&typeof window.SHOGI_LIVE_PUBLIC_CONFIG.publishableKey==='string'&&!!window.SHOGI_LIVE_PUBLIC_CONFIG.publishableKey;
+}
+function loadLivePublicConfig(){
+  return new Promise(function(resolve){
+    if(_livePublicCfgReady()){resolve(true);return;}
+    try{
+      var sc=document.createElement('script');
+      sc.src='app/config.public.js';
+      sc.onload=function(){resolve(_livePublicCfgReady());};
+      sc.onerror=function(){resolve(false);};
+      document.head.appendChild(sc);
+    }catch(e){resolve(false);}
+  });
+}
+// RPC の URL（純関数・末尾スラッシュを正規化）。
+function liveRpcUrl(baseUrl,fn){
+  var u=String(baseUrl==null?'':baseUrl).replace(/\/+$/,'');
+  return u+'/rest/v1/rpc/'+fn;
+}
+// 待機表示への補足を出す（正常表示が出た後は何もしない・fail-soft）。
+function sbLiveShowWaitNote(msg){
+  _sbLiveNote=String(msg==null?'':msg);
+  if(sbIsLiveRoute()&&!_sbLiveViewState)renderScoreboard();
+}
+// 公開スナップショットを1回取得して反映する（fail-soft・多重発火ガード）。
+function sbLiveFetchOnce(){
+  var slug=sbLiveSlug();
+  if(!slug||_sbLiveFetching)return Promise.resolve(false);
+  if(typeof fetch!=='function'){sbLiveShowWaitNote('お使いのブラウザではライブ配信を表示できません（新しいブラウザでお試しください）');return Promise.resolve(false);}
+  _sbLiveFetching=true;
+  return loadLivePublicConfig().then(function(okCfg){
+    if(!okCfg){_sbLiveFetching=false;sbLiveShowWaitNote('配信設定が見つかりません（会場の係員にお知らせください）');return false;}
+    var cfg=window.SHOGI_LIVE_PUBLIC_CONFIG;
+    return fetch(liveRpcUrl(cfg.url,'get_live_snapshot'),{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':cfg.publishableKey,'Authorization':'Bearer '+cfg.publishableKey},
+      body:JSON.stringify({slug:slug})
+    }).then(function(r){return r&&r.ok?r.json():null;}).then(function(env){
+      _sbLiveFetching=false;
+      if(env&&typeof env==='object'){sbSetLiveEnvelope(env);return true;}
+      if(!_sbLiveViewState)sbLiveShowWaitNote('配信が見つかりません（配信が終了したか、URLが古い可能性があります）');
+      return false;
+    });
+  }).then(function(v){_sbLiveFetching=false;return v;},function(){
+    _sbLiveFetching=false;
+    if(!_sbLiveViewState)sbLiveShowWaitNote('通信できませんでした（自動で再試行します）');
+    return false;
+  });
+}
+// 5秒ポーリング（live ルート表示中のみ・バックグラウンドタブでは打たない＝復帰時に focus/visibilitychange が再取得）。
+function sbLiveStartPolling(){
+  if(_sbLivePollTimer!=null)return;
+  sbLiveFetchOnce();
+  _sbLivePollTimer=setInterval(function(){
+    try{
+      if(typeof document!=='undefined'&&document.hidden)return;
+      sbLiveFetchOnce();
+    }catch(e){}
+  },LIVE_POLL_MS);
+}
+function sbLiveStopPolling(){
+  if(_sbLivePollTimer!=null){clearInterval(_sbLivePollTimer);_sbLivePollTimer=null;}
+}
+
+// ============================================================
+// LIVE-BROADCAST-001 Phase 3 §5.3: 受付キオスク（?live=<slug>&kiosk=1#scoreboard）
+//   共有タブレット向けの追加配慮のみ（技術的には参加者ビューと同一・追加基盤なし）:
+//   - 無操作60秒で個人ビュー/検索/絞り込みを解除して全体星取表へ自動リセット（次の人が詰まらない）
+//   - Screen Wake Lock（対応端末のみ・過信しない＝非対応時は端末の自動ロック無効/ガイドアクセスを運用条件 P2-b）
+//   - タップ目標 44px（.sb-kiosk スコープ CSS・既存セレクタ無変更）
+// ============================================================
+var LIVE_KIOSK_IDLE_MS=60000;
+var _sbKioskIdleTimer=null;
+var _sbWakeLock=null;
+
+function sbIsKioskMode(){
+  if(!sbIsLiveRoute())return false;
+  return /[?&]kiosk=1(?:&|#|$)/i.test(location.search||'');
+}
+// 個人ビュー・検索・クラス絞り込みを解除して全体星取表へ戻す（選択は memory-only なので state 非接触）。
+function sbKioskReset(){
+  _sbFocusId=null;_sbFocusCls=null;_sbSearch='';_sbClassFilter='all';
+  renderScoreboard();
+}
+function sbKioskTouch(){
+  if(!sbIsKioskMode())return;
+  if(_sbKioskIdleTimer!=null)clearTimeout(_sbKioskIdleTimer);
+  _sbKioskIdleTimer=setTimeout(function(){
+    _sbKioskIdleTimer=null;
+    try{sbKioskReset();}catch(e){}
+  },LIVE_KIOSK_IDLE_MS);
+}
+function sbKioskInit(){
+  if(!sbIsKioskMode())return;
+  try{document.body.classList.add('sb-kiosk');}catch(e){}
+  var evs=['touchstart','click','scroll','keydown','input'];
+  for(var i=0;i<evs.length;i++){
+    try{document.addEventListener(evs[i],sbKioskTouch,true);}catch(e){}
+  }
+  sbKioskTouch();
+  function acquireWakeLock(){
+    try{
+      if(typeof navigator!=='undefined'&&navigator.wakeLock&&navigator.wakeLock.request){
+        navigator.wakeLock.request('screen').then(function(s){_sbWakeLock=s;},function(){});
+      }
+    }catch(e){}
+  }
+  acquireWakeLock();
+  try{
+    document.addEventListener('visibilitychange',function(){if(!document.hidden)acquireWakeLock();});
+  }catch(e){}
+}
+
+// ============================================================
+// LIVE-BROADCAST-001 Phase 3 §5.1/§4.3: 運営側 配信グルー（start/stop/publish・全て fail-soft）
+//   「📡 ライブ配信」は明示オプトイン。OFF（既定）では外部通信ゼロ＝保存経路は現状と完全不変（受入 §8-1）。
+//   slug は start_live_session（SECURITY DEFINER・authenticated）が club membership から発行（§4.3①）、
+//   publish は publish_live_snapshot（既存行 UPDATE のみ・version は DB atomic 採番 §4.3②）、
+//   停止は stop_live_session（is_public=false・受入 #18）。配信状態は memory-only（保存スキーマ非接触 §5.4）。
+// ============================================================
+var _liveClient=null;
+var _liveSlug='';
+var _liveDisplayMode='given+no'; // 受入 #17: 氏名公開を暗黙の既定にしない
+var _livePublishTimer=null;
+var _livePublishing=false;
+var _livePublishQueued=false;
+var LIVE_PUBLISH_DEBOUNCE_MS=2000;
+
+function liveIsActive(){return !!(_liveSlug&&_liveClient);}
+// 参加者ビュー URL（純関数部分＝liveBuildViewerUrl・テスト対象）。
+function liveBuildViewerUrl(base,slug){
+  return String(base==null?'':base)+'?live='+encodeURIComponent(String(slug==null?'':slug))+'#scoreboard';
+}
+function liveViewerUrl(slug){
+  var base='';
+  try{base=location.origin+location.pathname;}catch(e){base='';}
+  return liveBuildViewerUrl(base,slug);
+}
+// 📡 配信中バー（J1）: 配信 ON の間だけ表示し、最終送信時刻・成否を textContent で書く。
+function liveUpdateBar(msg){
+  var bar=document.getElementById('live-bar');
+  var st=document.getElementById('live-bar-status');
+  if(!bar)return;
+  if(!liveIsActive()){bar.style.display='none';if(st)st.textContent='';return;}
+  bar.style.display='flex';
+  if(st)st.textContent=String(msg==null?'':msg);
+}
+function liveRefreshToggleUI(){
+  var btn=document.getElementById('liveToggleBtn');
+  if(btn)btn.textContent=liveIsActive()?'⏹ ライブ配信を停止':'📡 ライブ配信を開始';
+  var sel=document.getElementById('liveDisplayMode');
+  if(sel)sel.disabled=liveIsActive();
+}
+// QR 掲示（J2）: qrcode-generator を injof と同じ CDN+SRI 方式で遅延ロード。ロード失敗でも URL 掲示で運用できる（fail-soft）。
+function liveShowQr(slug){
+  var box=document.getElementById('liveQrBox');
+  var urlEl=document.getElementById('liveUrlText');
+  var qrEl=document.getElementById('liveQr');
+  var url=liveViewerUrl(slug);
+  if(urlEl)urlEl.textContent=url;
+  if(box)box.style.display='block';
+  if(!qrEl)return;
+  qrEl.innerHTML='';
+  function draw(){
+    try{
+      if(typeof window!=='undefined'&&typeof window.qrcode==='function'){
+        var qr=window.qrcode(0,'M');
+        qr.addData(url);
+        qr.make();
+        qrEl.innerHTML=qr.createSvgTag({cellSize:4,margin:4,scalable:true});
+        var svg=qrEl.querySelector?qrEl.querySelector('svg'):null;
+        if(svg&&svg.style){svg.style.width='220px';svg.style.height='220px';}
+        return true;
+      }
+    }catch(e){}
+    return false;
+  }
+  if(draw())return;
+  try{
+    var sc=document.createElement('script');
+    sc.src='https://cdn.jsdelivr.net/npm/qrcode-generator@1.5.0/qrcode.js';
+    sc.integrity='sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k';
+    sc.crossOrigin='anonymous';
+    sc.onload=function(){if(!draw())qrEl.textContent='（QRを生成できませんでした。上のURLを掲示してください）';};
+    sc.onerror=function(){qrEl.textContent='（QRを生成できませんでした。上のURLを掲示してください）';};
+    document.head.appendChild(sc);
+  }catch(e){qrEl.textContent='（QRを生成できませんでした。上のURLを掲示してください）';}
+}
+function liveHideQr(){
+  var box=document.getElementById('liveQrBox');
+  if(box)box.style.display='none';
+  var qrEl=document.getElementById('liveQr');
+  if(qrEl)qrEl.innerHTML='';
+  var urlEl=document.getElementById('liveUrlText');
+  if(urlEl)urlEl.textContent='';
+}
+// 配信開始（§4.3①）: 既存クラウド経路（loadCloudDeps→getSession）で authenticated client を作り start_live_session を呼ぶ。
+function liveStartBroadcastUI(setStatus){
+  setStatus=setStatus||function(){};
+  if(liveIsActive()){setStatus('すでに配信中です');return Promise.resolve({ok:false,step:'active'});}
+  var modeSel=document.getElementById('liveDisplayMode');
+  var mode=(modeSel&&modeSel.value==='full')?'full':'given+no';
+  // N1: インターネット公開＝影響が大きい操作なので明示 confirm（受入 #17 の告知運用も明示）。
+  var warn='参加者の番号・成績と表示名（'+(mode==='full'?'フルネーム':'姓＋番号のみ')+'）をインターネットに公開します。\n'
+    +'会場の掲示物（QR）に「氏名・成績をインターネット公開する」旨の告知を含めてください。\n'
+    +(mode==='full'?'フルネーム公開は、主催者が告知・同意の運用を決めている場合のみ使ってください。\n':'')
+    +'\nライブ配信を開始しますか？';
+  var okc=true;
+  try{okc=(typeof confirm==='function')?confirm(warn):true;}catch(e){okc=true;}
+  if(!okc){setStatus('配信を開始しませんでした');return Promise.resolve({ok:false,step:'cancelled'});}
+  setStatus('配信を開始しています…');
+  return loadCloudDeps().then(function(dep){
+    if(dep.offline){ setStatus('オフラインのため配信を開始できません（ネット接続後に再度お試しください・運営は続行できます）'); return {ok:false,step:'offline'}; }
+    if(!dep.cfg){ setStatus('クラウド設定がありません（配信は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
+    if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
+    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+    if(!client||!client.auth){ setStatus('クラウドに接続できませんでした'); return {ok:false,step:'client'}; }
+    return client.auth.getSession().then(function(r){
+      var session=r&&r.data&&r.data.session;
+      if(!session){ setStatus('クラウド管理ページ（app/）でログインしてから配信を開始してください'); return {ok:false,step:'auth'}; }
+      return client.rpc('start_live_session').then(function(rs){
+        if(rs&&rs.error){ setStatus('配信を開始できませんでした：'+((rs.error&&rs.error.message)||'不明')+'（運営は続行できます）'); return {ok:false,step:'rpc'}; }
+        var slug=(rs&&typeof rs.data==='string')?rs.data:'';
+        if(!slug){ setStatus('配信を開始できませんでした（公開コードを発行できません・運営は続行できます）'); return {ok:false,step:'slug'}; }
+        _liveClient=client;_liveSlug=slug;_liveDisplayMode=mode;
+        liveShowQr(slug);
+        liveUpdateBar('開始しました（初回データを送信中…）');
+        setStatus('配信を開始しました。QRを印刷して掲示してください（表示名：'+(mode==='full'?'フルネーム':'姓＋番号のみ')+'）');
+        livePublishNow(); // 初回スナップショットを即時送信（J4: 開いてすぐ出る）
+        return {ok:true,slug:slug};
+      });
+    });
+  }).catch(function(e){ setStatus('配信開始エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; });
+}
+// 配信停止（受入 #18）: stop_live_session で is_public=false（QR/URL 無効化）。大会終了チェックリストにも組込（runbook）。
+function liveStopBroadcastUI(setStatus){
+  setStatus=setStatus||function(){};
+  if(!liveIsActive()){setStatus('配信は開始されていません');return Promise.resolve({ok:false,step:'inactive'});}
+  var slug=_liveSlug,client=_liveClient;
+  setStatus('配信を停止しています…');
+  function clearLocal(){
+    _liveSlug='';_liveClient=null;_livePublishQueued=false;_livePublishing=false;
+    if(_livePublishTimer!=null){clearTimeout(_livePublishTimer);_livePublishTimer=null;}
+    liveHideQr();liveUpdateBar('');
+  }
+  return client.rpc('stop_live_session',{slug:slug}).then(function(rs){
+    clearLocal();
+    if(rs&&rs.error){ setStatus('⚠ 停止要求でエラーが発生しました：'+((rs.error&&rs.error.message)||'不明')+'。クラウド管理ページで配信が停止しているか確認してください'); return {ok:false,step:'rpc'}; }
+    setStatus('配信を停止しました（掲示したQR/URLは無効になりました）');
+    return {ok:true};
+  }).catch(function(e){
+    clearLocal();
+    setStatus('⚠ 停止処理でエラー：'+((e&&e.message)||e)+'。クラウド管理ページで配信が停止しているか確認してください');
+    return {ok:false,step:'exception'};
+  });
+}
+function liveToggleBroadcastUI(setStatus){
+  return liveIsActive()?liveStopBroadcastUI(setStatus):liveStartBroadcastUI(setStatus);
+}
+// publish 発火点の throttle（§5.1）: save()（確定状態）ごとに trailing debounce でまとめて送る。
+//   連打・編集中の中間状態を送らない（メッセージ数の抑制）。配信 OFF なら何もしない（完全不変）。
+function liveSchedulePublish(){
+  if(!liveIsActive())return;
+  if(_livePublishTimer!=null)clearTimeout(_livePublishTimer);
+  _livePublishTimer=setTimeout(function(){
+    _livePublishTimer=null;
+    livePublishNow();
+  },LIVE_PUBLISH_DEBOUNCE_MS);
+}
+function livePublishNow(){
+  if(!liveIsActive())return Promise.resolve(false);
+  if(_livePublishing){_livePublishQueued=true;return Promise.resolve(false);}
+  var snap=null;
+  try{snap=buildPublicLiveSnapshot(state,{display_mode:_liveDisplayMode});}
+  catch(eB){liveUpdateBar('⚠ 送信データを作成できませんでした（運営は続行できます）');return Promise.resolve(false);}
+  _livePublishing=true;
+  var client=_liveClient;
+  function afterPublish(okp){
+    _livePublishing=false;
+    liveUpdateBar(okp?('最終送信 '+sbFormatUpdateTime(new Date())+'（成功）')
+                     :'⚠ 送信に失敗しました（次の保存時に再送します・運営は続行できます）');
+    if(_livePublishQueued){_livePublishQueued=false;liveSchedulePublish();}
+    return okp;
+  }
+  return client.rpc('publish_live_snapshot',{slug:_liveSlug,payload:snap})
+    .then(function(rs){return afterPublish(!(rs&&rs.error));},function(){return afterPublish(false);});
+}
+
 // クラス表示名（state.classes[*].name 優先、なければ '<id>クラス'）。
 function sbClassDisplayName(cls){
   if(Array.isArray(state.classes)){
@@ -12754,12 +13239,12 @@ function sbClassDisplayName(cls){
 //   各ラウンド列は ○（勝ち）/×（負け）/－（未対局）と対戦相手番号（#NN）を表示する。
 //   Codex Should Fix 1: 現場要望「○×の星取表」に合わせ、負けは ● ではなく × で表示する。
 //   氏名・番号はすべて escapeHtml してから描画する（XSS 安全）。
-function buildScoreboardClassTableHtml(cls,sourceState){
+function buildScoreboardClassTableHtml(cls,sourceState,focusId){
   // SHOGI-TOUR-HISTORY-STEP1: 後方互換 optional 引数。sourceState 指定時のみ描画データ源を一時的に
   //   差し替える（withSourceState が global state を退避→finally で必ず復元）。引数なし呼び出し＝live
   //   経路の挙動は完全に従来どおり（本体不変＝#213 のふりがな ruby 表示もそのまま維持される）。
   if(sourceState!==undefined&&sourceState!==null&&sourceState!==state){
-    return withSourceState(sourceState,function(){return buildScoreboardClassTableHtml(cls);});
+    return withSourceState(sourceState,function(){return buildScoreboardClassTableHtml(cls,undefined,focusId);});
   }
   var players=(state.players&&state.players[cls])||[];
   if(players.length===0)return '';
@@ -12768,6 +13253,10 @@ function buildScoreboardClassTableHtml(cls,sourceState){
   var rounds=roundsForClass(cls)||0;
   var resultsArr=(state.results&&state.results[cls])||[];
   var done=rounds>0&&resultsArr.length>=rounds;
+  // SCOREBOARD-MY-VIEW-001 §5: optional focusId。undefined（未指定）なら出力は従来と完全一致
+  //   （GOLDEN 不変・sourceState と同じ後方互換）。指定時（null 含む）のみ行タップ属性を付け、
+  //   focusId 一致行に sb-row-me を付与する。
+  var tap=(focusId!==undefined);
   var html='<div class="sb-class">';
   html+='<div class="sb-class-h">'+escapeHtml(sbClassDisplayName(cls))+'　<span style="font-weight:400;color:#888;font-size:12px">'+(done?'最終結果':'途中経過')+'</span></div>';
   html+='<div class="sb-scroll"><table class="sb-table"><thead><tr>';
@@ -12776,7 +13265,9 @@ function buildScoreboardClassTableHtml(cls,sourceState){
   html+='<th>勝</th><th>負</th><th>B</th><th>C</th></tr></thead><tbody>';
   for(var i=0;i<finals.length;i++){
     var f=finals[i];var rank=ranks[i];
-    html+='<tr'+(rank===1?' class="sb-row-1"':'')+'>';
+    var trCls=(rank===1?'sb-row-1':'');
+    if(tap){trCls+=(trCls?' ':'')+'sb-row-tap';if(focusId&&f.p.id===focusId)trCls+=' sb-row-me';}
+    html+='<tr'+(trCls?' class="'+trCls+'"':'')+(tap?' data-sbpid="'+escapeHtml(f.p.id)+'" data-sbcls="'+escapeHtml(cls)+'"':'')+'>';
     html+='<td class="sb-col-rank">'+rank+'</td>';
     // FURIGANA-VIEW-002: 氏名にルビ（空 yomi は氏名のみ）。No.xx 補助表示は従来どおり維持。
     html+='<td class="sb-col-name">'+playerNameRubyHtml(getName(f.p.id,cls),yomiOf(f.p.id,cls))+'<span style="font-size:10px;color:#999;font-weight:400">　'+escapeHtml('No.'+entryNoOf(cls,f.p.id))+'</span></td>';
@@ -12803,14 +13294,184 @@ function buildScoreboardClassTableHtml(cls,sourceState){
     html+='</tr>';
   }
   html+='</tbody></table></div>';
-  html+='<div class="sb-legend">○=勝ち／×=負け／－=未対局　・　#NN=対戦相手の番号　・　勝・負=勝敗数　・　B=対戦相手の勝数合計／C=勝った相手の勝数合計（順位判定の主要指標）</div>';
+  html+='<div class="sb-legend">○=勝ち／×=負け／－=未対局　・　#NN=対戦相手の番号　・　勝・負=勝敗数　・　B=対戦相手の勝数合計／C=勝った相手の勝数合計（順位判定の主要指標）'+(tap?'　・　行タップ＝その対局者の個人ビュー':'')+'</div>';
   return html+'</div>';
+}
+
+// ============================================================
+// SCOREBOARD-MY-VIEW-001: 対局者を探す＋個人ビュー（read-only・memory-only）
+//   設計 = docs/specs/20260704_scoreboard_my_view_001_design.md（§3〜§5）。
+//   順位・勝敗・相手・卓番号はすべて既存派生関数（calcFinal / computeDisplayRanks /
+//   getName / yomiOf / entryNoOf / roundsForClass）を再利用し、ロジックを複製しない。
+//   state への書き込み・運営画面への導線は一切追加しない（read-only 不変）。
+// ============================================================
+
+// 現手合せ（state.pairings[cls]）から当該対局者の対局を探す（pure helper）。
+//   戻り値 {oppId, table}（卓番号 = index+1 の派生・非保存）または null。
+function sbFindCurrentMatch(cls,id){
+  var pa=(state.pairings&&state.pairings[cls])||[];
+  for(var i=0;i<pa.length;i++){
+    var m=pa[i];
+    if(!m)continue;
+    if(m.p1===id||m.p2===id)return {oppId:(m.p1===id?m.p2:m.p1),table:i+1};
+  }
+  return null;
+}
+
+// 確定 results を走査し、当該対局者の各回戦 {round, won, oppId} を返す（pure helper）。
+//   won: true=勝ち / false=負け / null=勝敗未確定。対局の無い回戦（待機等）は要素を出さない。
+function sbOpponentsByRound(cls,id){
+  var out=[];
+  var rs=(state.results&&state.results[cls])||[];
+  for(var r=0;r<rs.length;r++){
+    var round=Array.isArray(rs[r])?rs[r]:[];
+    for(var m=0;m<round.length;m++){
+      var mt=round[m];
+      if(!mt||(mt.p1!==id&&mt.p2!==id))continue;
+      out.push({round:r+1,won:(mt.winner==null)?null:(mt.winner===id),oppId:(mt.p1===id?mt.p2:mt.p1)});
+      break;
+    }
+  }
+  return out;
+}
+
+// 検索候補リスト HTML（build・pure）。番号=前方一致 / 氏名・よみ=部分一致。
+//   クラス絞り込みは既存 _sbClassFilter に従う。表示フィルタのみで state に書き込まない。
+//   氏名・番号・クラス名は escapeHtml 経由（XSS 安全）。
+function buildScoreboardFinderResultsHtml(activeClasses){
+  var q=String(_sbSearch||'').replace(/^\s+|\s+$/g,'');
+  if(!q)return '';
+  var lower=q.toLowerCase();
+  var LIMIT=20;
+  var hits=[];
+  var scan=(_sbClassFilter==='all')?activeClasses:[_sbClassFilter];
+  for(var c=0;c<scan.length&&hits.length<=LIMIT;c++){
+    var cls=scan[c];
+    var ps=(state.players&&state.players[cls])||[];
+    for(var i=0;i<ps.length&&hits.length<=LIMIT;i++){
+      var p=ps[i];
+      if(!p||!p.id)continue;
+      var no=String(entryNoOf(cls,p.id));
+      var noNum=String(parseInt(no,10));
+      var nm=String(p.name||'');
+      var ym=String(yomiOf(p.id,cls)||'');
+      if(no.indexOf(q)===0||(noNum!=='NaN'&&noNum.indexOf(q)===0)||nm.toLowerCase().indexOf(lower)!==-1||ym.toLowerCase().indexOf(lower)!==-1){
+        hits.push({cls:cls,id:p.id,name:nm,no:no});
+      }
+    }
+  }
+  var over=hits.length>LIMIT;
+  if(over)hits=hits.slice(0,LIMIT);
+  var html='';
+  if(hits.length===0){
+    html='<div class="sb-fres-none">見つかりませんでした。番号または名前（ふりがなも可）で入力してください。</div>';
+  }else{
+    for(var h=0;h<hits.length;h++){
+      html+='<button type="button" class="sb-fres-item" data-sbpick="'+escapeHtml(hits[h].id)+'" data-sbpickcls="'+escapeHtml(hits[h].cls)+'">'
+        +'<span>'+escapeHtml(hits[h].name)+'</span>'
+        +'<span class="sb-fres-no">'+escapeHtml('No.'+hits[h].no)+'</span>'
+        +'<span class="sb-fres-cls">'+escapeHtml(sbClassDisplayName(hits[h].cls))+'</span>'
+        +'</button>';
+    }
+    if(over)html+='<div class="sb-fres-none">候補が多すぎます。番号か名前をもう少し長く入力してください。</div>';
+  }
+  return html;
+}
+
+// 対局者を探す（検索フィールド＋候補リスト）HTML（build・pure）。
+//   クラス絞り込み UI は既存 .sb-tabs（_sbClassFilter）をそのまま使う（二重化しない）。
+function buildScoreboardFinderHtml(activeClasses){
+  return '<div class="sb-finder">'
+    +'<input type="search" class="sb-search" id="sb-search-input" placeholder="番号・名前で対局者を探す（行タップでも開けます）" value="'+escapeHtml(_sbSearch||'')+'" autocomplete="off">'
+    +'<div class="sb-fres" id="sb-fres">'+buildScoreboardFinderResultsHtml(activeClasses)+'</div>'
+    +'</div>';
+}
+
+// 個人ビュー HTML（build・pure・設計 §3.3/§3.4）。
+//   現在順位・勝敗・次の対戦（卓・相手名）・これまでの対戦（相手名で縦に）。
+//   対局者が見つからない場合は '' を返す（呼び出し側が一覧へ復帰＝受入 §6-8）。
+function buildScoreboardPlayerViewHtml(cls,focusId){
+  var players=(state.players&&state.players[cls])||[];
+  if(!players.length)return '';
+  var finals=calcFinal(cls);
+  var ranks=computeDisplayRanks(finals,cls);
+  var idx=-1;
+  for(var i=0;i<finals.length;i++){if(finals[i].p.id===focusId){idx=i;break;}}
+  if(idx===-1)return '';
+  var f=finals[idx];
+  var rounds=roundsForClass(cls)||0;
+  var resultsArr=(state.results&&state.results[cls])||[];
+  var done=rounds>0&&resultsArr.length>=rounds;
+  var cur=sbFindCurrentMatch(cls,focusId);
+  var html='<div class="sb-player">';
+  html+='<div class="sb-pv-head">'
+    +'<button type="button" class="sb-pv-back" data-sbback="1">← 星取表へ</button>'
+    +'<div><div class="sb-pv-name">'+playerNameRubyHtml(getName(focusId,cls),yomiOf(focusId,cls))+'</div>'
+    +'<div class="sb-pv-sub">'+escapeHtml(sbClassDisplayName(cls)+'・No.'+entryNoOf(cls,focusId))+'</div></div>'
+    +'</div>';
+  html+='<div class="sb-pv-stats"><span>順位 <b>'+ranks[idx]+'</b> 位／'+finals.length+'名</span>'
+    +'<span>現在の成績 <b>'+f.A+'</b> 勝 <b>'+(f.played-f.A)+'</b> 敗</span></div>';
+  if(done){
+    html+='<div class="sb-next"><div class="sb-next-b">全対局が終了しました（最終結果）</div></div>';
+  }else if(cur){
+    html+='<div class="sb-next"><div class="sb-next-h">次の対戦・'+(resultsArr.length+1)+'回戦</div>'
+      +'<div class="sb-next-b">♟ '+cur.table+'卓　'+playerNameRubyHtml(getName(cur.oppId,cls),yomiOf(cur.oppId,cls))
+      +'<span class="sb-fres-no">　'+escapeHtml('No.'+entryNoOf(cls,cur.oppId))+'</span></div></div>';
+  }else{
+    html+='<div class="sb-next"><div class="sb-next-h">次の対戦</div><div class="sb-next-none">まだ決まっていません</div></div>';
+  }
+  var hist=sbOpponentsByRound(cls,focusId);
+  html+='<div class="sb-history"><div class="sb-history-h">これまでの対戦</div>';
+  if(hist.length===0){
+    html+='<div class="sb-fres-none">まだ対局がありません。</div>';
+  }else{
+    for(var h=0;h<hist.length;h++){
+      var e=hist[h];
+      var mk=(e.won===null)?'<span class="sb-mark sb-mark-none">－</span>':(e.won?'<span class="sb-mark sb-mark-win">○</span>':'<span class="sb-mark sb-mark-lose">×</span>');
+      html+='<div class="sb-hrow"><span class="sb-hrow-r">'+e.round+'回戦</span>'+mk
+        +'<span>'+playerNameRubyHtml(getName(e.oppId,cls),yomiOf(e.oppId,cls))+'</span>'
+        +'<span class="sb-hrow-no">'+escapeHtml('No.'+entryNoOf(cls,e.oppId))+'</span></div>';
+    }
+  }
+  html+='</div></div>';
+  return html;
+}
+
+// 検索候補ボタンの束縛（bind）。候補差し替え時にも再束縛する。
+function sbBindFinderPicks(root){
+  if(!root||!root.querySelectorAll)return;
+  var els=root.querySelectorAll('[data-sbpick]');
+  for(var i=0;i<els.length;i++){
+    els[i].addEventListener('click',function(){
+      var pid=this.getAttribute('data-sbpick');
+      var pcls=this.getAttribute('data-sbpickcls');
+      if(!pid||!pcls)return;
+      _sbFocusId=pid;_sbFocusCls=pcls;
+      if(_sbClassFilter!=='all')_sbClassFilter=pcls;
+      renderScoreboard();
+    });
+  }
 }
 
 // 閲覧専用ビュー全体を再描画する。state を SoT として参照（DOM 直読みしない）。
 function renderScoreboard(){
   var view=document.getElementById('scoreboard-view');
   if(!view)return;
+  // LIVE-BROADCAST-001 Phase2 §5.2: live ルートは公開スナップショット（state 部分集合）をデータ源に
+  //   既存レンダラを駆動する（withSourceState・順位/星取ロジック非複製）。envelope 未受信なら案内のみ。
+  //   「最終更新」は envelope.updated_at（DB write 時刻・設計 P1-2）を正とする。
+  if(sbIsLiveRoute()&&state!==_sbLiveViewState){
+    if(!_sbLiveViewState){
+      // Phase3: 取得できない理由が分かる場合は補足を添える（textContent 相当＝escapeHtml 経由・fail-soft）。
+      view.innerHTML='<div class="sb-empty">ライブ配信のデータを待っています…<br>配信が始まると、ここに星取表が表示されます。'
+        +(_sbLiveNote?'<br><span style="font-size:12px;color:#b23030">'+escapeHtml(_sbLiveNote)+'</span>':'')
+        +'</div>';
+      return;
+    }
+    var lt=Date.parse(_sbLiveEnvelope&&_sbLiveEnvelope.updated_at);
+    if(!isNaN(lt))_sbLastUpdate=new Date(lt);
+    return withSourceState(_sbLiveViewState,renderScoreboard);
+  }
   var classList=(typeof getRegistrationClassList==='function')?getRegistrationClassList():(state.classes||[]);
   var activeClasses=[];
   for(var i=0;i<classList.length;i++){
@@ -12836,11 +13497,20 @@ function renderScoreboard(){
   var head='<div class="sb-head"><div>'
     +'<div class="sb-title">'+escapeHtml(title)+' 星取表</div>'
     +(metaParts.length?'<div class="sb-meta">'+escapeHtml(metaParts.join('　／　'))+'</div>':'')
-    +'<div class="sb-note">閲覧専用・自動更新（運営画面の保存に追従）</div>'
+    +'<div class="sb-note">'+(sbIsLiveRoute()?'閲覧専用・ライブ配信（自動更新）':'閲覧専用・自動更新（運営画面の保存に追従）')+'</div>'
     +(updLabel?'<div class="sb-updated">最終更新：'+escapeHtml(updLabel)+'</div>':'')
     +'</div></div>';
   // フィルタが現存クラスに無ければ all に戻す。
   if(_sbClassFilter!=='all'&&activeClasses.indexOf(_sbClassFilter)===-1)_sbClassFilter='all';
+  // SCOREBOARD-MY-VIEW-001: 選択中の対局者が現存しなければ一覧へ自動復帰（受入 §6-8・クラッシュさせない）。
+  if(_sbFocusId){
+    var fOk=false;
+    if(_sbFocusCls&&activeClasses.indexOf(_sbFocusCls)!==-1){
+      var fps=(state.players&&state.players[_sbFocusCls])||[];
+      for(var fi=0;fi<fps.length;fi++){if(fps[fi]&&fps[fi].id===_sbFocusId){fOk=true;break;}}
+    }
+    if(!fOk){_sbFocusId=null;_sbFocusCls=null;}
+  }
   var tabs='';
   if(activeClasses.length>1){
     tabs='<div class="sb-tabs"><button type="button" class="sb-tab'+(_sbClassFilter==='all'?' active':'')+'" data-sbcls="all">全クラス</button>';
@@ -12850,17 +13520,51 @@ function renderScoreboard(){
     tabs+='</div>';
   }
   var bodyHtml='';
+  var finder='';
   if(activeClasses.length===0){
     bodyHtml='<div class="sb-empty">まだ星取表に表示できる対局がありません。<br>運営画面で参加者を登録し、対局を開始すると表示されます。</div>';
   }else{
-    var shown=(_sbClassFilter==='all')?activeClasses:[_sbClassFilter];
-    for(var s=0;s<shown.length;s++)bodyHtml+=buildScoreboardClassTableHtml(shown[s]);
+    // SCOREBOARD-MY-VIEW-001 §5: 選択中は個人ビュー、未選択は星取表（行タップ可）＋対局者検索。
+    if(_sbFocusId){
+      bodyHtml=buildScoreboardPlayerViewHtml(_sbFocusCls,_sbFocusId);
+      if(!bodyHtml){_sbFocusId=null;_sbFocusCls=null;}
+    }
+    if(!bodyHtml){
+      finder=buildScoreboardFinderHtml(activeClasses);
+      var shown=(_sbClassFilter==='all')?activeClasses:[_sbClassFilter];
+      for(var s=0;s<shown.length;s++)bodyHtml+=buildScoreboardClassTableHtml(shown[s],undefined,null);
+    }
   }
-  view.innerHTML=head+tabs+'<div class="sb-body">'+bodyHtml+'</div>';
+  view.innerHTML=head+(_sbFocusId?'':tabs)+finder+'<div class="sb-body">'+bodyHtml+'</div>';
   var tabBtns=view.querySelectorAll('.sb-tab');
   for(var b=0;b<tabBtns.length;b++){
     tabBtns[b].addEventListener('click',function(){_sbClassFilter=this.getAttribute('data-sbcls')||'all';renderScoreboard();});
   }
+  // SCOREBOARD-MY-VIEW-001 bind: 検索入力は候補リストのみ差し替え（全再描画しない＝入力フォーカス維持）。
+  var sIn=view.querySelector?view.querySelector('#sb-search-input'):null;
+  if(sIn){
+    sIn.addEventListener('input',function(){
+      _sbSearch=this.value||'';
+      var box=view.querySelector('#sb-fres');
+      if(box){box.innerHTML=buildScoreboardFinderResultsHtml(activeClasses);sbBindFinderPicks(box);}
+    });
+  }
+  sbBindFinderPicks(view);
+  // 行タップ → 個人ビュー（クラス絞り込みは選択者のクラスへ追従）。
+  var rowEls=view.querySelectorAll('tr[data-sbpid]');
+  for(var rw=0;rw<rowEls.length;rw++){
+    rowEls[rw].addEventListener('click',function(){
+      var pid=this.getAttribute('data-sbpid');
+      var pcls=this.getAttribute('data-sbcls');
+      if(!pid||!pcls)return;
+      _sbFocusId=pid;_sbFocusCls=pcls;
+      if(_sbClassFilter!=='all')_sbClassFilter=pcls;
+      renderScoreboard();
+    });
+  }
+  // 個人ビューの「← 星取表へ」は一覧へ戻るのみ（運営画面への導線ではない＝read-only 不変）。
+  var backBtn=view.querySelector?view.querySelector('[data-sbback]'):null;
+  if(backBtn)backBtn.addEventListener('click',function(){_sbFocusId=null;_sbFocusCls=null;renderScoreboard();});
   // Codex Must Fix 1: 「運営画面へ」戻りボタンは廃止。閲覧ビューには運営画面への導線を束縛しない。
 }
 
@@ -12878,7 +13582,10 @@ function applyScoreboardRoute(){
     if(container)container.style.display='none';
     sbTouchUpdate();
     renderScoreboard();
+    // LIVE-BROADCAST-001 Phase3 §5.2: live ルート表示中のみ5秒ポーリング（追加経路・既定挙動不変）。
+    try{if(sbIsLiveRoute())sbLiveStartPolling();else sbLiveStopPolling();}catch(eP){}
   }else{
+    try{sbLiveStopPolling();}catch(eP2){}
     document.body.classList.remove('sb-active');
     view.style.display='none';
     view.setAttribute('aria-hidden','true');
@@ -12912,6 +13619,7 @@ function initScoreboard(){
   //   閲覧専用ビュー表示中のみ load()（運営タブの未保存編集を巻き戻さないため）。
   window.addEventListener('storage',function(e){
     if(!isScoreboardRoute())return;
+    if(sbIsLiveRoute())return; // LIVE-BROADCAST-001 Phase2: live ルートのデータ源は配信スナップショット（localStorage に追従しない）
     if(e&&e.key&&e.key!==STORAGE_KEY)return;
     try{load();}catch(err){}
     sbTouchUpdate();
@@ -12920,10 +13628,20 @@ function initScoreboard(){
   // タブ復帰時にも最新化（storage イベントを取りこぼした場合の保険）。
   window.addEventListener('focus',function(){
     if(!isScoreboardRoute())return;
+    if(sbIsLiveRoute()){try{sbLiveFetchOnce();}catch(eF){}return;} // LIVE-BROADCAST-001 Phase3: 画面復帰で最新スナップショットを再取得（§7②）
     try{load();}catch(err){}
     sbTouchUpdate();
     renderScoreboard();
   });
+  // LIVE-BROADCAST-001 Phase3 §7②: iOS バックグラウンドで timer が止まるため、可視化復帰でも再取得する。
+  document.addEventListener('visibilitychange',function(){
+    try{
+      if(document.hidden)return;
+      if(isScoreboardRoute()&&sbIsLiveRoute())sbLiveFetchOnce();
+    }catch(eV){}
+  });
+  // LIVE-BROADCAST-001 Phase3 §5.3: キオスク初期化（?kiosk=1 のときのみ・無操作リセット＋Wake Lock＋44px）。
+  try{sbKioskInit();}catch(eK){}
   applyScoreboardRoute();
 }
 
