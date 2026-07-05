@@ -2063,6 +2063,18 @@ else
 fi
 
 echo ""
+echo "【AUTH-ERROR-MSG-001 ログイン失敗エラー文言の改善（整形/429分岐/生エラー非表示/reject処理）】"
+if [ -f "$SCRIPT_DIR/test_auth_error_msg_001.js" ]; then
+  if node "$SCRIPT_DIR/test_auth_error_msg_001.js" "$TARGET" > /tmp/auth_error_msg_out.log 2>&1; then
+    ok "AUTH-ERROR-MSG-001 テスト 全PASS ($(tail -1 /tmp/auth_error_msg_out.log))"
+  else
+    ng "AUTH-ERROR-MSG-001 テスト 失敗"; cat /tmp/auth_error_msg_out.log
+  fi
+else
+  warn "test_auth_error_msg_001.js が見つからない"
+fi
+
+echo ""
 echo "【HARD-DELETE-ATOMIC-001 完全削除の原子化 RPC（実 PostgreSQL / psql 無ければ SKIP）】"
 if [ -f "$SCRIPT_DIR/hard_delete_atomic_pgtest.sh" ]; then
   if bash "$SCRIPT_DIR/hard_delete_atomic_pgtest.sh" > /tmp/harddel_pgtest_out.log 2>&1; then
