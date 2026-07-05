@@ -181,15 +181,31 @@ ok(rJ4&&rJ4.ok===true&&/^t_\d{4}_\d{2}_\d{2}$/.test(j4._getState().tournament_id
 
 console.log('=== L: Phase D 1台目側の合流案内表示（refreshOpsKeyDisplay 拡張）===');
 var l1=loadEnv();
-l1._setState({tournament_id:'t_2026_07_05',cloud_sent_tid:'t_2026_07_05',classes:[],players:{},results:{},report:{}});
+// P2-1 追補後は「当日の基本形」のみ案内対象＝テストは実行日から動的に組む（日付固定だと当日以外で FAIL する）
+var dL=new Date();var todayYmdL=dL.getFullYear()+'-'+('0'+(dL.getMonth()+1)).slice(-2)+'-'+('0'+dL.getDate()).slice(-2);
+var todayKeylessL=l1.opsKeylessTournamentId(todayYmdL);
+l1._setState({tournament_id:todayKeylessL,cloud_sent_tid:todayKeylessL,classes:[],players:{},results:{},report:{}});
 l1.refreshOpsKeyDisplay();
-ok(l1._doc.getElementById('opsKeyDisplay').innerHTML.indexOf('今日の大会に合流')>=0,'L1 キーなしID送信済み→合流案内を表示');
-l1._setState({tournament_id:'t_2026_07_05',classes:[],players:{},results:{},report:{}});
+ok(l1._doc.getElementById('opsKeyDisplay').innerHTML.indexOf('今日の大会に合流')>=0,'L1 当日キーなしID送信済み→合流案内を表示');
+l1._setState({tournament_id:todayKeylessL,classes:[],players:{},results:{},report:{}});
 l1.refreshOpsKeyDisplay();
 ok(l1._doc.getElementById('opsKeyDisplay').innerHTML==='','L2 キーなし・未送信は従来どおり表示なし（E2 と同じ既定）');
 l1._setState({tournament_id:'t_2026_07_05_4821',cloud_sent_tid:'t_2026_07_05',classes:[],players:{},results:{},report:{}});
 l1.refreshOpsKeyDisplay();
 ok(l1._doc.getElementById('opsKeyDisplay').innerHTML.indexOf('4821')>=0,'L3 キー付きIDは従来どおりキー表示（案内と排他）');
+// L3 P2-1 追補: suffix 付きキーなしID（衝突 _n）や別日のIDで送信済みでも合流案内を出さない（黙って別大会に割れる誤誘導の防止）
+l1._setState({tournament_id:'t_2026_07_05_2',cloud_sent_tid:'t_2026_07_05_2',classes:[],players:{},results:{},report:{}});
+l1.refreshOpsKeyDisplay();
+ok(l1._doc.getElementById('opsKeyDisplay').innerHTML==='','L4 suffix付きキーなしIDで送信済み→合流案内を出さない（P2-1）');
+var l2=loadEnv();
+var ymdL=new Date();var ymdStr=ymdL.getFullYear()+'-'+('0'+(ymdL.getMonth()+1)).slice(-2)+'-'+('0'+ymdL.getDate()).slice(-2);
+var todayTidL=l2.opsKeylessTournamentId(ymdStr);
+l2._setState({tournament_id:todayTidL,cloud_sent_tid:todayTidL,classes:[],players:{},results:{},report:{}});
+l2.refreshOpsKeyDisplay();
+ok(l2._doc.getElementById('opsKeyDisplay').innerHTML.indexOf('今日の大会に合流')>=0,'L5 当日基本形で送信済み→案内は引き続き表示（P2-1 追補後も L1 相当が成立）');
+l2._setState({tournament_id:'t_2020_01_01',cloud_sent_tid:'t_2020_01_01',classes:[],players:{},results:{},report:{}});
+l2.refreshOpsKeyDisplay();
+ok(l2._doc.getElementById('opsKeyDisplay').innerHTML==='','L6 別日のキーなしIDで送信済み→合流案内を出さない（P3-1 同時解消）');
 
 console.log('=== P: Phase D 静的 pin（ボタン・結線・ヘルプ）===');
 ok(RAW.indexOf('id="opsKeylessJoinBtn"')>=0,'P1 合流ボタンが存在');

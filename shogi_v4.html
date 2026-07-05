@@ -10223,7 +10223,9 @@ function refreshOpsKeyDisplay(){
   if(!key){
     // Phase D (#588): キーなしIDで送信済み（cloud_sent_tid が現IDと一致・末尾4桁なし）のときは合流案内を表示（設計 §8-2）。
     //   それ以外のキーなし（未送信・ID未確定）は従来どおり表示を消す。
-    var sentKeyless=(typeof state!=='undefined'&&state&&typeof state.cloud_sent_tid==='string'&&!!state.cloud_sent_tid&&state.cloud_sent_tid===tid);
+    //   L3 P2-1 追補: tid が「当日の基本形 t_YYYY_MM_DD」であることも要求。suffix 付き（衝突 _n）や別日のIDで
+    //   送信済みの端末に案内を出すと、2台目の合流（=当日基本形）と食い違い黙って別大会に割れるため表示しない。
+    var sentKeyless=(typeof state!=='undefined'&&state&&typeof state.cloud_sent_tid==='string'&&!!state.cloud_sent_tid&&state.cloud_sent_tid===tid&&tid===opsKeylessTournamentId(opsReportYmd()));
     if(sentKeyless){ disp.innerHTML='<span style="font-size:12px;color:#555">この端末はキーなしで送信済みです。２台目では「今日の大会に合流」を押すと同じ大会にまとまります</span>'; return; }
     disp.innerHTML=''; return;
   }
