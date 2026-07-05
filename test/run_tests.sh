@@ -2176,6 +2176,18 @@ else
   warn "test_ops_shared_key.js が見つからない"
 fi
 
+echo ""
+echo "【LIVE-BROADCAST-001 Phase2 / SCOREBOARD-MY-VIEW-001（live ルート・対局者検索・個人ビュー・GOLDEN）】"
+if [ -f "$SCRIPT_DIR/test_scoreboard_my_view_001.js" ]; then
+  if node "$SCRIPT_DIR/test_scoreboard_my_view_001.js" "$TARGET" > /tmp/scoreboard_my_view_out.log 2>&1; then
+    ok "MY-VIEW/LIVE-Phase2 テスト 全PASS ($(tail -1 /tmp/scoreboard_my_view_out.log))"
+  else
+    ng "MY-VIEW/LIVE-Phase2 テスト 失敗"; cat /tmp/scoreboard_my_view_out.log
+  fi
+else
+  warn "test_scoreboard_my_view_001.js が見つからない"
+fi
+
 
 # ============================================
 # 最終結果
