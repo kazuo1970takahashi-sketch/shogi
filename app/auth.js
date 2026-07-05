@@ -316,6 +316,10 @@
     if (target && (status === 'suspended' || status === 'retired') && isLastActiveAdmin(organizers, target)) {
       return Promise.resolve({ ok: false, message: '最後のオーナー/管理者は停止・退任できません。先に別の管理者を有効化してください。' });
     }
+    // APP-POLISH-P3-002（#525 監査 P3-4・註記）: 下の update は .eq('id', id) のみで club スコープを
+    // 省略しているが、サーバ側 RLS（app_is_admin が行の club_id 基準で強制）＋ id は自 club の
+    // 描画リスト由来のため越権は成立しない。.eq('club_id', ...) の追加は clubId の受け渡し変更を
+    // 要するため見送り（#525 監査自身の評価=価値低）。
     return client.from('organizers').update({ status: status }).eq('id', id).then(function (res) {
       if (res && res.error) return { ok: false, message: '変更できませんでした: ' + res.error.message };
       return { ok: true, message: '更新しました。' };
@@ -1599,6 +1603,10 @@
         msShowDelBtn.addEventListener('click', function () { msShowDeleted = !msShowDeleted; renderMemberEditor(); });
       }
     }
+    // APP-POLISH-P3-002（#525 監査 P3-3・註記）: bindMemberEditor は export も呼出も無い
+    // 真の未到達（renderMemberEditor は bindMemberSheet を使用）。export 済みの旧行編集系
+    // （updateMember / buildMemberEditRowHtml 等＝回帰資産として意図的温存）とは異なり、
+    // 将来旧資産を整理する際に安全に削除できる唯一の候補。本スライスでは削除しない。
     function bindMemberEditor() {
       var addForm = byId('memberAddForm');
       if (addForm) addForm.addEventListener('submit', function (e) {
@@ -1839,7 +1847,14 @@
     var doc = global.document;
     function fail(msg) { var el = doc && doc.getElementById('app-root'); if (el) el.innerHTML = '<section class="card"><h1>設定エラー</h1><p>' + esc(msg) + '</p></section>'; }
     if (!cfg || !cfg.url || !cfg.publishableKey || /REPLACE_ME|YOUR_PROJECT_REF/.test(cfg.url + cfg.publishableKey)) {
-      fail('app/config.js が未設定です。app/config.example.js を複製して URL と publishable key を設定してください。'); return;
+      // APP-POLISH-P3-002（#525 監査 P3-2）: index.html の config.js onerror が立てる
+      // __SHOGI_CONFIG_MISSING を読み、「未配置」と「配置済みだが未記入」を文言で区別する。
+      if (global.__SHOGI_CONFIG_MISSING) {
+        fail('app/config.js が配置されていません。app/config.example.js を複製して app/config.js を作成し、URL と publishable key を設定してください。');
+      } else {
+        fail('app/config.js は配置されていますが設定値が未記入です。URL と publishable key を実際の値に書き換えてください。');
+      }
+      return;
     }
     if (!global.supabase || !global.supabase.createClient) { fail('supabase-js を読み込めませんでした。'); return; }
     // ADMIN-ENTRY-REDIRECT: createClient 前に判定（hash 消去前に捕捉）。ログイン確立後にポータルへ転送する。
