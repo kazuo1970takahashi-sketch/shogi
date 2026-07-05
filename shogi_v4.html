@@ -537,7 +537,7 @@ body.sb-active{overflow:hidden}
     </div>
   </div>
   <div id="pane-master" style="display:none"></div>
-  <div id="pane-result" style="display:none">
+  <div id="pane-result" style="display:none;padding-bottom:calc(150px + env(safe-area-inset-bottom))">
     <!-- HELP-UX-004 (#341): 順位タブの迷子防止ヘルプ。#309/#323 のモーダル三層を流用し topic 追加のみ。
          順位表は per-class 動的描画（buildResultsClassHtml=golden 対象）のため、静的アンカーをここに置き
          click は bindReportEvents 側で openHelpModal('standings') へ結線する（report help と同経路・golden 非接触）。 -->
@@ -643,7 +643,7 @@ body.sb-active{overflow:hidden}
          position:sticky + bottom:0 で最終結果タブのスクロール中も主要操作を常時可視（ui-result-visibility 操作版）。
          バー内の並びは既存テストの近接・順序判定（送信ステータス→送信対象級、ヘルプ→送信、印刷→送信）を
          満たすよう配置。作者確認済み（クラスタごと集約・2026-07-06）。 -->
-    <div class="no-print" id="resultActionBar" style="position:sticky;bottom:0;background:#fff;border-top:1px solid #d7d7d7;box-shadow:0 -2px 6px rgba(0,0,0,0.08);padding:8px;margin:16px -8px 0;z-index:20">
+    <div class="no-print" id="resultActionBar" style="position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #d7d7d7;box-shadow:0 -2px 6px rgba(0,0,0,0.08);padding:8px 12px calc(8px + env(safe-area-inset-bottom)) 12px;z-index:50">
       <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-bottom:4px;min-height:1.2em;text-align:center"></div>
       <div id="sendTargetLine" class="no-print" style="font-size:12px;margin-bottom:6px;color:#555;min-height:1.1em;text-align:center"></div>
       <div style="display:flex;gap:6px;align-items:stretch">
