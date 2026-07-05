@@ -4,6 +4,8 @@
 #   設計 §4.1〜§4.3 / 受入 §8-6（列挙不可）§8-11（RPC 実装ガード）§8-12（version 単調性）
 #   §8-15（publish は update-only・club_id を publish 時に発明しない）#18（停止後は取得不可・ローテーション）。
 #   stagea_schema + 本 migration を使い捨て DB に適用して deny/allow を実証する。
+#   P2-1 (#612): 追補 migration（停止/ローテーション時の payload null 化）も適用し、
+#   停止後・ローテーション後に payload が残留しないことを実証する。
 #   前提: ローカル PostgreSQL（psql）。無ければ exit 0 で SKIP。実データ不使用（架空 fixture のみ）。
 # =============================================================================
 set -u
@@ -12,6 +14,7 @@ MIG_DIR="$SCRIPT_DIR/../supabase/migrations"
 DB="shogi_live_p3_test"
 SCHEMA_MIG="$MIG_DIR/20260620130000_stagea_schema.sql"
 LIVE_MIG="$MIG_DIR/20260705120000_live_broadcast_phase3_public_snapshots.sql"
+P2_MIG="$MIG_DIR/20260705153000_live_broadcast_p2_stop_payload_null.sql"
 PSQL_BASE=(psql -X -v ON_ERROR_STOP=1 -q)
 pass=0; fail=0
 ok(){ pass=$((pass+1)); [ -n "${VERBOSE:-}" ] && echo "  ✓ $1"; return 0; }
@@ -22,6 +25,7 @@ if ! command -v psql >/dev/null 2>&1; then echo "  ⚠ psql 不在のため LIVE
 if ! psql -X -d postgres -c 'select 1' >/dev/null 2>&1; then
   echo "  ⚠ PostgreSQL サーバへ接続できないため LIVE Phase3 pgtest を SKIP"; exit 0; fi
 if [ ! -f "$LIVE_MIG" ]; then echo "  ✗ LIVE Phase3 migration が見つからない: $LIVE_MIG"; echo "  LIVE Phase3 pgtest: PASS=0 FAIL=1"; exit 1; fi
+if [ ! -f "$P2_MIG" ]; then echo "  ✗ P2-1 migration が見つからない: $P2_MIG"; echo "  LIVE Phase3 pgtest: PASS=0 FAIL=1"; exit 1; fi
 
 psql -X -d postgres -c "drop database if exists $DB" >/dev/null 2>&1
 psql -X -d postgres -c "create database $DB" >/dev/null 2>&1 || { echo "  ⚠ test DB を作成できないため SKIP"; exit 0; }
@@ -47,6 +51,8 @@ SQL
 if "${PSQL_BASE[@]}" -d "$DB" -f "$SCHEMA_MIG" >/dev/null 2>&1; then ok "stagea schema 適用"; else ng "stagea schema 適用に失敗"; fi
 if "${PSQL_BASE[@]}" -d "$DB" -f "$LIVE_MIG" >/dev/null 2>&1; then ok "LIVE Phase3 migration 適用"; else ng "LIVE Phase3 migration 適用に失敗"; fi
 if "${PSQL_BASE[@]}" -d "$DB" -f "$LIVE_MIG" >/dev/null 2>&1; then ok "LIVE Phase3 migration 再適用（冪等）"; else ng "LIVE Phase3 migration 再適用に失敗（冪等でない）"; fi
+if "${PSQL_BASE[@]}" -d "$DB" -f "$P2_MIG" >/dev/null 2>&1; then ok "P2-1 migration（payload null 化）適用"; else ng "P2-1 migration 適用に失敗"; fi
+if "${PSQL_BASE[@]}" -d "$DB" -f "$P2_MIG" >/dev/null 2>&1; then ok "P2-1 migration 再適用（冪等）"; else ng "P2-1 migration 再適用に失敗（冪等でない）"; fi
 
 # --- 架空 fixture（実データ不使用）: 2クラブ・u1=club1 organizer / u2=club2 owner / u3=club1 viewer ---
 U1='11111111-1111-1111-1111-111111111111'
@@ -117,14 +123,20 @@ STOPPED=$(as_user "$U1" "select public.stop_live_session('$SLUG')")
 assert_eq "$STOPPED" "t" "stop_live_session が成功"
 GONE=$(as_anon "select coalesce((public.get_live_snapshot('$SLUG'))::text,'null')")
 assert_eq "$GONE" "null" "停止後は旧 slug で取得不可（受入 #18）"
+STOPPAY=$(psql -X -qtA -d "$DB" -c "select payload is null from public.public_live_snapshots where slug='$SLUG'")
+assert_eq "$STOPPAY" "t" "停止後は payload が null（P2-1 #612・データ最小化）"
 as_user_fails "$U1" "select public.publish_live_snapshot('$SLUG','{}'::jsonb)" && ok "停止済み slug への publish は error" || ng "停止済み slug へ publish できてしまう"
 
 # --- ローテーション: 再発行で旧 slug 失効（§4.2） ---
 SLUG2=$(as_user "$U1" "select public.start_live_session()")
+VR=$(as_user "$U1" "select public.publish_live_snapshot('$SLUG2','{\"schema_version\":1,\"state\":{\"rounds\":1}}'::jsonb)")
+assert_eq "$VR" "1" "ローテーション前の publish（旧 slug に payload を積む・P2-1 前提）"
 SLUG3=$(as_user "$U1" "select public.start_live_session()")
 [ -n "$SLUG2" ] && [ -n "$SLUG3" ] && [ "$SLUG2" != "$SLUG3" ] && ok "再発行で新 slug（$SLUG3）" || ng "再発行の slug が不正"
 OLD2=$(as_anon "select coalesce((public.get_live_snapshot('$SLUG2'))::text,'null')")
 assert_eq "$OLD2" "null" "再発行で旧 slug は失効（ローテーション）"
+ROTPAY=$(psql -X -qtA -d "$DB" -c "select payload is null from public.public_live_snapshots where slug='$SLUG2'")
+assert_eq "$ROTPAY" "t" "ローテーション後は旧行の payload が null（P2-1 #612）"
 NEW3=$(as_anon "select (public.get_live_snapshot('$SLUG3'))->>'version'")
 assert_eq "$NEW3" "0" "新 slug は version=0 で取得できる"
 
