@@ -16,7 +16,7 @@ function makeContext(){
 function loadEnv(confirmImpl){
   const ctx=makeContext();const js=extractScripts(RAW);const cryptoMock={randomUUID(){return '00000000-0000-0000-0000-000000000000';}};
   const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout','navigator',
-    `${js};return { issueOpsSharedKey:issueOpsSharedKey, applyOpsSharedKey:applyOpsSharedKey, opsKeyToTournamentId:opsKeyToTournamentId, tournamentIdToOpsKey:tournamentIdToOpsKey, opsRekeyNeedsConfirm:opsRekeyNeedsConfirm, opsKeyDateNote:opsKeyDateNote, refreshOpsKeyDisplay:refreshOpsKeyDisplay, normalizeState:normalizeState, _setState:function(s){ state=s; }, _getState:function(){ return state; } };`);
+    `${js};return { issueOpsSharedKey:issueOpsSharedKey, applyOpsSharedKey:applyOpsSharedKey, opsKeyToTournamentId:opsKeyToTournamentId, tournamentIdToOpsKey:tournamentIdToOpsKey, opsRekeyNeedsConfirm:opsRekeyNeedsConfirm, opsKeyDateNote:opsKeyDateNote, opsKeylessTournamentId:opsKeylessTournamentId, joinOpsKeylessTournament:joinOpsKeylessTournament, refreshOpsKeyDisplay:refreshOpsKeyDisplay, normalizeState:normalizeState, _setState:function(s){ state=s; }, _getState:function(){ return state; } };`);
   const api=fn(ctx.document,ctx.window,ctx.localStorage,cryptoMock,function(){},confirmImpl||function(){return true;},function(){return '';},function(){},function(){},{createObjectURL:function(){return 'blob:mock';},revokeObjectURL:function(){}},{log:function(){},warn:function(){},error:function(){}},Promise,function(cb){return 0;},{});
   api._doc=ctx.document;
   return api;
@@ -142,6 +142,61 @@ ok(nS.cloud_sent_tid==='t_2026_07_05_4821','N1 normalizeState が cloud_sent_tid
 ok(!('cloud_sent_tid' in envN.normalizeState({tournament_id:'t_2026_07_05'})),'N2 無ければ補完しない（default 補完パターン）');
 ok(!('cloud_sent_tid' in envN.normalizeState({cloud_sent_tid:''})),'N3 空文字は引き継がない');
 ok(!('cloud_sent_tid' in envN.normalizeState({cloud_sent_tid:1234})),'N4 文字列以外は引き継がない');
+
+// ===== OPS-SHARED-KEY-REDESIGN-001 Phase D (#588): キーなし合流（設計 §8-2） =====
+console.log('=== K: Phase D 純関数 opsKeylessTournamentId ===');
+var k0=loadEnv();
+ok(k0.opsKeylessTournamentId('2026-07-05')==='t_2026_07_05','K1 YYYY-MM-DD→t_YYYY_MM_DD（キーなし・ensureTournamentId 基本形と同形）');
+ok(k0.opsKeylessTournamentId('2026-02-31')===''&&k0.opsKeylessTournamentId('2026-13-01')==='','K2 暦上実在しない日付→空');
+ok(k0.opsKeylessTournamentId('')===''&&k0.opsKeylessTournamentId(null)===''&&k0.opsKeylessTournamentId('20260705')==='','K3 形式不正/空→空');
+
+console.log('=== J: Phase D joinOpsKeylessTournament（合流オーケストレーション）===');
+var j1=loadEnv();
+j1._setState({tournament_id:'',classes:[],players:{},results:{},report:{}});
+var rJ1=j1.joinOpsKeylessTournament(function(){});
+ok(rJ1&&rJ1.ok===true&&/^t_\d{4}_\d{2}_\d{2}$/.test(j1._getState().tournament_id),'J1 未確定端末の合流→t_<当日>（キーなし）をセット');
+ok(j1.tournamentIdToOpsKey(j1._getState().tournament_id)==='','J2 合流IDは運営共通キーを持たない（末尾4桁なし）');
+var rJ1b=j1.joinOpsKeylessTournament(function(){});
+ok(rJ1b&&rJ1b.ok===true&&rJ1b.tournament_id===j1._getState().tournament_id,'J3 再押下は同一ID維持（冪等）');
+// 発行済み（未送信）端末の合流は confirm 無しで張り替え（ガード非発火）
+var j2=loadEnv(function(){return false;});
+j2._setState({tournament_id:'',classes:[],players:{},results:{},report:{}});
+j2.issueOpsSharedKey(function(){});
+var rJ2=j2.joinOpsKeylessTournament(function(){});
+ok(rJ2&&rJ2.ok===true&&/^t_\d{4}_\d{2}_\d{2}$/.test(j2._getState().tournament_id),'J4 発行済み・未送信端末は confirm 無しでキーなしIDへ');
+// キー付きIDで送信済み端末の合流→confirm キャンセルで中止・ID維持
+var j3=loadEnv(function(){return false;});
+j3._setState({tournament_id:'',classes:[],players:{},results:{},report:{}});
+j3.issueOpsSharedKey(function(){});
+var tidJ3=j3._getState().tournament_id; j3._getState().cloud_sent_tid=tidJ3;
+var rJ3=j3.joinOpsKeylessTournament(function(){});
+ok(rJ3&&rJ3.ok===false&&rJ3.step==='cancelled'&&j3._getState().tournament_id===tidJ3,'J5 送信済み端末の合流 confirmキャンセル→中止・ID維持');
+// confirm OK→合流実行
+var j4=loadEnv(function(){return true;});
+j4._setState({tournament_id:'',classes:[],players:{},results:{},report:{}});
+j4.issueOpsSharedKey(function(){});
+j4._getState().cloud_sent_tid=j4._getState().tournament_id;
+var rJ4=j4.joinOpsKeylessTournament(function(){});
+ok(rJ4&&rJ4.ok===true&&/^t_\d{4}_\d{2}_\d{2}$/.test(j4._getState().tournament_id),'J6 送信済み端末の合流 confirm OK→キーなしIDへ張り替え');
+
+console.log('=== L: Phase D 1台目側の合流案内表示（refreshOpsKeyDisplay 拡張）===');
+var l1=loadEnv();
+l1._setState({tournament_id:'t_2026_07_05',cloud_sent_tid:'t_2026_07_05',classes:[],players:{},results:{},report:{}});
+l1.refreshOpsKeyDisplay();
+ok(l1._doc.getElementById('opsKeyDisplay').innerHTML.indexOf('今日の大会に合流')>=0,'L1 キーなしID送信済み→合流案内を表示');
+l1._setState({tournament_id:'t_2026_07_05',classes:[],players:{},results:{},report:{}});
+l1.refreshOpsKeyDisplay();
+ok(l1._doc.getElementById('opsKeyDisplay').innerHTML==='','L2 キーなし・未送信は従来どおり表示なし（E2 と同じ既定）');
+l1._setState({tournament_id:'t_2026_07_05_4821',cloud_sent_tid:'t_2026_07_05',classes:[],players:{},results:{},report:{}});
+l1.refreshOpsKeyDisplay();
+ok(l1._doc.getElementById('opsKeyDisplay').innerHTML.indexOf('4821')>=0,'L3 キー付きIDは従来どおりキー表示（案内と排他）');
+
+console.log('=== P: Phase D 静的 pin（ボタン・結線・ヘルプ）===');
+ok(RAW.indexOf('id="opsKeylessJoinBtn"')>=0,'P1 合流ボタンが存在');
+ok(RAW.indexOf('今日の大会に合流')>=0,'P2 ボタンラベル');
+ok(RAW.indexOf("getElementById('opsKeylessJoinBtn')")>=0&&RAW.indexOf('joinOpsKeylessTournament(')>=0,'P3 結線');
+ok(RAW.indexOf('function opsKeylessTournamentId(')>=0&&RAW.indexOf('function joinOpsKeylessTournament(')>=0,'P4 Phase D 関数が存在');
+ok(RAW.indexOf('【あとから2台目を足すとき】')>=0,'P5 ヘルプにキーなし合流手順');
 
 console.log('\nPASS='+pass+' FAIL='+fail);
 process.exit(fail>0?1:0);
