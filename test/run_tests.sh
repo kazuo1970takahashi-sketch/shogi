@@ -2089,6 +2089,18 @@ else
   warn "test_class_split_send_guard.js が見つからない"
 fi
 
+echo ""
+echo "【CLASS-SPLIT-CLOUD-MERGE-001 Phase3 成績発表の統合レポート（級別結合・閲覧専用/resolve/純レンダラ/静的HTML/結線/read-only）】"
+if [ -f "$SCRIPT_DIR/test_class_split_merged_report.js" ]; then
+  if node "$SCRIPT_DIR/test_class_split_merged_report.js" "$TARGET" > /tmp/class_split_merged_report_out.log 2>&1; then
+    ok "CLASS-SPLIT 統合レポート テスト 全PASS ($(tail -1 /tmp/class_split_merged_report_out.log))"
+  else
+    ng "CLASS-SPLIT 統合レポート テスト 失敗"; cat /tmp/class_split_merged_report_out.log
+  fi
+else
+  warn "test_class_split_merged_report.js が見つからない"
+fi
+
 
 
 echo ""
