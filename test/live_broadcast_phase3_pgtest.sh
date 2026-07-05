@@ -82,8 +82,10 @@ as_anon_fails(){ # $1=sql → 失敗すれば 0
 # --- §4.3① 発行: u1 が start_live_session → slug 発行・version=0・is_public=true・club1 ---
 SLUG=$(as_user "$U1" "select public.start_live_session()")
 case "$SLUG" in live-*) ok "start_live_session が slug を発行 ($SLUG)";; *) ng "start_live_session が slug を返さない (got '$SLUG')";; esac
-ROW=$(psql -X -qtA -d "$DB" -c "select version||'|'||is_public||'|'||club_id from public.public_live_snapshots where slug='$SLUG'")
-assert_eq "$ROW" "0|t|aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" "発行行は version=0・is_public=t・club_id=発行者の club（§8-15）"
+# 注: SQL の || 連結は boolean→text キャスト（'true'/'false'）を通る。psql の列表示（t/f）とは別物なので
+#     ::text を明示し 'true' を期待する（PostgreSQL 全対応版で決定的）。
+ROW=$(psql -X -qtA -d "$DB" -c "select version::text||'|'||is_public::text||'|'||club_id::text from public.public_live_snapshots where slug='$SLUG'")
+assert_eq "$ROW" "0|true|aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" "発行行は version=0・is_public=true・club_id=発行者の club（§8-15）"
 
 # --- viewer(rank0)・anon は発行不可 ---
 as_user_fails "$U3" "select public.start_live_session()" && ok "viewer は start_live_session 不可" || ng "viewer が start_live_session できてしまう"
@@ -128,9 +130,9 @@ assert_eq "$NEW3" "0" "新 slug は version=0 で取得できる"
 
 # --- §8-11 RPC 実装ガード: SECURITY DEFINER + search_path 固定を pg_proc で確認 ---
 for FN in get_live_snapshot start_live_session publish_live_snapshot stop_live_session; do
-  PROPS=$(psql -X -qtA -d "$DB" -c "select prosecdef||'|'||coalesce(array_to_string(proconfig,','),'') from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='$FN' limit 1")
+  PROPS=$(psql -X -qtA -d "$DB" -c "select prosecdef::text||'|'||coalesce(array_to_string(proconfig,','),'') from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='$FN' limit 1")
   case "$PROPS" in
-    t\|*search_path=*) ok "$FN は SECURITY DEFINER + search_path 固定（§8-11）";;
+    true\|*search_path=*) ok "$FN は SECURITY DEFINER + search_path 固定（§8-11）";;
     *) ng "$FN の DEFINER/search_path が不正 (got '$PROPS')";;
   esac
 done
