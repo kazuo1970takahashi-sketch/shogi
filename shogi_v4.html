@@ -508,6 +508,16 @@ body.sb-active{overflow:hidden}
       </span>
       <div id="tidShareStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
     </div>
+    <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 3 (#572): 成績発表の統合レポート（級別結合・閲覧専用）。
+         現在の大会ID（state.tournament_id＝app_tournament_id）でクラウドから両級 entries を取得し、既存
+         buildCloudResultBlocksHtml で級ごとに成績表を並べて #cloudMergedReport に読取専用描画する。追加のみ・
+         当日運営 state は無改変（読むだけ）。順位ロジックの新規追加なし（各級確定済み final_rank 流用）。
+         click は bindReportEvents で loadCloudMergedReportUI に結線。 -->
+    <div style="margin-top:8px;text-align:right" class="no-print">
+      <button type="button" id="cloudMergedReportBtn" class="btn-sm" title="現在の大会IDでクラウドから両級（全クラス）の結果をまとめて表示します（閲覧専用）" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ 両級まとめて表示（統合レポート）</button>
+      <div id="cloudMergedReportStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
+      <div id="cloudMergedReport" style="margin-top:8px;text-align:left"></div>
+    </div>
     <div class="section no-print rep-form" style="margin-top:16px">
       <!-- HELP-UX-002 (#322): 見出し脇「？ ヘルプ」。click は bindReportEvents で openHelpModal('report') に結線。 -->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
@@ -12326,6 +12336,13 @@ function bindReportEvents(){
     var inp=document.getElementById('tidInput');
     applySpecifiedTournamentId(inp?inp.value:'',function(msg){ applyCloudStatus(st,msg); });
   });
+  // CLASS-SPLIT-CLOUD-MERGE-001 Phase 3 (#572): 「☁ 両級まとめて表示（統合レポート）」（静的・id=cloudMergedReportBtn）
+  //   → loadCloudMergedReportUI（現在の大会IDで両級 entries を取得し #cloudMergedReport へ読取専用描画・fail-soft）。
+  var cloudMergedReportBtn=document.getElementById('cloudMergedReportBtn');
+  if(cloudMergedReportBtn)cloudMergedReportBtn.addEventListener('click',function(){
+    var st=document.getElementById('cloudMergedReportStatus');
+    loadCloudMergedReportUI(function(msg){ applyCloudStatus(st,msg); });
+  });
   // CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 初期表示時に送信対象級を反映（以後は showTab('result') で更新）。
   if(typeof refreshSendTargetClasses==='function')refreshSendTargetClasses();
 }
@@ -13153,6 +13170,23 @@ function buildCloudResultBlocksHtml(entries, isSP){
   }
   return html;
 }
+// CLASS-SPLIT-CLOUD-MERGE-001 Phase 3 (#572): 成績発表の統合レポート（級別結合・閲覧専用）。
+//   現在の大会ID（state.tournament_id＝app_tournament_id）でクラウドから両級 entries を取得し、既存
+//   buildCloudResultBlocksHtml を流用して級ごとに成績表を並べる。順位は各級で確定済みの final_rank を
+//   そのまま使う（設計 §3.5）＝順位ロジックの新規追加なし。級横断の総合順位は出さない（スコープ外）。
+// 現在の大会IDを報告用に解決する純関数。既存 normalizeTournamentIdInput で state.tournament_id を検証・
+//   正規化して返す（未設定/不正は ''）。ここで新規生成はしない（生成は送信/コピー導線 ensureTournamentId の責務）。
+function resolveReportTournamentId(state){
+  return normalizeTournamentIdInput(state&&state.tournament_id);
+}
+// 取得済み entries（1大会・全 class）を「成績発表・統合レポート」の見た目に組み立てる純関数。
+//   ☁ 閲覧専用バナー＋既存 buildCloudResultBlocksHtml（class 別セクション）。空/未設定の扱いは
+//   buildCloudResultBlocksHtml に委譲（この大会の結果がありません、を出す）。isSP も委譲（省略時は window 幅）。
+function buildCloudMergedReportHtml(entries, isSP){
+  var html='<div style="background:#e8f0f8;border:1px solid #9DB7D5;color:#1F3864;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">☁ 成績発表・統合レポート（両級まとめ・閲覧専用・みんなで共有）</div>';
+  html+=buildCloudResultBlocksHtml(entries, isSP);
+  return html;
+}
 // タップした大会の結果を「履歴一覧を差し替えて先頭に大きく表示」する（renderHistoryDetail と同じ全画面パターン）。
 function renderCloudTournamentDetail(client,clubId,tid,label,date){
   var host=document.getElementById('history-content'); if(!host)return;
@@ -13209,6 +13243,39 @@ function loadCloudPastTournamentsUI(setStatus){
       });
     });
   }).catch(function(e){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 取得例外:',(e&&e.message)||e); setStatus('クラウドの取得に失敗しました。通信状態を確認して、もう一度お試しください（ログインが必要な場合があります）。'); return {ok:false,step:'exception'}; });
+}
+
+// CLASS-SPLIT-CLOUD-MERGE-001 Phase 3 (#572): 現在の大会IDでクラウドから両級 entries を取得し、
+//   #cloudMergedReport に読取専用で統合レポートを描画するオーケストレーション（loadCloudPastTournamentsUI と
+//   対称・fail-soft）。当日運営 state は書き換えない（読むだけ・安全側）。会場ネット断でも従来のファイル手渡し
+//   統合が予備経路（設計 §4）。大会IDが未設定なら送信/指定開始へ誘導して終了（クラウドに何も無い＝誤解防止）。
+function loadCloudMergedReportUI(setStatus){
+  setStatus=setStatus||function(){};
+  var tid=resolveReportTournamentId((typeof state!=='undefined')?state:null);
+  if(!tid){ setStatus('大会IDが未設定です。先に「☁ クラウドへ送信」または「大会IDを指定して開始」で大会IDを揃えてください（運営は続行できます）'); return Promise.resolve({ok:false,step:'no-tid'}); }
+  setStatus('クラウドから両級の結果を取得中…（大会ID '+tid+'）');
+  return loadCloudDeps().then(function(dep){
+    if(dep&&dep.offline){ setStatus('オフラインのため取得できません（ネット接続後に再度お試しください・運営は続行できます）'); return {ok:false,step:'offline'}; }
+    if(!dep.cfg){ setStatus('クラウド設定がありません（取得は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
+    if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
+    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+    if(!client||!client.auth){ setStatus('クラウドに接続できませんでした'); return {ok:false,step:'client'}; }
+    return client.auth.getSession().then(function(r){
+      var session=r&&r.data&&r.data.session;
+      if(!session){ setStatus('クラウド管理ページ（app/）でログインすると統合レポートを表示できます'); return {ok:false,step:'auth'}; }
+      return client.rpc('claim_organizer_seat').then(function(rc){
+        var clubId=pickActiveClubId((rc&&rc.data)||[]);
+        if(!clubId){ setStatus('取得元クラブを一意に特定できません（有効な幹事クラブが無い／複数所属の可能性・管理ページを確認してください）'); return {ok:false,step:'club'}; }
+        return fetchCloudEntriesForTournament(client,tid,clubId).then(function(res){
+          if(!res.ok){ setStatus('取得に失敗しました：'+(res.message||'不明')+'（運営は続行できます・再取得できます）'); return res; }
+          var host=document.getElementById('cloudMergedReport');
+          if(host){ host.innerHTML=buildCloudMergedReportHtml(res.entries); }
+          setStatus('クラウドの統合レポートを表示しました（'+res.entries.length+' 名分・級ごとに表示）');
+          return res;
+        });
+      });
+    });
+  }).catch(function(e){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 統合レポート取得例外:',(e&&e.message)||e); setStatus('クラウドの取得に失敗しました。通信状態を確認して、もう一度お試しください（ログインが必要な場合があります）。'); return {ok:false,step:'exception'}; });
 }
 
 function renderHistoryList(flashMessage){
