@@ -16,7 +16,7 @@ function makeContext(){
 function loadEnv(confirmImpl){
   const ctx=makeContext();const js=extractScripts(RAW);const cryptoMock={randomUUID(){return '00000000-0000-0000-0000-000000000000';}};
   const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout','navigator',
-    `${js};return { issueOpsSharedKey:issueOpsSharedKey, applyOpsSharedKey:applyOpsSharedKey, opsKeyToTournamentId:opsKeyToTournamentId, tournamentIdToOpsKey:tournamentIdToOpsKey, opsRekeyNeedsConfirm:opsRekeyNeedsConfirm, opsKeyDateNote:opsKeyDateNote, refreshOpsKeyDisplay:refreshOpsKeyDisplay, _setState:function(s){ state=s; }, _getState:function(){ return state; } };`);
+    `${js};return { issueOpsSharedKey:issueOpsSharedKey, applyOpsSharedKey:applyOpsSharedKey, opsKeyToTournamentId:opsKeyToTournamentId, tournamentIdToOpsKey:tournamentIdToOpsKey, opsRekeyNeedsConfirm:opsRekeyNeedsConfirm, opsKeyDateNote:opsKeyDateNote, refreshOpsKeyDisplay:refreshOpsKeyDisplay, normalizeState:normalizeState, _setState:function(s){ state=s; }, _getState:function(){ return state; } };`);
   const api=fn(ctx.document,ctx.window,ctx.localStorage,cryptoMock,function(){},confirmImpl||function(){return true;},function(){return '';},function(){},function(){},{createObjectURL:function(){return 'blob:mock';},revokeObjectURL:function(){}},{log:function(){},warn:function(){},error:function(){}},Promise,function(cb){return 0;},{});
   api._doc=ctx.document;
   return api;
@@ -134,6 +134,14 @@ ok(RAW.indexOf('state.cloud_sent_tid=state.tournament_id')>=0,'S1 送信成功�
 ok(RAW.indexOf("getElementById('ops-share-details')")>=0,'S2 details 取得');
 ok(RAW.indexOf('refreshOpsKeyDisplay')>=0&&RAW.indexOf('function refreshOpsKeyDisplay(')>=0,'S3 再表示関数が存在し結線');
 ok(RAW.indexOf('function opsRekeyNeedsConfirm(')>=0&&RAW.indexOf('function opsKeyDateNote(')>=0,'S4 Phase C 純関数が存在');
+
+console.log('=== N: Phase C 追補（normalizeState 往復保持・L3 Should-Fix P2）===');
+var envN=loadEnv();
+var nS=envN.normalizeState({tournament_id:'t_2026_07_05_4821',cloud_sent_tid:'t_2026_07_05_4821'});
+ok(nS.cloud_sent_tid==='t_2026_07_05_4821','N1 normalizeState が cloud_sent_tid を保持（reload 後も張り替えガード有効）');
+ok(!('cloud_sent_tid' in envN.normalizeState({tournament_id:'t_2026_07_05'})),'N2 無ければ補完しない（default 補完パターン）');
+ok(!('cloud_sent_tid' in envN.normalizeState({cloud_sent_tid:''})),'N3 空文字は引き継がない');
+ok(!('cloud_sent_tid' in envN.normalizeState({cloud_sent_tid:1234})),'N4 文字列以外は引き継がない');
 
 console.log('\nPASS='+pass+' FAIL='+fail);
 process.exit(fail>0?1:0);

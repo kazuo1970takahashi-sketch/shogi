@@ -1156,6 +1156,9 @@ function normalizeState(raw){
   }
   // 支部マスタ連携用の tournament_id を保持（F2）
   if(typeof s.tournament_id==='string'&&s.tournament_id)base.tournament_id=s.tournament_id;
+  // OPS-SHARED-KEY Phase C (#585・L3 Should-Fix P2): 送信済み大会IDの記録を reload 後も保持
+  //   （tournament_id と同パターン・無ければ引き継がない＝張り替えガード opsRekeyNeedsConfirm の入力。yomiDirty の Codex P2b と同型）。
+  if(typeof s.cloud_sent_tid==='string'&&s.cloud_sent_tid)base.cloud_sent_tid=s.cloud_sent_tid;
   // ROUND-CLASS-START-003 (spec §8.2 / §9.4 step 7):
   //   互換フィールド state.started は classes 配列の OR を同期書き込み。
   //   normalizeState は §8.2 例外3関数の1つ（直接代入を許容、ただし最終必ず同期）。
