@@ -2188,6 +2188,30 @@ else
   warn "test_scoreboard_my_view_001.js が見つからない"
 fi
 
+echo ""
+echo "【LIVE-BROADCAST-001 Phase3（display_mode・envelope 受入・ポーリング補助・キオスク・Nice 1-3）】"
+if [ -f "$SCRIPT_DIR/test_live_broadcast_phase3.js" ]; then
+  if node "$SCRIPT_DIR/test_live_broadcast_phase3.js" "$TARGET" > /tmp/live_broadcast_p3_out.log 2>&1; then
+    ok "LIVE-Phase3 テスト 全PASS ($(tail -1 /tmp/live_broadcast_p3_out.log))"
+  else
+    ng "LIVE-Phase3 テスト 失敗"; cat /tmp/live_broadcast_p3_out.log
+  fi
+else
+  warn "test_live_broadcast_phase3.js が見つからない"
+fi
+
+echo ""
+echo "【LIVE-BROADCAST-001 Phase3 — 配信面（table/RPC）実 PostgreSQL 検証（psql 無ければ SKIP）】"
+if [ -f "$SCRIPT_DIR/live_broadcast_phase3_pgtest.sh" ]; then
+  if bash "$SCRIPT_DIR/live_broadcast_phase3_pgtest.sh" > /tmp/live_p3_pgtest_out.log 2>&1; then
+    ok "LIVE Phase3 pgtest OK/SKIP ($(tail -1 /tmp/live_p3_pgtest_out.log))"
+  else
+    ng "LIVE Phase3 pgtest 失敗"; cat /tmp/live_p3_pgtest_out.log
+  fi
+else
+  warn "live_broadcast_phase3_pgtest.sh が見つからない"
+fi
+
 
 # ============================================
 # 最終結果
