@@ -8839,7 +8839,8 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
 
   for(var i=0;i<state.pairings[cls].length;i++){
     var m=state.pairings[cls][i];
-    var n1=getNameWithNo(m.p1,cls),n2=getNameWithNo(m.p2,cls);
+    // PAIRING-RUBY-001 (#604): 手合いカードの氏名にふりがな併記（既存 nameWithNoRubyHtml を流用・
+    //   未登録は名前のみ＝fail-soft）。番号部は素のまま・氏名部だけルビ化（playerNameRubyHtml 経由）。
     var aux1=pcBuildAuxLabel(m.p1),aux2=pcBuildAuxLabel(m.p2);
     var detail=quality.pairDetails[i]||{labels:[]};
     var labelsHtml='';
@@ -8856,14 +8857,14 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       +'<button style="position:absolute;top:6px;right:6px;padding:3px 7px;border-radius:5px;border:1px solid #ccc;background:#fff;font-size:11px;color:#888;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
       +'<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:28px">'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
-      +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+escapeHtml(n1)+'</button>'
+      +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+nameWithNoRubyHtml(m.p1,cls)+'</button>'
       // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT: formatParticipantLabel による勝敗数併記補助ラベル
       +(aux1?'<div data-pairing-aux="p1" style="font-size:11px;color:#444;margin-top:3px;text-align:center;line-height:1.3;max-width:9em;word-break:break-word">'+escapeHtml(aux1)+'</div>':'')
       +(m.winner===m.p1?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
       +'</div>'
       +'<span style="font-weight:500;color:#888;padding-top:12px">vs</span>'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
-      +'<button class="winner-btn'+(m.winner===m.p2?' selected':'')+'" id="wb_'+cls+'_'+i+'_p2">'+escapeHtml(n2)+'</button>'
+      +'<button class="winner-btn'+(m.winner===m.p2?' selected':'')+'" id="wb_'+cls+'_'+i+'_p2">'+nameWithNoRubyHtml(m.p2,cls)+'</button>'
       // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT: formatParticipantLabel による勝敗数併記補助ラベル
       +(aux2?'<div data-pairing-aux="p2" style="font-size:11px;color:#444;margin-top:3px;text-align:center;line-height:1.3;max-width:9em;word-break:break-word">'+escapeHtml(aux2)+'</div>':'')
       +(m.winner===m.p2?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
