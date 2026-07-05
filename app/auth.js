@@ -1803,8 +1803,15 @@
     function init() {
       root = byId('app-root');
       // セッション変化（マジックリンク帰着・サインアウト）で再評価。
+      // APP-AUTH-REMOUNT-001 (#565): event 種別で分岐する。
+      //   - TOKEN_REFRESHED は長期セッションで定期発火し、evaluate()→showApp() の innerHTML
+      //     全置換で編集途中状態（msEditing / importPrep / 検索フォーカス / 大会詳細）が消えるため無視。
+      //   - INITIAL_SESSION は直下の init() 直呼び evaluate() と重複（cold load の claim RPC 二重発火）のため無視。
+      //   - 再評価は SIGNED_IN / SIGNED_OUT / USER_UPDATED のみ（マジックリンク帰着は SIGNED_IN で従来どおり）。
       if (client && client.auth && client.auth.onAuthStateChange) {
-        client.auth.onAuthStateChange(function () { evaluate(); });
+        client.auth.onAuthStateChange(function (event) {
+          if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') evaluate();
+        });
       }
       return evaluate();
     }
