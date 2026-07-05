@@ -2263,6 +2263,19 @@ else
 fi
 
 
+echo ""
+echo "【CROSSTABLE-HEADER/LAST-ATTENDED (#602/#603) 最終参加日常時年付き＋対戦成績表ヘッダー大会情報】"
+if [ -f "$SCRIPT_DIR/test_crosstable_last_attended_602_603.js" ]; then
+  if node "$SCRIPT_DIR/test_crosstable_last_attended_602_603.js" "$TARGET" > /tmp/crosstable_last_attended_out.log 2>&1; then
+    ok "CROSSTABLE-HEADER/LAST-ATTENDED テスト 全PASS ($(tail -1 /tmp/crosstable_last_attended_out.log))"
+  else
+    ng "CROSSTABLE-HEADER/LAST-ATTENDED テスト 失敗"; cat /tmp/crosstable_last_attended_out.log
+  fi
+else
+  warn "test_crosstable_last_attended_602_603.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
