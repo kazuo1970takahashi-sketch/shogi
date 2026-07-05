@@ -2051,6 +2051,18 @@ else
 fi
 
 echo ""
+echo "【APP-AUTH-REMOUNT-001 onAuthStateChange の event 種別分岐（TOKEN_REFRESHED で再マウントしない）】"
+if [ -f "$SCRIPT_DIR/test_app_auth_remount_001.js" ]; then
+  if node "$SCRIPT_DIR/test_app_auth_remount_001.js" "$TARGET" > /tmp/app_auth_remount_out.log 2>&1; then
+    ok "APP-AUTH-REMOUNT-001 テスト 全PASS ($(tail -1 /tmp/app_auth_remount_out.log))"
+  else
+    ng "APP-AUTH-REMOUNT-001 テスト 失敗"; cat /tmp/app_auth_remount_out.log
+  fi
+else
+  warn "test_app_auth_remount_001.js が見つからない"
+fi
+
+echo ""
 echo "【HARD-DELETE-ATOMIC-001 完全削除の原子化 RPC（実 PostgreSQL / psql 無ければ SKIP）】"
 if [ -f "$SCRIPT_DIR/hard_delete_atomic_pgtest.sh" ]; then
   if bash "$SCRIPT_DIR/hard_delete_atomic_pgtest.sh" > /tmp/harddel_pgtest_out.log 2>&1; then
