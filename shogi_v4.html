@@ -11974,6 +11974,22 @@ function bindHeaderEvents(){
   renderSaveStatusBar();
 }
 
+// NAME-INPUT-AUTOFILL-001 (#620): 氏名/ふりがな入力欄へのブラウザ標準の入力履歴候補（autofill）を抑止する。
+//   autocomplete="off" は最近の Safari/Chrome が履歴候補について無視することがあるため、
+//   毎回ランダムな name を付与して履歴のキーを非固定化する（固定 name は履歴の紐づけ先になるため付けない）。
+//   対象 input はフォーム送信に不使用（SPA・localStorage 保存・form 要素自体が存在しない）ため name 付与は安全。
+//   fail-soft: 属性付与に失敗しても登録導線は従来どおり動作。アプリ独自サジェスト/IME 処理は無改変。
+function applyAutofillGuard(inp){
+  if(!inp)return;
+  try{
+    inp.setAttribute('autocomplete','off');
+    inp.setAttribute('autocorrect','off');
+    inp.setAttribute('autocapitalize','off');
+    inp.setAttribute('spellcheck','false');
+    inp.setAttribute('name','nf-'+Math.random().toString(36).slice(2));
+  }catch(e){}
+}
+
 function bindRegistrationEvents(){
   // ROUND-CLASS-START-007 (Codex Should Fix S3):
   //   A/B 静的ボタン (bulkEditA / bulkEditB) と C+ 動的ボタン (class-bulkedit-{classId}) を
@@ -12032,6 +12048,7 @@ function bindRegistrationEvents(){
 
   // 参加者名入力欄: IME対応 + Enterで追加
   var inpName=document.getElementById('inp-name');
+  applyAutofillGuard(inpName); // NAME-INPUT-AUTOFILL-001 (#620): 履歴候補抑止（name 非固定化）
   var composing=false;
   inpName.addEventListener('compositionstart',function(){
     composing=true;
@@ -12070,6 +12087,7 @@ function bindRegistrationEvents(){
 
   // A-4 §3.1.2: ふりがな欄の手動編集を追跡。Stage 1 では追跡のみ。
   var inpYomi=document.getElementById('inp-yomi');
+  applyAutofillGuard(inpYomi); // NAME-INPUT-AUTOFILL-001 (#620): 履歴候補抑止（name 非固定化）
   if(inpYomi){
     var yomiComposing=false;
     inpYomi.addEventListener('compositionstart',function(){yomiComposing=true;});

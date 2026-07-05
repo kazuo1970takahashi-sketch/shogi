@@ -2250,6 +2250,19 @@ else
 fi
 
 
+echo ""
+echo "【NAME-INPUT-AUTOFILL-001 (#620) 氏名/ふりがな入力のブラウザ履歴候補抑止（name 非固定化＋属性ガード）】"
+if [ -f "$SCRIPT_DIR/test_name_input_autofill.js" ]; then
+  if node "$SCRIPT_DIR/test_name_input_autofill.js" "$TARGET" > /tmp/name_input_autofill_out.log 2>&1; then
+    ok "NAME-INPUT-AUTOFILL テスト 全PASS ($(tail -1 /tmp/name_input_autofill_out.log))"
+  else
+    ng "NAME-INPUT-AUTOFILL テスト 失敗"; cat /tmp/name_input_autofill_out.log
+  fi
+else
+  warn "test_name_input_autofill.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
