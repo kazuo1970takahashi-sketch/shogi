@@ -13245,6 +13245,19 @@ function loadCloudPastTournamentsUI(setStatus){
   }).catch(function(e){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 取得例外:',(e&&e.message)||e); setStatus('クラウドの取得に失敗しました。通信状態を確認して、もう一度お試しください（ログインが必要な場合があります）。'); return {ok:false,step:'exception'}; });
 }
 
+// CLASS-SPLIT-CLOUD-MERGE-001 Phase 3.1 (#575 hotfix): app_tournament_id（t_YYYY_MM_DD[_n]）→ クラウド内部の
+//   tournaments.id（uuid）を解決する。entries.tournament_id は uuid（tournaments.id・syncTournamentToCloud が
+//   tournaments.upsert().select('id') の uuid を書き込む）で、アプリ側の大会ID（app_tournament_id）とは別。
+//   統合レポートは現在の大会ID（app_tournament_id）起点なので、entries を引く前にここで uuid へ変換する
+//   （未送信なら id=null）。fail-soft・既存の読取関数は無改変。
+function fetchCloudTournamentIdByAppId(client, appTid, clubId){
+  if(!client||!client.from)return Promise.resolve({ok:false,message:'クラウドに接続していません',id:null});
+  return client.from('tournaments').select('id').eq('club_id',clubId).eq('app_tournament_id',appTid).then(function(res){
+    if(res&&res.error){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 大会ID照合エラー:',cloudErrDetail(res.error)); return {ok:false,message:'大会の照合に失敗しました（通信状態を確認してください）',id:null}; }
+    var rows=(res&&res.data)||[]; var row=rows[0]||null;
+    return {ok:true,id:row?row.id:null};
+  });
+}
 // CLASS-SPLIT-CLOUD-MERGE-001 Phase 3 (#572): 現在の大会IDでクラウドから両級 entries を取得し、
 //   #cloudMergedReport に読取専用で統合レポートを描画するオーケストレーション（loadCloudPastTournamentsUI と
 //   対称・fail-soft）。当日運営 state は書き換えない（読むだけ・安全側）。会場ネット断でも従来のファイル手渡し
@@ -13266,12 +13279,16 @@ function loadCloudMergedReportUI(setStatus){
       return client.rpc('claim_organizer_seat').then(function(rc){
         var clubId=pickActiveClubId((rc&&rc.data)||[]);
         if(!clubId){ setStatus('取得元クラブを一意に特定できません（有効な幹事クラブが無い／複数所属の可能性・管理ページを確認してください）'); return {ok:false,step:'club'}; }
-        return fetchCloudEntriesForTournament(client,tid,clubId).then(function(res){
-          if(!res.ok){ setStatus('取得に失敗しました：'+(res.message||'不明')+'（運営は続行できます・再取得できます）'); return res; }
-          var host=document.getElementById('cloudMergedReport');
-          if(host){ host.innerHTML=buildCloudMergedReportHtml(res.entries); }
-          setStatus('クラウドの統合レポートを表示しました（'+res.entries.length+' 名分・級ごとに表示）');
-          return res;
+        return fetchCloudTournamentIdByAppId(client,tid,clubId).then(function(tr){
+          if(!tr.ok){ setStatus('取得に失敗しました：'+(tr.message||'不明')+'（運営は続行できます・再取得できます）'); return tr; }
+          if(!tr.id){ setStatus('この大会はまだクラウドに送信されていません。先に「☁ クラウドへ送信」してください（大会ID '+tid+'・運営は続行できます）'); return {ok:false,step:'not-sent'}; }
+          return fetchCloudEntriesForTournament(client,tr.id,clubId).then(function(res){
+            if(!res.ok){ setStatus('取得に失敗しました：'+(res.message||'不明')+'（運営は続行できます・再取得できます）'); return res; }
+            var host=document.getElementById('cloudMergedReport');
+            if(host){ host.innerHTML=buildCloudMergedReportHtml(res.entries); }
+            setStatus('クラウドの統合レポートを表示しました（'+res.entries.length+' 名分・級ごとに表示）');
+            return res;
+          });
         });
       });
     });
