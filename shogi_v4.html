@@ -6339,7 +6339,7 @@ function renderSuggestList(suggestions){
     (function(m){
       var item=document.createElement('div');
       item.className='suggest-item';
-      // 行の内容と A/B ボタンを横並びに（行本体タップは A-4 既存挙動を維持、§3.2.2 Must Fix 1）
+      // ENTRY-ADD-CONFIRM-001 (#599): 行タップ＝選択のみ（onSuggestTap）。登録確定は既存「追加」ボタンに一本化。
       item.style.display='flex';
       item.style.alignItems='center';
       item.style.gap='8px';
@@ -6371,165 +6371,13 @@ function renderSuggestList(suggestions){
         e.preventDefault();
         onSuggestTap(m);
       });
-      // A-4.2 §3.2.3: A/B ボタン（行本体タップとは独立、stopPropagation で二重発火回避）
-      // PRESET-REMOVE-001 (#551 派生): 前回クラス(last_class)による A/B ボタン強調は廃止（毎回手動選択）。
-      //   前回クラスは上の「前回:Xクラス」テキストで参考提示のみ・ボタンは常に中立表示。
-      var classes=['A','B'];
-      for(var ci=0;ci<classes.length;ci++){
-        (function(cls){
-          var highlight=false;
-          var btn=document.createElement('button');
-          btn.type='button';
-          btn.className='suggest-add-btn'+(highlight?' suggest-add-btn-highlight':'');
-          btn.setAttribute('data-cls',cls);
-          btn.setAttribute('aria-label',m.name+'を'+cls+'クラスで追加');
-          btn.setAttribute('title',cls+'クラスで追加');
-          btn.textContent=cls;
-          btn.style.cssText='min-width:44px;min-height:44px;flex-shrink:0;border:1px solid #1976d2;background:'+(highlight?'#FFD580':'#fff')+';color:'+(highlight?'#7a3e00':'#1976d2')+';border-radius:6px;font-size:14px;font-weight:'+(highlight?'bold':'normal')+';cursor:pointer;margin-left:4px';
-          // mousedown / touchstart で行ハンドラより先に処理して伝播停止（行本体タップは A-4 既存挙動として維持）
-          btn.addEventListener('mousedown',function(e){
-            if(e.preventDefault)e.preventDefault();
-            if(e.stopPropagation)e.stopPropagation();
-            handleSuggestClassAdd(m.id,cls);
-          });
-          btn.addEventListener('touchstart',function(e){
-            if(e.preventDefault)e.preventDefault();
-            if(e.stopPropagation)e.stopPropagation();
-            handleSuggestClassAdd(m.id,cls);
-          });
-          // click は念のため伝播を止める（実機環境差吸収）
-          btn.addEventListener('click',function(e){
-            if(e.preventDefault)e.preventDefault();
-            if(e.stopPropagation)e.stopPropagation();
-          });
-          item.appendChild(btn);
-        })(classes[ci]);
-      }
+      // ENTRY-ADD-CONFIRM-001 (#599): サジェスト行の A/B 直接追加ボタンは廃止（誤タップ即登録の防止）。
+      //   タップ＝選択（氏名/ふりがなを入力欄へ反映）→ クラス選択 → 既存「追加」ボタンで確定（新規入力と同一導線）。
+      //   旧経路: suggest-add-btn ＋ handleSuggestClassAdd（PRESET-REMOVE-001 の A/B 強調廃止を経て #599 で導線ごと廃止）。
       list.appendChild(item);
     })(suggestions[i]);
   }
   list.style.display='block';
-}
-
-// A-4.3 §2.3: サジェスト A/B ボタン押下時の処理。
-// 過去参加者パネルと同じ 3 ケース分岐（メンタルモデル一貫性）。サジェストは既登録者除外があるため通常はケース 1 のみだが、念のため 3 ケース全対応。
-// _pendingNewYomi / master.yomi は触らない（A-4.2 Should Fix 6）。
-function handleSuggestClassAdd(memberId,cls){
-  var master=loadBranchMaster();
-  var member=null;
-  if(master&&Array.isArray(master.members)){
-    for(var mi=0;mi<master.members.length;mi++){
-      if(master.members[mi]&&master.members[mi].id===memberId){member=master.members[mi];break;}
-    }
-  }
-  if(!member){showMsg('該当する参加者が見つかりません','err');return;}
-  if(member.deleted===true){showMsg('この参加者は削除済みのため追加できません','err');return;}
-  var memberName=member.name||'';
-  var existingCls=null;
-  var existClasses=['A','B'];
-  for(var eci=0;eci<existClasses.length;eci++){
-    var eArr=state.players[existClasses[eci]]||[];
-    for(var epi=0;epi<eArr.length;epi++){
-      if(eArr[epi]&&eArr[epi].member_id===memberId){existingCls=existClasses[eci];break;}
-    }
-    if(existingCls)break;
-  }
-  // 共通：成功後の登録画面後処理（氏名/ふりがな欄クリア + サジェスト閉じ + 再描画）
-  // A-5.1-SAVE-003b: 追加 / クラス変更の両経路から呼ばれるため、verify 対象（pid/cls/name）と
-  // 保存未確認時の warn 文言を引数で受け取り、save() 後に検証する。
-  // SAVE-UX-MIN-NOTIFY-001: options.suppressOkMsg=true のとき成功 showMsg(ok) を出さない。
-  // master verify 失敗時に呼出側で立て、直前に出した warn を ok で上書きしないために使う。
-  function postSuccess(msgText,verifyPid,verifyCls,verifyName,warnMsg,options){
-    options=options||{};
-    var inpName=document.getElementById('inp-name');
-    var inpYomi=document.getElementById('inp-yomi');
-    if(inpName)inpName.value='';
-    if(inpYomi)inpYomi.value='';
-    _suggestState.selectedMemberId=null;
-    _suggestState.selectedNormalizedName=null;
-    _yomiManuallyEdited=false;
-    _yomiAutoBuffer='';
-    closeSuggestList();
-    renderRegList();save();
-    if(typeof renderPastParticipantsPanel==='function'){
-      var ppSearch=document.getElementById('pp-search');
-      renderPastParticipantsPanel(ppSearch?ppSearch.value:'');
-    }
-    if(!options.suppressOkMsg){
-      showMsg(msgText,'ok');
-    }
-    // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
-    // false は「保存未確認」（保存失敗と断定しない）。追加 / クラス変更とも rollback しない・運営は継続する。
-    if(!verifyPlayerPersistedById(verifyPid,verifyCls,verifyName)){
-      notifySaveWarning({
-        message:warnMsg,
-        consoleTag:'SAVE-003b: handleSuggestClassAdd の保存が確認できませんでした (player='+verifyPid+', cls='+verifyCls+', name='+verifyName+')',
-        callsiteId:'SAVE-003b-handleSuggestClassAdd',
-        kind:'save-verify',
-        aggregateKey:'save-verify:past',
-        severity:'warn'
-      });
-    }
-  }
-  // ケース 3: 同クラス登録済（alert OK のみ）
-  if(existingCls===cls){
-    alert(memberName+'さんは既に '+cls+'クラス に登録されています。');
-    return;
-  }
-  // ケース 2: 別クラス登録済（変更 confirm）
-  if(existingCls&&existingCls!==cls){
-    var ok2=confirm(memberName+'さんは現在 '+existingCls+'クラス に登録されています。\n'+cls+'クラス に変更しますか?');
-    if(!ok2)return;
-    var r2=changePlayerClass(memberId,cls,master,state);
-    // L3 P2: 全画面ビュー中は #reg-msg が背面で見えないため、失敗も blocking alert で確実に伝える。
-    if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');if(typeof isPpFullscreenOpen==='function'&&isPpFullscreenOpen())alert('クラス変更に失敗しました');return;}
-    saveBranchMaster(master);
-    // MASTER-V2-LASTCLASS S05: 既登録者クラス変更分岐限定の master.last_class 保存検証。
-    // changePlayerClass が master.members[i].last_class を新クラスに更新済み（line 1250）。
-    // saveBranchMaster は例外を握り潰すため、localStorage を再読込して検証する。
-    // 新規追加分岐（addPlayerFromMaster 側）では master を更新しないため、ここに verify を入れない。
-    // SAVE-UX-DESIGN Level 1: console.warn + showMsg。最終表示が warn になるよう、
-    // master verify 失敗時は postSuccess の成功 showMsg を suppressOkMsg で抑止する。
-    // 詳細は docs/specs/20260513_shogi_save_ux_design.md
-    var s05MasterVerifyOk=verifyMasterFieldPersisted(memberId,'last_class',cls);
-    if(!s05MasterVerifyOk){
-      if(typeof console!=='undefined'&&console.warn){
-        console.warn('[MASTER-V2-LASTCLASS] S05 last_class verify failed',{memberId:memberId,expected:cls});
-      }
-      // SAVE-UX-WARN-HELPER: user-facing warn は helper 経由。success showMsg 抑止は postSuccess(suppressOkMsg) で行う（不変）。
-      notifySaveWarning({
-        message:'前回クラス情報の保存が確認できませんでした',
-        consoleTag:'[MASTER-V2-LASTCLASS]',
-        callsiteId:'S05',
-        fields:['last_class'],
-        kind:'master-verify',
-        aggregateKey:'master-verify:lastclass',
-        severity:'warn'
-      });
-    }
-    postSuccess('['+memberName+'] を '+cls+'クラス に変更しました',r2.player.id,cls,r2.player.name,'クラスを変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',{suppressOkMsg:!s05MasterVerifyOk});
-    return;
-  }
-  // ケース 1: 未登録（追加 confirm）
-  var ok1=confirm(memberName+'さんを '+cls+'クラス に追加しますか?');
-  if(!ok1)return;
-  var r=addPlayerFromMaster(memberId,cls,master,state);
-  if(!r||!r.success){
-    var err=r&&r.error;
-    if(err==='duplicate_member'){
-      showMsg('この参加者はすでに登録されています','err');
-    }else if(err==='duplicate_name'){
-      showMsg('同じ名前の参加者がいます。別人の場合は手入力で区別してください','err');
-    }else if(err==='deleted'){
-      showMsg('この参加者は削除済みのため追加できません','err');
-    }else if(err==='not_found'){
-      showMsg('該当する参加者が見つかりません','err');
-    }else{
-      showMsg('追加に失敗しました','err');
-    }
-    return;
-  }
-  postSuccess('['+r.player.name+']（'+cls+'クラス）を登録しました',r.player.id,cls,r.player.name,'参加者は登録されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください');
 }
 
 function closeSuggestList(){

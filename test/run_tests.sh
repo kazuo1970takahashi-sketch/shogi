@@ -2128,6 +2128,18 @@ else
 fi
 
 echo ""
+echo "【ENTRY-ADD-CONFIRM-001 — 受付サジェストのタップ即登録廃止（選択→「追加」で確定）】"
+if [ -f "$SCRIPT_DIR/test_entry_add_confirm_001.js" ]; then
+  if node "$SCRIPT_DIR/test_entry_add_confirm_001.js" "$TARGET" > /tmp/entry_add_confirm_001_out.log 2>&1; then
+    ok "ENTRY-ADD-CONFIRM テスト 全PASS ($(tail -1 /tmp/entry_add_confirm_001_out.log))"
+  else
+    ng "ENTRY-ADD-CONFIRM テスト 失敗"; cat /tmp/entry_add_confirm_001_out.log
+  fi
+else
+  warn "test_entry_add_confirm_001.js が見つからない"
+fi
+
+echo ""
 echo "【MASTER-REBUILD-FROM-CLOUD-001 Phase1 純関数（buildDerivedMemberStatsFromCloud / mergeDerivedStatsIntoMaster）】"
 if [ -f "$SCRIPT_DIR/test_master_rebuild_from_cloud_001.js" ]; then
   if node "$SCRIPT_DIR/test_master_rebuild_from_cloud_001.js" "$TARGET" > /tmp/master_rebuild_from_cloud_001_out.log 2>&1; then
