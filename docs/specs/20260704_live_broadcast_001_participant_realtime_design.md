@@ -5,12 +5,12 @@
 | ID | LIVE-BROADCAST-001 |
 | 種別 | 設計（docs-only / 実装前） |
 | 作成日 | 2026-07-04 |
-| ステータス | Draft（設計レビュー 4巡目 P1/P2 反映済み・実装は後続 LIVE-BROADCAST-IMPL 群） |
+| ステータス | Draft（設計レビュー 4巡目 P1/P2 反映済み・独立 L3+ design-review conditional-go〔#532〕条件反映済み。Phase 1 実装 = #534 merge 済み・以降は後続 LIVE-BROADCAST-IMPL 群） |
 | base | orphan clean base `chore/shogi-tour-apphq-003h-2d-orphan-clean-base`（HEAD は branch ref を正とする） |
 | 対象ファイル（実装は別PR） | `shogi_v4.html`（配信送信グルー・公開ビュー経路）。参加者ビューは既存 `#scoreboard` レンダラを再利用（新規 `live.html` は作らない＝§5.2） |
 | 親機能 | LIVE-MOBILE-SCOREBOARD-001（`#scoreboard` 閲覧ビュー・`withSourceState` データ源差し替え）／CLOUD SYNC B-2b（#343・supabase-js v2 遅延ロード・fail-soft）／DATA-PERSISTENCE-PHASE2 Stage A |
 | 準拠 | CLAUDE.md 拘束9ルール・REFERENCE §3 データモデル不変条件・STYLE-GUIDE §1/§2/§3/§4 |
-| 関連スライス | SCOREBOARD-MY-VIEW-001（対局者を探す＋個人ビュー層・本配信の公開ビュー上にそのまま載る） |
+| 関連スライス | SCOREBOARD-MY-VIEW-001（対局者を探す＋個人ビュー層・本配信の公開ビュー上にそのまま載る）／CLASS-SPLIT-CLOUD-MERGE-001（#538・SoT 決定=案②＝§0.1） |
 
 ---
 
@@ -29,6 +29,16 @@
 5. **段階導入**: Phase 1 公開形の確定 → Phase 2 公開ビュー経路＋自分ビュー同梱 → **Phase 3 = 実用**（Supabase ポーリング＋QR掲示＋受付キオスク＋📡配信中表示）→ Phase 4 Realtime Broadcast 上乗せ（切れたらポーリング退避）→ Phase 5 polish。
 
 本書は **docs-only**。実装は後続 **LIVE-BROADCAST-IMPL**（Phase ごとに Draft PR・人間承認まで停止）。
+
+### 0.1 SoT 決定（確定・2026-07-04 髙橋・案②）— CLASS-SPLIT-CLOUD-MERGE-001 との交差
+
+> **独立 design-review Must Fix #1 反映（#532）**: 本決定は従来 PR #533 コメント（#4880548521）にのみ存在した。IMPL が埋もれたコメントに依存しないよう、SoT 契約として本文へ固定する。
+
+- **参加者向け配信契約は「常に1つの合体済みスナップショットを配る」で固定（案②）**。本設計の「運営端末1台＝SoT→一方向 publish」は**本決定による変更なし**でそのまま維持する。
+- A級/B級の担当分け入力（CLASS-SPLIT-CLOUD-MERGE-001・#538）は当面行わない前提。**「2台ライブ合体」（複数端末が部分 SoT を持ち寄る配信）は将来拡張**として切り出し、当面実装しない。
+- 参加者ビュー（SCOREBOARD-MY-VIEW-001）と公開ビューは配信元が1台か2台かを区別しないため、**本決定により my-view / 公開ビューの設計は不変**。
+- 成績発表の統合（級別結合レポート）は配信路とは別系統（クラウド `entries` の行レベルで自動統合・#538）。**LIVE-BROADCAST の配信スコープには影響しない**。
+- related_issue: #538 ／ 決定の記録: PR #533 コメント #4880548521（2026-07-04 髙橋 確定）
 
 ---
 
@@ -120,7 +130,7 @@
 - 出すのは **会場で既に公開の情報のみ**: 表示名・参加者番号・勝敗・対戦関係（`match` の `p1/p2/winner`）。順位・卓番号は viewer で派生。
 - **プレイヤーのフィールド単位ホワイトリスト**（`state` を機械的に写経しない＝列追加で漏れる事故を防ぐ）: 出すのは `id`（当日 tournament 内 id・**非PII**。`member_id` ではない）/ `name` / 任意 `yomi` / `entry_no` のみ。**絶対に混ぜない**: `member`（支部マスタ linkage）/ email / `grade` / 会費区分 / 内部メモ / `lastModifiedBy`。
 - **プライバシー invariant は「wire payload に載せない」で定義する（P2-1 反映）**: 既存 `normalizeState` は viewer 上で player に `member`/`grade` を、`match` に `lastModifiedBy` を**既定値で補完する**（＝往復不変ではない）。ただし補完されるのは**空/既定のプレースホルダ**であり、**wire で剥いだ実値を復元しない・送信もされない**（viewer は read-only 表示）。よって invariant は「`buildPublicLiveSnapshot` が emit する wire payload に除外項目が含まれないこと」で固定する（§8-7・§8-10）。より確実にしたい場合は **live 専用 normalizer / post-normalize strip** を実装で用いる（受入で選択）。
-- フルネームを避けたい運用のために、将来 `display_mode: "given+no"`（姓＋番号）等のオプションを持てる余地を残す（本スライスでは表示名そのまま）。
+- **氏名公開の扱い（未成年を含む・Phase 3 受入条件へ格上げ＝独立レビュー Should Fix #1・#532）**: slug（bearer secret）を知る者には**参加者のフルネーム＋よみ＋番号＋成績**が閲覧できるという残余は、列挙不可（§4.2）でも変わらない。本大会には会費区分「中学生以下」「女性」があり**未成年が参加する**ため、氏名公開を暗黙の既定にしない。Phase 3 で (a) **表示名の匿名度オプション `display_mode`**（例 `"full"`＝フルネーム／`"given+no"`＝姓＋番号）を実装し、**既定値と氏名公開の扱い（同意ベース運用を含む）は主催者（人間）が明示決定して記録に残す**。(b) **会場掲示・入口（QR 掲示物）に「氏名・成績をインターネット公開する」旨の告知を含める**（運用手順）。→ 受入 #17。
 
 ### 3.3 なぜこの形が差し替え耐性を持つか
 
@@ -149,6 +159,7 @@
 - **anon にテーブル直 SELECT を与えない**。読み取りは **`SECURITY DEFINER` の RPC `get_live_snapshot(slug text)`** 経由に限定する。この関数は **`slug` 完全一致かつ `is_public=true` の1行の payload だけ**を返す（一覧・全文 SELECT 不可＝**列挙不可**）。anon には関数 EXECUTE のみ付与し、`public_live_snapshots` テーブルには GRANT/RLS SELECT を与えない。
 - **RPC 実装ガード（P1-a・受入条件化＝§8-11）**: `SECURITY DEFINER` の常道の落とし穴を塞ぐ。① `SET search_path = pg_catalog, public`（または空）で**固定**、② テーブル参照は `public.public_live_snapshots` と**完全修飾**、③ **dynamic SQL 禁止**（`slug` は引数バインドのみ・文字列連結しない）、④ `REVOKE EXECUTE ON FUNCTION get_live_snapshot(text) FROM PUBLIC;` → `GRANT EXECUTE ... TO anon;`（PUBLIC への暗黙付与を外す）。⑤ 返すのは `payload`（と `version`）だけで、他 club/他 slug へ波及する引数を取らない。
 - `slug` は **高エントロピー（推測困難）＝実質 bearer secret**。大会ごとに発行し、終了で無効化（`is_public=false`）。QR/URL に載るのはこの slug。ローテーション（再発行で旧 slug 失効）も可能。
+- **slug ライフサイクルの runbook 化（独立レビュー Should Fix #2・#532）**: QR は撮影で会場外へも拡散し得るため、「発行→無効化」を運用に固定する。**① session 単位（大会ごと）の発行（`start_live_session`）／② 大会終了時の確実な無効化（`stop_live_session`＝`is_public=false`。終了操作のチェックリストに含める）／③ 漏えい・誤配布時のローテーション（再発行で旧 slug 失効）**を運用 runbook（`docs/`）に手順化し、Phase 3 受入（#18）へ紐づける。
 - **write** は運営者（authenticated・当該 `club_id`）だけ（RLS で club スコープ）。
 - **Realtime 送信権限（P2-a 反映）**: subscribe するチャネル名は **slug**（know-the-slug で購読可）だが、**slug を知る anon viewer が同じチャネルへ送信できてはならない**。よって **Realtime Authorization（private channel）を前提**とし、**送信は運営者（authenticated）または DB trigger/RPC 起点に限定**、anon は **subscribe のみ**（send 権限なし）。最小構成は **DB trigger/publish RPC 起点の broadcast に限定**し、クライアント `channel.send` を使う場合も送信元を authenticated 運営に絞る。
 - **代替（ポーリング専用なら）**: Supabase Storage に `snapshots/<slug>.json` を put（**バケットの list を無効化**・オブジェクトのみ public-read）。key=slug が bearer secret になり**列挙不可**。RPC を立てずに済むが Realtime は別途。
@@ -221,6 +232,7 @@
 - **各 Phase = 独立スライス**。**Phase 3 まで到達して初めて現場投入可能**（J1〜J7 が一通り繋がる）。Realtime(Phase 4) は体験を速くする上乗せ。
 - リファクタと挙動変更を混ぜない（ルール7）。
 - MY-VIEW-001 は本配信と**UX 上不可分**のため、別スライスだが Phase 2〜3 と**同一リリースで束ねる**前提とする。
+- **配信元は常に運営端末1台（SoT 決定=案②・§0.1）**。級分担入力（#538）を将来導入しても、配信は「合体済みスナップショット1つ」を維持する（2台ライブ合体は将来拡張・当面非実装）。
 
 ## 7. 落とし穴（レビュー2件の合流・実装時チェック）
 
@@ -231,7 +243,7 @@
 5. **Supabase Free の自動 pause**: 7日無アクセスでプロジェクト停止 → 大会前日に確認 or keepalive ping（GitHub Actions 等）。
 6. **課金トリガ**: 超過は 1M msg ごと $2.50 / 1000 peak 接続ごと $10。月1大会・数十接続なら実質ゼロだが、他イベント流用時に備えダッシュボードにアラート。
 7. **payload 256KB 上限**: 全星取表が肥大化したら差分送信を検討（数十人規模は当面問題なし）。
-8. **slug 推測・列挙**: read は RPC `get_live_snapshot(slug)` に限定しテーブル直 SELECT を anon に与えない（§4.2＝**列挙不可**）。slug は高エントロピー・大会ごとに無効化（`is_public=false`）・ローテーション可。
+8. **slug 推測・列挙**: read は RPC `get_live_snapshot(slug)` に限定しテーブル直 SELECT を anon に与えない（§4.2＝**列挙不可**）。slug は高エントロピー・大会ごとに無効化（`is_public=false`）・ローテーション可（ライフサイクルは runbook へ＝§4.2・受入 #18）。
 
 ## 8. 受入条件（実用フェーズ＝Phase 3 時点・体験基準 J1〜J7 に対応）
 
@@ -251,6 +263,8 @@
 14. **Broadcast 送信権限（P2-a）**: slug を知る anon viewer は subscribe のみ可・**同チャネルへ送信できない**（private/authorized・送信は運営 authenticated か DB trigger/RPC 起点）。
 15. **`club_id` の由来・publish は update-only（P1・3巡目）**: `club_id` は `start_live_session()` が呼び出し元 membership から確定し発行時に行へ書く。`publish_live_snapshot` は **INSERT せず既存行 UPDATE のみ**（`slug` 一致 かつ 所有 `club_id` 検査）で publish 時に `club_id` を発明しない。純関数 `buildPublicLiveSnapshot` の出力に `slug`/`version`/`updated_at` を含めない（envelope の責務・P2/P1-2）。
 16. **回戦数の正当性（P1-1・4巡目）**: 公開ビューが `state.rounds` / `classes[].rounds` を反映し、**非4回戦（例 3/5回戦）・クラス別回戦数の大会でも `roundsForClass` が正しい回戦数を返す**（4 回戦フォールバックで誤表示しない）。**非4回戦 fixture** で星取表の列数・終了判定（`results.length >= rounds`）が一致することをテスト。
+17. **氏名公開の扱い（未成年含む・独立レビュー Should Fix #1）**: `display_mode` オプション（§3.2・例 `"full"`／`"given+no"`）が実装され、**既定値と氏名公開の扱い（同意/告知運用を含む）を主催者（人間）が明示決定した記録**が Issue/運用手順に残る。会場掲示・入口（QR 掲示物）に「氏名・成績をインターネット公開する」旨の告知が含まれる。
+18. **slug ライフサイクル（独立レビュー Should Fix #2）**: 発行（`start_live_session`）→**大会終了時の確実な無効化**（`stop_live_session`・`is_public=false`・終了チェックリスト組込）→必要時ローテーションの運用 runbook が `docs/` に存在し、**無効化後に旧 slug で `get_live_snapshot` が取得不可**であることを確認。
 
 ## 9. 工程・ロールアウト
 
