@@ -2152,6 +2152,19 @@ else
   warn "test_live_broadcast_snapshot_001.js が見つからない"
 fi
 
+echo ""
+echo "【OPS-SHARED-KEY-REDESIGN-001 Phase A 運営共通キー純関数（発番/組立/抽出/往復/normalize受理）】"
+if [ -f "$SCRIPT_DIR/test_ops_shared_key.js" ]; then
+  if node "$SCRIPT_DIR/test_ops_shared_key.js" "$TARGET" > /tmp/ops_shared_key_out.log 2>&1; then
+    ok "OPS-SHARED-KEY Phase A テスト 全PASS ($(tail -1 /tmp/ops_shared_key_out.log))"
+  else
+    ng "OPS-SHARED-KEY Phase A テスト 失敗"; cat /tmp/ops_shared_key_out.log
+  fi
+else
+  warn "test_ops_shared_key.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================

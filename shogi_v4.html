@@ -2495,6 +2495,40 @@ function normalizeTournamentIdInput(raw){
   return s;
 }
 
+// OPS-SHARED-KEY-REDESIGN-001 Phase A (#580): 運営共通キー（2台分担を繋ぐ4桁数字）の純関数群。
+//   キーは新IDを増やさず、既存 app_tournament_id の末尾スロット（t_YYYY_MM_DD_<4桁>）を使う。
+//   人が扱うのは4桁だけ・日付はアプリ内部が付ける（日付で名前空間が分かれ衝突回避）。UI 接続は Phase B。
+//   既存 normalizeTournamentIdInput（t_YYYY_MM_DD(_\d+)? を受理）を検証に流用。生成規則 ensureTournamentId は無改変。
+// 未使用の4桁キー（'0000'..'9999'）を1つ返す純関数。existingKeys=当日ローカル履歴/送信済み由来の使用済み配列。
+//   rng 省略時 Math.random。まずランダムに数回試し（人に優しくバラける）、埋まってきたら線形走査で確実に空きを返す。
+//   空きが無い（1万件消費・現実に起きない）ときのみ '' を返す。
+function generateOpsSharedKey(existingKeys, rng){
+  var used={};
+  if(Array.isArray(existingKeys)){
+    for(var i=0;i<existingKeys.length;i++){ var e=existingKeys[i]; if(e==null)continue; var k4=('0000'+String(e)).slice(-4); used[k4]=true; }
+  }
+  var r=(typeof rng==='function')?rng:Math.random;
+  for(var t=0;t<20;t++){ var key=('0000'+Math.floor(r()*10000)).slice(-4); if(!used[key])return key; }
+  for(var n=0;n<10000;n++){ var k=('0000'+n).slice(-4); if(!used[k])return k; }
+  return '';
+}
+// 4桁キー key と 'YYYY-MM-DD' の ymd から内部大会ID 't_YYYY_MM_DD_<key>' を組み立てる純関数。
+//   key が4桁数字でない／ymd が YYYY-MM-DD 形でないときは ''。最終的に既存 normalizeTournamentIdInput を通して返す
+//   （＝生成規則と同形であることを保証・不正日付は '' に落ちる）。
+function opsKeyToTournamentId(key, ymd){
+  var k=(key==null)?'':String(key);
+  if(!/^\d{4}$/.test(k))return '';
+  var d=(ymd==null)?'':String(ymd);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return '';
+  return normalizeTournamentIdInput('t_'+d.replace(/-/g,'_')+'_'+k);
+}
+// 内部大会ID 't_YYYY_MM_DD_NNNN' から運営共通キー（末尾4桁）を取り出す純関数（表示用）。
+//   末尾が4桁のときだけ返す。日付のみ（t_YYYY_MM_DD）や 2桁 suffix（旧衝突回避の _2 等）は運営共通キーではないので ''。
+function tournamentIdToOpsKey(tid){
+  var s=(tid==null)?'':String(tid);
+  var m=/^t_\d{4}_\d{2}_\d{2}_(\d{4})$/.exec(s);
+  return m?m[1]:'';
+}
 function attachMemberIdToPlayer(player,member){
   if(!player||!member)return;
   player.member_id=member.id;
