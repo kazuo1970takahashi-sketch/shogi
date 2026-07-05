@@ -309,7 +309,9 @@ function makeState(){
   // read-only（仕様 5）: 編集系UIが描画されない
   // SCOREBOARD-MY-VIEW-001: 対局者検索の <input>（sb-search・表示フィルタのみ・state 非書込）だけを
   //   例外として許可する。編集系 input の禁止（read-only 徹底）は従来どおり検査する。
-  assert(!/<input(?![^>]*sb-search)/.test(html), 'E9 入力欄が出ない（対局者検索 sb-search を除く）');
+  //   LIVE-BROADCAST-001 Phase3（#598 code-review Nice 3）: 許可条件を class="sb-search 前置一致に厳密化
+  //   （タグ内のどこかに sb-search 文字列を含むだけの input をすり抜けさせない）。
+  assert(!/<input(?![^>]*class="sb-search")/.test(html), 'E9 入力欄が出ない（class="sb-search" の対局者検索を除く）');
   assert(!/リセット/.test(html), 'E10 リセット系の文言が出ない');
   assert(!/大会データをコピー|読み込み/.test(html), 'E11 保存/読込ボタンが出ない');
   assert(!/saveBtn|resetBtn|loadBtn/.test(html), 'E12 運営ボタンIDが出ない');
