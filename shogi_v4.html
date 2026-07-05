@@ -377,6 +377,28 @@ body.sb-active{overflow:hidden}
         <div style="font-size:11px;color:#888;margin-top:6px">クラスごとに変えたい場合は、上の「クラスを管理する」の各クラスで個別に設定できます。</div>
       </div>
     </details>
+    <!-- OPS-SHARED-KEY-REDESIGN-001 Phase B (#582): 2台で分担して入力するとき用の「運営共通キー」（4桁）。
+         受付タブ（大会開始前）に独立した畳みセクションで置く＝1台運営なら開かない＝目に触れない。
+         発行/合わせるは bindReportEvents で issueOpsSharedKey/applyOpsSharedKey に結線（追加のみ）。 -->
+    <details id="ops-share-details" style="margin-bottom:12px">
+      <summary style="font-size:14px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">▷ 2台で分担して入力するとき<span style="font-weight:400;font-size:11px;color:#888">　１台で運営するなら不要</span></summary>
+      <div style="border:1px solid #d3dbe5;border-top:none;border-radius:0 0 8px 8px;padding:12px">
+        <div style="font-size:12px;color:#555;line-height:1.6;margin-bottom:10px">A級・B級を別々の端末で入力するとき、両方で同じ「運営共通キー（4桁）」を使うと、送信した結果が１つの大会にまとまります。１台目でキーを発行し、２台目にその数字を伝えてください。</div>
+        <div style="margin-bottom:12px">
+          <div style="font-size:12px;font-weight:600;color:#1F3864;margin-bottom:4px">① １台目（キーを配る側）</div>
+          <button type="button" id="opsIssueBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">運営共通キーを発行</button>
+          <div id="opsKeyDisplay" style="margin-top:8px;min-height:1.4em"></div>
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#1F3864;margin-bottom:4px">② ２台目（キーを受け取る側）</div>
+          <span style="display:inline-flex;gap:6px;align-items:center">
+            <input type="text" id="opsKeyInput" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="例: 4821" aria-label="受け取った運営共通キー（4桁）" style="font-size:18px;letter-spacing:3px;width:104px;text-align:center;padding:6px 8px;border:1px solid #c3ccd8;border-radius:6px">
+            <button type="button" id="opsApplyBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">このキーに合わせる</button>
+          </span>
+        </div>
+        <div id="opsShareStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:8px;min-height:1.2em"></div>
+      </div>
+    </details>
     <div class="section">
       <div style="display:flex;align-items:center;gap:8px">
         <h2 style="margin:0">参加者を登録する</h2>
@@ -495,18 +517,6 @@ body.sb-active{overflow:hidden}
       <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
       <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 送信対象級の明示（players を持つ級・複数級は⚠）。textContent のみ・refreshSendTargetClasses が更新。 -->
       <div id="sendTargetLine" class="no-print" style="font-size:12px;margin-top:2px;color:#555;min-height:1.1em"></div>
-    </div>
-    <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): 共有セットアップ（大会IDの共有）。A級/B級を別端末で分担する運用向け。
-         追加のみ・当日運営フローは無改変（押さなければ従来通り）。click は bindReportEvents で結線。 -->
-    <div style="margin-top:8px;text-align:right" class="no-print">
-      <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 補足: 用途の一言（分担運用向け）。static・no-print・挙動不変。 -->
-      <div class="no-print" style="font-size:12px;margin-top:2px;margin-bottom:4px;color:#555">▷ A級・B級を2台で分担して入力するとき用（1台で運営するなら操作不要）</div>
-      <button type="button" id="copyTidBtn" class="btn-sm" title="この端末の大会IDをコピーして相手端末に共有します" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">大会IDをコピー</button>
-      <span style="display:inline-flex;gap:4px;align-items:center;margin-left:6px">
-        <input type="text" id="tidInput" inputmode="text" autocomplete="off" placeholder="例: t_2026_07_04" aria-label="共有された大会IDを入力" style="font-size:12px;padding:4px 6px;max-width:150px;border:1px solid #c3ccd8;border-radius:4px">
-        <button type="button" id="applyTidBtn" class="btn-sm" title="共有された大会IDでこの端末を同じ大会に揃えます" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">大会IDを指定して開始</button>
-      </span>
-      <div id="tidShareStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
     </div>
     <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 3 (#572): 成績発表の統合レポート（級別結合・閲覧専用）。
          現在の大会ID（state.tournament_id＝app_tournament_id）でクラウドから両級 entries を取得し、既存
@@ -9182,7 +9192,7 @@ var HELP_TEXTS={
       '送信に失敗しても当日のデータは端末に残っています。運営はそのまま続けて、あとで再送信できます。',
       '「大会履歴」タブの「☁ クラウドの過去大会」→「読み込む」で、共有された過去大会の結果を見られます。',
       'クラウドはバックアップの代わりではありません。端末の控えは「バックアップ」ボタンで保存してください。',
-      '【A級・B級を2台で分担する場合】1台目で「大会IDをコピー」→２台目の入力欄に貼って「大会IDを指定して開始」を押すと、両方の送信が同じ１つの大会にまとまります。各端末は自分の級だけを送るのがコツです。１台で運営するなら操作は不要です。'
+      '【A級・B級を2台で分担する場合】受付タブの「▷ 2台で分担して入力するとき」を開き、１台目で「運営共通キーを発行」→表示された4桁を２台目に伝え、２台目で入力して「このキーに合わせる」を押します。両方の送信が同じ１つの大会にまとまります（各端末は自分の級だけを送るのがコツ）。１台で運営するなら操作は不要です。'
     ]
   },
   // SAVE-STATUS-BAR-001 (STYLE-GUIDE §9 M3): ヘッダ直下の保存状態バーから開く保存4系統の説明。
@@ -10082,24 +10092,58 @@ function copyTextToClipboard(text,cb){
     if(cb)cb(!!okc);
   }catch(e3){ if(cb)cb(false); }
 }
-// 大会IDを確定（未生成なら ensureTournamentId で生成）してコピー。setStatus に結果文言。
-function copyCurrentTournamentId(setStatus){
-  var master=(typeof loadBranchMaster==='function')?loadBranchMaster():null;
-  var tid=ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report));
-  copyTextToClipboard(tid,function(okc){
-    if(setStatus)setStatus(okc?('大会IDをコピーしました（'+tid+'）'):('⚠ コピーできませんでした。大会ID '+tid+' を手入力で共有してください'));
-  });
-  return tid;
+// OPS-SHARED-KEY-REDESIGN-001 Phase B (#582): 運営共通キー（2台分担を繋ぐ4桁）の発行/適用オーケストレーション。
+//   キー＝内部ID app_tournament_id の末尾4桁（t_<当日>_<4桁>）。Phase A の純関数を使う。当日運営 state は
+//   tournament_id をセットするのみ（発番＝開始前の設定）。fail-soft・既存の生成規則 ensureTournamentId は無改変。
+// 当日日付（report 由来 or 今日）を YYYY-MM-DD で返す（ensureTournamentId と同じ基準）。
+function opsReportYmd(){
+  var ymd=(typeof getTournamentDateFromReport==='function')?getTournamentDateFromReport(state&&state.report):null;
+  if(!ymd||(typeof isValidYmd==='function'&&!isValidYmd(ymd)))ymd=(typeof todayYmd==='function')?todayYmd():'';
+  return ymd;
 }
-// 貼り付けた大会IDを検証して state.tournament_id にセット（＝相手端末と同じ大会に相乗り）。setStatus に結果。
-function applySpecifiedTournamentId(raw,setStatus){
-  var id=normalizeTournamentIdInput(raw);
-  if(!id){ if(setStatus)setStatus('⚠ 大会IDの形式が正しくありません（例: t_2026_07_04）'); return {ok:false}; }
-  if(typeof state==='undefined'||!state){ if(setStatus)setStatus('⚠ 大会データがありません'); return {ok:false}; }
-  state.tournament_id=id;
+// 衝突回避用：当日と同じ日付の既存キーを loadBranchMaster の tournament_ids から集める（ensureTournamentId と同源）。
+function collectLocalOpsKeysForDate(ymd){
+  var out=[]; if(!ymd)return out;
+  var pre='t_'+String(ymd).replace(/-/g,'_')+'_';
+  var master=(typeof loadBranchMaster==='function')?loadBranchMaster():null;
+  if(master&&Array.isArray(master.members)){
+    var seen={};
+    for(var i=0;i<master.members.length;i++){
+      var arr=(master.members[i]&&master.members[i].tournament_ids)||[];
+      for(var j=0;j<arr.length;j++){
+        var tid=arr[j]; if(typeof tid!=='string'||tid.indexOf(pre)!==0)continue;
+        var k=tournamentIdToOpsKey(tid); if(k&&!seen[k]){seen[k]=true;out.push(k);}
+      }
+    }
+  }
+  return out;
+}
+// 1台目：運営共通キーを発行して state.tournament_id を t_<当日>_<4桁> に確定。既に発行済みならそれを返す（毎回変えない）。
+function issueOpsSharedKey(setStatus){
+  if(typeof state==='undefined'||!state){ if(setStatus)setStatus('⚠ 大会データがありません'); return ''; }
+  var cur=tournamentIdToOpsKey(state.tournament_id);
+  if(cur){ if(setStatus)setStatus('この端末は運営共通キー '+cur+' で発行済みです（相手にこの数字を伝えてください）'); return cur; }
+  var ymd=opsReportYmd();
+  var key=generateOpsSharedKey(collectLocalOpsKeysForDate(ymd));
+  var tid=opsKeyToTournamentId(key,ymd);
+  if(!key||!tid){ if(setStatus)setStatus('⚠ キーの発行に失敗しました。もう一度お試しください'); return ''; }
+  state.tournament_id=tid;
   if(typeof saveData==='function'){ try{saveData();}catch(e){} }
-  if(setStatus)setStatus('この端末の大会IDを設定しました（'+id+'）。相手端末と同じIDで送信すると1つの大会に統合されます');
-  return {ok:true,tournament_id:id};
+  if(setStatus)setStatus('運営共通キー '+key+' を発行しました（相手にこの数字を伝えてください）'); 
+  return key;
+}
+// 2台目：受け取った4桁キーに合わせる（state.tournament_id を t_<当日>_<4桁> にセット）。
+function applyOpsSharedKey(rawInput,setStatus){
+  if(typeof state==='undefined'||!state){ if(setStatus)setStatus('⚠ 大会データがありません'); return {ok:false}; }
+  var k=String(rawInput==null?'':rawInput).replace(/[\s　]/g,'');
+  if(!/^\d{4}$/.test(k)){ if(setStatus)setStatus('⚠ 運営共通キーは4桁の数字です（相手の端末に表示された数字を入れてください）'); return {ok:false}; }
+  var ymd=opsReportYmd();
+  var tid=opsKeyToTournamentId(k,ymd);
+  if(!tid){ if(setStatus)setStatus('⚠ キーを認識できませんでした（4桁の数字を確認してください）'); return {ok:false}; }
+  state.tournament_id=tid;
+  if(typeof saveData==='function'){ try{saveData();}catch(e){} }
+  if(setStatus)setStatus('運営共通キー '+k+' に合わせました。この端末の結果を送信すると、同じキーの相手と１つの大会にまとまります'); 
+  return {ok:true,key:k,tournament_id:tid};
 }
 // CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 送信対象＝players を持つ級の一覧（純関数）。
 //   getReportClassLabel で級ラベル化。state を引数で受け副作用なし（テスト可能）。
@@ -11913,6 +11957,21 @@ function bindRegistrationEvents(){
   // START-UX-CONSOLIDATE-001 (設計 §5): #startBtn は「対局管理へ進むナビゲーション」。
   //   開始系の副作用を持つ startTournament ではなく goToTournamentFromReg（save()+タブ移動のみ）へ bind。
   document.getElementById('startBtn').addEventListener('click',goToTournamentFromReg);
+  // OPS-SHARED-KEY-REDESIGN-001 Phase B (#582): 受付タブ「2台で分担」→ 運営共通キーの発行/合わせる。
+  var opsIssueBtn=document.getElementById('opsIssueBtn');
+  if(opsIssueBtn)opsIssueBtn.addEventListener('click',function(){
+    var st=document.getElementById('opsShareStatus');
+    var key=issueOpsSharedKey(function(msg){ if(st)st.textContent=msg; });
+    var disp=document.getElementById('opsKeyDisplay');
+    if(disp)disp.innerHTML=key?('運営共通キー <strong style="font-size:24px;letter-spacing:4px;color:#1F3864">'+escapeHtml(key)+'</strong> <span style="font-size:12px;color:#555">を相手に伝えてください</span>'):'';
+  });
+  var opsApplyBtn=document.getElementById('opsApplyBtn');
+  if(opsApplyBtn)opsApplyBtn.addEventListener('click',function(){
+    var st=document.getElementById('opsShareStatus');
+    var inp=document.getElementById('opsKeyInput');
+    applyOpsSharedKey(inp?inp.value:'',function(msg){ if(st)st.textContent=msg; });
+  });
+
 
   // CLASS-VARIABLE-001 (CV-1): クラス追加ボタン / 新規クラス名入力欄（Enter で追加）を bind。
   //   改名 / 削除ボタンは renderClassManager 内で各行生成時に addEventListener する（動的 DOM）。
@@ -12357,18 +12416,6 @@ function bindReportEvents(){
   if(cloudSendBtn)cloudSendBtn.addEventListener('click',function(){
     var st=document.getElementById('cloudSendStatus');
     sendTournamentToCloud(function(msg){ applyCloudStatus(st,msg); });
-  });
-  // CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): 大会IDのコピー / 指定して開始（共有セットアップ・追加のみ）。
-  var copyTidBtn=document.getElementById('copyTidBtn');
-  if(copyTidBtn)copyTidBtn.addEventListener('click',function(){
-    var st=document.getElementById('tidShareStatus');
-    copyCurrentTournamentId(function(msg){ applyCloudStatus(st,msg); });
-  });
-  var applyTidBtn=document.getElementById('applyTidBtn');
-  if(applyTidBtn)applyTidBtn.addEventListener('click',function(){
-    var st=document.getElementById('tidShareStatus');
-    var inp=document.getElementById('tidInput');
-    applySpecifiedTournamentId(inp?inp.value:'',function(msg){ applyCloudStatus(st,msg); });
   });
   // CLASS-SPLIT-CLOUD-MERGE-001 Phase 3 (#572): 「☁ 両級まとめて表示（統合レポート）」（静的・id=cloudMergedReportBtn）
   //   → loadCloudMergedReportUI（現在の大会IDで両級 entries を取得し #cloudMergedReport へ読取専用描画・fail-soft）。
@@ -13299,7 +13346,7 @@ function fetchCloudTournamentIdByAppId(client, appTid, clubId){
 function loadCloudMergedReportUI(setStatus){
   setStatus=setStatus||function(){};
   var tid=resolveReportTournamentId((typeof state!=='undefined')?state:null);
-  if(!tid){ setStatus('大会IDが未設定です。先に「☁ クラウドへ送信」または「大会IDを指定して開始」で大会IDを揃えてください（運営は続行できます）'); return Promise.resolve({ok:false,step:'no-tid'}); }
+  if(!tid){ setStatus('この大会はまだ送信・キー設定がありません。先に「☁ クラウドへ送信」するか、2台で分担するなら受付タブの「▷ 2台で分担して入力するとき」で運営共通キーを設定してください（運営は続行できます）'); return Promise.resolve({ok:false,step:'no-tid'}); }
   setStatus('クラウドから両級の結果を取得中…（大会ID '+tid+'）');
   return loadCloudDeps().then(function(dep){
     if(dep&&dep.offline){ setStatus('オフラインのため取得できません（ネット接続後に再度お試しください・運営は続行できます）'); return {ok:false,step:'offline'}; }
