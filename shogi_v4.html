@@ -10348,22 +10348,18 @@ function sendTournamentToCloud(setStatus){
       if(!_okc){ setStatus('送信を中止しました（'+_tg.length+'クラス・分担運用では自分の級だけを持つ端末から送信してください）'); return Promise.resolve({ok:false,step:'cancelled'}); }
     }
   }catch(e){}
-  // SEND-DATE-GUARD-001 (#600): 送信前の報告書日付未設定チェック（当日日付での誤記録防止）。
-  //   大会日付は getTournamentDateFromReport が報告書の日付欄から取得し、未設定だと todayYmd()（今日）へ
-  //   フォールバックする。後日まとめ入力で実施日の設定忘れに気づけるよう confirm（#567 と同型・fail-soft・
-  //   当日に日付設定済みの当日運営は無警告＝挙動不変）。キャンセルで中止。
+  // SEND-DATE-CONFIRM-002 (#622): 送信前に「記録される実施日」を毎回確認する（#600 SEND-DATE-GUARD-001 を置換）。
+  //   REPORT-UX-001 の日付自動補完（未設定→今日）により UI 上「未設定」状態が存在せず、#600 の未設定ガードは
+  //   実質作動しなかった（後日まとめ入力で自動補完された「今日」が無警告で誤記録される）。案A（作者決定 2026-07-05）:
+  //   未設定のみ confirm を毎回 confirm に置き換え、getTournamentDateFromReport が返す実際の記録日を明示する。
+  //   キャンセルで中止（#600 の step:'cancelled-date' fail-soft を踏襲）。再送信（上書き修正）でも日付を再確認できる。
   try{
-    var _rd=(typeof state!=='undefined'&&state&&state.report)?state.report.date:null;
-    var _rdSet=false;
-    if(typeof _rd==='string'){
-      if(/^\d{4}-\d{2}-\d{2}$/.test(_rd))_rdSet=true;
-      else if(/\d{4}年\s*\d{1,2}月\s*\d{1,2}日/.test(_rd))_rdSet=true;
-    }
-    if(!_rdSet){
-      var _today=(typeof todayYmd==='function')?todayYmd():'';
-      var _dmsg='実施日が未設定です。今日の日付（'+_today+'）で記録されます。続行しますか？\n（後日のまとめ入力の場合は「キャンセル」し、報告書の日付欄に実施日を設定してください）';
+    var _recDate=(typeof getTournamentDateFromReport==='function')
+      ? getTournamentDateFromReport((typeof state!=='undefined'&&state)?state.report:null) : '';
+    if(_recDate){
+      var _dmsg='実施日 '+_recDate+' として記録します。違う場合は報告書の日付欄を修正してください。よろしいですか？';
       var _okd=true; try{ _okd=(typeof confirm==='function')?confirm(_dmsg):true; }catch(eD){ _okd=true; }
-      if(!_okd){ setStatus('送信を中止しました（報告書の日付欄に実施日を設定してから再送信してください）'); return Promise.resolve({ok:false,step:'cancelled-date'}); }
+      if(!_okd){ setStatus('送信を中止しました（報告書の日付欄で実施日を確認・修正してから再送信してください）'); return Promise.resolve({ok:false,step:'cancelled-date'}); }
     }
   }catch(eG){}
   setStatus('クラウドへ送信中…');

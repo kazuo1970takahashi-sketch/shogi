@@ -178,7 +178,7 @@ const syncSrc=RAW.slice(RAW.indexOf('function syncBranchMasterOnSave'),RAW.index
 assert(/masterSaved!==false\)\{[\s\S]{0,1200}markSaveStatus\('meibo'\)/.test(syncSrc), 'K2 名簿同期成功時のみ meibo 記録');  // YOMI-SYNC-OVERWRITE-001 で成功分岐に yomiDirty 解除が入り窓を拡張
 const expSrc=RAW.slice(RAW.indexOf('function exportTournamentBackup'),RAW.indexOf('function exportTournamentBackup')+1400);
 assert(expSrc.indexOf("markSaveStatus('backup')")>=0&&expSrc.indexOf("markSaveStatus('backup')")<expSrc.indexOf('return true;')+30, 'K3 バックアップ成功時に backup 記録');
-// SEND-DATE-GUARD-001 (#600): 冒頭に日付未設定ガードが追加され関数が伸びたため窓を 3600→5200 に拡大（チェック内容は不変）。
+// SEND-DATE-CONFIRM-002 (#622)/SEND-DATE-GUARD-001 (#600): 冒頭の日付確認ガードで関数が伸びたため窓を 3600→5200 に拡大（チェック内容は不変）。
 const cloudSrc=RAW.slice(RAW.indexOf('function sendTournamentToCloud'),RAW.indexOf('function sendTournamentToCloud')+5200);
 assert(/res&&res\.ok[\s\S]{0,900}markSaveStatus\('cloud'\)/.test(cloudSrc), 'K4 送信 res.ok 時に cloud 記録');
 
