@@ -28,7 +28,7 @@ A級/B級を2台で分担するときに「両端末を同じ大会に揃える�
 
 - 現行 `copyCurrentTournamentId` は `ensureTournamentId` を呼び、未生成なら `state.tournament_id`（`t_YYYY_MM_DD`）を**その場で確定**してクリップボードへコピーする（送信はしない）。
 - 現行 `applySpecifiedTournamentId` は貼り付けた `t_YYYY_MM_DD[_n]` を検証して `state.tournament_id` にセット。
-- UI は**最終結果タブ（大会報告書エリア）**にある。ボタン文言「大会IDを指定して**開始**」は「大会が始まる/リセットされる」誤解を生む。
+- UI は**最終結果タブ（大会報告書エリア＝`#pane-result`）**にある。ボタン文言「大会IDを指定して**開始**」は「大会が始まる/リセットされる」誤解を生む。
 - 混乱の核: (a) 置き場所が終盤タブ、(b) 「大会ID」という内部語がそのまま露出、(c) コピー＝送信だと誤解される、(d) 共有文字列が `t_2026_07_05` と長く手入力に不向き。
 
 ## 2. 新デザイン（利用者から見た姿）
@@ -39,7 +39,11 @@ A級/B級を2台で分担するときに「両端末を同じ大会に揃える�
 - **キーは一切見えない・触らない。** 従来どおり普通に運営して送信・表示するだけ。共有UIは既定で畳んでおく（開かなければ存在を意識しない）。
 
 ### 2.2 2台で分担
-対局管理タブの開始まわりに、畳まれた「▷ 2台で分担して入力するとき」を置く。開くと:
+対局管理タブ（`#pane-tournament`）の開始まわりに、畳まれた「▷ 2台で分担して入力するとき」を置く。
+
+> **配置の実装メモ（design-review Should-1）**: 対局管理タブには現状 `<details>` の折りたたみが**無い**（既存の `⚙ 大会の設定（大会開始前に確認）` details は**受付タブ `#pane-reg`** にあるクラス/回戦数の設定用で、別物）。本セクションは対局管理タブに**新規の折りたたみを1つ追加**する（追加のみ・受付タブの既存 details は無改変）。
+
+開くと:
 
 - **1台目（例: A級担当）**: 「運営共通キーを発行」→ **4桁（例 `4821`）が自動発番**されて大きく表示。これを相手に口頭/チャットで伝える。（内部では `state.tournament_id = t_<当日>_4821` を確定。）
 - **2台目（例: B級担当）**: 受け取った4桁を入力欄に打ち「このキーに合わせる」→ 内部で `t_<当日>_4821` を組み立て `state.tournament_id` にセット。
@@ -56,7 +60,7 @@ A級/B級を2台で分担するときに「両端末を同じ大会に揃える�
 
 **キーは新しいIDを増やさない。既存 `app_tournament_id` の末尾スロットを使う。**
 
-- 現行 `normalizeTournamentIdInput` の正規表現は既に `^t_\d{4}_\d{2}_\d{2}(?:_\d+)?$`＝**`t_2026_07_05_4821` は今のまま合格**。`ensureTournamentId` も衝突時に `_n` を付ける実装が既にある。→ **スキーマ追補ゼロ・検証器の変更ほぼゼロ**。
+- 現行 `normalizeTournamentIdInput` の正規表現は既に `^t_\d{4}_\d{2}_\d{2}(?:_\d+)?$`＝**`t_2026_07_05_4821` は今のまま合格**（design-review が node 実測で確認）。`ensureTournamentId` も衝突時に `_n` を付ける実装が既にある。→ **スキーマ追補ゼロ・検証器の変更ほぼゼロ**。
 - 「運営共通キー」= `app_tournament_id` の末尾4桁。内部IDは `t_<当日YYYY_MM_DD>_<4桁>`。
   - **人が扱うのは4桁だけ**。日付はアプリが内部で付ける（利用者は意識しない）。
   - **日付で名前空間が分かれる**ので、来月また `4821` が出ても先月と衝突しない（クラウド upsert キー `(club_id, app_tournament_id)` が別値になる）。
@@ -64,28 +68,33 @@ A級/B級を2台で分担するときに「両端末を同じ大会に揃える�
 - 2台目の「合わせる」: 入力4桁 `NNNN` ＋ 当日日付 → `t_<当日>_<NNNN>` を組んで `state.tournament_id` にセット（＝現行 applySpecifiedTournamentId の役割を、4桁入力から内部IDを組み立てる形に置換）。
 
 ### 3.1 純関数に切り出す（テスト対象）
-- `generateOpsSharedKey(existingKeys)` → 未使用の4桁文字列（衝突回避）。純。
+- `generateOpsSharedKey(existingKeys)` → 未使用の4桁文字列（衝突回避・`existingKeys` は当日ローカル履歴/送信済みから作った配列）。純。
 - `opsKeyToTournamentId(key, ymd)` → `t_<ymd>_<key>`（4桁検証・不正は空）。純。
 - `tournamentIdToOpsKey(tid)` → 末尾4桁（無ければ空）。純。表示用。
-- 既存 `ensureTournamentId` / `syncTournamentToCloud` / `fetchCloud*` は無改変（IDの中身が `_NNNN` 付きになるだけで経路は不変）。
+- 既存 `ensureTournamentId` / `syncTournamentToCloud` / `buildCloudSyncPayload` / `fetchCloud*` は無改変（IDの中身が `_NNNN` 付きになるだけで経路は不変）。移行用の第2生成器 `deriveTournamentMetaForMigration` 等 app_tournament_id を組む既存箇所も**無改変**（発番は新規導線側の責務）。
+
+### 3.2 発行と `ensureTournamentId` early-return の相互作用（design-review Should-2）
+`ensureTournamentId` は先頭で「既存 `state.tournament_id` があればそれを返す」early-return。したがって:
+- **発行は「まだ tournament_id が確定していない／まだ送信していない」段階で行うのが前提**。発行導線は suffix 付きID（`t_<当日>_<4桁>`）を `state.tournament_id` に確定→以後 `ensureTournamentId` はそれを返す（本体無改変で成立）。
+- **既に送信済みの大会に対して後から発行し直す（キー張り替え）とID不一致で別大会が生じる**。よって「送信後の発行/張り替え」は**抑止 or 明示確認**とする（Phase C で扱う・§8-5）。
 
 ## 4. 移行・後方互換（実装時の要注意）
 
 - **既存の本番大会は `t_YYYY_MM_DD`（4桁なし）**。これは今後も有効（読取・履歴・送信すべて現行どおり）。新方式は**新規大会の共有時のみ** `_NNNN` を足す。混在してよい（どちらも既存正規表現に合格）。
-- `members.tournament_ids` 履歴・master-rebuild の決定的 tie-break（date→app_tournament_id 昇順）は suffix があっても date 優先で安定。
+- `members.tournament_ids` 履歴（exact-string 蓄積）・master-rebuild の決定的 tie-break（date→app_tournament_id 文字列昇順）は suffix があっても date 優先で安定（design-review が該当行で確認）。
 - 単機運用の既存 `ensureTournamentId`（suffixなし生成）は**そのまま**。キー発行を押したときだけ suffix 付きに確定する。
-- 統合レポート取得（#576 修正済）は `app_tournament_id → tournaments.id(uuid)` 解決経路なので、IDの中身が変わっても不変。
+- 統合レポート取得（#576 修正済）は `app_tournament_id → tournaments.id(uuid)` 解決経路（不透明一致）なので、IDの中身が変わっても不変。
 
 ## 5. 撤去するもの
 
-- 最終結果タブ（大会報告書エリア）の「大会IDをコピー／大会IDを指定して開始」行（Phase 1 #542 で追加した `copyTidBtn`/`tidInput`/`applyTidBtn`/`tidShareStatus`）は**対局管理タブへ移設**＝旧位置は撤去。
-- 「☁ 両級まとめて表示（統合レポート）」ボタンは最終結果タブ（成績発表で使う）に**残す**（これは終盤に使うので置き場所は正しい）。
+- 最終結果タブ（`#pane-result`・大会報告書エリア）の「大会IDをコピー／大会IDを指定して開始」行（Phase 1 #542 で追加した `copyTidBtn`/`tidInput`/`applyTidBtn`/`tidShareStatus`）は**対局管理タブへ移設**＝旧位置は撤去。
+- 「☁ 両級まとめて表示（統合レポート）」ボタン（`cloudMergedReportBtn`）は最終結果タブに**残す**（これは終盤＝成績発表で使うので置き場所は正しい）。
 
 ## 6. 段階導入（各 Draft PR で停止・人間承認まで）
 
-- **Phase A**: 純関数3つ（generate/opsKeyToTournamentId/tournamentIdToOpsKey）＋テスト（docs/コード追加のみ・UI未接続）。
-- **Phase B**: 対局管理タブに「2台で分担」セクション（発行/合わせる）を追加し純関数へ結線。最終結果タブの旧共有行を撤去。ヘルプ文言更新。
-- **Phase C**: 磨き込み（単機運用でキー非表示・発行済みキーの再表示・当日日付跨ぎの注意表示など）。
+- **Phase A**: 純関数3つ（generate/opsKeyToTournamentId/tournamentIdToOpsKey）＋テスト（コード追加のみ・UI未接続）。
+- **Phase B**: 対局管理タブに「2台で分担」セクション（新規 details・発行/合わせる）を追加し純関数へ結線。最終結果タブの旧共有行を撤去。ヘルプ文言更新。
+- **Phase C**: 磨き込み（単機運用でキー非表示・発行済みキーの再表示・送信後の張り替え抑止・当日日付跨ぎの注意表示など）。
 - production 反映は各 Phase 後に別 release PR（`?v` インクリメント）。
 
 ## 7. CLAUDE.md 拘束9ルール整合（実装向け）
@@ -98,3 +107,14 @@ A級/B級を2台で分担するときに「両端末を同じ大会に揃える�
 2. 1台目が「発行」せずに送信→後から2台目を足したくなった場合の動線（当日途中からの分担開始）。Phase C で扱うか。
 3. 旧 `t_YYYY_MM_DD` で運用中の当日大会に後から4桁を足す必要が出た場合の扱い（基本は新規大会からで可）。
 4. Review Level: 本番の大会ID発番に触れる＝**L3 以上**（クラウド識別子に関わる）。design-review は別素性、code-review は独立必須。
+5. **（design-review Should-2）送信後のキー発行/張り替え**は ID 不一致で別大会を生む。抑止 or 明示確認のどちらにするか（Phase C）。§3.2 参照。
+
+## 9. design-review 反映（#579 / verdict: conditional-go）
+
+別セッションの独立 Claude Code レビュアーによる design-review（L3）を反映。**事実主張（正規表現が `t_..._4桁` を受理・`ensureTournamentId` early-return で本体無改変が成立・`syncTournamentToCloud` の upsert キー無影響・`members.tournament_ids`/master-rebuild tie-break が suffix 混在で決定的・撤去対象UIの所在・#576 の id 不透明一致）はすべて実コードで確認・一致**（正規表現は node 実測）。verdict: conditional-go（P0/P1 なし）。反映:
+
+1. **Should-1**: 移設先 `<details>` の所在誤記を修正。`⚙ 大会の設定` details は**受付タブ `#pane-reg`**（別物）。対局管理タブには既存 details が無いため**新規に折りたたみを追加**する（§2.2 実装メモ）。
+2. **Should-2**: 発行と `ensureTournamentId` early-return の相互作用、および**送信後の張り替え**を §3.2／§8-5 に明文化。
+3. **Nice**: 第2生成器 `deriveTournamentMetaForMigration` 等も無改変対象に含む旨（§3.1）／`generateOpsSharedKey` の衝突回避入力元（当日ローカル履歴/送信済み由来の配列）を明記（§3.1）。
+
+Phase A 実装着手は conditional-go により可（上記 Should を設計へ反映済み）。
