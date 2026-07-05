@@ -12805,17 +12805,33 @@ function _livePublicCfgReady(){
     &&typeof window.SHOGI_LIVE_PUBLIC_CONFIG.url==='string'&&!!window.SHOGI_LIVE_PUBLIC_CONFIG.url
     &&typeof window.SHOGI_LIVE_PUBLIC_CONFIG.publishableKey==='string'&&!!window.SHOGI_LIVE_PUBLIC_CONFIG.publishableKey;
 }
+// P2-2 (#613): config ロード失敗を記憶せず 5 秒ポーリング毎に <script> を head へ追加し続けると
+// config 未配備の終日キオスクで script 要素とネットワーク要求が無制限に蓄積する（約720個/時）。
+// 対策: ①実行中は同一 Promise を再利用（in-flight 多重ロード防止）②失敗タグは head から除去
+// ③失敗後 LIVE_CFG_RETRY_MS はバックオフ（即 false・タグを作らない）。成功経路（準備済み短絡）は不変。
+var LIVE_CFG_RETRY_MS=60000;
+var _livePublicCfgPromise=null;
+var _livePublicCfgRetryAt=0;
 function loadLivePublicConfig(){
-  return new Promise(function(resolve){
-    if(_livePublicCfgReady()){resolve(true);return;}
+  if(_livePublicCfgReady())return Promise.resolve(true);
+  if(_livePublicCfgPromise)return _livePublicCfgPromise;
+  if(Date.now()<_livePublicCfgRetryAt)return Promise.resolve(false);
+  _livePublicCfgPromise=new Promise(function(resolve){
+    var done=function(ok){
+      _livePublicCfgPromise=null;
+      if(!ok)_livePublicCfgRetryAt=Date.now()+LIVE_CFG_RETRY_MS;
+      resolve(ok);
+    };
     try{
       var sc=document.createElement('script');
+      var drop=function(){try{if(sc.parentNode)sc.parentNode.removeChild(sc);}catch(e2){}};
       sc.src='app/config.public.js';
-      sc.onload=function(){resolve(_livePublicCfgReady());};
-      sc.onerror=function(){resolve(false);};
+      sc.onload=function(){var ok=_livePublicCfgReady();if(!ok)drop();done(ok);};
+      sc.onerror=function(){drop();done(false);};
       document.head.appendChild(sc);
-    }catch(e){resolve(false);}
+    }catch(e){done(false);}
   });
+  return _livePublicCfgPromise;
 }
 // RPC の URL（純関数・末尾スラッシュを正規化）。
 function liveRpcUrl(baseUrl,fn){
