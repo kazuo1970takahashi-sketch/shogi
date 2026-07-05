@@ -2189,6 +2189,19 @@ else
 fi
 
 
+echo ""
+echo "【SEND-DATE-GUARD-001 (#600) ☁送信前の報告書日付未設定チェック（confirm/中止/挙動不変）】"
+if [ -f "$SCRIPT_DIR/test_send_date_guard.js" ]; then
+  if node "$SCRIPT_DIR/test_send_date_guard.js" "$TARGET" > /tmp/send_date_guard_out.log 2>&1; then
+    ok "SEND-DATE-GUARD テスト 全PASS ($(tail -1 /tmp/send_date_guard_out.log))"
+  else
+    ng "SEND-DATE-GUARD テスト 失敗"; cat /tmp/send_date_guard_out.log
+  fi
+else
+  warn "test_send_date_guard.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
