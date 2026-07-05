@@ -65,7 +65,9 @@ const SRC=extractScripts(RAW);
 // PRESET-SRC: 前回クラス自動割当が3経路から除去されている。
 // ============================================================
 assert(SRC.indexOf("inpClass.value=member.last_class")===-1,'PRESET-SRC-1 onSuggestTap の last_class 自動入力が除去されている');
-assert(/var highlight=false;/.test(SRC)&&SRC.indexOf("var highlight=(m.last_class===cls)")===-1,'PRESET-SRC-2 サジェスト A/B ボタンの last_class 強調が除去（highlight=false）');
+// ENTRY-ADD-CONFIRM-001 (#599) 追随: サジェスト A/B 直接追加ボタン自体が廃止されたため、
+// 「highlight=false で中立表示」ではなく「強調コード・ボタン生成コードが存在しない」ことを検証する。
+assert(SRC.indexOf("var highlight=(m.last_class===cls)")===-1&&SRC.indexOf("btn.className='suggest-add-btn'")===-1,'PRESET-SRC-2 サジェスト A/B ボタンの last_class 強調が復活していない（#599 でボタン自体を廃止）');
 assert(SRC.indexOf("var cls=(m.last_class==='A'||m.last_class==='B')?m.last_class:'A';")===-1,'PRESET-SRC-3 過去参加者一括追加の last_class 既定割当が除去');
 assert((SRC.match(/PRESET-REMOVE-001/g)||[]).length>=3,'PRESET-SRC-4 3経路すべてに PRESET-REMOVE-001 マーカーがある');
 
