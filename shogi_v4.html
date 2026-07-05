@@ -1156,6 +1156,9 @@ function normalizeState(raw){
   }
   // 支部マスタ連携用の tournament_id を保持（F2）
   if(typeof s.tournament_id==='string'&&s.tournament_id)base.tournament_id=s.tournament_id;
+  // OPS-SHARED-KEY Phase C (#585・L3 Should-Fix P2): 送信済み大会IDの記録を reload 後も保持
+  //   （tournament_id と同パターン・無ければ引き継がない＝張り替えガード opsRekeyNeedsConfirm の入力。yomiDirty の Codex P2b と同型）。
+  if(typeof s.cloud_sent_tid==='string'&&s.cloud_sent_tid)base.cloud_sent_tid=s.cloud_sent_tid;
   // ROUND-CLASS-START-003 (spec §8.2 / §9.4 step 7):
   //   互換フィールド state.started は classes 配列の OR を同期書き込み。
   //   normalizeState は §8.2 例外3関数の1つ（直接代入を許容、ただし最終必ず同期）。
@@ -2530,6 +2533,8 @@ function opsKeyToTournamentId(key, ymd){
   if(!/^\d{4}$/.test(k))return '';
   var d=(ymd==null)?'':String(ymd);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return '';
+  // Phase C (#585): 暦上実在しない日付（2/31・13月等）は既存 isValidYmd で拒否（Nice 消化・設計 §3.1 申し送り）。
+  if(typeof isValidYmd==='function'&&!isValidYmd(d))return '';
   return normalizeTournamentIdInput('t_'+d.replace(/-/g,'_')+'_'+k);
 }
 // 内部大会ID 't_YYYY_MM_DD_NNNN' から運営共通キー（末尾4桁）を取り出す純関数（表示用）。
@@ -10127,6 +10132,11 @@ function issueOpsSharedKey(setStatus){
   var key=generateOpsSharedKey(collectLocalOpsKeysForDate(ymd));
   var tid=opsKeyToTournamentId(key,ymd);
   if(!key||!tid){ if(setStatus)setStatus('⚠ キーの発行に失敗しました。もう一度お試しください'); return ''; }
+  // Phase C (#585): 送信済みIDからの張り替えは明示確認（設計 §8-5・キャンセル＝現IDを維持・confirm 不在/例外は安全側＝中止）。
+  if(typeof opsRekeyNeedsConfirm==='function'&&opsRekeyNeedsConfirm(state,tid)){
+    var okc=false; try{ okc=(typeof confirm==='function')?confirm('この端末は今の大会IDでクラウドへ送信済みです。\nキーを発行し直すと、クラウド上では別の大会として扱われます（送信済みの結果は元の大会に残ります）。\n発行し直しますか？'):false; }catch(eC){ okc=false; }
+    if(!okc){ if(setStatus)setStatus('発行を中止しました（送信済みの大会IDを維持します）'); return ''; }
+  }
   state.tournament_id=tid;
   if(typeof saveData==='function'){ try{saveData();}catch(e){} }
   if(setStatus)setStatus('運営共通キー '+key+' を発行しました（相手にこの数字を伝えてください）'); 
@@ -10140,10 +10150,45 @@ function applyOpsSharedKey(rawInput,setStatus){
   var ymd=opsReportYmd();
   var tid=opsKeyToTournamentId(k,ymd);
   if(!tid){ if(setStatus)setStatus('⚠ キーを認識できませんでした（4桁の数字を確認してください）'); return {ok:false}; }
+  // Phase C (#585): 送信済みIDからの張り替えは明示確認（設計 §8-5・キャンセル＝現IDを維持・confirm 不在/例外は安全側＝中止）。
+  if(typeof opsRekeyNeedsConfirm==='function'&&opsRekeyNeedsConfirm(state,tid)){
+    var okc=false; try{ okc=(typeof confirm==='function')?confirm('この端末は今の大会IDでクラウドへ送信済みです。\n別のキーに合わせると、クラウド上では別の大会として扱われます（送信済みの結果は元の大会に残ります）。\nこのキーに合わせますか？'):false; }catch(eC){ okc=false; }
+    if(!okc){ if(setStatus)setStatus('変更を中止しました（送信済みの大会IDを維持します）'); return {ok:false,step:'cancelled'}; }
+  }
   state.tournament_id=tid;
   if(typeof saveData==='function'){ try{saveData();}catch(e){} }
   if(setStatus)setStatus('運営共通キー '+k+' に合わせました。この端末の結果を送信すると、同じキーの相手と１つの大会にまとまります'); 
   return {ok:true,key:k,tournament_id:tid};
+}
+// OPS-SHARED-KEY-REDESIGN-001 Phase C (#585): 送信後のキー張り替えガード（設計 §3.2/§8-5）。
+//   この端末が現 tournament_id でクラウド送信済み（state.cloud_sent_tid が現IDと一致）のとき、異なる newTid への
+//   張り替えは ID 不一致で「別大会」を生む → 呼び出し側が confirm で明示確認する（決定: 髙橋 2026-07-05＝抑止でなく明示確認）。純関数。
+function opsRekeyNeedsConfirm(st,newTid){
+  if(!st||typeof st.cloud_sent_tid!=='string'||!st.cloud_sent_tid)return false;
+  if(st.cloud_sent_tid!==st.tournament_id)return false;
+  return !!newTid&&newTid!==st.tournament_id;
+}
+// Phase C (#585): 日付跨ぎ注意（設計 §6）。tid に埋まる日付が当日（ymd）と異なるとき注意文言を返す（該当しなければ ''）。
+//   運営共通キーは日付で名前空間が分かれる＝日を跨ぐと同じ4桁でも別大会。表示のみ・ブロックしない（fail-soft）。純関数。
+function opsKeyDateNote(tid,ymd){
+  var m=/^t_(\d{4})_(\d{2})_(\d{2})_\d{4}$/.exec(String(tid==null?'':tid));
+  if(!m)return '';
+  var tidYmd=m[1]+'-'+m[2]+'-'+m[3];
+  if(!ymd||tidYmd===String(ymd))return '';
+  return '⚠ このキーは '+Number(m[2])+'/'+Number(m[3])+' の大会用です。日付が変わると同じ4桁でも別の大会になるため、分担する2台は同じ日のうちに設定してください';
+}
+// Phase C (#585): 発行済みキーの再表示。state.tournament_id の末尾4桁を opsKeyDisplay に復元表示
+//   （リロード後や details を開き直したときにも発行済みキーが見える）。キー無しなら表示を消す。日付跨ぎ注意を併記。
+//   配色は STYLE-GUIDE warn（#633806 文字・#faeeda 地・#EF9F27 枠）。
+function refreshOpsKeyDisplay(){
+  var disp=(typeof document!=='undefined')?document.getElementById('opsKeyDisplay'):null;
+  if(!disp)return;
+  var tid=(typeof state!=='undefined'&&state)?state.tournament_id:'';
+  var key=tournamentIdToOpsKey(tid);
+  if(!key){ disp.innerHTML=''; return; }
+  var note=opsKeyDateNote(tid,opsReportYmd());
+  disp.innerHTML='運営共通キー <strong style="font-size:24px;letter-spacing:4px;color:#1F3864">'+escapeHtml(key)+'</strong> <span style="font-size:12px;color:#555">を相手に伝えてください</span>'
+    +(note?'<div style="font-size:12px;color:#633806;background:#faeeda;border:1px solid #EF9F27;border-radius:6px;padding:4px 8px;margin-top:6px">'+escapeHtml(note)+'</div>':'');
 }
 // CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 送信対象＝players を持つ級の一覧（純関数）。
 //   getReportClassLabel で級ラベル化。state を引数で受け副作用なし（テスト可能）。
@@ -10366,6 +10411,8 @@ function sendTournamentToCloud(setStatus){
             setStatus(base);
             // SAVE-STATUS-BAR-001: クラウド送信成功（res.ok・warn 含む＝送信自体は実行済み）の時刻を記録（fail-soft）。
             markSaveStatus('cloud');
+            // OPS-SHARED-KEY Phase C (#585): この端末が送信した大会IDを記録（キー張り替え時の明示確認 opsRekeyNeedsConfirm に使う・fail-soft）。
+            try{ if(typeof state!=='undefined'&&state&&state.tournament_id){ state.cloud_sent_tid=state.tournament_id; if(typeof saveData==='function')saveData(); } }catch(eS){}
           }
           else { setStatus('送信に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再送できます）'); }
           return res;
@@ -11961,16 +12008,20 @@ function bindRegistrationEvents(){
   var opsIssueBtn=document.getElementById('opsIssueBtn');
   if(opsIssueBtn)opsIssueBtn.addEventListener('click',function(){
     var st=document.getElementById('opsShareStatus');
-    var key=issueOpsSharedKey(function(msg){ if(st)st.textContent=msg; });
-    var disp=document.getElementById('opsKeyDisplay');
-    if(disp)disp.innerHTML=key?('運営共通キー <strong style="font-size:24px;letter-spacing:4px;color:#1F3864">'+escapeHtml(key)+'</strong> <span style="font-size:12px;color:#555">を相手に伝えてください</span>'):'';
+    issueOpsSharedKey(function(msg){ if(st)st.textContent=msg; });
+    // Phase C (#585): 表示は refreshOpsKeyDisplay に一元化（発行済み再表示・日付跨ぎ注意と同一描画・キャンセル時も現状を正しく反映）。
+    if(typeof refreshOpsKeyDisplay==='function')refreshOpsKeyDisplay();
   });
   var opsApplyBtn=document.getElementById('opsApplyBtn');
   if(opsApplyBtn)opsApplyBtn.addEventListener('click',function(){
     var st=document.getElementById('opsShareStatus');
     var inp=document.getElementById('opsKeyInput');
     applyOpsSharedKey(inp?inp.value:'',function(msg){ if(st)st.textContent=msg; });
+    if(typeof refreshOpsKeyDisplay==='function')refreshOpsKeyDisplay();
   });
+  // Phase C (#585): 畳みを開いたとき発行済みキーを復元表示（リロード後も見える・単機は開かない限り非表示のまま＝設計 §6）。
+  var opsDetails=document.getElementById('ops-share-details');
+  if(opsDetails)opsDetails.addEventListener('toggle',function(){ if(opsDetails.open&&typeof refreshOpsKeyDisplay==='function')refreshOpsKeyDisplay(); });
 
 
   // CLASS-VARIABLE-001 (CV-1): クラス追加ボタン / 新規クラス名入力欄（Enter で追加）を bind。
