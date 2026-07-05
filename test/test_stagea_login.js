@@ -154,8 +154,10 @@ const A = loadAuth();
   assert(A.buildAppViewHtml(sOrg, []).indexOf('adminPanel')<0, 'A4 organizer 画面に幹事管理パネルを出さない');
 
   // owner 画面のリスト：最後の owner の「一時停止/退任」は disabled
+  // #560 現実追従（APP-AUTH-SYNC-001 #593）: 行ボタンは廃止＝disabled 表現は消滅。
+  //   ガード本体は setOrganizerStatus のクライアント側判定（本ファイル下方 r3 で検証）に残る。
   const ownerRow = A.buildOrganizerRowHtml(organizers[0], organizers);
-  assert(/act-suspend[^>]*disabled/.test(ownerRow) && /act-retire[^>]*disabled/.test(ownerRow), 'A5 最後の owner の停止/退任ボタンは disabled');
+  assert(ownerRow.indexOf('class="org-check"') >= 0 && ownerRow.indexOf('act-suspend') < 0, 'A5 行ボタン廃止→チェック選択（ガードは setOrganizerStatus 側・r3）');
 
   const c = makeClient();
   // 招待 = organizers へ insert（active・user_id なし）

@@ -99,28 +99,33 @@
       '</section>';
   }
   function buildOrganizerRowHtml(org, organizers) {
-    // APP-UX-004B (作者承認 2026-07-03): 「役割 / 状態」の連結テキストを役割バッジ＋状態表示に分離
-    //   （名簿シートの mk-badge と同じ設計言語）。data-id・act-* クラス・disabled ガードは全て温存。
-    var lastGuard = isLastActiveAdmin(organizers, org);
-    var who = esc(org.display_name || org.email || '(無名)');
+    // 一覧はテーブル1行（<tr>）。行選択はチェックボックス、操作（一時停止/退任/再有効化）は
+    //   ヘッダーのツールバーへ集約（行ごとのボタン反復をやめる）。氏名は氏名セルをタップして編集。
+    var who = esc(org.display_name || '（氏名未登録）');
+    var nameMissing = !(org.display_name && String(org.display_name).trim());
+    var email = esc(org.email || '（メール未登録）');
+    var nameRaw = esc(org.display_name || '');
     var role = ROLE_LABEL[org.role] || org.role;
     var status = STATUS_LABEL[org.status] || org.status;
     var id = esc(org.id);
     var badgeCls = (org.role === 'organizer') ? ' rb-organizer' : ((org.role === 'viewer') ? ' rb-viewer' : '');
     var statusCls = (org.status === 'active') ? '' : ' st-suspended';
-    var h = '<li class="org-row" data-id="' + id + '">' +
-      '<span class="org-who">' + who + '</span>' +
-      '<span class="org-role-badge' + badgeCls + '">' + esc(role) + '</span>' +
-      '<span class="org-status' + statusCls + '">' + esc(status) + '</span>' +
-      '<span class="org-actions">';
-    if (org.status === 'active') {
-      h += '<button type="button" class="act-suspend" data-id="' + id + '"' + (lastGuard ? ' disabled title="最後のオーナー/管理者は停止できません"' : '') + '>一時停止</button>';
-      h += '<button type="button" class="act-retire"  data-id="' + id + '"' + (lastGuard ? ' disabled title="最後のオーナー/管理者は退任にできません"' : '') + '>退任</button>';
-    } else {
-      h += '<button type="button" class="act-reactivate" data-id="' + id + '">再有効化（再招待）</button>';
-    }
-    h += '</span></li>';
-    return h;
+    var whoCls = 'org-who' + (nameMissing ? ' org-who-missing' : '');
+    return '<tr class="org-row" data-id="' + id + '">' +
+      '<td class="org-check-cell"><input type="checkbox" class="org-check" data-id="' + id + '" aria-label="' + who + ' を選択"></td>' +
+      '<td class="org-name-cell" data-id="' + id + '" title="タップで氏名を編集">' +
+        '<span class="' + whoCls + '" data-id="' + id + '">' + who + '</span>' +
+        '<span class="org-pen" aria-hidden="true">✎</span>' +
+        '<span class="org-name-edit" data-id="' + id + '" style="display:none">' +
+        '<input type="text" class="org-name-input" data-id="' + id + '" value="' + nameRaw + '" placeholder="氏名（例：髙橋 一雄）">' +
+        '<button type="button" class="act-name-save" data-id="' + id + '">保存</button>' +
+        '<button type="button" class="act-name-cancel" data-id="' + id + '">やめる</button>' +
+        '</span>' +
+      '</td>' +
+      '<td class="org-mail-cell">' + email + '</td>' +
+      '<td><span class="org-role-badge' + badgeCls + '">' + esc(role) + '</span></td>' +
+      '<td><span class="org-status' + statusCls + '">' + esc(status) + '</span></td>' +
+      '</tr>';
   }
   function buildAdminPanelHtml(organizers, summary) {
     // APP-UX-004B (作者承認 2026-07-03): 幹事管理の整列＋役割説明。
@@ -135,6 +140,10 @@
       '<p class="muted">オーナー/管理者のみ。停止・退任しても会員名簿や履歴は消えません。' +
       'オーナー/管理者は常に1人以上必要です。</p>' +
       '<form id="inviteForm" class="adm-form">' +
+      '<div class="adm-fld">' +
+      '<label for="inviteName">お名前</label>' +
+      '<input type="text" id="inviteName" name="name" autocomplete="off" placeholder="お名前（例：髙橋 一雄）">' +
+      '</div>' +
       '<div class="adm-fld">' +
       '<label for="inviteEmail">メールで招待</label>' +
       '<input type="email" id="inviteEmail" name="email" autocomplete="off" placeholder="new@example.com" required>' +
@@ -156,7 +165,17 @@
       '<dt>幹事</dt><dd>大会結果・名簿の編集ができます。他の幹事の招待・停止はできません。</dd>' +
       '<dt>閲覧</dt><dd>閲覧のみ。編集はできません。</dd>' +
       '</dl>' +
-      '<ul class="org-list">' + rows + '</ul>' +
+      '<div class="org-toolbar" id="orgToolbar">' +
+      '<span class="org-sel" id="orgSelCount">選択 0件</span>' +
+      '<button type="button" id="bulkSuspend" class="org-tb-btn" disabled>一時停止</button>' +
+      '<button type="button" id="bulkRetire" class="org-tb-btn org-tb-danger" disabled>退任</button>' +
+      '<button type="button" id="bulkReactivate" class="org-tb-btn" disabled>再有効化</button>' +
+      '</div>' +
+      '<table class="org-table">' +
+      '<colgroup><col class="oc-chk"><col class="oc-name"><col class="oc-mail"><col class="oc-role"><col class="oc-st"></colgroup>' +
+      '<thead><tr><th><input type="checkbox" class="org-check-all" id="orgCheckAll" aria-label="すべて選択"></th><th>氏名</th><th>メール</th><th>役割</th><th>状態</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+      '</table>' +
       '</section>';
   }
   // APP-UX-001 (作者依頼 2026-07-02): 「縦一本のカード羅列」をやめ、紺のヘッダバー＋ピル型ナビで
@@ -267,14 +286,28 @@
         return { organizers: Array.isArray(res.data) ? res.data : [] };
       });
   }
-  function inviteOrganizer(client, clubId, email, role) {
+  function inviteOrganizer(client, clubId, email, role, name) {
     var addr = (email || '').trim();
     if (!isValidEmail(addr)) return Promise.resolve({ ok: false, message: 'メールアドレスの形式が正しくありません。' });
     var r = (['owner', 'admin', 'organizer', 'viewer'].indexOf(role) >= 0) ? role : 'organizer';
-    return client.from('organizers').insert({ club_id: clubId, email: addr, role: r, status: 'active' })
+    var row = { club_id: clubId, email: addr, role: r, status: 'active' };
+    var nm = (name || '').trim();
+    if (nm) row.display_name = nm;
+    return client.from('organizers').insert(row)
       .then(function (res) {
         if (res && res.error) return { ok: false, message: '招待できませんでした（権限/重複の可能性）: ' + res.error.message };
-        return { ok: true, message: addr + ' を招待しました。本人がメールのリンクからログインすると有効になります。' };
+        return { ok: true, message: (nm ? nm + '（' + addr + '）' : addr) + ' を招待しました。本人がメールのリンクからログインすると有効になります。' };
+      });
+  }
+  // 既存の席の氏名（display_name）を設定/変更する。RLS 上 organizers_update は owner/admin のみ許可。
+  //   status/role/user_id は変えないので「最後の admin ガード」トリガにも掛からない。
+  function updateOrganizerName(client, id, name) {
+    var nm = (name || '').trim();
+    if (!nm) return Promise.resolve({ ok: false, message: '氏名を入力してください。' });
+    return client.from('organizers').update({ display_name: nm }).eq('id', id)
+      .then(function (res) {
+        if (res && res.error) return { ok: false, message: '氏名を保存できませんでした（権限の可能性）: ' + res.error.message };
+        return { ok: true, message: '氏名を「' + nm + '」に保存しました。' };
       });
   }
   // status 変更（suspend/retire/active）。最後の active owner/admin を消す操作はクライアントでも弾く。
@@ -1226,7 +1259,8 @@
         if (e && e.preventDefault) e.preventDefault();
         var email = (byId('inviteEmail') || {}).value || '';
         var role = (byId('inviteRole') || {}).value || 'organizer';
-        inviteOrganizer(client, lastSummary.clubId, email, role).then(function (r) {
+        var name = (byId('inviteName') || {}).value || '';
+        inviteOrganizer(client, lastSummary.clubId, email, role, name).then(function (r) {
           setMsg('adminMsg', r.message, r.ok ? 'ok' : 'err'); if (r.ok) refreshAdmin();
         });
       });
@@ -1694,18 +1728,51 @@
     }
     function bindOrgActions() {
       if (!doc || !doc.querySelectorAll) return;
-      function wire(sel, status) {
-        var nodes = doc.querySelectorAll(sel); if (!nodes) return;
-        Array.prototype.forEach.call(nodes, function (n) {
-          n.addEventListener('click', function () {
-            setOrganizerStatus(client, n.getAttribute('data-id'), status, lastOrganizers)
-              .then(function (r) { setMsg('adminMsg', r.message, r.ok ? 'ok' : 'err'); if (r.ok) refreshAdmin(); });
-          });
-        });
+      function all(sel) { return doc.querySelectorAll(sel) || []; }
+      function first(sel) { var ns = doc.querySelectorAll(sel); return (ns && ns[0]) || null; }
+      function checkedIds() { var out = []; Array.prototype.forEach.call(all('.org-check'), function (c) { if (c.checked) out.push(c.getAttribute('data-id')); }); return out; }
+      function updateToolbar() {
+        var ids = checkedIds();
+        var cnt = first('#orgSelCount'); if (cnt) cnt.textContent = '選択 ' + ids.length + '件';
+        Array.prototype.forEach.call(all('.org-tb-btn'), function (b) { b.disabled = ids.length === 0; });
       }
-      wire('.act-suspend', 'suspended');
-      wire('.act-retire', 'retired');
-      wire('.act-reactivate', 'active');
+      Array.prototype.forEach.call(all('.org-check'), function (c) { c.addEventListener('change', updateToolbar); });
+      var chkAll = first('#orgCheckAll');
+      if (chkAll) chkAll.addEventListener('change', function () { Array.prototype.forEach.call(all('.org-check'), function (c) { c.checked = chkAll.checked; }); updateToolbar(); });
+      function bulk(status) {
+        var ids = checkedIds(); if (!ids.length) return;
+        var msgs = []; var chain = Promise.resolve();
+        ids.forEach(function (id) { chain = chain.then(function () { return setOrganizerStatus(client, id, status, lastOrganizers).then(function (r) { if (!r.ok) msgs.push(r.message); }); }); });
+        chain.then(function () { setMsg('adminMsg', msgs.length ? msgs.join(' / ') : '更新しました。', msgs.length ? 'err' : 'ok'); refreshAdmin(); });
+      }
+      var bs = first('#bulkSuspend'); if (bs) bs.addEventListener('click', function () { bulk('suspended'); });
+      var br = first('#bulkRetire'); if (br) br.addEventListener('click', function () { bulk('retired'); });
+      var ba = first('#bulkReactivate'); if (ba) ba.addEventListener('click', function () { bulk('active'); });
+      updateToolbar();
+      function toggleEdit(id, editing) {
+        var editBox = first('.org-name-edit[data-id="' + id + '"]');
+        var whoEl = first('.org-who[data-id="' + id + '"]');
+        var cell = first('.org-name-cell[data-id="' + id + '"]');
+        if (editBox) editBox.style.display = editing ? '' : 'none';
+        if (whoEl) whoEl.style.display = editing ? 'none' : '';
+        if (cell && cell.querySelector) { var pen = cell.querySelector('.org-pen'); if (pen) pen.style.display = editing ? 'none' : ''; }
+        if (editing) { var inp = first('.org-name-input[data-id="' + id + '"]'); if (inp && inp.focus) inp.focus(); }
+      }
+      Array.prototype.forEach.call(all('.org-name-cell'), function (cell) {
+        cell.addEventListener('click', function (e) {
+          var t = e && e.target; var cls = (t && typeof t.className === 'string') ? t.className : '';
+          if (cls.indexOf('act-name-') >= 0 || cls.indexOf('org-name-input') >= 0) return;
+          toggleEdit(cell.getAttribute('data-id'), true);
+        });
+      });
+      Array.prototype.forEach.call(all('.act-name-cancel'), function (n) { n.addEventListener('click', function (e) { if (e && e.stopPropagation) e.stopPropagation(); toggleEdit(n.getAttribute('data-id'), false); }); });
+      Array.prototype.forEach.call(all('.act-name-save'), function (n) {
+        n.addEventListener('click', function (e) {
+          if (e && e.stopPropagation) e.stopPropagation();
+          var id = n.getAttribute('data-id'); var inp = first('.org-name-input[data-id="' + id + '"]'); var nm = inp ? inp.value : '';
+          updateOrganizerName(client, id, nm).then(function (r) { setMsg('adminMsg', r.message, r.ok ? 'ok' : 'err'); if (r.ok) refreshAdmin(); });
+        });
+      });
     }
     function refreshAdmin() {
       if (!lastSummary || !lastSummary.isAdmin) return Promise.resolve();
@@ -1801,6 +1868,7 @@
     claimAndLoadMemberships: claimAndLoadMemberships,
     fetchOrganizers: fetchOrganizers,
     inviteOrganizer: inviteOrganizer,
+    updateOrganizerName: updateOrganizerName,
     setOrganizerStatus: setOrganizerStatus,
     signOut: signOut,
     // B-1 read-only（#343）

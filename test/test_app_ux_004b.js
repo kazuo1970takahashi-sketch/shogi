@@ -50,7 +50,7 @@ assert(h.indexOf('name="email"') >= 0 && h.indexOf('name="role"') >= 0, 'F6 name
 // ---- M: 結果視認性（adminMsg はフォーム直下・一覧より前） ----
 const iForm = h.indexOf('id="inviteForm"');
 const iMsg  = h.indexOf('id="adminMsg"');
-const iList = h.indexOf('class="org-list"');
+const iList = h.indexOf('class="org-table"'); // #560 現実追従（APP-AUTH-SYNC-001 #593）: 一覧は org-list → org-table
 assert(iForm >= 0 && iMsg > iForm, 'M1 adminMsg はフォームの後');
 assert(iList >= 0 && iMsg < iList, 'M2 adminMsg は org-list より前（スクロール不要位置）');
 
@@ -74,9 +74,12 @@ assert(rowView.indexOf('org-role-badge rb-viewer') >= 0, 'B3 viewer は rb-viewe
 assert(rowOwner.indexOf('class="org-status"') >= 0 && rowOwner.indexOf('有効') >= 0, 'B4 active は通常状態表示');
 assert(rowView.indexOf('org-status st-suspended') >= 0, 'B5 suspended は st-suspended');
 assert(rowOwner.indexOf('data-id="o-1"') >= 0, 'B6 data-id 温存');
-assert(rowOwner.indexOf('act-suspend') >= 0 && rowOwner.indexOf('disabled') >= 0, 'B7 最後の管理者ガード温存（disabled）');
-assert(rowOrg.indexOf('act-suspend') >= 0 && rowOrg.indexOf('act-retire') >= 0 && rowOrg.indexOf('disabled') < 0, 'B8 通常幹事は停止/退任可');
-assert(rowView.indexOf('act-reactivate') >= 0, 'B9 停止中は再有効化ボタン');
+// #560 現実追従（APP-AUTH-SYNC-001 #593）: 行ごとの act-suspend/act-retire/act-reactivate は廃止され、
+//   選択チェックボックス（org-check）＋ヘッダーツールバー（bulkSuspend/bulkRetire/bulkReactivate）へ集約。
+//   「最後の管理者ガード」は setOrganizerStatus のクライアント側ガードで継続（test_stagea_login.js A2/r3 で機能検証）。
+assert(rowOwner.indexOf('class="org-check"') >= 0 && rowOwner.indexOf('act-suspend') < 0, 'B7 行ボタン廃止→チェック選択（#560）');
+assert(h.indexOf('id="bulkSuspend"') >= 0 && h.indexOf('id="bulkRetire"') >= 0 && h.indexOf('id="bulkReactivate"') >= 0, 'B8 操作はツールバーへ集約（初期 disabled）');
+assert(rowView.indexOf('act-reactivate') < 0 && rowView.indexOf('class="org-check"') >= 0, 'B9 停止中の行も行ボタンなし・チェック選択（再有効化はツールバー）');
 assert(rowOwner.indexOf('org-meta') < 0, 'B10 幹事行の org-meta 連結表示は廃止（他画面の org-meta は非接触）');
 
 // ---- 回帰: アプリ全体ビュー ----
