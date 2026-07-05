@@ -554,19 +554,6 @@ body.sb-active{overflow:hidden}
       <div id="result-A" class="result-section"></div>
       <div id="result-B" class="result-section" style="margin-top:16px"></div>
     </div>
-    <div style="margin-top:16px;text-align:right" class="no-print">
-      <button type="button" class="btn-primary" onclick="printResults()">対戦成績を印刷 / PDF保存</button>
-    </div>
-    <!-- B-2b-wire (#343): 確定結果をクラウド（Supabase）へ送信（任意・冪等・押さなければ従来通り）。
-         click は bindReportEvents で sendTournamentToCloud に結線。supabase-js/config は click 時のみ遅延ロード。 -->
-    <div style="margin-top:8px;text-align:right" class="no-print">
-      <!-- HELP-UX-006 (STYLE-GUIDE §9 M2): 送信ボタン脇「？ ヘルプ」→ openHelpModal('cloud')（bindReportEvents で結線・topic は大会履歴側と共用）。 -->
-      <button type="button" id="helpBtnCloud" class="btn-sm" title="クラウド送信・取得の意味をヘルプで表示します" aria-label="クラウド送信・取得ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
-      <button type="button" id="cloudSendBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ クラウドへ送信（任意）</button>
-      <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
-      <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 送信対象級の明示（players を持つ級・複数級は⚠）。textContent のみ・refreshSendTargetClasses が更新。 -->
-      <div id="sendTargetLine" class="no-print" style="font-size:12px;margin-top:2px;color:#555;min-height:1.1em"></div>
-    </div>
     <!-- CLASS-SPLIT-CLOUD-MERGE-001 Phase 3 (#572): 成績発表の統合レポート（級別結合・閲覧専用）。
          現在の大会ID（state.tournament_id＝app_tournament_id）でクラウドから両級 entries を取得し、既存
          buildCloudResultBlocksHtml で級ごとに成績表を並べて #cloudMergedReport に読取専用描画する。追加のみ・
@@ -648,7 +635,25 @@ body.sb-active{overflow:hidden}
       </div>
       <!-- REPORT-UX-007B-1: 会計提出文（footer 2行目 / accountingNote）。既定 '※役員会で…提出ください。'。改行維持→帳票で<br>。 -->
       <div class="rep-fld"><label>会計提出文</label><textarea id="rep-accounting-note" placeholder="※役員会で会計長へ収支報告書として提出ください。"></textarea></div>
-      <button type="button" class="btn-primary" id="downloadReportBtn" style="width:100%">報告書を印刷 / PDF保存</button>
+    </div>
+    <!-- ACTION-BAR-001 (#605): 最終結果タブ終盤の主要アクションを画面下部の固定バーに集約。☁送信クラスタ
+         （？ヘルプ[HELP-UX-006] / ☁送信 / 送信ステータス / 送信対象級[#567]）を一緒に移設し文脈を保つ。
+         既存 id / onclick / bind / 文言は不変＝機能無改変・置き場所のみ変更（CLAUDE.md ルール1非抵触）。
+         統合レポート(#572) / ライブ配信(#610) は現状位置に温存。no-print で印刷時は隠す。
+         position:sticky + bottom:0 で最終結果タブのスクロール中も主要操作を常時可視（ui-result-visibility 操作版）。
+         バー内の並びは既存テストの近接・順序判定（送信ステータス→送信対象級、ヘルプ→送信、印刷→送信）を
+         満たすよう配置。作者確認済み（クラスタごと集約・2026-07-06）。 -->
+    <div class="no-print" id="resultActionBar" style="position:sticky;bottom:0;background:#fff;border-top:1px solid #d7d7d7;box-shadow:0 -2px 6px rgba(0,0,0,0.08);padding:8px;margin:16px -8px 0;z-index:20">
+      <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-bottom:4px;min-height:1.2em;text-align:center"></div>
+      <div id="sendTargetLine" class="no-print" style="font-size:12px;margin-bottom:6px;color:#555;min-height:1.1em;text-align:center"></div>
+      <div style="display:flex;gap:6px;align-items:stretch">
+        <button type="button" class="btn-primary" onclick="printResults()" style="flex:1;min-height:44px;padding:6px 4px;font-size:12px;line-height:1.25;white-space:normal">対戦成績を印刷 / PDF保存</button>
+        <div style="flex:1;display:flex;flex-direction:column;gap:4px;align-items:stretch">
+          <button type="button" id="helpBtnCloud" class="btn-sm" title="クラウド送信・取得の意味をヘルプで表示します" aria-label="クラウド送信・取得ヘルプ" style="font-size:11px;padding:2px 8px;font-weight:400;white-space:nowrap;align-self:center">？ ヘルプ</button>
+          <button type="button" id="cloudSendBtn" class="btn-primary" style="min-height:40px;padding:6px 4px;font-size:12px;line-height:1.25;white-space:normal">☁ クラウドへ送信（任意）</button>
+        </div>
+        <button type="button" class="btn-primary" id="downloadReportBtn" style="flex:1;min-height:44px;padding:6px 4px;font-size:12px;line-height:1.25;white-space:normal">報告書を印刷 / PDF保存</button>
+      </div>
     </div>
   </div>
   <!-- SHOGI-TOUR-HISTORY-STEP1: 過去大会の履歴一覧 / read-only 閲覧（追加 pane。既存 pane は変更しない） -->

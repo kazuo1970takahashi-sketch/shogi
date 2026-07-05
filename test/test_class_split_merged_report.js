@@ -76,7 +76,7 @@ ok(moh>=0,'S10 hotfix: fetchCloudTournamentIdByAppId 定義あり');
 ok(hb.indexOf("from('tournaments')")>=0&&hb.indexOf("eq('app_tournament_id'")>=0,'S11 hotfix: tournaments を app_tournament_id で照合');
 ok(hb.indexOf("select('id')")>=0,'S12 hotfix: uuid(id) を取得');
 
-ok(RAW.indexOf("id=\"cloudMergedReport\"")>RAW.indexOf("id=\"cloudSendBtn\""),'S6 クラウド送信近傍（報告書エリア）に配置');
+ok(RAW.indexOf("id=\"cloudMergedReport\"")>RAW.indexOf("id=\"cloudMergedReportBtn\""),'S6 描画コンテナは統合レポートボタンの後（報告書エリア内）。#605でクラウド送信は固定バーへ移設したため基準を自ボタンへ更新');
 
 console.log('\nPASS='+pass+' FAIL='+fail);
 process.exit(fail>0?1:0);
