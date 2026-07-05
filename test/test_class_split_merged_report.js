@@ -67,6 +67,15 @@ ok(body.indexOf('saveData')<0,'S2 読取専用（当日運営 state を saveData
 ok(body.indexOf('fetchCloudEntriesForTournament(')>=0,'S3 既存 entries 読取を再利用');
 ok(body.indexOf('resolveReportTournamentId(')>=0,'S4 現在の大会IDを resolveReportTournamentId で解決');
 ok(body.indexOf('buildCloudMergedReportHtml(')>=0,'S5 純レンダラで描画');
+ok(body.indexOf('fetchCloudTournamentIdByAppId(')>=0,'S7 hotfix: app_tournament_id→uuid を解決してから entries を引く');
+ok(body.indexOf('fetchCloudTournamentIdByAppId(')<body.indexOf('fetchCloudEntriesForTournament('),'S8 hotfix: uuid 解決は entries 取得より前');
+ok(body.indexOf('fetchCloudEntriesForTournament(client,tr.id')>=0,'S9 hotfix: entries には解決済み uuid(tr.id) を渡す');
+var moh=RAW.indexOf('function fetchCloudTournamentIdByAppId(');
+var hb=moh>=0?RAW.slice(moh,RAW.indexOf('\nfunction ',moh+1)):'';
+ok(moh>=0,'S10 hotfix: fetchCloudTournamentIdByAppId 定義あり');
+ok(hb.indexOf("from('tournaments')")>=0&&hb.indexOf("eq('app_tournament_id'")>=0,'S11 hotfix: tournaments を app_tournament_id で照合');
+ok(hb.indexOf("select('id')")>=0,'S12 hotfix: uuid(id) を取得');
+
 ok(RAW.indexOf("id=\"cloudMergedReport\"")>RAW.indexOf("id=\"cloudSendBtn\""),'S6 クラウド送信近傍（報告書エリア）に配置');
 
 console.log('\nPASS='+pass+' FAIL='+fail);
