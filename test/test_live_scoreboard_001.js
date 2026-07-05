@@ -307,7 +307,9 @@ function makeState(){
   assert(/<th>勝<\/th>/.test(html)&&/<th>負<\/th>/.test(html), 'E7 勝数・負数の列が出る');
   assert(/<th>B<\/th>/.test(html)&&/<th>C<\/th>/.test(html), 'E8 順位判定値（B/C）の列が出る');
   // read-only（仕様 5）: 編集系UIが描画されない
-  assert(!/<input/.test(html), 'E9 入力欄が出ない');
+  // SCOREBOARD-MY-VIEW-001: 対局者検索の <input>（sb-search・表示フィルタのみ・state 非書込）だけを
+  //   例外として許可する。編集系 input の禁止（read-only 徹底）は従来どおり検査する。
+  assert(!/<input(?![^>]*sb-search)/.test(html), 'E9 入力欄が出ない（対局者検索 sb-search を除く）');
   assert(!/リセット/.test(html), 'E10 リセット系の文言が出ない');
   assert(!/大会データをコピー|読み込み/.test(html), 'E11 保存/読込ボタンが出ない');
   assert(!/saveBtn|resetBtn|loadBtn/.test(html), 'E12 運営ボタンIDが出ない');

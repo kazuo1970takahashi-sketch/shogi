@@ -262,6 +262,34 @@ body.sb-active{overflow:hidden}
 .sb-metric{color:#555;font-size:12px}
 .sb-empty{padding:28px 16px;text-align:center;color:#888;font-size:13px;line-height:1.6}
 .sb-legend{padding:6px 12px 0;font-size:11px;color:#667}
+/* LIVE-BROADCAST-001 Phase2 / SCOREBOARD-MY-VIEW-001: 対局者を探す＋個人ビュー＋live ルート。
+   新規 class のみ追加（既存 .sb-* の挙動は変えない・拘束ルール3）。色は既存の意味色
+   （primary #1F3864 / 青 #2E75B6 / 勝 #1b7a2e / 負 #b23030 / 強調 #fde7c4）に限定し新色を足さない。 */
+.sb-finder{padding:8px 12px;background:#dde7f2;border-bottom:1px solid #d3dbe5}
+.sb-search{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #2E75B6;border-radius:8px;font-size:14px;font-family:inherit;background:#fff;color:#333}
+.sb-fres{margin-top:0}
+.sb-fres-item{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;text-align:left;padding:10px 12px;margin-top:6px;border:1px solid #c7d4e4;border-radius:8px;background:#fff;color:#1F3864;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer}
+.sb-fres-no{font-size:11px;color:#777;font-weight:400}
+.sb-fres-cls{margin-left:auto;font-size:11px;color:#2E75B6;font-weight:400}
+.sb-fres-none{padding:8px 2px 2px;font-size:12px;color:#667}
+.sb-row-tap{cursor:pointer}
+.sb-row-me .sb-col-name{background:#fde7c4}
+.sb-player{background:#fff;margin:0 0 16px;border-top:1px solid #d3dbe5;border-bottom:1px solid #d3dbe5}
+.sb-pv-head{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #e0e6ee}
+.sb-pv-back{padding:9px 14px;border:1px solid #2E75B6;border-radius:16px;background:#fff;color:#2E75B6;font-size:13px;font-family:inherit;cursor:pointer;flex-shrink:0}
+.sb-pv-name{font-size:17px;font-weight:600;color:#1F3864;line-height:1.3}
+.sb-pv-sub{font-size:12px;color:#667;margin-top:2px}
+.sb-pv-stats{display:flex;gap:18px;padding:10px 12px;font-size:13px;color:#333;border-bottom:1px solid #eef1f5}
+.sb-pv-stats b{font-size:18px;color:#1F3864}
+.sb-next{margin:10px 12px;padding:12px;border-radius:10px;background:#eef3f9;border:1px solid #c7d4e4}
+.sb-next-h{font-size:12px;color:#1F3864;font-weight:600;margin-bottom:4px}
+.sb-next-b{font-size:16px;font-weight:600;color:#1F3864;line-height:1.4}
+.sb-next-none{font-size:13px;color:#667}
+.sb-history{padding:0 12px 12px}
+.sb-history-h{font-size:12px;color:#1F3864;font-weight:600;padding:6px 0 2px}
+.sb-hrow{display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid #eef1f5;font-size:14px;color:#333}
+.sb-hrow-r{font-size:11px;color:#777;width:44px;flex-shrink:0}
+.sb-hrow-no{margin-left:auto;font-size:11px;color:#777}
 </style>
 </head>
 <body>
@@ -12710,6 +12738,11 @@ function buildPublicLiveSnapshot(src){
 // 表示中のクラスフィルタ（'all' または classId）。memory-only、保存しない。
 var _sbClassFilter='all';
 
+// SCOREBOARD-MY-VIEW-001 §5: 選択中の対局者・検索語（memory-only・保存しない。_sbClassFilter と同格）。
+var _sbFocusCls=null;
+var _sbFocusId=null;
+var _sbSearch='';
+
 // LIVE-MOBILE-SCOREBOARD-001 §1: 最終更新時刻。
 //   閲覧ビューが state を最後に読み込んだ時刻を保持する（memory-only / 非保存・保存データ構造は不変）。
 //   タブ切替などの単なる再描画では更新せず、データ再読込時（route 突入 / storage / focus）のみ更新する。
@@ -12740,6 +12773,48 @@ function isScoreboardRoute(){
   return !!tokens[v];
 }
 
+// ============================================================
+// LIVE-BROADCAST-001 Phase2 §5.2: live ルート（?live=<slug>#scoreboard）
+//   参加者/受付端末が公開スナップショット（state 部分集合）を閲覧する追加経路。
+//   Phase2 はローカル fixture / sbSetLiveEnvelope() で描画まで（配信路は Phase3 で
+//   get_live_snapshot ポーリング、Phase4 で Realtime を上乗せ・設計 §6）。
+//   通常の #scoreboard（同一端末 localStorage 追従）の挙動には影響しない（追加のみ）。
+// ============================================================
+
+// URL の ?live=<slug> を返す（無ければ ''）。
+function sbLiveSlug(){
+  var m=(location.search||'').match(/[?&]live=([^&#]*)/i);
+  if(!m)return '';
+  try{return decodeURIComponent(m[1]);}catch(e){return m[1];}
+}
+
+// live ルート判定（閲覧ルート かつ ?live= あり）。
+function sbIsLiveRoute(){return isScoreboardRoute()&&!!sbLiveSlug();}
+
+// 配信 envelope とビュー用 state（memory-only・保存しない）。
+var _sbLiveEnvelope=null;
+var _sbLiveViewState=null;
+
+// 配信 envelope（{slug,version,updated_at,payload:{schema_version,meta,state}}・設計 §3.1）を受け取り、
+//   ビュー用 state を用意して live ルート表示中なら再描画する。payload.state は normalizeState で
+//   補完し、meta.title を report.title へ反映して既存ヘッダ描画を再利用する。
+//   不正な envelope は破棄して待機表示へ戻す（fail-soft・受入 §8-9）。
+function sbSetLiveEnvelope(env){
+  if(!env||typeof env!=='object'||!env.payload||typeof env.payload!=='object'
+     ||!env.payload.state||typeof env.payload.state!=='object'){
+    _sbLiveEnvelope=null;_sbLiveViewState=null;
+  }else{
+    var vs=normalizeState(env.payload.state);
+    if(env.payload.meta&&typeof env.payload.meta.title==='string'&&env.payload.meta.title){
+      if(!vs.report||typeof vs.report!=='object')vs.report={};
+      vs.report.title=env.payload.meta.title;
+    }
+    _sbLiveEnvelope=env;
+    _sbLiveViewState=vs;
+  }
+  if(sbIsLiveRoute())renderScoreboard();
+}
+
 // クラス表示名（state.classes[*].name 優先、なければ '<id>クラス'）。
 function sbClassDisplayName(cls){
   if(Array.isArray(state.classes)){
@@ -12754,12 +12829,12 @@ function sbClassDisplayName(cls){
 //   各ラウンド列は ○（勝ち）/×（負け）/－（未対局）と対戦相手番号（#NN）を表示する。
 //   Codex Should Fix 1: 現場要望「○×の星取表」に合わせ、負けは ● ではなく × で表示する。
 //   氏名・番号はすべて escapeHtml してから描画する（XSS 安全）。
-function buildScoreboardClassTableHtml(cls,sourceState){
+function buildScoreboardClassTableHtml(cls,sourceState,focusId){
   // SHOGI-TOUR-HISTORY-STEP1: 後方互換 optional 引数。sourceState 指定時のみ描画データ源を一時的に
   //   差し替える（withSourceState が global state を退避→finally で必ず復元）。引数なし呼び出し＝live
   //   経路の挙動は完全に従来どおり（本体不変＝#213 のふりがな ruby 表示もそのまま維持される）。
   if(sourceState!==undefined&&sourceState!==null&&sourceState!==state){
-    return withSourceState(sourceState,function(){return buildScoreboardClassTableHtml(cls);});
+    return withSourceState(sourceState,function(){return buildScoreboardClassTableHtml(cls,undefined,focusId);});
   }
   var players=(state.players&&state.players[cls])||[];
   if(players.length===0)return '';
@@ -12768,6 +12843,10 @@ function buildScoreboardClassTableHtml(cls,sourceState){
   var rounds=roundsForClass(cls)||0;
   var resultsArr=(state.results&&state.results[cls])||[];
   var done=rounds>0&&resultsArr.length>=rounds;
+  // SCOREBOARD-MY-VIEW-001 §5: optional focusId。undefined（未指定）なら出力は従来と完全一致
+  //   （GOLDEN 不変・sourceState と同じ後方互換）。指定時（null 含む）のみ行タップ属性を付け、
+  //   focusId 一致行に sb-row-me を付与する。
+  var tap=(focusId!==undefined);
   var html='<div class="sb-class">';
   html+='<div class="sb-class-h">'+escapeHtml(sbClassDisplayName(cls))+'　<span style="font-weight:400;color:#888;font-size:12px">'+(done?'最終結果':'途中経過')+'</span></div>';
   html+='<div class="sb-scroll"><table class="sb-table"><thead><tr>';
@@ -12776,7 +12855,9 @@ function buildScoreboardClassTableHtml(cls,sourceState){
   html+='<th>勝</th><th>負</th><th>B</th><th>C</th></tr></thead><tbody>';
   for(var i=0;i<finals.length;i++){
     var f=finals[i];var rank=ranks[i];
-    html+='<tr'+(rank===1?' class="sb-row-1"':'')+'>';
+    var trCls=(rank===1?'sb-row-1':'');
+    if(tap){trCls+=(trCls?' ':'')+'sb-row-tap';if(focusId&&f.p.id===focusId)trCls+=' sb-row-me';}
+    html+='<tr'+(trCls?' class="'+trCls+'"':'')+(tap?' data-sbpid="'+escapeHtml(f.p.id)+'" data-sbcls="'+escapeHtml(cls)+'"':'')+'>';
     html+='<td class="sb-col-rank">'+rank+'</td>';
     // FURIGANA-VIEW-002: 氏名にルビ（空 yomi は氏名のみ）。No.xx 補助表示は従来どおり維持。
     html+='<td class="sb-col-name">'+playerNameRubyHtml(getName(f.p.id,cls),yomiOf(f.p.id,cls))+'<span style="font-size:10px;color:#999;font-weight:400">　'+escapeHtml('No.'+entryNoOf(cls,f.p.id))+'</span></td>';
@@ -12803,14 +12884,181 @@ function buildScoreboardClassTableHtml(cls,sourceState){
     html+='</tr>';
   }
   html+='</tbody></table></div>';
-  html+='<div class="sb-legend">○=勝ち／×=負け／－=未対局　・　#NN=対戦相手の番号　・　勝・負=勝敗数　・　B=対戦相手の勝数合計／C=勝った相手の勝数合計（順位判定の主要指標）</div>';
+  html+='<div class="sb-legend">○=勝ち／×=負け／－=未対局　・　#NN=対戦相手の番号　・　勝・負=勝敗数　・　B=対戦相手の勝数合計／C=勝った相手の勝数合計（順位判定の主要指標）'+(tap?'　・　行タップ＝その対局者の個人ビュー':'')+'</div>';
   return html+'</div>';
+}
+
+// ============================================================
+// SCOREBOARD-MY-VIEW-001: 対局者を探す＋個人ビュー（read-only・memory-only）
+//   設計 = docs/specs/20260704_scoreboard_my_view_001_design.md（§3〜§5）。
+//   順位・勝敗・相手・卓番号はすべて既存派生関数（calcFinal / computeDisplayRanks /
+//   getName / yomiOf / entryNoOf / roundsForClass）を再利用し、ロジックを複製しない。
+//   state への書き込み・運営画面への導線は一切追加しない（read-only 不変）。
+// ============================================================
+
+// 現手合せ（state.pairings[cls]）から当該対局者の対局を探す（pure helper）。
+//   戻り値 {oppId, table}（卓番号 = index+1 の派生・非保存）または null。
+function sbFindCurrentMatch(cls,id){
+  var pa=(state.pairings&&state.pairings[cls])||[];
+  for(var i=0;i<pa.length;i++){
+    var m=pa[i];
+    if(!m)continue;
+    if(m.p1===id||m.p2===id)return {oppId:(m.p1===id?m.p2:m.p1),table:i+1};
+  }
+  return null;
+}
+
+// 確定 results を走査し、当該対局者の各回戦 {round, won, oppId} を返す（pure helper）。
+//   won: true=勝ち / false=負け / null=勝敗未確定。対局の無い回戦（待機等）は要素を出さない。
+function sbOpponentsByRound(cls,id){
+  var out=[];
+  var rs=(state.results&&state.results[cls])||[];
+  for(var r=0;r<rs.length;r++){
+    var round=Array.isArray(rs[r])?rs[r]:[];
+    for(var m=0;m<round.length;m++){
+      var mt=round[m];
+      if(!mt||(mt.p1!==id&&mt.p2!==id))continue;
+      out.push({round:r+1,won:(mt.winner==null)?null:(mt.winner===id),oppId:(mt.p1===id?mt.p2:mt.p1)});
+      break;
+    }
+  }
+  return out;
+}
+
+// 検索候補リスト HTML（build・pure）。番号=前方一致 / 氏名・よみ=部分一致。
+//   クラス絞り込みは既存 _sbClassFilter に従う。表示フィルタのみで state に書き込まない。
+//   氏名・番号・クラス名は escapeHtml 経由（XSS 安全）。
+function buildScoreboardFinderResultsHtml(activeClasses){
+  var q=String(_sbSearch||'').replace(/^\s+|\s+$/g,'');
+  if(!q)return '';
+  var lower=q.toLowerCase();
+  var LIMIT=20;
+  var hits=[];
+  var scan=(_sbClassFilter==='all')?activeClasses:[_sbClassFilter];
+  for(var c=0;c<scan.length&&hits.length<=LIMIT;c++){
+    var cls=scan[c];
+    var ps=(state.players&&state.players[cls])||[];
+    for(var i=0;i<ps.length&&hits.length<=LIMIT;i++){
+      var p=ps[i];
+      if(!p||!p.id)continue;
+      var no=String(entryNoOf(cls,p.id));
+      var noNum=String(parseInt(no,10));
+      var nm=String(p.name||'');
+      var ym=String(yomiOf(p.id,cls)||'');
+      if(no.indexOf(q)===0||(noNum!=='NaN'&&noNum.indexOf(q)===0)||nm.toLowerCase().indexOf(lower)!==-1||ym.toLowerCase().indexOf(lower)!==-1){
+        hits.push({cls:cls,id:p.id,name:nm,no:no});
+      }
+    }
+  }
+  var over=hits.length>LIMIT;
+  if(over)hits=hits.slice(0,LIMIT);
+  var html='';
+  if(hits.length===0){
+    html='<div class="sb-fres-none">見つかりませんでした。番号または名前（ふりがなも可）で入力してください。</div>';
+  }else{
+    for(var h=0;h<hits.length;h++){
+      html+='<button type="button" class="sb-fres-item" data-sbpick="'+escapeHtml(hits[h].id)+'" data-sbpickcls="'+escapeHtml(hits[h].cls)+'">'
+        +'<span>'+escapeHtml(hits[h].name)+'</span>'
+        +'<span class="sb-fres-no">'+escapeHtml('No.'+hits[h].no)+'</span>'
+        +'<span class="sb-fres-cls">'+escapeHtml(sbClassDisplayName(hits[h].cls))+'</span>'
+        +'</button>';
+    }
+    if(over)html+='<div class="sb-fres-none">候補が多すぎます。番号か名前をもう少し長く入力してください。</div>';
+  }
+  return html;
+}
+
+// 対局者を探す（検索フィールド＋候補リスト）HTML（build・pure）。
+//   クラス絞り込み UI は既存 .sb-tabs（_sbClassFilter）をそのまま使う（二重化しない）。
+function buildScoreboardFinderHtml(activeClasses){
+  return '<div class="sb-finder">'
+    +'<input type="search" class="sb-search" id="sb-search-input" placeholder="番号・名前で対局者を探す（行タップでも開けます）" value="'+escapeHtml(_sbSearch||'')+'" autocomplete="off">'
+    +'<div class="sb-fres" id="sb-fres">'+buildScoreboardFinderResultsHtml(activeClasses)+'</div>'
+    +'</div>';
+}
+
+// 個人ビュー HTML（build・pure・設計 §3.3/§3.4）。
+//   現在順位・勝敗・次の対戦（卓・相手名）・これまでの対戦（相手名で縦に）。
+//   対局者が見つからない場合は '' を返す（呼び出し側が一覧へ復帰＝受入 §6-8）。
+function buildScoreboardPlayerViewHtml(cls,focusId){
+  var players=(state.players&&state.players[cls])||[];
+  if(!players.length)return '';
+  var finals=calcFinal(cls);
+  var ranks=computeDisplayRanks(finals,cls);
+  var idx=-1;
+  for(var i=0;i<finals.length;i++){if(finals[i].p.id===focusId){idx=i;break;}}
+  if(idx===-1)return '';
+  var f=finals[idx];
+  var rounds=roundsForClass(cls)||0;
+  var resultsArr=(state.results&&state.results[cls])||[];
+  var done=rounds>0&&resultsArr.length>=rounds;
+  var cur=sbFindCurrentMatch(cls,focusId);
+  var html='<div class="sb-player">';
+  html+='<div class="sb-pv-head">'
+    +'<button type="button" class="sb-pv-back" data-sbback="1">← 星取表へ</button>'
+    +'<div><div class="sb-pv-name">'+playerNameRubyHtml(getName(focusId,cls),yomiOf(focusId,cls))+'</div>'
+    +'<div class="sb-pv-sub">'+escapeHtml(sbClassDisplayName(cls)+'・No.'+entryNoOf(cls,focusId))+'</div></div>'
+    +'</div>';
+  html+='<div class="sb-pv-stats"><span>順位 <b>'+ranks[idx]+'</b> 位／'+finals.length+'名</span>'
+    +'<span>現在の成績 <b>'+f.A+'</b> 勝 <b>'+(f.played-f.A)+'</b> 敗</span></div>';
+  if(done){
+    html+='<div class="sb-next"><div class="sb-next-b">全対局が終了しました（最終結果）</div></div>';
+  }else if(cur){
+    html+='<div class="sb-next"><div class="sb-next-h">次の対戦・'+(resultsArr.length+1)+'回戦</div>'
+      +'<div class="sb-next-b">♟ '+cur.table+'卓　'+playerNameRubyHtml(getName(cur.oppId,cls),yomiOf(cur.oppId,cls))
+      +'<span class="sb-fres-no">　'+escapeHtml('No.'+entryNoOf(cls,cur.oppId))+'</span></div></div>';
+  }else{
+    html+='<div class="sb-next"><div class="sb-next-h">次の対戦</div><div class="sb-next-none">まだ決まっていません</div></div>';
+  }
+  var hist=sbOpponentsByRound(cls,focusId);
+  html+='<div class="sb-history"><div class="sb-history-h">これまでの対戦</div>';
+  if(hist.length===0){
+    html+='<div class="sb-fres-none">まだ対局がありません。</div>';
+  }else{
+    for(var h=0;h<hist.length;h++){
+      var e=hist[h];
+      var mk=(e.won===null)?'<span class="sb-mark sb-mark-none">－</span>':(e.won?'<span class="sb-mark sb-mark-win">○</span>':'<span class="sb-mark sb-mark-lose">×</span>');
+      html+='<div class="sb-hrow"><span class="sb-hrow-r">'+e.round+'回戦</span>'+mk
+        +'<span>'+playerNameRubyHtml(getName(e.oppId,cls),yomiOf(e.oppId,cls))+'</span>'
+        +'<span class="sb-hrow-no">'+escapeHtml('No.'+entryNoOf(cls,e.oppId))+'</span></div>';
+    }
+  }
+  html+='</div></div>';
+  return html;
+}
+
+// 検索候補ボタンの束縛（bind）。候補差し替え時にも再束縛する。
+function sbBindFinderPicks(root){
+  if(!root||!root.querySelectorAll)return;
+  var els=root.querySelectorAll('[data-sbpick]');
+  for(var i=0;i<els.length;i++){
+    els[i].addEventListener('click',function(){
+      var pid=this.getAttribute('data-sbpick');
+      var pcls=this.getAttribute('data-sbpickcls');
+      if(!pid||!pcls)return;
+      _sbFocusId=pid;_sbFocusCls=pcls;
+      if(_sbClassFilter!=='all')_sbClassFilter=pcls;
+      renderScoreboard();
+    });
+  }
 }
 
 // 閲覧専用ビュー全体を再描画する。state を SoT として参照（DOM 直読みしない）。
 function renderScoreboard(){
   var view=document.getElementById('scoreboard-view');
   if(!view)return;
+  // LIVE-BROADCAST-001 Phase2 §5.2: live ルートは公開スナップショット（state 部分集合）をデータ源に
+  //   既存レンダラを駆動する（withSourceState・順位/星取ロジック非複製）。envelope 未受信なら案内のみ。
+  //   「最終更新」は envelope.updated_at（DB write 時刻・設計 P1-2）を正とする。
+  if(sbIsLiveRoute()&&state!==_sbLiveViewState){
+    if(!_sbLiveViewState){
+      view.innerHTML='<div class="sb-empty">ライブ配信のデータを待っています…<br>配信が始まると、ここに星取表が表示されます。</div>';
+      return;
+    }
+    var lt=Date.parse(_sbLiveEnvelope&&_sbLiveEnvelope.updated_at);
+    if(!isNaN(lt))_sbLastUpdate=new Date(lt);
+    return withSourceState(_sbLiveViewState,renderScoreboard);
+  }
   var classList=(typeof getRegistrationClassList==='function')?getRegistrationClassList():(state.classes||[]);
   var activeClasses=[];
   for(var i=0;i<classList.length;i++){
@@ -12836,11 +13084,20 @@ function renderScoreboard(){
   var head='<div class="sb-head"><div>'
     +'<div class="sb-title">'+escapeHtml(title)+' 星取表</div>'
     +(metaParts.length?'<div class="sb-meta">'+escapeHtml(metaParts.join('　／　'))+'</div>':'')
-    +'<div class="sb-note">閲覧専用・自動更新（運営画面の保存に追従）</div>'
+    +'<div class="sb-note">'+(sbIsLiveRoute()?'閲覧専用・ライブ配信（自動更新）':'閲覧専用・自動更新（運営画面の保存に追従）')+'</div>'
     +(updLabel?'<div class="sb-updated">最終更新：'+escapeHtml(updLabel)+'</div>':'')
     +'</div></div>';
   // フィルタが現存クラスに無ければ all に戻す。
   if(_sbClassFilter!=='all'&&activeClasses.indexOf(_sbClassFilter)===-1)_sbClassFilter='all';
+  // SCOREBOARD-MY-VIEW-001: 選択中の対局者が現存しなければ一覧へ自動復帰（受入 §6-8・クラッシュさせない）。
+  if(_sbFocusId){
+    var fOk=false;
+    if(_sbFocusCls&&activeClasses.indexOf(_sbFocusCls)!==-1){
+      var fps=(state.players&&state.players[_sbFocusCls])||[];
+      for(var fi=0;fi<fps.length;fi++){if(fps[fi]&&fps[fi].id===_sbFocusId){fOk=true;break;}}
+    }
+    if(!fOk){_sbFocusId=null;_sbFocusCls=null;}
+  }
   var tabs='';
   if(activeClasses.length>1){
     tabs='<div class="sb-tabs"><button type="button" class="sb-tab'+(_sbClassFilter==='all'?' active':'')+'" data-sbcls="all">全クラス</button>';
@@ -12850,17 +13107,51 @@ function renderScoreboard(){
     tabs+='</div>';
   }
   var bodyHtml='';
+  var finder='';
   if(activeClasses.length===0){
     bodyHtml='<div class="sb-empty">まだ星取表に表示できる対局がありません。<br>運営画面で参加者を登録し、対局を開始すると表示されます。</div>';
   }else{
-    var shown=(_sbClassFilter==='all')?activeClasses:[_sbClassFilter];
-    for(var s=0;s<shown.length;s++)bodyHtml+=buildScoreboardClassTableHtml(shown[s]);
+    // SCOREBOARD-MY-VIEW-001 §5: 選択中は個人ビュー、未選択は星取表（行タップ可）＋対局者検索。
+    if(_sbFocusId){
+      bodyHtml=buildScoreboardPlayerViewHtml(_sbFocusCls,_sbFocusId);
+      if(!bodyHtml){_sbFocusId=null;_sbFocusCls=null;}
+    }
+    if(!bodyHtml){
+      finder=buildScoreboardFinderHtml(activeClasses);
+      var shown=(_sbClassFilter==='all')?activeClasses:[_sbClassFilter];
+      for(var s=0;s<shown.length;s++)bodyHtml+=buildScoreboardClassTableHtml(shown[s],undefined,null);
+    }
   }
-  view.innerHTML=head+tabs+'<div class="sb-body">'+bodyHtml+'</div>';
+  view.innerHTML=head+(_sbFocusId?'':tabs)+finder+'<div class="sb-body">'+bodyHtml+'</div>';
   var tabBtns=view.querySelectorAll('.sb-tab');
   for(var b=0;b<tabBtns.length;b++){
     tabBtns[b].addEventListener('click',function(){_sbClassFilter=this.getAttribute('data-sbcls')||'all';renderScoreboard();});
   }
+  // SCOREBOARD-MY-VIEW-001 bind: 検索入力は候補リストのみ差し替え（全再描画しない＝入力フォーカス維持）。
+  var sIn=view.querySelector?view.querySelector('#sb-search-input'):null;
+  if(sIn){
+    sIn.addEventListener('input',function(){
+      _sbSearch=this.value||'';
+      var box=view.querySelector('#sb-fres');
+      if(box){box.innerHTML=buildScoreboardFinderResultsHtml(activeClasses);sbBindFinderPicks(box);}
+    });
+  }
+  sbBindFinderPicks(view);
+  // 行タップ → 個人ビュー（クラス絞り込みは選択者のクラスへ追従）。
+  var rowEls=view.querySelectorAll('tr[data-sbpid]');
+  for(var rw=0;rw<rowEls.length;rw++){
+    rowEls[rw].addEventListener('click',function(){
+      var pid=this.getAttribute('data-sbpid');
+      var pcls=this.getAttribute('data-sbcls');
+      if(!pid||!pcls)return;
+      _sbFocusId=pid;_sbFocusCls=pcls;
+      if(_sbClassFilter!=='all')_sbClassFilter=pcls;
+      renderScoreboard();
+    });
+  }
+  // 個人ビューの「← 星取表へ」は一覧へ戻るのみ（運営画面への導線ではない＝read-only 不変）。
+  var backBtn=view.querySelector?view.querySelector('[data-sbback]'):null;
+  if(backBtn)backBtn.addEventListener('click',function(){_sbFocusId=null;_sbFocusCls=null;renderScoreboard();});
   // Codex Must Fix 1: 「運営画面へ」戻りボタンは廃止。閲覧ビューには運営画面への導線を束縛しない。
 }
 
@@ -12912,6 +13203,7 @@ function initScoreboard(){
   //   閲覧専用ビュー表示中のみ load()（運営タブの未保存編集を巻き戻さないため）。
   window.addEventListener('storage',function(e){
     if(!isScoreboardRoute())return;
+    if(sbIsLiveRoute())return; // LIVE-BROADCAST-001 Phase2: live ルートのデータ源は配信スナップショット（localStorage に追従しない）
     if(e&&e.key&&e.key!==STORAGE_KEY)return;
     try{load();}catch(err){}
     sbTouchUpdate();
@@ -12920,6 +13212,7 @@ function initScoreboard(){
   // タブ復帰時にも最新化（storage イベントを取りこぼした場合の保険）。
   window.addEventListener('focus',function(){
     if(!isScoreboardRoute())return;
+    if(sbIsLiveRoute())return; // LIVE-BROADCAST-001 Phase2: 同上（Phase3 でここに再取得＝ポーリング再開を足す）
     try{load();}catch(err){}
     sbTouchUpdate();
     renderScoreboard();
