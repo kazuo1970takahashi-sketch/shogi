@@ -4592,13 +4592,14 @@ function bindMasterEditModalEvents(){
 // ============================================================
 // MASTER-SHEET-001: スプレッドシート型 簡易一覧の coordinator 群（bind から呼ぶ・テストから直接呼べる）。
 //   削除/復元/編集は既存の applyMasterMember*（純関数・ガード込み）を流用＝新しい破壊ロジックを作らない。
-// MASTER-SHEET-002: 日付の表示短縮（今年=M/D・他年=YYYY/M/D・不明=－）。title に生値を残す。
+// LAST-ATTENDED-YEAR-001 (#602): 最終参加日は常に年付き（YYYY/M/D）で表示する。
+//   旧 MASTER-SHEET-002 は当年を M/D に短縮していたが、月例運用は年跨ぎが常時発生し、当年省略だと
+//   同じ欄の意味が年で読み替えになるため、当年短縮を廃止して常に年を付す（不明=－）。title に生値を残す。
 function _masterSheetFmtDate(s){
   var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||'');
   if(!m)return s?String(s):'－';
-  var nowY=new Date().getFullYear();
   var y=parseInt(m[1],10),mo=parseInt(m[2],10),d=parseInt(m[3],10);
-  return (y===nowY)?(mo+'/'+d):(y+'/'+mo+'/'+d);
+  return y+'/'+mo+'/'+d;
 }
 function masterSheetSelectedMids(members){
   var live=[],del=[];
