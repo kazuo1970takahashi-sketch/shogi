@@ -11222,6 +11222,20 @@ function buildTournamentPdfFilename(kind,className){
   return buildSafePdfFilename([buildTournamentHeldDateCompact(),title,className,kind],'_');
 }
 
+// CROSSTABLE-HEADER-INFO-001 (#603): 大会の参加人数（全登録クラスの参加者数合計）。表示専用・fail-soft。
+//   getRegistrationClassList / state.players を source of truth に集計し、採点・並び順ロジックには触れない。
+function countTournamentParticipants(){
+  var classes=(typeof getRegistrationClassList==='function')?getRegistrationClassList():((state&&state.classes)||[]);
+  var total=0;
+  for(var i=0;i<classes.length;i++){
+    var c=classes[i];
+    if(!c||(typeof isSafeClassId==='function'&&!isSafeClassId(c.id)))continue;
+    var players=(state&&state.players&&state.players[c.id])||[];
+    total+=players.length;
+  }
+  return total;
+}
+
 // PDF 帳票の見出し HTML（大会名 / 種別 / 対象月 / 開催日）。印刷・配布時に単体で意味が通るようにする。
 //   未入力（対象月・開催日が空）でも崩れないよう、存在する項目だけを表示する。すべて escapeHtml 済み。
 function buildPdfDocHeaderHtml(kindLabel){
@@ -11231,6 +11245,12 @@ function buildPdfDocHeaderHtml(kindLabel){
   var metaParts=[];
   if(monthLabel)metaParts.push('対象月：'+monthLabel);
   if(heldLabel)metaParts.push('開催日：'+heldLabel);
+  // CROSSTABLE-HEADER-INFO-001 (#603): 持ち時間・参加人数を見出しに追加（報告書メタ流用・fail-soft）。
+  //   持ち時間は formatTimeControl（既定あり）、参加人数は全登録クラスの合計。0 名時は省略。
+  var timeControl=(typeof formatTimeControl==='function')?formatTimeControl(state.report):'';
+  if(timeControl)metaParts.push('持ち時間：'+timeControl);
+  var pcount=(typeof countTournamentParticipants==='function')?countTournamentParticipants():0;
+  if(pcount>0)metaParts.push('参加：'+pcount+'名');
   var titleLine=title+(kindLabel?('　'+kindLabel):'');
   var metaHtml=metaParts.length?'<div class="doc-meta">'+escapeHtml(metaParts.join('　／　'))+'</div>':'';
   return '<header class="doc-header"><div class="doc-title">'+escapeHtml(titleLine)+'</div>'+metaHtml+'</header>';
@@ -13384,6 +13404,11 @@ function renderScoreboard(){
   var metaParts=[];
   if(monthLabel)metaParts.push('対象月：'+monthLabel);
   if(heldLabel)metaParts.push('開催日：'+heldLabel);
+  // CROSSTABLE-HEADER-INFO-001 (#603): 画面星取表ヘッダにも持ち時間・参加人数を併記（印刷と対称・fail-soft）。
+  var sbTime=(typeof formatTimeControl==='function')?formatTimeControl(state.report):'';
+  if(sbTime)metaParts.push('持ち時間：'+sbTime);
+  var sbCount=(typeof countTournamentParticipants==='function')?countTournamentParticipants():0;
+  if(sbCount>0)metaParts.push('参加：'+sbCount+'名');
   // LIVE-MOBILE-SCOREBOARD-001 §1 read-only 徹底（Codex Must Fix 1）:
   //   閲覧URL（#scoreboard / #viewer / #mobile-standings）には運営画面への戻り導線
   //   （ボタン / リンク等）を一切置かない。戻り導線があると閲覧者が保存・読込・リセット・
