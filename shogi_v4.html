@@ -395,6 +395,10 @@ body.sb-active{overflow:hidden}
             <input type="text" id="opsKeyInput" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="例: 4821" aria-label="受け取った運営共通キー（4桁）" style="font-size:18px;letter-spacing:3px;width:104px;text-align:center;padding:6px 8px;border:1px solid #c3ccd8;border-radius:6px">
             <button type="button" id="opsApplyBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">このキーに合わせる</button>
           </span>
+          <!-- OPS-SHARED-KEY-REDESIGN-001 Phase D (#588): １台目がキーを発行せず送信済みの大会へ、あとから合流する導線（設計 §8-2） -->
+          <div style="margin-top:8px;font-size:12px;color:#555">１台目がキーを発行していない（キーなしで送信済み）とき →
+            <button type="button" id="opsKeylessJoinBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">今日の大会に合流</button>
+          </div>
         </div>
         <div id="opsShareStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:8px;min-height:1.2em"></div>
       </div>
@@ -2543,6 +2547,15 @@ function tournamentIdToOpsKey(tid){
   var s=(tid==null)?'':String(tid);
   var m=/^t_\d{4}_\d{2}_\d{2}_(\d{4})$/.exec(s);
   return m?m[1]:'';
+}
+// OPS-SHARED-KEY-REDESIGN-001 Phase D (#588): 'YYYY-MM-DD' からキーなし内部大会ID 't_YYYY_MM_DD' を組み立てる純関数（設計 §8-2）。
+//   1台目がキーを発行せず送信した大会のIDと同形（ensureTournamentId の基本形）。形式不正・暦上実在しない日付は ''。
+//   最終的に既存 normalizeTournamentIdInput を通して返す（＝生成規則と同形であることを保証）。
+function opsKeylessTournamentId(ymd){
+  var d=(ymd==null)?'':String(ymd);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return '';
+  if(typeof isValidYmd==='function'&&!isValidYmd(d))return '';
+  return normalizeTournamentIdInput('t_'+d.replace(/-/g,'_'));
 }
 function attachMemberIdToPlayer(player,member){
   if(!player||!member)return;
@@ -9197,7 +9210,8 @@ var HELP_TEXTS={
       '送信に失敗しても当日のデータは端末に残っています。運営はそのまま続けて、あとで再送信できます。',
       '「大会履歴」タブの「☁ クラウドの過去大会」→「読み込む」で、共有された過去大会の結果を見られます。',
       'クラウドはバックアップの代わりではありません。端末の控えは「バックアップ」ボタンで保存してください。',
-      '【A級・B級を2台で分担する場合】受付タブの「▷ 2台で分担して入力するとき」を開き、１台目で「運営共通キーを発行」→表示された4桁を２台目に伝え、２台目で入力して「このキーに合わせる」を押します。両方の送信が同じ１つの大会にまとまります（各端末は自分の級だけを送るのがコツ）。１台で運営するなら操作は不要です。'
+      '【A級・B級を2台で分担する場合】受付タブの「▷ 2台で分担して入力するとき」を開き、１台目で「運営共通キーを発行」→表示された4桁を２台目に伝え、２台目で入力して「このキーに合わせる」を押します。両方の送信が同じ１つの大会にまとまります（各端末は自分の級だけを送るのがコツ）。１台で運営するなら操作は不要です。',
+      '【あとから2台目を足すとき】１台目がキーを発行せずに送信済みの場合は、２台目で「今日の大会に合流」を押してください（キー入力は不要・同じ日のうちに）。'
     ]
   },
   // SAVE-STATUS-BAR-001 (STYLE-GUIDE §9 M3): ヘッダ直下の保存状態バーから開く保存4系統の説明。
@@ -10160,6 +10174,27 @@ function applyOpsSharedKey(rawInput,setStatus){
   if(setStatus)setStatus('運営共通キー '+k+' に合わせました。この端末の結果を送信すると、同じキーの相手と１つの大会にまとまります'); 
   return {ok:true,key:k,tournament_id:tid};
 }
+// OPS-SHARED-KEY-REDESIGN-001 Phase D (#588): キーなしで送信済みの大会へ、あとから2台目を合流（設計 §8-2）。
+//   1台目がキーを発行せず送信した場合の大会IDは t_<当日>（4桁なし）。この端末の tournament_id を同じ t_<当日> に
+//   明示セットして合流する（ensureTournamentId の衝突 _n 付与を経由しない＝☁完全再構築後などに黙って別大会へ
+//   割れる穴を塞ぐ）。送信済みIDからの張り替えは Phase C の opsRekeyNeedsConfirm で明示確認。fail-soft・
+//   生成規則 ensureTournamentId 本体は無改変。
+function joinOpsKeylessTournament(setStatus){
+  if(typeof state==='undefined'||!state){ if(setStatus)setStatus('⚠ 大会データがありません'); return {ok:false}; }
+  var ymd=opsReportYmd();
+  var tid=opsKeylessTournamentId(ymd);
+  if(!tid){ if(setStatus)setStatus('⚠ 今日の日付を確認できませんでした'); return {ok:false}; }
+  if(state.tournament_id===tid){ if(setStatus)setStatus('この端末はすでに今日の大会（キーなし）に合流済みです。そのまま入力・送信してください'); return {ok:true,tournament_id:tid}; }
+  // 送信済みIDからの張り替えは明示確認（設計 §8-5 と同型・キャンセル＝現IDを維持・confirm 不在/例外は安全側＝中止）。
+  if(typeof opsRekeyNeedsConfirm==='function'&&opsRekeyNeedsConfirm(state,tid)){
+    var okc=false; try{ okc=(typeof confirm==='function')?confirm('この端末は今の大会IDでクラウドへ送信済みです。\n合流すると、クラウド上では別の大会として扱われます（送信済みの結果は元の大会に残ります）。\n合流しますか？'):false; }catch(eC){ okc=false; }
+    if(!okc){ if(setStatus)setStatus('合流を中止しました（送信済みの大会IDを維持します）'); return {ok:false,step:'cancelled'}; }
+  }
+  state.tournament_id=tid;
+  if(typeof saveData==='function'){ try{saveData();}catch(e){} }
+  if(setStatus)setStatus('今日の大会（キーなし）に合流しました。この端末の結果を送信すると、相手と１つの大会にまとまります');
+  return {ok:true,tournament_id:tid};
+}
 // OPS-SHARED-KEY-REDESIGN-001 Phase C (#585): 送信後のキー張り替えガード（設計 §3.2/§8-5）。
 //   この端末が現 tournament_id でクラウド送信済み（state.cloud_sent_tid が現IDと一致）のとき、異なる newTid への
 //   張り替えは ID 不一致で「別大会」を生む → 呼び出し側が confirm で明示確認する（決定: 髙橋 2026-07-05＝抑止でなく明示確認）。純関数。
@@ -10185,7 +10220,15 @@ function refreshOpsKeyDisplay(){
   if(!disp)return;
   var tid=(typeof state!=='undefined'&&state)?state.tournament_id:'';
   var key=tournamentIdToOpsKey(tid);
-  if(!key){ disp.innerHTML=''; return; }
+  if(!key){
+    // Phase D (#588): キーなしIDで送信済み（cloud_sent_tid が現IDと一致・末尾4桁なし）のときは合流案内を表示（設計 §8-2）。
+    //   それ以外のキーなし（未送信・ID未確定）は従来どおり表示を消す。
+    //   L3 P2-1 追補: tid が「当日の基本形 t_YYYY_MM_DD」であることも要求。suffix 付き（衝突 _n）や別日のIDで
+    //   送信済みの端末に案内を出すと、2台目の合流（=当日基本形）と食い違い黙って別大会に割れるため表示しない。
+    var sentKeyless=(typeof state!=='undefined'&&state&&typeof state.cloud_sent_tid==='string'&&!!state.cloud_sent_tid&&state.cloud_sent_tid===tid&&tid===opsKeylessTournamentId(opsReportYmd()));
+    if(sentKeyless){ disp.innerHTML='<span style="font-size:12px;color:#555">この端末はキーなしで送信済みです。２台目では「今日の大会に合流」を押すと同じ大会にまとまります</span>'; return; }
+    disp.innerHTML=''; return;
+  }
   var note=opsKeyDateNote(tid,opsReportYmd());
   disp.innerHTML='運営共通キー <strong style="font-size:24px;letter-spacing:4px;color:#1F3864">'+escapeHtml(key)+'</strong> <span style="font-size:12px;color:#555">を相手に伝えてください</span>'
     +(note?'<div style="font-size:12px;color:#633806;background:#faeeda;border:1px solid #EF9F27;border-radius:6px;padding:4px 8px;margin-top:6px">'+escapeHtml(note)+'</div>':'');
@@ -12017,6 +12060,13 @@ function bindRegistrationEvents(){
     var st=document.getElementById('opsShareStatus');
     var inp=document.getElementById('opsKeyInput');
     applyOpsSharedKey(inp?inp.value:'',function(msg){ if(st)st.textContent=msg; });
+    if(typeof refreshOpsKeyDisplay==='function')refreshOpsKeyDisplay();
+  });
+  // OPS-SHARED-KEY-REDESIGN-001 Phase D (#588): キーなしの大会へ合流（設計 §8-2）。
+  var opsKeylessJoinBtn=document.getElementById('opsKeylessJoinBtn');
+  if(opsKeylessJoinBtn)opsKeylessJoinBtn.addEventListener('click',function(){
+    var st=document.getElementById('opsShareStatus');
+    joinOpsKeylessTournament(function(msg){ if(st)st.textContent=msg; });
     if(typeof refreshOpsKeyDisplay==='function')refreshOpsKeyDisplay();
   });
   // Phase C (#585): 畳みを開いたとき発行済みキーを復元表示（リロード後も見える・単機は開かない限り非表示のまま＝設計 §6）。
