@@ -69,6 +69,8 @@
     button[disabled] { opacity:.5; cursor:not-allowed; }
     .msg { min-height:1.2em; font-size:13px; color:var(--primary); }
     .org-list { list-style:none; padding:0; margin:10px 0 0; }
+    /* APP-AUTH-SYNC-001 (#593): #560 が誤って削除した .org-meta を復旧（auth.js の名簿ふりがな/支部/（削除済）表示で使用中） */
+    .org-meta { color:var(--muted); font-size:12px; }
     .org-table { width:100%; border-collapse:collapse; font-size:14px; table-layout:fixed; margin-top:4px; }
     .org-table col.oc-chk { width:34px; } .org-table col.oc-name { width:26%; } .org-table col.oc-mail { width:34%; } .org-table col.oc-role { width:16%; } .org-table col.oc-st { width:12%; }
     .org-table th { text-align:left; font-size:12px; font-weight:600; color:var(--muted); padding:6px 8px; border-bottom:2px solid var(--line); }
