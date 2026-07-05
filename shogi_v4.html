@@ -4592,13 +4592,14 @@ function bindMasterEditModalEvents(){
 // ============================================================
 // MASTER-SHEET-001: スプレッドシート型 簡易一覧の coordinator 群（bind から呼ぶ・テストから直接呼べる）。
 //   削除/復元/編集は既存の applyMasterMember*（純関数・ガード込み）を流用＝新しい破壊ロジックを作らない。
-// MASTER-SHEET-002: 日付の表示短縮（今年=M/D・他年=YYYY/M/D・不明=－）。title に生値を残す。
+// LAST-ATTENDED-YEAR-001 (#602): 最終参加日は常に年付き（YYYY/M/D）で表示する。
+//   旧 MASTER-SHEET-002 は当年を M/D に短縮していたが、月例運用は年跨ぎが常時発生し、当年省略だと
+//   同じ欄の意味が年で読み替えになるため、当年短縮を廃止して常に年を付す（不明=－）。title に生値を残す。
 function _masterSheetFmtDate(s){
   var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||'');
   if(!m)return s?String(s):'－';
-  var nowY=new Date().getFullYear();
   var y=parseInt(m[1],10),mo=parseInt(m[2],10),d=parseInt(m[3],10);
-  return (y===nowY)?(mo+'/'+d):(y+'/'+mo+'/'+d);
+  return y+'/'+mo+'/'+d;
 }
 function masterSheetSelectedMids(members){
   var live=[],del=[];
@@ -8838,7 +8839,8 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
 
   for(var i=0;i<state.pairings[cls].length;i++){
     var m=state.pairings[cls][i];
-    var n1=getNameWithNo(m.p1,cls),n2=getNameWithNo(m.p2,cls);
+    // PAIRING-RUBY-001 (#604): 手合いカードの氏名にふりがな併記（既存 nameWithNoRubyHtml を流用・
+    //   未登録は名前のみ＝fail-soft）。番号部は素のまま・氏名部だけルビ化（playerNameRubyHtml 経由）。
     var aux1=pcBuildAuxLabel(m.p1),aux2=pcBuildAuxLabel(m.p2);
     var detail=quality.pairDetails[i]||{labels:[]};
     var labelsHtml='';
@@ -8855,14 +8857,14 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       +'<button style="position:absolute;top:6px;right:6px;padding:3px 7px;border-radius:5px;border:1px solid #ccc;background:#fff;font-size:11px;color:#888;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
       +'<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:28px">'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
-      +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+escapeHtml(n1)+'</button>'
+      +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+nameWithNoRubyHtml(m.p1,cls)+'</button>'
       // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT: formatParticipantLabel による勝敗数併記補助ラベル
       +(aux1?'<div data-pairing-aux="p1" style="font-size:11px;color:#444;margin-top:3px;text-align:center;line-height:1.3;max-width:9em;word-break:break-word">'+escapeHtml(aux1)+'</div>':'')
       +(m.winner===m.p1?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
       +'</div>'
       +'<span style="font-weight:500;color:#888;padding-top:12px">vs</span>'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
-      +'<button class="winner-btn'+(m.winner===m.p2?' selected':'')+'" id="wb_'+cls+'_'+i+'_p2">'+escapeHtml(n2)+'</button>'
+      +'<button class="winner-btn'+(m.winner===m.p2?' selected':'')+'" id="wb_'+cls+'_'+i+'_p2">'+nameWithNoRubyHtml(m.p2,cls)+'</button>'
       // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT: formatParticipantLabel による勝敗数併記補助ラベル
       +(aux2?'<div data-pairing-aux="p2" style="font-size:11px;color:#444;margin-top:3px;text-align:center;line-height:1.3;max-width:9em;word-break:break-word">'+escapeHtml(aux2)+'</div>':'')
       +(m.winner===m.p2?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
@@ -11220,6 +11222,20 @@ function buildTournamentPdfFilename(kind,className){
   return buildSafePdfFilename([buildTournamentHeldDateCompact(),title,className,kind],'_');
 }
 
+// CROSSTABLE-HEADER-INFO-001 (#603): 大会の参加人数（全登録クラスの参加者数合計）。表示専用・fail-soft。
+//   getRegistrationClassList / state.players を source of truth に集計し、採点・並び順ロジックには触れない。
+function countTournamentParticipants(){
+  var classes=(typeof getRegistrationClassList==='function')?getRegistrationClassList():((state&&state.classes)||[]);
+  var total=0;
+  for(var i=0;i<classes.length;i++){
+    var c=classes[i];
+    if(!c||(typeof isSafeClassId==='function'&&!isSafeClassId(c.id)))continue;
+    var players=(state&&state.players&&state.players[c.id])||[];
+    total+=players.length;
+  }
+  return total;
+}
+
 // PDF 帳票の見出し HTML（大会名 / 種別 / 対象月 / 開催日）。印刷・配布時に単体で意味が通るようにする。
 //   未入力（対象月・開催日が空）でも崩れないよう、存在する項目だけを表示する。すべて escapeHtml 済み。
 function buildPdfDocHeaderHtml(kindLabel){
@@ -11229,6 +11245,12 @@ function buildPdfDocHeaderHtml(kindLabel){
   var metaParts=[];
   if(monthLabel)metaParts.push('対象月：'+monthLabel);
   if(heldLabel)metaParts.push('開催日：'+heldLabel);
+  // CROSSTABLE-HEADER-INFO-001 (#603): 持ち時間・参加人数を見出しに追加（報告書メタ流用・fail-soft）。
+  //   持ち時間は formatTimeControl（既定あり）、参加人数は全登録クラスの合計。0 名時は省略。
+  var timeControl=(typeof formatTimeControl==='function')?formatTimeControl(state.report):'';
+  if(timeControl)metaParts.push('持ち時間：'+timeControl);
+  var pcount=(typeof countTournamentParticipants==='function')?countTournamentParticipants():0;
+  if(pcount>0)metaParts.push('参加：'+pcount+'名');
   var titleLine=title+(kindLabel?('　'+kindLabel):'');
   var metaHtml=metaParts.length?'<div class="doc-meta">'+escapeHtml(metaParts.join('　／　'))+'</div>':'';
   return '<header class="doc-header"><div class="doc-title">'+escapeHtml(titleLine)+'</div>'+metaHtml+'</header>';
@@ -13382,6 +13404,11 @@ function renderScoreboard(){
   var metaParts=[];
   if(monthLabel)metaParts.push('対象月：'+monthLabel);
   if(heldLabel)metaParts.push('開催日：'+heldLabel);
+  // CROSSTABLE-HEADER-INFO-001 (#603): 画面星取表ヘッダにも持ち時間・参加人数を併記（印刷と対称・fail-soft）。
+  var sbTime=(typeof formatTimeControl==='function')?formatTimeControl(state.report):'';
+  if(sbTime)metaParts.push('持ち時間：'+sbTime);
+  var sbCount=(typeof countTournamentParticipants==='function')?countTournamentParticipants():0;
+  if(sbCount>0)metaParts.push('参加：'+sbCount+'名');
   // LIVE-MOBILE-SCOREBOARD-001 §1 read-only 徹底（Codex Must Fix 1）:
   //   閲覧URL（#scoreboard / #viewer / #mobile-standings）には運営画面への戻り導線
   //   （ボタン / リンク等）を一切置かない。戻り導線があると閲覧者が保存・読込・リセット・
