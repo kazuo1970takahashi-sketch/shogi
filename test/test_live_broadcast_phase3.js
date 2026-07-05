@@ -28,6 +28,8 @@ function makeEnv(loc){
     scripts()+';return {normalizeState:normalizeState,buildPublicLiveSnapshot:buildPublicLiveSnapshot,'
     +'sbLiveAcceptEnvelope:sbLiveAcceptEnvelope,sbSetLiveEnvelope:sbSetLiveEnvelope,'
     +'liveRpcUrl:liveRpcUrl,liveBuildViewerUrl:liveBuildViewerUrl,'
+    +'loadLivePublicConfig:loadLivePublicConfig,'
+    +'_doc:function(){return document;},_win:function(){return window;},'
     +'sbIsKioskMode:sbIsKioskMode,sbKioskReset:sbKioskReset,'
     +'liveIsActive:liveIsActive,liveSchedulePublish:liveSchedulePublish,'
     +'renderScoreboard:renderScoreboard,'
@@ -172,6 +174,29 @@ function makeSrc(){
   let threw=false;
   try{E.liveSchedulePublish();}catch(e){threw=true;}
   ok(!threw,'O2 配信 OFF で liveSchedulePublish は何もしない（保存経路に影響なし）');
+}
+
+// ---- C. P2-2 (#613): loadLivePublicConfig の script タグ蓄積解消（同期に観測できる副作用のみ検査） ----
+{
+  const E=makeEnv();
+  const doc=E._doc();
+  let appended=0;
+  doc.head.appendChild=function(c){c.parentNode=this;this.childNodes.push(c);appended++;return c;};
+  doc.head.removeChild=function(c){const i=this.childNodes.indexOf(c);if(i>=0)this.childNodes.splice(i,1);c.parentNode=null;return c;};
+  const p1=E.loadLivePublicConfig();
+  const p1b=E.loadLivePublicConfig();
+  ok(appended===1,'C1 実行中の多重呼び出しで script タグは1つだけ（in-flight 再利用）');
+  ok(p1===p1b,'C2 実行中は同一 Promise を返す');
+  const sc=doc.head.childNodes[0];
+  ok(!!sc&&/config\.public\.js$/.test(sc.src),'C3 追加された script は app/config.public.js を指す');
+  sc.onerror();
+  ok(doc.head.childNodes.length===0,'C4 ロード失敗した script タグは head から除去される');
+  E.loadLivePublicConfig();
+  E.loadLivePublicConfig();
+  ok(appended===1,'C5 失敗直後（バックオフ中）の再呼び出しは新しい script タグを作らない（増殖しない）');
+  E._win().SHOGI_LIVE_PUBLIC_CONFIG={url:'https://kakuu-example.supabase.co',publishableKey:'kakuu-publishable-key'};
+  E.loadLivePublicConfig();
+  ok(appended===1,'C6 config 準備済みは script タグを追加せず短絡（成功経路不変）');
 }
 
 console.log('LIVE-BROADCAST-001 Phase3: PASS='+pass+' FAIL='+fail);
