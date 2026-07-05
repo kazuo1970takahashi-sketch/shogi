@@ -256,6 +256,23 @@
   function redirectTo() {
     try { return global.location.origin + global.location.pathname; } catch (e) { return undefined; }
   }
+  // AUTH-ERROR-MSG-001（#601）: マジックリンク送信失敗を人が読める文言に整形する。
+  //   STYLE-GUIDE §4.3: 生のエラー文字列は画面に出さない（詳細は console.warn）・次の行動を1つ添える。
+  //   429（レート制限）だけは判別して文言を分ける。それ以外は汎用文言（空 message/'{}' でも壊れない）。
+  function formatMagicLinkError(err) {
+    var status = (err && typeof err.status === 'number') ? err.status : '';
+    var raw = (err && typeof err.message === 'string') ? err.message : '';
+    var detail = raw.replace(/^\s+|\s+$/g, '');
+    try {
+      if (global.console && global.console.warn) {
+        global.console.warn('[auth] メール送信に失敗しました status=' + status + ' message=' + (detail || '(空)'));
+      }
+    } catch (e) {}
+    if (status === 429 || /rate ?limit/i.test(detail) || /too many/i.test(detail)) {
+      return 'メールの送信回数が上限に達しました。1分ほど待ってから、もう一度お試しください。';
+    }
+    return 'メールを送信できませんでした。しばらく待ってから、もう一度お試しください。何度も失敗する場合は、クラブの管理者（オーナー）にご連絡ください。';
+  }
   function requestMagicLink(client, email) {
     var addr = (email || '').trim();
     if (!isValidEmail(addr)) return Promise.resolve({ ok: false, message: 'メールアドレスの形式が正しくありません。' });
@@ -263,8 +280,11 @@
       email: addr,
       options: { shouldCreateUser: true, emailRedirectTo: redirectTo() }
     }).then(function (res) {
-      if (res && res.error) return { ok: false, message: '送信に失敗しました: ' + res.error.message };
+      if (res && res.error) return { ok: false, message: formatMagicLinkError(res.error) };
       return { ok: true, email: addr, message: 'ログイン用リンクを送りました。メールを確認してください。' };
+    }, function (err) {
+      // ネットワーク断等で Promise が reject されても未処理にしない（従来は未ハンドル）。
+      return { ok: false, message: formatMagicLinkError(err) };
     });
   }
   function loadSession(client) {
@@ -1878,6 +1898,7 @@
     buildAdminPanelHtml: buildAdminPanelHtml,
     buildAppViewHtml: buildAppViewHtml,
     // actions（client 注入）
+    formatMagicLinkError: formatMagicLinkError,
     requestMagicLink: requestMagicLink,
     loadSession: loadSession,
     claimAndLoadMemberships: claimAndLoadMemberships,
