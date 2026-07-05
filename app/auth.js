@@ -260,7 +260,7 @@
   //   STYLE-GUIDE §4.3: 生のエラー文字列は画面に出さない（詳細は console.warn）・次の行動を1つ添える。
   //   429（レート制限）だけは判別して文言を分ける。それ以外は汎用文言（空 message/'{}' でも壊れない）。
   function formatMagicLinkError(err) {
-    var status = (err && (typeof err.status === 'number' ? err.status : err.status)) || '';
+    var status = (err && typeof err.status === 'number') ? err.status : '';
     var raw = (err && typeof err.message === 'string') ? err.message : '';
     var detail = raw.replace(/^\s+|\s+$/g, '');
     try {
