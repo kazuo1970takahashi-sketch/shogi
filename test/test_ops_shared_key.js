@@ -43,6 +43,10 @@ ok(E.opsKeyToTournamentId('4821','2026-7-5')==='','K7 0詰め無し日付→空'
 ok(E.opsKeyToTournamentId('4821',null)==='','K8 ymd null→空');
 ok(E.opsKeyToTournamentId(null,'2026-07-05')==='','K9 key null→空');
 ok(E.normalizeTournamentIdInput(E.opsKeyToTournamentId('4821','2026-07-05'))==='t_2026_07_05_4821','K10 組立IDは normalizeTournamentIdInput 受理');
+// Phase C (#585): 暦妥当性（isValidYmd による実在日チェック）
+ok(E.opsKeyToTournamentId('4821','2026-02-31')==='','K11 暦に無い日付（2/31）→空（Phase C）');
+ok(E.opsKeyToTournamentId('4821','2026-13-01')==='','K12 13月→空（Phase C）');
+ok(E.opsKeyToTournamentId('4821','2024-02-29')==='t_2024_02_29_4821','K13 うるう日 2/29 は受理（Phase C）');
 
 console.log('=== T: tournamentIdToOpsKey ===');
 ok(E.tournamentIdToOpsKey('t_2026_07_05_4821')==='4821','T1 末尾4桁抽出');
