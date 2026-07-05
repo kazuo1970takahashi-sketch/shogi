@@ -69,11 +69,23 @@
     button[disabled] { opacity:.5; cursor:not-allowed; }
     .msg { min-height:1.2em; font-size:13px; color:var(--primary); }
     .org-list { list-style:none; padding:0; margin:10px 0 0; }
-    .org-row { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
-    .org-who { font-weight:600; min-width:9em; }
-    .org-meta { color:var(--muted); font-size:12px; }
-    .org-actions { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
-    .org-actions button { margin-top:0; padding:6px 10px; font-size:13px; }
+    .org-table { width:100%; border-collapse:collapse; font-size:14px; table-layout:fixed; margin-top:4px; }
+    .org-table col.oc-chk { width:34px; } .org-table col.oc-name { width:26%; } .org-table col.oc-mail { width:34%; } .org-table col.oc-role { width:16%; } .org-table col.oc-st { width:12%; }
+    .org-table th { text-align:left; font-size:12px; font-weight:600; color:var(--muted); padding:6px 8px; border-bottom:2px solid var(--line); }
+    .org-table td { padding:10px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+    .org-check, .org-check-all { width:18px; height:18px; }
+    .org-name-cell { cursor:pointer; }
+    .org-who { font-weight:600; word-break:break-word; }
+    .org-who-missing { color:#999; font-weight:400; }
+    .org-pen { color:var(--muted); font-size:12px; margin-left:4px; }
+    .org-mail-cell { color:#444; font-size:12px; word-break:break-all; }
+    .org-name-edit { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:4px; }
+    .org-name-edit input { margin:0; padding:6px 8px; font-size:14px; width:100%; box-sizing:border-box; }
+    .org-name-edit button { margin-top:0; padding:6px 10px; font-size:13px; }
+    .org-toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; background:#E6F1FB; border:1px solid #B5D4F4; border-radius:8px; padding:8px 10px; margin:10px 0; font-size:13px; color:#0C447C; }
+    .org-sel { font-weight:600; }
+    .org-tb-btn { margin-top:0; padding:6px 12px; font-size:13px; background:#fff; }
+    .org-tb-danger { border-color:#A32D2D; color:#A32D2D; }
     /* APP-UX-004B (作者承認 2026-07-03): 幹事管理の整列＋役割説明。招待フォームは
        .adm-form（コントロール高さ40px統一・役割 select は内容幅＝全幅巨大化解消）。
        旧 #inviteForm の行組み CSS は .adm-form に置換。 */
@@ -81,7 +93,7 @@
     .adm-fld { flex:1 1 220px; min-width:0; }
     .adm-fld label { margin:0 0 4px; }
     .adm-fld-role { flex:0 0 auto; }
-    .adm-form input[type="email"] { height:40px; padding:6px 10px; font-size:15px; }
+    .adm-form input[type="email"], .adm-form input[type="text"] { width:100%; box-sizing:border-box; height:40px; padding:6px 10px; font-size:15px; border:1px solid var(--line); border-radius:8px; }
     .adm-form select { width:auto; max-width:100%; height:40px; padding:6px 8px; font-size:15px; }
     .adm-form button { margin-top:0; height:40px; padding:0 18px; font-size:14px; }
     .role-help { background:#f4f6f9; border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin:10px 0 0; font-size:12px; color:#556; }
@@ -170,7 +182,7 @@
   <!-- Supabase JS（UMD・global `supabase` を生やす）。publishable key + URL のみ使用。 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js" integrity="sha384-nD3dwv4+ZqdYnmZKe/249ImlV04om7xTCcsoSeQYI+RO+XlKPoqAWaJR1M5SJH9p" crossorigin="anonymous"></script>
   <!-- cache-bust: app/auth.js 変更時に ?v=N をバンプ（app/ は cache-bust が無く旧 JS を握る問題の対策・#343）-->
-  <script src="auth.js?v=24"></script>
+  <script src="auth.js?v=40"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       try { window.ShogiAuth.boot(); }
