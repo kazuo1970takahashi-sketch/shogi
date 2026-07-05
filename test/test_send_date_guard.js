@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// SEND-DATE-GUARD-001 (#600) — ☁送信前の報告書日付未設定チェック検証。
-//   大会日付は getTournamentDateFromReport が報告書の日付欄から取得し、未設定だと todayYmd()（今日）へ
-//   フォールバックして誤記録される。sendTournamentToCloud 冒頭のガードが
-//   ①未設定なら confirm（今日の日付を明示）②キャンセルで中止（step:'cancelled-date'・fail-soft）
-//   ③日付設定済み（新/旧 schema）は無警告＝挙動不変 を満たすことを確認する。
+// SEND-DATE-CONFIRM-002 (#622) — ☁送信前に「記録される実施日」を毎回確認する検証（#600 SEND-DATE-GUARD-001 を置換）。
+//   REPORT-UX-001 の日付自動補完（未設定→今日）で UI 上「未設定」状態が存在せず #600 の未設定ガードは実質作動しない。
+//   案A（作者決定 2026-07-05）: 未設定のみ confirm → 毎回 confirm。sendTournamentToCloud 冒頭のガードが
+//   ①送信のたびに confirm（getTournamentDateFromReport が返す実際の記録日を明示）
+//   ②キャンセルで中止（step:'cancelled-date'・fail-soft・次の行動を案内）
+//   ③続行なら送信フローへ通過（ブロックしない）を満たすことを確認する。
 //   入力は完全架空。当日運営テストへ非干渉（追加のみ）。navigator.onLine=false で実ネットワーク不使用。
 const fs=require('fs');
 const RAW=fs.readFileSync(process.argv[2]||'shogi_v4.html','utf8');
@@ -30,7 +31,7 @@ let pass=0,fail=0;function ok(c,m){if(c)pass++;else{fail++;console.log('  FAIL: 
 
 // 1クラスのみ（#567 の複数級 confirm を発火させず、日付ガードだけを見る）。
 function mkState(dateVal){
-  var st={ tournament_id:'t_test_600', rounds:1,
+  var st={ tournament_id:'t_test_622', rounds:1,
     classes:[{id:'A',name:'Aクラス'}],
     players:{ A:[
       {id:'a1',name:'甲',yomi:'こう',cls:'A',member_id:'m_a1'},
@@ -46,17 +47,17 @@ function lastStatus(arr){return arr.length?arr[arr.length-1]:'';}
 const tests=[];
 function t(name,fn){tests.push({name:name,fn:fn});}
 
-t('D1 未設定＋キャンセル→中止（cancelled-date・案内 status・confirm に今日の日付）',function(){
+t('D1 未設定（空）＋キャンセル→中止（cancelled-date・案内 status・confirm に今日の日付を明示）',function(){
   var L=loadEnv(false);var msgs=[];
   L.env._setState(mkState(''));
   return L.env.sendTournamentToCloud(function(m){msgs.push(m);}).then(function(res){
     ok(res&&res.ok===false&&res.step==='cancelled-date','D1a step=cancelled-date（got '+JSON.stringify(res)+'）');
     ok(L.confirmCalls.length===1,'D1b confirm は1回（got '+L.confirmCalls.length+'）');
     var c=L.confirmCalls[0]||'';
-    ok(c.indexOf('実施日が未設定')>=0,'D1c confirm 文言に「実施日が未設定」');
-    ok(c.indexOf(L.env.todayYmd())>=0,'D1d confirm 文言に今日の日付（YYYY-MM-DD）を明示');
+    ok(c.indexOf('として記録します')>=0,'D1c confirm 文言に「として記録します」');
+    ok(c.indexOf(L.env.todayYmd())>=0,'D1d 未設定は自動補完された今日の日付を明示（YYYY-MM-DD）');
     var st=lastStatus(msgs);
-    ok(st.indexOf('中止')>=0&&st.indexOf('実施日')>=0,'D1e status は中止＋次の行動（実施日設定）を案内');
+    ok(st.indexOf('中止')>=0&&st.indexOf('実施日')>=0,'D1e status は中止＋次の行動（実施日の確認・修正）を案内');
   });
 });
 
@@ -69,48 +70,61 @@ t('D2 未設定＋続行→送信フローへ進む（fail-soft・ガードは�
   });
 });
 
-t('D3 新 schema（YYYY-MM-DD）設定済→無警告＝挙動不変',function(){
+t('D3 新 schema（YYYY-MM-DD）設定済でも毎回 confirm（設定日を明示）＋キャンセルで中止',function(){
   var L=loadEnv(false);var msgs=[];
   L.env._setState(mkState('2026-07-04'));
   return L.env.sendTournamentToCloud(function(m){msgs.push(m);}).then(function(res){
-    ok(L.confirmCalls.length===0,'D3a confirm は呼ばれない');
-    ok(res&&res.step!=='cancelled-date','D3b 中止されない（後段へ・got '+JSON.stringify(res&&res.step)+'）');
+    ok(L.confirmCalls.length===1,'D3a 設定済でも confirm は1回（毎回確認＝#622 の変更点）');
+    ok((L.confirmCalls[0]||'').indexOf('2026-07-04')>=0,'D3b confirm 文言に設定済みの実施日 2026-07-04 を明示');
+    ok(res&&res.step==='cancelled-date','D3c キャンセルで中止');
   });
 });
 
-t('D4 旧 schema（YYYY年M月D日）設定済→無警告',function(){
+t('D3b 新 schema 設定済＋続行→通過（送信フローへ）',function(){
+  var L=loadEnv(true);
+  L.env._setState(mkState('2026-07-04'));
+  return L.env.sendTournamentToCloud(function(){}).then(function(res){
+    ok(L.confirmCalls.length===1,'D3b1 confirm は1回');
+    ok(res&&res.step!=='cancelled-date','D3b2 続行で通過');
+  });
+});
+
+t('D4 旧 schema（YYYY年M月D日）設定済→毎回 confirm・正規化日（YYYY-MM-DD）を明示',function(){
   var L=loadEnv(false);
   L.env._setState(mkState('2026年7月4日'));
   return L.env.sendTournamentToCloud(function(){}).then(function(res){
-    ok(L.confirmCalls.length===0,'D4a confirm は呼ばれない');
-    ok(res&&res.step!=='cancelled-date','D4b 中止されない');
+    ok(L.confirmCalls.length===1,'D4a confirm は1回');
+    ok((L.confirmCalls[0]||'').indexOf('2026-07-04')>=0,'D4b 旧 schema も正規化した 2026-07-04 を明示');
+    ok(res&&res.step==='cancelled-date','D4c キャンセルで中止');
   });
 });
 
-t('D5 report 自体が無い→未設定扱いで confirm',function(){
+t('D5 report 自体が無い→今日の日付で confirm',function(){
   var L=loadEnv(false);
   var st=mkState();delete st.report;
   L.env._setState(st);
   return L.env.sendTournamentToCloud(function(){}).then(function(res){
     ok(L.confirmCalls.length===1,'D5a confirm は1回');
-    ok(res&&res.step==='cancelled-date','D5b キャンセルで中止');
+    ok((L.confirmCalls[0]||'').indexOf(L.env.todayYmd())>=0,'D5b 今日の日付を明示');
+    ok(res&&res.step==='cancelled-date','D5c キャンセルで中止');
   });
 });
 
-t('D6 不正文字列（日付として解釈不能）→未設定扱いで confirm',function(){
+t('D6 不正文字列（日付として解釈不能）→今日の日付で confirm',function(){
   var L=loadEnv(false);
   L.env._setState(mkState('あした'));
   return L.env.sendTournamentToCloud(function(){}).then(function(res){
     ok(L.confirmCalls.length===1,'D6a confirm は1回');
-    ok(res&&res.step==='cancelled-date','D6b キャンセルで中止');
+    ok((L.confirmCalls[0]||'').indexOf(L.env.todayYmd())>=0,'D6b 解釈不能は今日の日付へフォールバックして明示');
+    ok(res&&res.step==='cancelled-date','D6c キャンセルで中止');
   });
 });
 
 console.log('=== S: 静的チェック ===');
-ok(RAW.indexOf('SEND-DATE-GUARD-001')>=0,'S1 ガードのコメントマーカーが存在');
+ok(RAW.indexOf('SEND-DATE-CONFIRM-002')>=0,'S1 ガードのコメントマーカー（SEND-DATE-CONFIRM-002）が存在');
 ok(RAW.indexOf("step:'cancelled-date'")>=0,'S2 cancelled-date 中止経路が存在');
-ok(RAW.indexOf('実施日が未設定です')>=0,'S3 confirm 文言（実施日が未設定）が存在');
-var iGuard=RAW.indexOf('SEND-DATE-GUARD-001 (#600)');
+ok(RAW.indexOf('として記録します')>=0,'S3 毎回 confirm 文言（〜として記録します）が存在');
+var iGuard=RAW.indexOf('SEND-DATE-CONFIRM-002 (#622)');
 var iSending=RAW.indexOf("setStatus('クラウドへ送信中…')");
 ok(iGuard>=0&&iSending>=0&&iGuard<iSending,'S4 ガードは送信開始（クラウドへ送信中…）より前');
 
