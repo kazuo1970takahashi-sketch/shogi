@@ -52,6 +52,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 #resultActionBar .rab-cloud{flex:1;display:flex;gap:5px;align-items:stretch}
 @media(max-width:560px){#resultActionBar .rab-row{flex-direction:column}#resultActionBar .rab-cloud{width:100%}}
 #pane-result{padding-bottom:calc(110px + env(safe-area-inset-bottom))}
+#pane-reg{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
 @media(max-width:560px){#pane-result{padding-bottom:calc(215px + env(safe-area-inset-bottom))}}
 .cloud-status-pending{color:#1F3864}
 .cloud-status-info{color:#444}
@@ -508,11 +509,13 @@ body.sb-active{overflow:hidden}
       </div>
       <div id="fee-summary" style="margin-top:12px"></div>
       <hr class="separator">
-      <div class="flex">
-        <!-- START-UX-CONSOLIDATE-001 (設計 §5): このボタンは「対局管理へ進むナビゲーション」。開始系の副作用は持たない。
-             id="startBtn" は短期互換のため維持するが、意味は「開始」ではなく「対局管理タブへ移動」。開始は対局管理タブへ集約。 -->
-        <button type="button" class="btn-primary" id="startBtn">登録内容を確認して対局管理へ</button>
-        <span style="font-size:12px;color:#888">※対局の開始は「対局管理」タブで行います</span>
+      <!-- REG-ACTION-BAR-001: 参加者登録の主要ナビ「対局管理へ」を画面下部の固定バーへ集約。
+           startBtn の id/文言/bind は不変（test_start_ux_consolidate SRC1/SRC3）。pane-reg 非表示時はバーも隠れる。 -->
+      <div class="no-print" id="regActionBar" style="position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #e3e3e3;box-shadow:0 -2px 10px rgba(0,0,0,0.06);padding:9px 12px calc(9px + env(safe-area-inset-bottom)) 12px;z-index:50">
+        <div style="max-width:860px;margin:0 auto">
+          <button type="button" class="btn-primary" style="width:100%;min-height:48px;font-size:14px;border-radius:8px" id="startBtn">登録内容を確認して対局管理へ</button>
+          <div style="font-size:11px;color:#888;text-align:center;margin-top:4px">※対局の開始は「対局管理」タブで行います</div>
+        </div>
       </div>
     </div>
   </div>
