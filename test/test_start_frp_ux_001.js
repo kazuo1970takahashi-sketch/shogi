@@ -121,6 +121,7 @@ function loadEnv(opts){
        renderPlayerNameWithRuby:renderPlayerNameWithRuby,
        makePlayerRow:makePlayerRow,
        editPlayerYomi:editPlayerYomi,
+       __setAppModalTestResolver:__setAppModalTestResolver,
        updateField:updateField,
        normalizeYomi:normalizeYomi,
        getName:getName,
@@ -144,6 +145,11 @@ function loadEnv(opts){
   api._ctx = ctx;
   api._warns = warns;
   api._setPromptValue = function(v){ promptState.value = v; };
+  // IN-APP-MODAL-001 (#606): prompt を appPrompt へ移行したため、アプリ内モーダルの結果を
+  //   従来の promptState.value / opts.confirm から同期解決する（DOM 非依存・_setPromptValue 互換）。
+  if(typeof api.__setAppModalTestResolver==='function'){
+    api.__setAppModalTestResolver(function(type){ if(type==='prompt')return promptState.value; if(type==='confirm')return ('confirm' in opts)?opts.confirm:true; return true; });
+  }
   return api;
 }
 

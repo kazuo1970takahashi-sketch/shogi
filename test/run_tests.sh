@@ -2152,6 +2152,18 @@ else
 fi
 
 echo ""
+echo "【IN-APP-MODAL-001 (#606) — 汎用アプリ内モーダル + prompt3件の非同期置換（静的）】"
+if [ -f "$SCRIPT_DIR/test_in_app_modal_001.js" ]; then
+  if node "$SCRIPT_DIR/test_in_app_modal_001.js" "$TARGET" > /tmp/in_app_modal_001_out.log 2>&1; then
+    ok "IN-APP-MODAL テスト 全PASS ($(tail -1 /tmp/in_app_modal_001_out.log))"
+  else
+    ng "IN-APP-MODAL テスト 失敗"; cat /tmp/in_app_modal_001_out.log
+  fi
+else
+  warn "test_in_app_modal_001.js が見つからない"
+fi
+
+echo ""
 echo "【MASTER-REBUILD-FROM-CLOUD-001 Phase1 純関数（buildDerivedMemberStatsFromCloud / mergeDerivedStatsIntoMaster）】"
 if [ -f "$SCRIPT_DIR/test_master_rebuild_from_cloud_001.js" ]; then
   if node "$SCRIPT_DIR/test_master_rebuild_from_cloud_001.js" "$TARGET" > /tmp/master_rebuild_from_cloud_001_out.log 2>&1; then
