@@ -23,8 +23,10 @@ function loadEnv(confirmResult){
   const calls=[];
   const confirmFn=function(msg){calls.push(String(msg));return confirmResult;};
   const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout','navigator',
-    `${js};return { sendTournamentToCloud:sendTournamentToCloud, todayYmd:todayYmd, _setState:function(s){ state=s; } };`);
+    `${js};return { sendTournamentToCloud:sendTournamentToCloud, todayYmd:todayYmd, __setAppModalTestResolver:__setAppModalTestResolver, _setState:function(s){ state=s; } };`);
   const env=fn(ctx.document,ctx.window,ctx.localStorage,cryptoMock,function(){},confirmFn,function(){return '';},function(){},function(){},{createObjectURL:function(){return 'blob:mock';},revokeObjectURL:function(){}},{log:function(){},warn:function(){},error:function(){}},Promise,function(cb){return 0;},{onLine:false});
+  // IN-APP-MODAL-001: 送信前 confirm はアプリ内モーダル化済。同期解決シームへ配線（メッセージ捕捉＋confirmResult 返却）。
+  if(typeof env.__setAppModalTestResolver==='function')env.__setAppModalTestResolver(function(type,message){ calls.push(String(message)); return confirmResult; });
   return {env:env,ctx:ctx,confirmCalls:calls};
 }
 let pass=0,fail=0;function ok(c,m){if(c)pass++;else{fail++;console.log('  FAIL: '+m);}}

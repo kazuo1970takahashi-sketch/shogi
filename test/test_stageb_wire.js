@@ -17,8 +17,10 @@ function makeContext(){
 function loadEnv(){
   const ctx=makeContext();const js=extractScripts(RAW);const cryptoMock={randomUUID(){return '00000000-0000-0000-0000-000000000000';}};
   const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout',
-    `${js};return { pickActiveClubId:pickActiveClubId, sendTournamentToCloud:sendTournamentToCloud, _setState:function(s){ state=s; } };`);
+    `${js};return { pickActiveClubId:pickActiveClubId, sendTournamentToCloud:sendTournamentToCloud, __setAppModalTestResolver:__setAppModalTestResolver, _setState:function(s){ state=s; } };`);
   const env=fn(ctx.document,ctx.window,ctx.localStorage,cryptoMock,function(){},function(){return true;},function(){return '';},function(){},function(){},{createObjectURL:function(){return 'blob:mock';},revokeObjectURL:function(){}},{log:function(){},warn:function(){},error:function(){}},Promise,function(cb){return 0;});
+  // IN-APP-MODAL-001: 送信前 confirm はアプリ内モーダル化済。同期解決シームで OK 固定（送信フローへ通過）。
+  if(typeof env.__setAppModalTestResolver==='function')env.__setAppModalTestResolver(function(){return true;});
   return {env:env,ctx:ctx};
 }
 // mock supabase client

@@ -10441,67 +10441,78 @@ function pushAllMembersToCloud(setStatus){
 
 function sendTournamentToCloud(setStatus){
   setStatus=setStatus||function(){};
-  // CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 複数級を持つ端末の誤送信ガード（明示＋確認）。
-  //   送信対象が2級以上なら級名を挙げて confirm。キャンセルで中止（fail-soft・当日運営は続行）。
-  try{
-    var _tg=(typeof sendTargetClasses==='function')?sendTargetClasses((typeof state!=='undefined')?state:null):[];
-    if(_tg.length>1){
+  return new Promise(function(resolve){
+    // CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 複数級を持つ端末の誤送信ガード（明示＋確認）。
+    //   送信対象が2級以上なら級名を挙げて confirm。キャンセルで中止（fail-soft・当日運営は続行）。
+    //   IN-APP-MODAL-001: appConfirm 非同期化（Promise 契約維持・戻り値ネイティブ同値）。
+    var _tg=[];
+    try{ _tg=(typeof sendTargetClasses==='function')?sendTargetClasses((typeof state!=='undefined')?state:null):[]; }catch(e){ _tg=[]; }
+    if(_tg&&_tg.length>1){
       var _nm=[]; for(var _i=0;_i<_tg.length;_i++)_nm.push(_tg[_i].label+'（'+_tg[_i].count+'名）');
       var _msg='この端末には '+_nm.join('・')+' の'+_tg.length+'クラスが入っています。\nこの大会IDで全クラスを送信しますか？\n（分担運用で相手の級も持っている場合は「キャンセル」してください）';
-      var _okc=true; try{ _okc=(typeof confirm==='function')?confirm(_msg):true; }catch(e){ _okc=true; }
-      if(!_okc){ setStatus('送信を中止しました（'+_tg.length+'クラス・分担運用では自分の級だけを持つ端末から送信してください）'); return Promise.resolve({ok:false,step:'cancelled'}); }
-    }
-  }catch(e){}
-  // SEND-DATE-CONFIRM-002 (#622): 送信前に「記録される実施日」を毎回確認する（#600 SEND-DATE-GUARD-001 を置換）。
-  //   REPORT-UX-001 の日付自動補完（未設定→今日）により UI 上「未設定」状態が存在せず、#600 の未設定ガードは
-  //   実質作動しなかった（後日まとめ入力で自動補完された「今日」が無警告で誤記録される）。案A（作者決定 2026-07-05）:
-  //   未設定のみ confirm を毎回 confirm に置き換え、getTournamentDateFromReport が返す実際の記録日を明示する。
-  //   キャンセルで中止（#600 の step:'cancelled-date' fail-soft を踏襲）。再送信（上書き修正）でも日付を再確認できる。
-  try{
-    var _recDate=(typeof getTournamentDateFromReport==='function')
-      ? getTournamentDateFromReport((typeof state!=='undefined'&&state)?state.report:null) : '';
-    if(_recDate){
-      var _dmsg='実施日 '+_recDate+' として記録します。違う場合は報告書の日付欄を修正してください。よろしいですか？';
-      var _okd=true; try{ _okd=(typeof confirm==='function')?confirm(_dmsg):true; }catch(eD){ _okd=true; }
-      if(!_okd){ setStatus('送信を中止しました（報告書の日付欄で実施日を確認・修正してから再送信してください）'); return Promise.resolve({ok:false,step:'cancelled-date'}); }
-    }
-  }catch(eG){}
-  setStatus('クラウドへ送信中…');
-  return loadCloudDeps().then(function(dep){
-    if(dep.offline){ setStatus('オフラインのため送信できません（ネット接続後に再度お試しください・運営は続行できます）'); return {ok:false,step:'offline'}; }
-    if(!dep.cfg){ setStatus('クラウド設定がありません（送信は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
-    if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
-    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
-    if(!client||!client.auth){ setStatus('クラウドに接続できませんでした'); return {ok:false,step:'client'}; }
-    return client.auth.getSession().then(function(r){
-      var session=r&&r.data&&r.data.session;
-      if(!session){ setStatus('クラウド管理ページ（app/）でログインしてから送信してください'); return {ok:false,step:'auth'}; }
-      return client.rpc('claim_organizer_seat').then(function(rc){
-        var clubId=pickActiveClubId((rc&&rc.data)||[]);
-        if(!clubId){ setStatus('送信先クラブを一意に特定できません（有効な幹事クラブが無い／複数所属の可能性・管理ページを確認してください）'); return {ok:false,step:'club'}; }
-        var master=(typeof loadBranchMaster==='function')?loadBranchMaster():{members:[]};
-        try{ if(typeof ensureTournamentId==='function')ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report)); }catch(e){}
-        return syncTournamentToCloud(client,master,{clubId:clubId}).then(function(res){
-          if(res&&res.ok){
-            // A-2 (SYSTEM-REVIEW #377 follow): 未解決 entry を黙って成功扱いにしない。
-            //   unresolved>0 は ⚠ 警告（U-1 で橙）＝集計欠落に気づける。skipped(マスタ未連携)は対象外の中立注記。
-            var c=res.counts||{};
-            var base='送信しました（名簿 '+(c.members||0)+' 名・結果 '+(c.entries||0)+' 件';
-            if(c.skipped)base+='／マスタ未連携 '+c.skipped+' 名は対象外';
-            base+='）';
-            if(res.warn){ base='⚠ 一部の結果を送信できませんでした：未解決 '+(c.unresolved||0)+' 名。'+base+' 支部マスタへ紐付けてから再送してください（冪等・運営は続行できます）'; }
-            setStatus(base);
-            // SAVE-STATUS-BAR-001: クラウド送信成功（res.ok・warn 含む＝送信自体は実行済み）の時刻を記録（fail-soft）。
-            markSaveStatus('cloud');
-            // OPS-SHARED-KEY Phase C (#585): この端末が送信した大会IDを記録（キー張り替え時の明示確認 opsRekeyNeedsConfirm に使う・fail-soft）。
-            try{ if(typeof state!=='undefined'&&state&&state.tournament_id){ state.cloud_sent_tid=state.tournament_id; if(typeof saveData==='function')saveData(); } }catch(eS){}
-          }
-          else { setStatus('送信に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再送できます）'); }
-          return res;
-        });
+      appConfirm(_msg,function(_okc){
+        if(!_okc){ setStatus('送信を中止しました（'+_tg.length+'クラス・分担運用では自分の級だけを持つ端末から送信してください）'); resolve({ok:false,step:'cancelled'}); return; }
+        _dateGate();
       });
-    });
-  }).catch(function(e){ setStatus('送信エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; });
+    } else { _dateGate(); }
+    // SEND-DATE-CONFIRM-002 (#622): 送信前に「記録される実施日」を毎回確認する（#600 SEND-DATE-GUARD-001 を置換）。
+    //   REPORT-UX-001 の日付自動補完（未設定→今日）により UI 上「未設定」状態が存在せず、#600 の未設定ガードは
+    //   実質作動しなかった（後日まとめ入力で自動補完された「今日」が無警告で誤記録される）。案A（作者決定 2026-07-05）:
+    //   未設定のみ confirm を毎回 confirm に置き換え、getTournamentDateFromReport が返す実際の記録日を明示する。
+    //   キャンセルで中止（#600 の step:'cancelled-date' fail-soft を踏襲）。再送信（上書き修正）でも日付を再確認できる。
+    function _dateGate(){
+      var _recDate='';
+      try{
+        _recDate=(typeof getTournamentDateFromReport==='function')
+          ? getTournamentDateFromReport((typeof state!=='undefined'&&state)?state.report:null) : '';
+      }catch(eG){ _recDate=''; }
+      if(_recDate){
+        var _dmsg='実施日 '+_recDate+' として記録します。違う場合は報告書の日付欄を修正してください。よろしいですか？';
+        appConfirm(_dmsg,function(_okd){
+          if(!_okd){ setStatus('送信を中止しました（報告書の日付欄で実施日を確認・修正してから再送信してください）'); resolve({ok:false,step:'cancelled-date'}); return; }
+          _send();
+        });
+      } else { _send(); }
+    }
+    function _send(){
+      setStatus('クラウドへ送信中…');
+      resolve(loadCloudDeps().then(function(dep){
+        if(dep.offline){ setStatus('オフラインのため送信できません（ネット接続後に再度お試しください・運営は続行できます）'); return {ok:false,step:'offline'}; }
+        if(!dep.cfg){ setStatus('クラウド設定がありません（送信は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
+        if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
+        var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+        if(!client||!client.auth){ setStatus('クラウドに接続できませんでした'); return {ok:false,step:'client'}; }
+        return client.auth.getSession().then(function(r){
+          var session=r&&r.data&&r.data.session;
+          if(!session){ setStatus('クラウド管理ページ（app/）でログインしてから送信してください'); return {ok:false,step:'auth'}; }
+          return client.rpc('claim_organizer_seat').then(function(rc){
+            var clubId=pickActiveClubId((rc&&rc.data)||[]);
+            if(!clubId){ setStatus('送信先クラブを一意に特定できません（有効な幹事クラブが無い／複数所属の可能性・管理ページを確認してください）'); return {ok:false,step:'club'}; }
+            var master=(typeof loadBranchMaster==='function')?loadBranchMaster():{members:[]};
+            try{ if(typeof ensureTournamentId==='function')ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report)); }catch(e){}
+            return syncTournamentToCloud(client,master,{clubId:clubId}).then(function(res){
+              if(res&&res.ok){
+                // A-2 (SYSTEM-REVIEW #377 follow): 未解決 entry を黙って成功扱いにしない。
+                //   unresolved>0 は ⚠ 警告（U-1 で橙）＝集計欠落に気づける。skipped(マスタ未連携)は対象外の中立注記。
+                var c=res.counts||{};
+                var base='送信しました（名簿 '+(c.members||0)+' 名・結果 '+(c.entries||0)+' 件';
+                if(c.skipped)base+='／マスタ未連携 '+c.skipped+' 名は対象外';
+                base+='）';
+                if(res.warn){ base='⚠ 一部の結果を送信できませんでした：未解決 '+(c.unresolved||0)+' 名。'+base+' 支部マスタへ紐付けてから再送してください（冪等・運営は続行できます）'; }
+                setStatus(base);
+                // SAVE-STATUS-BAR-001: クラウド送信成功（res.ok・warn 含む＝送信自体は実行済み）の時刻を記録（fail-soft）。
+                markSaveStatus('cloud');
+                // OPS-SHARED-KEY Phase C (#585): この端末が送信した大会IDを記録（キー張り替え時の明示確認 opsRekeyNeedsConfirm に使う・fail-soft）。
+                try{ if(typeof state!=='undefined'&&state&&state.tournament_id){ state.cloud_sent_tid=state.tournament_id; if(typeof saveData==='function')saveData(); } }catch(eS){}
+              }
+              else { setStatus('送信に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再送できます）'); }
+              return res;
+            });
+          });
+        });
+      }).catch(function(e){ setStatus('送信エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; }));
+    }
+  });
 }
 
 // CLOUD PULL (B-3c-wire / #343): 支部マスタ画面→クラウド名簿取得のブラウザ・グルー。
@@ -13163,37 +13174,39 @@ function liveStartBroadcastUI(setStatus){
   if(liveIsActive()){setStatus('すでに配信中です');return Promise.resolve({ok:false,step:'active'});}
   var modeSel=document.getElementById('liveDisplayMode');
   var mode=(modeSel&&modeSel.value==='full')?'full':'given+no';
-  // N1: インターネット公開＝影響が大きい操作なので明示 confirm（受入 #17 の告知運用も明示）。
+  // N1: インターネット公開＝影響が大きい操作なので明示 confirm（受入 #17 の告知運用も明示）。IN-APP-MODAL-001: appConfirm 非同期化（Promise 契約維持・戻り値ネイティブ同値）。
   var warn='参加者の番号・成績と表示名（'+(mode==='full'?'フルネーム':'姓＋番号のみ')+'）をインターネットに公開します。\n'
     +'会場の掲示物（QR）に「氏名・成績をインターネット公開する」旨の告知を含めてください。\n'
     +(mode==='full'?'フルネーム公開は、主催者が告知・同意の運用を決めている場合のみ使ってください。\n':'')
     +'\nライブ配信を開始しますか？';
-  var okc=true;
-  try{okc=(typeof confirm==='function')?confirm(warn):true;}catch(e){okc=true;}
-  if(!okc){setStatus('配信を開始しませんでした');return Promise.resolve({ok:false,step:'cancelled'});}
-  setStatus('配信を開始しています…');
-  return loadCloudDeps().then(function(dep){
-    if(dep.offline){ setStatus('オフラインのため配信を開始できません（ネット接続後に再度お試しください・運営は続行できます）'); return {ok:false,step:'offline'}; }
-    if(!dep.cfg){ setStatus('クラウド設定がありません（配信は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
-    if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
-    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
-    if(!client||!client.auth){ setStatus('クラウドに接続できませんでした'); return {ok:false,step:'client'}; }
-    return client.auth.getSession().then(function(r){
-      var session=r&&r.data&&r.data.session;
-      if(!session){ setStatus('クラウド管理ページ（app/）でログインしてから配信を開始してください'); return {ok:false,step:'auth'}; }
-      return client.rpc('start_live_session').then(function(rs){
-        if(rs&&rs.error){ setStatus('配信を開始できませんでした：'+((rs.error&&rs.error.message)||'不明')+'（運営は続行できます）'); return {ok:false,step:'rpc'}; }
-        var slug=(rs&&typeof rs.data==='string')?rs.data:'';
-        if(!slug){ setStatus('配信を開始できませんでした（公開コードを発行できません・運営は続行できます）'); return {ok:false,step:'slug'}; }
-        _liveClient=client;_liveSlug=slug;_liveDisplayMode=mode;
-        liveShowQr(slug);
-        liveUpdateBar('開始しました（初回データを送信中…）');
-        setStatus('配信を開始しました。QRを印刷して掲示してください（表示名：'+(mode==='full'?'フルネーム':'姓＋番号のみ')+'）');
-        livePublishNow(); // 初回スナップショットを即時送信（J4: 開いてすぐ出る）
-        return {ok:true,slug:slug};
-      });
+  return new Promise(function(resolve){
+    appConfirm(warn,function(okc){
+      if(!okc){setStatus('配信を開始しませんでした');resolve({ok:false,step:'cancelled'});return;}
+      setStatus('配信を開始しています…');
+      resolve(loadCloudDeps().then(function(dep){
+        if(dep.offline){ setStatus('オフラインのため配信を開始できません（ネット接続後に再度お試しください・運営は続行できます）'); return {ok:false,step:'offline'}; }
+        if(!dep.cfg){ setStatus('クラウド設定がありません（配信は任意です・運営は続行できます）'); return {ok:false,step:'config'}; }
+        if(!dep.sb){ setStatus('クラウドに接続できませんでした（オフライン等・運営は続行できます）'); return {ok:false,step:'network'}; }
+        var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+        if(!client||!client.auth){ setStatus('クラウドに接続できませんでした'); return {ok:false,step:'client'}; }
+        return client.auth.getSession().then(function(r){
+          var session=r&&r.data&&r.data.session;
+          if(!session){ setStatus('クラウド管理ページ（app/）でログインしてから配信を開始してください'); return {ok:false,step:'auth'}; }
+          return client.rpc('start_live_session').then(function(rs){
+            if(rs&&rs.error){ setStatus('配信を開始できませんでした：'+((rs.error&&rs.error.message)||'不明')+'（運営は続行できます）'); return {ok:false,step:'rpc'}; }
+            var slug=(rs&&typeof rs.data==='string')?rs.data:'';
+            if(!slug){ setStatus('配信を開始できませんでした（公開コードを発行できません・運営は続行できます）'); return {ok:false,step:'slug'}; }
+            _liveClient=client;_liveSlug=slug;_liveDisplayMode=mode;
+            liveShowQr(slug);
+            liveUpdateBar('開始しました（初回データを送信中…）');
+            setStatus('配信を開始しました。QRを印刷して掲示してください（表示名：'+(mode==='full'?'フルネーム':'姓＋番号のみ')+'）');
+            livePublishNow(); // 初回スナップショットを即時送信（J4: 開いてすぐ出る）
+            return {ok:true,slug:slug};
+          });
+        });
+      }).catch(function(e){ setStatus('配信開始エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; }));
     });
-  }).catch(function(e){ setStatus('配信開始エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; });
+  });
 }
 // 配信停止（受入 #18）: stop_live_session で is_public=false（QR/URL 無効化）。大会終了チェックリストにも組込（runbook）。
 function liveStopBroadcastUI(setStatus){
