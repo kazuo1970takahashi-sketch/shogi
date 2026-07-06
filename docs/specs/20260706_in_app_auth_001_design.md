@@ -5,7 +5,7 @@
 - Review Level: **L3+**（認証・セッション・権限表示。作者と別素性で design-review 必須）
 - 前提調査（production `0616883`・2026-07-06 確認済／`a6d0fce`・?v=93 で Slice 1/2 反映済）
   - ログインはパスワードレスのマジックリンク（`signInWithOtp` + `emailRedirectTo`）。実装は **app/ のみ**。
-  - 本体・app/ とも `createClient(url, publishableKey)` のみ＝**supabase-js 既定**（同一 storageKey / `persistSession=true` / `detectSessionInUrl=true` / **`flowType='pkce'`（v2 既定）** / localStorage）。**同一オリジンでセッション共有が成立**。
+  - 本体・app/ とも `createClient(url, publishableKey)` のみ＝**supabase-js 既定**（同一 storageKey / `persistSession=true` / `detectSessionInUrl=true` / **`flowType='implicit'`（auth-js v2.108.2 既定・`GoTrueClient.js:21` 実体 grep 確認）** / localStorage）。**同一オリジンでセッション共有が成立**。
   - 本体はクラウド系関数が `getSession()` を都度 ad-hoc に読むだけ。supabase-js UMD（`@supabase/supabase-js@2.108.2`）と `app/config.js` は**ボタン押下時のみ遅延ロード**（既定では外部依存ゼロ）。
   - app/ に再利用可能な部品: `detectAuthCallback()`（hash/search のトークン検出）、`ShogiAuth.{requestMagicLink, signOut, loadSession, claimAndLoadMemberships, summarizeMemberships, formatMagicLinkError}`（client 注入でテスト可）。
 
@@ -51,32 +51,32 @@
 
 **送信**: `requestMagicLink` 相当を本体へ移植（`signInWithOtp({ email, options:{ shouldCreateUser:true, emailRedirectTo:<本体URL> } })`）。エラー整形は `formatMagicLinkError`（429 判別・生エラー非表示・`console.warn` のみ）を流用・固定化。UI は app/ の `buildLoginViewHtml`/`buildCheckEmailViewHtml`（メール入力→「確認して」→再送）を **#606 `showAppModal` 流用モーダル**で再現。専用タブは作らず既存導線に自然に足す。
 
-### 戻り先 = 案A（完全アプリ内・作者確定 2026-07-06）＋ Must Fix 技術確定（2026-07-07）
+### 戻り先 = 案A（完全アプリ内・作者確定 2026-07-06）＋ Must Fix 技術確定（2026-07-07・実体確認）
 
-design-review（#646・conditional-go）の Must Fix 3件を実コードで技術確定した。以下が確定した挙動・因果である。
+design-review（#646・conditional-go）の Must Fix 3件を実コード＋ライブラリ実体で技術確定した。以下が確定した挙動・因果である。
 
 **MF① 因果の訂正（旧設計は逆だった）**
-`detectAuthCallback()` は URL（`hash`+`search`）を**正規表現で読むだけ**でトークンを消費しない。トークンの実消費（`?code=` / `#access_token=` 除去＋`history.replaceState`）を行うのは、**既定 `detectSessionInUrl:true` の `createClient` 生成時**。したがって正しい因果は「**`createClient` を呼ぶと URL の認証パラメータが消えるので、その前に `detectAuthCallback()` で URL 状態を先読みしてフラグ化する**」。app/ `boot()` も `var fromMagicLink=detectAuthCallback(); var client=createClient(...)` の順で、読み取り→生成（消費）の順序を担保している。
+`detectAuthCallback()` は URL（`hash`+`search`）を**正規表現で読むだけ**でトークンを消費しない。トークンの実消費（`#access_token=` 等の除去＋`history.replaceState`）を行うのは、**既定 `detectSessionInUrl:true` の `createClient` 生成時**。したがって正しい因果は「**`createClient` を呼ぶと URL の認証パラメータが消えるので、その前に `detectAuthCallback()` で URL 状態を先読みしてフラグ化する**」。app/ `boot()` も `var fromMagicLink=detectAuthCallback(); var client=createClient(...)` の順で、読み取り→生成（消費）の順序を担保している。
 
-**MF② PKCE `?code=` 交換経路（案A 最大リスク）— 技術確定**
-- **flowType**: 両系統とも `createClient(url, key)` をオプション無しで呼ぶ＝supabase-js v2 既定の **PKCE**。よってマジックリンク帰着は **クエリ `?code=xxx`**（ハッシュではない）。`detectAuthCallback()` の `[?&]code=` 検出がこれに対応。
-- **`code_verifier` 共有**: PKCE の `code_verifier` は送信時（`signInWithOtp` を呼んだ client）に **localStorage へ永続**される（既定 storageKey `sb-<ref>-auth-token` 系列）。帰着時に生成する client は**別インスタンスでも同一オリジン・同一既定 storageKey** ゆえ同じ `code_verifier` を読める＝`exchangeCodeForSession` 相当（`detectSessionInUrl` 内部）が成立する。**制約**: この共有は「両系統とも `createClient` にオプションを渡さない（既定 storageKey 維持）」が前提。片方に storageKey/flowType/persist を明示すると破綻するため、**下記の制約条件を正本化**する。
-- **帰着限定・早期ブート経路の新設**: 本体は supabase-js を遅延ロードするため、帰着時にトークンを消費するには**起動早期に UMD＋config を先行ロードして永続 client を1つ生成**する必要がある。これを **`detectAuthCallback()` が true の時だけ**実行する（`?code=` 等が URL に無い通常起動では従来どおり何もロードしない＝当日運営の通常経路はネット/挙動ともゼロ改変）。生成した client は**モジュール変数に閉じ込める**（ライブ配信 `_liveClient` の前例に倣う。当日運営コアは参照しない）。
-- **`#scoreboard` ハッシュとの共存順序（直交）**: 閲覧ビュールーティング `isScoreboardRoute()`（`applyScoreboardRoute()` / `hashchange` 購読）は **`location.hash`** を参照する。PKCE 帰着 URL は **クエリ `?code=` のみでハッシュは空** ＝ 両者は直交し競合しない（帰着 URL は `isScoreboardRoute()===false` → 運営ビューのまま＝意図どおり）。順序保証は「**認証帰着ブート（`createClient` によるトークン消費）を、ハッシュルーティング適用より前に走らせる**」の一点。supabase-js の `replaceState` は自身が付けた認証パラメータのみ除去し、他のクエリ/ハッシュは温存するため、空ハッシュは保持される。
+**MF② マジックリンク帰着経路（案A 最大リスク）— 実体確認で確定**
+- **flowType 実測**: auth-js（GoTrueClient）v2.108.2 の既定は **`flowType:'implicit'`**（`node_modules/@supabase/auth-js/dist/module/GoTrueClient.js:21` の `flowType: 'implicit'` を実体確認）。本体・app/ とも `createClient` に flowType を渡さない＝**implicit フロー**。よってマジックリンク帰着は **URL ハッシュ `#access_token=…&refresh_token=…&type=magiclink`**（`?code=` クエリではない）。`detectAuthCallback()` の `access_token=` 検出がこれに対応（`[?&]code=` 分岐は本構成では発火しない防御的分岐）。**⇒ レビュー MF② が懸念した「PKCE `code=` 交換／別インスタンス間の `code_verifier` 共有」は本構成では発生せず論点消滅**（PKCE 未使用）。
+- **セッション確立**: 帰着時に生成する client（既定 `detectSessionInUrl:true`）が**ハッシュのトークンを直接パースしてセッション化**し localStorage（既定 storageKey）へ永続。app/ が現行 production で同一フロー（既定 implicit）で成立している実績がそのまま本体にも当てはまる。
+- **帰着限定・早期ブート経路の新設**: 本体は supabase-js を遅延ロードするため、帰着時にハッシュのトークンを消費するには**起動早期に UMD＋config を先行ロードして永続 client を1つ生成**する必要がある。これを **`detectAuthCallback()` が true の時だけ**実行する（帰着でない通常起動では従来どおり何もロードしない＝当日運営の通常経路はネット/挙動ともゼロ改変）。生成した client は**モジュール変数に閉じ込める**（ライブ配信 `_liveClient` の前例に倣う。当日運営コアは参照しない）。
+- **`#scoreboard` ハッシュとの共存順序（implicit ゆえの実務点）**: 帰着 URL は **ハッシュを持つ**（`#access_token=…`）。ただし閲覧ビュールーティング `isScoreboardRoute()`（`applyScoreboardRoute()` / `hashchange` 購読・`location.hash` 参照）は `scoreboard`/`viewer`/`mobile-standings` にのみマッチし、`#access_token=…` はどれにも一致しない → `isScoreboardRoute()===false`＝運営ビュー維持（誤ルーティングなし）。**順序保証**は「**認証帰着ブート（`createClient`＝ハッシュ消費）を、ハッシュルーティング適用・`hashchange` 依存処理より前に走らせる**」の一点。supabase-js はトークン消費後 `replaceState` で自身の認証ハッシュを除去し、その結果生じ得る `hashchange` は空ハッシュ → `applyScoreboardRoute()` は運営ビューのまま（無害）。
 
 **MF③ 「app/ boot と同一パターン」表現の訂正**
 app/ `boot()` は `detectAuthCallback()` の真偽に関係なく client を**無条件生成**（`fromMagicLink` は生成後のポータル転送分岐にのみ使用）。案A の「**帰着時のみ**早期生成」は app/ のコピーではなく**本体向けの新規最小ロジック**。gate（`detectAuthCallback()` true）＋モジュール変数封じ込めで副作用を帰着経路に限定する（CLAUDE.md ルール1/2：当日運営コア無改変・build/bind/coordinator 維持と両立）。
 
-**フォールバック（案B・確実に機能）**: 上記早期ロード/`code=` 交換が実装中に詰まった場合は、本体からメール送信だけ行い `emailRedirectTo = app/` のままにする（着地は app/ ＝同一オリジンでセッション共有→本体リロードで「ログイン中」）。**Slice 3 実装 PR 内に「案A を試み、code 交換/早期ロードで詰まれば即 案B 退避」の判断ゲートを置く**。
+**フォールバック（案B・確実に機能）**: 上記早期ロード/ハッシュ消費が実装中に詰まった場合は、本体からメール送信だけ行い `emailRedirectTo = app/` のままにする（着地は app/ ＝同一オリジンでセッション共有→本体リロードで「ログイン中」）。**Slice 3 実装 PR 内に「案A を試み、早期ロード/帰着消費で詰まれば即 案B 退避」の判断ゲートを置く**。
 
-**セキュリティ/権限**: 本体はメール送信とセッション確立のみ。役割・クラブは表示補助で、送信/削除の可否は RLS が最終強制（既存どおり）。secret 不使用。
+**セキュリティ/権限**: 本体はメール送信とセッション確立のみ。役割・クラブは表示補助で、送信/削除の可否は RLS が最終強制（既存どおり）。secret 不使用。implicit フローは現行 production の app/ が既に採用しており本体でも据え置き（新規リスクの導入なし）。
 
-**テスト**: `requestMagicLink`（mock client・valid/invalid email・429・reject）／`detectAuthCallback` の hash/search 判定／`?code=` 帰着時に早期ブートが1回だけ client を生成し `getSession` が確立へ遷移すること（mock supabase）／通常起動（認証パラメータ無し）では早期ブートを起動しない（ロード副作用ゼロ）こと／送信後の checkEmail 表示遷移。
+**テスト**: `requestMagicLink`（mock client・valid/invalid email・429・reject）／`detectAuthCallback` の hash/search 判定／`#access_token=`（implicit）帰着時に早期ブートが1回だけ client を生成し `getSession` が確立へ遷移すること（mock supabase）／通常起動（認証パラメータ無し）では早期ブートを起動しない（ロード副作用ゼロ）こと／`#access_token=` ハッシュが `isScoreboardRoute()===false` で運営ビュー維持であること／送信後の checkEmail 表示遷移。
 
 ---
 
 ## セッション共有の制約（正本・Should Fix 反映）
-本体・app/ のセッション共有は「両系統とも `createClient(url, publishableKey)` を**オプション無し**で呼ぶ」ことに依存する（既定 storageKey / persist / localStorage / PKCE の一致）。**いずれの系統でも `createClient` に storageKey・flowType・persistSession・detectSessionInUrl 等のオプションを追加しない**ことを制約とする（追加すると共有と `code_verifier` 交換が破綻する）。
+本体・app/ のセッション共有は「両系統とも `createClient(url, publishableKey)` を**オプション無し**で呼ぶ」ことに依存する（既定 storageKey / `persistSession` / localStorage / `flowType:'implicit'` の一致）。**いずれの系統でも `createClient` に storageKey・flowType・persistSession・detectSessionInUrl 等のオプションを追加しない**ことを制約とする（追加すると共有と帰着時のトークン消費が破綻する）。
 
 ## 更新頻度の分離（Should Fix 反映・Slice 1 で反映済）
 `visibilitychange` 毎の `claim_organizer_seat` RPC は重い。**session 有無チェック（軽・localStorage `getSession`）と membership 再取得（重・RPC）を分離**し、RPC は初回＋ログイン/ログアウト直後のみ、`visibilitychange` は session 有無だけに絞る（Slice 1 の `refreshAuthChip(false)` がこれ）。
@@ -92,7 +92,7 @@ app/ `boot()` は `detectAuthCallback()` の真偽に関係なく client を**�
 - L4 相当（認証）の code-review は **Codex 必須**（SoD）。design-review は本設計（改訂）に対して別セッション reviewer が再実施。
 
 ## 論点の確定状況
-1. **戻り先: 案A（完全アプリ内）で確定**（作者 2026-07-06）。Must Fix ①②③ を実コードで技術確定（2026-07-07・上記）。案B フォールバック判断ゲートを Slice 3 PR に内包。
+1. **戻り先: 案A（完全アプリ内）で確定**（作者 2026-07-06）。Must Fix ①②③ を実コード＋ライブラリ実体で技術確定（2026-07-07・上記）。案B フォールバック判断ゲートを Slice 3 PR に内包。
 2. **配置**: Slice 1/2 実装で `#auth-status-bar`（保存状態バー直下）に確定。表示は「氏名（無ければメール）＋クラブ名」まで。役割は当面出さない（UX 簡潔・権限は RLS 強制）。
 3. **ログイン UI の器**: #606 の `showAppModal` 流用モーダルにメール入力→「確認して」→再送を載せる（app/ の buildLoginView/checkEmailView を鏡写し）。
 
@@ -100,7 +100,7 @@ app/ `boot()` は `detectAuthCallback()` の真偽に関係なく client を**�
 | # | Must Fix | 対応 |
 |---|---|---|
 | MF① | 案A の因果が逆 | Slice3「MF①」で訂正（read=detectAuthCallback／消費=createClient の detectSessionInUrl）。 |
-| MF② | PKCE `code=` 交換・code_verifier 共有・帰着限定早期ロード・#scoreboard 共存順序 未検討 | Slice3「MF②」で技術確定（既定 PKCE／同一 storageKey 共有／`detectAuthCallback` gate の早期 UMD+config ロード／`?code=`(query) と `#hash`(scoreboard) の直交・順序保証）。共有前提は「セッション共有の制約」で正本化。 |
+| MF② | PKCE `code=` 交換・code_verifier 共有・帰着限定早期ロード・#scoreboard 共存順序 未検討 | **実体確認で flowType 既定=implicit を確定**（auth-js 2.108.2 源 `GoTrueClient.js:21`）。⇒帰着は**ハッシュ `#access_token=`**・PKCE/`code_verifier` は本構成で不発（論点消滅）。残る実務点＝帰着限定早期ブート（`detectAuthCallback` gate）＋ハッシュ消費を `#scoreboard` ルーティング前に走らせる順序保証。共有前提は「セッション共有の制約」で正本化。 |
 | MF③ | 「app/ boot と同一」誤り | Slice3「MF③」で訂正（app/=無条件生成／本体=帰着限定の新規最小ロジック・モジュール変数封じ込め）。 |
 
 Should Fix（appConfirm コールバック型／両系統オプション無し制約／`_liveClient` 前例／`#auth-status-bar`・`bindHeaderEvents` の正しい id/関数名／visibilitychange と RPC 分離／オフライン・複数タブ・ログアウト後描画）および Nice-to-Have（役割非表示のテスト1行明記／`formatMagicLinkError` 固定化／案B 判断ゲート）を本文各節に反映済。
