@@ -104,6 +104,7 @@ function loadEnv(opts){
        parseTournamentBackup:parseTournamentBackup,
        exportTournamentBackup:exportTournamentBackup,
        importTournamentBackupFromText:importTournamentBackupFromText,
+       __setAppModalTestResolver:__setAppModalTestResolver,
        _setState:function(s){state=s;},
        _getState:function(){return state;}
      };`
@@ -125,6 +126,8 @@ function loadEnv(opts){
   api._ctx = ctx;
   api._alerts = alerts;
   api._confirms = confirms;
+  // IN-APP-MODAL-001 Phase 1b: 復元 confirm はアプリ内モーダル化済。同期解決シームへ opts.confirm を配線（メッセージ捕捉＋回答）。
+  if(typeof api.__setAppModalTestResolver==='function'){ api.__setAppModalTestResolver(function(type,message){ confirms.push(message); return ('confirm' in opts)?opts.confirm:true; }); }
   return api;
 }
 
@@ -266,7 +269,7 @@ function stable(x){ return JSON.stringify(x); }
   const json = env.serializeTournamentBackup(s,'2026-06-20T00:00:00.000Z');
   const ret = env.importTournamentBackupFromText(json);
   const after = env._getState();
-  assert(ret===true, 'R2-1 import は true を返す');
+  assert(env._alerts.length===0, 'R2-1 成功経路で alert を出さない（import 実行）');
   assert(after.players.A.length===2 && after.players.A[0].name==='架空太郎', 'R2-2 global state がバックアップ内容で上書き復元される');
   assert(env._confirms.length===1, 'R2-3 上書き前に confirm ガードを通る');
   // localStorage shogi_v4 にも保存される（applyLoadedJson 内 save() 再利用）
@@ -293,7 +296,7 @@ function stable(x){ return JSON.stringify(x); }
   const before = stable(env._getState());
   const json = env.serializeTournamentBackup(env.normalizeState(fxFull()),'2026-06-20T00:00:00.000Z');
   const ret = env.importTournamentBackupFromText(json);
-  assert(ret===false, 'R4-1 confirm キャンセルで import は false');
+  assert(env._confirms.length===1, 'R4-1 キャンセルでも確認モーダルは提示（resolver 呼出1回）');
   assert(stable(env._getState())===before, 'R4-2 confirm キャンセル時は state を変更しない（誤操作データ消失防止）');
 }
 

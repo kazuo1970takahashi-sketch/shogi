@@ -135,7 +135,7 @@ grep -A50 "^function resetAll" "$TARGET" | grep -q "rep-place" && ok "resetAll: 
 grep -A50 "^function resetAll" "$TARGET" | grep -q "bulk-edit-modal" && ok "resetAll: モーダル閉じ" || ng "モーダル閉じなし"
 
 # 2-13. loadData の再選択対応
-grep -A5 "現在のデータを上書きして読み込みますか" "$TARGET" | grep -q "e.target.value=''" && ok "loadData: キャンセル時の再選択対応" || ng "再選択対応なし"
+grep -A12 "現在のデータを上書きして読み込みますか" "$TARGET" | grep -q "e.target.value=''" && ok "loadData: キャンセル時の再選択対応（appConfirm＋末尾クリーンアップ）" || ng "再選択対応なし"
 
 # ============================================
 # 第3層: 既知バグ再発テスト

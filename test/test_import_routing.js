@@ -46,7 +46,7 @@ console.log('=== R: ルーティング（静的検証）===');
 ok(/classifyImportJson\(text\)/.test(RAW),'R1 読込が classifyImportJson を使う');
 ok(/kind==='backup'[\s\S]{0,120}importTournamentBackupFromText\(text\)/.test(RAW),'R2 backup→importTournamentBackupFromText に自動誘導');
 ok(/kind==='master'[\s\S]{0,160}マスタをインポート/.test(RAW),'R3 master→「マスタをインポート」へ誘導');
-ok(/現在のデータを上書きして読み込みますか？'\)\)\{e\.target\.value=''/.test(RAW),'R4 スモーク互換: confirm 直後に e.target.value=（キャンセル再選択）');
+ok(/appConfirm\('現在のデータを上書きして読み込みますか？'/.test(RAW)&&/e\.target\.value=''/.test(RAW),'R4 上書き確認はアプリ内モーダル（appConfirm）＋e.target.value=クリーンアップ（キャンセル再選択）');
 ok(/applyLoadedJson\(text\)/.test(RAW),'R5 生 state は従来どおり applyLoadedJson');
 
 console.log('\nPASS='+pass+' FAIL='+fail);
