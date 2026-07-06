@@ -34,7 +34,7 @@ function statefulClient(session,memberships){
   const st={session:session||null,signOutCalls:0,rpcCalls:0};
   return {_st:st,
     auth:{getSession(){return Promise.resolve({data:{session:st.session},error:null});},
-          signOut(){st.signOutCalls++;st.session=null;return Promise.resolve({error:null});}},
+          signOut(opts){st.signOutCalls++;st.lastScope=opts&&opts.scope;st.session=null;return Promise.resolve({error:null});}},
     rpc(){st.rpcCalls++;return Promise.resolve({data:memberships||[],error:null});}};
 }
 
@@ -48,10 +48,16 @@ ok(/id="auth-status-bar"[^>]*display:none/.test(RAW),'S2 初期は display:none�
 ok(RAW.indexOf('function buildAuthChipHtml')>=0 && RAW.indexOf('function refreshAuthChip')>=0 && RAW.indexOf('function doAppLogout')>=0,'S3 主要関数が存在');
 ok(RAW.indexOf('_renderAuthChip(computeAuthChipState(session,(rc&&rc.data)||[]))')>=0,'S4 autoPull 相乗りでチップ更新（追加RPCなし）');
 ok(RAW.indexOf("addEventListener('visibilitychange'")>=0 && RAW.indexOf('refreshAuthChip(false)')>=0,'S5 visibilitychange で RPCなし再確認');
-ok(RAW.indexOf('signOut()')>=0,'S6 signOut を呼ぶ');
+ok(RAW.indexOf('signOut(')>=0,'S6 signOut を呼ぶ');
 ok(RAW.indexOf('この端末の大会データ・名簿は消えません')>=0,'S7 ログアウト確認に安心材料の文言');
+ok(RAW.indexOf("signOut({scope:'local'})")>=0,'S8 signOut は scope:local（全デバイスを切らない）');
+ok(RAW.indexOf('auth-logout-btn')>=0 && RAW.indexOf('.auth-status-bar{')>=0,'S9 色はCSSクラス（インライン色を撤去）');
+ok(RAW.indexOf("showToast('ログアウトしました')")>=0,'S10 成功はトースト（モーダルでない）');
+ok(RAW.indexOf('_cloudCfgReady()&&typeof refreshAuthChip')>=0,'S11 visibilitychange はクラウド設定判明時のみ');
+ok(RAW.indexOf("_renderAuthChip({status:'in',email:(session.user&&session.user.email)")>=0,'S12 claim 前に fail-soft でログイン中を先行描画');
 
 const {env,els,alerts}=makeEnv();
+const toastEl=()=>{ if(!els['app-toast'])els['app-toast']={id:'app-toast',textContent:'',className:'',style:{}}; return els['app-toast']; };
 
 // ---- P: 純関数 ----
 console.log('=== P: 純関数 ===');
@@ -87,12 +93,15 @@ env.__setAuthClientTestFactory(function(){ return shared; });
 env.refreshAuthChip(true); await flush();
 ok(bar.innerHTML.indexOf('ログイン中')>=0,'F4a 事前状態＝ログイン中');
 var seen=[];
+toastEl().textContent='';
 env.__setAppModalTestResolver(function(type,message){ seen.push(String(message||'')); return true; }); // confirm=OK・全モーダル文言を捕捉
 env.doAppLogout(); await flush();
 ok(shared._st.signOutCalls===1,'F4b signOut が1回呼ばれた');
+ok(shared._st.lastScope==='local','F4b2 signOut は scope:local（この端末のみ）');
 ok(bar.innerHTML.indexOf('未ログイン')>=0,'F4c ログアウト後は未ログイン表示');
 ok(seen.join('|').indexOf('ログアウトしますか')>=0,'F4d 確認モーダルが出た');
-ok(seen.join('|').indexOf('ログアウトしました')>=0,'F4e 完了通知（appAlert）');
+ok(toastEl().textContent.indexOf('ログアウトしました')>=0,'F4e 完了はトースト通知');
+ok(seen.slice(1).join('|').indexOf('ログアウトしました')<0,'F4f 成功はモーダルを出さない');
 
 // F5: ログアウト（キャンセル）→ signOut を呼ばない
 var shared2=statefulClient({user:{email:'me@club.jp'}},[{club_id:'c1',club_name:'沼津支部',status:'active'}]);
@@ -102,6 +111,17 @@ env.__setAppModalTestResolver(function(){ return false; }); // confirm=キャン
 env.doAppLogout(); await flush();
 ok(shared2._st.signOutCalls===0,'F5 キャンセル時は signOut を呼ばない');
 ok(bar.innerHTML.indexOf('ログイン中')>=0,'F5b キャンセル後もログイン中のまま');
+
+// F6: signOut が {error} を解決（reject でない失敗）→ 成功通知を出さず失敗通知・チップ維持
+var errCli={_st:{},auth:{getSession:function(){return Promise.resolve({data:{session:{user:{email:'me@club.jp'}}}});},signOut:function(){return Promise.resolve({error:{message:'boom'}});}},rpc:function(){return Promise.resolve({data:[{club_id:'c1',club_name:'沼津支部',status:'active'}]});}};
+env.__setAuthClientTestFactory(function(){ return errCli; });
+env.refreshAuthChip(true); await flush();
+toastEl().textContent='';
+var seen2=[];
+env.__setAppModalTestResolver(function(type,message){ seen2.push(String(message||'')); return true; });
+env.doAppLogout(); await flush();
+ok(seen2.join('|').indexOf('ログアウトに失敗')>=0,'F6 signOut が{error}解決時は失敗通知（appAlert）');
+ok(toastEl().textContent.indexOf('ログアウトしました')<0,'F6b 失敗時は成功トーストを出さない');
 
 console.log('');
 console.log('PASS='+pass+' FAIL='+fail);

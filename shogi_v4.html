@@ -45,6 +45,9 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .alert-ok{background:#eaf3de;color:#27500A;border:1px solid #97c459}
 .alert-warn{background:#faeeda;color:#633806;border:1px solid #EF9F27}
 .save-warn-pill{flex:0 0 auto;align-self:center;padding:4px 10px;border-radius:12px;background:#faeeda;color:#633806;border:1px solid #EF9F27;font-size:12px;font-weight:500}
+.auth-status-bar{align-items:center;gap:8px;flex-wrap:wrap;background:#f4f6f9;border-bottom:1px solid #d3dbe5;color:#555;padding:4px 14px;font-size:12px}
+.auth-chip-in{color:#27500A;font-weight:600}
+.auth-logout-btn{min-height:30px;background:#fff;border:1px solid #1F3864;color:#1F3864}
 /* U-1 (UX-P1): クラウド結果 status の色分け＋AAコントラスト（applyCloudStatus が kind クラスを付与）。
    旧 #888（コントラスト不足）を解消し 成功=緑/失敗=赤/警告=橙/案内=中立/送信中=紺 で区別する。 */
 .cloud-status{color:#444}
@@ -361,7 +364,7 @@ body.sb-active{overflow:hidden}
 <!-- IN-APP-AUTH-001 Slice1/2 (#645): クラウドのログイン状態を常時1行表示＋アプリ内ログアウト。
      クラウド未設定なら JS が display:none のまま。氏名/クラブ名は escapeHtml 経由（buildAuthChipHtml）。
      初期表示は autoPullMembersOnStartup 相乗り・更新は refreshAuthChip・ログアウトは doAppLogout。 -->
-<div id="auth-status-bar" class="no-print" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;background:#eef3f8;border-bottom:1px solid #d3dbe5;color:#555;padding:4px 14px;font-size:12px"></div>
+<div id="auth-status-bar" class="auth-status-bar no-print" style="display:none"></div>
 <!-- LIVE-BROADCAST-001 Phase3 (§5.1 / J1): 📡 配信中バー。ライブ配信 ON の間だけ表示し、最終送信時刻・成否と停止ボタンを
      スクロールせず見える位置に常時出す（[[ui-result-visibility-principle]]・「配信が切れている/OFFのまま」に運営が気づける）。
      文言は liveUpdateBar が textContent で書く（innerHTML 不使用）。停止は liveStopBroadcastUI（bindReportEvents で結線）。 -->
@@ -10155,13 +10158,13 @@ function buildAuthChipHtml(state){
   if(state.status==='in'){
     var who=escapeHtml(state.email||'（ログイン中）');
     var club=state.clubName?('・'+escapeHtml(state.clubName)):'';
-    return '<span style="color:#1a6b2e">☁ ログイン中：'+who+club+'</span>'+
-           '<button type="button" class="btn-sm no-print" id="authLogoutBtn" style="min-height:30px;background:#fff;border:1px solid #2b6cb0;color:#2b6cb0">ログアウト</button>';
+    return '<span class="auth-chip-in">☁ ログイン中：'+who+club+'</span>'+
+           '<button type="button" class="btn-sm no-print auth-logout-btn" id="authLogoutBtn">ログアウト</button>';
   }
   if(state.status==='loading')return '<span>☁ ログイン状態を確認中…</span>';
   if(state.status==='offline')return '<span>☁ オフライン（ログイン状態は確認できません）</span>';
   // 'out'（未ログイン）。［ログイン］ボタンは Slice3（アプリ内ログイン）で追加＝ここでは死んだボタンを置かない。
-  return '<span style="color:#777">☁ 未ログイン（クラウド共有は任意）</span>';
+  return '<span>☁ 未ログイン（クラウド共有は任意）</span>';
 }
 // DOM 反映（build/bind）。noconfig はバー自体を隠す（クラウド未設定＝ログイン概念なし）。
 function _renderAuthChip(state){
@@ -10215,9 +10218,11 @@ function doAppLogout(){
     if(!ok)return;
     _authAcquire().then(function(a){
       if(!a.client){ appAlert('ログアウトできませんでした（接続できません）。通信状況を確認してもう一度お試しください。'); return; }
-      a.client.auth.signOut().then(function(){
+      // scope:'local'＝この端末（同一オリジンの共有セッション）だけをログアウト（全デバイスは切らない・#647 Codex P2）。
+      a.client.auth.signOut({scope:'local'}).then(function(res){
+        if(res&&res.error){ appAlert('ログアウトに失敗しました。通信状況を確認してもう一度お試しください。'); return; }
         refreshAuthChip(false);
-        appAlert('ログアウトしました。');
+        if(typeof showToast==='function')showToast('ログアウトしました'); else appAlert('ログアウトしました。');
       },function(){ appAlert('ログアウトに失敗しました。通信状況を確認してもう一度お試しください。'); });
     });
   });
@@ -10700,8 +10705,10 @@ function autoPullMembersOnStartup(){
       return client.auth.getSession().then(function(r){
         var session=r&&r.data&&r.data.session;
         if(!session){ if(typeof _renderAuthChip==='function')_renderAuthChip({status:'out'}); return {ok:false,step:'auth'}; }
+        // IN-APP-AUTH-001 (#645): claim 前に「ログイン中」を先行描画＝RPC 失敗でもバーが隠れない fail-soft（#647 Codex P2）。
+        if(typeof _renderAuthChip==='function')_renderAuthChip({status:'in',email:(session.user&&session.user.email)?String(session.user.email):''});
         return client.rpc('claim_organizer_seat').then(function(rc){
-          // IN-APP-AUTH-001 (#645): 既取得の session/memberships でログイン状態バーを更新（追加RPCなし）。
+          // 既取得の session/memberships でクラブ名まで反映（追加RPCなし）。
           if(typeof _renderAuthChip==='function')_renderAuthChip(computeAuthChipState(session,(rc&&rc.data)||[]));
           var clubId=pickActiveClubId((rc&&rc.data)||[]);
           if(!clubId)return {ok:false,step:'club'};
@@ -12215,7 +12222,8 @@ function bindHeaderEvents(){
   renderSaveStatusBar();
   // IN-APP-AUTH-001 (#645): タブ復帰時にログイン状態バーを軽く再確認（getSession のみ＝RPC を撃たない）。
   //   初期表示は autoPullMembersOnStartup が相乗りで描画するためここでは呼ばない（起動時の二重 loadCloudDeps 回避）。
-  try{ document.addEventListener('visibilitychange',function(){ if(!document.hidden&&typeof refreshAuthChip==='function')refreshAuthChip(false); }); }catch(e){}
+  //   クラウド設定が判明している端末のみ再確認＝未設定端末で config.js を毎回再注入しない（#647 Codex P2）。
+  try{ document.addEventListener('visibilitychange',function(){ if(!document.hidden&&typeof _cloudCfgReady==='function'&&_cloudCfgReady()&&typeof refreshAuthChip==='function')refreshAuthChip(false); }); }catch(e){}
 }
 
 // NAME-INPUT-AUTOFILL-001 (#620): 氏名/ふりがな入力欄へのブラウザ標準の入力履歴候補（autofill）を抑止する。
