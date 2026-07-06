@@ -10199,11 +10199,12 @@ function _authAcquire(){
 }
 // coordinator: ログイン状態バーを更新。fetchMembership=true のときのみ claim_organizer_seat（初回/ログアウト後）。
 //   visibilitychange は fetchMembership=false（getSession のみ＝RPC を撃たない／レビュー Should Fix 反映）。
-function refreshAuthChip(fetchMembership){
+function refreshAuthChip(fetchMembership,skipLoading){
   var bar=(typeof document!=='undefined')&&document.getElementById('auth-status-bar');
   if(!bar)return;
   var prevClub=(_authChipState&&_authChipState.clubName)||'';
-  _renderAuthChip({status:'loading'});
+  // IN-APP-AUTH-001 follow(#645): skipLoading=true のとき中間の loading 描画を出さない（帰着=初回表示のチラつき/レイアウトシフト防止・確定状態へ一発描画）。
+  if(!skipLoading)_renderAuthChip({status:'loading'});
   _authAcquire().then(function(a){
     if(a.status==='noconfig'){ _renderAuthChip({status:'noconfig'}); return; }
     if(a.status){ _renderAuthChip({status:a.status}); return; }
@@ -10294,7 +10295,7 @@ function bootAuthCallback(){
   try{ if(!detectAuthCallback())return Promise.resolve({skipped:true}); }catch(e){ return Promise.resolve({skipped:true}); }
   return _authAcquire().then(function(a){
     if(a&&a.client)_authCallbackClient=a.client;   // 生成＝既定 detectSessionInUrl でハッシュ消費（module 封じ込め）。
-    if(typeof refreshAuthChip==='function')refreshAuthChip(true);   // セッション確立後の描画は共通経路へ（membership まで）。
+    if(typeof refreshAuthChip==='function')refreshAuthChip(true,true);   // セッション確立後の描画は共通経路へ（membership まで）。帰着は loading 中間描画を出さず一発描画（チラつき防止）。
     return {ok:!!(a&&a.client)};
   }).catch(function(){ return {ok:false}; });
 }

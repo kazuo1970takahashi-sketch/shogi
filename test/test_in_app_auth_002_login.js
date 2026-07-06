@@ -59,6 +59,8 @@ var iBoot=RAW.indexOf("if(typeof bootAuthCallback==='function')bootAuthCallback(
 var iScore=RAW.indexOf('initScoreboard();');
 ok(iBoot>=0 && iScore>=0 && iBoot<iScore,'S6 DOMContentLoaded で帰着ブートを initScoreboard より前に呼ぶ（順序保証）');
 ok(RAW.indexOf('読むだけ・消費しない')>=0,'S7 detectAuthCallback は読むだけ（消費は createClient）を明記');
+ok(RAW.indexOf('function refreshAuthChip(fetchMembership,skipLoading)')>=0 && RAW.indexOf('if(!skipLoading)_renderAuthChip')>=0,'S8 refreshAuthChip に skipLoading ガード（チラつき防止）');
+ok(RAW.indexOf('refreshAuthChip(true,true)')>=0,'S9 帰着ブートは skipLoading=true で確定状態へ一発描画');
 
 const {env,els,warns}=makeEnv();
 const bar=()=>els['auth-status-bar'];
@@ -142,6 +144,22 @@ ok(bar().innerHTML==='__UNTOUCHED__','F9b 非帰着ではバーを触らない�
 resetLoc(); LOC.hash='#access_token=xx';
 ok(env.isScoreboardRoute()===false,'F10 #access_token= は isScoreboardRoute false（誤ルーティングなし）');
 resetLoc();
+
+// F11: skipLoading（帰着チラつき防止）＝中間 loading 描画を出さず確定状態へ一発
+resetLoc();
+env.__setAuthClientTestFactory(function(){ return otpClient({session:{user:{email:'me@club.jp'}},memberships:[{club_id:'c1',club_name:'沼津支部',status:'active'}]}); });
+var barEl=bar();
+barEl.innerHTML='';
+env.refreshAuthChip(true,true);   // skipLoading=true（bootAuthCallback と同じ経路）
+ok(barEl.innerHTML.indexOf('確認中')<0,'F11 skipLoading=true→同期時点で loading(確認中) を描画しない');
+await flush();
+ok(barEl.innerHTML.indexOf('ログイン中：me@club.jp')>=0,'F11b 最終はログイン中を一発描画');
+// F12: 既定（skipLoading 無し）は従来どおり loading を出す（visibilitychange 等の後方互換）
+barEl.innerHTML='';
+env.refreshAuthChip(true);
+ok(barEl.innerHTML.indexOf('確認中')>=0,'F12 既定は loading 中間描画を出す（後方互換）');
+await flush();
+ok(barEl.innerHTML.indexOf('ログイン中')>=0,'F12b 既定も最終はログイン中');
 
 console.log('');
 console.log('PASS='+pass+' FAIL='+fail);
