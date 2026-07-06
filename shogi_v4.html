@@ -50,6 +50,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .auth-status-bar{align-items:center;gap:8px;flex-wrap:wrap;background:#f4f6f9;border-bottom:1px solid #d3dbe5;color:#555;padding:4px 14px;font-size:12px}
 .auth-chip-in{color:#27500A;font-weight:600}
 .auth-logout-btn{min-height:30px;background:#fff;border:1px solid #1F3864;color:#1F3864}
+.auth-login-btn{min-height:30px;background:#1F3864;border:1px solid #1F3864;color:#fff}
 /* U-1 (UX-P1): クラウド結果 status の色分け＋AAコントラスト（applyCloudStatus が kind クラスを付与）。
    旧 #888（コントラスト不足）を解消し 成功=緑/失敗=赤/警告=橙/案内=中立/送信中=紺 で区別する。 */
 .cloud-status{color:#444}
@@ -10167,8 +10168,9 @@ function buildAuthChipHtml(state){
   }
   if(state.status==='loading')return '<span>☁ ログイン状態を確認中…</span>';
   if(state.status==='offline')return '<span>☁ オフライン（ログイン状態は確認できません）</span>';
-  // 'out'（未ログイン）。［ログイン］ボタンは Slice3（アプリ内ログイン）で追加＝ここでは死んだボタンを置かない。
-  return '<span>☁ 未ログイン（クラウド共有は任意）</span>';
+  // 'out'（未ログイン）。Slice3（#645）で［ログイン］ボタンを追加＝押下で doAppLogin（アプリ内マジックリンク送信）。
+  return '<span>☁ 未ログイン（クラウド共有は任意）</span>'+
+         '<button type="button" class="btn-sm no-print auth-login-btn" id="authLoginBtn">ログイン</button>';
 }
 // DOM 反映（build/bind）。noconfig はバー自体を隠す（クラウド未設定＝ログイン概念なし）。
 function _renderAuthChip(state){
@@ -10180,6 +10182,8 @@ function _renderAuthChip(state){
   bar.style.display='flex';
   var lo=document.getElementById('authLogoutBtn');
   if(lo)lo.addEventListener('click',function(){ doAppLogout(); });
+  var li=document.getElementById('authLoginBtn');
+  if(li)li.addEventListener('click',function(){ doAppLogin(); });
 }
 // client 取得（テスト時は factory・本番は loadCloudDeps 経由）。resolve: {client} または {status:'offline'|'noconfig'}
 function _authAcquire(){
@@ -10230,6 +10234,69 @@ function doAppLogout(){
       },function(){ appAlert('ログアウトに失敗しました。通信状況を確認してもう一度お試しください。'); });
     });
   });
+}
+// IN-APP-AUTH-001 Slice3 (#645): 本体からのアプリ内ログイン（パスワードレスのマジックリンク送信）＋
+//   マジックリンク帰着（implicit フロー＝URL ハッシュに #access_token=）時の早期セッション確立。
+//   認証ヘルパは app/auth.js の ShogiAuth（isValidEmail/formatMagicLinkError/requestMagicLink/detectAuthCallback）と
+//   論理を鏡写し（DI で client 注入＝実 createClient/DOM 非依存でテスト可）。secret 不使用・当日運営コア無改変。
+var _authEmailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+var _authCallbackClient=null;   // module-scoped: 帰着時に生成した永続 client（当日運営コアは参照しない＝_liveClient と同型の封じ込め）。既定 null。
+function isValidEmail(s){ return typeof s==='string'&&_authEmailRe.test(s.replace(/^\s+|\s+$/g,'')); }
+// 戻り先＝本体URL（origin+pathname）＝案A（完全アプリ内）。ハッシュ/クエリは含めない（ShogiAuth.redirectTo と同一）。
+function _authRedirectTo(){ try{ return location.origin+location.pathname; }catch(e){ return undefined; } }
+// AUTH-ERROR-MSG-001（#601）鏡写し: 送信失敗を人が読める文言へ（生エラーは console.warn のみ・429 判別・空でも壊れない）。
+function formatMagicLinkError(err){
+  var status=(err&&typeof err.status==='number')?err.status:'';
+  var raw=(err&&typeof err.message==='string')?err.message:'';
+  var detail=raw.replace(/^\s+|\s+$/g,'');
+  try{ if(typeof console!=='undefined'&&console.warn)console.warn('[auth] メール送信に失敗しました status='+status+' message='+(detail||'(空)')); }catch(e){}
+  if(status===429||/rate ?limit/i.test(detail)||/too many/i.test(detail))return 'メールの送信回数が上限に達しました。1分ほど待ってから、もう一度お試しください。';
+  return 'メールを送信できませんでした。しばらく待ってから、もう一度お試しください。何度も失敗する場合は、クラブの管理者（オーナー）にご連絡ください。';
+}
+// ShogiAuth.requestMagicLink 鏡写し: signInWithOtp（emailRedirectTo=本体URL）。reject も {ok:false} に整形（未処理にしない）。
+function requestMagicLink(client,email){
+  var addr=(email||'').replace(/^\s+|\s+$/g,'');
+  if(!isValidEmail(addr))return Promise.resolve({ok:false,message:'メールアドレスの形式が正しくありません。'});
+  return client.auth.signInWithOtp({email:addr,options:{shouldCreateUser:true,emailRedirectTo:_authRedirectTo()}}).then(function(res){
+    if(res&&res.error)return {ok:false,message:formatMagicLinkError(res.error)};
+    return {ok:true,email:addr,message:'ログイン用リンクを送りました。メールを確認してください。'};
+  },function(err){ return {ok:false,message:formatMagicLinkError(err)}; });
+}
+// ShogiAuth.detectAuthCallback 鏡写し（読むだけ・消費しない）: implicit の #access_token= 等が URL にあるか。
+//   ※消費（URL からの除去）は既定 detectSessionInUrl:true の createClient 生成時に起きる（このヘルパは判定のみ）。
+function detectAuthCallback(){
+  try{
+    var loc=(typeof location!=='undefined')?location:{};
+    var blob=String(loc.hash||'')+'&'+String(loc.search||'');
+    return /access_token=|refresh_token=|[?&]code=|type=magiclink|type=recovery|type=signup/.test(blob);
+  }catch(e){ return false; }
+}
+// Slice3: アプリ内ログイン導線。メール入力（appPrompt）→ requestMagicLink → 結果をモーダルで通知。fail-soft。
+function doAppLogin(){
+  appPrompt('ログイン用リンクを受け取るメールアドレスを入力してください。\n（クラウド共有は任意です。ログインしなくても当日の運営はできます）','',function(val){
+    if(val==null)return;   // キャンセル
+    var addr=String(val).replace(/^\s+|\s+$/g,'');
+    if(!isValidEmail(addr)){ appAlert('メールアドレスの形式が正しくありません。もう一度お試しください。'); return; }
+    _authAcquire().then(function(a){
+      if(!a||!a.client){ appAlert('ログイン用メールを送信できませんでした（接続できません）。通信状況を確認してもう一度お試しください。'); return; }
+      requestMagicLink(a.client,addr).then(function(res){
+        if(res&&res.ok){ appAlert('ログイン用リンクを '+addr+' に送りました。\nメールのリンクを開くと、この画面がログイン状態になります。'); }
+        else{ appAlert((res&&res.message)||'メールを送信できませんでした。しばらく待ってからお試しください。'); }
+      },function(){ appAlert('メールを送信できませんでした。しばらく待ってからお試しください。'); });
+    });
+  });
+}
+// Slice3: マジックリンク帰着（detectAuthCallback）時のみ、起動早期に client を生成して #access_token= を消費し
+//   セッションを確立→ログイン状態バーを更新する。非帰着では即 return（何もしない＝通常起動はゼロ改変）。
+//   #scoreboard 等ハッシュルーティング（isScoreboardRoute は完全一致ゆえ #access_token= に不一致＝運営ビュー維持）
+//   より前に呼ぶ（順序保証）。fail-soft：失敗は無音で通常起動へ落ちる（当日運営を止めない）。
+function bootAuthCallback(){
+  try{ if(!detectAuthCallback())return Promise.resolve({skipped:true}); }catch(e){ return Promise.resolve({skipped:true}); }
+  return _authAcquire().then(function(a){
+    if(a&&a.client)_authCallbackClient=a.client;   // 生成＝既定 detectSessionInUrl でハッシュ消費（module 封じ込め）。
+    if(typeof refreshAuthChip==='function')refreshAuthChip(true);   // セッション確立後の描画は共通経路へ（membership まで）。
+    return {ok:!!(a&&a.client)};
+  }).catch(function(){ return {ok:false}; });
 }
 // CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): クリップボードコピー（navigator.clipboard 優先・execCommand フォールバック・失敗は cb(false)）。
 function copyTextToClipboard(text,cb){
@@ -14482,6 +14549,7 @@ document.addEventListener('DOMContentLoaded',function(){
   bindTabEvents();
   bindReportEvents();
   initApp();
+  if(typeof bootAuthCallback==='function')bootAuthCallback(); // #645 Slice3: 帰着時のみ早期確立（routing 前）
   initScoreboard();
   // B-3c-auto (#343): 起動時 auto-pull（非ブロッキング・無音・fail-soft）。描画完了後に次 tick で実行。
   if(typeof scheduleAutoPullMembers==='function')scheduleAutoPullMembers();

@@ -2173,6 +2173,16 @@ else
   warn "test_in_app_auth_001.js が見つからない"
 fi
 
+if [ -f "$SCRIPT_DIR/test_in_app_auth_002_login.js" ]; then
+  if node "$SCRIPT_DIR/test_in_app_auth_002_login.js" "$TARGET" > /tmp/in_app_auth_002_out.log 2>&1; then
+    ok "IN-APP-AUTH Slice3(ログイン) テスト 全PASS ($(tail -1 /tmp/in_app_auth_002_out.log))"
+  else
+    ng "IN-APP-AUTH Slice3(ログイン) テスト 失敗"; cat /tmp/in_app_auth_002_out.log
+  fi
+else
+  warn "test_in_app_auth_002_login.js が見つからない"
+fi
+
 echo ""
 echo "【MASTER-REBUILD-FROM-CLOUD-001 Phase1 純関数（buildDerivedMemberStatsFromCloud / mergeDerivedStatsIntoMaster）】"
 if [ -f "$SCRIPT_DIR/test_master_rebuild_from_cloud_001.js" ]; then
