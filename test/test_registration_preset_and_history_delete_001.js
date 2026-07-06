@@ -43,6 +43,7 @@ function loadEnv(confirmImpl){
        removeArchiveEntryByTid:(typeof removeArchiveEntryByTid==='function')?removeArchiveEntryByTid:null,
        findArchiveEntryByTid:(typeof findArchiveEntryByTid==='function')?findArchiveEntryByTid:null,
        loadArchive:(typeof loadArchive==='function')?loadArchive:null,
+       __setAppModalTestResolver:(typeof __setAppModalTestResolver==='function')?__setAppModalTestResolver:null,
        ARCHIVE_KEY:(typeof ARCHIVE_KEY!=='undefined')?ARCHIVE_KEY:'shogi_archive',
        _ls:localStorage
      };`);
@@ -51,6 +52,8 @@ function loadEnv(confirmImpl){
     function(){},function(){return null;},{createObjectURL:function(){return 'blob:mock';},revokeObjectURL:function(){}},
     consoleMock,Promise,function(){});
   api._alerts=alerts; api._ls=ctx.localStorage;
+  // IN-APP-MODAL-001 Phase 1b: confirm はアプリ内モーダル化済。confirmImpl を同期解決シームへ配線（1モーダル=1回）。
+  if(api.__setAppModalTestResolver){ api.__setAppModalTestResolver(function(){ return confirmImpl?confirmImpl():true; }); }
   return api;
 }
 
@@ -104,13 +107,13 @@ assert(SRC.indexOf("前"+"'+escapeHtml(fm.last_class)")>=0||/前'\+escapeHtml\(f
   ]}));
   var res=env.clearAllArchiveHistory();
   var after=env.loadArchive();
-  assert(res===true&&after.tournaments.length===0,'HIST-DELALL-1 確認OKで全削除（tournaments 空）');
+  assert(after.tournaments.length===0,'HIST-DELALL-1 確認OKで全削除（tournaments 空）');
 }
 {
   var env=loadEnv(function(){return true;});
   // 履歴0件 → alert して false・localStorage は書かない
   var res=env.clearAllArchiveHistory();
-  assert(res===false,'HIST-DELALL-2 履歴0件では false（何もしない）');
+  assert(env._alerts.length>=1&&env._alerts[env._alerts.length-1].indexOf('削除できる履歴がありません')>=0,'HIST-DELALL-2 履歴0件では alert のみ（何もしない）');
 }
 {
   var callN=0;
@@ -118,7 +121,7 @@ assert(SRC.indexOf("前"+"'+escapeHtml(fm.last_class)")>=0||/前'\+escapeHtml\(f
   env._ls.setItem(env.ARCHIVE_KEY,JSON.stringify({schema_version:1,updated_at:'x',tournaments:[{identity:{tournament_id:'t1'}},{identity:{tournament_id:'t2'}}]}));
   var res=env.clearAllArchiveHistory();
   var after=env.loadArchive();
-  assert(res===false&&after.tournaments.length===2,'HIST-DELALL-3 確認キャンセルで無変化');
+  assert(after.tournaments.length===2,'HIST-DELALL-3 確認キャンセルで無変化');
   assert(callN===1,'HIST-DELALL-4 二段階確認：一段目 false で二段目に進まない');
 }
 
@@ -132,14 +135,14 @@ assert(SRC.indexOf("前"+"'+escapeHtml(fm.last_class)")>=0||/前'\+escapeHtml\(f
   ]}));
   var res=env.deleteArchiveTournamentUI('t1');
   var after=env.loadArchive();
-  assert(res===true&&after.tournaments.length===1&&after.tournaments[0].identity.tournament_id==='t2','HIST-DEL1-1 対象1件のみ削除・他は残る');
+  assert(after.tournaments.length===1&&after.tournaments[0].identity.tournament_id==='t2','HIST-DEL1-1 対象1件のみ削除・他は残る');
 }
 {
   var env=loadEnv(function(){return false;}); // キャンセル
   env._ls.setItem(env.ARCHIVE_KEY,JSON.stringify({schema_version:1,updated_at:'x',tournaments:[{identity:{tournament_id:'t1',title:'架空大会1'}}]}));
   var res=env.deleteArchiveTournamentUI('t1');
   var after=env.loadArchive();
-  assert(res===false&&after.tournaments.length===1,'HIST-DEL1-2 確認キャンセルで無変化');
+  assert(after.tournaments.length===1,'HIST-DEL1-2 確認キャンセルで無変化');
 }
 
 // ============================================================
