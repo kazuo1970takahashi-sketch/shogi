@@ -358,6 +358,10 @@ body.sb-active{overflow:hidden}
      最終実行時刻を常時1行表示し「保存されているか不安」を見える化する。時刻は localStorage 別キー（SAVE_STATUS_KEY）＝state スキーマ非接触。
      文言は renderSaveStatusBar が textContent で書く（innerHTML 不使用）。タップ/Enter/Space で openHelpModal('save-systems')（bindHeaderEvents で結線）。 -->
 <div id="save-status-bar" class="no-print" role="button" tabindex="0" title="押すと保存の仕組みを表示します" aria-label="保存状態（押すと説明を表示）" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:#f4f6f9;border-bottom:1px solid #d3dbe5;color:#555;padding:4px 14px;font-size:12px;cursor:pointer"></div>
+<!-- IN-APP-AUTH-001 Slice1/2 (#645): クラウドのログイン状態を常時1行表示＋アプリ内ログアウト。
+     クラウド未設定なら JS が display:none のまま。氏名/クラブ名は escapeHtml 経由（buildAuthChipHtml）。
+     初期表示は autoPullMembersOnStartup 相乗り・更新は refreshAuthChip・ログアウトは doAppLogout。 -->
+<div id="auth-status-bar" class="no-print" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;background:#eef3f8;border-bottom:1px solid #d3dbe5;color:#555;padding:4px 14px;font-size:12px"></div>
 <!-- LIVE-BROADCAST-001 Phase3 (§5.1 / J1): 📡 配信中バー。ライブ配信 ON の間だけ表示し、最終送信時刻・成否と停止ボタンを
      スクロールせず見える位置に常時出す（[[ui-result-visibility-principle]]・「配信が切れている/OFFのまま」に運営が気づける）。
      文言は liveUpdateBar が textContent で書く（innerHTML 不使用）。停止は liveStopBroadcastUI（bindReportEvents で結線）。 -->
@@ -10118,6 +10122,106 @@ function applyCloudStatus(el,msg){
   el.textContent=s;
   el.className='cloud-status cloud-status-'+classifyCloudStatusKind(s);
 }
+// ============================================================
+// IN-APP-AUTH-001 Slice1/2 (#645): 本体（当日運営アプリ）のログイン状態表示＋アプリ内ログアウト。
+//   当日運営コア（開始/確定/再生成/棄権/勝敗/ペアリング）には非依存＝クラウド層のみ。
+//   起動時の初期表示は autoPullMembersOnStartup が既に取得する session/memberships に相乗り
+//   （追加 RPC・二重スクリプト注入なし）。ログアウト成功時・タブ復帰(visibilitychange)時のみ
+//   独立 refreshAuthChip を使う（この時点では supabase 済ロード＝単独 loadCloudDeps 呼び出しで安全）。
+//   認証ヘルパは app/auth.js の ShogiAuth（requestMagicLink/signOut/summarizeMemberships）と論理を鏡写し。
+//   表示文字列（メール/クラブ名）は escapeHtml 経由（innerHTML への自由文流入を増やさない）。
+//   テスト容易性: __setAuthClientTestFactory で mock client を注入（実 createClient を経由しない）。
+var _authChipState=null;            // memory-only: {status,email,clubName}
+var _authClientTestFactory=null;    // テスト専用: 設定時は実 createClient の代わりに mock を返す（既定 null＝本番無効）
+function __setAuthClientTestFactory(fn){ _authClientTestFactory=fn; }
+
+// 純粋: active クラブ（pickActiveClubId が返す一意 club）の club_name を取り出す（無ければ ''）。
+function _pickActiveClubName(memberships){
+  var list=Array.isArray(memberships)?memberships:[];
+  var id=pickActiveClubId(list);
+  if(!id)return '';
+  for(var i=0;i<list.length;i++){ var m=list[i]; if(m&&m.club_id===id&&m.club_name)return String(m.club_name); }
+  return '';
+}
+// 純粋: session（+memberships）から chip state を作る（テスト対象）。session なし＝未ログイン。
+function computeAuthChipState(session,memberships){
+  if(!session)return {status:'out'};
+  var email=(session.user&&session.user.email)?String(session.user.email):'';
+  return {status:'in',email:email,clubName:_pickActiveClubName(memberships||[])};
+}
+// 純粋: chip state から HTML 文字列を返す（イベントは持たない）。status: 'in'|'out'|'loading'|'offline'
+function buildAuthChipHtml(state){
+  state=state||{};
+  if(state.status==='in'){
+    var who=escapeHtml(state.email||'（ログイン中）');
+    var club=state.clubName?('・'+escapeHtml(state.clubName)):'';
+    return '<span style="color:#1a6b2e">☁ ログイン中：'+who+club+'</span>'+
+           '<button type="button" class="btn-sm no-print" id="authLogoutBtn" style="min-height:30px;background:#fff;border:1px solid #2b6cb0;color:#2b6cb0">ログアウト</button>';
+  }
+  if(state.status==='loading')return '<span>☁ ログイン状態を確認中…</span>';
+  if(state.status==='offline')return '<span>☁ オフライン（ログイン状態は確認できません）</span>';
+  // 'out'（未ログイン）。［ログイン］ボタンは Slice3（アプリ内ログイン）で追加＝ここでは死んだボタンを置かない。
+  return '<span style="color:#777">☁ 未ログイン（クラウド共有は任意）</span>';
+}
+// DOM 反映（build/bind）。noconfig はバー自体を隠す（クラウド未設定＝ログイン概念なし）。
+function _renderAuthChip(state){
+  _authChipState=state;
+  var bar=(typeof document!=='undefined')&&document.getElementById('auth-status-bar');
+  if(!bar)return;
+  if(state&&state.status==='noconfig'){ bar.style.display='none'; bar.innerHTML=''; return; }
+  bar.innerHTML=buildAuthChipHtml(state);
+  bar.style.display='flex';
+  var lo=document.getElementById('authLogoutBtn');
+  if(lo)lo.addEventListener('click',function(){ doAppLogout(); });
+}
+// client 取得（テスト時は factory・本番は loadCloudDeps 経由）。resolve: {client} または {status:'offline'|'noconfig'}
+function _authAcquire(){
+  if(_authClientTestFactory){ var c=_authClientTestFactory(); return Promise.resolve(c?{client:c}:{status:'offline'}); }
+  return loadCloudDeps().then(function(dep){
+    if(!dep||!dep.cfg)return {status:'noconfig'};
+    if(dep.offline)return {status:'offline'};
+    if(!dep.sb)return {status:'offline'};
+    var client=null;
+    try{ client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey); }catch(e){ client=null; }
+    return (client&&client.auth)?{client:client}:{status:'offline'};
+  });
+}
+// coordinator: ログイン状態バーを更新。fetchMembership=true のときのみ claim_organizer_seat（初回/ログアウト後）。
+//   visibilitychange は fetchMembership=false（getSession のみ＝RPC を撃たない／レビュー Should Fix 反映）。
+function refreshAuthChip(fetchMembership){
+  var bar=(typeof document!=='undefined')&&document.getElementById('auth-status-bar');
+  if(!bar)return;
+  var prevClub=(_authChipState&&_authChipState.clubName)||'';
+  _renderAuthChip({status:'loading'});
+  _authAcquire().then(function(a){
+    if(a.status==='noconfig'){ _renderAuthChip({status:'noconfig'}); return; }
+    if(a.status){ _renderAuthChip({status:a.status}); return; }
+    var client=a.client;
+    client.auth.getSession().then(function(r){
+      var session=r&&r.data&&r.data.session;
+      if(!session){ _renderAuthChip({status:'out'}); return; }
+      var email=(session.user&&session.user.email)?String(session.user.email):'';
+      if(!fetchMembership){ _renderAuthChip({status:'in',email:email,clubName:prevClub}); return; }
+      client.rpc('claim_organizer_seat').then(function(rc){
+        _renderAuthChip(computeAuthChipState(session,(rc&&rc.data)||[]));
+      },function(){ _renderAuthChip({status:'in',email:email,clubName:''}); });
+    },function(){ _renderAuthChip({status:'offline'}); });
+  });
+}
+// Slice2: アプリ内ログアウト。appConfirm（#606・コールバック型）で確認→signOut→バー更新。fail-soft。
+//   確認文言に安心材料（端末のデータは消えない）を明記（HISTORY-VS-CLOUD-WORDING のトーン）。danger 非付与。
+function doAppLogout(){
+  appConfirm('ログアウトしますか？\nログアウトしても、この端末の大会データ・名簿は消えません。再ログインすればクラウド送信を再開できます。',function(ok){
+    if(!ok)return;
+    _authAcquire().then(function(a){
+      if(!a.client){ appAlert('ログアウトできませんでした（接続できません）。通信状況を確認してもう一度お試しください。'); return; }
+      a.client.auth.signOut().then(function(){
+        refreshAuthChip(false);
+        appAlert('ログアウトしました。');
+      },function(){ appAlert('ログアウトに失敗しました。通信状況を確認してもう一度お試しください。'); });
+    });
+  });
+}
 // CLASS-SPLIT-CLOUD-MERGE-001 Phase 1 (#540): クリップボードコピー（navigator.clipboard 優先・execCommand フォールバック・失敗は cb(false)）。
 function copyTextToClipboard(text,cb){
   var t=String(text==null?'':text);
@@ -10595,8 +10699,10 @@ function autoPullMembersOnStartup(){
       if(!client||!client.auth)return {ok:false,step:'client'};
       return client.auth.getSession().then(function(r){
         var session=r&&r.data&&r.data.session;
-        if(!session)return {ok:false,step:'auth'};
+        if(!session){ if(typeof _renderAuthChip==='function')_renderAuthChip({status:'out'}); return {ok:false,step:'auth'}; }
         return client.rpc('claim_organizer_seat').then(function(rc){
+          // IN-APP-AUTH-001 (#645): 既取得の session/memberships でログイン状態バーを更新（追加RPCなし）。
+          if(typeof _renderAuthChip==='function')_renderAuthChip(computeAuthChipState(session,(rc&&rc.data)||[]));
           var clubId=pickActiveClubId((rc&&rc.data)||[]);
           if(!clubId)return {ok:false,step:'club'};
           return pullMembersFromCloud(client,{clubId:clubId}).then(function(res){
@@ -12107,6 +12213,9 @@ function bindHeaderEvents(){
     });
   }
   renderSaveStatusBar();
+  // IN-APP-AUTH-001 (#645): タブ復帰時にログイン状態バーを軽く再確認（getSession のみ＝RPC を撃たない）。
+  //   初期表示は autoPullMembersOnStartup が相乗りで描画するためここでは呼ばない（起動時の二重 loadCloudDeps 回避）。
+  try{ document.addEventListener('visibilitychange',function(){ if(!document.hidden&&typeof refreshAuthChip==='function')refreshAuthChip(false); }); }catch(e){}
 }
 
 // NAME-INPUT-AUTOFILL-001 (#620): 氏名/ふりがな入力欄へのブラウザ標準の入力履歴候補（autofill）を抑止する。
