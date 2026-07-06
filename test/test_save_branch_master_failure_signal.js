@@ -93,6 +93,7 @@ function loadEnv(path){
        saveBranchMaster:saveBranchMaster,
        isQuotaExceededError:isQuotaExceededError,
        processMasterImportText:processMasterImportText,
+       __setAppModalTestResolver:__setAppModalTestResolver,
        loadBranchMaster:loadBranchMaster,
        _branchMasterKey:BRANCH_MASTER_KEY,
        _getIndicatorCount:function(){ return saveWarningIndicatorState.count; },
@@ -112,6 +113,8 @@ function loadEnv(path){
   );
   api._ctx = ctx;
   api._warnCalls = warnCalls;
+  // IN-APP-MODAL-001 Phase 1b: overwrite confirm はアプリ内モーダル化済。同期解決シームで OK 固定（callback を同期実行）。
+  if(api.__setAppModalTestResolver){ api.__setAppModalTestResolver(function(){ return true; }); }
   api._clearWarn = function(){ warnCalls.length=0; };
   return api;
 }

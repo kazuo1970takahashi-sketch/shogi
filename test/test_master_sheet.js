@@ -69,6 +69,7 @@ function loadEnv(){
        masterSheetClearSelection:masterSheetClearSelection,
        masterSheetDeleteSelected:masterSheetDeleteSelected,
        masterSheetRestoreSelected:masterSheetRestoreSelected,
+       __setAppModalTestResolver:__setAppModalTestResolver,
        masterSheetCycleMember:masterSheetCycleMember,
        masterSheetCycleGrade:masterSheetCycleGrade,
        masterSheetCommitNameEdit:masterSheetCommitNameEdit,
@@ -95,6 +96,8 @@ function loadEnv(){
   api._ctx = ctx;
   api._alerts = alerts;
   api._confirms = confirms;
+  // IN-APP-MODAL-001 Phase 1b: confirm はアプリ内モーダル化済。同期解決シームでメッセージ捕捉＋OK固定。
+  if(api.__setAppModalTestResolver){ api.__setAppModalTestResolver(function(type,message){ confirms.push(String(message)); return true; }); }
   return api;
 }
 
@@ -282,7 +285,8 @@ const qDel=(function(){
   const cap={rows:null};
   mockCloudEnv(e,cap);
   e._select('m-ka');e._select('m-an');
-  return Promise.resolve(e.masterSheetDeleteSelected()).then(function(){
+  e.masterSheetDeleteSelected();
+  return new Promise(function(r){setTimeout(r,0);}).then(function(){
     assert(cap.rows&&cap.rows.length===2, 'Q5 削除2名分をまとめて upsert');
     assert(cap.rows.every(r=>typeof r.deleted_at==='string'&&r.deleted_at.length>0&&typeof r.name==='string'&&r.name.length>0), 'Q6 各行に deleted_at（時刻）と name（未存在会員の INSERT 対策）');
   });
@@ -293,7 +297,8 @@ const qRes=(function(){
   mockCloudEnv(e,cap);
   e._setShowDeleted(true);
   e._select('m-dl');
-  return Promise.resolve(e.masterSheetRestoreSelected()).then(function(){
+  e.masterSheetRestoreSelected();
+  return new Promise(function(r){setTimeout(r,0);}).then(function(){
     assert(cap.rows&&cap.rows.length===1&&cap.rows[0].member_id==='m-dl'&&cap.rows[0].deleted_at===null, 'Q7 復元は deleted_at=null を upsert');
   });
 })();

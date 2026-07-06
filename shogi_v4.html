@@ -4410,17 +4410,19 @@ function processMasterImportText(text,mode,setStatus){
       setStatus('インポートファイルが非対応の版（schema_version）のため読み込めません。安全のため取り込みを中止しました。既存のマスタは保持しています。');
       return;
     }
-    if(!confirm('現在のマスタをすべて置き換えます。元に戻せません。\n\n続けますか？\n\n読込予定: '+(result.newMaster.members.length)+'名'))return;
-    // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
-    var saved=saveBranchMaster(result.newMaster);
-    var modalEl=document.getElementById('master-import-modal');if(modalEl)modalEl.remove();
-    // MEMBERS-CANDIDATE-MASTER-RECUT-001: 候補マスタ取込の完了通知。当日参加者の自動登録ではなく、
-    //   受付で「過去参加者から選ぶ」を通じて当日参加者を選択する候補であることを明示する。
-    if(saved&&typeof showMsg==='function')showMsg('参加者マスタを読み込みました（'+result.newMaster.members.length+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
-    renderMasterTab();
-    // PP-REFRESH-ON-IMPORT-001: 受付タブの「📋 名簿から受付」ボタン表示（#past-participants-section）は
-    //   マスタ会員数に依存するため、取込直後に再描画して即時反映する（従来はリロードまで非表示のままだった）。
-    if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+    appConfirm('現在のマスタをすべて置き換えます。元に戻せません。\n\n続けますか？\n\n読込予定: '+(result.newMaster.members.length)+'名',function(ok){
+      if(!ok)return;
+      // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
+      var saved=saveBranchMaster(result.newMaster);
+      var modalEl=document.getElementById('master-import-modal');if(modalEl)modalEl.remove();
+      // MEMBERS-CANDIDATE-MASTER-RECUT-001: 候補マスタ取込の完了通知。当日参加者の自動登録ではなく、
+      //   受付で「過去参加者から選ぶ」を通じて当日参加者を選択する候補であることを明示する。
+      if(saved&&typeof showMsg==='function')showMsg('参加者マスタを読み込みました（'+result.newMaster.members.length+'名）。これは候補マスタです。受付時に「過去参加者から選ぶ」で当日参加者を選択してください。','ok');
+      renderMasterTab();
+      // PP-REFRESH-ON-IMPORT-001: 受付タブの「📋 名簿から受付」ボタン表示（#past-participants-section）は
+      //   マスタ会員数に依存するため、取込直後に再描画して即時反映する（従来はリロードまで非表示のままだった）。
+      if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+    });
     return;
   }
 
@@ -4654,18 +4656,20 @@ function masterSheetDeleteSelected(){
   var sel=masterSheetSelectedMids((master&&master.members)||[]);
   if(sel.live.length===0)return;
   // MASTER-CLOUD-DELETE-001: ログイン中はクラウドにも波及することを confirm で明示（全端末反映＝影響が大きい）。
-  if(!confirm(sel.live.length+'名（'+_masterSheetNamesFor(sel.live,master)+'）を支部マスタから削除します。\n削除後はサジェスト・過去参加者・一覧から非表示になります（参加履歴データは保持・復元できます）。\nログイン中はクラウドの名簿からも削除され、全端末に反映されます。\n\nよろしいですか？'))return;
-  var okc=0;var doneMids=[];
-  for(var i=0;i<sel.live.length;i++){
-    var r=applyMasterMemberDelete(sel.live[i],master,todayYmd());
-    if(r&&r.success){okc++;doneMids.push(sel.live[i]);delete _masterSelected[sel.live[i]];}
-  }
-  saveBranchMaster(master);
-  showToast(okc+'名を削除しました');
-  renderMasterTab();
-  if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
-  // MASTER-CLOUD-DELETE-001: 成功分だけクラウドの deleted_at にも反映（fail-soft・結果は status 行 N4）。
-  return pushMemberDeleteStateToCloud(doneMids,master,true,_masterCloudStatusFn());
+  appConfirm(sel.live.length+'名（'+_masterSheetNamesFor(sel.live,master)+'）を支部マスタから削除します。\n削除後はサジェスト・過去参加者・一覧から非表示になります（参加履歴データは保持・復元できます）。\nログイン中はクラウドの名簿からも削除され、全端末に反映されます。\n\nよろしいですか？',function(ok){
+    if(!ok)return;
+    var okc=0;var doneMids=[];
+    for(var i=0;i<sel.live.length;i++){
+      var r=applyMasterMemberDelete(sel.live[i],master,todayYmd());
+      if(r&&r.success){okc++;doneMids.push(sel.live[i]);delete _masterSelected[sel.live[i]];}
+    }
+    saveBranchMaster(master);
+    showToast(okc+'名を削除しました');
+    renderMasterTab();
+    if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+    // MASTER-CLOUD-DELETE-001: 成功分だけクラウドの deleted_at にも反映（fail-soft・結果は status 行 N4）。
+    pushMemberDeleteStateToCloud(doneMids,master,true,_masterCloudStatusFn());
+  });
 }
 function masterSheetRestoreSelected(){
   var master=loadBranchMaster();
@@ -4673,17 +4677,19 @@ function masterSheetRestoreSelected(){
   if(sel.del.length===0)return;
   // L3 P1-1: 復元は「既に削除を取り込んだ端末」には自動で戻らない（merge に un-delete 分岐なし）ため、
   //   「全端末に反映」とは言わない（削除方向のみ全端末伝播）。merge の un-delete 化は別スライス判断。
-  if(!confirm(sel.del.length+'名（'+_masterSheetNamesFor(sel.del,master)+'）を復元します。\n一覧・過去参加者・サジェスト候補に再表示されます。\nログイン中はクラウドの名簿でも復元されます。\n\nよろしいですか？'))return;
-  var okc=0;var doneMids=[];
-  for(var i=0;i<sel.del.length;i++){
-    var r=applyMasterMemberRestore(sel.del[i],master);
-    if(r&&r.success){okc++;doneMids.push(sel.del[i]);delete _masterSelected[sel.del[i]];}
-  }
-  saveBranchMaster(master);
-  showToast(okc+'名を復元しました');
-  renderMasterTab();
-  if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
-  return pushMemberDeleteStateToCloud(doneMids,master,false,_masterCloudStatusFn());
+  appConfirm(sel.del.length+'名（'+_masterSheetNamesFor(sel.del,master)+'）を復元します。\n一覧・過去参加者・サジェスト候補に再表示されます。\nログイン中はクラウドの名簿でも復元されます。\n\nよろしいですか？',function(ok){
+    if(!ok)return;
+    var okc=0;var doneMids=[];
+    for(var i=0;i<sel.del.length;i++){
+      var r=applyMasterMemberRestore(sel.del[i],master);
+      if(r&&r.success){okc++;doneMids.push(sel.del[i]);delete _masterSelected[sel.del[i]];}
+    }
+    saveBranchMaster(master);
+    showToast(okc+'名を復元しました');
+    renderMasterTab();
+    if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+    pushMemberDeleteStateToCloud(doneMids,master,false,_masterCloudStatusFn());
+  });
 }
 // MASTER-CLOUD-DELETE-001: 名簿タブの status 行（N4）へ書く setStatus を作る（closure 内で都度 getElementById）。
 function _masterCloudStatusFn(){
@@ -4907,14 +4913,18 @@ function bindMasterTabEvents(){
   if(bulkPushBtn)bulkPushBtn.addEventListener('click',function(){
     var master=loadBranchMaster();
     var n=(master&&Array.isArray(master.members))?master.members.length:0;
-    if(!confirm('名簿 '+n+'名をクラウドへ一括送信します。\nクラウド側の氏名・ふりがな・区分・市町村は、この端末の名簿の内容で上書きされます。\n\nよろしいですか？'))return;
-    pushAllMembersToCloud(_masterCloudStatusFn());
+    appConfirm('名簿 '+n+'名をクラウドへ一括送信します。\nクラウド側の氏名・ふりがな・区分・市町村は、この端末の名簿の内容で上書きされます。\n\nよろしいですか？',function(ok){
+      if(!ok)return;
+      pushAllMembersToCloud(_masterCloudStatusFn());
+    });
   });
   // MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): 「☁ クラウドから完全再構築」→ confirm 後に rebuildMasterFromCloudUI（fail-soft・status のみ）。
   var rebuildBtn=document.getElementById('masterRebuildBtn');
   if(rebuildBtn)rebuildBtn.addEventListener('click',function(){
-    if(!confirm('クラウドの大会記録から、各会員の「前回クラス・最終参加・参加履歴」を再計算して名簿へ反映します。\n氏名・ふりがな・区分・市町村・削除状態は変更しません。\n端末に未送信の直近の参加記録は巻き戻しません。\n\n再構築しますか？'))return;
-    rebuildMasterFromCloudUI(_masterCloudStatusFn());
+    appConfirm('クラウドの大会記録から、各会員の「前回クラス・最終参加・参加履歴」を再計算して名簿へ反映します。\n氏名・ふりがな・区分・市町村・削除状態は変更しません。\n端末に未送信の直近の参加記録は巻き戻しません。\n\n再構築しますか？',function(ok){
+      if(!ok)return;
+      rebuildMasterFromCloudUI(_masterCloudStatusFn());
+    });
   });
   var importBtn=document.getElementById('masterImportBtn');
   if(importBtn)importBtn.addEventListener('click',openMasterImportModal);
@@ -4963,21 +4973,23 @@ function bindMasterTabEvents(){
         var mid=this.getAttribute('data-mid');
         var memberName=this.getAttribute('data-name')||'';
         if(!mid)return;
-        if(!confirm('「'+memberName+'」を支部マスタから削除します。\n削除後はサジェスト候補・過去参加者から非表示になります（参加履歴データは保持）。\n\n続けますか？'))return;
-        var master=loadBranchMaster();
-        var result=applyMasterMemberDelete(mid,master,todayYmd());
-        if(!result.success){
-          if(typeof showMsg==='function'){
-            if(result.error==='not_found')showMsg('対象の member が見つかりません','err');
-            else if(result.error==='already_deleted')showMsg('すでに削除済みです','warn');
-            else showMsg('削除に失敗しました','err');
+        appConfirm('「'+memberName+'」を支部マスタから削除します。\n削除後はサジェスト候補・過去参加者から非表示になります（参加履歴データは保持）。\n\n続けますか？',function(ok){
+          if(!ok)return;
+          var master=loadBranchMaster();
+          var result=applyMasterMemberDelete(mid,master,todayYmd());
+          if(!result.success){
+            if(typeof showMsg==='function'){
+              if(result.error==='not_found')showMsg('対象の member が見つかりません','err');
+              else if(result.error==='already_deleted')showMsg('すでに削除済みです','warn');
+              else showMsg('削除に失敗しました','err');
+            }
+            return;
           }
-          return;
-        }
-        // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
-        var saved=saveBranchMaster(master);
-        if(saved&&typeof showMsg==='function')showMsg('「'+memberName+'」を削除しました','ok');
-        renderMasterTab();
+          // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
+          var saved=saveBranchMaster(master);
+          if(saved&&typeof showMsg==='function')showMsg('「'+memberName+'」を削除しました','ok');
+          renderMasterTab();
+        });
       });
     }
   }
@@ -5037,23 +5049,25 @@ function bindMasterTabEvents(){
         var mid=this.getAttribute('data-mid');
         var memberName=this.getAttribute('data-name')||'';
         if(!mid)return;
-        if(!confirm('「'+memberName+'」を復元します。\n通常マスタ一覧・過去参加者・サジェスト候補に再表示されます。\n\n続けますか？'))return;
-        var master=loadBranchMaster();
-        var result=applyMasterMemberRestore(mid,master);
-        if(!result.success){
-          if(typeof showMsg==='function'){
-            if(result.error==='not_found')showMsg('対象の member が見つかりません','err');
-            else if(result.error==='not_deleted')showMsg('削除されていません','warn');
-            else showMsg('復元に失敗しました','err');
+        appConfirm('「'+memberName+'」を復元します。\n通常マスタ一覧・過去参加者・サジェスト候補に再表示されます。\n\n続けますか？',function(ok){
+          if(!ok)return;
+          var master=loadBranchMaster();
+          var result=applyMasterMemberRestore(mid,master);
+          if(!result.success){
+            if(typeof showMsg==='function'){
+              if(result.error==='not_found')showMsg('対象の member が見つかりません','err');
+              else if(result.error==='not_deleted')showMsg('削除されていません','warn');
+              else showMsg('復元に失敗しました','err');
+            }
+            return;
           }
-          return;
-        }
-        // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
-        var saved=saveBranchMaster(master);
-        if(saved&&typeof showMsg==='function')showMsg('「'+memberName+'」を復元しました','ok');
-        renderMasterTab();
-        // A-4 §3.4.3: 復元後の再反映 — 過去参加者パネルも更新
-        if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+          // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2): 保存失敗時は成功バナーを出さない（saveBranchMaster が警告済）。
+          var saved=saveBranchMaster(master);
+          if(saved&&typeof showMsg==='function')showMsg('「'+memberName+'」を復元しました','ok');
+          renderMasterTab();
+          // A-4 §3.4.3: 復元後の再反映 — 過去参加者パネルも更新
+          if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
+        });
       });
     }
   }

@@ -102,6 +102,7 @@ function loadEnv(path){
     `${js};
      return {
        processMasterImportText:processMasterImportText,
+       __setAppModalTestResolver:__setAppModalTestResolver,
        applyOverwriteImport:applyOverwriteImport,
        applyMergeImport:applyMergeImport,
        normalizeBranchMaster:normalizeBranchMaster,
@@ -120,6 +121,8 @@ function loadEnv(path){
   api._ctx = ctx;
   api._warnCalls = warnCalls;
   api._confirmCalls = confirmCalls;
+  // IN-APP-MODAL-001 Phase 1b: overwrite confirm はアプリ内モーダル化済。同期解決シームで到達を confirmCalls に記録＋OK固定。
+  if(api.__setAppModalTestResolver){ api.__setAppModalTestResolver(function(type,message){ confirmCalls.push(String(message)); return true; }); }
   return api;
 }
 
