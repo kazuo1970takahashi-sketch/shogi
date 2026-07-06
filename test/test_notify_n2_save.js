@@ -27,9 +27,11 @@ function makeEnv(){
   const win={innerWidth:1024,addEventListener(){},scrollTo(){},matchMedia(){return{matches:false,addEventListener(){}};},isSecureContext:true};
   const alerts=[];
   const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','console','Promise','setTimeout','navigator','Blob','URL','FileReader',
-    scripts()+';return {saveData:saveData,exportTournamentBackup:exportTournamentBackup,importTournamentBackupFromText:importTournamentBackupFromText,serializeTournamentBackup:serializeTournamentBackup,loadSaveStatus:loadSaveStatus,SAVE_STATUS_KEY:SAVE_STATUS_KEY,_get:function(){return state;}};');
+    scripts()+';return {saveData:saveData,exportTournamentBackup:exportTournamentBackup,importTournamentBackupFromText:importTournamentBackupFromText,serializeTournamentBackup:serializeTournamentBackup,loadSaveStatus:loadSaveStatus,SAVE_STATUS_KEY:SAVE_STATUS_KEY,__setAppModalTestResolver:__setAppModalTestResolver,_get:function(){return state;}};');
   const env=fn(doc,win,ls,{randomUUID:()=>'00000000-0000-0000-0000-000000000000'},function(m){alerts.push(String(m));},()=>true,()=>'',{log(){},warn(){},error(){}},Promise,cb=>0,
     {onLine:true},function(){},{createObjectURL:()=>'blob:mock',revokeObjectURL(){}},function(){return null;});
+  // IN-APP-MODAL-001 Phase 1b: 復元 confirm はアプリ内モーダル化済。同期解決シームで OK 固定（callback を同期実行）。
+  if(typeof env.__setAppModalTestResolver==='function')env.__setAppModalTestResolver(function(){return true;});
   return {env,store,els,alerts};
 }
 let pass=0,fail=0;const ok=(c,m)=>{c?pass++:(fail++,console.log('  FAIL: '+m));};
@@ -61,7 +63,7 @@ ok(typeof stB.backup==='number'&&stB.backup>0,'F4 保存状態バーの backup �
 var Er=makeEnv();
 var json=Er.env.serializeTournamentBackup(Er.env._get(),new Date().toISOString());
 var r2=Er.env.importTournamentBackupFromText(json);
-ok(r2===true,'F5 復元（serialize round-trip）が true を返す');
+ok(!!Er.store['shogi_v4'],'F5 復元で state が localStorage(shogi_v4) に保存される（applyLoadedJson→save）');
 ok(String(Er.els['app-toast'].textContent).indexOf('バックアップを復元しました')>=0,'F6 復元成功が toast に出る');
 ok(Er.alerts.length===0,'F7 復元成功経路で alert が出ない');
 var Em=makeEnv();

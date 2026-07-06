@@ -10905,14 +10905,16 @@ function loadData(e){
     }else if(kind==='invalid'){
       alert('読み込みに失敗しました。正しい大会データファイルか確認してください');
     }else{
-      if(!confirm('現在のデータを上書きして読み込みますか？')){e.target.value='';var lm0=document.getElementById('load-modal');if(lm0)lm0.remove();return;}
-      try{
-        applyLoadedJson(text);
-        // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert は維持）。
-        showToast('データを読み込みました');
-      } catch(err){
-        alert('読み込みに失敗しました。正しいファイルか確認してください');
-      }
+      appConfirm('現在のデータを上書きして読み込みますか？',function(ok){
+        if(!ok)return; // キャンセル時は末尾の共通クリーンアップ（e.target.value 初期化＋load-modal 除去）に委ねる＝再選択可
+        try{
+          applyLoadedJson(text);
+          // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert は維持）。
+          showToast('データを読み込みました');
+        } catch(err){
+          alert('読み込みに失敗しました。正しいファイルか確認してください');
+        }
+      });
     }
     e.target.value='';
     var lm=document.getElementById('load-modal');if(lm)lm.remove();
@@ -10941,15 +10943,17 @@ function loadFromPaste(){
     alert('読み込みに失敗しました。正しい大会データか確認してください');
     return;
   }
-  if(!confirm('現在のデータを上書きして読み込みますか？'))return;
-  try{
-    applyLoadedJson(text);
-    _closeRestoreModals();
-    // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert は維持）。
-    showToast('データを読み込みました');
-  }catch(err){
-    alert('読み込みに失敗しました。正しい大会データか確認してください');
-  }
+  appConfirm('現在のデータを上書きして読み込みますか？',function(ok){
+    if(!ok)return;
+    try{
+      applyLoadedJson(text);
+      _closeRestoreModals();
+      // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert は維持）。
+      showToast('データを読み込みました');
+    }catch(err){
+      alert('読み込みに失敗しました。正しい大会データか確認してください');
+    }
+  });
 }
 
 function openLoadModal(){
@@ -11133,17 +11137,17 @@ function exportTournamentBackup(){
 function importTournamentBackupFromText(text){
   var res=parseTournamentBackup(text);
   if(!res.ok){ alert(res.message); return false; }
-  if(!confirm('現在の大会データを上書きしてバックアップを復元しますか？この操作は元に戻せません。'))return false;
-  try{
-    // 復元は独自正規化を作らず、既存 applyLoadedJson（state=normalizeState(...)→save→再描画）を再利用する。
-    applyLoadedJson(JSON.stringify(res.state));
-    // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert・復元前の confirm は維持）。
-    showToast('バックアップを復元しました');
-    return true;
-  }catch(err){
-    alert('復元に失敗しました。正しいバックアップファイルか確認してください');
-    return false;
-  }
+  appConfirm('現在の大会データを上書きしてバックアップを復元しますか？この操作は元に戻せません。',function(ok){
+    if(!ok)return;
+    try{
+      // 復元は独自正規化を作らず、既存 applyLoadedJson（state=normalizeState(...)→save→再描画）を再利用する。
+      applyLoadedJson(JSON.stringify(res.state));
+      // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert・復元前の confirm は維持）。
+      showToast('バックアップを復元しました');
+    }catch(err){
+      alert('復元に失敗しました。正しいバックアップファイルか確認してください');
+    }
+  });
 }
 
 // coordinator: ファイル選択 input(change) から backup を取り込む。
