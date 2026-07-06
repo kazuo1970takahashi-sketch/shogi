@@ -34,12 +34,14 @@ function loadEnv(){
   const alerts=[];const confirms=[];let confirmAnswer=true;
   const js=extractScripts(RAW);
   const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout',
-    js+';return {removeArchiveEntryByTid:removeArchiveEntryByTid,deleteArchiveTournamentUI:deleteArchiveTournamentUI,renderHistoryDetail:renderHistoryDetail,renderHistoryList:renderHistoryList,normalizeArchive:normalizeArchive,ARCHIVE_KEY:ARCHIVE_KEY};');
+    js+';return {removeArchiveEntryByTid:removeArchiveEntryByTid,deleteArchiveTournamentUI:deleteArchiveTournamentUI,renderHistoryDetail:renderHistoryDetail,renderHistoryList:renderHistoryList,normalizeArchive:normalizeArchive,ARCHIVE_KEY:ARCHIVE_KEY,__setAppModalTestResolver:__setAppModalTestResolver};');
   const api=fn(ctx.document,ctx.window,ctx.localStorage,{randomUUID:function(){return '00000000-0000-0000-0000-000000000000';}},
     function(m){alerts.push(String(m));},function(m){confirms.push(String(m));return confirmAnswer;},function(){return '';},
     function(){},function(){return null;},{createObjectURL:function(){return 'blob:mock';},revokeObjectURL:function(){}},
     {log:function(){},warn:function(){},error:function(){}},Promise,function(cb){});
   api._ctx=ctx;api._alerts=alerts;api._confirms=confirms;api._setConfirm=function(v){confirmAnswer=v;};
+  // IN-APP-MODAL-001 Phase 1b: confirm はアプリ内モーダル化済。テストは同期解決シームで追随（メッセージ捕捉＋回答）。
+  api.__setAppModalTestResolver(function(type,message){ confirms.push(String(message)); return confirmAnswer; });
   return api;
 }
 function fixtureArchive(){
@@ -65,7 +67,7 @@ console.log('=== D: deleteArchiveTournamentUI（confirm→setItem→flash）==='
 const e2=loadEnv();
 e2._ctx.localStorage._[e2.ARCHIVE_KEY]=JSON.stringify(fixtureArchive());
 var d1=e2.deleteArchiveTournamentUI('t-kakuu-1');
-ok(d1===true,'D1 confirm OK で true');
+ok(e2._ctx.localStorage._setLog.indexOf(e2.ARCHIVE_KEY)>=0,'D1 確認OKで削除実行（ARCHIVE_KEY へ setItem）');
 ok(e2._confirms.length===1&&e2._confirms[0].indexOf('2026年6月')>=0,'D2 confirm に対象大会の表示名');
 ok(e2._confirms[0].indexOf('元に戻せません')>=0&&e2._confirms[0].indexOf('クラウド')>=0,'D3 confirm に不可逆＋クラウド非影響の明示');
 var after1=JSON.parse(e2._ctx.localStorage._[e2.ARCHIVE_KEY]);
@@ -77,11 +79,11 @@ e3._ctx.localStorage._[e3.ARCHIVE_KEY]=JSON.stringify(fixtureArchive());
 e3._setConfirm(false);
 var d2=e3.deleteArchiveTournamentUI('t-kakuu-1');
 var after2=JSON.parse(e3._ctx.localStorage._[e3.ARCHIVE_KEY]);
-ok(d2===false&&after2.tournaments.length===2,'D7 confirm キャンセルで無変化');
+ok(after2.tournaments.length===2&&e3._ctx.localStorage._setLog.indexOf(e3.ARCHIVE_KEY)<0,'D7 確認キャンセルで無変化（setItem なし）');
 const e4=loadEnv();
 e4._ctx.localStorage._[e4.ARCHIVE_KEY]=JSON.stringify(fixtureArchive());
 var d3=e4.deleteArchiveTournamentUI('t-nai');
-ok(d3===false&&e4._confirms.length===0,'D8 存在しない tid は confirm を出さず一覧へ戻る');
+ok(e4._confirms.length===0,'D8 存在しない tid は確認を出さず一覧へ戻る');
 
 console.log('=== V: 詳細ビューの導線（RAW pin）===');
 ok(RAW.indexOf('id="history-delete-btn"')>=0&&RAW.indexOf('🗑 この履歴を削除')>=0,'V1 詳細ビューに削除ボタン');

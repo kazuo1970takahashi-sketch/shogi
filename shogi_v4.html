@@ -13837,17 +13837,18 @@ function deleteArchiveTournamentUI(tid){
   if(!entry){renderHistoryList();return false;}
   var id=entry.identity||{};
   var label=(id.targetMonthLabel||id.title||'この大会')+(id.heldDate?('（開催日 '+id.heldDate+'）'):'');
-  if(!confirm('「'+label+'」を大会履歴から削除します。\nこの端末からのみ削除され、元に戻せません。\n（クラウドの過去大会・当日の大会データには影響しません）\n\n削除しますか？'))return false;
-  var res=removeArchiveEntryByTid(archive,tid);
-  if(!res.removed){renderHistoryList();return false;}
-  try{
-    localStorage.setItem(ARCHIVE_KEY,JSON.stringify(res.archive));
-  }catch(e){
-    alert('履歴を削除できませんでした。もう一度お試しください。');
-    return false;
-  }
-  renderHistoryList('🗑 「'+label+'」を履歴から削除しました。');
-  return true;
+  appConfirm('「'+label+'」を大会履歴から削除します。\nこの端末からのみ削除され、元に戻せません。\n（クラウドの過去大会・当日の大会データには影響しません）\n\n削除しますか？',function(ok){
+    if(!ok)return;
+    var res=removeArchiveEntryByTid(archive,tid);
+    if(!res.removed){renderHistoryList();return;}
+    try{
+      localStorage.setItem(ARCHIVE_KEY,JSON.stringify(res.archive));
+    }catch(e){
+      alert('履歴を削除できませんでした。もう一度お試しください。');
+      return;
+    }
+    renderHistoryList('🗑 「'+label+'」を履歴から削除しました。');
+  });
 }
 
 // HISTORY-DELETE-001 (#550): 大会履歴を全削除（二段階確認）。当日 state・支部マスタ・クラウドには触れない。
@@ -13856,17 +13857,20 @@ function clearAllArchiveHistory(){
   var archive=loadArchive();
   var n=(archive&&Array.isArray(archive.tournaments))?archive.tournaments.length:0;
   if(n===0){ alert('削除できる履歴がありません。'); return false; }
-  if(!confirm('この端末に保管した大会履歴 '+n+' 件をすべて削除します。\nこの端末からのみ削除され、元に戻せません。\n（クラウドの過去大会・当日の大会データ・名簿には影響しません）\n\n続けますか？'))return false;
-  if(!confirm('本当に全 '+n+' 件を削除しますか？'))return false;
-  var next={schema_version:ARCHIVE_SCHEMA_VERSION,updated_at:archiveNowIso(),tournaments:[]};
-  try{
-    localStorage.setItem(ARCHIVE_KEY,JSON.stringify(next));
-  }catch(e){
-    alert('履歴を削除できませんでした。もう一度お試しください。');
-    return false;
-  }
-  renderHistoryList('🗑 大会履歴をすべて削除しました（'+n+'件）。');
-  return true;
+  appConfirm('この端末に保管した大会履歴 '+n+' 件をすべて削除します。\nこの端末からのみ削除され、元に戻せません。\n（クラウドの過去大会・当日の大会データ・名簿には影響しません）\n\n続けますか？',function(ok1){
+    if(!ok1)return;
+    appConfirm('本当に全 '+n+' 件を削除しますか？',function(ok2){
+      if(!ok2)return;
+      var next={schema_version:ARCHIVE_SCHEMA_VERSION,updated_at:archiveNowIso(),tournaments:[]};
+      try{
+        localStorage.setItem(ARCHIVE_KEY,JSON.stringify(next));
+      }catch(e){
+        alert('履歴を削除できませんでした。もう一度お試しください。');
+        return;
+      }
+      renderHistoryList('🗑 大会履歴をすべて削除しました（'+n+'件）。');
+    });
+  });
 }
 
 // 一覧表示順（§5）: 開催日 desc → 保存日時 desc（新しい大会が上）。heldDate は YYYY-MM-DD で辞書順=日付順。
@@ -13958,14 +13962,15 @@ function saveCurrentTournamentToArchive(){
   var archive=loadArchive();
   var existing=tid?findArchiveEntryByTid(archive,tid):null;
   var label=entry.identity.targetMonthLabel||entry.identity.title||'この大会';
-  if(existing){ if(!confirm('「'+label+'」は既に履歴にあります。\n現在の内容で上書きしますか？'))return false; }
-  else { if(!confirm('現在の大会（'+label+'）を履歴へ保存しますか？'))return false; }
-  var res=persistArchiveEntry(entry);
-  if(res.ok){ renderHistoryList('✓ 大会を履歴へ保存しました。'); return true; }
-  alert(res.quota
-    ?'大会履歴を保存できませんでした（保存容量の上限）。\nJSONバックアップをご利用ください。\n当日の大会データは保持されています。'
-    :'大会履歴を保存できませんでした。\n当日の大会データは保持されています。');
-  return false;
+  var msg=existing?('「'+label+'」は既に履歴にあります。\n現在の内容で上書きしますか？'):('現在の大会（'+label+'）を履歴へ保存しますか？');
+  appConfirm(msg,function(ok){
+    if(!ok)return;
+    var res=persistArchiveEntry(entry);
+    if(res.ok){ renderHistoryList('✓ 大会を履歴へ保存しました。'); return; }
+    alert(res.quota
+      ?'大会履歴を保存できませんでした（保存容量の上限）。\nJSONバックアップをご利用ください。\n当日の大会データは保持されています。'
+      :'大会履歴を保存できませんでした。\n当日の大会データは保持されています。');
+  });
 }
 
 // 履歴一覧（read-only。§5）。identity だけで描画し snapshot 本体は開かない。各行から閲覧へ遷移。
