@@ -31,6 +31,8 @@ body{font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:15px;color:#222;b
 .tab.active{background:#1F3864;color:#fff;font-weight:500}
 .section{background:#fff;border-radius:10px;padding:12px 12px;margin-bottom:12px;border:1px solid #e0e0e0}
 h2{font-size:15px;font-weight:500;margin-bottom:10px;color:#1F3864;border-bottom:2px solid #1F3864;padding-bottom:6px}
+.section-head{display:flex;align-items:center;gap:8px;border-bottom:2px solid #1F3864;padding-bottom:6px;margin-bottom:12px}
+.section-head h2{border-bottom:none;padding-bottom:0}
 h3{font-size:14px;font-weight:500;margin-bottom:8px;color:#444}
 .flex{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
 input[type=text]{height:44px;padding:0 12px;border:1px solid #ccc;border-radius:8px;font-size:16px;font-family:inherit}
@@ -469,7 +471,7 @@ body.sb-active{overflow:hidden}
       </div>
     </details>
     <div class="section">
-      <div style="display:flex;align-items:center;gap:8px">
+      <div class="section-head">
         <h2 style="margin:0">参加者を登録する</h2>
         <button type="button" id="helpBtnReg" class="btn-sm" title="登録・受付の使い方をヘルプで表示します" aria-label="登録・受付ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
       </div>
@@ -1378,7 +1380,7 @@ function markAutosaveStatus(){
   markSaveStatus('autosave');
 }
 
-// 表示用: 未実行/不正値は「未」・当日は HH:MM・別日は M/D HH:MM。
+// 表示用: 未実行/不正値は「未」・当日は HH:MM・別日は YYYY/MM/DD HH:MM（年つき8桁・ゼロ埋め）。
 function formatSaveStatusTime(ms){
   if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return '未';
   var d=new Date(ms);
@@ -1387,7 +1389,9 @@ function formatSaveStatusTime(ms){
   var mm=('0'+d.getMinutes()).slice(-2);
   var now=new Date();
   if(d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate())return hh+':'+mm;
-  return (d.getMonth()+1)+'/'+d.getDate()+' '+hh+':'+mm;
+  var mo=('0'+(d.getMonth()+1)).slice(-2);
+  var dd=('0'+d.getDate()).slice(-2);
+  return d.getFullYear()+'/'+mo+'/'+dd+' '+hh+':'+mm;
 }
 
 // 表示テキスト組立（固定文言＋時刻のみ＝自由文なし。textContent で書くため escape 不要）。
@@ -3892,7 +3896,7 @@ function buildMasterTabHtml(master){
   });
   // HELP-UX-005 (#342): 見出し脇に「？ ヘルプ」（id=helpBtnMaster）。click は bindMasterTabEvents 側で
   //   openHelpModal('master') へ結線（renderMasterTab 後に毎回 bind・#309/#323 と同じ build/bind 分離）。
-  var html='<div class="section"><div style="display:flex;align-items:center;gap:8px"><h2 style="margin:0">沼津支部 参加者マスタ</h2><button type="button" id="helpBtnMaster" class="btn-sm" title="支部マスタの使い方をヘルプで表示します" aria-label="支部マスタヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button></div>';
+  var html='<div class="section"><div class="section-head"><h2 style="margin:0">沼津支部 参加者マスタ</h2><button type="button" id="helpBtnMaster" class="btn-sm" title="支部マスタの使い方をヘルプで表示します" aria-label="支部マスタヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button></div>';
   // A-4 §3.5.2 → CLEANUP-P3-001: 旧サマリ行「登録: N名（うちふりがな未入力: N名）」は撤去（MASTER-SHEET-002 の
   //   シートヘッダサマリ「名簿 N名（ふりがな未入力 N名）」と重複＝?v=61 P3 申し送りの消化）。noYomiCount の算出は
   //   ヘッダサマリ側（下記）で使うため維持。

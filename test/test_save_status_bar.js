@@ -123,7 +123,7 @@ assert(env.formatSaveStatusTime(undefined)==='未'&&env.formatSaveStatusTime(0)=
 const nowT=Date.now();
 assert(/^\d{2}:\d{2}$/.test(env.formatSaveStatusTime(nowT)), 'R7 当日は HH:MM');
 const past=new Date(new Date().getFullYear()-1,0,5,9,7,0).getTime();
-assert(env.formatSaveStatusTime(past)==='1/5 09:07', 'R8 別日は M/D HH:MM');
+assert(env.formatSaveStatusTime(past)===(new Date().getFullYear()-1)+'/01/05 09:07', 'R8 別日は YYYY/MM/DD HH:MM（年つき8桁・ゼロ埋め）');
 const txtEmpty=env.buildSaveStatusBarText({});
 assert(txtEmpty.indexOf('💾 自動保存 未')>=0&&txtEmpty.indexOf('📋 名簿 未')>=0&&txtEmpty.indexOf('バックアップ 未')>=0&&txtEmpty.indexOf('☁ 送信 未')>=0, 'R9 全未実行で4系統とも「未」');
 assert(txtEmpty.split('｜').length===4, 'R10 区切りは ｜ で4要素');
