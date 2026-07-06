@@ -64,6 +64,13 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 /* 当日UX: 操作の成功を控えめに知らせるトースト（対局管理タブでも見える固定表示）。 */
 .app-toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);max-width:90%;background:#27500A;color:#fff;padding:10px 18px;border-radius:10px;font-size:15px;font-weight:500;z-index:10000;box-shadow:0 2px 10px rgba(0,0,0,.3);opacity:0;transition:opacity .2s;pointer-events:none;text-align:center}
 .app-toast.show{opacity:1}
+.app-modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
+.app-modal-box{background:#fff;border-radius:12px;max-width:420px;width:100%;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,0.28)}
+.app-modal-msg{font-size:14px;color:#222;line-height:1.65;white-space:pre-wrap;word-break:break-word}
+.app-modal-input{width:100%;box-sizing:border-box;height:42px;border:1px solid #ccc;border-radius:8px;padding:8px 10px;font-size:16px;margin-top:12px;font-family:inherit}
+.app-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.app-modal-actions button{min-height:44px;padding:0 18px;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit}
+.app-modal-cancel{background:#fff;border:1px solid #ccc;color:#333}
 /* PP-FULLSCREEN-001: 全画面ビュー内だけのスタイル上書き（scoped・追加のみ）。
    .pp-controls＝検索/50音/クイックフィルタをヘッダ（約56px）直下に sticky。
    .pp-list-box＝登録タブ時代の内側スクロール箱（inline max-height:280px）を !important で解除し、スクロールを overlay 1本に。 */
@@ -5706,12 +5713,13 @@ function onClickRenameClass(classId){
   var cur='';
   var clsList=getRegistrationClassList();
   for(var i=0;i<clsList.length;i++){if(clsList[i].id===classId){cur=clsList[i].name;break;}}
-  var input=prompt('新しいクラス名を入力してください',cur);
-  if(input===null)return;                 // キャンセル
-  var name=input.trim();
-  if(!name){alert('クラス名を入力してください');return;}
-  if(name===cur)return;                    // 変更なし
-  renameClass(classId,name);
+  appPrompt('新しいクラス名を入力してください',cur,function(input){
+    if(input===null)return;                 // キャンセル
+    var name=input.trim();
+    if(!name){alert('クラス名を入力してください');return;}
+    if(name===cur)return;                    // 変更なし
+    renameClass(classId,name);
+  });
 }
 
 // 「削除」ボタンのハンドラ。canDeleteClass を確認し confirm の上で removeClass する。
@@ -5800,6 +5808,69 @@ function showToast(text){
     _toastTimer=setTimeout(function(){ var e2=document.getElementById('app-toast'); if(e2)e2.className='app-toast'; },1800);
   }catch(e){}
 }
+
+// IN-APP-MODAL-001 (#606) Phase 0: 汎用アプリ内モーダル（confirm / prompt / alert）。
+//   目的: ネイティブ prompt/confirm/alert の「github.io の内容」ヘッダを排除し STYLE-GUIDE に沿った見た目へ統一する土台。
+//   非同期（結果は onResult コールバック）。戻り値の意味はネイティブと同値: confirm/alert→OK=true・Cancel=false／prompt→文字列 / キャンセル=null。
+//   メッセージは textContent（+ CSS white-space:pre-wrap）で表示＝改行保持・XSS 安全（会員名等を含むため escapeHtml 不要の設計）。
+//   ES5・build/bind 分離。本 Phase は「追加のみ」＝既存 prompt/confirm/alert 呼び出しは未置換（挙動ゼロ変更）。
+var _appModalPending=null;
+var _appModalTestResolver=null; // テスト専用: 設定時はDOMを出さず同期的に onResult を解決（既定 null＝本番は無効）
+function __setAppModalTestResolver(fn){ _appModalTestResolver=fn; }
+function showAppModal(opts){
+  opts=opts||{};
+  var type=opts.type||'confirm';
+  if(_appModalTestResolver){ var _tv=_appModalTestResolver(type,opts.message,opts.defaultValue); if(typeof opts.onResult==='function')opts.onResult(_tv); return; }
+  var prev=document.getElementById('app-modal'); if(prev&&prev.parentNode)prev.parentNode.removeChild(prev);
+  var overlay=document.createElement('div');
+  overlay.id='app-modal'; overlay.className='app-modal-overlay no-print';
+  overlay.setAttribute('role','dialog'); overlay.setAttribute('aria-modal','true');
+  var box=document.createElement('div'); box.className='app-modal-box';
+  var msg=document.createElement('div'); msg.className='app-modal-msg';
+  msg.textContent=(opts.message==null?'':String(opts.message));
+  box.appendChild(msg);
+  var input=null;
+  if(type==='prompt'){
+    input=document.createElement('input'); input.type='text'; input.className='app-modal-input';
+    input.value=(opts.defaultValue==null?'':String(opts.defaultValue));
+    box.appendChild(input);
+  }
+  var actions=document.createElement('div'); actions.className='app-modal-actions';
+  var cancelBtn=null;
+  if(type!=='alert'){
+    cancelBtn=document.createElement('button'); cancelBtn.type='button';
+    cancelBtn.className='app-modal-cancel'; cancelBtn.textContent=(opts.cancelText||'キャンセル');
+    actions.appendChild(cancelBtn);
+  }
+  var okBtn=document.createElement('button'); okBtn.type='button';
+  okBtn.className=(opts.danger?'btn-danger':'btn-primary')+' app-modal-ok';
+  okBtn.textContent=(opts.okText||(type==='confirm'?'はい':'OK'));
+  actions.appendChild(okBtn);
+  box.appendChild(actions);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  var done=false;
+  function cleanup(){ try{document.removeEventListener('keydown',onKey,true);}catch(e){} if(overlay&&overlay.parentNode)overlay.parentNode.removeChild(overlay); _appModalPending=null; }
+  function finish(result){ if(done)return; done=true; cleanup(); if(typeof opts.onResult==='function')opts.onResult(result); }
+  function onOk(){ finish(type==='prompt'?(input?input.value:''):true); }
+  function onCancel(){ finish(type==='prompt'?null:false); }
+  okBtn.onclick=onOk;
+  if(cancelBtn)cancelBtn.onclick=onCancel;
+  overlay.onclick=function(e){ if(e&&e.target===overlay){ if(type==='alert')finish(true); else onCancel(); } };
+  function onKey(e){
+    var k=e.keyCode||e.which;
+    if(k===27){ if(e.preventDefault)e.preventDefault(); if(type==='alert')finish(true); else onCancel(); }
+    else if(k===13){ if(opts.danger&&type==='confirm')return; if(e.preventDefault)e.preventDefault(); onOk(); }
+  }
+  try{document.addEventListener('keydown',onKey,true);}catch(e){}
+  _appModalPending={ ok:onOk, cancel:onCancel, setValueAndOk:function(val){ if(input)input.value=val; onOk(); } };
+  try{ if(input){input.focus(); if(input.select)input.select();} else if(cancelBtn&&opts.danger){cancelBtn.focus();} else {okBtn.focus();} }catch(e){}
+}
+function appConfirm(message,onResult,opts){ opts=opts||{}; opts.type='confirm'; opts.message=message; opts.onResult=onResult; showAppModal(opts); }
+function appPrompt(message,defaultValue,onResult,opts){ opts=opts||{}; opts.type='prompt'; opts.message=message; opts.defaultValue=defaultValue; opts.onResult=onResult; showAppModal(opts); }
+function appAlert(message,onResult,opts){ opts=opts||{}; opts.type='alert'; opts.message=message; opts.onResult=onResult; showAppModal(opts); }
+// テスト/自動化用: 現在表示中のアプリ内モーダルを解決（confirm/alert=true/false、prompt=文字列/null）。Phase 1 のテスト追随で使用。
+function __resolveAppModal(v){ if(!_appModalPending)return false; var m=_appModalPending; if(v===false||v===null){m.cancel();} else if(v===true){m.ok();} else {m.setValueAndOk(v);} return true; }
 
 // 致命的エラーは登録タブが見えていない可能性があるため alert で通知（重複連発を避けるため直近メッセージで抑止）
 // SAVE-NONQUOTA-ALERT (Issue #278): alwaysAlert=true のときは表示中タブに関わらず alert を出す。
@@ -7296,19 +7367,20 @@ function editPlayer(id,cls){
   var p=null;
   for(var i=0;i<players.length;i++){if(players[i].id===id){p=players[i];break;}}
   if(!p)return;
-  var newName=prompt('名前を変更してください',p.name);
-  if(!newName||!newName.trim())return;
-  newName=newName.trim();
-  // CLASS-VARIABLE-001 (CV-1): 重複名チェックを全クラス横断に汎用化（A/B のみなら従来と同一結果・C+ も保護）。
-  var all=allRegisteredPlayers();
-  for(var i=0;i<all.length;i++){if(all[i].name===newName&&all[i].id!==id){alert('同じ名前がいます');return;}}
-  // MASTER-001: normalize 後に変更なしならモーダルを開かず、旧フローと同じく参加者名のみ更新。
-  if(normalizePersonName(p.name)===normalizePersonName(newName)){
-    applyParticipantRenameOnly(p,newName);
-    return;
-  }
-  // MASTER-001: 会員マスタ反映の分岐確認モーダルを開く。
-  openMemberMasterSyncDialog(p,newName);
+  appPrompt('名前を変更してください',p.name,function(newName){
+    if(!newName||!newName.trim())return;
+    newName=newName.trim();
+    // CLASS-VARIABLE-001 (CV-1): 重複名チェックを全クラス横断に汎用化（A/B のみなら従来と同一結果・C+ も保護）。
+    var all=allRegisteredPlayers();
+    for(var i=0;i<all.length;i++){if(all[i].name===newName&&all[i].id!==id){alert('同じ名前がいます');return;}}
+    // MASTER-001: normalize 後に変更なしならモーダルを開かず、旧フローと同じく参加者名のみ更新。
+    if(normalizePersonName(p.name)===normalizePersonName(newName)){
+      applyParticipantRenameOnly(p,newName);
+      return;
+    }
+    // MASTER-001: 会員マスタ反映の分岐確認モーダルを開く。
+    openMemberMasterSyncDialog(p,newName);
+  });
 }
 
 // START-FRP-UX-001: 参加者一覧の「ふりがな」を登録後でも編集・保存できるようにする（編集導線）。
@@ -7326,16 +7398,17 @@ function editPlayerYomi(id,cls){
   if(!p)return;
   var displayName=getName(id,cls);
   var cur=(typeof p.yomi==='string')?p.yomi:'';
-  var input=prompt(displayName+' のふりがなを入力してください（空欄にするとルビなしに戻ります）',cur);
-  if(input===null)return;                 // キャンセルは変更しない
-  var normalized=normalizeYomi(input);
-  if(normalized===cur)return;             // 変更なしは保存しない
-  p.yomiDirty=true;                       // YOMI-SYNC-OVERWRITE-001 (Codex P2b): 当日編集の意図を state に永続化（reload後も上書き対象を復元）
-  updateField(id,cls,'yomi',normalized);  // save() + 保存検証(SAVE-003b) + renderRegList は updateField 側に委譲
-  // YOMI-SYNC-OVERWRITE-001: 当日その場で編集した意図を記録し、「名簿を更新」時の非空マスタ上書き対象にする。
-  //   登録時にマスタからコピーしただけの player.yomi（＝古い値の残存）を誤検知しないよう、明示編集のみ印を付ける。
-  _pendingNewYomi[id]=normalized;
-  showMsg(displayName+' のふりがなを更新しました','ok');
+  appPrompt(displayName+' のふりがなを入力してください（空欄にするとルビなしに戻ります）',cur,function(input){
+    if(input===null)return;                 // キャンセルは変更しない
+    var normalized=normalizeYomi(input);
+    if(normalized===cur)return;             // 変更なしは保存しない
+    p.yomiDirty=true;                       // YOMI-SYNC-OVERWRITE-001 (Codex P2b): 当日編集の意図を state に永続化（reload後も上書き対象を復元）
+    updateField(id,cls,'yomi',normalized);  // save() + 保存検証(SAVE-003b) + renderRegList は updateField 側に委譲
+    // YOMI-SYNC-OVERWRITE-001: 当日その場で編集した意図を記録し、「名簿を更新」時の非空マスタ上書き対象にする。
+    //   登録時にマスタからコピーしただけの player.yomi（＝古い値の残存）を誤検知しないよう、明示編集のみ印を付ける。
+    _pendingNewYomi[id]=normalized;
+    showMsg(displayName+' のふりがなを更新しました','ok');
+  });
 }
 
 // ROUND-CLASS-START-004 (spec §6.3.2):
