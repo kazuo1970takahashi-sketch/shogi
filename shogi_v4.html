@@ -1378,7 +1378,7 @@ function markAutosaveStatus(){
   markSaveStatus('autosave');
 }
 
-// 表示用: 未実行/不正値は「未」・当日は HH:MM・別日は M/D HH:MM。
+// 表示用: 未実行/不正値は「未」・当日は HH:MM・別日は YYYY/MM/DD HH:MM（年つき8桁・ゼロ埋め）。
 function formatSaveStatusTime(ms){
   if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return '未';
   var d=new Date(ms);
@@ -1387,7 +1387,9 @@ function formatSaveStatusTime(ms){
   var mm=('0'+d.getMinutes()).slice(-2);
   var now=new Date();
   if(d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate())return hh+':'+mm;
-  return (d.getMonth()+1)+'/'+d.getDate()+' '+hh+':'+mm;
+  var mo=('0'+(d.getMonth()+1)).slice(-2);
+  var dd=('0'+d.getDate()).slice(-2);
+  return d.getFullYear()+'/'+mo+'/'+dd+' '+hh+':'+mm;
 }
 
 // 表示テキスト組立（固定文言＋時刻のみ＝自由文なし。textContent で書くため escape 不要）。
