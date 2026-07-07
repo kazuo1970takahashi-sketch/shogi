@@ -412,8 +412,42 @@
       wins: (e && e.wins) || 0,
       losses: (e && e.losses) || 0,
       sos: (e && e.sos != null) ? e.sos : '',
-      sodos: (e && e.sodos != null) ? e.sodos : ''
+      sodos: (e && e.sodos != null) ? e.sodos : '',
+      // #607 Phase3: 会員属性（当時値/現在値）の補助行 HTML。entry=当時値スナップショット・m=members 現在値。
+      attrHtml: buildEntryAttrDisplayHtml(e, m)
     };
+  }
+  // MEMBER-ATTR-SNAPSHOT-001 (#607) Phase3: app/ 大会結果への会員属性表示（当日 shogi_v4.html と鏡写し）。
+  //   当日側の resolveEntryAttr / buildEntryAttrDisplay / buildEntryAttrDisplayHtml を app/ へ移植（純関数・副作用なし）。
+  //   語彙は当日と統一（沼津支部員／他・一般／中学生以下／女性）。当時値(entry)優先・null(旧行)のみ members 現在値へフォールバック＋「※現在値」注記。
+  function memberKindLabelJa(v) { return v === 'member' ? '沼津支部員' : (v === 'other' ? '他' : ''); }
+  function gradeLabelJa(v) { return v === 'ippan' ? '一般' : (v === 'chu' ? '中学生以下' : (v === 'josei' ? '女性' : '')); }
+  function resolveEntryAttr(entry, memberCurrent) {
+    var e = entry || {}, mc = memberCurrent || {};
+    function pick(snap, cur) {
+      if (snap === null || snap === undefined) { return { value: (cur == null ? '' : cur), fromCurrent: (cur != null && cur !== '') }; }
+      return { value: snap, fromCurrent: false };
+    }
+    return {
+      member_kind: pick(e.member_kind, mc.member_kind),
+      grade: pick(e.grade, mc.grade),
+      city: pick(e.city, mc.city)
+    };
+  }
+  function buildEntryAttrDisplay(entry, memberCurrent) {
+    var r = resolveEntryAttr(entry, memberCurrent);
+    var parts = [];
+    var mk = memberKindLabelJa(r.member_kind.value); if (mk !== '') parts.push(mk);
+    var gr = gradeLabelJa(r.grade.value); if (gr !== '') parts.push(gr);
+    var ct = r.city.value; if (ct != null && ct !== '') parts.push(ct);
+    var fromCurrent = !!(r.member_kind.fromCurrent || r.grade.fromCurrent || r.city.fromCurrent);
+    return { parts: parts, fromCurrent: fromCurrent, text: parts.length ? (parts.join(' / ') + (fromCurrent ? '（※現在値）' : '')) : '' };
+  }
+  function buildEntryAttrDisplayHtml(entry, memberCurrent) {
+    var d = buildEntryAttrDisplay(entry, memberCurrent);
+    if (!d.parts.length) return '';
+    var safe = []; for (var i = 0; i < d.parts.length; i++) safe.push(esc(d.parts[i]));
+    return '<div style="font-size:11px;color:#777;margin-top:2px">' + safe.join(' / ') + (d.fromCurrent ? '<span style="color:#999">（※現在値）</span>' : '') + '</div>';
   }
   // APP-UX-004A (作者依頼 2026-07-03「当日アプリの順位表と同じUIに」): クラスごとのブロック・
   //   ふりがなルビ・1位ハイライト・凡例を当日 buildScoreboardClassTableHtml と同型に。
@@ -447,7 +481,7 @@
         var r = rows[j];
         html += '<tr' + (r.rank === 1 ? ' class="sb-row-1"' : '') + '>' +
           '<td class="sb-col-rank">' + (r.rank == null ? '-' : esc(String(r.rank))) + '</td>' +
-          '<td class="sb-col-name">' + _entryNameRubyHtml(r.name, r.yomi) + '</td>' +
+          '<td class="sb-col-name">' + _entryNameRubyHtml(r.name, r.yomi) + (r.attrHtml || '') + '</td>' +
           '<td class="sb-wins">' + esc(String(r.wins)) + '</td>' +
           '<td class="sb-metric">' + esc(String(r.losses)) + '</td>' +
           '<td class="sb-metric">' + esc(String(r.sos)) + '</td>' +
@@ -481,11 +515,11 @@
   // players は埋め込まず club 単位で別取得し JS で突き合わせる（制約名に非依存・確実）。shapeEntryRow 互換の形に再構成。
   function fetchEntries(client, tournamentId, clubId) {
     return client.from('entries')
-      .select('final_rank,class,wins,losses,sos,sodos,participated,player_id')
+      .select('final_rank,class,wins,losses,sos,sodos,participated,member_kind,grade,city,player_id')
       .eq('tournament_id', tournamentId).eq('club_id', clubId).then(function (res) {
         if (res.error) return { ok:false, message:'結果の読み込みに失敗しました', entries:[] };
         var rows = res.data || [];
-        return client.from('players').select('id,member_id,members(name,yomi)').eq('club_id', clubId).then(function (pr) {
+        return client.from('players').select('id,member_id,members(name,yomi,member_kind,grade,city)').eq('club_id', clubId).then(function (pr) {
           if (pr.error) return { ok:false, message:'選手情報の読み込みに失敗しました', entries:[] };
           var byId = {}, plist = pr.data || [];
           for (var i=0;i<plist.length;i++){ if(plist[i]) byId[plist[i].id]=plist[i]; }
@@ -1911,6 +1945,11 @@
     sortTournamentsDesc: sortTournamentsDesc,
     buildTournamentListHtml: buildTournamentListHtml,
     buildMemberListHtml: buildMemberListHtml,
+    memberKindLabelJa: memberKindLabelJa,
+    gradeLabelJa: gradeLabelJa,
+    resolveEntryAttr: resolveEntryAttr,
+    buildEntryAttrDisplay: buildEntryAttrDisplay,
+    buildEntryAttrDisplayHtml: buildEntryAttrDisplayHtml,
     shapeEntryRow: shapeEntryRow,
     buildEntryTableHtml: buildEntryTableHtml,
     buildTournamentHeadHtml: buildTournamentHeadHtml,
