@@ -33,7 +33,8 @@ const A = loadAuth();
   assert(tl.indexOf('class="cloud-tnt"')>=0 && tl.indexOf('cloud-tnt tnt-')<0, 'T2 button クラスは cloud-tnt 単独（bind の className リセット互換）');
   assert(tl.indexOf('data-id="t1"')>=0, 'T3 data-id 温存');
   assert(tl.indexOf('<span class="tnt-date">2026-06-14</span>')>=0, 'T4 日付 span');
-  assert(tl.indexOf('<span class="tnt-name">六月例会</span>')>=0, 'T5 名称 span');
+  // #608 CLOUD-TOURNEY-NAMING: 表示名は正規化タイトル（'六月例会' は '月例' を含む→'沼津支部月例将棋大会'＋date の月度）
+  assert(tl.indexOf('<span class="tnt-name">2026年6月度 沼津支部月例将棋大会</span>')>=0, 'T5 名称 span（#608 正規化表示）');
   assert(tl.indexOf('<span class="tnt-season">2026年度</span>')>=0, 'T6 年度 span');
   assert(tl.indexOf('<span class="tnt-status">確定</span>')>=0, 'T7 確定は緑バッジ（ts-other なし）');
   assert(tl.indexOf('<span class="tnt-status ts-other">下書き</span>')>=0, 'T8 下書きは ts-other');
