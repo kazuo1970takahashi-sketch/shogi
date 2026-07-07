@@ -2308,6 +2308,19 @@ else
 fi
 
 
+echo ""
+echo "【EDIT-PAST-RESULT-REGRESS-001 (#658) 過去結果 勝者書換→順位再計算＋winner-null invariant 回帰】"
+if [ -f "$SCRIPT_DIR/test_edit_past_result_regression_001.js" ]; then
+  if node "$SCRIPT_DIR/test_edit_past_result_regression_001.js" "$TARGET" > /tmp/edit_past_result_regress_out.log 2>&1; then
+    ok "EDIT-PAST-RESULT-REGRESS テスト 全PASS ($(tail -1 /tmp/edit_past_result_regress_out.log))"
+  else
+    ng "EDIT-PAST-RESULT-REGRESS テスト 失敗"; cat /tmp/edit_past_result_regress_out.log
+  fi
+else
+  warn "test_edit_past_result_regression_001.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
