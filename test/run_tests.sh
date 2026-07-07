@@ -77,7 +77,9 @@ echo ""
 echo "【第2層】重点回帰テスト"
 
 # 2-1. エスケープが innerHTML 流入箇所で適用されているか
-unescaped=$(grep -nE "'\+name\+|'\+newName\+|'\+p\.name\+|'\+players\[.*\]\.name\+|'\+getName\(.*\)\+|'\+candidates\[.*\]\.name\+|'\+n1\+|'\+n2\+|'\+date\+|'\+place\+|'\+start\+|'\+end\+|'\+sei\+|'\+fuku\+|'\+note\+|'\+oppName\+|'\+pn1\+|'\+pn2\+|'\+pw\+|'\+text\+" "$TARGET" | grep -v "escapeHtml" | grep -v "alert(" | grep -v "confirm(" | wc -l)
+#   除外: escapeHtml 適用済／native alert()・confirm()（textContent 相当のプレーン表示）／
+#         アプリ内モーダル appConfirm()・appAlert()・appPrompt()（showAppModal が msg.textContent で描画＝innerHTML 非流入で安全・native confirm/alert と同クラス。IN-APP-MODAL-001 #606）。
+unescaped=$(grep -nE "'\+name\+|'\+newName\+|'\+p\.name\+|'\+players\[.*\]\.name\+|'\+getName\(.*\)\+|'\+candidates\[.*\]\.name\+|'\+n1\+|'\+n2\+|'\+date\+|'\+place\+|'\+start\+|'\+end\+|'\+sei\+|'\+fuku\+|'\+note\+|'\+oppName\+|'\+pn1\+|'\+pn2\+|'\+pw\+|'\+text\+" "$TARGET" | grep -v "escapeHtml" | grep -v "alert(" | grep -v "confirm(" | grep -v "appConfirm(" | grep -v "appAlert(" | grep -v "appPrompt(" | wc -l)
 [ "$unescaped" -eq 0 ] && ok "未エスケープのユーザー入力: 0件" || ng "未エスケープ箇所: $unescaped 件 (危険)"
 
 # 2-2. showMsg内でescapeHtml使用
@@ -2368,6 +2370,18 @@ if [ -f "$SCRIPT_DIR/test_in_app_modal_pairing_regen_606.js" ]; then
   fi
 else
   warn "test_in_app_modal_pairing_regen_606.js が見つからない"
+fi
+
+echo ""
+echo "【IN-APP-MODAL-001 (#606) スライス — 棄権時の不戦勝確認のアプリ内モーダル化（appConfirm・danger なし・順序保持）】"
+if [ -f "$SCRIPT_DIR/test_in_app_modal_withdraw_forfeit_606.js" ]; then
+  if node "$SCRIPT_DIR/test_in_app_modal_withdraw_forfeit_606.js" "$TARGET" > /tmp/in_app_modal_withdraw_forfeit_606_out.log 2>&1; then
+    ok "IN-APP-MODAL-WITHDRAW-FORFEIT-606 テスト 全PASS ($(tail -1 /tmp/in_app_modal_withdraw_forfeit_606_out.log))"
+  else
+    ng "IN-APP-MODAL-WITHDRAW-FORFEIT-606 テスト 失敗"; cat /tmp/in_app_modal_withdraw_forfeit_606_out.log
+  fi
+else
+  warn "test_in_app_modal_withdraw_forfeit_606.js が見つからない"
 fi
 
 

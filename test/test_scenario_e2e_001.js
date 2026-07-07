@@ -21,12 +21,15 @@ function makeEnv(confirmVal){
     addEventListener(){},body:node(),head:node(),documentElement:node(),querySelector(){return null;},querySelectorAll(){return[];}};
   const win={innerWidth:1024,addEventListener(){},scrollTo(){},matchMedia(){return{matches:false,addEventListener(){}};},location:{href:'',search:''}};
   const exposed='normalizeState,generatePairing,setWinner,submitRound,calcFinal,roundsForClass,formatTimeControl,'
-    +'toggleWithdrawn,withdrawMarkHtml,addClass,getFee,isTournamentDone,getWins,normalizeMasterFeeFields,addPlayerFromMaster';
+    +'toggleWithdrawn,withdrawMarkHtml,addClass,getFee,isTournamentDone,getWins,normalizeMasterFeeFields,addPlayerFromMaster,__setAppModalTestResolver';
   const names=exposed.split(',');
   const ret='return {'+names.map(n=>n+':(typeof '+n+'!=="undefined"?'+n+':undefined)').join(',')+',_get:function(){return state;},_set:function(v){state=v;}};';
   const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','console','Promise','setTimeout','navigator',
     scripts()+';'+ret);
-  return fn(doc,win,ls,{randomUUID:()=>'x'+Math.random().toString(16).slice(2)},()=>{},()=>!!confirmVal,()=>'',{log(){},warn(){},error(){}},Promise,cb=>0,{onLine:true});
+  const api=fn(doc,win,ls,{randomUUID:()=>'x'+Math.random().toString(16).slice(2)},()=>{},()=>!!confirmVal,()=>'',{log(){},warn(){},error(){}},Promise,cb=>0,{onLine:true});
+  // IN-APP-MODAL-001 (#606): 棄権時の不戦勝確認が native confirm→appConfirm に移行。appConfirm を confirmVal で同期解決するよう配線＝S4 系を挙動同値のまま維持。
+  if(typeof api.__setAppModalTestResolver==='function')api.__setAppModalTestResolver(function(){return !!confirmVal;});
+  return api;
 }
 
 let pass=0, fail=0; const fails=[];

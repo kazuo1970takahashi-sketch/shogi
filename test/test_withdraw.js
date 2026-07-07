@@ -17,8 +17,11 @@ function makeEnv(confirmVal){
     addEventListener(){},body:node(),head:node(),querySelector(){return null;},querySelectorAll(){return[];}};
   const win={innerWidth:1024,addEventListener(){},scrollTo(){},matchMedia(){return{matches:false,addEventListener(){}};}};
   const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','console','Promise','setTimeout','navigator',
-    scripts()+';return {normalizeState:normalizeState,generatePairing:generatePairing,getRoundLeftoverPlayers:getRoundLeftoverPlayers,toggleWithdrawn:toggleWithdrawn,withdrawMarkHtml:withdrawMarkHtml,_get:function(){return state;},_set:function(v){state=v;}};');
-  return fn(doc,win,ls,{randomUUID:()=>'0'},()=>{},()=>!!confirmVal,()=>'',{log(){},warn(){},error(){}},Promise,cb=>0,{onLine:true});
+    scripts()+';return {normalizeState:normalizeState,generatePairing:generatePairing,getRoundLeftoverPlayers:getRoundLeftoverPlayers,toggleWithdrawn:toggleWithdrawn,withdrawMarkHtml:withdrawMarkHtml,__setAppModalTestResolver:(typeof __setAppModalTestResolver!=="undefined"?__setAppModalTestResolver:undefined),_get:function(){return state;},_set:function(v){state=v;}};');
+  const api=fn(doc,win,ls,{randomUUID:()=>'0'},()=>{},()=>!!confirmVal,()=>'',{log(){},warn(){},error(){}},Promise,cb=>0,{onLine:true});
+  // IN-APP-MODAL-001 (#606): 不戦勝確認が native confirm→appConfirm に移行。appConfirm を confirmVal で同期解決するよう配線＝既存 T2/T5 を挙動同値のまま維持。
+  if(typeof api.__setAppModalTestResolver==='function')api.__setAppModalTestResolver(function(){return !!confirmVal;});
+  return api;
 }
 let pass=0,fail=0;const ok=(c,m)=>{c?pass++:(fail++,console.log('  FAIL: '+m));};
 function st(players,extra){

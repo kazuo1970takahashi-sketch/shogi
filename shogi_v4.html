@@ -6563,12 +6563,21 @@ function toggleWithdrawn(id,cls){
     if(m.p1===id){oppId=m.p2;mIdx=j;break;}
     if(m.p2===id){oppId=m.p1;mIdx=j;break;}
   }
-  if(oppId&&mIdx>=0&&typeof confirm==='function'&&
-     confirm(getName(id,cls)+'さんを棄権にしました。\n現在の回戦で '+getName(oppId,cls)+'さんと対局予定です。\n'+getName(oppId,cls)+'さんを不戦勝（勝ち）にしますか？')){
-    setWinner(cls,mIdx,oppId);   // 相手を勝ちに記録（＝不戦勝）。setWinner が保存・再描画も行う。
+  // IN-APP-MODAL-001 (#606): 不戦勝確認を native confirm→appConfirm へ挙動同値化。棄権自体は上で save 済み。
+  //   本 confirm は「相手を不戦勝にするか」の affirmative 選択（破壊的 reset/削除ではないため danger は付けない＝native 既定挙動を温存）。
+  //   順序保持のため後処理（renderRegList/showMsg）を _finishWithdraw に集約し、OK時のみ setWinner→後処理／キャンセル・対象なしでも後処理は必ず実行（元コードと同一順序）。
+  function _finishWithdraw(){
+    renderRegList();
+    if(typeof showMsg==='function')showMsg(getName(id,cls)+'さんを棄権にしました（次の回戦から組み合わせ対象外・成績は残ります）','ok');
   }
-  renderRegList();
-  if(typeof showMsg==='function')showMsg(getName(id,cls)+'さんを棄権にしました（次の回戦から組み合わせ対象外・成績は残ります）','ok');
+  if(oppId&&mIdx>=0){
+    appConfirm(getName(id,cls)+'さんを棄権にしました。\n現在の回戦で '+getName(oppId,cls)+'さんと対局予定です。\n'+getName(oppId,cls)+'さんを不戦勝（勝ち）にしますか？',function(_ok){
+      if(_ok)setWinner(cls,mIdx,oppId);   // 相手を勝ちに記録（＝不戦勝）。setWinner が保存・再描画も行う。
+      _finishWithdraw();
+    });
+  }else{
+    _finishWithdraw();
+  }
 }
 
 // A-3 サジェスト状態（候補タップで保持される選択 member の参照）
