@@ -2372,6 +2372,18 @@ else
 fi
 
 
+
+echo ""
+echo "【MEMBER-ATTR-SNAPSHOT-001 (#607) Phase1-0 登録時に city を player へ写す（member/grade と対称・snapshot 源）】"
+if [ -f "$SCRIPT_DIR/test_member_attr_snapshot_city_607.js" ]; then
+  if node "$SCRIPT_DIR/test_member_attr_snapshot_city_607.js" "$TARGET" > /tmp/member_attr_snapshot_city_607_out.log 2>&1; then
+    ok "MEMBER-ATTR-SNAPSHOT-CITY-607 テスト 全PASS ($(tail -1 /tmp/member_attr_snapshot_city_607_out.log))"
+  else
+    ng "MEMBER-ATTR-SNAPSHOT-CITY-607 テスト 失敗"; cat /tmp/member_attr_snapshot_city_607_out.log
+  fi
+else
+  warn "test_member_attr_snapshot_city_607.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================

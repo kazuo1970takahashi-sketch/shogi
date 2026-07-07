@@ -2737,6 +2737,8 @@ function addPlayerFromMaster(memberId,cls,master,state){
     cls:cls,
     member:feeFields.member,
     grade:feeFields.grade,
+    // MEMBER-ATTR-SNAPSHOT-001 (#607): 当時の市町村を master member から player へ写す（member/grade と対称・snapshot 源）。
+    city:normalizeCity(member.city),
     member_id:member.id,
     // FURIGANA-MVP-001: master.yomi を当日 player.yomi に snapshot コピー（normalizeYomi 正規化・空は ''）。
     yomi:normalizeYomi(member.yomi||''),
@@ -3781,7 +3783,7 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi){
     //   master の member/grade を引き継ぐ（一括 vs 単発の非対称を解消）。
     var feeFields=normalizeMasterFeeFields(m);
     // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（欠番維持）
-    state.players[cls].push({id:pid,name:m.name,cls:cls,member:feeFields.member,grade:feeFields.grade,member_id:m.id,entry_no:nextEntryNoForClass(cls,state)});
+    state.players[cls].push({id:pid,name:m.name,cls:cls,member:feeFields.member,grade:feeFields.grade,city:normalizeCity(m.city),member_id:m.id,entry_no:nextEntryNoForClass(cls,state)}); // MEMBER-ATTR-SNAPSHOT-001 (#607): city も master から写す（一括経路・単発と対称）
     existingMids[m.id]=true;
     existingNames[m.name]=true;
     added++;
@@ -6614,6 +6616,8 @@ function addPlayer(){
   var id='p'+Date.now()+Math.floor(Math.random()*1000);
   var newPlayer={id:id,name:name,cls:cls,member:memberValue,grade:gradeValue};
   if(memberIdValue)newPlayer.member_id=memberIdValue;
+  // MEMBER-ATTR-SNAPSHOT-001 (#607): 当時の市町村を master 一致サジェスト(suggestSelected)から写す（member/grade と対称・不一致/欠損は ''）。
+  newPlayer.city=normalizeCity(suggestSelected&&suggestSelected.city);
   // FURIGANA-MVP-001: 受付ふりがな欄を player.yomi に保持。空でサジェスト選択時は master.yomi をフォールバック。
   newPlayer.yomi=normalizeYomi(yomiRaw||'');
   if(!newPlayer.yomi&&suggestSelected)newPlayer.yomi=normalizeYomi(suggestSelected.yomi||'');
