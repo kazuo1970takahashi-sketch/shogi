@@ -2408,6 +2408,17 @@ if [ -f "$SCRIPT_DIR/test_member_attr_display_607.js" ]; then
 else
   warn "test_member_attr_display_607.js が見つからない"
 fi
+
+echo "【MEMBER-ATTR-SNAPSHOT-001 (#607) Phase2-2 当日 結果一覧/報告書への会員属性表示（§6/§8）】"
+if [ -f "$SCRIPT_DIR/test_member_attr_display_dayof_607.js" ]; then
+  if node "$SCRIPT_DIR/test_member_attr_display_dayof_607.js" "$TARGET" > /tmp/member_attr_display_dayof_607_out.log 2>&1; then
+    ok "MEMBER-ATTR-DISPLAY-DAYOF-607 テスト 全PASS ($(tail -1 /tmp/member_attr_display_dayof_607_out.log))"
+  else
+    ng "MEMBER-ATTR-DISPLAY-DAYOF-607 テスト 失敗"; cat /tmp/member_attr_display_dayof_607_out.log
+  fi
+else
+  warn "test_member_attr_display_dayof_607.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================

@@ -10942,6 +10942,7 @@ function buildResultsMobileHtml(cls, finals, wins){
     //   表示: 勝：N　負：N　相手：N　勝相手：N
     //   旧実装はラベル間で半角コロン・コロンなしが混在していた（同 PR で解消）。
     html+='<div style="font-size:12px;color:#555">勝：<strong>'+f.A+'</strong>　負：'+(f.played-f.A)+'　相手：'+f.B+'　勝相手：'+f.C+'</div>';
+    html+=buildPlayerAttrDisplayHtml(f.p); // MEMBER-ATTR-SNAPSHOT-001 (#607) Phase2-2: 会員属性（当日＝当時値・注記なし）
     html+='</div>';
     html+='</div>';
     html+='<div style="display:flex;gap:4px">';
@@ -10963,7 +10964,7 @@ function buildResultsDesktopHtml(cls, finals, wins){
     var f=finals[idx];var rank=displayRanks[idx];
     var rowCls=rank===1?'row-r1':rank===2?'row-r2':rank===3?'row-r3':'';
     var badge=_resultsRankBadgeHtml(rank);
-    html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+nameWithNoRubyHtml(f.p.id,cls)+withdrawMarkHtml(f.p.id,cls)+'</td>';
+    html+='<tr class="'+rowCls+'"><td>'+badge+'</td><td style="text-align:left;font-weight:500">'+nameWithNoRubyHtml(f.p.id,cls)+withdrawMarkHtml(f.p.id,cls)+buildPlayerAttrDisplayHtml(f.p)+'</td>';
     for(var r=0;r<roundsForClass(cls);r++){
       html+=buildResultsRoundCellDesktopHtml(cls, f.p.id, r, wins);
     }
@@ -11903,7 +11904,7 @@ function getTopPlayers(cls){
   var result=[];
   for(var i=0;i<Math.min(3,finals.length);i++){
     // FURIGANA-VIEW-002: 報告書の入賞者ルビ用に yomi も持たせる（空は ''）。rank/name は不変。
-    result.push({rank:i+1,name:finals[i].p.name,yomi:(typeof finals[i].p.yomi==='string')?finals[i].p.yomi:''});
+    result.push({rank:i+1,name:finals[i].p.name,yomi:(typeof finals[i].p.yomi==='string')?finals[i].p.yomi:'',member:finals[i].p.member,grade:finals[i].p.grade,city:finals[i].p.city}); // #607 Phase2-2: 会員属性を帳票入賞者へ搬送
   }
   return result;
 }
@@ -11984,9 +11985,12 @@ function buildReportHtml(){
     var name=p?p.name:'';
     // FURIGANA-VIEW-002: 入賞者氏名にルビ（空 yomi は氏名のみ）。ラベルは従来どおり escapeHtml。
     var nameHtml=playerNameRubyHtml(name,p?p.yomi:'');
+    // MEMBER-ATTR-SNAPSHOT-001 (#607) Phase2-2: 入賞者の会員属性（支部員区分/会費区分＝氏名下補助行・市町村＝専用列を埋める）。
+    var attrHtml=buildReportWinnerKindGradeHtml(p);
+    var cityStr=p?buildEntryAttrSnapshot(p).city:'';
     return '<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold">'+escapeHtml(label)+'</td>'
-      +'<td style="padding:6px 10px;border:1px solid #999;">'+nameHtml+'</td>'
-      +'<td style="padding:6px 10px;border:1px solid #999;"></td></tr>';
+      +'<td style="padding:6px 10px;border:1px solid #999;">'+nameHtml+attrHtml+'</td>'
+      +'<td style="padding:6px 10px;border:1px solid #999;">'+escapeHtml(cityStr)+'</td></tr>';
   }
   function buildClassRankRows(classes){
     // REPORT-UX-002 (Codex Should Fix):
@@ -14358,6 +14362,23 @@ function buildEntryAttrDisplayHtml(entry, memberCurrent){
   if(!d.parts.length)return '';
   var safe=[]; for(var i=0;i<d.parts.length;i++)safe.push(escapeHtml(d.parts[i]));
   return '<div style="font-size:11px;color:#777;margin-top:2px">'+safe.join(' / ')+(d.fromCurrent?'<span style="color:#999">（※現在値）</span>':'')+'</div>';
+}
+// MEMBER-ATTR-SNAPSHOT-001 (#607) Phase 2-2: 当日 player の会員属性（3属性）を補助行 HTML に整形。
+//   当日 player レコード＝登録時点値＝当時値（＝現在値・注記なし）。buildEntryAttrSnapshot で entry 形へ写し、
+//   クラウド過去大会ビューと同一の buildEntryAttrDisplayHtml を再利用（結果一覧の表示をクラウドと統一）。
+function buildPlayerAttrDisplayHtml(player){
+  if(!player)return '';
+  return buildEntryAttrDisplayHtml(buildEntryAttrSnapshot(player), null);
+}
+// MEMBER-ATTR-SNAPSHOT-001 (#607) Phase 2-2: 報告書 入賞者の支部員区分/会費区分の補助行（市町村は帳票の専用列で別途）。
+//   空パーツは非表示。ラベルは固定語彙だが escapeHtml を通す（防御）。表示対象が無ければ空文字。
+function buildReportWinnerKindGradeHtml(player){
+  if(!player)return '';
+  var s=buildEntryAttrSnapshot(player);
+  var parts=[]; var mk=memberKindLabelJa(s.member_kind); if(mk!=='')parts.push(mk);
+  var gr=gradeLabelJa(s.grade); if(gr!=='')parts.push(gr);
+  if(!parts.length)return '';
+  return '<div style="font-size:11px;color:#777;margin-top:2px">'+escapeHtml(parts.join(' / '))+'</div>';
 }
 // スマホ用カード（縦に積む）。
 function _cloudResultCardsHtml(rows){
