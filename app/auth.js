@@ -361,6 +361,32 @@
       return na < nb ? -1 : (na > nb ? 1 : 0);
     });
   }
+  // CLOUD-TOURNEY-NAMING-001 (#608) app 鏡写し: クラウド過去大会一覧/詳細の表記統一（表示側正規化・純関数3本）。
+  //   当日 shogi_v4.html と同一仕様を逐語移植（副作用なし・fail-soft・元データ tournaments.name は無改変）。
+  //   設計 docs/specs/20260707_cloud_tourney_naming_001_design.md §3.2。一覧 buildTournamentListHtml／詳細 buildTournamentHeadHtml から呼ぶ。
+  function buildMonthlyPeriodLabel(dateYmd){
+    var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateYmd==null?'':dateYmd).trim());
+    if(!m)return '';
+    var y=parseInt(m[1],10), mo=parseInt(m[2],10);
+    if(!(mo>=1&&mo<=12))return '';
+    return y+'年'+mo+'月度';
+  }
+  function canonicalizeCloudTournamentName(name){
+    var s=String(name==null?'':name).trim();
+    if(s==='')return '沼津支部月例将棋大会';
+    if(s.length>=3&&s.slice(-3)==='報告書'){ s=s.slice(0,-3).replace(/[\s　]+$/,''); }
+    s=s.replace(/[\s　]*[（(]?\s*(?:\d{4}[-\/]\d{1,2}(?:[-\/]\d{1,2})?|\d{4}年\d{1,2}月(?:\d{1,2}日)?度?)\s*[)）]?\s*$/,'');
+    s=s.replace(/[\s　]+$/,'');
+    if(s===''||s.indexOf('月例')>=0)return '沼津支部月例将棋大会';
+    return s;
+  }
+  function buildCloudTournamentDisplayTitle(name, dateYmd){
+    var period=buildMonthlyPeriodLabel(dateYmd);
+    var base=canonicalizeCloudTournamentName(name);
+    if(period==='')return base;
+    if(base===period||base.indexOf(period)===0||/^\d{4}年\d{1,2}月度/.test(base))return base;
+    return period+' '+base;
+  }
   function buildTournamentListHtml(tournaments) {
     var list = sortTournamentsDesc(tournaments);
     if (!list.length) return '<p class="muted">クラウドに大会がありません。</p>';
@@ -374,7 +400,7 @@
       return '<li>' +
         '<button type="button" class="cloud-tnt" data-id="' + esc((t && t.id) || '') + '">' +
         '<span class="tnt-date">' + esc((t && t.date) || '') + '</span>' +
-        '<span class="tnt-name">' + esc((t && t.name) || '(名称未設定)') + '</span>' +
+        '<span class="tnt-name">' + esc(buildCloudTournamentDisplayTitle((t && t.name) || '', (t && t.date) || '') || '(名称未設定)') + '</span>' +
         '<span class="tnt-season">' + esc((t && t.season) || '') + '</span>' + badge +
         '</button></li>';
     }).join('');
@@ -496,7 +522,7 @@
   function buildTournamentHeadHtml(t) {
     if (!t) return '';
     var st = TSTATUS_LABEL[t.status] || esc((t && t.status) || '');
-    return '<div class="sb-tnt-head">' + esc(t.date || '') + '　' + esc(t.name || '(名称未設定)') +
+    return '<div class="sb-tnt-head">' + esc(t.date || '') + '　' + esc(buildCloudTournamentDisplayTitle(t.name, t.date) || '(名称未設定)') +
       '<span class="sb-tnt-meta">' + esc(t.season || '') + '／' + st + '</span></div>';
   }
   function fetchTournaments(client, clubId) {
@@ -1943,6 +1969,10 @@
     signOut: signOut,
     // B-1 read-only（#343）
     sortTournamentsDesc: sortTournamentsDesc,
+    // CLOUD-TOURNEY-NAMING-001 (#608) app 鏡写し（表示側正規化・純関数）
+    buildMonthlyPeriodLabel: buildMonthlyPeriodLabel,
+    canonicalizeCloudTournamentName: canonicalizeCloudTournamentName,
+    buildCloudTournamentDisplayTitle: buildCloudTournamentDisplayTitle,
     buildTournamentListHtml: buildTournamentListHtml,
     buildMemberListHtml: buildMemberListHtml,
     memberKindLabelJa: memberKindLabelJa,
