@@ -3551,8 +3551,10 @@ function handlePastParticipantClassAdd(memberId,cls){
   }
   // ケース 2: 別クラス登録済（変更 confirm）
   if(existingCls&&existingCls!==cls){
-    var ok2=confirm(memberName+'さんは現在 '+existingCls+'クラス に登録されています。\n'+cls+'クラス に変更しますか?');
-    if(!ok2)return;
+    // IN-APP-MODAL-001 (#606): native confirm→appConfirm（挙動同値=OK続行/取消中断）。変更操作ゆえ danger 無し(Enter=OK 維持)。
+    //   async 化に伴い appConfirm の後に return を足し、モーダル表示中にケース1（追加）へ落ちないようにする。
+    appConfirm(memberName+'さんは現在 '+existingCls+'クラス に登録されています。\n'+cls+'クラス に変更しますか?',function(_ok2){
+    if(!_ok2)return;
     var r2=changePlayerClass(memberId,cls,master,state);
     // L3 P2: 全画面ビュー中は #reg-msg が背面で見えないため、失敗も blocking alert で確実に伝える。
     if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');if(typeof isPpFullscreenOpen==='function'&&isPpFullscreenOpen())alert('クラス変更に失敗しました');return;}
@@ -3601,10 +3603,13 @@ function handlePastParticipantClassAdd(memberId,cls){
       });
     }
     return;
+    });
+    return;
   }
   // ケース 1: 未登録（追加 confirm）
-  var ok1=confirm(memberName+'さんを '+cls+'クラス に追加しますか?');
-  if(!ok1)return;
+  // IN-APP-MODAL-001 (#606): native confirm→appConfirm（挙動同値）。追加操作ゆえ danger 無し(Enter=OK 維持)。
+  appConfirm(memberName+'さんを '+cls+'クラス に追加しますか?',function(_ok1){
+  if(!_ok1)return;
   var r=addPlayerFromMaster(memberId,cls,master,state);
   if(!r||!r.success){
     var err=r&&r.error;
@@ -3641,6 +3646,7 @@ function handlePastParticipantClassAdd(memberId,cls){
       severity:'warn'
     });
   }
+  });
 }
 
 // 仕様書 v6 §3.1 / §4.2: F4 ふりがな入力ダイアログ（build/bind/coordinator パターン）
