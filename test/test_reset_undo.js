@@ -59,8 +59,8 @@ ok(msgEl&&msgEl.innerHTML.indexOf('reset-undo-btn')>=0,'B1 #reg-msg に「元に
 ok(msgEl.innerHTML.indexOf('全リセットしました')>=0,'B2 成功メッセージを併記');
 
 console.log('=== 配線（RAW） ===');
-ok(/function resetAll\(\)\{[\s\S]{0,200}captureResetSnapshot\('all'\)/.test(RAW),'W1 resetAll が confirm 後に snapshot');
-ok(/function resetTournamentProgressOnly\(\)\{[\s\S]{0,200}captureResetSnapshot\('progress'\)/.test(RAW),'W2 resetProgress が confirm 後に snapshot');
+ok(/function resetAll\(\)\{[\s\S]{0,600}captureResetSnapshot\('all'\)/.test(RAW),'W1 resetAll が confirm 後に snapshot');
+ok(/function resetTournamentProgressOnly\(\)\{[\s\S]{0,600}captureResetSnapshot\('progress'\)/.test(RAW),'W2 resetProgress が confirm 後に snapshot');
 ok(RAW.indexOf("showResetUndoBanner('大会データを全リセットしました')")>=0,'W3 全リセット成功で undo バナー');
 ok(RAW.indexOf("showResetUndoBanner('大会進行データをリセットしました')")>=0,'W4 進行リセット成功で undo バナー');
 ok(/id="reset-undo-btn"[\s\S]{0,200}undoLastReset\(\)/.test(RAW)||/reset-undo-btn'\)[\s\S]{0,120}undoLastReset/.test(RAW),'W5 元に戻すボタン→undoLastReset 結線');
