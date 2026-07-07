@@ -87,6 +87,7 @@ function loadEnv(){
        buildCurrentPairingsHtml:buildCurrentPairingsHtml,
        bindTournamentEvents:bindTournamentEvents,
        generatePairing:generatePairing,
+       __setAppModalTestResolver:(typeof __setAppModalTestResolver==='function'?__setAppModalTestResolver:null),
        _setState:function(s){state=s;},
        _getState:function(){return state;}
      };`
@@ -99,6 +100,12 @@ function loadEnv(){
   );
   api._ctx = ctx;
   api._warns = warns;
+  // IN-APP-MODAL-001 (#606): 再生成ボタンの確認は native confirm→appConfirm に移行した。
+  //   appConfirm は既定で DOM モーダルを出すが、テストでは __setAppModalTestResolver で同期解決に切替え、
+  //   従来の confirm スタブ（_confirmCalls/_confirmReturn）へ配線＝既存 C 系 assert を挙動同値のまま維持する。
+  if (typeof api.__setAppModalTestResolver === 'function') {
+    api.__setAppModalTestResolver(function(type, msg){ ctx._confirmCalls.push(String(msg==null?'':msg)); return ctx._confirmReturn; });
+  }
   return api;
 }
 

@@ -2358,6 +2358,18 @@ else
   warn "test_in_app_modal_reset_606.js が見つからない"
 fi
 
+echo ""
+echo "【IN-APP-MODAL-001 (#606) スライス — クラス削除/組み合わせ再生成 confirm 3件のアプリ内モーダル化（appConfirm+danger）】"
+if [ -f "$SCRIPT_DIR/test_in_app_modal_pairing_regen_606.js" ]; then
+  if node "$SCRIPT_DIR/test_in_app_modal_pairing_regen_606.js" "$TARGET" > /tmp/in_app_modal_pairing_regen_606_out.log 2>&1; then
+    ok "IN-APP-MODAL-PAIRING-REGEN-606 テスト 全PASS ($(tail -1 /tmp/in_app_modal_pairing_regen_606_out.log))"
+  else
+    ng "IN-APP-MODAL-PAIRING-REGEN-606 テスト 失敗"; cat /tmp/in_app_modal_pairing_regen_606_out.log
+  fi
+else
+  warn "test_in_app_modal_pairing_regen_606.js が見つからない"
+fi
+
 
 echo ""
 echo "【IN-APP-MODAL-001 (#606) スライス — 過去参加者パネルのクラス追加/変更 confirm 2件のアプリ内モーダル化】"
