@@ -14251,18 +14251,46 @@ function fetchCloudEntriesForTournament(client, tid, clubId){
     });
   });
 }
+// CLOUD-TOURNEY-NAMING-001 (#608): クラウド過去大会一覧/詳細の表記統一（表示側正規化・純関数3本）。
+//   元データ tournaments.name は書き換えず、表示時のみ「YYYY年M月度＋正規化した大会名」に整える。
+//   すべて副作用なし・fail-soft（想定外入力でも例外を投げない）。設計 docs/specs/20260707_cloud_tourney_naming_001_design.md。
+function buildMonthlyPeriodLabel(dateYmd){
+  var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateYmd==null?'':dateYmd).trim());
+  if(!m)return '';
+  var y=parseInt(m[1],10), mo=parseInt(m[2],10);
+  if(!(mo>=1&&mo<=12))return '';
+  return y+'年'+mo+'月度';
+}
+function canonicalizeCloudTournamentName(name){
+  var s=String(name==null?'':name).trim();
+  if(s==='')return '沼津支部月例将棋大会';
+  if(s.length>=3&&s.slice(-3)==='報告書'){ s=s.slice(0,-3).replace(/[\s　]+$/,''); }
+  s=s.replace(/[\s　]*[（(]?\s*(?:\d{4}[-\/]\d{1,2}(?:[-\/]\d{1,2})?|\d{4}年\d{1,2}月(?:\d{1,2}日)?度?)\s*[)）]?\s*$/,'');
+  s=s.replace(/[\s　]+$/,'');
+  if(s===''||s.indexOf('月例')>=0)return '沼津支部月例将棋大会';
+  return s;
+}
+function buildCloudTournamentDisplayTitle(name, dateYmd){
+  var period=buildMonthlyPeriodLabel(dateYmd);
+  var base=canonicalizeCloudTournamentName(name);
+  if(period==='')return base;
+  if(base===period||base.indexOf(period)===0||/^\d{4}年\d{1,2}月度/.test(base))return base;
+  return period+' '+base;
+}
 function buildCloudTournamentListHtml(tournaments){
   var arr=Array.isArray(tournaments)?tournaments.slice():[];
   arr.sort(function(a,b){var da=(a&&a.date)||'',db=(b&&b.date)||'';return da<db?1:(da>db?-1:0);});
   if(!arr.length)return '<div style="padding:20px;text-align:center;color:#888;background:#f7f7f7;border-radius:8px">クラウドに過去大会がありません。</div>';
   var html='';
   for(var i=0;i<arr.length;i++){var t=arr[i];
-    var nm=escapeHtml((t&&t.name)||'(名称未設定)');
+    var rawNm=(t&&t.name)||'';
+    var lbl=escapeHtml(rawNm);                                  // data-label は生の大会名（詳細と単一ソース化・#657 P1）
+    var disp=escapeHtml(buildCloudTournamentDisplayTitle(rawNm,(t&&t.date)||'')||'(名称未設定)'); // 表示は正規化タイトル
     var dt=escapeHtml((t&&t.date)||'—');
     var sn=escapeHtml((t&&t.season)||'');
     // ローカル履歴カード(.history-row)と同じ2行レイアウトに統一。
-    html+='<button type="button" class="cloud-history-row" data-tid="'+escapeHtml((t&&t.id)||'')+'" data-label="'+nm+'" data-date="'+dt+'" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid #d3dbe5;border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer">'
-      +'<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="font-weight:600;color:#1F3864">'+nm+'</span><span style="font-size:11px;color:#999">'+sn+'</span></div>'
+    html+='<button type="button" class="cloud-history-row" data-tid="'+escapeHtml((t&&t.id)||'')+'" data-label="'+lbl+'" data-date="'+dt+'" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid #d3dbe5;border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer">'
+      +'<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="font-weight:600;color:#1F3864">'+disp+'</span><span style="font-size:11px;color:#999">'+sn+'</span></div>'
       +'<div style="font-size:12px;color:#555;margin-top:4px">開催日 '+dt+'　/　タップで結果を表示</div>'
       +'</button>';
   }
@@ -14357,7 +14385,8 @@ function renderCloudTournamentDetail(client,clubId,tid,label,date){
     var html='';
     html+='<div style="margin-bottom:10px"><button type="button" class="btn-sm" id="cloud-history-back-btn" style="background:#fff;color:#444;font-size:13px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← クラウドの大会一覧へ戻る</button></div>';
     html+='<div style="background:#e8f0f8;border:1px solid #9DB7D5;color:#1F3864;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">☁ クラウドの過去大会（閲覧専用・みんなで共有）</div>';
-    html+='<div style="margin-bottom:10px"><div style="font-size:16px;font-weight:700;color:#1F3864">'+escapeHtml(label||'(大会名未設定)')+'</div>'+(date?'<div style="font-size:12px;color:#666;margin-top:2px">開催日 '+escapeHtml(date)+'</div>':'')+'</div>';
+    var _head=(typeof buildCloudTournamentDisplayTitle==='function')?buildCloudTournamentDisplayTitle(label,date):(label||'');
+    html+='<div style="margin-bottom:10px"><div style="font-size:16px;font-weight:700;color:#1F3864">'+escapeHtml(_head||'(大会名未設定)')+'</div>'+(date?'<div style="font-size:12px;color:#666;margin-top:2px">開催日 '+escapeHtml(date)+'</div>':'')+'</div>';
     html+= r.ok ? buildCloudResultBlocksHtml(r.entries) : '<div class="alert alert-err" style="font-size:13px">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
     h.innerHTML=html;
     if(typeof window!=='undefined'&&window.scrollTo)window.scrollTo(0,0);

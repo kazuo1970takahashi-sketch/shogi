@@ -2233,6 +2233,18 @@ else
 fi
 
 echo ""
+echo "【CLOUD-TOURNEY-NAMING-001 (#608) 表記統一 純関数（buildMonthlyPeriodLabel/canonicalizeCloudTournamentName/buildCloudTournamentDisplayTitle・GOLDEN）】"
+if [ -f "$SCRIPT_DIR/test_cloud_tourney_naming_001.js" ]; then
+  if node "$SCRIPT_DIR/test_cloud_tourney_naming_001.js" "$TARGET" > /tmp/cloud_tourney_naming_001_out.log 2>&1; then
+    ok "CLOUD-TOURNEY-NAMING-001 テスト 全PASS ($(tail -1 /tmp/cloud_tourney_naming_001_out.log))"
+  else
+    ng "CLOUD-TOURNEY-NAMING-001 テスト 失敗（表示正規化の差分の可能性）"; cat /tmp/cloud_tourney_naming_001_out.log
+  fi
+else
+  warn "test_cloud_tourney_naming_001.js が見つからない"
+fi
+
+echo ""
 echo "【LIVE-BROADCAST-001 Phase2 / SCOREBOARD-MY-VIEW-001（live ルート・対局者検索・個人ビュー・GOLDEN）】"
 if [ -f "$SCRIPT_DIR/test_scoreboard_my_view_001.js" ]; then
   if node "$SCRIPT_DIR/test_scoreboard_my_view_001.js" "$TARGET" > /tmp/scoreboard_my_view_out.log 2>&1; then
