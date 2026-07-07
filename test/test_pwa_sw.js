@@ -28,6 +28,14 @@ ok(/res\.ok\s*&&\s*res\.type\s*===\s*'basic'\s*&&\s*!res\.redirected/.test(s),'�
 ok(/method\s*!==\s*'GET'\)\s*return/.test(s),'GET 以外は触らない');
 ok(/PRECACHE/.test(s)&&/shogi_v4\.html/.test(s),'PRECACHE に当日アプリ shell');
 
+console.log('=== リリース版番号の同期（sw CACHE == index.html ?v）===');
+var swVerM=s.match(/var\s+CACHE\s*=\s*'shogi-tour-v(\d+)'/);
+var idxHtml=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
+var idxVerM=idxHtml.match(/href="shogi_v4\.html\?v=(\d+)"/);
+ok(!!swVerM,'sw.js の CACHE 版番号を抽出できる（shogi-tour-vN）');
+ok(!!idxVerM,'index.html の shogi_v4.html?v=N を抽出できる（release で ?v 付与）');
+ok(!!(swVerM&&idxVerM&&swVerM[1]===idxVerM[1]),'sw CACHE 版 == index.html ?v（不一致は release の sw bump 忘れ）'+((swVerM&&idxVerM)?(' [sw=v'+swVerM[1]+' idx=v'+idxVerM[1]+']'):''));
+
 console.log('=== 登録スニペット（ES5・load後・shogi_v4.html / index.html）===');
 ['shogi_v4.html','index.html'].forEach(f=>{
   const html=fs.readFileSync(path.join(ROOT,f),'utf8');
