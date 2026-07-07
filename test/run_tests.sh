@@ -2430,6 +2430,16 @@ if [ -f "$SCRIPT_DIR/test_member_attr_display_app_607.js" ]; then
 else
   warn "test_member_attr_display_app_607.js が見つからない"
 fi
+
+if [ -f "$SCRIPT_DIR/test_cloud_tourney_naming_app_608.js" ]; then
+  if node "$SCRIPT_DIR/test_cloud_tourney_naming_app_608.js" "$TARGET" > /tmp/cloud_tourney_naming_app_608_out.log 2>&1; then
+    ok "CLOUD-TOURNEY-NAMING-APP-608 テスト 全PASS ($(tail -1 /tmp/cloud_tourney_naming_app_608_out.log))"
+  else
+    ng "CLOUD-TOURNEY-NAMING-APP-608 テスト 失敗（app 表記正規化の差分の可能性）"; cat /tmp/cloud_tourney_naming_app_608_out.log
+  fi
+else
+  warn "test_cloud_tourney_naming_app_608.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
