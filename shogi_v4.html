@@ -5910,8 +5910,11 @@ function onClickRemoveClass(classId){
   var cur=classId;
   var clsList=getRegistrationClassList();
   for(var i=0;i<clsList.length;i++){if(clsList[i].id===classId){cur=clsList[i].name;break;}}
-  if(!confirm('「'+cur+'」を削除しますか？この操作は取り消せません。'))return;
-  removeClass(classId);
+  // IN-APP-MODAL-001 (#606): native confirm→appConfirm（挙動同値=OK続行/取消中断）。削除＝破壊操作ゆえ danger:true（既定フォーカス=キャンセル・Enter抑止）。本体は inline callback 内に温存（別ヘルパ抽出しない）。
+  appConfirm('「'+cur+'」を削除しますか？この操作は取り消せません。',function(_ok){
+    if(!_ok)return;
+    removeClass(classId);
+  },{danger:true});
 }
 
 // ROUND-CLASS-START-005 (spec §11 / §15.1):
@@ -9192,14 +9195,15 @@ function bindTournamentEvents(cls){
   if(rb)rb.addEventListener('click',function(){
     var pairings=state.pairings[cls]||[];
     var hasWinner=pairings.some(function(m){return m&&m.winner;});
-    if(hasWinner){
-      if(!confirm('入力済みの勝敗があります。組み合わせを再生成すると勝敗が消えます。続けますか？'))return;
+    if(hasWinner){ // IN-APP-MODAL-001 (#606): native confirm→appConfirm・破壊操作ゆえ danger:true（既定キャンセル）。OK時のみ再生成＝挙動同値（confirm false で return と同じ）。
+      appConfirm('入力済みの勝敗があります。組み合わせを再生成すると勝敗が消えます。続けますか？',function(_ok){ if(!_ok)return; generatePairing(cls);renderTournament(cls); },{danger:true});
     }else if(((state.results&&state.results[cls])||[]).length===0&&pairings.length>0){
       // FRP-IMPL-004B (設計 §5.4.1): 結果未確定の初回 round の再生成は「今の手合いを作り直す」破壊操作。
       //   部分手合い・未割当0 と通常開始 round1・未割当0 は state で識別できないため由来を問わず同じ確認を出す。
-      if(!confirm('現在の組み合わせをすべて作り直します。今ある手合いは破棄され、全員をペアし直します。よろしいですか？'))return;
+      appConfirm('現在の組み合わせをすべて作り直します。今ある手合いは破棄され、全員をペアし直します。よろしいですか？',function(_ok){ if(!_ok)return; generatePairing(cls);renderTournament(cls); },{danger:true});
+    }else{
+      generatePairing(cls);renderTournament(cls);
     }
-    generatePairing(cls);renderTournament(cls);
   });
 
   for(var rr=0;rr<state.results[cls].length;rr++){
