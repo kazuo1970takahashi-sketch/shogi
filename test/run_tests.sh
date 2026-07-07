@@ -2450,6 +2450,16 @@ if [ -f "$SCRIPT_DIR/test_rebuild_semantics_wording_609.js" ]; then
 else
   warn "test_rebuild_semantics_wording_609.js が見つからない"
 fi
+
+if [ -f "$SCRIPT_DIR/test_rebuild_semantics_fullmatch_609.js" ]; then
+  if node "$SCRIPT_DIR/test_rebuild_semantics_fullmatch_609.js" "$TARGET" > /tmp/rebuild_semantics_fullmatch_609_out.log 2>&1; then
+    ok "REBUILD-SEMANTICS-FULLMATCH-609 テスト 全PASS ($(tail -1 /tmp/rebuild_semantics_fullmatch_609_out.log))"
+  else
+    ng "REBUILD-SEMANTICS-FULLMATCH-609 テスト 失敗（完全一致導線の差分の可能性）"; cat /tmp/rebuild_semantics_fullmatch_609_out.log
+  fi
+else
+  warn "test_rebuild_semantics_fullmatch_609.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
