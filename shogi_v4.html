@@ -2737,6 +2737,8 @@ function addPlayerFromMaster(memberId,cls,master,state){
     cls:cls,
     member:feeFields.member,
     grade:feeFields.grade,
+    // MEMBER-ATTR-SNAPSHOT-001 (#607): 当時の市町村を master member から player へ写す（member/grade と対称・snapshot 源）。
+    city:normalizeCity(member.city),
     member_id:member.id,
     // FURIGANA-MVP-001: master.yomi を当日 player.yomi に snapshot コピー（normalizeYomi 正規化・空は ''）。
     yomi:normalizeYomi(member.yomi||''),
@@ -3781,7 +3783,7 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi){
     //   master の member/grade を引き継ぐ（一括 vs 単発の非対称を解消）。
     var feeFields=normalizeMasterFeeFields(m);
     // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（欠番維持）
-    state.players[cls].push({id:pid,name:m.name,cls:cls,member:feeFields.member,grade:feeFields.grade,member_id:m.id,entry_no:nextEntryNoForClass(cls,state)});
+    state.players[cls].push({id:pid,name:m.name,cls:cls,member:feeFields.member,grade:feeFields.grade,city:normalizeCity(m.city),member_id:m.id,entry_no:nextEntryNoForClass(cls,state)}); // MEMBER-ATTR-SNAPSHOT-001 (#607): city も master から写す（一括経路・単発と対称）
     existingMids[m.id]=true;
     existingNames[m.name]=true;
     added++;
@@ -6614,6 +6616,8 @@ function addPlayer(){
   var id='p'+Date.now()+Math.floor(Math.random()*1000);
   var newPlayer={id:id,name:name,cls:cls,member:memberValue,grade:gradeValue};
   if(memberIdValue)newPlayer.member_id=memberIdValue;
+  // MEMBER-ATTR-SNAPSHOT-001 (#607): 当時の市町村を master 一致サジェスト(suggestSelected)から写す（member/grade と対称・不一致/欠損は ''）。
+  newPlayer.city=normalizeCity(suggestSelected&&suggestSelected.city);
   // FURIGANA-MVP-001: 受付ふりがな欄を player.yomi に保持。空でサジェスト選択時は master.yomi をフォールバック。
   newPlayer.yomi=normalizeYomi(yomiRaw||'');
   if(!newPlayer.yomi&&suggestSelected)newPlayer.yomi=normalizeYomi(suggestSelected.yomi||'');
@@ -9727,11 +9731,14 @@ function buildCloudSyncPayload(master, opts){
         membersOut[mid]=stamp({ member_id:mid, name:(mm2.name||p.name||''), yomi:(mm2.yomi||p.yomi||''), member_kind:fc2.member_kind, grade:fc2.grade, city:fc2.city });
         playersOut[mid]=stamp({ member_id:mid });
       }
+      // MEMBER-ATTR-SNAPSHOT-001 (#607): 当時値スナップショット＝player 由来（現在マスタ mm2 は使わない）。
+      var _attr=buildEntryAttrSnapshot(p);
       entries.push(stamp({
         app_tournament_id:appTid, member_id:mid, 'class':cls,
         final_rank:(ranks[fi]!=null?ranks[fi]:null),
         wins:row.A, losses:(row.played-row.A), draws:0,
-        sos:row.B, sodos:row.C, participated:true
+        sos:row.B, sodos:row.C, participated:true,
+        member_kind:_attr.member_kind, grade:_attr.grade, city:_attr.city
       }));
     }
   }
@@ -10499,6 +10506,47 @@ function _cloudMemberFieldCols(m){
     grade:(m&&(m.grade==='chu'||m.grade==='josei'))?m.grade:'ippan',
     city:(m&&typeof m.city==='string'&&m.city)?m.city:null
   };
+}
+
+// MEMBER-ATTR-SNAPSHOT-001 (#607): entries の会員属性スナップショット純関数。
+//   _cloudMemberFieldCols(=master 現在値) と対称だが入力は当日 player レコード（登録時点値＝当時値）。
+//   member_kind/grade は常に非 null（旧行 null と区別可）。city は normalizeCity で正規化（空は ''）。副作用なし。
+function buildEntryAttrSnapshot(player){
+  var pl=player||{};
+  return {
+    member_kind:(pl.member==='other')?'other':'member',
+    grade:(pl.grade==='chu'||pl.grade==='josei')?pl.grade:'ippan',
+    city:normalizeCity(pl.city)
+  };
+}
+// MEMBER-ATTR-SNAPSHOT-001 (#607): 読取時の属性解決。当時値(entry)優先・null(旧行)のみ members 現在値へフォールバック。
+//   返す各属性は {value, fromCurrent}（fromCurrent=true のとき「現在値」注記を出す）。city の '' は当時値扱い（フォールバックしない）。
+function resolveEntryAttr(entry, memberCurrent){
+  var e=entry||{}, mc=memberCurrent||{};
+  function pick(snap, cur){
+    if(snap===null||snap===undefined){ return { value:(cur==null?'':cur), fromCurrent:(cur!=null&&cur!=='') }; }
+    return { value:snap, fromCurrent:false };
+  }
+  return {
+    member_kind:pick(e.member_kind, mc.member_kind),
+    grade:pick(e.grade, mc.grade),
+    city:pick(e.city, mc.city)
+  };
+}
+// MEMBER-ATTR-SNAPSHOT-001 (#607) Phase 2: 会員属性の表示ラベル純関数（結果一覧/報告書・副作用なし）。
+//   会費語彙は既存ヘルプと統一（一般／中学生以下／女性）。支部員区分は formatParticipantLabel と統一（沼津支部員／他）。
+function memberKindLabelJa(v){ return v==='member'?'沼津支部員':(v==='other'?'他':''); }
+function gradeLabelJa(v){ return v==='ippan'?'一般':(v==='chu'?'中学生以下':(v==='josei'?'女性':'')); }
+// resolveEntryAttr の結果を「支部員区分／会費区分／市町村」の表示パーツへ整形。空 city は非表示・
+//   いずれかが現在値フォールバック(fromCurrent)なら注記フラグを立てる。text は GOLDEN 用の素の文字列（未エスケープ）。
+function buildEntryAttrDisplay(entry, memberCurrent){
+  var r=resolveEntryAttr(entry, memberCurrent);
+  var parts=[];
+  var mk=memberKindLabelJa(r.member_kind.value); if(mk!=='')parts.push(mk);
+  var gr=gradeLabelJa(r.grade.value); if(gr!=='')parts.push(gr);
+  var ct=r.city.value; if(ct!=null&&ct!=='')parts.push(ct);
+  var fromCurrent=!!(r.member_kind.fromCurrent||r.grade.fromCurrent||r.city.fromCurrent);
+  return { parts:parts, fromCurrent:fromCurrent, text:parts.length?(parts.join(' / ')+(fromCurrent?'（※現在値）':'')):'' };
 }
 
 function pushMemberEditToCloud(member,setStatus){
@@ -14239,10 +14287,10 @@ function fetchCloudEntriesForTournament(client, tid, clubId){
   if(!client||!client.from)return Promise.resolve({ok:false,message:'クラウドに接続していません',entries:[]});
   // entries→players は FK が2本（player_id / (club_id,player_id)）で埋め込みが曖昧になるため、
   // players は埋め込まず別取得して JS で突き合わせる（制約名に非依存・確実）。
-  return client.from('entries').select('final_rank,class,wins,losses,sos,sodos,player_id').eq('tournament_id',tid).then(function(res){
+  return client.from('entries').select('final_rank,class,wins,losses,sos,sodos,member_kind,grade,city,player_id').eq('tournament_id',tid).then(function(res){
     if(res&&res.error){if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 結果取得エラー:',cloudErrDetail(res.error));return {ok:false,message:'結果の読み込みに失敗しました（通信状態を確認してください）',entries:[]};}
     var rows=(res&&res.data)||[];
-    return client.from('players').select('id,member_id,members(name,yomi)').eq('club_id',clubId).then(function(pr){
+    return client.from('players').select('id,member_id,members(name,yomi,member_kind,grade,city)').eq('club_id',clubId).then(function(pr){
       if(pr&&pr.error){if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 選手取得エラー:',cloudErrDetail(pr.error));return {ok:false,message:'選手情報の読み込みに失敗しました（通信状態を確認してください）',entries:[]};}
       var byId={}; var plist=(pr&&pr.data)||[];
       for(var i=0;i<plist.length;i++){ if(plist[i])byId[plist[i].id]=plist[i]; }
@@ -14303,6 +14351,14 @@ function _cloudResultRankInfo(e){
   return { rank:rank, badge:(rank!=null)?_resultsRankBadgeHtml(rank):'-', rowCls:rank===1?'row-r1':rank===2?'row-r2':rank===3?'row-r3':'',
     color:rank===1?'#fef8e7':rank===2?'#f5f5f5':rank===3?'#eaf3fb':'#fff' };
 }
+// MEMBER-ATTR-SNAPSHOT-001 (#607) Phase 2: entry の会員属性を小さめ補助行 HTML に整形（city のみ要エスケープ）。
+//   memberCurrent は埋め込み members 現在値（当時値 null のフォールバック元）。表示対象が無ければ空文字。
+function buildEntryAttrDisplayHtml(entry, memberCurrent){
+  var d=buildEntryAttrDisplay(entry, memberCurrent);
+  if(!d.parts.length)return '';
+  var safe=[]; for(var i=0;i<d.parts.length;i++)safe.push(escapeHtml(d.parts[i]));
+  return '<div style="font-size:11px;color:#777;margin-top:2px">'+safe.join(' / ')+(d.fromCurrent?'<span style="color:#999">（※現在値）</span>':'')+'</div>';
+}
 // スマホ用カード（縦に積む）。
 function _cloudResultCardsHtml(rows){
   var html='';
@@ -14316,6 +14372,7 @@ function _cloudResultCardsHtml(rows){
     html+='<div style="flex:1;min-width:0">';
     html+='<div style="font-weight:500;font-size:15px">'+playerNameRubyHtml(nm,ym)+'</div>';
     html+='<div style="font-size:12px;color:#555;margin-top:2px">勝：<strong>'+escapeHtml(String(wins))+'</strong>　負：'+escapeHtml(String(losses))+'　相手(B)：'+escapeHtml(String(sos))+'　勝相手(C)：'+escapeHtml(String(sodos))+'</div>';
+    html+=buildEntryAttrDisplayHtml(e, m); // #607 Phase 2: 会員属性（当時値/現在値）
     html+='</div></div>';
   }
   return html;
@@ -14328,7 +14385,7 @@ function _cloudResultTableHtml(rows){
     var nm=(m&&m.name)||''; var ym=(m&&m.yomi)||''; var ri=_cloudResultRankInfo(e);
     var wins=(e&&e.wins!=null)?e.wins:'-'; var losses=(e&&e.losses!=null)?e.losses:'-';
     var sos=(e&&e.sos!=null)?e.sos:'-'; var sodos=(e&&e.sodos!=null)?e.sodos:'-';
-    html+='<tr class="'+ri.rowCls+'"><td>'+ri.badge+'</td><td style="text-align:left;font-weight:500">'+playerNameRubyHtml(nm,ym)+'</td>'
+    html+='<tr class="'+ri.rowCls+'"><td>'+ri.badge+'</td><td style="text-align:left;font-weight:500">'+playerNameRubyHtml(nm,ym)+buildEntryAttrDisplayHtml(e,m)+'</td>'
       +'<td><strong>'+escapeHtml(String(wins))+'</strong></td><td>'+escapeHtml(String(losses))+'</td><td>'+escapeHtml(String(sos))+'</td><td>'+escapeHtml(String(sodos))+'</td></tr>';
   }
   html+='</tbody></table></div>';
