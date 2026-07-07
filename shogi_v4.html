@@ -3928,7 +3928,7 @@ function buildMasterTabHtml(master){
   html+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
   html+='<button type="button" id="masterBulkPushBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ 名簿全体をクラウドへ一括送信</button>';
   // MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): クラウドの大会記録から前回クラス/最終参加/参加履歴を再計算して名簿へ反映（既存☁取得は軽いまま）。
-  html+='<button type="button" id="masterRebuildBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ クラウドから完全再構築（参加履歴も再計算）</button>';
+  html+='<button type="button" id="masterRebuildBtn" title="端末の新しい記録は残したまま、クラウドの大会記録で参加履歴を再計算します（クラウドへ完全一致はしません）" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ クラウドから名簿を再計算（参加履歴を反映）</button>';
   html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
   html+='<button type="button" id="masterImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📂 マスタをインポート</button>';
   // A-4 §3.4.1: 削除済み表示トグル
@@ -4938,10 +4938,10 @@ function bindMasterTabEvents(){
       pushAllMembersToCloud(_masterCloudStatusFn());
     });
   });
-  // MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): 「☁ クラウドから完全再構築」→ confirm 後に rebuildMasterFromCloudUI（fail-soft・status のみ）。
+  // MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): 「☁ クラウドから名簿を再計算」→ confirm 後に rebuildMasterFromCloudUI（fail-soft・status のみ）。#609 でボタン名から「完全」を除去（ローカル温存仕様との齟齬解消）。
   var rebuildBtn=document.getElementById('masterRebuildBtn');
   if(rebuildBtn)rebuildBtn.addEventListener('click',function(){
-    appConfirm('クラウドの大会記録から、各会員の「前回クラス・最終参加・参加履歴」を再計算して名簿へ反映します。\n氏名・ふりがな・区分・市町村・削除状態は変更しません。\n端末に未送信の直近の参加記録は巻き戻しません。\n\n再構築しますか？',function(ok){
+    appConfirm('クラウドの大会記録から、各会員の「前回クラス・最終参加・参加履歴」を再計算して名簿へ反映します。\n氏名・ふりがな・区分・市町村・削除状態は変更しません。\nこの端末の新しい参加記録はそのまま残ります（クラウドへ完全一致はしません）。\n\n再構築しますか？',function(ok){
       if(!ok)return;
       rebuildMasterFromCloudUI(_masterCloudStatusFn());
     });
@@ -10795,7 +10795,7 @@ function pullMembersToMasterUI(setStatus){
     });
   }).catch(function(e){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 取得例外:',(e&&e.message)||e); setStatus('クラウドの取得に失敗しました。通信状態を確認して、もう一度お試しください（ログインが必要な場合があります）。'); return {ok:false,step:'exception'}; });
 }
-// MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): 「☁ クラウドから完全再構築」ボタンのブラウザ・グルー。
+// MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): 「☁ クラウドから名簿を再計算」ボタンのブラウザ・グルー。
 //   pullMembersToMasterUI と同じ deps/auth/claim 経路で client を作り rebuildMasterFromCloud を呼ぶ。
 //   任意・非ブロッキング・fail-soft（当日運営を止めない）。進行/結果は masterCloudPullStatus に表示
 //   （[[ui-result-visibility-principle]] 準拠＝押下位置直下の status 行）。
