@@ -2384,6 +2384,18 @@ if [ -f "$SCRIPT_DIR/test_member_attr_snapshot_city_607.js" ]; then
 else
   warn "test_member_attr_snapshot_city_607.js が見つからない"
 fi
+
+echo ""
+echo "【MEMBER-ATTR-SNAPSHOT-001 (#607) Phase1-1/1-2 クラウド entries 当時値スナップショット＋読取フォールバック】"
+if [ -f "$SCRIPT_DIR/test_member_attr_snapshot_cloud_607.js" ]; then
+  if node "$SCRIPT_DIR/test_member_attr_snapshot_cloud_607.js" "$TARGET" > /tmp/member_attr_snapshot_cloud_607_out.log 2>&1; then
+    ok "MEMBER-ATTR-SNAPSHOT-CLOUD-607 テスト 全PASS ($(tail -1 /tmp/member_attr_snapshot_cloud_607_out.log))"
+  else
+    ng "MEMBER-ATTR-SNAPSHOT-CLOUD-607 テスト 失敗"; cat /tmp/member_attr_snapshot_cloud_607_out.log
+  fi
+else
+  warn "test_member_attr_snapshot_cloud_607.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
