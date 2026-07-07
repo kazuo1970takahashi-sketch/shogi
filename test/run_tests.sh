@@ -2334,6 +2334,19 @@ else
 fi
 
 
+echo ""
+echo "【IN-APP-MODAL-001 (#606) スライス — 破壊的リセット/削除 confirm 3件のアプリ内モーダル化（appConfirm+danger）】"
+if [ -f "$SCRIPT_DIR/test_in_app_modal_reset_606.js" ]; then
+  if node "$SCRIPT_DIR/test_in_app_modal_reset_606.js" "$TARGET" > /tmp/in_app_modal_reset_606_out.log 2>&1; then
+    ok "IN-APP-MODAL-RESET-606 テスト 全PASS ($(tail -1 /tmp/in_app_modal_reset_606_out.log))"
+  else
+    ng "IN-APP-MODAL-RESET-606 テスト 失敗"; cat /tmp/in_app_modal_reset_606_out.log
+  fi
+else
+  warn "test_in_app_modal_reset_606.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================

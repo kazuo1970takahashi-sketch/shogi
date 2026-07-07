@@ -8201,7 +8201,9 @@ function resetClassForClass(classId){
   }
   if(!klass){showMsg('クラスが見つかりません','err');return;}
   var className=klass.name||(classId+'クラス');
-  if(!confirm(className+'の組み合わせ・勝敗結果を削除します。\n他クラスのデータは保持されます。\nよろしいですか？'))return;
+  // IN-APP-MODAL-001 (#606): native confirm→appConfirm（挙動同値=OK続行/取消中断）。破壊操作ゆえ danger:true（既定=キャンセル・Enter抑止＝Issue「危険は既定キャンセル」）。
+  appConfirm(className+'の組み合わせ・勝敗結果を削除します。\n他クラスのデータは保持されます。\nよろしいですか？',function(_ok){
+  if(!_ok)return;
   if(!state.pairings||typeof state.pairings!=='object')state.pairings={};
   if(!state.results||typeof state.results!=='object')state.results={};
   state.pairings[classId]=[];
@@ -8219,6 +8221,7 @@ function resetClassForClass(classId){
     }
   }
   showMsg(className+'をリセットしました','ok');
+  },{danger:true});
 }
 
 // ============================================================
@@ -12136,7 +12139,9 @@ function showResetUndoBanner(msg){
 }
 
 function resetTournamentProgressOnly(){
-  if(!confirm('参加者一覧は残したまま、現在の組み合わせ・勝敗結果を削除します。\nよろしいですか？'))return;
+  // IN-APP-MODAL-001 (#606): native confirm→appConfirm（挙動同値）。破壊操作ゆえ danger:true（既定キャンセル）。
+  appConfirm('参加者一覧は残したまま、現在の組み合わせ・勝敗結果を削除します。\nよろしいですか？',function(_ok){
+  if(!_ok)return;
   captureResetSnapshot('progress');
   // B. 大会進行データ（局単位）のみ初期化
   // ROUND-CLASS-START-004b (spec §12.2):
@@ -12174,10 +12179,13 @@ function resetTournamentProgressOnly(){
   if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel(_ppSearchReset?_ppSearchReset.value:'');
   showTab('reg');
   showResetUndoBanner('大会進行データをリセットしました');
+  },{danger:true});
 }
 
 function resetAll(){
-  if(!confirm('参加者一覧・組み合わせ・勝敗結果を含む大会データをすべてリセットします。\n支部マスタは保持されます。'))return;
+  // IN-APP-MODAL-001 (#606): native confirm→appConfirm（挙動同値）。破壊操作ゆえ danger:true（既定キャンセル）。
+  appConfirm('参加者一覧・組み合わせ・勝敗結果を含む大会データをすべてリセットします。\n支部マスタは保持されます。',function(_ok){
+  if(!_ok)return;
   captureResetSnapshot('all');
   // ROUND-CLASS-START-004b (spec §12.3 / §8.2 例外):
   //   state.classes 駆動で全リセット。{A:[],B:[]} 固定 literal を廃止し、emptyClassDict 経由で
@@ -12239,6 +12247,7 @@ function resetAll(){
   if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel(_ppSearchReset?_ppSearchReset.value:'');
   showTab('reg');
   showResetUndoBanner('大会データを全リセットしました');
+  },{danger:true});
 }
 
 // ============================================================

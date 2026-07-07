@@ -266,6 +266,9 @@ function loadEnv(path){
        updateReportFieldFromElement: updateReportFieldFromElement,
        downloadReport: downloadReport,
        resetAll: resetAll,
+       // IN-APP-MODAL-001 (#606): resetAll の confirm を appConfirm へ移行したため、
+       //   アプリ内モーダルの結果を同期解決するシームを env から公開する（DOM 非依存）。
+       __setAppModalTestResolver: __setAppModalTestResolver,
        _setState: function(s){state=s;},
        _getState: function(){return state;}
      };`
@@ -629,6 +632,8 @@ function makeBaseState(reportOverrides){
   const env = loadEnv(targetPath);
   env._setState(makeBaseState({accountingNote:'別会計提出文'}));
   seedReportDom(env._ctx, {accountingNote:'別会計提出文'});
+  // IN-APP-MODAL-001 (#606): appConfirm 化した resetAll を同期承認して本体を実行させる（挙動同値=OK）。
+  env.__setAppModalTestResolver(function(type){ return type==='prompt'?'':true; });
   env.resetAll();
   assertEq(env._getState().report.accountingNote, DEFAULT_NOTE, 'G1 resetAll 後 state.accountingNote が default');
   assertEq(env._ctx.document.getElementById('rep-accounting-note').value, DEFAULT_NOTE, 'G2 #rep-accounting-note も default');
