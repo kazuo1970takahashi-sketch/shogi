@@ -9731,11 +9731,14 @@ function buildCloudSyncPayload(master, opts){
         membersOut[mid]=stamp({ member_id:mid, name:(mm2.name||p.name||''), yomi:(mm2.yomi||p.yomi||''), member_kind:fc2.member_kind, grade:fc2.grade, city:fc2.city });
         playersOut[mid]=stamp({ member_id:mid });
       }
+      // MEMBER-ATTR-SNAPSHOT-001 (#607): 当時値スナップショット＝player 由来（現在マスタ mm2 は使わない）。
+      var _attr=buildEntryAttrSnapshot(p);
       entries.push(stamp({
         app_tournament_id:appTid, member_id:mid, 'class':cls,
         final_rank:(ranks[fi]!=null?ranks[fi]:null),
         wins:row.A, losses:(row.played-row.A), draws:0,
-        sos:row.B, sodos:row.C, participated:true
+        sos:row.B, sodos:row.C, participated:true,
+        member_kind:_attr.member_kind, grade:_attr.grade, city:_attr.city
       }));
     }
   }
@@ -10502,6 +10505,32 @@ function _cloudMemberFieldCols(m){
     member_kind:(m&&m.member==='other')?'other':'member',
     grade:(m&&(m.grade==='chu'||m.grade==='josei'))?m.grade:'ippan',
     city:(m&&typeof m.city==='string'&&m.city)?m.city:null
+  };
+}
+
+// MEMBER-ATTR-SNAPSHOT-001 (#607): entries の会員属性スナップショット純関数。
+//   _cloudMemberFieldCols(=master 現在値) と対称だが入力は当日 player レコード（登録時点値＝当時値）。
+//   member_kind/grade は常に非 null（旧行 null と区別可）。city は normalizeCity で正規化（空は ''）。副作用なし。
+function buildEntryAttrSnapshot(player){
+  var pl=player||{};
+  return {
+    member_kind:(pl.member==='other')?'other':'member',
+    grade:(pl.grade==='chu'||pl.grade==='josei')?pl.grade:'ippan',
+    city:normalizeCity(pl.city)
+  };
+}
+// MEMBER-ATTR-SNAPSHOT-001 (#607): 読取時の属性解決。当時値(entry)優先・null(旧行)のみ members 現在値へフォールバック。
+//   返す各属性は {value, fromCurrent}（fromCurrent=true のとき「現在値」注記を出す）。city の '' は当時値扱い（フォールバックしない）。
+function resolveEntryAttr(entry, memberCurrent){
+  var e=entry||{}, mc=memberCurrent||{};
+  function pick(snap, cur){
+    if(snap===null||snap===undefined){ return { value:(cur==null?'':cur), fromCurrent:(cur!=null&&cur!=='') }; }
+    return { value:snap, fromCurrent:false };
+  }
+  return {
+    member_kind:pick(e.member_kind, mc.member_kind),
+    grade:pick(e.grade, mc.grade),
+    city:pick(e.city, mc.city)
   };
 }
 
@@ -14243,10 +14272,10 @@ function fetchCloudEntriesForTournament(client, tid, clubId){
   if(!client||!client.from)return Promise.resolve({ok:false,message:'クラウドに接続していません',entries:[]});
   // entries→players は FK が2本（player_id / (club_id,player_id)）で埋め込みが曖昧になるため、
   // players は埋め込まず別取得して JS で突き合わせる（制約名に非依存・確実）。
-  return client.from('entries').select('final_rank,class,wins,losses,sos,sodos,player_id').eq('tournament_id',tid).then(function(res){
+  return client.from('entries').select('final_rank,class,wins,losses,sos,sodos,member_kind,grade,city,player_id').eq('tournament_id',tid).then(function(res){
     if(res&&res.error){if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 結果取得エラー:',cloudErrDetail(res.error));return {ok:false,message:'結果の読み込みに失敗しました（通信状態を確認してください）',entries:[]};}
     var rows=(res&&res.data)||[];
-    return client.from('players').select('id,member_id,members(name,yomi)').eq('club_id',clubId).then(function(pr){
+    return client.from('players').select('id,member_id,members(name,yomi,member_kind,grade,city)').eq('club_id',clubId).then(function(pr){
       if(pr&&pr.error){if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 選手取得エラー:',cloudErrDetail(pr.error));return {ok:false,message:'選手情報の読み込みに失敗しました（通信状態を確認してください）',entries:[]};}
       var byId={}; var plist=(pr&&pr.data)||[];
       for(var i=0;i<plist.length;i++){ if(plist[i])byId[plist[i].id]=plist[i]; }
