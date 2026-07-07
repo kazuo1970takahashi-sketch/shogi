@@ -111,6 +111,33 @@
 - [x] secret/実データ不使用（例はすべて架空）
 - [x] 実装フェーズで `bash test/run_tests.sh shogi_v4.html` WARN=0 を条件化
 
+## 10. design-review 反映（2026-07-07・conditional-go 条件の取り込み）
+
+別セッション・別素性の design-review 判定 = **conditional-go**（PR #657 コメントに凍結マーカー）。方式に block 事由なし。以下を実装 PR の必須条件として設計に取り込む。
+
+### 10.1 [P1] 末尾日付トークン除去の正規表現安全化
+
+§2.2 手順3の「末尾日付トークン1回除去」は、**区切り文字または月成分を伴う日付表記のみ**を対象とする。裸の4桁数字（`支部対抗戦2025`・`○○杯2026`）は日付とみなさず温存する。除去対象の具体パターン:
+
+- 末尾 ` YYYY-MM` / `YYYY-MM-DD`（直前が区切り/空白/全角括弧）
+- 末尾 `YYYY年M月`（`度` の有無を問わず）
+- 全角括弧囲み `（YYYY-MM）` 等
+
+数字終わりの固有名（例 `○○杯2026` → `○○杯2026` を温存）を GOLDEN で1本以上ピン留めする。
+
+### 10.2 [P1] 一覧⇔詳細の表示整合（単一ソース化）
+
+一覧 `.cloud-history-row` の `data-label` には **生の `t.name` を保持**し、表示は一覧 span・詳細見出しとも `buildCloudTournamentDisplayTitle(name,date)` から都度導出する（`canonicalizeCloudTournamentName` は冪等ゆえ二重適用も無害）。→ 一覧＝正規化名／詳細＝生名の食い違いを防ぐ。`renderCloudTournamentDetail(client,clubId,tid,label,date)` は受け取った生 `label` と `date` から詳細見出しを合成する。
+
+### 10.3 [P2] 追加の堅牢化（実装で対応）
+
+- 先頭埋め込み月度（名前先頭に `YYYY年M月度` があり date と食い違う場合）→ §2.3 の二重付与ガードを先頭 period トークン一般へ拡張し、二重月表示を防ぐ。
+- 空化→月例既定の誤正規化（固有名が日付/報告書のみ → strip 後に空 → 月例名）は、テストで意図を明示的に固定する。
+
+### 10.4 行番号の基準（レビュー補足の訂正）
+
+design-review は当初ローカル mount（本番と別系統の stale コピー）を参照し「行番号スタール」と指摘したが、**本 PR の base（orphan clean base）では設計の行番号（`fetchCloudTournaments` L14207／`buildCloudTournamentListHtml` L14230／`renderCloudTournamentDetail` L14327／`deriveSeason` L9671）は実コードと一致**することを確認済み。ただし実装は行番号でなく symbol で再特定する方針は維持する（将来ドリフト耐性）。
+
 ---
 
 ## 設計完了（判定は別セッション・別素性の design-review で）
@@ -118,8 +145,10 @@
 クラウド**読み取り表示のみ**・書き込み無し・当日運営無改変ゆえ **Review Level L2〜L3 提案**（表示規則の妥当性・fail-soft・月例/特別の判定境界を独立確認）。実装（IMPL）は本設計レビューの go/conditional-go 後に着手・Draft 停止のまま。
 
 ```yaml
-cowork-status: design-done
+cowork-status: design-reviewed
 reviewer: claude-code
+review-verdict: conditional-go
+review-conditions: [P1-regex-date-token, P1-list-detail-single-source]
 task: 608
 ```
 
