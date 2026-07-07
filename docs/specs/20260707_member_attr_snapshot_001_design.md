@@ -63,7 +63,8 @@ entries.push(stamp({
 }));
 ```
 
-- 正規化は**マスタ用と同一ロジックを流用**（`member`→member_kind 'member'/'other'、`grade`→'ippan'/'chu'/'josei' 既定 ippan、`city`→trim+maxlen20+空→''）だが**入力は player レコード**。純関数 `buildEntryAttrSnapshot(player)`（build 層・副作用なし）に切り出しユニットテスト可能化。
+- 正規化は**マスタ用と同一ロジックを流用**（`player.member`→member_kind 'member'/'other'、`player.grade`→'ippan'/'chu'/'josei' 既定 ippan、`player.city`→trim+maxlen20+空→''）だが**入力は player レコード**。純関数 `buildEntryAttrSnapshot(player)`（build 層・副作用なし）に切り出しユニットテスト可能化。
+- ⚠ **前提修正（§11 M1）**: 当日 player レコードは現状 `member`/`grade` は持つが **`city` を持たない**（`addPlayerFromMaster` L2736 が city を写していない・`normalizeMasterFeeFields` L2683 は `{member,grade}` のみ返す）。そのため city のスナップショットは §11 の先頭スライス（登録時に player へ city を写す）を前提とする。フィールド名は **`player.member`**（`member_kind` ではない）に注意。
 - **冪等**: 再送は同じ当日 state（凍結済み）から同値を upsert（`onConflict:tournament_id,player_id`）＝上書きしても不変。
 - **既定挙動不変**: 属性が無い player でも null/''（fail-soft）。当日運営（localStorage）無改変・送信路の順序不変。
 
@@ -108,3 +109,35 @@ task: 607
 ```
 
 🤖 PMO-OPS v2.1-final / 実装ライン=Claude Code
+
+## 11. design-review 反映（conditional-go 条件の消化・#666 レビュー）
+
+別素性の design-review で **conditional-go**（Must Fix 1 / Should 4）。以下を設計に反映し go 相当とする。
+
+### M1（Must Fix・block 事由）＝ city のスナップショット源を実在化
+
+- **事実**: 当日 player レコード（`state.players[cls][i]`）は `member`/`grade` は持つが **`city` を持たない**。`normalizeMasterFeeFields`（L2683）は `{member,grade}` のみ返し、`addPlayerFromMaster`（push は L2736）/`finalizeAddPastParticipants` は player に city を載せない（コメント L2818「participant 側に city は無い」）。一方 **source のマスタ member は city を保持**（名簿正規化 L1982 `city:normalizeCity(m.city)`）。
+- **解決（Phase 1 の先頭スライス＝1-0 として追加）**: 登録時に **player へ city を写す**。`addPlayerFromMaster` の player オブジェクトに `city:normalizeCity(member.city)` を追加（source マスタ member の city 由来）。`finalizeAddPastParticipants` の一括経路も同様。**追加のみ・既存挙動不変**（新フィールド付与のみ・当日運営の分岐/表示は無改変）。これで `snapCity(p)=normalizeCity(p.city)` が当時値を返し、ローカル履歴にも city が乗る。
+- **後方互換**: 本スライス以前に保存した過去大会（ローカル履歴/クラウド）は city 欠落＝当時値復元不能ゆえ捏造せず、読取フォールバック（members 現在値＋「現在値」注記）に委ねる。member/grade は player に既存ゆえ本スライス不要。
+
+### Should
+
+- **S1**: 読取フォールバックのため `fetchCloudEntriesForTournament` の `players → members(...)` 埋め込みに `member_kind,grade,city` を追加（現状 `members(name,yomi)` のみ）。entry の当時値が null のときのみ members 現在値を用い「現在値」注記。
+- **S2**: player 側フィールド名は **`player.member`**（`member_kind` ではない）。送信正規化で member_kind へ写す。実装コメントに明記し取り違え事故を防ぐ。
+- **S3**: 「現在マスタ ≠ 当日 player」ケースを作り、entries の member_kind/grade（及び city）が **player 由来で固定**されることを GOLDEN で pin（現在値に引きずられない回帰）。`WARN=0` ゲート維持。
+- **S4**: 新 migration の timestamp は既存最新 `20260705153000` より後に採番する。
+
+### Phase 分割（改訂）
+
+- **Phase 1-0**: 登録時に player へ city を写す（追加のみ・当日運営無改変）＋テスト（player に city 付与・既存フィールド不変）。
+- **Phase 1-1**: entries 3列 migration（S4 採番）。
+- **Phase 1-2**: 送信 `buildEntryAttrSnapshot(player)` 結線（S2/S3）＋読取 SELECT 3列＋`resolveEntryAttr` フォールバック（S1）。
+- **Phase 2**: 結果一覧/報告書に3属性表示。**Phase 3**: app/ 鏡写し。
+
+```yaml
+cowork-status: design-reviewed
+verdict: conditional-go
+reviewer: claude-code-reviewer
+task: 607
+resolved: [M1, S1, S2, S3, S4]
+```
