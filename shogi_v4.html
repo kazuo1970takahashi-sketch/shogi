@@ -8831,15 +8831,20 @@ function buildScoreGridHtml(cls, sorted, wins){
   return html;
 }
 
-function buildPlayedHistoryHtml(cls, sorted, played){
+function buildPlayedHistoryHtml(cls, sorted, played, isSP){
+  // MOBILE-PLAYED-LIST-COLLAPSE-001 (#661): 対戦済みリストは参照系ゆえ <details> 格納。isSP(モバイル)は
+  //   既定折りたたみ・PC は open で従来表示（STYLE-GUIDE §6/§7・データ層/sorted/played は read-only）。
+  //   isSP 省略時は window 幅で判定（テスト注入可・renderCloudTournamentDetail と同流儀）。開閉は native disclosure＝JS/bind 不要。
+  if(isSP===undefined)isSP=(typeof window!=='undefined'&&window.innerWidth)?(window.innerWidth<600):false;
   // PAIRING-UX-SCORE-LIST-READABILITY-IMPL-LIGHT (PR #104 §4.2 候補 A + C):
   //   暫定成績と sorted を共有しているため、対戦済みリストも勝数順 +
   //   同勝数内エントリー番号順となる。並び順を見出しと補足で明示。
   //   対戦相手タグは renderTournament の played[] 構築順 = ラウンド順を維持。
   //   切替 UI / 独自並び順は IMPL-LIGHT 範囲外。
-  var html='<h3>対戦済みリスト<span style="font-size:11px;font-weight:normal;color:#888;margin-left:8px">（勝数順）</span></h3>';
-  html+='<div style="font-size:11px;color:#888;margin-bottom:6px">※ 暫定成績と同じ勝数順で表示しています。対戦相手はラウンド順です。</div>';
-  html+='<div style="margin-bottom:12px">';
+  var html='<details class="played-history-details" style="margin-bottom:12px"'+(isSP?'':' open')+'>';
+  html+='<summary style="font-size:14px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">対戦済みリスト<span style="font-weight:400;font-size:11px;color:#888;margin-left:8px">（勝数順）　タップで開閉</span></summary>';
+  html+='<div style="font-size:11px;color:#888;margin:8px 0 6px">※ 暫定成績と同じ勝数順で表示しています。対戦相手はラウンド順です。</div>';
+  html+='<div style="margin-bottom:4px">';
   for(var i=0;i<sorted.length;i++){
     var p=sorted[i];
     var tags='';
@@ -8847,6 +8852,7 @@ function buildPlayedHistoryHtml(cls, sorted, played){
     html+='<div style="margin-bottom:4px"><strong style="font-size:12px">'+escapeHtml(getNameWithNo(p.id,cls))+'</strong>：'+(tags||'なし')+'</div>';
   }
   html+='</div>';
+  html+='</details>';
   return html;
 }
 
@@ -9437,13 +9443,16 @@ function renderTournament(cls){
   // ROUND-CLASS-START-004b: action bar を section の冒頭に挿入し、started=true 時の
   //   「<className>をリセット」導線を確保する。className は state.classes[cls].name を尊重。
   var html='<div class="section">'+actionBarHtml+'<h2>'+escapeHtml(className)+'</h2>';
-  html+=buildScoreGridHtml(cls, sorted, wins);
-  html+=buildPlayedHistoryHtml(cls, sorted, played);
-  html+=buildPastResultsHtml(cls);
+  // MOBILE-PLAYED-LIST-COLLAPSE-001 (#661): 操作対象（現在の組み合わせ）を上部へ置き、モバイルで
+  //   無スクロールで見せる（[[ui-result-visibility-principle]]）。参照系（暫定成績・対戦済みリスト・
+  //   過去の結果）は下に回す。bind は id 参照＝DOM 順非依存ゆえ呼び出し順の入替のみで挙動不変。
   // FRP-IMPL-002 (FRP-DESIGN-002 §8): 部分開始中(started かつ results 空)のクラスは未割当一覧を表示。
   //   helper 内部で「started かつ results 空 かつ 未割当>0」のときだけ中身を返す（それ以外は ''）。
   html+=buildFirstRoundPartialSectionHtml(cls);
   html+=buildCurrentPairingsHtml(cls, roundNum, done);
+  html+=buildScoreGridHtml(cls, sorted, wins);
+  html+=buildPlayedHistoryHtml(cls, sorted, played);
+  html+=buildPastResultsHtml(cls);
 
   el.innerHTML=html;
   bindTournamentEvents(cls);

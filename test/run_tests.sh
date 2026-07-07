@@ -2321,6 +2321,19 @@ else
 fi
 
 
+echo ""
+echo "【MOBILE-PLAYED-LIST-COLLAPSE-001 (#661) 対戦済みリスト折りたたみ＋現在の組み合わせ上部化（表示のみ・データ非改変）】"
+if [ -f "$SCRIPT_DIR/test_mobile_played_collapse_001.js" ]; then
+  if node "$SCRIPT_DIR/test_mobile_played_collapse_001.js" "$TARGET" > /tmp/mobile_played_collapse_out.log 2>&1; then
+    ok "MOBILE-PLAYED-LIST-COLLAPSE テスト 全PASS ($(tail -1 /tmp/mobile_played_collapse_out.log))"
+  else
+    ng "MOBILE-PLAYED-LIST-COLLAPSE テスト 失敗"; cat /tmp/mobile_played_collapse_out.log
+  fi
+else
+  warn "test_mobile_played_collapse_001.js が見つからない"
+fi
+
+
 # ============================================
 # 最終結果
 # ============================================
