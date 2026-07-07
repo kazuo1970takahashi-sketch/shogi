@@ -3928,13 +3928,16 @@ function buildMasterTabHtml(master){
   html+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
   html+='<button type="button" id="masterBulkPushBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ 名簿全体をクラウドへ一括送信</button>';
   // MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): クラウドの大会記録から前回クラス/最終参加/参加履歴を再計算して名簿へ反映（既存☁取得は軽いまま）。
-  html+='<button type="button" id="masterRebuildBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ クラウドから完全再構築（参加履歴も再計算）</button>';
+  html+='<button type="button" id="masterRebuildBtn" title="端末の新しい記録は残したまま、クラウドの大会記録で参加履歴を再計算します（クラウドへ完全一致はしません）" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ クラウドから名簿を再計算（参加履歴を反映）</button>';
   html+='<button type="button" id="masterExportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📤 マスタをエクスポート</button>';
   html+='<button type="button" id="masterImportBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">📂 マスタをインポート</button>';
   // A-4 §3.4.1: 削除済み表示トグル
   html+='<button type="button" id="masterShowDeletedBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864" data-on="'+(_masterShowDeleted?'1':'0')+'">'+(_masterShowDeleted?'🗑️ 削除済みを隠す':'🗑️ 削除済みを表示')+'</button>';
   // Phase 2 §5.1: マスタリセット(B 案: バックアップ済チェック + テキスト確認 + 二段階確認)。誤タップ防止のため最下＋折りたたみ内。
   html+='<button type="button" id="masterResetBtn" style="background:#fff;border:1px solid #c33;color:#c33">📛 マスタをリセット</button>';
+  // REBUILD-SEMANTICS-001 (#609) Phase2: クラウド完全一致（リセット→再構築）。大会進行中は disabled（クリック時も二重ガード）。
+  var _cmStarted=!!(state&&state.started);
+  html+='<button type="button" id="masterCloudMatchBtn"'+(_cmStarted?' disabled':'')+' title="'+(_cmStarted?'大会進行中は実行できません（終了後に）':'この端末の記録を破棄し、クラウドの状態に完全に合わせます（先にバックアップ推奨・要ログイン）')+'" style="background:#fff;border:1px solid #c33;color:#c33'+(_cmStarted?';opacity:.5;cursor:not-allowed':'')+'">☁ クラウドの状態に完全に合わせる（端末の記録を破棄）</button>';
   html+='</div></details>';
   // PWA 収束方針(docs/PWA-PLAN): 当日アプリ⇄app/ の相互リンク（同一ウィンドウ遷移・別タブを増やさない）。
   html+='<div style="margin:0 0 12px"><a href="app/" style="font-size:13px;color:#1F3864">☁ クラウド管理ページ（名簿編集・ログイン）を開く →</a></div>';
@@ -4217,6 +4220,144 @@ function bindMasterResetModalEvents(){
     }
   });
 }
+
+// REBUILD-SEMANTICS-001 (#609) Phase2: 「☁ クラウドの状態に完全に合わせる（端末の記録を破棄）」。
+//   マスタリセット→クラウド再構築を1導線に束ねる破壊的操作。既存 applyMasterReset / rebuildMasterFromCloudUI を
+//   再利用し新規破壊ロジックは書かない（#551 再計算ロジック無改変）。大会進行中は封じ、未ログイン時はリセットせず中断。
+var CLOUD_MATCH_CONFIRM_WORD='クラウドに合わせる';   // #609 design-review Must Fix#1: 確認語はリセット('リセット')と別・引数化。
+
+// 純オーケストレータ（依存注入でテスト可能・DOM/クラウド非依存）。
+//   io: { ensureSessionP():Promise<bool>, doReset():{ok}, doRebuildP():Promise<{ok}>, setStatus(msg) }
+//   順序（Must Fix#3）: セッション確認 → OK のみ reset → rebuild。未ログインは reset せず中断（空マスタ trap 回避）。
+//   fail-soft: reset 後に rebuild 失敗しても throw せず、再実行＋バックアップ復元の両経路を status に提示。
+function performCloudFullMatchReset(io){
+  io=io||{};
+  var setStatus=io.setStatus||function(){};
+  setStatus('クラウド接続を確認中…');
+  return Promise.resolve(io.ensureSessionP?io.ensureSessionP():false).then(function(hasSession){
+    if(!hasSession){
+      setStatus('クラウド管理ページ（app/）でログインしてから実行してください（名簿はまだ変更していません）。');
+      return {ok:false,step:'auth',didReset:false};
+    }
+    var r=io.doReset?io.doReset():{ok:false};
+    if(!r||!r.ok){
+      setStatus('リセットに失敗しました（名簿は変更していません）。');
+      return {ok:false,step:'reset',didReset:false};
+    }
+    setStatus('クラウドの状態に合わせて再構築中…');
+    return Promise.resolve(io.doRebuildP?io.doRebuildP():{ok:false}).then(function(rb){
+      if(rb&&rb.ok){
+        setStatus('クラウドの状態に合わせました。');
+        return {ok:true,step:'done',didReset:true};
+      }
+      // reset は完了・rebuild 失敗＝両復元経路を提示（Must Fix#3）。
+      setStatus('リセットは完了しましたが、クラウドからの再構築に失敗しました。「☁ クラウドから名簿を再計算」でもう一度お試しいただくか、バックアップした JSON を「📂 マスタをインポート」で復元してください。');
+      return {ok:false,step:'rebuild',didReset:true};
+    });
+  }).catch(function(e){
+    if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 完全一致 例外:',(e&&e.message)||e);
+    setStatus('処理に失敗しました。通信状態を確認して、もう一度お試しください。');
+    return {ok:false,step:'exception',didReset:false};
+  });
+}
+
+// クラウドセッションの事前確認（リセット前・authoritative）。未ログイン/オフライン/設定不在は false。
+function ensureCloudSessionForMatch(){
+  return loadCloudDeps().then(function(dep){
+    if(!dep||dep.offline||!dep.cfg||!dep.sb)return false;
+    var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
+    if(!client||!client.auth)return false;
+    return client.auth.getSession().then(function(r){ return !!(r&&r.data&&r.data.session); });
+  }).catch(function(){ return false; });
+}
+
+// 確認モーダル HTML（純）。リセットモーダルとは別素性＝確認語 CLOUD_MATCH_CONFIRM_WORD・危険色。
+function buildCloudFullMatchModalHtml(master){
+  var liveCount=0,tombCount=0;
+  if(master&&Array.isArray(master.members)){
+    for(var i=0;i<master.members.length;i++){ if(master.members[i].deleted===true)tombCount++; else liveCount++; }
+  }
+  var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto">';
+  html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#c33">☁ クラウドの状態に完全に合わせる</h3>';
+  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:12px">この端末のマスタを<strong>一度すべて消去</strong>してから、クラウドの記録で再構築します。<strong>クラウドへ未送信の記録はこの操作で失われます</strong>。<strong>この操作は取り消せません</strong>。</p>';
+  html+='<div style="margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:13px;color:#444;line-height:1.6">';
+  html+='<div>現在のマスタ件数:</div>';
+  html+='<div>　• 生存 member: <strong id="cm-live-count">'+liveCount+'</strong> 名</div>';
+  html+='<div>　• 削除済み(tombstone): <strong id="cm-tomb-count">'+tombCount+'</strong> 名</div>';
+  html+='</div>';
+  html+='<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#444;margin-bottom:12px;cursor:pointer">';
+  html+='<input type="checkbox" id="cm-backup-checked" style="margin-top:3px"> ';
+  html+='<span>「📤 マスタをエクスポート」でバックアップ JSON をダウンロード済みです(必須)</span>';
+  html+='</label>';
+  html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">確認のため <strong style="color:#c33">'+CLOUD_MATCH_CONFIRM_WORD+'</strong> と入力してください</label>';
+  html+='<input type="text" id="cm-confirm-text" placeholder="'+CLOUD_MATCH_CONFIRM_WORD+'" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
+  html+='<div id="cm-status" style="font-size:13px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
+  html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
+  html+='<button type="button" id="cm-cancel" class="btn-sm" style="background:#fff">キャンセル</button>';
+  html+='<button type="button" id="cm-run" disabled style="background:#ccc;color:#fff;border:1px solid #999;border-radius:6px;padding:8px 14px;font-size:14px;cursor:not-allowed">実行</button>';
+  html+='</div></div>';
+  return html;
+}
+
+function openCloudFullMatchModal(){
+  var existing=document.getElementById('cloud-fullmatch-modal');
+  if(existing)existing.remove();
+  var master=loadBranchMaster();
+  var modal=document.createElement('div');
+  modal.id='cloud-fullmatch-modal';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=buildCloudFullMatchModalHtml(master);
+  document.body.appendChild(modal);
+  bindCloudFullMatchModalEvents();
+}
+
+function bindCloudFullMatchModalEvents(){
+  var cancelBtn=document.getElementById('cm-cancel');
+  if(cancelBtn)cancelBtn.addEventListener('click',function(){ var m=document.getElementById('cloud-fullmatch-modal');if(m)m.remove(); });
+  var checkbox=document.getElementById('cm-backup-checked');
+  var textInput=document.getElementById('cm-confirm-text');
+  var runBtn=document.getElementById('cm-run');
+  function updateRunBtn(){
+    if(!runBtn)return;
+    var ok=(checkbox&&checkbox.checked)&&(textInput&&textInput.value===CLOUD_MATCH_CONFIRM_WORD);   // Must Fix#1: 厳密一致
+    runBtn.disabled=!ok;
+    runBtn.style.cssText=ok
+      ? 'background:#c33;color:#fff;border:1px solid #c33;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer;font-weight:600'
+      : 'background:#ccc;color:#fff;border:1px solid #999;border-radius:6px;padding:8px 14px;font-size:14px;cursor:not-allowed';
+  }
+  if(checkbox)checkbox.addEventListener('change',updateRunBtn);
+  if(textInput)textInput.addEventListener('input',updateRunBtn);
+  if(runBtn)runBtn.addEventListener('click',function(){
+    if(runBtn.disabled)return;
+    // Must Fix#2: 大会進行中ガードはボタン disabled だけでなくクリック時にも早期 return（二重防御）。
+    if(state&&state.started){ var se0=document.getElementById('cm-status'); if(se0)se0.textContent='大会進行中は実行できません（終了後にお試しください）。'; return; }
+    if(textInput)textInput.blur();
+    runBtn.disabled=true;
+    function setStatus(msg){ var se=document.getElementById('cm-status'); if(se)se.textContent=msg; }
+    performCloudFullMatchReset({
+      ensureSessionP:ensureCloudSessionForMatch,
+      doReset:function(){
+        var master=loadBranchMaster();
+        var r=applyMasterReset(master);
+        if(!r||!r.success)return {ok:false};
+        var saved=saveBranchMaster(r.newMaster);
+        try{ if(typeof renderMasterTab==='function')renderMasterTab(); }catch(eR){}
+        return {ok:!!saved};
+      },
+      doRebuildP:function(){ return rebuildMasterFromCloudUI(setStatus); },
+      setStatus:setStatus
+    }).then(function(res){
+      try{ if(typeof renderMasterTab==='function')renderMasterTab(); }catch(eR2){}
+      if(res&&res.ok){
+        var m=document.getElementById('cloud-fullmatch-modal');if(m)m.remove();
+        if(typeof showMsg==='function')showMsg('クラウドの状態に合わせました','ok');
+      }else{
+        var runB=document.getElementById('cm-run'); if(runB)runB.disabled=false;   // 再試行できるよう戻す
+      }
+    });
+  });
+}
+
 
 // ============================================================
 // Phase 2 §5.2: 22 名取り込み専用モーダル(空マスタ専用、配列形式 JSON 受領)
@@ -4938,10 +5079,10 @@ function bindMasterTabEvents(){
       pushAllMembersToCloud(_masterCloudStatusFn());
     });
   });
-  // MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): 「☁ クラウドから完全再構築」→ confirm 後に rebuildMasterFromCloudUI（fail-soft・status のみ）。
+  // MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): 「☁ クラウドから名簿を再計算」→ confirm 後に rebuildMasterFromCloudUI（fail-soft・status のみ）。#609 でボタン名から「完全」を除去（ローカル温存仕様との齟齬解消）。
   var rebuildBtn=document.getElementById('masterRebuildBtn');
   if(rebuildBtn)rebuildBtn.addEventListener('click',function(){
-    appConfirm('クラウドの大会記録から、各会員の「前回クラス・最終参加・参加履歴」を再計算して名簿へ反映します。\n氏名・ふりがな・区分・市町村・削除状態は変更しません。\n端末に未送信の直近の参加記録は巻き戻しません。\n\n再構築しますか？',function(ok){
+    appConfirm('クラウドの大会記録から、各会員の「前回クラス・最終参加・参加履歴」を再計算して名簿へ反映します。\n氏名・ふりがな・区分・市町村・削除状態は変更しません。\nこの端末の新しい参加記録はそのまま残ります（クラウドへ完全一致はしません）。\n\n再構築しますか？',function(ok){
       if(!ok)return;
       rebuildMasterFromCloudUI(_masterCloudStatusFn());
     });
@@ -4951,6 +5092,12 @@ function bindMasterTabEvents(){
   // Phase 2: マスタリセットモーダルを開く（22名取込ボタンは撤去・関数は未使用化）
   var resetBtn=document.getElementById('masterResetBtn');
   if(resetBtn)resetBtn.addEventListener('click',openMasterResetModal);
+  // REBUILD-SEMANTICS-001 (#609) Phase2: 完全一致ボタン。クリック時に大会進行中を早期 return（Must Fix#2 二重防御）。
+  var cloudMatchBtn=document.getElementById('masterCloudMatchBtn');
+  if(cloudMatchBtn)cloudMatchBtn.addEventListener('click',function(){
+    if(state&&state.started){ if(typeof showMsg==='function')showMsg('大会進行中は実行できません（終了後にお試しください）','err'); return; }
+    openCloudFullMatchModal();
+  });
   var exportBtn=document.getElementById('masterExportBtn');
   if(exportBtn)exportBtn.addEventListener('click',function(){
     var master=loadBranchMaster();
@@ -10795,7 +10942,7 @@ function pullMembersToMasterUI(setStatus){
     });
   }).catch(function(e){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 取得例外:',(e&&e.message)||e); setStatus('クラウドの取得に失敗しました。通信状態を確認して、もう一度お試しください（ログインが必要な場合があります）。'); return {ok:false,step:'exception'}; });
 }
-// MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): 「☁ クラウドから完全再構築」ボタンのブラウザ・グルー。
+// MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): 「☁ クラウドから名簿を再計算」ボタンのブラウザ・グルー。
 //   pullMembersToMasterUI と同じ deps/auth/claim 経路で client を作り rebuildMasterFromCloud を呼ぶ。
 //   任意・非ブロッキング・fail-soft（当日運営を止めない）。進行/結果は masterCloudPullStatus に表示
 //   （[[ui-result-visibility-principle]] 準拠＝押下位置直下の status 行）。
