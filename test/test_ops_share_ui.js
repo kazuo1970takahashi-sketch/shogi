@@ -16,11 +16,17 @@ function makeContext(){
 function loadEnv(confirmImpl){
   const ctx=makeContext();const js=extractScripts(RAW);const cryptoMock={randomUUID(){return '00000000-0000-0000-0000-000000000000';}};
   const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout','navigator',
-    `${js};return { issueOpsSharedKey:issueOpsSharedKey, applyOpsSharedKey:applyOpsSharedKey, opsKeyToTournamentId:opsKeyToTournamentId, tournamentIdToOpsKey:tournamentIdToOpsKey, opsRekeyNeedsConfirm:opsRekeyNeedsConfirm, opsKeyDateNote:opsKeyDateNote, opsKeylessTournamentId:opsKeylessTournamentId, joinOpsKeylessTournament:joinOpsKeylessTournament, refreshOpsKeyDisplay:refreshOpsKeyDisplay, normalizeState:normalizeState, _setState:function(s){ state=s; }, _getState:function(){ return state; } };`);
+    `${js};return { issueOpsSharedKey:issueOpsSharedKey, applyOpsSharedKey:applyOpsSharedKey, opsKeyToTournamentId:opsKeyToTournamentId, tournamentIdToOpsKey:tournamentIdToOpsKey, opsRekeyNeedsConfirm:opsRekeyNeedsConfirm, opsKeyDateNote:opsKeyDateNote, opsKeylessTournamentId:opsKeylessTournamentId, joinOpsKeylessTournament:joinOpsKeylessTournament, refreshOpsKeyDisplay:refreshOpsKeyDisplay, normalizeState:normalizeState, __setAppModalTestResolver:(typeof __setAppModalTestResolver==='function'?__setAppModalTestResolver:null), _setState:function(s){ state=s; }, _getState:function(){ return state; } };`);
   const api=fn(ctx.document,ctx.window,ctx.localStorage,cryptoMock,function(){},confirmImpl||function(){return true;},function(){return '';},function(){},function(){},{createObjectURL:function(){return 'blob:mock';},revokeObjectURL:function(){}},{log:function(){},warn:function(){},error:function(){}},Promise,function(cb){return 0;},{});
   api._doc=ctx.document;
+  // IN-APP-MODAL-001 (#606): 張り替え確認は native confirm→appConfirm へ移行。テストは __setAppModalTestResolver で
+  //   同期解決に切替え、従来の confirmImpl（confirm 戻り値注入）へ配線＝confirm 分岐の C/J 系 assert を挙動同値で維持。
+  if(typeof api.__setAppModalTestResolver==='function'){ api.__setAppModalTestResolver(function(type,message){ return (confirmImpl?confirmImpl(message):true); }); }
   return api;
 }
+// IN-APP-MODAL-001 (#606): 張り替え確認 OK/キャンセルの結果は onDone(result) で返る（confirm 分岐は非同期）。
+//   テストは resolver で同期解決されるため、confirm 分岐のケースは onDone を同期捕捉して従来の「戻り値」assert を維持する。
+//   （非 confirm 経路は従来どおり戻り値が同期で返るため変更不要。）
 let pass=0,fail=0;function ok(c,m){if(c)pass++;else{fail++;console.log('  FAIL: '+m);}}
 
 console.log('=== I: issueOpsSharedKey（発行・再発行は同キー）===');
@@ -82,7 +88,7 @@ var c1=loadEnv(function(){return false;});
 c1._setState({tournament_id:'',classes:[],players:{},results:{},report:{}});
 var kC1=c1.issueOpsSharedKey(function(){}); var tidC1=c1._getState().tournament_id;
 c1._getState().cloud_sent_tid=tidC1;
-var rC=c1.applyOpsSharedKey(kC1==='0000'?'0001':'0000',function(){});
+var rC; c1.applyOpsSharedKey(kC1==='0000'?'0001':'0000',function(){},function(_r){rC=_r;}); // confirm 分岐→onDone 同期捕捉
 ok(rC&&rC.ok===false&&rC.step==='cancelled','C6 送信済み＋confirmキャンセル→ok:false/step:cancelled');
 ok(c1._getState().tournament_id===tidC1,'C7 キャンセル時は tournament_id 維持');
 // apply: confirm OK→張り替え実行
@@ -91,7 +97,7 @@ c2._setState({tournament_id:'',classes:[],players:{},results:{},report:{}});
 var kC2=c2.issueOpsSharedKey(function(){}); var tidC2=c2._getState().tournament_id;
 c2._getState().cloud_sent_tid=tidC2;
 var newK=(kC2==='0000')?'0001':'0000';
-var rD=c2.applyOpsSharedKey(newK,function(){});
+var rD; c2.applyOpsSharedKey(newK,function(){},function(_r){rD=_r;}); // confirm 分岐→onDone 同期捕捉
 ok(rD&&rD.ok===true&&c2._getState().tournament_id!==tidC2,'C8 confirm OK→張り替え実行');
 // issue: 送信済み（suffix無しID）から発行し直し confirmキャンセル→中止
 var c3=loadEnv(function(){return false;});
@@ -99,7 +105,7 @@ c3._setState({tournament_id:'',classes:[],players:{},results:{},report:{}});
 var kC3=c3.issueOpsSharedKey(function(){});
 var baseTid=c3._getState().tournament_id.replace(/_\d{4}$/,'');
 c3._setState({tournament_id:baseTid,cloud_sent_tid:baseTid,classes:[],players:{},results:{},report:{}});
-var kC3b=c3.issueOpsSharedKey(function(){});
+var kC3b; c3.issueOpsSharedKey(function(){},function(_r){kC3b=_r;}); // confirm 分岐→onDone 同期捕捉
 ok(kC3b===''&&c3._getState().tournament_id===baseTid,'C9 送信済みIDからの発行し直し confirmキャンセル→中止・ID維持');
 // 未送信なら confirm 無しで従来どおり（confirm=false でも成功する＝ガード非発火）
 var c4=loadEnv(function(){return false;});
@@ -169,14 +175,14 @@ var j3=loadEnv(function(){return false;});
 j3._setState({tournament_id:'',classes:[],players:{},results:{},report:{}});
 j3.issueOpsSharedKey(function(){});
 var tidJ3=j3._getState().tournament_id; j3._getState().cloud_sent_tid=tidJ3;
-var rJ3=j3.joinOpsKeylessTournament(function(){});
+var rJ3; j3.joinOpsKeylessTournament(function(){},function(_r){rJ3=_r;}); // confirm 分岐→onDone 同期捕捉
 ok(rJ3&&rJ3.ok===false&&rJ3.step==='cancelled'&&j3._getState().tournament_id===tidJ3,'J5 送信済み端末の合流 confirmキャンセル→中止・ID維持');
 // confirm OK→合流実行
 var j4=loadEnv(function(){return true;});
 j4._setState({tournament_id:'',classes:[],players:{},results:{},report:{}});
 j4.issueOpsSharedKey(function(){});
 j4._getState().cloud_sent_tid=j4._getState().tournament_id;
-var rJ4=j4.joinOpsKeylessTournament(function(){});
+var rJ4; j4.joinOpsKeylessTournament(function(){},function(_r){rJ4=_r;}); // confirm 分岐→onDone 同期捕捉
 ok(rJ4&&rJ4.ok===true&&/^t_\d{4}_\d{2}_\d{2}$/.test(j4._getState().tournament_id),'J6 送信済み端末の合流 confirm OK→キーなしIDへ張り替え');
 
 console.log('=== L: Phase D 1台目側の合流案内表示（refreshOpsKeyDisplay 拡張）===');
