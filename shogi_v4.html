@@ -3428,9 +3428,11 @@ function openPpDenseActionSheet(memberId,currentCls){
     var pid=null;var arr=(state.players&&state.players[currentCls])||[];
     for(var pi=0;pi<arr.length;pi++){ if(arr[pi]&&arr[pi].member_id===memberId){pid=arr[pi].id;break;} }
     if(pid==null){alert('該当する受付が見つかりません');return;}
-    removePlayer(pid,currentCls);
-    var inp=document.getElementById('pp-search');
-    renderPastParticipantsPanel(inp?inp.value:'');
+    // IN-APP-MODAL-001 (#606): removePlayer は appConfirm で非同期化。削除後の pp パネル再描画を onDone 継続として渡す（元の同期後処理と同一順序＝OK/取消いずれも実行）。
+    removePlayer(pid,currentCls,function(){
+      var inp=document.getElementById('pp-search');
+      renderPastParticipantsPanel(inp?inp.value:'');
+    });
   });
   var caBtn=document.getElementById('pp-sheet-cancel');
   if(caBtn)caBtn.addEventListener('click',closeSheet);
@@ -6857,7 +6859,7 @@ function addPlayer(){
   }
 }
 
-function removePlayer(id,cls){
+function removePlayer(id,cls,onDone){
   var name=getName(id,cls);
   var inPairings=false;
   for(var i=0;i<state.pairings[cls].length;i++){
@@ -6872,6 +6874,7 @@ function removePlayer(id,cls){
     //   「参加者一覧は残したまま、組み合わせ・勝敗結果は削除」を明示し、
     //   既存 #resetBtn「大会データを全リセット」(全リセット) との混同を抑制。
     alert(name+'は現在の組み合わせに登録されているため削除できません。\n\n別の選手に差し替える場合は「対戦相手変更」を実行してください。\n参加者一覧から削除したい場合は、先に「大会進行データをリセット」を実行してください。\n大会進行データをリセットすると、参加者一覧は残したまま、現在の組み合わせ・勝敗結果は削除されます。');
+    if(typeof onDone==='function')onDone(); // IN-APP-MODAL-001 (#606): ガードブロック経路でも元の「removePlayer 後に無条件で後処理」を再現（厳密同値・冪等再描画）。
     return;
   }
   var pastMatches=0;
@@ -6896,27 +6899,35 @@ function removePlayer(id,cls){
     //   既存 #resetBtn 誤押下を抑制 / 「参加者一覧は残したまま」明示で
     //   PR #114 で真実になった内容を伝える（PR #111 §7.3 で書けなかった）。
     alert(name+'には過去'+pastMatches+'試合分の勝敗結果があるため削除できません。\n\n参加者を削除する場合は、先に「大会進行データをリセット」を実行してください。\n大会進行データをリセットすると、参加者一覧は残したまま、現在の組み合わせ・勝敗結果は削除されます。');
+    if(typeof onDone==='function')onDone(); // IN-APP-MODAL-001 (#606): ガードブロック経路でも元の「removePlayer 後に無条件で後処理」を再現（厳密同値・冪等再描画）。
     return;
   }
+  // IN-APP-MODAL-001 (#606): native confirm→appConfirm（挙動同値=OK続行/取消中断）。削除＝破壊操作ゆえ danger:true（既定フォーカス=キャンセル・Enter抑止）。
+  //   呼び出し元 pp-sheet-remove は removePlayer の後に pp パネル再描画を同期実行していたため、その継続を onDone として受け取り、
+  //   confirm 解決後（OK/取消いずれも）に実行＝元の「removePlayer 後に無条件で後処理」と同一順序を保つ。
   var msg=name+'を削除しますか？';
-  if(!confirm(msg))return;
-  var arr=state.players[cls];
-  state.players[cls]=arr.filter(function(p){return p.id!==id;});
-  // A-4 §3.1.4: 当該 player の _pendingNewYomi も破棄
-  if(_pendingNewYomi&&Object.prototype.hasOwnProperty.call(_pendingNewYomi,id))delete _pendingNewYomi[id];
-  renderRegList();save();
-  // A-5.1-SAVE-001: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
-  // false は「保存未確認」（保存失敗と断定しない）。削除は rollback しない・運営は継続する。
-  if(!verifyPlayerAbsent(id,cls)){
-    notifySaveWarning({
-      message:'削除は反映されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
-      consoleTag:'SAVE-001: removePlayer の保存が確認できませんでした (player='+id+', cls='+cls+')',
-      callsiteId:'SAVE-001-removePlayer',
-      kind:'save-verify',
-      aggregateKey:'save-verify:entry',
-      severity:'warn'
-    });
-  }
+  appConfirm(msg,function(_ok){
+    if(_ok){
+      var arr=state.players[cls];
+      state.players[cls]=arr.filter(function(p){return p.id!==id;});
+      // A-4 §3.1.4: 当該 player の _pendingNewYomi も破棄
+      if(_pendingNewYomi&&Object.prototype.hasOwnProperty.call(_pendingNewYomi,id))delete _pendingNewYomi[id];
+      renderRegList();save();
+      // A-5.1-SAVE-001: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+      // false は「保存未確認」（保存失敗と断定しない）。削除は rollback しない・運営は継続する。
+      if(!verifyPlayerAbsent(id,cls)){
+        notifySaveWarning({
+          message:'削除は反映されましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+          consoleTag:'SAVE-001: removePlayer の保存が確認できませんでした (player='+id+', cls='+cls+')',
+          callsiteId:'SAVE-001-removePlayer',
+          kind:'save-verify',
+          aggregateKey:'save-verify:entry',
+          severity:'warn'
+        });
+      }
+    }
+    if(typeof onDone==='function')onDone();
+  },{danger:true});
 }
 
 // ============================================================

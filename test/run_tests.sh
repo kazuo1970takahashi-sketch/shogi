@@ -2384,6 +2384,18 @@ else
   warn "test_in_app_modal_withdraw_forfeit_606.js が見つからない"
 fi
 
+echo ""
+echo "【IN-APP-MODAL-001 (#606) スライス — 参加者削除確認のアプリ内モーダル化（appConfirm+danger・onDone 継続）】"
+if [ -f "$SCRIPT_DIR/test_in_app_modal_remove_player_606.js" ]; then
+  if node "$SCRIPT_DIR/test_in_app_modal_remove_player_606.js" "$TARGET" > /tmp/in_app_modal_remove_player_606_out.log 2>&1; then
+    ok "IN-APP-MODAL-REMOVE-PLAYER-606 テスト 全PASS ($(tail -1 /tmp/in_app_modal_remove_player_606_out.log))"
+  else
+    ng "IN-APP-MODAL-REMOVE-PLAYER-606 テスト 失敗"; cat /tmp/in_app_modal_remove_player_606_out.log
+  fi
+else
+  warn "test_in_app_modal_remove_player_606.js が見つからない"
+fi
+
 
 echo ""
 echo "【IN-APP-MODAL-001 (#606) スライス — 過去参加者パネルのクラス追加/変更 confirm 2件のアプリ内モーダル化】"
