@@ -71,7 +71,9 @@ ok(Es.alerts.every(a=>a.indexOf('名簿を更新しました')<0),'S3 成功通�
 console.log('=== 静的HTML / 配線（RAW） ===');
 ok(RAW.indexOf('>📋 名簿を更新</button>')>=0,'R1 ボタン名は「📋 名簿を更新」');
 ok(!/function saveData\(\)\{[\s\S]{0,400}navigator\.clipboard/.test(RAW),'R2 saveData にクリップボード書き出しが無い');
-ok(/function saveData\(\)\{[\s\S]{0,200}syncBranchMasterOnSave\(\)/.test(RAW),'R3 saveData は名簿同期を維持');
+// IN-APP-MODAL-001 (#606): YOMI 上書き確認の appConfirm 非同期化に伴い、saveData は完了通知(showToast)を
+//   syncBranchMasterOnSave の onDone 継続で受ける（引数付き呼び出し）。名簿同期の維持（呼出の存在）を担保する意図は不変。
+ok(/function saveData\(\)\{[\s\S]{0,600}syncBranchMasterOnSave\(/.test(RAW),'R3 saveData は名簿同期を維持（onDone 継続付き）');
 ok(RAW.indexOf('回戦数（全クラス既定）')>=0,'R4 共通欄は「全クラス既定」と明示');
 ok(/renderClassManager\(\)\{[\s\S]*createElement\('select'\)[\s\S]*onChangeClassRounds/.test(RAW),'R5 クラス管理行に回戦数selectと結線');
 ok(/roundsSel\.disabled=isClassStarted\(c\.id\)/.test(RAW),'R6 クラス別selectは開始後ロック');
