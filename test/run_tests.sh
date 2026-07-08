@@ -2271,6 +2271,18 @@ else
 fi
 
 echo ""
+echo "【LIVE-BROADCAST-001 Phase4 — Realtime Broadcast 上乗せ（受信→即再取得／DB trigger 送信）】"
+if [ -f "$SCRIPT_DIR/test_live_broadcast_phase4.js" ]; then
+  if node "$SCRIPT_DIR/test_live_broadcast_phase4.js" "$TARGET" > /tmp/live_broadcast_p4_out.log 2>&1; then
+    ok "LIVE-Phase4 テスト 全PASS ($(tail -1 /tmp/live_broadcast_p4_out.log))"
+  else
+    ng "LIVE-Phase4 テスト 失敗"; cat /tmp/live_broadcast_p4_out.log
+  fi
+else
+  warn "test_live_broadcast_phase4.js が見つからない"
+fi
+
+echo ""
 echo "【LIVE-BROADCAST-001 Phase3 — 配信面（table/RPC）実 PostgreSQL 検証（psql 無ければ SKIP）】"
 if [ -f "$SCRIPT_DIR/live_broadcast_phase3_pgtest.sh" ]; then
   if bash "$SCRIPT_DIR/live_broadcast_phase3_pgtest.sh" > /tmp/live_p3_pgtest_out.log 2>&1; then
