@@ -34,9 +34,9 @@
     font-weight: bold;
     padding: 8px 12px;
   }
-  .section-header.trouble {
-    background: #c0392b;
-  }
+  .section-header.cloud { background: #1F3864; }
+  .section-header.live { background: #2b6cb0; }
+  .section-header.trouble { background: #c0392b; }
   .section-body {
     padding: 10px 12px;
   }
@@ -63,6 +63,15 @@
     color: #c0392b;
     font-weight: bold;
   }
+  .btn {
+    display: inline-block;
+    font-size: 12px;
+    background: #eef2f7;
+    border: 1px solid #c3cfdd;
+    border-radius: 5px;
+    padding: 0 5px;
+    white-space: nowrap;
+  }
   .note {
     background: #fff8e1;
     border-left: 3px solid #f39c12;
@@ -74,6 +83,17 @@
   }
   .note.intro {
     margin: 0 0 12px;
+  }
+  .note.blue {
+    background: #eaf1f8;
+    border-left-color: #2b6cb0;
+  }
+  code {
+    font-size: 12px;
+    background: #f2f2f2;
+    padding: 0 3px;
+    border-radius: 3px;
+    word-break: break-all;
   }
   table {
     width: 100%;
@@ -113,62 +133,127 @@
 <h1>月例将棋大会 当日マニュアル</h1>
 
 <div class="note intro">
-  このマニュアルは<strong>事前準備・全体像・困ったときの指針</strong>です。細かなボタン操作は、画面内のヘルプ（？）や確認メッセージに従ってください。記載の例はすべて架空です。
+  このマニュアルは<strong>事前準備・当日の流れ・困ったときの指針</strong>です。細かなボタン操作は、画面内の「？ ヘルプ」や確認メッセージに従ってください。画面は上部に<strong>5つのタブ</strong>（参加者登録／対局管理／最終結果／会員名簿／大会履歴）があります。記載の例はすべて架空です。
 </div>
 
 <div class="section">
-  <div class="section-header">1. 大会開始前</div>
+  <div class="section-header">1. 大会開始前（参加者登録タブ）</div>
   <div class="section-body">
     <div class="url-box">https://kazuo1970takahashi-sketch.github.io/shogi/</div>
     <ul class="check">
-      <li>参加者を登録する</li>
-      <li class="important">「JSONバックアップ保存」を押す</li>
-      <li>「大会開始」を押す</li>
-    </ul>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-header">2. 各ラウンド（毎回）</div>
-  <div class="section-body">
-    <ul class="check">
-      <li>「ペアリング生成」で組み合わせ確認</li>
-      <li>対局実施 → 勝者を入力</li>
-      <li>「ラウンド確定」を押す</li>
-      <li class="important">「JSONバックアップ保存」を押す</li>
+      <li><span class="important">クラウドを使う場合は先にログイン</span>：「会員名簿」タブの<span class="btn">☁ クラウド管理ページ（名簿編集・ログイン）を開く</span>からログイン（送信・ライブ配信・名簿取得に必要）</li>
+      <li>「回戦数（全クラス既定）」を確認（既定は4回戦。開始後は変更できません）</li>
+      <li>参加者を登録する（氏名・会費区分〔一般／中学生以下／女性〕・ふりがな）。「過去参加者から選ぶ」も使えます</li>
+      <li>必要ならクラスを追加（C以降。A・Bは固定で削除不可）</li>
+      <li>控えを取る：<span class="btn">☁ クラウドへ送信</span> ／ <span class="btn">バックアップ</span></li>
     </ul>
     <div class="note">
-      保存すると shogi_YYYYMMDD_HHMM.json がダウンロードされます。ファイルの存在を必ず確認してください。
+      上部の<strong>「保存状態」バー</strong>で、自動保存／名簿を更新／バックアップ／クラウド送信の<strong>最終時刻</strong>を確認できます（バーを押すと説明が出ます）。<br>
+      「<strong>⚠ この端末ではデータが保存されません</strong>」の赤い帯が出たら、シークレット（プライベート）を解除し、通常のブラウザで開き直してください。
     </div>
   </div>
 </div>
 
 <div class="section">
-  <div class="section-header">3. 大会終了後</div>
+  <div class="section-header">2. 対局を進める（対局管理タブ・毎回戦）</div>
   <div class="section-body">
     <ul class="check">
-      <li>「成績」タブで順位確認</li>
-      <li class="important">「JSONバックアップ保存」を押す（最終）</li>
-      <li>印刷 または 報告書ダウンロード</li>
+      <li>「対局管理」タブへ移動し、クラスごとに<span class="btn">〇クラス全員で1局目を開始</span>（偶数のとき）</li>
+      <li>来た人から始めるなら<span class="btn">このクラスを部分開始（未割当者を表示）</span> → 未割当者を選んで<span class="btn">選択した参加者で1局目を追加作成</span>、または<span class="btn">未手合いをまとめて1局目作成</span></li>
+      <li><span class="btn">現在の組み合わせを印刷 / PDF保存</span>で組み合わせを配布</li>
+      <li>対局 → 勝った人のボタンを押す（もう一度押すと取り消し、相手側を押すと変更）</li>
+      <li>全卓入力したら<span class="btn">○回戦 確定して次へ</span>を押す</li>
+      <li class="important">確定したら控えを取る：<span class="btn">☁ クラウドへ送信</span>（主）＋ <span class="btn">バックアップ</span></li>
     </ul>
     <div class="note">
-      報告書・印刷を出したら、<strong>日時／各対局の勝敗／参加人数</strong>が正しいか目視で確認してください。
+      節目（大会開始／クラス完了／全終了）で<strong>控えを促す黄色い帯</strong>（<span class="btn">バックアップする</span>／<span class="btn">あとで</span>）が出たら、<span class="btn">バックアップする</span>を押すと安心です。<br>
+      ⚠️「組み合わせを再生成」すると入力済みの勝敗が消えることがあります。確認メッセージをよく読んでください。
     </div>
   </div>
 </div>
 
 <div class="section">
-  <div class="section-header">4. 知っておくと困らない運用の考え方</div>
+  <div class="section-header live">3. 参加者・会場に成績を見せる</div>
+  <div class="section-body">
+    <ul class="check">
+      <li><strong>📱 スマホ星取表</strong>（ヘッダのボタン）…<strong>同じ端末の別タブ</strong>で星取表を全画面表示。会場のディスプレイやサブ画面向け（ネット不要・自動更新）</li>
+      <li><strong>📡 ライブ配信</strong>…参加者が<strong>自分のスマホ</strong>で順位・星取を見られるように公開。ヘッダの<span class="btn">📡 ライブ配信</span>で最終結果タブの配信欄へ移動</li>
+    </ul>
+    <div class="note blue">
+      <strong>ライブ配信の手順</strong>：最終結果タブの「📡 参加者向けライブ配信（任意）」で、①<strong>表示名</strong>を選ぶ（既定「姓＋番号のみ（おすすめ）」／「フルネーム」は告知・同意を決めた場合のみ）→ ②<span class="btn">📡 ライブ配信を開始</span> → ③出てきた<strong>QRを印刷して会場に掲示</strong>。<br>
+      配信中は上部に「<strong>📡 配信中</strong>」バーが出ます。終わったら<span class="btn">⏹ 配信を停止</span>。<br>
+      <span class="important">掲示物には「氏名・成績をインターネット公開する」旨の告知を必ず入れてください。</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header">4. 大会終了後（最終結果タブ）</div>
+  <div class="section-body">
+    <ul class="check">
+      <li>「最終結果」タブで順位を確認（「順位の見方」ヘルプあり）</li>
+      <li class="important"><span class="btn">☁ クラウドへ送信</span>で結果を残す・共有する（最終）</li>
+      <li><span class="btn">対戦成績を印刷 / PDF保存</span></li>
+      <li>「大会報告書」を入力 →<span class="btn">報告書を印刷 / PDF保存</span></li>
+      <li>ライブ配信していたら<span class="btn">⏹ 配信を停止</span></li>
+      <li><span class="btn">バックアップ</span>で最終の控え（JSON）も取る</li>
+      <li><span class="btn">📋 名簿を更新</span>で今日の参加者を会員名簿へ反映</li>
+    </ul>
+    <div class="note">
+      報告書・印刷を出したら、<strong>日時／各対局の勝敗／参加人数</strong>が正しいか目視で確認してください。両クラスまとめて見たいときは<span class="btn">☁ 両級まとめて表示（統合レポート）</span>が使えます。
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header cloud">5. 「保存」は4つある（覚えておく）</div>
+  <div class="section-body">
+    <table>
+      <tbody>
+      <tr>
+        <td>💾 自動保存</td>
+        <td>入力するたび<strong>この端末の中だけ</strong>に自動保存。何もしなくてOK（端末の故障・データ消去には備えられません）。</td>
+      </tr>
+      <tr>
+        <td>☁ クラウドへ送信<br>（主・任意）</td>
+        <td>確定結果を<strong>クラウドへ</strong>。みんなで共有でき、控えにもなります。<strong>ログインとネット接続が必要</strong>。押さなくても運営は続けられます。</td>
+      </tr>
+      <tr>
+        <td>バックアップ</td>
+        <td>大会データを<strong>JSONファイルに保存／復元</strong>。<strong>端末事故から復旧できるのはこれだけ</strong>。ネット不要。ファイル名は <code>shogi_backup_日付_時刻.json</code>。</td>
+      </tr>
+      <tr>
+        <td>📋 名簿を更新</td>
+        <td>今日の参加者を<strong>会員名簿（支部マスタ）へ反映</strong>。大会データの控えではありません。</td>
+      </tr>
+      </tbody>
+    </table>
+    <div class="note blue">
+      共有・控えは<strong>クラウド送信を主</strong>に。ただし<strong>クラウドはバックアップの代わりではありません</strong>。端末が壊れたときに<strong>元に戻せるのは「バックアップ」（JSON）だけ</strong>です。両方こまめに取っておくと万全です。
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header">6. 知っておくと困らない運用の考え方</div>
   <div class="section-body">
     <table>
       <tbody>
       <tr>
         <td>来た人だけで始める<br>（部分開始・逐次手合）</td>
-        <td>全員そろわなくても1局目を始められます。受付順に2人ずつ「1卓追加」、または今いる人を一気に「まとめて1局目作成」。後から来た人も同じ操作で足せて、<strong>すでにある対局・結果は変わりません</strong>。手合いがまだの人は「未割当」として表示されます。</td>
+        <td>全員そろわなくても1局目を始められます。「このクラスを部分開始」→未割当者を選んで「選択した参加者で1局目を追加作成」、または「未手合いをまとめて1局目作成」で今いる人を一気に組みます。後から来た人も同じ操作で足せて、<strong>すでにある対局・結果は変わりません</strong>。</td>
       </tr>
       <tr>
         <td>奇数のときの待機</td>
-        <td>人数が奇数だと1名が待機になります（対局には入らず次を待つだけ）。<strong>待機は不戦勝ではありません</strong>（勝ち点は付きません）。次のラウンドで対局に戻ります。1局目はできるだけ偶数になるよう受付・手合いを調整するとスムーズです。</td>
+        <td>人数が奇数だと1名が待機になります（対局には入らず次を待つだけ）。<strong>待機は不戦勝ではありません</strong>（勝ち点は付きません）。次の回戦で対局に戻ります。1局目はできるだけ偶数になるよう受付・手合いを調整するとスムーズです。</td>
+      </tr>
+      <tr>
+        <td>途中で帰る人（棄権）</td>
+        <td>受付タブの参加者一覧で「棄権」にすると、<strong>次の組み合わせから外れます</strong>。<strong>それまでの成績は残ります</strong>。</td>
+      </tr>
+      <tr>
+        <td>表示名とプライバシー<br>（ライブ配信）</td>
+        <td>ライブ配信は<strong>インターネット公開</strong>です。既定の表示名は「姓＋番号のみ」で氏名を勝手に公開しません。フルネーム公開は<strong>主催者が告知・同意運用を決めた場合のみ</strong>選んでください（未成年参加を前提とした設計）。</td>
       </tr>
       <tr>
         <td>クラスを増やす<br>（C 以降）</td>
@@ -176,15 +261,19 @@
       </tr>
       <tr>
         <td>ふりがな</td>
-        <td>氏名にふりがなを表示でき、同姓や読みづらい名前の取り違えを防げます。登録後でも編集でき、空にするとふりがな表示は消えます。</td>
+        <td>氏名にふりがなを表示でき、順位表・星取表・報告書などでも取り違えを防げます。登録後でも編集でき、空にするとふりがな表示は消えます。</td>
       </tr>
       <tr>
-        <td>支部マスタ・<br>過去大会の統合</td>
-        <td>会員の元データです。当日は大きくいじらず、参加者登録の素材として使います。万一データが壊れても当日の大会運営は止まらない設計で、元データは保全されます。</td>
+        <td>2台で分担する<br>（A級・B級）</td>
+        <td>2台で入力を分けるときは、受付タブの「▷ 2台で分担して入力するとき」で、1台目で<strong>運営共通キー（4桁）を発行</strong>→2台目でそのキーを入力して「このキーに合わせる」。両方の送信が同じ1つの大会にまとまります（各台は自分の級だけ送るのがコツ）。1台運営なら操作は不要です。</td>
+      </tr>
+      <tr>
+        <td>会員名簿・<br>クラウド名簿</td>
+        <td>会員の元データです。当日は大きくいじらず、参加者登録の素材として使います。<strong>「☁ クラウドから取得」</strong>で最新の名簿を取り込めます（ログイン時）。万一データが壊れても当日の運営は止まらない設計です。</td>
       </tr>
       <tr>
         <td>履歴</td>
-        <td>過去大会の記録は「履歴」で閲覧できます。<strong>いま進行中の大会とは別もの</strong>です。履歴を見ても今の大会は変わりません。</td>
+        <td>過去大会は「大会履歴」タブで閲覧できます（端末内の記録＋「☁ クラウドの過去大会」）。<strong>いま進行中の大会とは別もの</strong>で、見ても今の大会は変わりません。</td>
       </tr>
       </tbody>
     </table>
@@ -192,26 +281,38 @@
 </div>
 
 <div class="section">
-  <div class="section-header trouble">5. トラブル時</div>
+  <div class="section-header trouble">7. トラブル時</div>
   <div class="section-body">
     <table>
       <tbody>
       <tr>
-        <td>ブラウザが落ちた</td>
-        <td>「読み込み」→ 直前の JSON を選択</td>
+        <td>ブラウザが落ちた・誤ってリセットした</td>
+        <td>「バックアップ」→「バックアップから復元（ファイル選択）」で直前の JSON を選ぶ（テキスト貼り付けでも可）</td>
       </tr>
       <tr>
         <td>端末が壊れた</td>
-        <td>別端末でアプリを開き同じ JSON を「読み込み」</td>
+        <td>別端末でアプリを開き、同じ JSON を「バックアップ」画面で復元（クラウド送信済みなら結果はクラウドにも残っています）</td>
       </tr>
       <tr>
         <td>JSON が見当たらない</td>
-        <td>ダウンロードフォルダで「shogi_」で検索</td>
+        <td>ダウンロードフォルダ（iPhoneは「ファイル」→「ダウンロード」）で「<code>shogi_backup_</code>」を探す</td>
+      </tr>
+      <tr>
+        <td>クラウドに送れない</td>
+        <td>ログインとネット接続を確認。送れなくても運営は続行でき、あとで再送信できます</td>
+      </tr>
+      <tr>
+        <td>ライブ配信が切れた</td>
+        <td>上部の「📡 配信中」バーで状態を確認。必要なら再度「📡 ライブ配信を開始」</td>
+      </tr>
+      <tr>
+        <td>「⚠ 未保存の恐れ」が出た</td>
+        <td>自動保存の確認が取れなかった表示（必ずしも失敗ではない）。落ち着いて続行し、念のため「バックアップ」で控える</td>
       </tr>
       </tbody>
     </table>
     <div class="note">
-      ℹ️ 連絡先は別途ご確認ください。
+      ℹ️ ヘッダの<strong>「⋯ その他」</strong>にリセット操作（大会進行データをリセット／大会データを全リセット）があります（誤タップ防止のためメニュー内）。連絡先は別途ご確認ください。
     </div>
   </div>
 </div>
