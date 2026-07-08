@@ -11234,7 +11234,10 @@ function getTournamentDateFromReport(r){
 }
 
 // マスタ同期は saveData() 時のみ。save()/resetAll()/編集時に呼ばない（仕様書 3.4.1、§3.1.3）
-function syncBranchMasterOnSave(){
+function syncBranchMasterOnSave(onDone){
+  // IN-APP-MODAL-001 (#606): YOMI 上書き確認を appConfirm へ非同期化したため、完了通知（呼び出し元 saveData の
+  //   showToast）を onDone コールバックで受け、tail 完了／corruption スキップ／例外の全経路で1回だけ呼ぶ＝旧同期完了順序を保持。
+  function _done(){ if(typeof onDone==='function')onDone(); }
   try{
     var master=loadBranchMaster();
     // 仕様書 v5 §3.5 / Codex MF #3: 破損由来の空マスタは保存しない。
@@ -11253,6 +11256,7 @@ function syncBranchMasterOnSave(){
         severity:'warn'
       });
       save();
+      _done();
       return;
     }
     var date=getTournamentDateFromReport(state.report);
@@ -11269,10 +11273,32 @@ function syncBranchMasterOnSave(){
     // YOMI-SYNC-OVERWRITE-001: 当日編集したふりがなが、マスタの既存(非空)ふりがなと異なる会員について
     //   1回だけ確認して上書きする（#333「空のときだけ補完」を、明示編集時は反映へ緩める）。
     //   純粋マージ updateBranchMasterFromTournament は不変。ここ(オーケストレータ)で追加検知する。
+    // IN-APP-MODAL-001 (#606): confirm の答えを saveBranchMaster 前に確定する必要があるため、保存以降の tail を
+    //   _finishMasterSync に集約。OK 時は上書き後・キャンセル/差分なし時はそのまま tail を実行＝旧「confirm 応答後に保存」
+    //   の順序・分岐を厳密保持。tail は独自 try/catch＋_done で、旧 outer try/catch と同じ warn 文言・完了通知を維持。
+    var _finishMasterSync=function(){
+      try{
+        var masterSaved=saveBranchMaster(master);
+        if(masterSaved!==false){
+          // 反映済みのため一時マップをクリア（保存成功時のみ。失敗時は次回 saveData での再試行に備えて保持）。
+          _pendingNewYomi={};
+          // YOMI-SYNC-OVERWRITE-001 (Codex P2b): 永続マーカーも解除（解決済みを次回「名簿を更新」で再prompt しない）。
+          try{var _yck2=(state&&state.players)?Object.keys(state.players):[];for(var _yk=0;_yk<_yck2.length;_yk++){var _yar=state.players[_yck2[_yk]];if(Array.isArray(_yar)){for(var _yj=0;_yj<_yar.length;_yj++){if(_yar[_yj]&&_yar[_yj].yomiDirty)delete _yar[_yj].yomiDirty;}}}}catch(_yce){}
+          // SAVE-STATUS-BAR-001: 名簿同期成功の時刻を記録（fail-soft・破損スキップ/保存失敗時は記録しない）。
+          markSaveStatus('meibo');
+        }
+        save();
+      }catch(e2){
+        if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタ同期に失敗（既存大会運営は継続）',e2);
+      }
+      _done();
+    };
+    // YOMI 差分検出（同期）。検出が例外なく完走したときのみ確認を出す（旧: 検出～confirm を同一 try 内＝throw で confirm 到達せず）。
+    var _ydiffs=[]; var _ydiffsReady=false;
     try{
       var _yById={};
       for(var _mi=0;_mi<master.members.length;_mi++){ if(master.members[_mi]&&master.members[_mi].id) _yById[master.members[_mi].id]=master.members[_mi]; }
-      var _ydiffs=[]; var _yseen={};
+      var _yseen={};
       var _yck=(state&&state.players&&typeof state.players==='object')?Object.keys(state.players):[];
       for(var _ci=0;_ci<_yck.length;_ci++){
         var _arr=state.players[_yck[_ci]]; if(!Array.isArray(_arr))continue;
@@ -11284,25 +11310,21 @@ function syncBranchMasterOnSave(){
           if(_dy&&_my&&_dy!==_my){ _ydiffs.push({mem:_mem,name:String(_mem.name||_pp.name||''),from:_my,to:_dy}); _yseen[_mem.id]=true; }
         }
       }
-      if(_ydiffs.length>0&&typeof confirm==='function'){
-        var _lines=[]; for(var _li=0;_li<_ydiffs.length;_li++){ _lines.push(_ydiffs[_li].name+'：'+_ydiffs[_li].from+' → '+_ydiffs[_li].to); }
-        if(confirm('当日編集したふりがなが名簿と異なる会員がいます。名簿のふりがなを次のとおり更新しますか？\n\n'+_lines.join('\n')+'\n\n（キャンセルすると名簿のふりがなは変更しません）')){
-          for(var _ai=0;_ai<_ydiffs.length;_ai++){ _ydiffs[_ai].mem.yomi=_ydiffs[_ai].to; }
-        }
-      }
+      _ydiffsReady=true;
     }catch(_ye){ if(typeof console!=='undefined'&&console.warn)console.warn('YOMI-SYNC-OVERWRITE-001 skip',_ye); }
-    var masterSaved=saveBranchMaster(master);
-    if(masterSaved!==false){
-      // 反映済みのため一時マップをクリア（保存成功時のみ。失敗時は次回 saveData での再試行に備えて保持）。
-      _pendingNewYomi={};
-      // YOMI-SYNC-OVERWRITE-001 (Codex P2b): 永続マーカーも解除（解決済みを次回「名簿を更新」で再prompt しない）。
-      try{var _yck=(state&&state.players)?Object.keys(state.players):[];for(var _yk=0;_yk<_yck.length;_yk++){var _yar=state.players[_yck[_yk]];if(Array.isArray(_yar)){for(var _yj=0;_yj<_yar.length;_yj++){if(_yar[_yj]&&_yar[_yj].yomiDirty)delete _yar[_yj].yomiDirty;}}}}catch(_yce){}
-      // SAVE-STATUS-BAR-001: 名簿同期成功の時刻を記録（fail-soft・破損スキップ/保存失敗時は記録しない）。
-      markSaveStatus('meibo');
+    if(_ydiffsReady&&_ydiffs.length>0){
+      var _lines=[]; for(var _li=0;_li<_ydiffs.length;_li++){ _lines.push(_ydiffs[_li].name+'：'+_ydiffs[_li].from+' → '+_ydiffs[_li].to); }
+      // 上書き＝肯定操作ゆえ danger 無し（Enter=OK 維持）。OK 時のみ上書き→tail、キャンセル時はそのまま tail＝旧 confirm 分岐と同値。
+      appConfirm('当日編集したふりがなが名簿と異なる会員がいます。名簿のふりがなを次のとおり更新しますか？\n\n'+_lines.join('\n')+'\n\n（キャンセルすると名簿のふりがなは変更しません）',function(_ok){
+        if(_ok){ try{ for(var _ai=0;_ai<_ydiffs.length;_ai++){ _ydiffs[_ai].mem.yomi=_ydiffs[_ai].to; } }catch(_ye2){ if(typeof console!=='undefined'&&console.warn)console.warn('YOMI-SYNC-OVERWRITE-001 skip',_ye2); } }
+        _finishMasterSync();
+      });
+      return;
     }
-    save();
+    _finishMasterSync();
   }catch(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタ同期に失敗（既存大会運営は継続）',e);
+    _done();
   }
 }
 
@@ -11312,10 +11334,13 @@ function syncBranchMasterOnSave(){
 //   専用の「バックアップ」ボタンに一本化（役割の重複を解消）。saveDataAsFile は互換のため定義を温存（未使用）。
 function saveData(){
   // F2: 名簿を更新（支部マスタへ同期）。当日の参加者・クラス構成を名簿へ反映する。
-  syncBranchMasterOnSave();
-  // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は blocking alert をやめ toast へ（OK タップ不要）。
-  //   旧 alert にあった「控えはバックアップ」案内は保存状態バー＋save-systems ヘルプ（?v=56）がカバー済み。
-  showToast('📋 名簿を更新しました');
+  // IN-APP-MODAL-001 (#606): syncBranchMasterOnSave は YOMI 上書き確認が appConfirm（非同期）化したため、
+  //   完了通知 showToast を onDone 継続で受ける＝旧「同期反映後に通知」の順序を保持（差分なし/確認キャンセル/OK いずれも反映完了後に1回）。
+  syncBranchMasterOnSave(function(){
+    // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は blocking alert をやめ toast へ（OK タップ不要）。
+    //   旧 alert にあった「控えはバックアップ」案内は保存状態バー＋save-systems ヘルプ（?v=56）がカバー済み。
+    showToast('📋 名簿を更新しました');
+  });
 }
 
 function saveDataAsFile(json){
