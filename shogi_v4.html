@@ -10978,12 +10978,14 @@ function _confirmUnlinkedBeforeSend(unlinked, onUpdateAndSend, onSendAsIs, onCan
     if(ok1){ onUpdateAndSend(); return; }
     var m2='名簿を更新せずに送信します。\n未連携の '+n+' 名（'+label+'）は、クラウドの共有結果に載りません。\n\nこのまま送信しますか？';
     appConfirm(m2,function(ok2){ if(ok2)onSendAsIs(); else onCancel(); },{okText:'このまま送信',cancelText:'中止'});
-  },{okText:'名簿を更新して送信',cancelText:'しない'});
+  },{okText:'名簿を更新して送信',cancelText:'更新しない'});
 }
 // 送信後（skipped>0）の⚠注記（C）: 未連携者が共有結果に未反映であること・最上位者・直し方を明示。
 function _unlinkedSkippedNote(count){
   var label=''; try{ label=_unlinkedTopLabel(collectUnlinkedParticipantsForSend()); }catch(e){ label=''; }
-  return '\n⚠ 未連携 '+count+' 名'+(label?('（'+label+'）'):'')+'は共有結果に未反映です。「📋 名簿を更新」→ 再送信で反映できます。';
+  // 表示先は applyCloudStatus（textContent・.cloud-status に pre-wrap なし）＝'\n' は改行にならないため
+  // 区切りは全角スペース（L3 レビュー指摘3・CSS は拘束ルール3で不変のまま）。
+  return '　⚠ 未連携 '+count+' 名'+(label?('（'+label+'）'):'')+'は共有結果に未反映です。「📋 名簿を更新」→ 再送信で反映できます。';
 }
 function sendTournamentToCloud(setStatus){
   setStatus=setStatus||function(){};
@@ -11050,7 +11052,9 @@ function sendTournamentToCloud(setStatus){
             return syncTournamentToCloud(client,master,{clubId:clubId}).then(function(res){
               if(res&&res.ok){
                 // A-2 (SYSTEM-REVIEW #377 follow): 未解決 entry を黙って成功扱いにしない。
-                //   unresolved>0 は ⚠ 警告（U-1 で橙）＝集計欠落に気づける。skipped(マスタ未連携)は対象外の中立注記。
+                //   unresolved>0 は ⚠ 警告（U-1 で橙）＝集計欠落に気づける。skipped(マスタ未連携)は当初「対象外の中立注記」
+                //   だったが、未連携の入賞者（1位含む）が共有結果から黙って欠落する実害を受け
+                //   CLOUD-SEND-UNLINKED-GUARD-001 で ⚠ 注記（_unlinkedSkippedNote）へ格上げした（#377 判断の意図的更新）。
                 var c=res.counts||{};
                 var base='送信しました（名簿 '+(c.members||0)+' 名・結果 '+(c.entries||0)+' 件）';
                 // CLOUD-SEND-UNLINKED-GUARD-001 (C): 未連携者は共有結果に未反映＝中立注記ではなく⚠で最上位者と直し方を明示。
