@@ -51,12 +51,14 @@ const env=loadEnv();
   var C=env.classifyCloudStatusKind;
   ok(C('⚠ 一部の結果を送信できませんでした：未解決 1 名。送信しました（名簿 2 名・結果 1 件）支部マスタへ紐付けてから再送してください（冪等・運営は続行できます）')==='warn','M1 ⚠未解決→warn(橙)');
   ok(C('送信しました（名簿 2 名・結果 2 件）')==='ok','M2 完全成功→ok(緑)');
-  ok(C('送信しました（名簿 2 名・結果 1 件／マスタ未連携 1 名は対象外）')==='ok','M3 未連携注記のみ→ok(緑・中立注記)');
+  // CLOUD-SEND-UNLINKED-GUARD-001: #377 の「skipped は中立注記(ok/緑)」を、未連携者が共有結果から
+  //   黙って欠落する（1位が消える）問題を受けて ⚠ 警告(warn/橙) に格上げ。M3 の期待も warn へ更新。
+  ok(C('送信しました（名簿 2 名・結果 1 件）　⚠ 未連携 1 名（最上位：1位 甲）は共有結果に未反映です。「📋 名簿を更新」→ 再送信で反映できます。')==='warn','M3 未連携ありは⚠→warn(橙・CLOUD-SEND-UNLINKED-GUARD-001 で中立注記から格上げ)');
 
   console.log('=== A-2 配線（RAW）===');
   ok(/\{ok:true,warn:\(counts\.unresolved>0\),counts:counts,tournament_id:tid\}/.test(RAW),'W1 ok 返却に warn フラグ');
   ok(RAW.indexOf("if(res.warn){ base='⚠ 一部の結果を送信できませんでした")>=0,'W2 sendTournamentToCloud が res.warn で ⚠ 格上げ');
-  ok(RAW.indexOf("／マスタ未連携 '+c.skipped+' 名は対象外")>=0,'W3 skipped は中立注記');
+  ok(RAW.indexOf('if(c.skipped)base+=_unlinkedSkippedNote(c.skipped)')>=0,'W3 skipped は _unlinkedSkippedNote(⚠未反映) に格上げ（CLOUD-SEND-UNLINKED-GUARD-001）');
 
   console.log('A2-PARTIAL-WARN: PASS='+pass+' FAIL='+fail);
   process.exit(fail===0?0:1);
