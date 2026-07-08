@@ -52,19 +52,29 @@ ok(env.classifyCloudStatusKind('送信しました（名簿 1 名・結果 1 件
 //   モーダルは __setAppModalTestResolver で自動応答（message 内容でディスパッチ）。
 //   loadCloudDeps は config/supabase 不在＋script 注入失敗（mock）で {cfg:false} → step:'config'。
 //   よって res.step==='config' ＝「ガードを通過して _send に到達した」ことの決定的な証拠になる。
+// L3 再レビュー指摘1 対応: resolve 漏れ（ハング）を silent PASS にしないウォッチドッグ。
+//   実 setTimeout（sandbox 外の node 実タイマー）なのでイベントループが維持され、
+//   「未解決 await → ループ枯渇 → exit 0」の fail-open が起きず、必ず FAIL(exit 1) になる。
+var _wd=setTimeout(function(){
+  console.log('  FAIL: timeout（sendTournamentToCloud の Promise が resolve されていない疑い）');
+  console.log('CLOUD-SEND-UNLINKED-GUARD-001: PASS='+pass+' FAIL='+(fail+1));
+  process.exit(1);
+},15000);
 function runSend(answers){
   // answers: {date:bool, guard1:bool, guard2:bool}。prompts: 表示された confirm メッセージの記録。
+  // L3 再レビュー指摘2 対応: 既知パターン以外の confirm は unexpected に記録し、各経路で 0 件をアサートする
+  //   （無条件 return true の広い許容をやめ、想定外モーダルの出現を検知可能にする。応答は true で先へ進め、ハングはさせない）。
   var env=loadEnv();
-  var prompts=[];
+  var prompts=[],unexpected=[];
   env.__setAppModalTestResolver(function(type,message){
     var m=String(message==null?'':message); prompts.push(m);
     if(m.indexOf('実施日')>=0)return answers.date;
     if(m.indexOf('名簿を更新してから送信しますか')>=0)return answers.guard1;
     if(m.indexOf('このまま送信しますか')>=0)return answers.guard2;
-    return true; // 想定外の confirm（YOMI 上書き等）は通す
+    unexpected.push(m); return true;
   });
   var statuses=[];
-  return {env:env,prompts:prompts,statuses:statuses,
+  return {env:env,prompts:prompts,unexpected:unexpected,statuses:statuses,
     send:function(){ return env.sendTournamentToCloud(function(s){statuses.push(String(s));}); }};
 }
 function guardShown(prompts){ var c=0; for(var i=0;i<prompts.length;i++){ if(prompts[i].indexOf('名簿に未連携の参加者')>=0)c++; } return c; }
@@ -80,6 +90,7 @@ function stage2Shown(prompts){ var c=0; for(var i=0;i<prompts.length;i++){ if(pr
   var r1=await t1.send();
   ok(guardShown(t1.prompts)===0,'B1-1 全員連携済み→ガード confirm は表示されない');
   ok(r1&&r1.ok===false&&r1.step==='config','B1-2 従来どおり _send へ到達（step:config）');
+  ok(t1.unexpected.length===0,'B1-3 想定外の confirm は表示されない');
 
   // B2: 未連携あり・1段目=更新しない・2段目=中止 → cancelled-unlinked（送信未到達）
   var t2=runSend({date:true,guard1:false,guard2:false});
@@ -88,12 +99,14 @@ function stage2Shown(prompts){ var c=0; for(var i=0;i<prompts.length;i++){ if(pr
   ok(guardShown(t2.prompts)===1&&stage2Shown(t2.prompts)===1,'B2-1 ガード2段が表示される');
   ok(r2&&r2.ok===false&&r2.step==='cancelled-unlinked','B2-2 中止→{ok:false,step:cancelled-unlinked} で exactly-once resolve');
   ok(t2.statuses.length&&t2.statuses[t2.statuses.length-1].indexOf('送信を中止しました')>=0,'B2-3 中止 status に再送信案内');
+  ok(t2.unexpected.length===0,'B2-4 想定外の confirm は表示されない');
 
   // B3: 未連携あり・1段目=更新しない・2段目=このまま送信 → _send 到達
   var t3=runSend({date:true,guard1:false,guard2:true});
   t3.env._setState(mkState());
   var r3=await t3.send();
   ok(r3&&r3.step==='config','B3-1 このまま送信→ _send へ到達（step:config）');
+  ok(t3.unexpected.length===0,'B3-2 想定外の confirm は表示されない');
 
   // B4: 未連携あり・1段目=名簿を更新して送信 → syncBranchMasterOnSave が member_id を付与してから _send 到達
   var t4=runSend({date:true,guard1:true});
@@ -107,7 +120,9 @@ function stage2Shown(prompts){ var c=0; for(var i=0;i<prompts.length;i++){ if(pr
   ok(hasKo,'B4-2 初参加者が支部マスタへ新規登録される');
   ok(r4&&r4.step==='config','B4-3 名簿更新後に _send へ到達（step:config）');
   ok(stage2Shown(t4.prompts)===0,'B4-4 1段目 OK なら2段目は表示されない');
+  ok(t4.unexpected.length===0,'B4-5 想定外の confirm は表示されない（名簿更新経路含む）');
 
+  clearTimeout(_wd);
   console.log('CLOUD-SEND-UNLINKED-GUARD-001: PASS='+pass+' FAIL='+fail);
   process.exit(fail===0?0:1);
 })().catch(function(e){ console.log('  FAIL: B 系で例外: '+((e&&e.stack)||e)); console.log('CLOUD-SEND-UNLINKED-GUARD-001: PASS='+pass+' FAIL='+(fail+1)); process.exit(1); });
