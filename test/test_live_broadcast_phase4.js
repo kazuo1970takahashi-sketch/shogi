@@ -107,6 +107,14 @@ let pass=0,fail=0;const ok=(c,m)=>{c?pass++:(fail++,console.log('  FAIL: '+m));}
   ok(!!mFetch && /sbLiveDrainPendingRefetch\s*\(/.test(mFetch[0]),'sbLiveFetchOnce 完了時に追い焚きをドレイン');
   // 5-6. Codex P2: 初回失敗/切断でも購読を毎周回リトライ（ポーリングに固定されない）
   ok(!!mStart && /!\s*_sbLiveRt\s*\)\s*sbLiveStartRealtime\s*\(/.test(mStart[0]),'ポーリング周回で購読が無ければ realtime を再試行');
+  // 5-7. Codex 2巡目 P2: 購読失敗（CHANNEL_ERROR/TIMED_OUT/CLOSED）は subscribe ステータスコールバックで来る →
+  //   _sbLiveRt を解放してリトライを再開できるようにする＋二重 subscribe を防ぐ starting ガード
+  ok(!!mRt && /subscribe\(\s*function\(\s*status\s*\)/.test(mRt[0]),'subscribe はステータスコールバックを取る');
+  ok(!!mRt && /CHANNEL_ERROR/.test(mRt[0]) && /TIMED_OUT/.test(mRt[0]) && /CLOSED/.test(mRt[0]),'CHANNEL_ERROR/TIMED_OUT/CLOSED を検知');
+  ok(!!mRt && /_sbLiveRt\s*===\s*ch\s*\)\s*_sbLiveRt\s*=\s*null/.test(mRt[0]),'購読失敗時は _sbLiveRt を解放（リトライ再開）');
+  ok(!!mRt && /_sbLiveRt\s*=\s*ch\s*;[\s\S]*?\.subscribe\(/.test(mRt[0]),'_sbLiveRt は subscribe 前にセット（同期発火でも解放可能）');
+  ok(/var\s+_sbLiveRtStarting\s*=\s*false/.test(src),'_sbLiveRtStarting（二重 subscribe 防止）フラグを持つ');
+  ok(!!mRt && /_sbLiveRt\s*\|\|\s*_sbLiveRtStarting\s*\)\s*return/.test(mRt[0]),'起動中は再入せず二重 subscribe を防ぐ');
   // 5-4. supabase-js は運営経路と同一 CDN+SRI を遅延ロード
   ok(/@supabase\/supabase-js@2\.108\.2\/dist\/umd\/supabase\.js/.test(src),'viewer realtime は supabase-js@2.108.2 を遅延ロード');
   ok((src.match(/sha384-nD3dwv4\+ZqdYnmZKe\/249ImlV04om7xTCcsoSeQYI\+RO\+XlKPoqAWaJR1M5SJH9p/g)||[]).length>=2,'supabase-js の SRI は運営経路と同一を再利用');

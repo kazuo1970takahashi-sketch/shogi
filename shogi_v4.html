@@ -13595,6 +13595,7 @@ var _sbLiveRt=null;            // 購読中の channel（memory-only）
 var _sbLiveRtClient=null;      // anon supabase-js client（lazy・memory-only）
 var _sbLiveRtLibPromise=null;  // supabase-js ロードの in-flight ガード
 var _sbLiveRtRetryAt=0;        // ロード失敗時のバックオフ（config ローダと同型・#613 と同じ多重注入対策）
+var _sbLiveRtStarting=false;   // 購読開始の非同期処理中フラグ（二重 subscribe 防止）
 
 // Realtime channel/topic 名（純関数）＝ slug（bearer secret）。QR で配る know-the-slug と一貫（§4.2）。
 function liveRealtimeTopic(slug){return String(slug==null?'':slug);}
@@ -13625,27 +13626,41 @@ function loadLiveRealtimeLib(){
   return _sbLiveRtLibPromise;
 }
 
-// Realtime 購読開始（live ルートのみ・冪等・完全 fail-soft）。受信で sbLiveFetchOnce() を撃つ（再取得が真実源）。
+// Realtime 購読開始（live ルートのみ・冪等・完全 fail-soft）。受信で sbLiveRequestRefetch() を撃つ（再取得が真実源）。
+//   Codex 2巡目 P2: 購読失敗（CHANNEL_ERROR/TIMED_OUT/CLOSED）は例外でなく subscribe のステータスコールバックで
+//     来る。ここで `_sbLiveRt` を解放してポーリング周回リトライ（`if(!_sbLiveRt)…`）を再開させる（購読が無いのに
+//     リトライが止まる状態を防ぐ）。二重 subscribe は `_sbLiveRtStarting` ガードで防ぐ。
 function sbLiveStartRealtime(){
   try{
     if(!sbIsLiveRoute())return;
     var slug=sbLiveSlug();
-    if(!slug||_sbLiveRt)return;
+    if(!slug||_sbLiveRt||_sbLiveRtStarting)return;
+    _sbLiveRtStarting=true;
+    var clearStarting=function(){_sbLiveRtStarting=false;};
     loadLivePublicConfig().then(function(okCfg){
-      if(!okCfg||!sbIsLiveRoute()||_sbLiveRt)return null;
+      if(!okCfg||!sbIsLiveRoute()||_sbLiveRt){clearStarting();return null;}
       return loadLiveRealtimeLib().then(function(okLib){
-        if(!okLib||!sbIsLiveRoute()||_sbLiveRt)return;
+        if(!okLib||!sbIsLiveRoute()||_sbLiveRt){clearStarting();return;}
         try{
           var cfg=window.SHOGI_LIVE_PUBLIC_CONFIG;
           if(!_sbLiveRtClient)_sbLiveRtClient=window.supabase.createClient(cfg.url,cfg.publishableKey);
           var ch=_sbLiveRtClient.channel(liveRealtimeTopic(slug),{config:{private:true}});
           ch.on('broadcast',{event:'snapshot'},function(){try{sbLiveRequestRefetch();}catch(eF){}});
-          ch.subscribe();
-          _sbLiveRt=ch;
+          _sbLiveRt=ch; // ステータスコールバックが同期発火しても解放できるよう subscribe 前にセット
+          ch.subscribe(function(status){
+            try{
+              if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+                // 購読失敗/切断: 参照を外して次のポーリング周回で再購読させる（無購読でリトライが止まらない）。
+                if(_sbLiveRt===ch)_sbLiveRt=null;
+                try{if(_sbLiveRtClient&&_sbLiveRtClient.removeChannel)_sbLiveRtClient.removeChannel(ch);}catch(e2){}
+              }
+            }catch(e3){}
+          });
         }catch(eC){/* fail-soft: ポーリング継続 */}
+        clearStarting();
       });
-    },function(){/* fail-soft */});
-  }catch(e){/* fail-soft */}
+    },function(){clearStarting();});
+  }catch(e){_sbLiveRtStarting=false;}
 }
 
 // Realtime 購読停止（route 離脱・fail-soft）。
