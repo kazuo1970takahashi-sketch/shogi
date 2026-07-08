@@ -1738,6 +1738,18 @@ else
 fi
 
 echo ""
+echo "【CLOUD-SEND-UNLINKED-GUARD-001 クラウド送信の未連携者ガード（送信前 confirm ＋ 送信後 ⚠ 注記）】"
+if [ -f "$SCRIPT_DIR/test_cloud_send_unlinked_guard_001.js" ]; then
+  if node "$SCRIPT_DIR/test_cloud_send_unlinked_guard_001.js" "$TARGET" > /tmp/cloud_send_unlinked_guard_001_out.log 2>&1; then
+    ok "CLOUD-SEND-UNLINKED-GUARD-001 テスト 全PASS ($(tail -1 /tmp/cloud_send_unlinked_guard_001_out.log))"
+  else
+    ng "CLOUD-SEND-UNLINKED-GUARD-001 テスト 失敗"; cat /tmp/cloud_send_unlinked_guard_001_out.log
+  fi
+else
+  warn "test_cloud_send_unlinked_guard_001.js が見つからない"
+fi
+
+echo ""
 echo "【A-4 (SYSTEM-REVIEW #377) クラス集計キーの正規化（app/auth.js canonicalizeClass・少→B・年度横断安定）】"
 if [ -f "$SCRIPT_DIR/test_a4_class_canon.js" ]; then
   if node "$SCRIPT_DIR/test_a4_class_canon.js" > /tmp/a4_class_canon_out.log 2>&1; then
