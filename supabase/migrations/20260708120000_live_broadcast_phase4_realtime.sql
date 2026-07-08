@@ -16,7 +16,10 @@
 --
 -- ⚠ 適用は Supabase プロジェクトへのマイグレーション実行で行う（本 PR はコードのみ・自動適用しない）。
 --    realtime スキーマ（realtime.send / realtime.topic / realtime.messages）は Supabase 提供。
---    ローカルの素の PostgreSQL には realtime スキーマが無いため pgtest 対象外（実 E2E は live スモークで確認）。
+--    ローカルの素の PostgreSQL には realtime スキーマが無いため、realtime.messages への
+--    Realtime Authorization 節は存在ガード（to_regclass）付きの DO ブロックで実行する
+--    ＝ pgtest（HARD-DELETE-ATOMIC-001 等の全 migration 適用）では NOTICE でスキップ、
+--    Supabase 実環境では従来どおり全文が適用される（実 E2E は live スモークで確認）。
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -89,17 +92,30 @@ comment on function public.live_slug_is_public(text) is
 --   anon / authenticated は「is_public な slug に対応する topic」の broadcast を **受信（SELECT）のみ** 可。
 --   送信（INSERT）は anon に付与しない＝know-the-slug でも viewer は send できない（spoof 不可）。
 -- -----------------------------------------------------------------------------
-alter table realtime.messages enable row level security;
+-- realtime.messages / realtime.topic() は Supabase 提供。素の PostgreSQL（pgtest）には無いため
+-- 存在ガード付き DO ブロックで実行する（Supabase では従来どおり全文適用・冪等）。
+do $phase4_realtime_guard$
+begin
+  if to_regclass('realtime.messages') is null then
+    raise notice 'LIVE-BROADCAST-001 Phase4: realtime schema absent (plain PostgreSQL) — skip Realtime Authorization policies';
+    return;
+  end if;
 
-drop policy if exists "live: anon can receive is_public broadcast" on realtime.messages;
-create policy "live: anon can receive is_public broadcast"
-  on realtime.messages
-  for select
-  to anon, authenticated
-  using (
-    realtime.messages.extension = 'broadcast'
-    and public.live_slug_is_public(realtime.topic())
-  );
+  execute 'alter table realtime.messages enable row level security';
+
+  execute 'drop policy if exists "live: anon can receive is_public broadcast" on realtime.messages';
+  execute $policy$
+    create policy "live: anon can receive is_public broadcast"
+      on realtime.messages
+      for select
+      to anon, authenticated
+      using (
+        realtime.messages.extension = 'broadcast'
+        and public.live_slug_is_public(realtime.topic())
+      )
+  $policy$;
+end
+$phase4_realtime_guard$;
 
 -- 注: anon への INSERT ポリシーは意図的に作成しない（＝クライアント送信不可・受入 §8-14）。
 --   運営者（authenticated）が channel.send を使う将来拡張が要る場合のみ、別途 club 所有検査つき
