@@ -343,6 +343,10 @@ body.sb-active{overflow:hidden}
          運営画面（このタブ）はそのまま維持し、閲覧専用ビューは #scoreboard hash で起動する。
          同一ブラウザの localStorage(state) を参照し、運営タブの保存に追従してリアルタイム更新する。 -->
     <button type="button" class="btn-sm no-print" id="openScoreboardBtn" style="background:#2E75B6;color:#fff;border-color:#2E75B6">📱 スマホ星取表</button>
+    <!-- LIVE-BROADCAST-001 (#610): 「📱 スマホ星取表」の隣に配信導線ボタンを新設。参加者向け閲覧機能どうしを隣接させ発見性を上げる。
+         誘導のみ（開始はしない）＝押下で最終結果タブへ切替＋配信セクションへスクロール（goToLiveBroadcastSection）。
+         氏名公開の判断（表示名セレクタ）と開始トリガはセクション側（liveToggleBtn）に集約したまま＝誤公開ガード維持。bind は bindHeaderEvents。 -->
+    <button type="button" class="btn-sm no-print" id="liveNavBtn" style="background:#fff;color:#2b6cb0;border:1px solid #2b6cb0">📡 ライブ配信</button>
     <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A">📋 名簿を更新</button>
     <!-- ⑨-a: 「読み込み」ボタンは撤去（復元は「バックアップ」に集約＝ファイル/貼り付けの両方をバックアップ画面で行う）。
          loadFile input は温存（loadData の受け皿・import_routing 資産）。openLoadModal/loadData/loadFromPaste は温存。 -->
@@ -563,6 +567,33 @@ body.sb-active{overflow:hidden}
   </div>
   <div id="pane-master" style="display:none"></div>
   <div id="pane-result" style="display:none">
+    <!-- LIVE-BROADCAST-001 (#610): 参加者向けライブ配信セクションを最終結果タブの先頭へ移動（配信開始に気づきやすい位置・[[ui-result-visibility-principle]]）。
+         id/bind/onclick/文言/CSS は不変＝機能無改変・置き場所のみ（CLAUDE.md ルール1非抵触・ACTION-BAR-001 #605 と同方針）。scroll 用 id=live-broadcast-section を付与。 -->
+    <!-- LIVE-BROADCAST-001 Phase3 (§5.1/§6): 参加者向けライブ配信（任意・明示オプトイン）。
+         click は bindReportEvents で liveToggleBroadcastUI に結線。OFF（既定）では外部通信ゼロ＝当日運営は現状と完全一致（受入 §8-1）。
+         表示名（§3.2・受入 #17・未成年参加前提）: 既定選択は「姓＋番号のみ」＝氏名公開を暗黙の既定にしない。フルネーム公開は
+         主催者の明示決定（告知・同意運用込み）。運用手順・決定記録 = docs/notes/20260705_live_broadcast_phase3_runbook_001.md。 -->
+    <div id="live-broadcast-section" class="section no-print" style="margin-top:16px;text-align:left">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h2 style="margin:0;font-size:16px">📡 参加者向けライブ配信（任意）</h2>
+      </div>
+      <div style="font-size:12px;color:#555;margin-top:4px">参加者が自分のスマホで順位・星取・手合せを見られるようにします（インターネット公開）。使わなくても大会運営・報告書には影響しません。QRの掲示物には「氏名・成績をインターネット公開する」旨の告知を含めてください。</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <label for="liveDisplayMode" style="font-size:12px;color:#333">表示名</label>
+        <select id="liveDisplayMode" style="font-size:13px;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-family:inherit">
+          <option value="given+no" selected>姓＋番号のみ（おすすめ）</option>
+          <option value="full">フルネーム（主催者が告知・同意運用を決定済みの場合）</option>
+        </select>
+        <button type="button" id="liveToggleBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">📡 ライブ配信を開始</button>
+      </div>
+      <div id="liveStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
+      <div id="liveQrBox" style="display:none;margin-top:8px;padding:10px;border:1px dashed #2b6cb0;border-radius:8px;background:#fff;text-align:center">
+        <div id="liveQr" style="margin:0 auto"></div>
+        <div id="liveUrlText" style="font-size:12px;word-break:break-all;margin-top:6px;color:#333"></div>
+        <button type="button" id="liveCopyUrlBtn" class="btn-sm" style="margin-top:6px;border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">URLをコピー</button>
+        <div style="font-size:11px;color:#777;margin-top:6px">このQRを印刷して会場に掲示してください。受付タブレット（キオスク）はURL末尾に <code>&amp;kiosk=1</code> を付けて開きます（無操作60秒で星取表へ自動リセット）。</div>
+      </div>
+    </div>
     <!-- HELP-UX-004 (#341): 順位タブの迷子防止ヘルプ。#309/#323 のモーダル三層を流用し topic 追加のみ。
          順位表は per-class 動的描画（buildResultsClassHtml=golden 対象）のため、静的アンカーをここに置き
          click は bindReportEvents 側で openHelpModal('standings') へ結線する（report help と同経路・golden 非接触）。 -->
@@ -588,31 +619,6 @@ body.sb-active{overflow:hidden}
       <button type="button" id="cloudMergedReportBtn" class="btn-sm" title="現在の大会IDでクラウドから両級（全クラス）の結果をまとめて表示します（閲覧専用）" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ 両級まとめて表示（統合レポート）</button>
       <div id="cloudMergedReportStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
       <div id="cloudMergedReport" style="margin-top:8px;text-align:left"></div>
-    </div>
-    <!-- LIVE-BROADCAST-001 Phase3 (§5.1/§6): 参加者向けライブ配信（任意・明示オプトイン）。
-         click は bindReportEvents で liveToggleBroadcastUI に結線。OFF（既定）では外部通信ゼロ＝当日運営は現状と完全一致（受入 §8-1）。
-         表示名（§3.2・受入 #17・未成年参加前提）: 既定選択は「姓＋番号のみ」＝氏名公開を暗黙の既定にしない。フルネーム公開は
-         主催者の明示決定（告知・同意運用込み）。運用手順・決定記録 = docs/notes/20260705_live_broadcast_phase3_runbook_001.md。 -->
-    <div class="section no-print" style="margin-top:16px;text-align:left">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <h2 style="margin:0;font-size:16px">📡 参加者向けライブ配信（任意）</h2>
-      </div>
-      <div style="font-size:12px;color:#555;margin-top:4px">参加者が自分のスマホで順位・星取・手合せを見られるようにします（インターネット公開）。使わなくても大会運営・報告書には影響しません。QRの掲示物には「氏名・成績をインターネット公開する」旨の告知を含めてください。</div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <label for="liveDisplayMode" style="font-size:12px;color:#333">表示名</label>
-        <select id="liveDisplayMode" style="font-size:13px;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-family:inherit">
-          <option value="given+no" selected>姓＋番号のみ（おすすめ）</option>
-          <option value="full">フルネーム（主催者が告知・同意運用を決定済みの場合）</option>
-        </select>
-        <button type="button" id="liveToggleBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">📡 ライブ配信を開始</button>
-      </div>
-      <div id="liveStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
-      <div id="liveQrBox" style="display:none;margin-top:8px;padding:10px;border:1px dashed #2b6cb0;border-radius:8px;background:#fff;text-align:center">
-        <div id="liveQr" style="margin:0 auto"></div>
-        <div id="liveUrlText" style="font-size:12px;word-break:break-all;margin-top:6px;color:#333"></div>
-        <button type="button" id="liveCopyUrlBtn" class="btn-sm" style="margin-top:6px;border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">URLをコピー</button>
-        <div style="font-size:11px;color:#777;margin-top:6px">このQRを印刷して会場に掲示してください。受付タブレット（キオスク）はURL末尾に <code>&amp;kiosk=1</code> を付けて開きます（無操作60秒で星取表へ自動リセット）。</div>
-      </div>
     </div>
     <div class="section no-print rep-form" style="margin-top:16px">
       <!-- HELP-UX-002 (#322): 見出し脇「？ ヘルプ」。click は bindReportEvents で openHelpModal('report') に結線。 -->
@@ -12609,6 +12615,23 @@ function bindDangerMenuEvents(){
   var ra=document.getElementById('resetBtn'); if(ra)ra.addEventListener('click',function(){ toggleDangerMenu(true); });
 }
 
+// LIVE-BROADCAST-001 (#610): ヘッダ「📡 ライブ配信」誘導ボタンの遷移先。最終結果タブを開き、配信セクションへスクロールする。
+//   開始はしない（liveToggleBtn を発火させない）＝氏名公開の判断はセクション側で必ず経由。完全 fail-soft（描画/スクロール失敗でも運営継続）。
+function goToLiveBroadcastSection(){
+  try{ if(typeof showTab==='function')showTab('result'); }catch(e){}
+  try{
+    var sec=document.getElementById('live-broadcast-section');
+    if(sec&&sec.getBoundingClientRect){
+      // .tab-bar は position:sticky top:0。セクション先頭を単純に上端へ合わせると見出しがバー下に隠れるため、
+      //   バー高さぶん差し引いた絶対位置へスクロールする（section は結果タブ先頭配置・完全 fail-soft）。
+      var tb=document.querySelector('.tab-bar');
+      var barH=tb?tb.getBoundingClientRect().height:0;
+      var y=(window.pageYOffset||0)+sec.getBoundingClientRect().top-barH-8;
+      if(y<0)y=0;
+      try{ window.scrollTo({top:y,behavior:'smooth'}); }catch(e2){ window.scrollTo(0,y); }
+    }
+  }catch(e3){}
+}
 function bindHeaderEvents(){
   // ⑬ STORAGE-WARN: 警告バナーの「閉じる」（表示中のみ存在・押下で非表示）。
   var storageWarnClose=document.getElementById('storage-warn-close');
@@ -12623,6 +12646,9 @@ function bindHeaderEvents(){
   var resetProgressBtn=document.getElementById('resetProgressBtn');
   if(resetProgressBtn)resetProgressBtn.addEventListener('click',resetTournamentProgressOnly);
   bindDangerMenuEvents();
+  // LIVE-BROADCAST-001 (#610): ヘッダ「📡 ライブ配信」誘導ボタン → 最終結果タブへ切替＋配信セクションへスクロール（開始はしない・fail-soft）。
+  var liveNavBtn=document.getElementById('liveNavBtn');
+  if(liveNavBtn)liveNavBtn.addEventListener('click',goToLiveBroadcastSection);
   // U-2 (UX-P1): 「保存確認 N件」ピル → 説明モーダル（意味/解消導線）。クリックと Enter/Space で開く。
   var saveWarnPill=document.getElementById('save-warning-indicator');
   if(saveWarnPill){
