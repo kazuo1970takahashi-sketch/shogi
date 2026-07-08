@@ -93,10 +93,20 @@ let pass=0,fail=0;const ok=(c,m)=>{c?pass++:(fail++,console.log('  FAIL: '+m));}
   ok(!!mStart && /sbLiveFetchOnce\s*\(/.test(mStart[0]),'sbLiveStartPolling は sbLiveFetchOnce（初回取得）を維持');
   const mStop=src.match(/function\s+sbLiveStopPolling\s*\(\)\s*\{[\s\S]*?\n\}/);
   ok(!!mStop && /sbLiveStopRealtime\s*\(/.test(mStop[0]),'sbLiveStopPolling が sbLiveStopRealtime を呼ぶ');
-  // 5-3. 受信ハンドラは sbLiveFetchOnce（再取得＝真実源）を撃つ・§7①
+  // 5-3. 受信ハンドラは sbLiveRequestRefetch（追い焚き経由の再取得＝真実源）を撃つ・§7①
   const mRt=src.match(/function\s+sbLiveStartRealtime\s*\(\)\s*\{[\s\S]*?\n\}/);
-  ok(!!mRt && /on\(\s*['"]broadcast['"]\s*,\s*\{\s*event\s*:\s*['"]snapshot['"]\s*\}\s*,\s*function\(\)\{[\s\S]*?sbLiveFetchOnce\s*\(/.test(mRt[0]),'broadcast 受信で sbLiveFetchOnce を再取得（Broadcast を真実源にしない）');
+  ok(!!mRt && /on\(\s*['"]broadcast['"]\s*,\s*\{\s*event\s*:\s*['"]snapshot['"]\s*\}\s*,\s*function\(\)\{[\s\S]*?sbLiveRequestRefetch\s*\(/.test(mRt[0]),'broadcast 受信で sbLiveRequestRefetch を撃つ（Broadcast を真実源にしない）');
   ok(!!mRt && /private\s*:\s*true/.test(mRt[0]),'private channel を購読（§4.2 P2-a）');
+  // 5-5. Codex P2: fetch 実行中の broadcast を取りこぼさない追い焚き（take-latest）
+  ok(/function\s+sbLiveRequestRefetch\s*\(\)/.test(src),'sbLiveRequestRefetch（追い焚き要求）が存在');
+  ok(/function\s+sbLiveDrainPendingRefetch\s*\(\)/.test(src),'sbLiveDrainPendingRefetch（完了後ドレイン）が存在');
+  ok(/var\s+_sbLivePendingRefetch\s*=\s*false/.test(src),'_sbLivePendingRefetch フラグを持つ');
+  const mReq=src.match(/function\s+sbLiveRequestRefetch\s*\(\)\s*\{[\s\S]*?\n\}/);
+  ok(!!mReq && /_sbLiveFetching\s*\)\s*\{\s*_sbLivePendingRefetch\s*=\s*true/.test(mReq[0]),'fetch 実行中は追い焚きを予約（多重は畳む）');
+  const mFetch=src.match(/function\s+sbLiveFetchOnce\s*\(\)\s*\{[\s\S]*?\n\}/);
+  ok(!!mFetch && /sbLiveDrainPendingRefetch\s*\(/.test(mFetch[0]),'sbLiveFetchOnce 完了時に追い焚きをドレイン');
+  // 5-6. Codex P2: 初回失敗/切断でも購読を毎周回リトライ（ポーリングに固定されない）
+  ok(!!mStart && /!\s*_sbLiveRt\s*\)\s*sbLiveStartRealtime\s*\(/.test(mStart[0]),'ポーリング周回で購読が無ければ realtime を再試行');
   // 5-4. supabase-js は運営経路と同一 CDN+SRI を遅延ロード
   ok(/@supabase\/supabase-js@2\.108\.2\/dist\/umd\/supabase\.js/.test(src),'viewer realtime は supabase-js@2.108.2 を遅延ロード');
   ok((src.match(/sha384-nD3dwv4\+ZqdYnmZKe\/249ImlV04om7xTCcsoSeQYI\+RO\+XlKPoqAWaJR1M5SJH9p/g)||[]).length>=2,'supabase-js の SRI は運営経路と同一を再利用');
@@ -123,6 +133,13 @@ let pass=0,fail=0;const ok=(c,m)=>{c?pass++:(fail++,console.log('  FAIL: '+m));}
     ok(/for\s+select/i.test(mig) && /to\s+anon/i.test(mig),'anon は受信(SELECT)可');
     ok(/realtime\.topic\s*\(\s*\)/.test(mig),'topic = is_public な slug に限定（列挙不可の一貫）');
     ok(!/for\s+insert[\s\S]*?to\s+anon/i.test(mig),'anon への INSERT(送信)ポリシーを作らない（spoof 不可・受入 §8-14）');
+    // Codex P1: RLS の USING はテーブル直 SELECT でなく SECURITY DEFINER helper 経由（Phase3 で anon revoke 済のため）
+    ok(/create\s+or\s+replace\s+function\s+public\.live_slug_is_public\s*\(\s*p_slug\s+text\s*\)/i.test(mig),'live_slug_is_public helper を定義（列挙不可のまま参照経路を付与）');
+    ok(/security\s+definer/i.test(mig) && /set\s+search_path/i.test(mig),'helper は SECURITY DEFINER＋search_path 固定');
+    ok(/grant\s+execute\s+on\s+function\s+public\.live_slug_is_public\s*\(\s*text\s*\)\s+to\s+anon/i.test(mig),'helper EXECUTE を anon に付与');
+    ok(/public\.live_slug_is_public\s*\(\s*realtime\.topic\s*\(\s*\)\s*\)/i.test(mig),'受信ポリシーは helper 経由（テーブル直 SELECT でない）');
+    // Codex P2: トリガの realtime.send は fail-soft（publish を巻き戻さない）
+    ok(/exception\s+when\s+others\s+then/i.test(mig),'realtime.send を fail-soft 例外ブロックで包む（publish は真実源）');
   }
 })();
 

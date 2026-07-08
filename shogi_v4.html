@@ -13480,6 +13480,7 @@ function sbSetLiveEnvelope(env){
 var LIVE_POLL_MS=5000;
 var _sbLivePollTimer=null;
 var _sbLiveFetching=false;
+var _sbLivePendingRefetch=false; // Phase4: fetch 実行中に来た broadcast の「追い焚き」要求（take-latest・1回のみ）
 
 function _livePublicCfgReady(){
   return (typeof window!=='undefined')&&!!window.SHOGI_LIVE_PUBLIC_CONFIG
@@ -13543,11 +13544,22 @@ function sbLiveFetchOnce(){
       if(!_sbLiveViewState)sbLiveShowWaitNote('配信が見つかりません（配信が終了したか、URLが古い可能性があります）');
       return false;
     });
-  }).then(function(v){_sbLiveFetching=false;return v;},function(){
+  }).then(function(v){_sbLiveFetching=false;sbLiveDrainPendingRefetch();return v;},function(){
     _sbLiveFetching=false;
+    sbLiveDrainPendingRefetch();
     if(!_sbLiveViewState)sbLiveShowWaitNote('通信できませんでした（自動で再試行します）');
     return false;
   });
+}
+// Phase4 §7①: broadcast の合図で再取得を要求する（take-latest）。fetch 実行中なら1回だけ「追い焚き」を
+//   予約し（多重発火は畳む）、完了後に最新をもう一度取り直す＝publish 確定前に始まった in-flight で
+//   古い/空 envelope に留まる取りこぼしレースを閉じる。実データ源は常に get_live_snapshot（§7①）。
+function sbLiveRequestRefetch(){
+  if(_sbLiveFetching){_sbLivePendingRefetch=true;return;}
+  sbLiveFetchOnce();
+}
+function sbLiveDrainPendingRefetch(){
+  if(_sbLivePendingRefetch){_sbLivePendingRefetch=false;sbLiveFetchOnce();}
 }
 // 5秒ポーリング（live ルート表示中のみ・バックグラウンドタブでは打たない＝復帰時に focus/visibilitychange が再取得）。
 function sbLiveStartPolling(){
@@ -13558,6 +13570,7 @@ function sbLiveStartPolling(){
     try{
       if(typeof document!=='undefined'&&document.hidden)return;
       sbLiveFetchOnce();
+      if(!_sbLiveRt)sbLiveStartRealtime(); // Phase4: 初回失敗/切断で購読が無ければ毎周回で再試行（バックオフは loadLiveRealtimeLib 内）
     }catch(e){}
   },LIVE_POLL_MS);
 }
@@ -13626,7 +13639,7 @@ function sbLiveStartRealtime(){
           var cfg=window.SHOGI_LIVE_PUBLIC_CONFIG;
           if(!_sbLiveRtClient)_sbLiveRtClient=window.supabase.createClient(cfg.url,cfg.publishableKey);
           var ch=_sbLiveRtClient.channel(liveRealtimeTopic(slug),{config:{private:true}});
-          ch.on('broadcast',{event:'snapshot'},function(){try{sbLiveFetchOnce();}catch(eF){}});
+          ch.on('broadcast',{event:'snapshot'},function(){try{sbLiveRequestRefetch();}catch(eF){}});
           ch.subscribe();
           _sbLiveRt=ch;
         }catch(eC){/* fail-soft: ポーリング継続 */}
