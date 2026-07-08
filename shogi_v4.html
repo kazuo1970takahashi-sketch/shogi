@@ -10578,62 +10578,91 @@ function collectLocalOpsKeysForDate(ymd){
   return out;
 }
 // 1台目：運営共通キーを発行して state.tournament_id を t_<当日>_<4桁> に確定。既に発行済みならそれを返す（毎回変えない）。
-function issueOpsSharedKey(setStatus){
-  if(typeof state==='undefined'||!state){ if(setStatus)setStatus('⚠ 大会データがありません'); return ''; }
+// IN-APP-MODAL-001 (#606): 送信済みIDからの張り替え確認を native confirm→appConfirm（非同期）化。
+//   confirm の答えを state.tournament_id 確定前に得る必要があるため、確定～通知を _commit に集約し確認 OK 時のみ呼ぶ。
+//   同期経路の戻り値（key）は従来どおり返す（非 confirm 呼出元の互換）。完了は onDone(result) で全経路 1 回通知＝
+//   呼出元の後続表示更新（refreshOpsKeyDisplay）を確認応答後に走らせる（キャンセル時も反映）。
+function issueOpsSharedKey(setStatus, onDone){
+  function _done(r){ if(typeof onDone==='function')onDone(r); return r; }
+  if(typeof state==='undefined'||!state){ if(setStatus)setStatus('⚠ 大会データがありません'); return _done(''); }
   var cur=tournamentIdToOpsKey(state.tournament_id);
-  if(cur){ if(setStatus)setStatus('この端末は運営共通キー '+cur+' で発行済みです（相手にこの数字を伝えてください）'); return cur; }
+  if(cur){ if(setStatus)setStatus('この端末は運営共通キー '+cur+' で発行済みです（相手にこの数字を伝えてください）'); return _done(cur); }
   var ymd=opsReportYmd();
   var key=generateOpsSharedKey(collectLocalOpsKeysForDate(ymd));
   var tid=opsKeyToTournamentId(key,ymd);
-  if(!key||!tid){ if(setStatus)setStatus('⚠ キーの発行に失敗しました。もう一度お試しください'); return ''; }
-  // Phase C (#585): 送信済みIDからの張り替えは明示確認（設計 §8-5・キャンセル＝現IDを維持・confirm 不在/例外は安全側＝中止）。
-  if(typeof opsRekeyNeedsConfirm==='function'&&opsRekeyNeedsConfirm(state,tid)){
-    var okc=false; try{ okc=(typeof confirm==='function')?confirm('この端末は今の大会IDでクラウドへ送信済みです。\nキーを発行し直すと、クラウド上では別の大会として扱われます（送信済みの結果は元の大会に残ります）。\n発行し直しますか？'):false; }catch(eC){ okc=false; }
-    if(!okc){ if(setStatus)setStatus('発行を中止しました（送信済みの大会IDを維持します）'); return ''; }
+  if(!key||!tid){ if(setStatus)setStatus('⚠ キーの発行に失敗しました。もう一度お試しください'); return _done(''); }
+  function _commit(){
+    state.tournament_id=tid;
+    if(typeof saveData==='function'){ try{saveData();}catch(e){} }
+    if(setStatus)setStatus('運営共通キー '+key+' を発行しました（相手にこの数字を伝えてください）');
+    return _done(key);
   }
-  state.tournament_id=tid;
-  if(typeof saveData==='function'){ try{saveData();}catch(e){} }
-  if(setStatus)setStatus('運営共通キー '+key+' を発行しました（相手にこの数字を伝えてください）'); 
-  return key;
+  // Phase C (#585): 送信済みIDからの張り替えは明示確認（設計 §8-5・キャンセル＝現IDを維持）。OK 時のみ確定＝旧 confirm false で return '' と同値。
+  if(typeof opsRekeyNeedsConfirm==='function'&&opsRekeyNeedsConfirm(state,tid)){
+    appConfirm('この端末は今の大会IDでクラウドへ送信済みです。\nキーを発行し直すと、クラウド上では別の大会として扱われます（送信済みの結果は元の大会に残ります）。\n発行し直しますか？',function(_ok){
+      if(!_ok){ if(setStatus)setStatus('発行を中止しました（送信済みの大会IDを維持します）'); _done(''); return; }
+      _commit();
+    });
+    return;
+  }
+  return _commit();
 }
 // 2台目：受け取った4桁キーに合わせる（state.tournament_id を t_<当日>_<4桁> にセット）。
-function applyOpsSharedKey(rawInput,setStatus){
-  if(typeof state==='undefined'||!state){ if(setStatus)setStatus('⚠ 大会データがありません'); return {ok:false}; }
+// IN-APP-MODAL-001 (#606): 張り替え確認を appConfirm（非同期）化。確定～通知を _commit 集約・OK 時のみ実行＝旧同値。
+//   同期経路の戻り値（{ok:...}）は従来どおり返し、完了は onDone(result) で全経路 1 回通知（refreshOpsKeyDisplay を確認応答後に）。
+function applyOpsSharedKey(rawInput,setStatus,onDone){
+  function _done(r){ if(typeof onDone==='function')onDone(r); return r; }
+  if(typeof state==='undefined'||!state){ if(setStatus)setStatus('⚠ 大会データがありません'); return _done({ok:false}); }
   var k=String(rawInput==null?'':rawInput).replace(/[\s　]/g,'');
-  if(!/^\d{4}$/.test(k)){ if(setStatus)setStatus('⚠ 運営共通キーは4桁の数字です（相手の端末に表示された数字を入れてください）'); return {ok:false}; }
+  if(!/^\d{4}$/.test(k)){ if(setStatus)setStatus('⚠ 運営共通キーは4桁の数字です（相手の端末に表示された数字を入れてください）'); return _done({ok:false}); }
   var ymd=opsReportYmd();
   var tid=opsKeyToTournamentId(k,ymd);
-  if(!tid){ if(setStatus)setStatus('⚠ キーを認識できませんでした（4桁の数字を確認してください）'); return {ok:false}; }
-  // Phase C (#585): 送信済みIDからの張り替えは明示確認（設計 §8-5・キャンセル＝現IDを維持・confirm 不在/例外は安全側＝中止）。
-  if(typeof opsRekeyNeedsConfirm==='function'&&opsRekeyNeedsConfirm(state,tid)){
-    var okc=false; try{ okc=(typeof confirm==='function')?confirm('この端末は今の大会IDでクラウドへ送信済みです。\n別のキーに合わせると、クラウド上では別の大会として扱われます（送信済みの結果は元の大会に残ります）。\nこのキーに合わせますか？'):false; }catch(eC){ okc=false; }
-    if(!okc){ if(setStatus)setStatus('変更を中止しました（送信済みの大会IDを維持します）'); return {ok:false,step:'cancelled'}; }
+  if(!tid){ if(setStatus)setStatus('⚠ キーを認識できませんでした（4桁の数字を確認してください）'); return _done({ok:false}); }
+  function _commit(){
+    state.tournament_id=tid;
+    if(typeof saveData==='function'){ try{saveData();}catch(e){} }
+    if(setStatus)setStatus('運営共通キー '+k+' に合わせました。この端末の結果を送信すると、同じキーの相手と１つの大会にまとまります');
+    return _done({ok:true,key:k,tournament_id:tid});
   }
-  state.tournament_id=tid;
-  if(typeof saveData==='function'){ try{saveData();}catch(e){} }
-  if(setStatus)setStatus('運営共通キー '+k+' に合わせました。この端末の結果を送信すると、同じキーの相手と１つの大会にまとまります'); 
-  return {ok:true,key:k,tournament_id:tid};
+  // Phase C (#585): 送信済みIDからの張り替えは明示確認（設計 §8-5・キャンセル＝現IDを維持）。OK 時のみ確定＝旧 confirm false で return {ok:false,step:'cancelled'} と同値。
+  if(typeof opsRekeyNeedsConfirm==='function'&&opsRekeyNeedsConfirm(state,tid)){
+    appConfirm('この端末は今の大会IDでクラウドへ送信済みです。\n別のキーに合わせると、クラウド上では別の大会として扱われます（送信済みの結果は元の大会に残ります）。\nこのキーに合わせますか？',function(_ok){
+      if(!_ok){ if(setStatus)setStatus('変更を中止しました（送信済みの大会IDを維持します）'); _done({ok:false,step:'cancelled'}); return; }
+      _commit();
+    });
+    return;
+  }
+  return _commit();
 }
 // OPS-SHARED-KEY-REDESIGN-001 Phase D (#588): キーなしで送信済みの大会へ、あとから2台目を合流（設計 §8-2）。
 //   1台目がキーを発行せず送信した場合の大会IDは t_<当日>（4桁なし）。この端末の tournament_id を同じ t_<当日> に
 //   明示セットして合流する（ensureTournamentId の衝突 _n 付与を経由しない＝☁完全再構築後などに黙って別大会へ
 //   割れる穴を塞ぐ）。送信済みIDからの張り替えは Phase C の opsRekeyNeedsConfirm で明示確認。fail-soft・
 //   生成規則 ensureTournamentId 本体は無改変。
-function joinOpsKeylessTournament(setStatus){
-  if(typeof state==='undefined'||!state){ if(setStatus)setStatus('⚠ 大会データがありません'); return {ok:false}; }
+// IN-APP-MODAL-001 (#606): 張り替え確認を appConfirm（非同期）化。確定～通知を _commit 集約・OK 時のみ実行＝旧同値。
+//   同期経路の戻り値（{ok:...}）は従来どおり返し、完了は onDone(result) で全経路 1 回通知（refreshOpsKeyDisplay を確認応答後に）。
+function joinOpsKeylessTournament(setStatus,onDone){
+  function _done(r){ if(typeof onDone==='function')onDone(r); return r; }
+  if(typeof state==='undefined'||!state){ if(setStatus)setStatus('⚠ 大会データがありません'); return _done({ok:false}); }
   var ymd=opsReportYmd();
   var tid=opsKeylessTournamentId(ymd);
-  if(!tid){ if(setStatus)setStatus('⚠ 今日の日付を確認できませんでした'); return {ok:false}; }
-  if(state.tournament_id===tid){ if(setStatus)setStatus('この端末はすでに今日の大会（キーなし）に合流済みです。そのまま入力・送信してください'); return {ok:true,tournament_id:tid}; }
-  // 送信済みIDからの張り替えは明示確認（設計 §8-5 と同型・キャンセル＝現IDを維持・confirm 不在/例外は安全側＝中止）。
-  if(typeof opsRekeyNeedsConfirm==='function'&&opsRekeyNeedsConfirm(state,tid)){
-    var okc=false; try{ okc=(typeof confirm==='function')?confirm('この端末は今の大会IDでクラウドへ送信済みです。\n合流すると、クラウド上では別の大会として扱われます（送信済みの結果は元の大会に残ります）。\n合流しますか？'):false; }catch(eC){ okc=false; }
-    if(!okc){ if(setStatus)setStatus('合流を中止しました（送信済みの大会IDを維持します）'); return {ok:false,step:'cancelled'}; }
+  if(!tid){ if(setStatus)setStatus('⚠ 今日の日付を確認できませんでした'); return _done({ok:false}); }
+  if(state.tournament_id===tid){ if(setStatus)setStatus('この端末はすでに今日の大会（キーなし）に合流済みです。そのまま入力・送信してください'); return _done({ok:true,tournament_id:tid}); }
+  function _commit(){
+    state.tournament_id=tid;
+    if(typeof saveData==='function'){ try{saveData();}catch(e){} }
+    if(setStatus)setStatus('今日の大会（キーなし）に合流しました。この端末の結果を送信すると、相手と１つの大会にまとまります');
+    return _done({ok:true,tournament_id:tid});
   }
-  state.tournament_id=tid;
-  if(typeof saveData==='function'){ try{saveData();}catch(e){} }
-  if(setStatus)setStatus('今日の大会（キーなし）に合流しました。この端末の結果を送信すると、相手と１つの大会にまとまります');
-  return {ok:true,tournament_id:tid};
+  // 送信済みIDからの張り替えは明示確認（設計 §8-5 と同型・キャンセル＝現IDを維持）。OK 時のみ確定＝旧 confirm false で return {ok:false,step:'cancelled'} と同値。
+  if(typeof opsRekeyNeedsConfirm==='function'&&opsRekeyNeedsConfirm(state,tid)){
+    appConfirm('この端末は今の大会IDでクラウドへ送信済みです。\n合流すると、クラウド上では別の大会として扱われます（送信済みの結果は元の大会に残ります）。\n合流しますか？',function(_ok){
+      if(!_ok){ if(setStatus)setStatus('合流を中止しました（送信済みの大会IDを維持します）'); _done({ok:false,step:'cancelled'}); return; }
+      _commit();
+    });
+    return;
+  }
+  return _commit();
 }
 // OPS-SHARED-KEY-REDESIGN-001 Phase C (#585): 送信後のキー張り替えガード（設計 §3.2/§8-5）。
 //   この端末が現 tournament_id でクラウド送信済み（state.cloud_sent_tid が現IDと一致）のとき、異なる newTid への
@@ -12640,23 +12669,23 @@ function bindRegistrationEvents(){
   var opsIssueBtn=document.getElementById('opsIssueBtn');
   if(opsIssueBtn)opsIssueBtn.addEventListener('click',function(){
     var st=document.getElementById('opsShareStatus');
-    issueOpsSharedKey(function(msg){ if(st)st.textContent=msg; });
-    // Phase C (#585): 表示は refreshOpsKeyDisplay に一元化（発行済み再表示・日付跨ぎ注意と同一描画・キャンセル時も現状を正しく反映）。
-    if(typeof refreshOpsKeyDisplay==='function')refreshOpsKeyDisplay();
+    // IN-APP-MODAL-001 (#606): 張り替え確認が appConfirm（非同期）化したため、表示更新 refreshOpsKeyDisplay を onDone 継続で受ける
+    //   （確認応答後に確定・キャンセル時も反映）。Phase C (#585): 表示は refreshOpsKeyDisplay に一元化。
+    issueOpsSharedKey(function(msg){ if(st)st.textContent=msg; }, function(){ if(typeof refreshOpsKeyDisplay==='function')refreshOpsKeyDisplay(); });
   });
   var opsApplyBtn=document.getElementById('opsApplyBtn');
   if(opsApplyBtn)opsApplyBtn.addEventListener('click',function(){
     var st=document.getElementById('opsShareStatus');
     var inp=document.getElementById('opsKeyInput');
-    applyOpsSharedKey(inp?inp.value:'',function(msg){ if(st)st.textContent=msg; });
-    if(typeof refreshOpsKeyDisplay==='function')refreshOpsKeyDisplay();
+    // IN-APP-MODAL-001 (#606): 表示更新を onDone 継続で受ける（確認応答後・キャンセル時も反映）。
+    applyOpsSharedKey(inp?inp.value:'',function(msg){ if(st)st.textContent=msg; }, function(){ if(typeof refreshOpsKeyDisplay==='function')refreshOpsKeyDisplay(); });
   });
   // OPS-SHARED-KEY-REDESIGN-001 Phase D (#588): キーなしの大会へ合流（設計 §8-2）。
   var opsKeylessJoinBtn=document.getElementById('opsKeylessJoinBtn');
   if(opsKeylessJoinBtn)opsKeylessJoinBtn.addEventListener('click',function(){
     var st=document.getElementById('opsShareStatus');
-    joinOpsKeylessTournament(function(msg){ if(st)st.textContent=msg; });
-    if(typeof refreshOpsKeyDisplay==='function')refreshOpsKeyDisplay();
+    // IN-APP-MODAL-001 (#606): 表示更新を onDone 継続で受ける（確認応答後・キャンセル時も反映）。
+    joinOpsKeylessTournament(function(msg){ if(st)st.textContent=msg; }, function(){ if(typeof refreshOpsKeyDisplay==='function')refreshOpsKeyDisplay(); });
   });
   // Phase C (#585): 畳みを開いたとき発行済みキーを復元表示（リロード後も見える・単機は開かない限り非表示のまま＝設計 §6）。
   var opsDetails=document.getElementById('ops-share-details');
