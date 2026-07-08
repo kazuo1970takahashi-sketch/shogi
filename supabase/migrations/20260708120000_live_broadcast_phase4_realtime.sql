@@ -1,6 +1,6 @@
 -- =============================================================================
 -- LIVE-BROADCAST-001 Phase 4 — 参加者向けライブ配信の Realtime Broadcast 上乗せ
---   設計正本: docs/specs/20260704_live_broadcast_001_participant_realtime_design.md
+--   設計正本: 設計PR #533 の docs/specs/20260704_live_broadcast_001_participant_realtime_design.md（base へは未 merge）
 --     （§2 アーキ比較 / §6 Phase4 / §7① 落とし穴 / §4.2 P2-a 送信権限 / 受入 §8-14）
 --   前提: 20260705120000_live_broadcast_phase3_public_snapshots.sql（public.public_live_snapshots・RPC 群）
 --

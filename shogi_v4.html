@@ -13581,7 +13581,7 @@ function sbLiveStopPolling(){
 
 // ============================================================
 // LIVE-BROADCAST-001 Phase 4 §6 / §4.2 P2-a / §7①: Realtime Broadcast（受信→即再取得・上乗せ）
-//   設計 = docs/specs/20260704_live_broadcast_001_participant_realtime_design.md（§2 アーキ・§6 Phase4・§7① 落とし穴・§4.2 P2-a 送信権限）。
+//   設計 = 設計PR #533 の docs/specs/20260704_live_broadcast_001_participant_realtime_design.md（base へは未 merge・§2 アーキ・§6 Phase4・§7① 落とし穴・§4.2 P2-a 送信権限）。
 //   方針（Broadcast だけを真実源にしない・§7①）: 受信は「更新の合図」に留め、実データは常に
 //     get_live_snapshot を再取得する（version 単調性は DB が保証・§4.3②）。取りこぼし・順序入替・
 //     payload 欠落・WS 切断に強い。
@@ -13596,6 +13596,8 @@ var _sbLiveRtClient=null;      // anon supabase-js client（lazy・memory-only�
 var _sbLiveRtLibPromise=null;  // supabase-js ロードの in-flight ガード
 var _sbLiveRtRetryAt=0;        // ロード失敗時のバックオフ（config ローダと同型・#613 と同じ多重注入対策）
 var _sbLiveRtStarting=false;   // 購読開始の非同期処理中フラグ（二重 subscribe 防止）
+var LIVE_RT_JOIN_BACKOFF_MS=15000; // join 失敗（無効/停止済み slug）時の再購読バックオフ（毎5秒叩かない）
+var _sbLiveRtJoinBackoffUntil=0;
 
 // Realtime channel/topic 名（純関数）＝ slug（bearer secret）。QR で配る know-the-slug と一貫（§4.2）。
 function liveRealtimeTopic(slug){return String(slug==null?'':slug);}
@@ -13635,6 +13637,7 @@ function sbLiveStartRealtime(){
     if(!sbIsLiveRoute())return;
     var slug=sbLiveSlug();
     if(!slug||_sbLiveRt||_sbLiveRtStarting)return;
+    if(Date.now()<_sbLiveRtJoinBackoffUntil)return; // Nice: 無効/停止済み slug の join 失敗を毎5秒叩かない（古い QR 連打対策）
     _sbLiveRtStarting=true;
     var clearStarting=function(){_sbLiveRtStarting=false;};
     loadLivePublicConfig().then(function(okCfg){
@@ -13643,16 +13646,21 @@ function sbLiveStartRealtime(){
         if(!okLib||!sbIsLiveRoute()||_sbLiveRt){clearStarting();return;}
         try{
           var cfg=window.SHOGI_LIVE_PUBLIC_CONFIG;
-          if(!_sbLiveRtClient)_sbLiveRtClient=window.supabase.createClient(cfg.url,cfg.publishableKey);
+          // Should Fix P2: 参加者ビューは厳密に anon/memory-only。運営の localStorage セッションを拾わせず
+          //   （persistSession:false）・URL のトークンを消費せず（detectSessionInUrl:false）・自動更新もしない。
+          if(!_sbLiveRtClient)_sbLiveRtClient=window.supabase.createClient(cfg.url,cfg.publishableKey,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
           var ch=_sbLiveRtClient.channel(liveRealtimeTopic(slug),{config:{private:true}});
           ch.on('broadcast',{event:'snapshot'},function(){try{sbLiveRequestRefetch();}catch(eF){}});
           _sbLiveRt=ch; // ステータスコールバックが同期発火しても解放できるよう subscribe 前にセット
           ch.subscribe(function(status){
             try{
-              if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+              if(status==='SUBSCRIBED'){
+                _sbLiveRtJoinBackoffUntil=0; // 購読成功で backoff 解除
+              }else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
                 // 購読失敗/切断: 参照を外して次のポーリング周回で再購読させる（無購読でリトライが止まらない）。
                 if(_sbLiveRt===ch)_sbLiveRt=null;
                 try{if(_sbLiveRtClient&&_sbLiveRtClient.removeChannel)_sbLiveRtClient.removeChannel(ch);}catch(e2){}
+                _sbLiveRtJoinBackoffUntil=Date.now()+LIVE_RT_JOIN_BACKOFF_MS; // Nice: 無効/停止済み slug を毎5秒叩かない
               }
             }catch(e3){}
           });

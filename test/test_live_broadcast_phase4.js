@@ -115,6 +115,13 @@ let pass=0,fail=0;const ok=(c,m)=>{c?pass++:(fail++,console.log('  FAIL: '+m));}
   ok(!!mRt && /_sbLiveRt\s*=\s*ch\s*;[\s\S]*?\.subscribe\(/.test(mRt[0]),'_sbLiveRt は subscribe 前にセット（同期発火でも解放可能）');
   ok(/var\s+_sbLiveRtStarting\s*=\s*false/.test(src),'_sbLiveRtStarting（二重 subscribe 防止）フラグを持つ');
   ok(!!mRt && /_sbLiveRt\s*\|\|\s*_sbLiveRtStarting\s*\)\s*return/.test(mRt[0]),'起動中は再入せず二重 subscribe を防ぐ');
+  // 5-8. Codex 3巡目 Should Fix P2: 参加者 client は厳密 anon/memory-only（運営 session を拾わない）
+  ok(!!mRt && /createClient\([^;]*persistSession\s*:\s*false/.test(mRt[0]),'viewer client は persistSession:false（運営 localStorage session を拾わない）');
+  ok(!!mRt && /detectSessionInUrl\s*:\s*false/.test(mRt[0]),'viewer client は detectSessionInUrl:false（URL トークンを消費しない）');
+  // 5-9. Codex 3巡目 Nice: join 失敗時のバックオフ（無効/停止済み slug を毎5秒叩かない）
+  ok(/var\s+LIVE_RT_JOIN_BACKOFF_MS\s*=/.test(src) && /var\s+_sbLiveRtJoinBackoffUntil\s*=/.test(src),'join 失敗バックオフの変数を持つ');
+  ok(!!mRt && /Date\.now\(\)\s*<\s*_sbLiveRtJoinBackoffUntil\s*\)\s*return/.test(mRt[0]),'バックオフ中は再購読を試みない');
+  ok(!!mRt && /SUBSCRIBED[\s\S]*?_sbLiveRtJoinBackoffUntil\s*=\s*0/.test(mRt[0]),'購読成功でバックオフ解除');
   // 5-4. supabase-js は運営経路と同一 CDN+SRI を遅延ロード
   ok(/@supabase\/supabase-js@2\.108\.2\/dist\/umd\/supabase\.js/.test(src),'viewer realtime は supabase-js@2.108.2 を遅延ロード');
   ok((src.match(/sha384-nD3dwv4\+ZqdYnmZKe\/249ImlV04om7xTCcsoSeQYI\+RO\+XlKPoqAWaJR1M5SJH9p/g)||[]).length>=2,'supabase-js の SRI は運営経路と同一を再利用');
@@ -149,6 +156,34 @@ let pass=0,fail=0;const ok=(c,m)=>{c?pass++:(fail++,console.log('  FAIL: '+m));}
     // Codex P2: トリガの realtime.send は fail-soft（publish を巻き戻さない）
     ok(/exception\s+when\s+others\s+then/i.test(mig),'realtime.send を fail-soft 例外ブロックで包む（publish は真実源）');
   }
+})();
+
+// --- 7. Codex 3巡目 Should Fix P2: subscribe lifecycle を fake client で実行時検証 ---
+//   CHANNEL_ERROR/TIMED_OUT/CLOSED で _sbLiveRt が解放され removeChannel される／broadcast callback が
+//   payload を読まず refetch だけ呼ぶ（引数を取らない＝poison getter が発火しない）を実 mock で確認。
+(function(){
+  const api=makeEnv({search:'?live=live-x',hash:'#scoreboard'});
+  const win=api._win();
+  let removed=null,statusCb=null,bcastHandler=null;
+  const fakeCh={
+    on:function(type,filter,cb){if(type==='broadcast')bcastHandler=cb;return fakeCh;},
+    subscribe:function(cb){statusCb=cb;return fakeCh;},
+    unsubscribe:function(){}
+  };
+  const fakeClient={channel:function(){return fakeCh;},removeChannel:function(c){removed=c;}};
+  win.SHOGI_LIVE_PUBLIC_CONFIG={url:'https://example.invalid',publishableKey:'anon-key'};
+  win.supabase={createClient:function(){return fakeClient;}};
+  api.sbLiveStartRealtime();
+  setTimeout(function(){
+    ok(api._rt()===fakeCh,'購読確立で _sbLiveRt に channel が入る（実 mock）');
+    ok(typeof bcastHandler==='function'&&bcastHandler.length===0,'broadcast ハンドラは引数を取らない＝payload を読まない');
+    let threw=false;
+    try{if(bcastHandler)bcastHandler({get payload(){throw new Error('read');}});}catch(e){threw=(e&&e.message==='read');}
+    ok(!threw,'broadcast ハンドラは payload を参照しない（poison getter 未発火・refetch のみ）');
+    if(typeof statusCb==='function')statusCb('CHANNEL_ERROR');
+    ok(api._rt()==null,'CHANNEL_ERROR で _sbLiveRt を解放（ポーリング周回リトライ再開）');
+    ok(removed===fakeCh,'CHANNEL_ERROR で removeChannel を呼び channel リークを防ぐ');
+  },3);
 })();
 
 setTimeout(function(){
