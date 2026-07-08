@@ -96,6 +96,7 @@ function loadEnv(opts){
        generatePairing:generatePairing,
        startTournamentForClass:startTournamentForClass,
        applyStartForCandidates:applyStartForCandidates,
+       __setAppModalTestResolver:(typeof __setAppModalTestResolver==='function'?__setAppModalTestResolver:null),
        _setState:function(s){state=s;}, _getState:function(){return state;}
      };`
   );
@@ -106,6 +107,10 @@ function loadEnv(opts){
     consoleMock, Promise, function(cb){ /* no-op timer */ }
   );
   api._ctx = ctx; api._warns = warns; api._confirmCalls = confirmCalls;
+  // IN-APP-MODAL-001 (#606): FRP追加の確認は native confirm→appConfirm へ移行。テストは __setAppModalTestResolver で
+  //   同期解決に切替え、既存の confirm スタブ（confirmFn＝confirmCalls への push・opts.confirm 戻り値・再入副作用）へ配線＝
+  //   H/RE 系 assert を挙動同値のまま維持。resolver は onResult 前に同期実行＝confirm 中の再入ガード保持を忠実に再現。
+  if(typeof api.__setAppModalTestResolver==='function'){ api.__setAppModalTestResolver(function(type,message){ return confirmFn(message); }); }
   return api;
 }
 

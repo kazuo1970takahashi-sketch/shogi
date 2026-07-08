@@ -89,6 +89,7 @@ function loadEnv(opts){
        onClickAddAllTables:onClickAddAllTables,
        onClickAppendFirstRound:onClickAppendFirstRound,
        renderTournament:renderTournament,
+       __setAppModalTestResolver:(typeof __setAppModalTestResolver==='function'?__setAppModalTestResolver:null),
        _setState:function(s){state=s;}, _getState:function(){return state;}
      };`
   );
@@ -99,6 +100,9 @@ function loadEnv(opts){
     consoleMock, Promise, function(cb){ /* no-op timer */ }
   );
   api._ctx = ctx; api._warns = warns; api._confirmCalls = confirmCalls;
+  // IN-APP-MODAL-001 (#606): FRP追加の確認は appConfirm へ移行。__setAppModalTestResolver を confirmFn へ配線し
+  //   （confirmCalls への push・opts.confirm 戻り値・クロス再入副作用を保持）、クロス再入ガード X 系 assert を挙動同値で維持。
+  if(typeof api.__setAppModalTestResolver==='function'){ api.__setAppModalTestResolver(function(type,message){ return confirmFn(message); }); }
   return api;
 }
 

@@ -8277,6 +8277,10 @@ var firstRoundAppendInFlight=false;
 function onClickAppendFirstRound(cls){
   if(firstRoundAppendInFlight)return;   // 再入防止: 共有フラグ（#274・クロス再入も弾く）
   firstRoundAppendInFlight=true;
+  // IN-APP-MODAL-001 (#606): native confirm→appConfirm（非同期）。再入ガード firstRoundAppendInFlight は
+  //   confirm 応答～append 完了まで保持する必要があるため、モーダル到達時のみ解除を callback へ委譲（_frpDeferred）。
+  //   その他の全 return / 同期例外は従来どおり finally で解除＝旧 try/finally と同値（連打/クロス再入は #274 のまま弾く）。
+  var _frpDeferred=false;
   try{
     if(!isClassStarted(cls)){showMsg('部分開始していないクラスには追加できません','warn');return;}
     var results=(state.results&&state.results[cls])||[];
@@ -8297,12 +8301,14 @@ function onClickAppendFirstRound(cls){
     if(selected.length<2){showMsg('2人以上を選択してください','warn');return;}
     var built=buildFirstRoundPartialPairs(selected);
     if(!built.pairs.length){showMsg('2人以上を選択してください','warn');return;}
-    if(typeof confirm==='function'){
-      if(!confirm(buildFrpAppendConfirmMessage(cls,built.pairs,built.leftover)))return;
-    }
-    appendFirstRoundPairs(cls,built.pairs);
+    // OK 時のみ append＝旧 confirm false で return と同値。append/例外いずれの経路でも finally で再入ガードを解除。
+    appConfirm(buildFrpAppendConfirmMessage(cls,built.pairs,built.leftover),function(_ok){
+      try{ if(_ok)appendFirstRoundPairs(cls,built.pairs); }
+      finally{ firstRoundAppendInFlight=false; }
+    });
+    _frpDeferred=true;
   }finally{
-    firstRoundAppendInFlight=false;
+    if(!_frpDeferred)firstRoundAppendInFlight=false;
   }
 }
 
@@ -8321,6 +8327,9 @@ function onClickAppendFirstRound(cls){
 function onClickAddOneTable(cls){
   if(firstRoundAppendInFlight)return;   // 再入防止: 共有フラグ（#274・クロス再入も弾く）
   firstRoundAppendInFlight=true;
+  // IN-APP-MODAL-001 (#606): native confirm→appConfirm（非同期）。再入ガードは confirm 応答～append 完了まで保持
+  //   （モーダル到達時のみ解除を callback へ委譲＝_frpDeferred）。その他の return / 例外は finally で解除＝旧 try/finally と同値。
+  var _frpDeferred=false;
   try{
     if(!isClassStarted(cls)){showMsg('部分開始していないクラスには追加できません','warn');return;}
     var results=(state.results&&state.results[cls])||[];
@@ -8329,12 +8338,14 @@ function onClickAddOneTable(cls){
     if(unassigned.length<2){showMsg('未手合いが2人未満のため1卓を作成できません','warn');return;}
     var built=buildFirstRoundPartialPairs(unassigned.slice(0,2));   // 先頭2名 → 1ペア・leftover なし
     if(!built.pairs.length){showMsg('未手合いが2人未満のため1卓を作成できません','warn');return;}
-    if(typeof confirm==='function'){
-      if(!confirm(buildFrpAppendConfirmMessage(cls,built.pairs,built.leftover)))return;
-    }
-    appendFirstRoundPairs(cls,built.pairs);   // 既存対局を変更せず末尾に1卓を append
+    // OK 時のみ append＝旧 confirm false で return と同値。append/例外いずれの経路でも finally で再入ガードを解除。
+    appConfirm(buildFrpAppendConfirmMessage(cls,built.pairs,built.leftover),function(_ok){
+      try{ if(_ok)appendFirstRoundPairs(cls,built.pairs); }   // 既存対局を変更せず末尾に1卓を append
+      finally{ firstRoundAppendInFlight=false; }
+    });
+    _frpDeferred=true;
   }finally{
-    firstRoundAppendInFlight=false;
+    if(!_frpDeferred)firstRoundAppendInFlight=false;
   }
 }
 
@@ -8353,6 +8364,9 @@ function onClickAddOneTable(cls){
 function onClickAddAllTables(cls){
   if(firstRoundAppendInFlight)return;   // 再入防止: 共有フラグ（#274・クロス再入も弾く）
   firstRoundAppendInFlight=true;
+  // IN-APP-MODAL-001 (#606): native confirm→appConfirm（非同期）。再入ガードは confirm 応答～append 完了まで保持
+  //   （モーダル到達時のみ解除を callback へ委譲＝_frpDeferred）。その他の return / 例外は finally で解除＝旧 try/finally と同値。
+  var _frpDeferred=false;
   try{
     if(!isClassStarted(cls)){showMsg('部分開始していないクラスには追加できません','warn');return;}
     var results=(state.results&&state.results[cls])||[];
@@ -8361,12 +8375,14 @@ function onClickAddAllTables(cls){
     if(unassigned.length<2){showMsg('未手合いが2人未満のため1局目を作成できません','warn');return;}
     var built=buildFirstRoundPartialPairs(unassigned);   // 全員 → 2人ずつ全ペア・奇数は末尾1人 leftover（待機）
     if(!built.pairs.length){showMsg('未手合いが2人未満のため1局目を作成できません','warn');return;}
-    if(typeof confirm==='function'){
-      if(!confirm(buildFrpAppendConfirmMessage(cls,built.pairs,built.leftover)))return;
-    }
-    appendFirstRoundPairs(cls,built.pairs);   // 既存対局を変更せず末尾に全卓をまとめて append
+    // OK 時のみ append＝旧 confirm false で return と同値。append/例外いずれの経路でも finally で再入ガードを解除。
+    appConfirm(buildFrpAppendConfirmMessage(cls,built.pairs,built.leftover),function(_ok){
+      try{ if(_ok)appendFirstRoundPairs(cls,built.pairs); }   // 既存対局を変更せず末尾に全卓をまとめて append
+      finally{ firstRoundAppendInFlight=false; }
+    });
+    _frpDeferred=true;
   }finally{
-    firstRoundAppendInFlight=false;
+    if(!_frpDeferred)firstRoundAppendInFlight=false;
   }
 }
 
