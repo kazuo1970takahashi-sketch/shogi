@@ -94,6 +94,7 @@ function loadEnv(opts){
        getDuplicatePlayersInPairings:getDuplicatePlayersInPairings,
        buildCurrentPairingsHtml:buildCurrentPairingsHtml,
        renderTournament:renderTournament,
+       __setAppModalTestResolver:(typeof __setAppModalTestResolver!=='undefined'?__setAppModalTestResolver:undefined),
        _setState:function(s){state=s;}, _getState:function(){return state;}
      };`
   );
@@ -104,6 +105,11 @@ function loadEnv(opts){
     consoleMock, Promise, function(cb){ /* no-op timer */ }
   );
   api._ctx = ctx; api._warns = warns; api._alerts = alerts; api._confirmCalls = confirmCalls;
+  // IN-APP-MODAL-001 (#606): addPlayer の遅延追加確認が native confirm→appConfirm に移行。
+  //   appConfirm を既存の confirmCalls/opts.confirm 機構へ同期解決で配線＝ADD-5/6/7/8 を挙動同値のまま維持。
+  if(typeof api.__setAppModalTestResolver==='function'){
+    api.__setAppModalTestResolver(function(type,message){ confirmCalls.push(String(message)); return (typeof opts.confirm==='function')?opts.confirm(message):(opts.confirm!==false); });
+  }
   return api;
 }
 

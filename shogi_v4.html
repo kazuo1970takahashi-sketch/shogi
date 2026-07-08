@@ -6767,13 +6767,17 @@ function addPlayer(){
   //   現回戦の組み合わせに含まれず待機になる上、人数を奇数化して以降の組み合わせに影響しうる。誤操作で
   //   進行中の大会に紛れ込むのを防ぐため、運営に確認する（最低限の通知ガード。1回戦の途中受付＝results
   //   が空のクラスは対象外で従来どおり追加できる）。キャンセル時は追加しない。
+  // IN-APP-MODAL-001 (#606): 開始後クラスへの遅延追加確認を native confirm→appConfirm へ挙動同値化。
+  //   追加は破壊操作でない（affirmative 選択）ため danger なし＝native 既定 Enter=OK を温存。OK 時のみ _doAddPlayer 実行＝confirm false で return と同値。
+  //   ガード非該当（未開始 or 1回戦途中＝results 空）は従来どおり即追加。追加本体を _doAddPlayer に集約（クロージャで name/cls/suggestSelected 等を温存・function 宣言は巻き上げ）。
   if(isClassStarted(cls)&&state.results&&Array.isArray(state.results[cls])&&state.results[cls].length>=1){
     var roundsDone272=state.results[cls].length;
-    if(!confirm(cls+'クラスはすでに'+roundsDone272+'回戦まで進行しています。\nいま追加すると、この参加者は現在の組み合わせには入らず、'+(roundsDone272+1)+'回戦以降の対象になります（この回戦は待機になり、次の回戦から組み合わせに入ります）。\n\n追加してよろしいですか？')){
-      return;
-    }
+    appConfirm(cls+'クラスはすでに'+roundsDone272+'回戦まで進行しています。\nいま追加すると、この参加者は現在の組み合わせには入らず、'+(roundsDone272+1)+'回戦以降の対象になります（この回戦は待機になり、次の回戦から組み合わせに入ります）。\n\n追加してよろしいですか？',function(_ok){ if(_ok)_doAddPlayer(); });
+    return;
   }
+  _doAddPlayer();
 
+  function _doAddPlayer(){
   var id='p'+Date.now()+Math.floor(Math.random()*1000);
   var newPlayer={id:id,name:name,cls:cls,member:memberValue,grade:gradeValue};
   if(memberIdValue)newPlayer.member_id=memberIdValue;
@@ -6857,6 +6861,7 @@ function addPlayer(){
       severity:'warn'
     });
   }
+  } // end _doAddPlayer（IN-APP-MODAL-001 #606: 追加本体を集約）
 }
 
 function removePlayer(id,cls,onDone){
