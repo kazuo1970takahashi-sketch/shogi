@@ -8840,12 +8840,45 @@ function bindChangePairingModalEvents(cls, idx){
 
     var otherIdx=findPairContainingPlayer(cls, X, idx);
 
-    if(otherIdx===-1){
-      if(pairHasRematch(cls, keepPlayer, X)){
-        if(!confirm('この組み合わせは過去に対戦済みです。再戦として保存しますか？'))return;
+    // IN-APP-MODAL-001 (#606): 対戦相手変更（再戦保存 / 入れ替え）の native confirm 2件を appConfirm へ挙動同値化。
+    //   confirm 後の共通後処理（modal 除去→renderTournament→save→SAVE-003b 保存検証）を _finishChangePairing に集約し、
+    //   OK 経路のみで呼ぶ＝元の「confirm OK 後に後処理」の順序・分岐を厳密保持（取消/重複ロールバックは非実行＝confirm false で return と同値）。
+    function _finishChangePairing(){
+      document.getElementById('chg-modal').remove();
+      renderTournament(cls);save();
+      // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
+      // false は「保存未確認」（保存失敗と断定しない）。対戦相手変更 / swap は rollback しない・運営は継続する。
+      // pairingsMatchSnapshot で配列全体（p1 / p2 / winner、両側存在時のみ lastModifiedBy）を比較するため、
+      // swap で 2 ペア同時に変わっても、片方だけ stale になっているケースを検知できる。
+      var expectedPairings_cp=state.pairings[cls];
+      var persisted_cp=readPersistedState();
+      var pairingsOk_cp=persisted_cp&&persisted_cp.pairings&&pairingsMatchSnapshot(persisted_cp.pairings[cls],expectedPairings_cp);
+      if(!pairingsOk_cp){
+        notifySaveWarning({
+          message:'対戦相手を変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+          consoleTag:'SAVE-003b: bindChangePairingModalEvents の保存が確認できませんでした (cls='+cls+', idx='+idx+')',
+          callsiteId:'SAVE-003b-bindChangePairingModalEvents',
+          kind:'save-verify',
+          aggregateKey:'save-verify:pairing',
+          severity:'warn'
+        });
       }
+    }
+
+    if(otherIdx===-1){
       // A-4 §4: 手動変更ペアには lastModifiedBy: 'manual' を付与
-      state.pairings[cls][idx]={p1:newP1,p2:newP2,winner:null,lastModifiedBy:'manual'};
+      if(pairHasRematch(cls, keepPlayer, X)){
+        // 再戦保存＝肯定操作ゆえ danger 無し(Enter=OK 維持)。OK 時のみ確定→後処理＝confirm false で return と同値。
+        appConfirm('この組み合わせは過去に対戦済みです。再戦として保存しますか？',function(_ok){
+          if(!_ok)return;
+          state.pairings[cls][idx]={p1:newP1,p2:newP2,winner:null,lastModifiedBy:'manual'};
+          _finishChangePairing();
+        });
+      } else {
+        state.pairings[cls][idx]={p1:newP1,p2:newP2,winner:null,lastModifiedBy:'manual'};
+        _finishChangePairing();
+      }
+      return;
     } else {
       var otherPair=state.pairings[cls][otherIdx];
       if(otherPair.winner){
@@ -8864,40 +8897,24 @@ function bindChangePairingModalEvents(cls, idx){
       var newOtherP1=(otherPair.p1===X)?droppedFromTarget:otherPair.p1;
       var newOtherP2=(otherPair.p2===X)?droppedFromTarget:otherPair.p2;
 
-      if(!confirm('入れ替えを実行します。\n  ('+getName(oldP1,cls)+'-'+getName(oldP2,cls)+') → ('+getName(newP1,cls)+'-'+getName(newP2,cls)+')\n  ('+getName(otherPair.p1,cls)+'-'+getName(otherPair.p2,cls)+') → ('+getName(newOtherP1,cls)+'-'+getName(newOtherP2,cls)+')\nよろしいですか?'))return;
+      // 入れ替え実行＝肯定操作ゆえ danger 無し(Enter=OK 維持)。OK 時のみ確定→重複検査→後処理＝confirm false で return と同値。
+      appConfirm('入れ替えを実行します。\n  ('+getName(oldP1,cls)+'-'+getName(oldP2,cls)+') → ('+getName(newP1,cls)+'-'+getName(newP2,cls)+')\n  ('+getName(otherPair.p1,cls)+'-'+getName(otherPair.p2,cls)+') → ('+getName(newOtherP1,cls)+'-'+getName(newOtherP2,cls)+')\nよろしいですか?',function(_ok){
+        if(!_ok)return;
+        var backup1=state.pairings[cls][idx];
+        var backup2=state.pairings[cls][otherIdx];
+        // A-4 §4: 入れ替えで影響を受けた両ペアに lastModifiedBy: 'manual' を付与
+        state.pairings[cls][idx]={p1:newP1,p2:newP2,winner:null,lastModifiedBy:'manual'};
+        state.pairings[cls][otherIdx]={p1:newOtherP1,p2:newOtherP2,winner:null,lastModifiedBy:'manual'};
 
-      var backup1=state.pairings[cls][idx];
-      var backup2=state.pairings[cls][otherIdx];
-      // A-4 §4: 入れ替えで影響を受けた両ペアに lastModifiedBy: 'manual' を付与
-      state.pairings[cls][idx]={p1:newP1,p2:newP2,winner:null,lastModifiedBy:'manual'};
-      state.pairings[cls][otherIdx]={p1:newOtherP1,p2:newOtherP2,winner:null,lastModifiedBy:'manual'};
-
-      if(getDuplicatePlayersInPairings(cls).length>0){
-        state.pairings[cls][idx]=backup1;
-        state.pairings[cls][otherIdx]=backup2;
-        alert('内部エラー: 入れ替え後の重複を検出しました。変更を取り消し、元の組み合わせに戻しました');
-        return;
-      }
-    }
-
-    document.getElementById('chg-modal').remove();
-    renderTournament(cls);save();
-    // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
-    // false は「保存未確認」（保存失敗と断定しない）。対戦相手変更 / swap は rollback しない・運営は継続する。
-    // pairingsMatchSnapshot で配列全体（p1 / p2 / winner、両側存在時のみ lastModifiedBy）を比較するため、
-    // swap で 2 ペア同時に変わっても、片方だけ stale になっているケースを検知できる。
-    var expectedPairings_cp=state.pairings[cls];
-    var persisted_cp=readPersistedState();
-    var pairingsOk_cp=persisted_cp&&persisted_cp.pairings&&pairingsMatchSnapshot(persisted_cp.pairings[cls],expectedPairings_cp);
-    if(!pairingsOk_cp){
-      notifySaveWarning({
-        message:'対戦相手を変更しましたが、保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
-        consoleTag:'SAVE-003b: bindChangePairingModalEvents の保存が確認できませんでした (cls='+cls+', idx='+idx+')',
-        callsiteId:'SAVE-003b-bindChangePairingModalEvents',
-        kind:'save-verify',
-        aggregateKey:'save-verify:pairing',
-        severity:'warn'
+        if(getDuplicatePlayersInPairings(cls).length>0){
+          state.pairings[cls][idx]=backup1;
+          state.pairings[cls][otherIdx]=backup2;
+          alert('内部エラー: 入れ替え後の重複を検出しました。変更を取り消し、元の組み合わせに戻しました');
+          return;
+        }
+        _finishChangePairing();
       });
+      return;
     }
   });
 }

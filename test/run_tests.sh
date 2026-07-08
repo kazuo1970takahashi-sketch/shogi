@@ -2422,6 +2422,19 @@ else
 fi
 
 
+echo ""
+echo "【IN-APP-MODAL-001 (#606) スライス — 対戦相手変更（再戦保存 / 入れ替え）confirm 2件のアプリ内モーダル化】"
+if [ -f "$SCRIPT_DIR/test_in_app_modal_change_pairing_606.js" ]; then
+  if node "$SCRIPT_DIR/test_in_app_modal_change_pairing_606.js" "$TARGET" > /tmp/in_app_modal_change_pairing_606_out.log 2>&1; then
+    ok "IN-APP-MODAL-CHANGE-PAIRING-606 テスト 全PASS ($(tail -1 /tmp/in_app_modal_change_pairing_606_out.log))"
+  else
+    ng "IN-APP-MODAL-CHANGE-PAIRING-606 テスト 失敗"; cat /tmp/in_app_modal_change_pairing_606_out.log
+  fi
+else
+  warn "test_in_app_modal_change_pairing_606.js が見つからない"
+fi
+
+
 
 echo ""
 echo "【MEMBER-ATTR-SNAPSHOT-001 (#607) Phase1-0 登録時に city を player へ写す（member/grade と対称・snapshot 源）】"
