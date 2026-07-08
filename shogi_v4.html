@@ -5957,6 +5957,17 @@ function showTab(t){
   var tm=document.getElementById('tab-master');if(tm)tm.className='tab'+(t==='master'?' active':'');
   var th=document.getElementById('tab-history');if(th)th.className='tab'+(t==='history'?' active':'');
   try{window.scrollTo(0,0);}catch(e){}
+  // STICKY-TAB-REPAINT-001: .tab-bar は position:sticky。タブ切替時の className 変更＋
+  //   scrollTo(0,0) の組合せで一部ブラウザ(Safari 等)が旧 active タブの濃紺塗りを再ラスタライズせず
+  //   残す「描画ゴースト」（DOM は1タブ active なのに見た目だけ2タブ点灯）が出る。ロジック/レイアウト/
+  //   CSS 規則は不変のまま、バーを1フレームだけ極小 opacity 変化させ強制再描画して消す（fail-soft）。
+  try{
+    var _tb=document.querySelector('.tab-bar');
+    if(_tb&&typeof requestAnimationFrame==='function'){
+      _tb.style.opacity='0.999';
+      requestAnimationFrame(function(){ try{ _tb.style.opacity=''; }catch(e){} });
+    }
+  }catch(e){}
   if(t==='result'){renderResults();if(typeof refreshSendTargetClasses==='function')refreshSendTargetClasses();}
   // ROUND-CLASS-START-005 (spec §15.1 row 1): tournament タブ表示時は
   //   state.classes を走査して renderTournament(c.id) を呼ぶ（A/B literal 解消）。
