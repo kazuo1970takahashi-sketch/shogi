@@ -2598,6 +2598,18 @@ if [ -f "$SCRIPT_DIR/test_sb_close_opener_001.js" ]; then
 else
   warn "test_sb_close_opener_001.js が見つからない"
 fi
+
+echo ""
+echo "【WORLD-STD-ALIGN-002 (#717) 受付リストの固定列グリッド化（世界標準の揃え②）】"
+if [ -f "$SCRIPT_DIR/test_world_std_align_002.js" ]; then
+  if node "$SCRIPT_DIR/test_world_std_align_002.js" "$TARGET" > /tmp/world_std_align_002_out.log 2>&1; then
+    ok "WORLD-STD-ALIGN-002 テスト 全PASS ($(tail -1 /tmp/world_std_align_002_out.log))"
+  else
+    ng "WORLD-STD-ALIGN-002 テスト 失敗"; cat /tmp/world_std_align_002_out.log
+  fi
+else
+  warn "test_world_std_align_002.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
