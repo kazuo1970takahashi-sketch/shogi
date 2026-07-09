@@ -16,6 +16,7 @@ var CACHE = 'shogi-tour-v96';   // ★release ごとにバージョンを上げ�
 var PRECACHE = [
   './', 'index.html', 'shogi_v4.html', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
+  'icon-192-maskable.png', 'icon-512-maskable.png',
   'app/', 'app/index.html', 'app/auth.js'
 ];
 
