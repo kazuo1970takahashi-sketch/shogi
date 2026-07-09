@@ -9,6 +9,7 @@
 //   B2. opener 有り（運営タブから window.open）→ ✕ 閉じる を描画する
 //   B3. B2 の描画結果にも「運営画面へ」導線が無い（read-only 徹底の E13 対称）
 //   B4. live ルート（?live= あり）は opener があっても描画しない
+//   B7. クロスオリジン opener（第三者ページ経由）→ 描画しない（L3 Should-1）
 //   B5. ✕ 閉じる click → window.close() が呼ばれる（1回・他の副作用なし）
 //   B6. opener アクセスで例外 → fail-soft で描画しない
 // 使い方: node test/test_sb_close_opener_001.js shogi_v4.html
@@ -34,6 +35,7 @@ const htmlSrc = fs.readFileSync(targetPath, 'utf8');
   assert(!!fnm, 'S1-1 sbCanCloseWindow が存在する');
   assert(!!fnm && /window\.opener/.test(fnm[0]), 'S1-2 判定条件に window.opener を含む');
   assert(!!fnm && /sbIsLiveRoute/.test(fnm[0]), 'S1-3 live ルート除外を含む');
+  assert(!!fnm && /opener\.location/.test(fnm[0]), 'S1-4 同一オリジン限定（opener.location アクセス）を含む（L3 Should-1）');
   // 束縛箇所: sb-close-btn には window.close のみ（location 遷移・hash 書換を束縛しない）
   const bindm = htmlSrc.match(/sb-close-btn'\):null;\s*\n\s*if\(sbCloseEl\)sbCloseEl\.addEventListener\('click',function\(\)\{([\s\S]*?)\}\);/);
   assert(!!bindm, 'S2-1 ✕ 閉じる の click 束縛が存在する');
@@ -165,10 +167,21 @@ function makeState(){
   assert(env.sbCanCloseWindow() === false, 'B1-2 sbCanCloseWindow=false');
 }
 
-// B2/B3: opener 有り → ボタンを描画する・運営導線は無いまま
+function sameOriginOpener(){
+  // 同一オリジン opener 相当（location.href が例外なく読める）
+  return { location: { href: 'http://localhost/shogi_v4.html' } };
+}
+function crossOriginOpener(){
+  // クロスオリジン opener 相当（location アクセスで SecurityError）
+  const op = {};
+  Object.defineProperty(op, 'location', { get(){ throw new Error('SecurityError: cross-origin'); } });
+  return op;
+}
+
+// B2/B3: 同一オリジン opener 有り → ボタンを描画する・運営導線は無いまま
 {
   const env = loadEnv(targetPath);
-  env._ctx.window.opener = {};
+  env._ctx.window.opener = sameOriginOpener();
   env._setState(makeState());
   env.renderScoreboard();
   const html = env._ctx.document.getElementById('scoreboard-view').innerHTML;
@@ -183,7 +196,7 @@ function makeState(){
 // B4: live ルート（?live= あり）は opener があっても描画しない
 {
   const env = loadEnv(targetPath);
-  env._ctx.window.opener = {};
+  env._ctx.window.opener = sameOriginOpener();
   env._ctx.location.search = '?live=kakuu-slug';
   env._setState(makeState());
   env.renderScoreboard();
@@ -195,7 +208,7 @@ function makeState(){
 // B5: click → window.close() が1回呼ばれる
 {
   const env = loadEnv(targetPath);
-  env._ctx.window.opener = {};
+  env._ctx.window.opener = sameOriginOpener();
   env._setState(makeState());
   // view.querySelector をフックして #sb-close-btn だけ実要素を返す
   const view = env._ctx.document.getElementById('scoreboard-view');
@@ -212,6 +225,19 @@ function makeState(){
   } else {
     fail += 2;
   }
+}
+
+// B7: クロスオリジン opener（第三者ページの target=_blank 等）→ 描画しない（L3 Should-1）
+{
+  const env = loadEnv(targetPath);
+  env._ctx.window.opener = crossOriginOpener();
+  env._setState(makeState());
+  let threw = false;
+  try { env.renderScoreboard(); } catch(e){ threw = true; }
+  assert(!threw, 'B7-1 描画が例外で落ちない（fail-soft）');
+  const html = env._ctx.document.getElementById('scoreboard-view').innerHTML;
+  assert(!/sb-close-btn/.test(html), 'B7-2 クロスオリジン opener では ✕ 閉じる を描画しない');
+  assert(env.sbCanCloseWindow() === false, 'B7-3 sbCanCloseWindow=false（クロスオリジン）');
 }
 
 // B6: opener アクセスで例外 → fail-soft で描画しない

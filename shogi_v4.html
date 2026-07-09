@@ -258,7 +258,8 @@ body.sb-active{overflow:hidden}
 /* Codex Must Fix 1: 「運営画面へ」戻りボタン(.sb-back)は read-only 徹底のため廃止（CSS も削除）。 */
 /* SB-CLOSE-OPENER-001 (#712 作者決定 2026-07-09): 運営タブの window.open から開かれたタブ限定の
    「✕ 閉じる」（window.close() のみ・運営画面へのナビゲーションではない＝Must Fix 1 の原則は不変）。
-   URL 直接アクセス（参加者共有・live・キオスク）では opener が無く描画されない。新規 class のみ追加。 */
+   URL 直接アクセス（参加者共有・live・キオスク）では opener が無く描画されない。
+   第三者ページ経由で opener が付く場合はクロスオリジン判定で除外（L3 Should-1）。新規 class のみ追加。 */
 .sb-close{flex:none;background:transparent;border:1px solid rgba(255,255,255,0.65);color:#fff;border-radius:8px;padding:8px 12px;font-size:13px;font-family:inherit;cursor:pointer;line-height:1;white-space:nowrap}
 .sb-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;background:#dde7f2}
 .sb-tab{padding:6px 14px;border-radius:16px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:13px;cursor:pointer;font-family:inherit}
@@ -14245,9 +14246,17 @@ function sbBindFinderPicks(root){
 //   （Codex Must Fix 1 / LIVE-MOBILE-SCOREBOARD-001 §1 の read-only 原則は不変）。
 //   - URL 直接アクセス（参加者への共有・キオスク）は window.opener 不在 → false（何も描画されない）
 //   - live ルート（?live= あり）は opener があっても false（会場据置き端末での誤タップ防止）
-//   - 例外時は false（fail-soft・クロスオリジン opener アクセス例外等）
+//   - L3 Should-1: 同一オリジン opener（=運営タブの window.open）に限定。第三者ページの
+//     target="_blank"（noopener なし）等で opener が付いた場合は location アクセスが
+//     クロスオリジン例外 → false（参加者側に描画される経路を遮断）
+//   - 例外時は false（fail-soft）
 function sbCanCloseWindow(){
-  try{return !!(window.opener&&window.opener!==window)&&!sbIsLiveRoute();}catch(e){return false;}
+  try{
+    if(!(window.opener&&window.opener!==window))return false;
+    if(sbIsLiveRoute())return false;
+    void window.opener.location.href; // クロスオリジンは例外 → catch で false
+    return true;
+  }catch(e){return false;}
 }
 
 function renderScoreboard(){
