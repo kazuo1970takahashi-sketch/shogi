@@ -279,6 +279,11 @@ body.sb-active{overflow:hidden}
 .sb-opp{font-size:10px;color:#777;display:block;margin-top:1px}
 .sb-wins{font-weight:700;color:#1F3864;font-size:15px}
 .sb-metric{color:#555;font-size:12px}
+/* WORLD-STD-ALIGN-001: 氏名=左寄せ/数値(勝・負・B・C)=右寄せ（世界標準の揃え・承認済み挙動変更スライス）。
+   既存 .sb-col-name の text-align:left は .sb-table th,td (0-1-1) に詳細度で負けて死んでいた
+   （specificity バグ）→ td 付きセレクタで勝たせる。順位列・○×回戦列は中央のまま。既存セレクタ無変更。 */
+.sb-table td.sb-col-name,.sb-table thead th.sb-col-name{text-align:left}
+.sb-table td.sb-wins,.sb-table td.sb-metric{text-align:right}
 .sb-empty{padding:28px 16px;text-align:center;color:#888;font-size:13px;line-height:1.6}
 .sb-legend{padding:6px 12px 0;font-size:11px;color:#667}
 /* LIVE-BROADCAST-001 Phase2 / SCOREBOARD-MY-VIEW-001: 対局者を探す＋個人ビュー＋live ルート。
