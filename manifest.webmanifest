@@ -3,7 +3,7 @@
   "short_name": "将棋大会運営",
   "description": "沼津将棋支部 月例大会の運営アプリ（受付・ペアリング・順位・報告書）",
   "lang": "ja",
-  "start_url": "shogi_v4.html?v=67",
+  "start_url": "shogi_v4.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
@@ -14,13 +14,25 @@
       "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

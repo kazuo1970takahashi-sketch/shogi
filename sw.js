@@ -12,10 +12,11 @@
          .then(function(){return self.clients.matchAll();})
          .then(function(cs){cs.forEach(function(c){c.navigate(c.url);});}));});
 */
-var CACHE = 'shogi-tour-v108';   // ★release ごとにバージョンを上げる（?v と同期）
+var CACHE = 'shogi-tour-v109';   // ★release ごとにバージョンを上げる（?v と同期）
 var PRECACHE = [
   './', 'index.html', 'shogi_v4.html', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
+  'icon-192-maskable.png', 'icon-512-maskable.png',
   'app/', 'app/index.html', 'app/auth.js'
 ];
 
