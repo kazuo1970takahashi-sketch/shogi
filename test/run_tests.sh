@@ -2586,6 +2586,18 @@ if [ -f "$SCRIPT_DIR/test_rebuild_semantics_fullmatch_609.js" ]; then
 else
   warn "test_rebuild_semantics_fullmatch_609.js が見つからない"
 fi
+
+echo ""
+echo "【SB-CLOSE-OPENER-001 (#712) スマホ星取表の ✕ 閉じる（運営タブ限定・read-only 不変）】"
+if [ -f "$SCRIPT_DIR/test_sb_close_opener_001.js" ]; then
+  if node "$SCRIPT_DIR/test_sb_close_opener_001.js" "$TARGET" > /tmp/sb_close_opener_001_out.log 2>&1; then
+    ok "SB-CLOSE-OPENER-001 テスト 全PASS ($(tail -1 /tmp/sb_close_opener_001_out.log))"
+  else
+    ng "SB-CLOSE-OPENER-001 テスト 失敗"; cat /tmp/sb_close_opener_001_out.log
+  fi
+else
+  warn "test_sb_close_opener_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
