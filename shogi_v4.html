@@ -36,7 +36,7 @@ h2{font-size:15px;font-weight:500;margin-bottom:10px;color:#1F3864;border-bottom
 h3{font-size:14px;font-weight:500;margin-bottom:8px;color:#444}
 .flex{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
 input[type=text]{height:44px;padding:0 12px;border:1px solid #ccc;border-radius:8px;font-size:16px;font-family:inherit}
-select{height:44px;padding:0 8px;border:1px solid #ccc;border-radius:8px;font-size:15px;font-family:inherit;background:#fff}
+select{height:44px;padding:0 8px;border:1px solid #ccc;border-radius:8px;font-size:16px;font-family:inherit;background:#fff} /* INPUT-STD-001 (#715): 16px 未満は iOS フォーカス時自動ズームの原因（15→16px） */
 button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;font-family:inherit;-webkit-tap-highlight-color:transparent}
 .btn-primary{background:#1F3864;color:#fff;border-color:#1F3864}
 .btn-success{background:#27500A;color:#fff;border-color:#27500A}
@@ -131,7 +131,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .sb-table ruby,#pane-result ruby{ruby-position:over}
 .sb-table rt,#pane-result rt{font-size:.6em;font-weight:400;color:#777;line-height:1}
 .player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:14px}
-.sel-sm{height:34px;padding:0 6px;border:1px solid #ccc;border-radius:6px;font-size:13px;background:#fff;font-family:inherit}
+.sel-sm{height:44px;padding:0 6px;border:1px solid #ccc;border-radius:6px;font-size:16px;background:#fff;font-family:inherit} /* INPUT-STD-001 (#715): 会費区分等は当日最多用＝13px/34px→16px/44px（iOS 自動ズーム防止＋44px タップ標的） */
 /* ROUND-CLASS-START-007 (spec §15.1 .grid2 3+ クラス棚卸し):
    現状 A/B 2 クラス前提で `1fr 1fr` 固定。C クラス以降を追加すると 3 番目以降が
    次行へ折り返される（致命的崩れは無く、半幅占有で並ぶ）。
@@ -295,7 +295,7 @@ body.sb-active{overflow:hidden}
    新規 class のみ追加（既存 .sb-* の挙動は変えない・拘束ルール3）。色は既存の意味色
    （primary #1F3864 / 青 #2E75B6 / 勝 #1b7a2e / 負 #b23030 / 強調 #fde7c4）に限定し新色を足さない。 */
 .sb-finder{padding:8px 12px;background:#dde7f2;border-bottom:1px solid #d3dbe5}
-.sb-search{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #2E75B6;border-radius:8px;font-size:14px;font-family:inherit;background:#fff;color:#333}
+.sb-search{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #2E75B6;border-radius:8px;font-size:16px;font-family:inherit;background:#fff;color:#333;min-height:44px} /* INPUT-STD-001 (#715): 14→16px（iOS 自動ズーム防止）＋通常時も 44px（キオスク時のみだった不統一を解消） */
 .sb-fres{margin-top:0}
 .sb-fres-item{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;text-align:left;padding:10px 12px;margin-top:6px;border:1px solid #c7d4e4;border-radius:8px;background:#fff;color:#1F3864;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer}
 .sb-fres-no{font-size:11px;color:#777;font-weight:400}
@@ -374,10 +374,8 @@ body.sb-active{overflow:hidden}
     </div>
   </div>
 </div>
-<!-- SAVE-STATUS-BAR-001 (STYLE-GUIDE §9 M3 / 監査 🟡-2・🔵-2): 保存4系統（自動保存/📋名簿を更新/バックアップ/☁クラウドへ送信）の
-     最終実行時刻を常時1行表示し「保存されているか不安」を見える化する。時刻は localStorage 別キー（SAVE_STATUS_KEY）＝state スキーマ非接触。
-     文言は renderSaveStatusBar が textContent で書く（innerHTML 不使用）。タップ/Enter/Space で openHelpModal('save-systems')（bindHeaderEvents で結線）。 -->
-<div id="save-status-bar" class="no-print" role="button" tabindex="0" title="押すと保存の仕組みを表示します" aria-label="保存状態（押すと説明を表示）" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:#f4f6f9;border-bottom:1px solid #d3dbe5;color:#555;padding:4px 14px;font-size:12px;cursor:pointer"></div>
+<!-- SAVE-STATUS-BAR-REMOVE-001: 保存状態バー（旧 #save-status-bar・保存4系統の最終実行時刻の常時1行表示）は撤去。
+     異常系は ⚠未保存ピル / backup-nudge / storage-warn が担当。記録レイヤ（SAVE_STATUS_KEY）は温存。 -->
 <!-- IN-APP-AUTH-001 Slice1/2 (#645): クラウドのログイン状態を常時1行表示＋アプリ内ログアウト。
      クラウド未設定なら JS が display:none のまま。氏名/クラブ名は escapeHtml 経由（buildAuthChipHtml）。
      初期表示は autoPullMembersOnStartup 相乗り・更新は refreshAuthChip・ログアウトは doAppLogout。 -->
@@ -442,7 +440,7 @@ body.sb-active{overflow:hidden}
         <h2>クラスを管理する</h2>
         <div id="class-manager-list" style="margin-bottom:8px"></div>
         <div class="flex">
-          <input type="text" id="inp-new-class" placeholder="クラス名（例: Cクラス）" style="width:200px" autocomplete="off" maxlength="20">
+          <input type="text" id="inp-new-class" placeholder="クラス名（例: Cクラス）" style="width:200px" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" maxlength="20">
           <button type="button" class="btn-sm" id="addClassBtn" style="border-color:#2E75B6;color:#2E75B6">クラスを追加</button>
         </div>
         <div style="font-size:11px;color:#888;margin-top:4px">A・Bクラスは削除できません。開始済み・参加者がいるクラスは削除できません。</div>
@@ -474,7 +472,7 @@ body.sb-active{overflow:hidden}
         <div>
           <div style="font-size:12px;font-weight:600;color:#1F3864;margin-bottom:4px">② ２台目（キーを受け取る側）</div>
           <span style="display:inline-flex;gap:6px;align-items:center">
-            <input type="text" id="opsKeyInput" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="例: 4821" aria-label="受け取った運営共通キー（4桁）" style="font-size:18px;letter-spacing:3px;width:104px;text-align:center;padding:6px 8px;border:1px solid #c3ccd8;border-radius:6px">
+            <input type="text" id="opsKeyInput" inputmode="numeric" enterkeyhint="done" autocomplete="off" maxlength="4" placeholder="例: 4821" aria-label="受け取った運営共通キー（4桁）" style="font-size:18px;letter-spacing:3px;width:104px;text-align:center;padding:6px 8px;border:1px solid #c3ccd8;border-radius:6px">
             <button type="button" id="opsApplyBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">このキーに合わせる</button>
           </span>
           <!-- OPS-SHARED-KEY-REDESIGN-001 Phase D (#588): １台目がキーを発行せず送信済みの大会へ、あとから合流する導線（設計 §8-2） -->
@@ -498,7 +496,7 @@ body.sb-active{overflow:hidden}
       </div>
       <div style="font-size:11px;color:#888;margin:0 0 4px">名簿にない新規の方は下の欄で手入力:</div>
       <div class="flex">
-        <input type="text" id="inp-name" placeholder="氏名を入力" style="width:150px" autocomplete="off">
+        <input type="text" id="inp-name" placeholder="氏名を入力" style="width:150px" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next">
         <select id="inp-class">
           <option value="A">Aクラス</option>
           <option value="B">Bクラス</option>
@@ -506,7 +504,7 @@ body.sb-active{overflow:hidden}
         <button type="button" class="btn-primary" id="addBtn">追加</button>
       </div>
       <div style="margin-top:6px">
-        <input type="text" id="inp-yomi" placeholder="ふりがな" style="width:200px;font-size:16px" autocomplete="off">
+        <input type="text" id="inp-yomi" inputmode="kana" placeholder="ふりがな" style="width:200px;font-size:16px" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
         <span style="font-size:11px;color:#888;margin-left:6px">自動入力されない場合は手入力してください</span>
       </div>
       <div id="suggest-list" class="suggest-list" style="display:none"></div>
@@ -590,7 +588,7 @@ body.sb-active{overflow:hidden}
       <div style="font-size:12px;color:#555;margin-top:4px">参加者が自分のスマホで順位・星取・手合せを見られるようにします（インターネット公開）。使わなくても大会運営・報告書には影響しません。QRの掲示物には「氏名・成績をインターネット公開する」旨の告知を含めてください。</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
         <label for="liveDisplayMode" style="font-size:12px;color:#333">表示名</label>
-        <select id="liveDisplayMode" style="font-size:13px;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-family:inherit">
+        <select id="liveDisplayMode" style="font-size:16px;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-family:inherit">
           <option value="given+no" selected>姓＋番号のみ（おすすめ）</option>
           <option value="full">フルネーム（主催者が告知・同意運用を決定済みの場合）</option>
         </select>
@@ -647,8 +645,8 @@ body.sb-active{overflow:hidden}
         <div><label>会場</label><input type="text" id="rep-place" value="労政会館"></div>
         <div><label>開始時間</label><input type="time" id="rep-start" step="300"></div>
         <div><label>終了時間</label><input type="time" id="rep-end" step="300"><div id="rep-time-warning" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px"></div></div>
-        <div><label>担当役員（正）</label><input type="text" id="rep-sei" placeholder="氏名"></div>
-        <div><label>担当役員（副）</label><input type="text" id="rep-fuku" placeholder="氏名"></div>
+        <div><label>担当役員（正）</label><input type="text" id="rep-sei" placeholder="氏名" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+        <div><label>担当役員（副）</label><input type="text" id="rep-fuku" placeholder="氏名" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
         <!-- REPORT-UX-003A: 賞金額（円）。既定7000・0有効・負/不正は7000。downloadReport の収支で参照。 -->
         <div><label>賞金額（円）</label><input type="number" id="rep-prize" min="0" step="100" inputmode="numeric" placeholder="7000"></div>
       </div>
@@ -1363,11 +1361,17 @@ function isQuotaExceededError(e){
   );
 }
 
-// SAVE-STATUS-BAR-001 (STYLE-GUIDE §9 M3 / 監査 🟡-2・🔵-2): 保存4系統の最終実行時刻の記録と表示。
+// SAVE-STATUS-BAR-001 (STYLE-GUIDE §9 M3 / 監査 🟡-2・🔵-2): 保存4系統の最終実行時刻の記録。
 //   kind = 'autosave'（save() 成功）/ 'meibo'（syncBranchMasterOnSave 成功）/ 'backup'（exportTournamentBackup 成功）/
 //   'cloud'（sendTournamentToCloud res.ok）。localStorage の別キー SAVE_STATUS_KEY に {kind:epoch_ms} で保持
-//   （state スキーマ非接触＝GOLDEN/クラウド payload/normalizeState 不変）。記録・描画とも fail-soft（try/catch＋
-//   DOM ガード）で、保存系の既存動作を一切ブロックしない（読めない/書けないときは黙って表示だけ据え置く）。
+//   （state スキーマ非接触＝GOLDEN/クラウド payload/normalizeState 不変）。記録は fail-soft（try/catch）で、
+//   保存系の既存動作を一切ブロックしない（読めない/書けないときは黙ってスキップする）。
+// SAVE-STATUS-BAR-REMOVE-001: 常時表示の保存状態バー（💾自動保存｜📋名簿｜バックアップ｜☁送信）は撤去。
+//   正常時に常時出続ける情報は読まれず、スマホの縦1行を消費するだけだった（作者判断・2026-07-09）。
+//   異常系の可視化は既存の ⚠未保存ピル（save-warning-indicator）/ backup-nudge / storage-warn が引き続き担当。
+//   記録レイヤ（SAVE_STATUS_KEY / markSaveStatus / markAutosaveStatus）は温存＝将来「バックアップが古いときだけ
+//   警告」等の異常時のみ表示に再利用できる。表示レイヤ（renderSaveStatusBar / buildSaveStatusBarText /
+//   formatSaveStatusTime / 静的 div / bindHeaderEvents 結線 / save-systems ヘルプ topic）のみ削除。
 var SAVE_STATUS_KEY='shogi_save_status_v1';
 // 自動保存の分単位スロットル: save() は入力のたびに呼ばれる高頻度経路のため、同一分内は再書込しない（表示は HH:MM 粒度）。
 var _saveStatusLastMinute=null;
@@ -1387,7 +1391,6 @@ function markSaveStatus(kind){
     st[kind]=Date.now();
     localStorage.setItem(SAVE_STATUS_KEY,JSON.stringify(st));
   }catch(e){}
-  renderSaveStatusBar();
 }
 
 function markAutosaveStatus(){
@@ -1398,6 +1401,7 @@ function markAutosaveStatus(){
 }
 
 // 表示用: 未実行/不正値は「未」・当日は HH:MM・別日は YYYY/MM/DD HH:MM（年つき8桁・ゼロ埋め）。
+// SAVE-STATUS-BAR-REMOVE-001: バー撤去後はバックアップ modal の「最終バックアップ」表示（buildBackupModalHtml）が唯一の利用箇所。
 function formatSaveStatusTime(ms){
   if(typeof ms!=='number'||!isFinite(ms)||ms<=0)return '未';
   var d=new Date(ms);
@@ -1409,24 +1413,6 @@ function formatSaveStatusTime(ms){
   var mo=('0'+(d.getMonth()+1)).slice(-2);
   var dd=('0'+d.getDate()).slice(-2);
   return d.getFullYear()+'/'+mo+'/'+dd+' '+hh+':'+mm;
-}
-
-// 表示テキスト組立（固定文言＋時刻のみ＝自由文なし。textContent で書くため escape 不要）。
-function buildSaveStatusBarText(st){
-  st=st||{};
-  return '💾 自動保存 '+formatSaveStatusTime(st.autosave)
-    +'｜📋 名簿 '+formatSaveStatusTime(st.meibo)
-    +'｜バックアップ '+formatSaveStatusTime(st.backup)
-    +'｜☁ 送信 '+formatSaveStatusTime(st.cloud);
-}
-
-function renderSaveStatusBar(){
-  try{
-    if(typeof document==='undefined')return;
-    var el=document.getElementById('save-status-bar');
-    if(!el)return;
-    el.textContent=buildSaveStatusBarText(loadSaveStatus());
-  }catch(e){}
 }
 
 function save(){
@@ -3037,14 +3023,14 @@ function _buildPpControlsHtml(filter,row,qf){
   //   通常フローでは div ラッパーは無害＝レイアウト不変。GOLDEN は wrapper 追加分のみ surgical 再採取）。
   var html='<div class="pp-controls">';
   html+='<div class="flex" style="margin-bottom:8px">';
-  html+='<input type="text" id="pp-search" placeholder="氏名で検索（漢字・ふりがな）" value="'+escapeHtml(filter||'')+'" style="flex:1;min-width:0">';
+  html+='<input type="text" id="pp-search" inputmode="kana" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="氏名で検索（漢字・ふりがな）" value="'+escapeHtml(filter||'')+'" style="flex:1;min-width:0">';
   html+='</div>';
   // 50音タブ（仕様書 v6 §3.3, §4.1）
   html+='<div id="pp-yomi-tabs" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;overflow-x:auto">';
   for(var ti=0;ti<PP_YOMI_TAB_DEFS.length;ti++){
     var td=PP_YOMI_TAB_DEFS[ti];
     var active=(td.key===row);
-    html+='<button type="button" class="pp-yomi-tab'+(active?' active':'')+'" data-row="'+escapeHtml(td.key)+'" style="min-height:36px;min-width:36px;padding:6px 10px;border:1px solid '+(active?'#1976d2':'#ccc')+';background:'+(active?'#e3f2fd':'#fff')+';color:'+(active?'#0d47a1':'#333')+';border-radius:6px;font-size:13px;cursor:pointer">'+escapeHtml(td.label)+'</button>';
+    html+='<button type="button" class="pp-yomi-tab'+(active?' active':'')+'" data-row="'+escapeHtml(td.key)+'" style="min-height:44px;min-width:44px;padding:6px 10px;border:1px solid '+(active?'#1976d2':'#ccc')+';background:'+(active?'#e3f2fd':'#fff')+';color:'+(active?'#0d47a1':'#333')+';border-radius:6px;font-size:13px;cursor:pointer">'+escapeHtml(td.label)+'</button>';
   }
   html+='</div>';
   // クイックフィルタ（A-3 §1-2）。排他選択・再タップで解除。
@@ -3058,7 +3044,7 @@ function _buildPpControlsHtml(filter,row,qf){
   for(var qi=0;qi<qfDefs.length;qi++){
     var qd=qfDefs[qi];
     var qActive=(qd.key===qf);
-    html+='<button type="button" class="pp-quick-filter-btn'+(qActive?' active':'')+'" data-qfkey="'+escapeHtml(qd.key)+'" style="min-height:34px;padding:6px 12px;border:1px solid '+(qActive?'#1976d2':'#ccc')+';background:'+(qActive?'#e3f2fd':'#fff')+';color:'+(qActive?'#0d47a1':'#333')+';border-radius:6px;font-size:13px;cursor:pointer">'+escapeHtml(qd.label)+'</button>';
+    html+='<button type="button" class="pp-quick-filter-btn'+(qActive?' active':'')+'" data-qfkey="'+escapeHtml(qd.key)+'" style="min-height:44px;padding:6px 12px;border:1px solid '+(qActive?'#1976d2':'#ccc')+';background:'+(qActive?'#e3f2fd':'#fff')+';color:'+(qActive?'#0d47a1':'#333')+';border-radius:6px;font-size:13px;cursor:pointer">'+escapeHtml(qd.label)+'</button>';
   }
   html+='</div>';
   // ChatGPT M3 反映: 「他」タブの意味補足（常時表示）
@@ -3682,7 +3668,7 @@ function buildYomiInputModalHtml(members){
     html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
     html+='<span style="min-width:6em;font-size:14px">'+escapeHtml(m.name||'')+'</span>';
     html+='<span style="color:#888;font-size:14px">→</span>';
-    html+='<input type="text" inputmode="kana" class="yomi-input" data-mid="'+escapeHtml(m.id||'')+'" placeholder="さとうたろう" style="flex:1;min-width:8em;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:14px">';
+    html+='<input type="text" inputmode="kana" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" class="yomi-input" data-mid="'+escapeHtml(m.id||'')+'" placeholder="さとうたろう" style="flex:1;min-width:8em;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:16px">';
     html+='</div>';
   }
   html+='</div>';
@@ -3969,7 +3955,7 @@ function buildMasterTabHtml(master){
   html+='<div style="max-width:760px">';
   html+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
   html+='<h3 style="margin:0">簡易一覧</h3>';
-  html+='<select id="master-sort" style="font-size:13px;padding:4px 8px"><option value="yomi"'+(_masterSortMode!=='recent'?' selected':'')+'>ふりがな順</option><option value="recent"'+(_masterSortMode==='recent'?' selected':'')+'>最終参加順</option></select>';
+  html+='<select id="master-sort" style="font-size:16px;padding:4px 8px"><option value="yomi"'+(_masterSortMode!=='recent'?' selected':'')+'>ふりがな順</option><option value="recent"'+(_masterSortMode==='recent'?' selected':'')+'>最終参加順</option></select>';
   html+='<span style="font-size:12px;color:#888">名簿 '+liveMembers.length+'名'+(noYomiCount>0?('（ふりがな未入力 '+noYomiCount+'名）'):'')+'</span>';
   html+='<span style="font-size:11px;color:#aaa;margin-left:auto">セルをタップで編集／□で選択→削除</span>';
   html+='</div>';
@@ -4060,9 +4046,9 @@ function buildMasterEditModalHtml(member){
   // Phase 3 §2.2: 説明文「氏名・ふりがな・区分が編集できます。参加履歴は変更されません。」を撤去
   // (後続フェーズで前回クラス・city が追加されたため不整合、各 label と placeholder で意図は伝わる)
   html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">氏名</label>';
-  html+='<input type="text" id="me-name" value="'+escapeHtml(member.name||'')+'" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
+  html+='<input type="text" id="me-name" value="'+escapeHtml(member.name||'')+'" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
   html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">ふりがな</label>';
-  html+='<input type="text" inputmode="kana" id="me-yomi" value="'+escapeHtml(member.yomi||'')+'" placeholder="やまだたろう" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
+  html+='<input type="text" inputmode="kana" id="me-yomi" value="'+escapeHtml(member.yomi||'')+'" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="やまだたろう" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
 
   // Phase 1 §3: 市町村(任意、maxlength=20、自由入力)。ふりがな直後配置で「個人属性 → 区分 → 履歴」の流れを維持
   html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">市町村</label>';
@@ -4944,9 +4930,9 @@ function buildMasterEditPanelHtml(m){
   }
   return '<div class="master-edit-panel">'
     +'<div class="mep-fld"><label for="ms-edit-yomi">ふりがな</label>'
-    +'<input type="text" id="ms-edit-yomi" inputmode="kana" value="'+y+'" data-init="'+y+'" placeholder="ふりがな"></div>'
+    +'<input type="text" id="ms-edit-yomi" inputmode="kana" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" value="'+y+'" data-init="'+y+'" placeholder="ふりがな"></div>'
     +'<div class="mep-fld"><label for="ms-edit-name">氏名</label>'
-    +'<input type="text" id="ms-edit-name" value="'+n+'" data-init="'+n+'" placeholder="氏名"></div>'
+    +'<input type="text" id="ms-edit-name" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" value="'+n+'" data-init="'+n+'" placeholder="氏名"></div>'
     +'<div class="mep-fld"><label>支部員区分</label>'
     +'<div class="mep-seg" id="ms-edit-member" data-init="'+mem+'" role="group" aria-label="支部員区分">'+segBtn('member','支部員',mem)+segBtn('other','その他',mem)+'</div></div>'
     +'<div class="mep-fld"><label>級（会費区分）</label>'
@@ -5861,7 +5847,7 @@ function renderClassManager(){
       if(!isNaN(curOv)&&curOv>=1&&nums.indexOf(curOv)<0)nums.push(curOv);
       nums.sort(function(a,b){return a-b;});
       var roundsSel=document.createElement('select');
-      roundsSel.style.cssText='font-size:13px;padding:2px 4px';
+      roundsSel.style.cssText='font-size:16px;padding:2px 4px'; // INPUT-STD-001 (#715): 13→16px（iOS 自動ズーム防止）
       if(roundsSel.setAttribute)roundsSel.setAttribute('aria-label',(c.name||c.id)+'の回戦数');
       var optHtml='<option value="">既定('+gdef+')</option>';
       for(var oi=0;oi<nums.length;oi++)optHtml+='<option value="'+nums[oi]+'">'+nums[oi]+'回戦</option>';
@@ -6045,6 +6031,13 @@ function showAppModal(opts){
   var input=null;
   if(type==='prompt'){
     input=document.createElement('input'); input.type='text'; input.className='app-modal-input';
+    // INPUT-STD-001 (#715): 氏名等の固有名詞入力が主用途＝自動補正/大文字化を無効化（fail-soft・setAttribute 不在 mock でも安全）。
+    try{
+      input.setAttribute('autocapitalize','off');
+      input.setAttribute('autocorrect','off');
+      input.setAttribute('spellcheck','false');
+      input.setAttribute('enterkeyhint','done');
+    }catch(eAttr){}
     input.value=(opts.defaultValue==null?'':String(opts.defaultValue));
     box.appendChild(input);
   }
@@ -6977,15 +6970,16 @@ function buildBulkEditModalHtml(cls, players){
     rows+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
       +'<span style="font-size:12px;color:#888;min-width:28px">'+cls+entryNoOf(cls,players[i].id)+'</span>'
       +'<input type="text" id="bulk-name-'+players[i].id+'" value="'+escapeHtml(players[i].name)+'" '
-      +'style="flex:1;height:34px;padding:0 10px;border:1px solid #ccc;border-radius:6px;font-size:14px;font-family:inherit">'
+      +'autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" '
+      +'style="flex:1;height:44px;padding:0 10px;border:1px solid #ccc;border-radius:6px;font-size:16px;font-family:inherit">'
       +'</div>';
   }
   return '<div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-height:80vh;overflow-y:auto;">'
     +'<h3 style="margin-bottom:16px;font-size:16px;font-weight:500;color:#1F3864">'+cls+'クラス 名前の一括編集</h3>'
     +rows
     +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">'
-    +'<button id="bulk-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
-    +'<button id="bulk-save" style="padding:8px 16px;border-radius:8px;border:none;background:#1F3864;color:#fff;font-size:14px;cursor:pointer">保存</button>'
+    +'<button id="bulk-cancel" style="min-height:44px;padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
+    +'<button id="bulk-save" style="min-height:44px;padding:8px 16px;border-radius:8px;border:none;background:#1F3864;color:#fff;font-size:14px;cursor:pointer">保存</button>'
     +'</div></div>';
 }
 
@@ -8843,9 +8837,9 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
     +'</div>'
     +emptyNoticeHtml
     +'<div style="margin-bottom:12px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">先手</label>'
-    +'<select id="chg-p1" style="width:100%;height:36px;border:1px solid #ccc;border-radius:8px;font-size:14px">'+sel1.html+'</select></div>'
+    +'<select id="chg-p1" style="width:100%;min-height:44px;border:1px solid #ccc;border-radius:8px;font-size:16px">'+sel1.html+'</select></div>'
     +'<div style="margin-bottom:20px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">後手</label>'
-    +'<select id="chg-p2" style="width:100%;height:36px;border:1px solid #ccc;border-radius:8px;font-size:14px">'+sel2.html+'</select></div>'
+    +'<select id="chg-p2" style="width:100%;min-height:44px;border:1px solid #ccc;border-radius:8px;font-size:16px">'+sel2.html+'</select></div>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end">'
     +'<button onclick="document.getElementById(\'chg-modal\').remove()" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
     +'<button id="chg-save" style="'+saveBtnStyle+'"'+saveBtnAttr+'>変更を保存</button>'
@@ -9119,7 +9113,7 @@ function buildPastResultsHtml(cls){
         +'<span style="font-size:13px;color:#888">vs</span>'
         +'<span style="display:inline-block;width:8em;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ escapeHtml(pn2) +'</span>'
         +'<span style="font-size:12px;color:'+pc+';font-weight:500;white-space:nowrap;margin-left:4px">'+escapeHtml(pw)+'</span>'
-        +'<button id="editpast_'+cls+'_'+rr+'_'+mm+'" style="padding:2px 8px;font-size:11px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;margin-left:auto;flex-shrink:0">修正</button>'
+        +'<button id="editpast_'+cls+'_'+rr+'_'+mm+'" style="min-height:44px;padding:2px 12px;font-size:12px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;margin-left:auto;flex-shrink:0">修正</button>'
         +'</div>';
     }
     html+='</div>';
@@ -9222,7 +9216,7 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
     html+='<div class="pairing-card" style="position:relative">'
       // A-4 §3 MF6-a: 卓番号バッジ（配列 index+1 から算出。永続化なし）
       +'<div style="position:absolute;top:6px;left:6px;padding:2px 8px;border-radius:4px;background:#1F3864;color:#fff;font-size:11px;font-weight:bold">第 '+(i+1)+' 卓</div>'
-      +'<button style="position:absolute;top:6px;right:6px;padding:3px 7px;border-radius:5px;border:1px solid #ccc;background:#fff;font-size:11px;color:#888;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
+      +'<button style="position:absolute;top:6px;right:6px;padding:4px 10px;border-radius:5px;border:1px solid #ccc;background:#fff;font-size:12px;color:#888;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
       +'<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:28px">'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
       +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+nameWithNoRubyHtml(m.p1,cls)+'</button>'
@@ -9256,7 +9250,7 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
     // FRP-IMPL-004B (設計 §5.4 / §5.4.2): 部分手合い組成中（started・results 空・未割当>0）は
     //   再生成ボタンを出力しない（HTML に出さない＝bind 対象も存在しない）。未割当0 は由来を問わず従来どおり出力。
     +(shouldShowRegenerateButton(cls)
-      ?'<button style="padding:8px 16px;border-radius:8px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:14px;cursor:pointer" id="repairBtn_'+cls+'">組み合わせを再生成</button>'
+      ?'<button style="min-height:44px;padding:8px 16px;border-radius:8px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:14px;cursor:pointer" id="repairBtn_'+cls+'">組み合わせを再生成</button>'
       :'')
     +'</div>';
   return html;
@@ -9505,20 +9499,10 @@ var HELP_TEXTS={
       '【A級・B級を2台で分担する場合】受付タブの「▷ 2台で分担して入力するとき」を開き、１台目で「運営共通キーを発行」→表示された4桁を２台目に伝え、２台目で入力して「このキーに合わせる」を押します。両方の送信が同じ１つの大会にまとまります（各端末は自分の級だけを送るのがコツ）。１台で運営するなら操作は不要です。',
       '【あとから2台目を足すとき】１台目がキーを発行せずに送信済みの場合は、２台目で「今日の大会に合流」を押してください（キー入力は不要・同じ日のうちに）。'
     ]
-  },
-  // SAVE-STATUS-BAR-001 (STYLE-GUIDE §9 M3): ヘッダ直下の保存状態バーから開く保存4系統の説明。
-  //   本文は buildHelpModalHtml で escapeHtml 経由。保存スキーマ不変・script-global 固定文字列。文言は作者承認済（2026-07-02）。
-  'save-systems':{
-    title:'保存の仕組み（4系統）',
-    lines:[
-      'このアプリは操作のたびに端末（ブラウザ）へ自動保存しています。ふだんは何もしなくて大丈夫です。',
-      '💾 自動保存：この端末の中だけの保存です。端末の故障・ブラウザのデータ消去には備えられません。',
-      '📋 名簿を更新：この大会の参加者を支部マスタ（名簿）へ反映します。大会データの控えではありません。',
-      'バックアップ：大会データをファイル（shogi_backup_….json）に控えます。端末事故からの復旧ができるのはこれだけです。節目ごとの実行がおすすめです。',
-      '☁ クラウドへ送信：確定した結果をみんなで共有するための送信です（任意・ログインが必要）。バックアップの代わりにはなりません。',
-      'バーの時刻は、各操作をこの端末で最後に実行した時刻です。「未」はこの端末でまだ実行していないことを示します。'
-    ]
   }
+  // SAVE-STATUS-BAR-REMOVE-001: 'save-systems' topic（保存4系統の説明）は撤去。
+  //   唯一の導線が保存状態バーだったため、バー削除で到達不能になる dead topic を残さない。
+  //   「復旧できるのはバックアップだけ」の教育は save-warning ヘルプ＋backup-nudge が引き続き担う。
 };
 
 function buildHelpModalHtml(topic){
@@ -11453,7 +11437,8 @@ function saveData(){
   //   完了通知 showToast を onDone 継続で受ける＝旧「同期反映後に通知」の順序を保持（差分なし/確認キャンセル/OK いずれも反映完了後に1回）。
   syncBranchMasterOnSave(function(){
     // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は blocking alert をやめ toast へ（OK タップ不要）。
-    //   旧 alert にあった「控えはバックアップ」案内は保存状態バー＋save-systems ヘルプ（?v=56）がカバー済み。
+    //   旧 alert にあった「控えはバックアップ」案内は backup-nudge＋save-warning ヘルプがカバー
+    //   （SAVE-STATUS-BAR-REMOVE-001: 旧・保存状態バー＋save-systems ヘルプは撤去済み）。
     showToast('📋 名簿を更新しました');
   });
 }
@@ -11747,7 +11732,7 @@ function exportTournamentBackup(){
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
     // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ。ファイル名は toast(1.8秒)では読み切れないため
-    //   省略（保存先はバックアップ画面の常設案内に記載済み・実行時刻は保存状態バーに記録される）。
+    //   省略（保存先はバックアップ画面の常設案内に記載済み・実行時刻はバックアップ画面冒頭の「最終バックアップ」に表示される）。
     showToast('バックアップを保存しました（ダウンロードフォルダ）');
     // SAVE-STATUS-BAR-001: バックアップ成功の時刻を記録（fail-soft）。
     markSaveStatus('backup');
@@ -11790,9 +11775,14 @@ function importTournamentBackupFile(e){
 }
 
 // build: バックアップ modal の HTML（pure 文字列・動的なユーザ入力を埋め込まない）。
+// SAVE-STATUS-BAR-REMOVE-001: 冒頭に「最終バックアップ: 時刻」を1行表示（旧保存状態バーの backup 時刻の移設先）。
+//   時刻は markSaveStatus('backup') の記録（SAVE_STATUS_KEY）＝固定文言＋formatSaveStatusTime の出力のみで XSS 面なし。
 function buildBackupModalHtml(){
+  var lastBackup='未';
+  try{ lastBackup=formatSaveStatusTime((loadSaveStatus()||{}).backup); }catch(eLb){}
   return '<div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:360px;max-height:90vh;overflow-y:auto">'
     +'<h3 style="margin-bottom:6px;font-size:16px;font-weight:500;color:#1F3864">バックアップ</h3>'
+    +'<div style="margin:0 0 8px;padding:6px 10px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;color:#1F3864;font-size:13px">最終バックアップ: <strong>'+lastBackup+'</strong>（この端末での実行時刻・「未」はまだ実行していません）</div>'
     +'<p style="margin:0 0 12px;color:#888;font-size:12px;line-height:1.5">大会データを 1 つの JSON ファイルとして保存／復元します（自動バックアップ用）。</p>'
     +'<button id="backup-export" class="btn-primary" style="width:100%;padding:12px;border-radius:8px;border:none;background:#27500A;color:#fff;font-size:14px;cursor:pointer">バックアップを保存（ダウンロード）</button>'
     +'<div style="margin:8px 0 0;background:#eef4ea;border:1px solid #cfe0c2;border-radius:8px;padding:8px 10px;color:#3b5a26;font-size:12px;line-height:1.6">📁 保存先：iPhone は「ファイル」アプリ →「ダウンロード」、Android は「ダウンロード」フォルダに保存されます。ファイル名は <strong>shogi_backup_日付_時刻.json</strong> です。</div>'
@@ -11801,7 +11791,7 @@ function buildBackupModalHtml(){
     +'<input type="file" id="backup-import-file" accept=".json,application/json" style="display:none">'
     +'<div style="margin:8px 0 0;background:#eaf0f7;border:1px solid #c2d4e6;border-radius:8px;padding:8px 10px;color:#1F3864;font-size:12px;line-height:1.6">↩ 復元：上の「ファイル選択」を押し、保存した <strong>shogi_backup_….json</strong> を選ぶだけです（フォルダの指定は不要・iPhone はファイル画面の「ダウンロード」から選べます）。</div>'
     +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:12px">─ または 貼り付けから復元 ─</div>'
-    +'<textarea id="backup-paste-area" placeholder="バックアップ/大会データのテキストを貼り付け" style="width:100%;height:90px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px;font-family:monospace;resize:vertical;box-sizing:border-box"></textarea>'
+    +'<textarea id="backup-paste-area" placeholder="バックアップ/大会データのテキストを貼り付け" style="width:100%;height:90px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:16px;font-family:monospace;resize:vertical;box-sizing:border-box"></textarea>'
     +'<button id="backup-paste-btn" style="width:100%;margin-top:6px;padding:10px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:14px;cursor:pointer">貼り付けから復元</button>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
     +'<button id="backup-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">閉じる</button>'
@@ -12727,16 +12717,7 @@ function bindHeaderEvents(){
       if(k==='Enter'||k===' '||k==='Spacebar'||k===13||k===32){ if(e&&e.preventDefault)e.preventDefault(); openHelpModal('save-warning'); }
     });
   }
-  // SAVE-STATUS-BAR-001: 保存状態バー＝タップ/Enter/Space で保存4系統の説明ヘルプ。初期表示もここで描画（U-2 ピルと同型）。
-  var saveStatusBar=document.getElementById('save-status-bar');
-  if(saveStatusBar){
-    saveStatusBar.addEventListener('click',function(){openHelpModal('save-systems');});
-    saveStatusBar.addEventListener('keydown',function(e){
-      var k=e&&(e.key||e.keyCode);
-      if(k==='Enter'||k===' '||k==='Spacebar'||k===13||k===32){ if(e&&e.preventDefault)e.preventDefault(); openHelpModal('save-systems'); }
-    });
-  }
-  renderSaveStatusBar();
+  // SAVE-STATUS-BAR-REMOVE-001: 保存状態バーの結線・初期描画は撤去（バー本体の削除に追随）。
   // IN-APP-AUTH-001 (#645): タブ復帰時にログイン状態バーを軽く再確認（getSession のみ＝RPC を撃たない）。
   //   初期表示は autoPullMembersOnStartup が相乗りで描画するためここでは呼ばない（起動時の二重 loadCloudDeps 回避）。
   //   クラウド設定が判明している端末のみ再確認＝未設定端末で config.js を毎回再注入しない（#647 Codex P2）。
@@ -14169,7 +14150,7 @@ function buildScoreboardFinderResultsHtml(activeClasses){
 //   クラス絞り込み UI は既存 .sb-tabs（_sbClassFilter）をそのまま使う（二重化しない）。
 function buildScoreboardFinderHtml(activeClasses){
   return '<div class="sb-finder">'
-    +'<input type="search" class="sb-search" id="sb-search-input" placeholder="番号・名前で対局者を探す（行タップでも開けます）" value="'+escapeHtml(_sbSearch||'')+'" autocomplete="off">'
+    +'<input type="search" class="sb-search" id="sb-search-input" enterkeyhint="search" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="番号・名前で対局者を探す（行タップでも開けます）" value="'+escapeHtml(_sbSearch||'')+'" autocomplete="off">'
     +'<div class="sb-fres" id="sb-fres">'+buildScoreboardFinderResultsHtml(activeClasses)+'</div>'
     +'</div>';
 }
