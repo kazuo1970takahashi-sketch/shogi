@@ -745,7 +745,7 @@ else
 fi
 
 echo ""
-echo "【SAVE-STATUS-BAR-001 (STYLE-GUIDE M3) 保存状態バー（4系統の最終実行時刻 / save フック / textContent 描画 / ？結線 / save-systems ヘルプ）】"
+echo "【SAVE-STATUS-BAR-REMOVE-001 (#716) 保存状態バー撤去（記録レイヤ温存 / save フック / バックアップmodal最終時刻 / save-systems撤去）】"
 if [ -f "$SCRIPT_DIR/test_save_status_bar.js" ]; then
   if node "$SCRIPT_DIR/test_save_status_bar.js" "$TARGET" > /tmp/save_status_bar_out.log 2>&1; then
     ok "SAVE-STATUS-BAR テスト 全PASS ($(tail -1 /tmp/save_status_bar_out.log))"

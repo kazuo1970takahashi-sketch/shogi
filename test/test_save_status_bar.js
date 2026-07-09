@@ -1,15 +1,16 @@
 #!/usr/bin/env node
-// SAVE-STATUS-BAR-001 (STYLE-GUIDE §9 M3 / 監査 🟡-2・🔵-2): 保存状態バーの単体テスト。
-//   保存4系統（自動保存/📋名簿を更新/バックアップ/☁クラウドへ送信）の最終実行時刻を
-//   localStorage 別キー SAVE_STATUS_KEY に記録し、ヘッダ直下バーに textContent で1行表示する純追加スライス。
+// SAVE-STATUS-BAR-REMOVE-001 (#716): 保存状態バー撤去の単体テスト（SAVE-STATUS-BAR-001 の後継）。
+//   常時表示バー（💾自動保存｜📋名簿｜バックアップ｜☁送信）は撤去し、記録レイヤ
+//   （SAVE_STATUS_KEY / loadSaveStatus / markSaveStatus / markAutosaveStatus / formatSaveStatusTime）は温存。
+//   backup 時刻の表示はバックアップ modal 冒頭「最終バックアップ:」へ移設。
 //   検証:
-//     R: loadSaveStatus（空/破損→{}）・markSaveStatus（記録）・formatSaveStatusTime（未/当日/別日）・buildSaveStatusBarText。
+//     R: loadSaveStatus（空/破損→{}）・markSaveStatus（記録）・formatSaveStatusTime（未/当日/別日）＝記録レイヤ非劣化。
 //     S: save() 成功で autosave が記録される（STORAGE_KEY 保存は非劣化）・markSaveStatus は fail-soft。
-//     D: renderSaveStatusBar が #save-status-bar の textContent に4系統を書く（innerHTML 不使用）。
-//     H: 静的 HTML＝id/role=button/tabindex/no-print・ヘッダと backup-nudge の間。
-//     W: bindHeaderEvents で click/keydown → openHelpModal('save-systems') 結線＋初期描画。実クリックでモーダル open。
-//     K: 4フック（save/syncBranchMasterOnSave/exportTournamentBackup/sendTournamentToCloud）がソース上に存在。
-//     T: HELP_TEXTS['save-systems'] が承認済み title＋本文6行・buildHelpModalHtml で全行 present。
+//     X: 撤去の検証＝静的 #save-status-bar 不在・renderSaveStatusBar/buildSaveStatusBarText 不在・
+//        bindHeaderEvents に結線なし＆mock で例外なく実行・markSaveStatus が描画を呼ばない。
+//     K: 4フック（save/syncBranchMasterOnSave/exportTournamentBackup/sendTournamentToCloud）がソース上に温存。
+//     B: バックアップ modal 冒頭に「最終バックアップ:」表示（未実行=「未」・実行後=時刻）。
+//     T: HELP_TEXTS['save-systems'] は撤去済み・既存 topic（tournament/cloud/save-warning）は非劣化。
 //   データは完全架空のみ。state スキーマには何も追加しない（別キー保存）。
 
 const fs = require('fs');
@@ -82,8 +83,7 @@ function loadEnv(){
        markSaveStatus:markSaveStatus,
        markAutosaveStatus:markAutosaveStatus,
        formatSaveStatusTime:formatSaveStatusTime,
-       buildSaveStatusBarText:buildSaveStatusBarText,
-       renderSaveStatusBar:renderSaveStatusBar,
+       buildBackupModalHtml:buildBackupModalHtml,
        bindHeaderEvents:bindHeaderEvents,
        save:save,
        SAVE_STATUS_KEY:SAVE_STATUS_KEY,
@@ -105,11 +105,11 @@ function ok(msg){pass++; if(process.env.VERBOSE)console.log('  ✓ '+msg);}
 function ng(msg){fail++; console.error('  ✗ '+msg);}
 function assert(cond,msg){if(cond)ok(msg);else ng(msg);}
 
-console.log('\n【SAVE-STATUS-BAR-001 (STYLE-GUIDE M3) 保存状態バー】');
+console.log('\n【SAVE-STATUS-BAR-REMOVE-001 (#716) 保存状態バー撤去（記録レイヤ温存）】');
 
-// R レジストリ/ヘルパ
+// R レジストリ/ヘルパ（記録レイヤ非劣化）
 const env = loadEnv();
-assert(env.SAVE_STATUS_KEY==='shogi_save_status_v1', 'R1 SAVE_STATUS_KEY が専用キー（state 別キー）');
+assert(env.SAVE_STATUS_KEY==='shogi_save_status_v1', 'R1 SAVE_STATUS_KEY が専用キー（state 別キー・温存）');
 assert(JSON.stringify(env.loadSaveStatus())==='{}', 'R2 未保存時 loadSaveStatus は {}');
 env._ctx.localStorage.setItem(env.SAVE_STATUS_KEY,'{broken json');
 assert(JSON.stringify(env.loadSaveStatus())==='{}', 'R3 破損 JSON でも {} を返す（fail-soft）');
@@ -118,82 +118,65 @@ assert(JSON.stringify(env.loadSaveStatus())==='{}', 'R4 配列など object 以�
 env._ctx.localStorage.removeItem(env.SAVE_STATUS_KEY);
 env.markSaveStatus('backup');
 const st1=env.loadSaveStatus();
-assert(typeof st1.backup==='number'&&st1.backup>0, 'R5 markSaveStatus(backup) が epoch ms を記録');
+assert(typeof st1.backup==='number'&&st1.backup>0, 'R5 markSaveStatus(backup) が epoch ms を記録（温存）');
 assert(env.formatSaveStatusTime(undefined)==='未'&&env.formatSaveStatusTime(0)==='未'&&env.formatSaveStatusTime('x')==='未', 'R6 未実行/不正値は「未」');
 const nowT=Date.now();
 assert(/^\d{2}:\d{2}$/.test(env.formatSaveStatusTime(nowT)), 'R7 当日は HH:MM');
 const past=new Date(new Date().getFullYear()-1,0,5,9,7,0).getTime();
 assert(env.formatSaveStatusTime(past)===(new Date().getFullYear()-1)+'/01/05 09:07', 'R8 別日は YYYY/MM/DD HH:MM（年つき8桁・ゼロ埋め）');
-const txtEmpty=env.buildSaveStatusBarText({});
-assert(txtEmpty.indexOf('💾 自動保存 未')>=0&&txtEmpty.indexOf('📋 名簿 未')>=0&&txtEmpty.indexOf('バックアップ 未')>=0&&txtEmpty.indexOf('☁ 送信 未')>=0, 'R9 全未実行で4系統とも「未」');
-assert(txtEmpty.split('｜').length===4, 'R10 区切りは ｜ で4要素');
-const txtPart=env.buildSaveStatusBarText({autosave:nowT});
-assert(/自動保存 \d{2}:\d{2}/.test(txtPart)&&txtPart.indexOf('バックアップ 未')>=0, 'R11 一部のみ記録なら該当だけ時刻表示');
 
 // S save() フック（非劣化＋autosave 記録）
 const es = loadEnv();
 es.save();
 assert(!!es._ctx.localStorage._[es.STORAGE_KEY], 'S1 save() が STORAGE_KEY へ保存（非劣化）');
 const stS=es.loadSaveStatus();
-assert(typeof stS.autosave==='number'&&stS.autosave>0, 'S2 save() 成功で autosave が記録される');
+assert(typeof stS.autosave==='number'&&stS.autosave>0, 'S2 save() 成功で autosave が記録される（温存）');
 let threwS=false; try{ es.save(); es.save(); }catch(e){ threwS=true; }
 assert(!threwS, 'S3 連続 save()（分単位スロットル経路）でも例外なし');
 
-// D 描画（textContent・innerHTML 不使用）
-const ed = loadEnv();
-ed.markSaveStatus('meibo');
-const barEl=ed._ctx.document.getElementById('save-status-bar');
-assert(typeof barEl.textContent==='string'&&barEl.textContent.indexOf('📋 名簿 ')>=0&&barEl.textContent.indexOf('自動保存')>=0, 'D1 renderSaveStatusBar が textContent に4系統を書く');
-assert(barEl.innerHTML==='', 'D2 バーへ innerHTML を使わない（textContent のみ）');
-const rsbSrc=RAW.slice(RAW.indexOf('function renderSaveStatusBar'),RAW.indexOf('function renderSaveStatusBar')+400);
-assert(rsbSrc.indexOf('textContent')>=0&&rsbSrc.indexOf('innerHTML')<0, 'D3 renderSaveStatusBar 実装も textContent 経由');
-
-// H 静的 HTML
-assert(RAW.indexOf('id="save-status-bar"')>=0, 'H1 #save-status-bar が静的 HTML に存在');
-const barIdx=RAW.indexOf('id="save-status-bar"');
-const barTag=RAW.slice(RAW.lastIndexOf('<div',barIdx),RAW.indexOf('>',barIdx)+1);
-assert(barTag.indexOf('role="button"')>=0&&barTag.indexOf('tabindex="0"')>=0, 'H2 role=button＋tabindex=0（キーボード到達可）');
-assert(barTag.indexOf('no-print')>=0, 'H3 no-print（印刷に出さない）');
-assert(barTag.indexOf('aria-label')>=0, 'H4 aria-label あり');
-assert(barIdx>RAW.indexOf('class="header"')&&barIdx<RAW.indexOf('id="backup-nudge"'), 'H5 ヘッダと backup-nudge の間に配置');
-
-// W bind（bindHeaderEvents 結線＋実クリックでモーダル open）
+// X 撤去の検証（表示レイヤ不在）
+assert(RAW.indexOf('id="save-status-bar"')<0, 'X1 静的 #save-status-bar が HTML に存在しない（撤去）');
+assert(RAW.indexOf('function renderSaveStatusBar')<0, 'X2 renderSaveStatusBar が存在しない（撤去）');
+assert(RAW.indexOf('function buildSaveStatusBarText')<0, 'X3 buildSaveStatusBarText が存在しない（撤去）');
 const bheStart=RAW.indexOf('function bindHeaderEvents');
 const bheBody=RAW.slice(bheStart,RAW.indexOf('function bindRegistrationEvents'));
-assert(bheBody.indexOf("getElementById('save-status-bar')")>=0&&bheBody.indexOf("openHelpModal('save-systems')")>=0, 'W1 bindHeaderEvents で save-status-bar → save-systems ヘルプ結線');
-assert(bheBody.indexOf('renderSaveStatusBar()')>=0, 'W2 bindHeaderEvents で初期描画');
+assert(bheStart>=0&&bheBody.indexOf('save-status-bar')<0&&bheBody.indexOf('renderSaveStatusBar')<0, 'X4 bindHeaderEvents にバー結線・初期描画が無い');
+const mssStart=RAW.indexOf('function markSaveStatus');
+const mssSrc=RAW.slice(mssStart,mssStart+400);
+assert(mssStart>=0&&mssSrc.indexOf('renderSaveStatusBar')<0, 'X5 markSaveStatus が描画を呼ばない（記録のみ）');
 const ew = loadEnv();
 let threwW=false; try{ ew.bindHeaderEvents(); }catch(e){ threwW=true; }
-assert(!threwW, 'W3 bindHeaderEvents が mock DOM で例外なく実行される');
-const barW=ew._ctx._elements['save-status-bar'];
-assert(barW&&barW._listeners.click&&barW._listeners.click.length>0, 'W4 バーに click ハンドラ');
-barW._listeners.click[0]();
-assert(ew._ctx.document.body.childNodes.length===1&&ew._ctx.document.body.childNodes[0].innerHTML.indexOf('保存の仕組み')>=0, 'W5 クリックで「保存の仕組み」モーダルが開く');
-assert(barW._listeners.keydown&&barW._listeners.keydown.length>0, 'W6 keydown（Enter/Space）ハンドラあり');
+assert(!threwW, 'X6 bindHeaderEvents が mock DOM で例外なく実行される（撤去後も非劣化）');
 
-// K 4フックの存在（ソース検証）
+// K 4フックの存在（記録レイヤ温存のソース検証）
 const saveSrc=RAW.slice(RAW.indexOf('function save()'),RAW.indexOf('function save()')+900);
-assert(saveSrc.indexOf('markAutosaveStatus()')>=0, 'K1 save() 成功パスで markAutosaveStatus');
+assert(saveSrc.indexOf('markAutosaveStatus()')>=0, 'K1 save() 成功パスで markAutosaveStatus（温存）');
 const syncSrc=RAW.slice(RAW.indexOf('function syncBranchMasterOnSave'),RAW.indexOf('function saveData'));  // YOMI-SYNC-OVERWRITE-001 で関数が伸びたため関数全体を対象に
-assert(/masterSaved!==false\)\{[\s\S]{0,1200}markSaveStatus\('meibo'\)/.test(syncSrc), 'K2 名簿同期成功時のみ meibo 記録');  // YOMI-SYNC-OVERWRITE-001 で成功分岐に yomiDirty 解除が入り窓を拡張
+assert(/masterSaved!==false\)\{[\s\S]{0,1200}markSaveStatus\('meibo'\)/.test(syncSrc), 'K2 名簿同期成功時のみ meibo 記録（温存）');
 const expSrc=RAW.slice(RAW.indexOf('function exportTournamentBackup'),RAW.indexOf('function exportTournamentBackup')+1400);
-assert(expSrc.indexOf("markSaveStatus('backup')")>=0&&expSrc.indexOf("markSaveStatus('backup')")<expSrc.indexOf('return true;')+30, 'K3 バックアップ成功時に backup 記録');
-// SEND-DATE-CONFIRM-002 (#622)/SEND-DATE-GUARD-001 (#600): 冒頭の日付確認ガードで関数が伸びたため窓を 3600→5200 に拡大（チェック内容は不変）。
+assert(expSrc.indexOf("markSaveStatus('backup')")>=0&&expSrc.indexOf("markSaveStatus('backup')")<expSrc.indexOf('return true;')+30, 'K3 バックアップ成功時に backup 記録（温存）');
+// SEND-DATE-CONFIRM-002 (#622)/SEND-DATE-GUARD-001 (#600): 冒頭の日付確認ガードで関数が伸びたため窓を 5200 に拡大（チェック内容は不変）。
 const cloudSrc=RAW.slice(RAW.indexOf('function sendTournamentToCloud'),RAW.indexOf('function sendTournamentToCloud')+5200);
-assert(/res&&res\.ok[\s\S]{0,900}markSaveStatus\('cloud'\)/.test(cloudSrc), 'K4 送信 res.ok 時に cloud 記録');
+assert(/res&&res\.ok[\s\S]{0,900}markSaveStatus\('cloud'\)/.test(cloudSrc), 'K4 送信 res.ok 時に cloud 記録（温存）');
 
-// T ヘルプ topic
-const hs=env.HELP_TEXTS&&env.HELP_TEXTS['save-systems'];
-assert(!!hs&&hs.title==='保存の仕組み（4系統）', 'T1 save-systems の title');
-assert(hs&&Array.isArray(hs.lines)&&hs.lines.length===6, 'T2 本文6行');
-const jh=hs?hs.lines.join('\n'):'';
-assert(jh.indexOf('自動保存')>=0&&jh.indexOf('名簿を更新')>=0&&jh.indexOf('バックアップ')>=0&&jh.indexOf('クラウドへ送信')>=0, 'T3 4系統すべての説明を含む');
-assert(jh.indexOf('復旧ができるのはこれだけ')>=0, 'T4 復旧はバックアップのみの説明を含む');
-assert(jh.indexOf('「未」')>=0, 'T5 「未」の意味の説明を含む');
-const mh=env.buildHelpModalHtml('save-systems');
-let allH=!!hs; for(let i=0;hs&&i<hs.lines.length;i++){ if(mh.indexOf(hs.lines[i])<0) allH=false; }
-assert(allH&&mh.indexOf('保存の仕組み（4系統）')>=0, 'T6 buildHelpModalHtml に title＋全行 present');
-assert(env.HELP_TEXTS['tournament']&&env.HELP_TEXTS['cloud']&&env.HELP_TEXTS['save-warning'], 'T7 既存 topic 非劣化');
+// B バックアップ modal 冒頭の「最終バックアップ」表示（backup 時刻の移設先）
+const eb = loadEnv();
+const htmlBefore=eb.buildBackupModalHtml();
+assert(htmlBefore.indexOf('最終バックアップ:')>=0, 'B1 バックアップ modal 冒頭に「最終バックアップ:」を表示');
+assert(htmlBefore.indexOf('<strong>未</strong>')>=0, 'B2 未実行時は「未」');
+eb.markSaveStatus('backup');
+const htmlAfter=eb.buildBackupModalHtml();
+assert(/<strong>\d{2}:\d{2}<\/strong>/.test(htmlAfter), 'B3 実行後は当日 HH:MM を表示');
+const bbmStart=RAW.indexOf('function buildBackupModalHtml');
+const bbmSrc=RAW.slice(bbmStart,bbmStart+900);
+assert(bbmSrc.indexOf('formatSaveStatusTime')>=0&&bbmSrc.indexOf('loadSaveStatus')>=0, 'B4 表示は formatSaveStatusTime(loadSaveStatus().backup) 由来（固定文言のみ・XSS 面なし）');
 
-console.log('\n  SAVE-STATUS-BAR テスト: PASS '+pass+'件 / FAIL '+fail+'件');
+// T ヘルプ topic（save-systems 撤去・既存 topic 非劣化）
+assert(!env.HELP_TEXTS['save-systems'], 'T1 HELP_TEXTS[save-systems] は撤去済み（導線がバーのみだった dead topic を残さない）');
+assert(RAW.indexOf("openHelpModal('save-systems')")<0, 'T2 save-systems を開く導線が残っていない');
+assert(env.HELP_TEXTS['tournament']&&env.HELP_TEXTS['cloud']&&env.HELP_TEXTS['save-warning'], 'T3 既存 topic（tournament/cloud/save-warning）非劣化');
+const mh=env.buildHelpModalHtml('save-warning');
+assert(typeof mh==='string'&&mh.length>0, 'T4 buildHelpModalHtml が既存 topic で引き続き動作');
+
+console.log('\n  SAVE-STATUS-BAR-REMOVE テスト: PASS '+pass+'件 / FAIL '+fail+'件');
 if(fail>0){ process.exit(1); }
