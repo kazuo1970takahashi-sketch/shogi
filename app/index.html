@@ -140,6 +140,11 @@
     .sb-row-1 .sb-col-rank { background:#fde7c4; }
     .sb-wins { font-weight:700; color:var(--primary); font-size:14px; }
     .sb-metric { color:#555; font-size:12px; }
+    /* WORLD-STD-ALIGN-001: 氏名=左寄せ/数値(勝・負・B・C)=右寄せ（世界標準の揃え）。
+       既存 .sb-col-name の text-align:left は .sb-table th,td (0-1-1) に詳細度で負けて
+       死んでいた（specificity バグ）→ td 付きセレクタで勝たせる。順位列は中央のまま。 */
+    .sb-table td.sb-col-name, .sb-table thead th.sb-col-name { text-align:left; }
+    .sb-table td.sb-wins, .sb-table td.sb-metric { text-align:right; }
     .sb-legend { margin:4px 0 0; font-size:11px; color:#667; }
     .sb-tnt-head { font-size:15px; font-weight:600; color:var(--fg); margin:8px 0 2px; }
     .sb-tnt-head .sb-tnt-meta { font-weight:400; font-size:12px; color:var(--muted); margin-left:8px; }
