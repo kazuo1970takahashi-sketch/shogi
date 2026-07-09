@@ -256,6 +256,11 @@ body.sb-active{overflow:hidden}
 /* LIVE-MOBILE-SCOREBOARD-001 §1: 最終更新時刻（閲覧ビューが state を最後に読み込んだ時刻）。 */
 .sb-updated{font-size:11px;opacity:0.92;margin-top:3px;font-variant-numeric:tabular-nums}
 /* Codex Must Fix 1: 「運営画面へ」戻りボタン(.sb-back)は read-only 徹底のため廃止（CSS も削除）。 */
+/* SB-CLOSE-OPENER-001 (#712 作者決定 2026-07-09): 運営タブの window.open から開かれたタブ限定の
+   「✕ 閉じる」（window.close() のみ・運営画面へのナビゲーションではない＝Must Fix 1 の原則は不変）。
+   URL 直接アクセス（参加者共有・live・キオスク）では opener が無く描画されない。
+   第三者ページ経由で opener が付く場合はクロスオリジン判定で除外（L3 Should-1）。新規 class のみ追加。 */
+.sb-close{flex:none;background:transparent;border:1px solid rgba(255,255,255,0.65);color:#fff;border-radius:8px;padding:8px 12px;font-size:13px;font-family:inherit;cursor:pointer;line-height:1;white-space:nowrap}
 .sb-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;background:#dde7f2}
 .sb-tab{padding:6px 14px;border-radius:16px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:13px;cursor:pointer;font-family:inherit}
 .sb-tab.active{background:#2E75B6;color:#fff;font-weight:600}
@@ -14236,6 +14241,24 @@ function sbBindFinderPicks(root){
 }
 
 // 閲覧専用ビュー全体を再描画する。state を SoT として参照（DOM 直読みしない）。
+// SB-CLOSE-OPENER-001 (#712 作者決定 2026-07-09): 運営タブの「📱スマホ星取表」(window.open) から
+//   開かれたタブに限り「✕ 閉じる」を表示できるかの判定。window.close() のみで運営画面への導線ではない
+//   （Codex Must Fix 1 / LIVE-MOBILE-SCOREBOARD-001 §1 の read-only 原則は不変）。
+//   - URL 直接アクセス（参加者への共有・キオスク）は window.opener 不在 → false（何も描画されない）
+//   - live ルート（?live= あり）は opener があっても false（会場据置き端末での誤タップ防止）
+//   - L3 Should-1: 同一オリジン opener（=運営タブの window.open）に限定。第三者ページの
+//     target="_blank"（noopener なし）等で opener が付いた場合は location アクセスが
+//     クロスオリジン例外 → false（参加者側に描画される経路を遮断）
+//   - 例外時は false（fail-soft）
+function sbCanCloseWindow(){
+  try{
+    if(!(window.opener&&window.opener!==window))return false;
+    if(sbIsLiveRoute())return false;
+    void window.opener.location.href; // クロスオリジンは例外 → catch で false
+    return true;
+  }catch(e){return false;}
+}
+
 function renderScoreboard(){
   var view=document.getElementById('scoreboard-view');
   if(!view)return;
@@ -14279,6 +14302,9 @@ function renderScoreboard(){
   //   勝敗入力・編集UIへ到達でき、閲覧専用(read-only)要件に反するため。
   //   運営者が運営画面へ戻る必要がある場合は「別タブ運用」または「#scoreboard を外した
   //   運営URLを直接開く」運用とする（閲覧ビュー内には導線を持たせない）。
+  //   ※ SB-CLOSE-OPENER-001 (#712 作者決定 2026-07-09) 意図的更新: 運営タブの window.open から
+  //     開かれたタブ限定の「✕ 閉じる」(window.close のみ) を追加。運営画面へのナビゲーションを
+  //     提供しないため本原則の禁止対象外。URL 直接アクセスでは opener 不在で描画されない。
   // 最終更新時刻（仕様の必須表示項目）。_sbLastUpdate 未設定（直接描画）の場合は現在時刻で代替。
   var updLabel=sbFormatUpdateTime(_sbLastUpdate||new Date());
   var head='<div class="sb-head"><div>'
@@ -14286,7 +14312,10 @@ function renderScoreboard(){
     +(metaParts.length?'<div class="sb-meta">'+escapeHtml(metaParts.join('　／　'))+'</div>':'')
     +'<div class="sb-note">'+(sbIsLiveRoute()?'閲覧専用・ライブ配信（自動更新）':'閲覧専用・自動更新（運営画面の保存に追従）')+'</div>'
     +(updLabel?'<div class="sb-updated">最終更新：'+escapeHtml(updLabel)+'</div>':'')
-    +'</div></div>';
+    +'</div>'
+    // SB-CLOSE-OPENER-001: 運営タブから開かれた場合のみ（window.close のみ・運営導線ではない）。
+    +(sbCanCloseWindow()?'<button type="button" id="sb-close-btn" class="sb-close" aria-label="この画面を閉じて運営画面のタブへ戻る">✕ 閉じる</button>':'')
+    +'</div>';
   // フィルタが現存クラスに無ければ all に戻す。
   if(_sbClassFilter!=='all'&&activeClasses.indexOf(_sbClassFilter)===-1)_sbClassFilter='all';
   // SCOREBOARD-MY-VIEW-001: 選択中の対局者が現存しなければ一覧へ自動復帰（受入 §6-8・クラッシュさせない）。
@@ -14353,6 +14382,9 @@ function renderScoreboard(){
   var backBtn=view.querySelector?view.querySelector('[data-sbback]'):null;
   if(backBtn)backBtn.addEventListener('click',function(){_sbFocusId=null;_sbFocusCls=null;renderScoreboard();});
   // Codex Must Fix 1: 「運営画面へ」戻りボタンは廃止。閲覧ビューには運営画面への導線を束縛しない。
+  // SB-CLOSE-OPENER-001: ✕ 閉じるは window.close() のみ束縛（運営画面へのナビゲーションを提供しない）。
+  var sbCloseEl=view.querySelector?view.querySelector('#sb-close-btn'):null;
+  if(sbCloseEl)sbCloseEl.addEventListener('click',function(){try{window.close();}catch(e){}});
 }
 
 // hash に応じて閲覧専用ビューと運営画面を切り替える。
