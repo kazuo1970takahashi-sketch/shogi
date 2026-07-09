@@ -10941,6 +10941,52 @@ function pushAllMembersToCloud(setStatus){
   });
 }
 
+// CLOUD-SEND-UNLINKED-GUARD-001: クラウド送信時、会員マスタ未連携（member_id 無し）の参加者は
+//   buildCloudSyncPayload で entries が作られず「対象外」＝クラウドの共有結果に載らない（1位でも黙って欠落し得る）。
+//   これを送信前に検知して確認（A案）＋送信後注記を⚠強調（C）。読み取り専用で保存/順位ロジックには触れない。
+//   走査は buildCloudSyncPayload と同一（st.classes → 各クラス players → calcFinal/computeDisplayRanks）＝実際に対象外になる人と一致。
+function collectUnlinkedParticipantsForSend(){
+  var out=[];
+  var st=(typeof state!=='undefined')?state:null;
+  if(!st||!Array.isArray(st.classes))return out;
+  for(var ci=0;ci<st.classes.length;ci++){
+    var cls=st.classes[ci]&&st.classes[ci].id; if(!cls)continue;
+    var players=(st.players&&Array.isArray(st.players[cls]))?st.players[cls]:[]; if(!players.length)continue;
+    var finals=calcFinal(cls); var ranks=computeDisplayRanks(finals,cls);
+    for(var fi=0;fi<finals.length;fi++){
+      var p=finals[fi]&&finals[fi].p; var mid=p&&p.member_id;
+      if(typeof mid==='string'&&mid)continue;
+      out.push({ name:(p&&p.name)||'', rank:(ranks[fi]!=null?ranks[fi]:null) });
+    }
+  }
+  return out;
+}
+// 未連携者リストの「最上位者」表示ラベル（順位のある人の最小順位＝最上位・無ければ先頭氏名）。
+function _unlinkedTopLabel(list){
+  var arr=Array.isArray(list)?list:[]; var top=null;
+  for(var i=0;i<arr.length;i++){ var r=arr[i].rank; if(r!=null&&(top===null||r<top.rank))top=arr[i]; }
+  if(top)return '最上位：'+top.rank+'位 '+top.name;
+  return (arr[0]&&arr[0].name)||'';
+}
+// 送信前ガードの確認（3択を既存 appConfirm 2 段で構成＝新規モーダル部品を増やさない）:
+//   ①名簿を更新して送信 → onUpdateAndSend ／ ②このまま送信 → onSendAsIs ／ ③中止 → onCancel。
+function _confirmUnlinkedBeforeSend(unlinked, onUpdateAndSend, onSendAsIs, onCancel){
+  var n=(unlinked&&unlinked.length)||0;
+  var label=_unlinkedTopLabel(unlinked);
+  var m1='⚠ 名簿に未連携の参加者が '+n+' 名います（'+label+'）。\nこのまま送信すると、この方々はクラウドの共有結果に載りません（当日アプリの表示は変わりません）。\n\n名簿を更新してから送信しますか？（初参加の方を名簿に登録してから全員まとめて送ります）';
+  appConfirm(m1,function(ok1){
+    if(ok1){ onUpdateAndSend(); return; }
+    var m2='名簿を更新せずに送信します。\n未連携の '+n+' 名（'+label+'）は、クラウドの共有結果に載りません。\n\nこのまま送信しますか？';
+    appConfirm(m2,function(ok2){ if(ok2)onSendAsIs(); else onCancel(); },{okText:'このまま送信',cancelText:'中止'});
+  },{okText:'名簿を更新して送信',cancelText:'更新しない'});
+}
+// 送信後（skipped>0）の⚠注記（C）: 未連携者が共有結果に未反映であること・最上位者・直し方を明示。
+function _unlinkedSkippedNote(count){
+  var label=''; try{ label=_unlinkedTopLabel(collectUnlinkedParticipantsForSend()); }catch(e){ label=''; }
+  // 表示先は applyCloudStatus（textContent・.cloud-status に pre-wrap なし）＝'\n' は改行にならないため
+  // 区切りは全角スペース（L3 レビュー指摘3・CSS は拘束ルール3で不変のまま）。
+  return '　⚠ 未連携 '+count+' 名'+(label?('（'+label+'）'):'')+'は共有結果に未反映です。「📋 名簿を更新」→ 再送信で反映できます。';
+}
 function sendTournamentToCloud(setStatus){
   setStatus=setStatus||function(){};
   return new Promise(function(resolve){
@@ -10972,9 +11018,20 @@ function sendTournamentToCloud(setStatus){
         var _dmsg='実施日 '+_recDate+' として記録します。違う場合は報告書の日付欄を修正してください。よろしいですか？';
         appConfirm(_dmsg,function(_okd){
           if(!_okd){ setStatus('送信を中止しました（報告書の日付欄で実施日を確認・修正してから再送信してください）'); resolve({ok:false,step:'cancelled-date'}); return; }
-          _send();
+          _guardThenSend();
         });
-      } else { _send(); }
+      } else { _guardThenSend(); }
+    }
+    // CLOUD-SEND-UNLINKED-GUARD-001: 送信直前ガード。未連携者がいれば確認（無ければ従来どおり即送信）。
+    //   ①名簿を更新して送信＝既存 syncBranchMasterOnSave（初参加者に member_id 付与）→送信 ②このまま送信 ③中止。
+    //   走査失敗時は空扱いで従来どおり送信（fail-open＝ガードで送信を止めない）。
+    function _guardThenSend(){
+      var _u=[]; try{ _u=collectUnlinkedParticipantsForSend(); }catch(eU){ _u=[]; }
+      if(!_u.length){ _send(); return; }
+      _confirmUnlinkedBeforeSend(_u,
+        function(){ if(typeof syncBranchMasterOnSave==='function'){ syncBranchMasterOnSave(function(){ _send(); }); } else { _send(); } },
+        function(){ _send(); },
+        function(){ setStatus('送信を中止しました（「📋 名簿を更新」→ 再送信で未連携者も反映できます）'); resolve({ok:false,step:'cancelled-unlinked'}); });
     }
     function _send(){
       setStatus('クラウドへ送信中…');
@@ -10995,11 +11052,13 @@ function sendTournamentToCloud(setStatus){
             return syncTournamentToCloud(client,master,{clubId:clubId}).then(function(res){
               if(res&&res.ok){
                 // A-2 (SYSTEM-REVIEW #377 follow): 未解決 entry を黙って成功扱いにしない。
-                //   unresolved>0 は ⚠ 警告（U-1 で橙）＝集計欠落に気づける。skipped(マスタ未連携)は対象外の中立注記。
+                //   unresolved>0 は ⚠ 警告（U-1 で橙）＝集計欠落に気づける。skipped(マスタ未連携)は当初「対象外の中立注記」
+                //   だったが、未連携の入賞者（1位含む）が共有結果から黙って欠落する実害を受け
+                //   CLOUD-SEND-UNLINKED-GUARD-001 で ⚠ 注記（_unlinkedSkippedNote）へ格上げした（#377 判断の意図的更新）。
                 var c=res.counts||{};
-                var base='送信しました（名簿 '+(c.members||0)+' 名・結果 '+(c.entries||0)+' 件';
-                if(c.skipped)base+='／マスタ未連携 '+c.skipped+' 名は対象外';
-                base+='）';
+                var base='送信しました（名簿 '+(c.members||0)+' 名・結果 '+(c.entries||0)+' 件）';
+                // CLOUD-SEND-UNLINKED-GUARD-001 (C): 未連携者は共有結果に未反映＝中立注記ではなく⚠で最上位者と直し方を明示。
+                if(c.skipped)base+=_unlinkedSkippedNote(c.skipped);
                 if(res.warn){ base='⚠ 一部の結果を送信できませんでした：未解決 '+(c.unresolved||0)+' 名。'+base+' 支部マスタへ紐付けてから再送してください（冪等・運営は続行できます）'; }
                 setStatus(base);
                 // SAVE-STATUS-BAR-001: クラウド送信成功（res.ok・warn 含む＝送信自体は実行済み）の時刻を記録（fail-soft）。
