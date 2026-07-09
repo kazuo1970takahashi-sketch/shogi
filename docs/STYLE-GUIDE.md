@@ -105,8 +105,9 @@
 - topic は固定文字列・escapeHtml 経由・1スライス=1画面。
 - 現行 topic: first-round / report / reg / standings / master / save-warning /
   tournament（対局管理全般・?v=56）/
-  cloud（送信/取得の意味と失敗時の影響・順位タブ送信ボタン脇と大会履歴クラウド見出し脇で1 topic 共用・?v=56）/
-  save-systems（保存4系統の役割と「復旧できるのはバックアップだけ」・保存状態バーから開く・?v=56）。
+  cloud（送信/取得の意味と失敗時の影響・順位タブ送信ボタン脇と大会履歴クラウド見出し脇で1 topic 共用・?v=56）。
+- 撤去済み topic: save-systems（保存4系統の説明・?v=56 新設 → SAVE-STATUS-BAR-REMOVE-001/#716 で撤去。
+  唯一の導線だった保存状態バーの撤去に追随。「復旧できるのはバックアップだけ」の教育は save-warning＋backup-nudge が担当）。
 
 ## 6. レイアウト構造
 
@@ -135,7 +136,7 @@
 |---|---|---|---|
 | M1 | alert 61 箇所（成功通知にも使用） | タブ単位で N2/N3 へ置換（挙動変更スライス） | 高 |
 | M2 | ~~対局管理・クラウドのヘルプ topic 欠落~~ | **対応済**（HELP-UX-006・#471・?v=56 で本番反映） | 済 |
-| M3 | ~~保存4系統の状態が見えない~~ | **対応済**（SAVE-STATUS-BAR-001・#472・?v=56＝ヘッダ保存状態バー＋save-systems ヘルプ） | 済 |
+| M3 | ~~保存4系統の状態が見えない~~ | **方針転換**（SAVE-STATUS-BAR-001・#472・?v=56 で常時バー新設 → SAVE-STATUS-BAR-REMOVE-001・#716 で撤去。原則を「正常時は沈黙・異常時のみ顕示」へ＝異常系は ⚠未保存ピル/backup-nudge/storage-warn が担当・最終バックアップ時刻はバックアップ画面冒頭に表示・記録レイヤ SAVE_STATUS_KEY は温存） | 済 |
 | M4 | インライン style 520 箇所 | 「見た目のみスライス」で画面単位クラス化・GOLDEN 再採取 | 中 |
 | M5 | app/ の primary 色 #2b6cb0 | `:root --primary` を #1F3864 へ（1行・app/ release 時に同乗） | 中 |
 | M6 | 44px が一部ボタンのみ | 共通 CSS で全面化を検証（CSS 変更＝ルール3 に注意して単独スライス） | 中 |
