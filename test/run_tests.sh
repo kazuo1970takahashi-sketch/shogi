@@ -2658,6 +2658,18 @@ if [ -f "$SCRIPT_DIR/test_input_kbd_coexist_004.js" ]; then
 else
   warn "test_input_kbd_coexist_004.js が見つからない"
 fi
+
+echo ""
+echo "【TAP-TARGET-DENSE-001 (#737 / スライス⑤a) 密集部タップ標的の44px本対応】"
+if [ -f "$SCRIPT_DIR/test_tap_target_dense_001.js" ]; then
+  if node "$SCRIPT_DIR/test_tap_target_dense_001.js" "$TARGET" > /tmp/tap_target_dense_001_out.log 2>&1; then
+    ok "TAP-TARGET-DENSE-001 テスト 全PASS ($(tail -1 /tmp/tap_target_dense_001_out.log))"
+  else
+    ng "TAP-TARGET-DENSE-001 テスト 失敗"; cat /tmp/tap_target_dense_001_out.log
+  fi
+else
+  warn "test_tap_target_dense_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
