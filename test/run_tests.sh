@@ -2634,6 +2634,18 @@ if [ -f "$SCRIPT_DIR/test_input_kbd_coexist_002.js" ]; then
 else
   warn "test_input_kbd_coexist_002.js が見つからない"
 fi
+
+echo ""
+echo "【INPUT-KBD-COEXIST-003 (#731 / スライス②c) サジェストのスクロール連鎖遮断＋高さ再計算の安定化】"
+if [ -f "$SCRIPT_DIR/test_input_kbd_coexist_003.js" ]; then
+  if node "$SCRIPT_DIR/test_input_kbd_coexist_003.js" "$TARGET" > /tmp/input_kbd_coexist_003_out.log 2>&1; then
+    ok "INPUT-KBD-COEXIST-003 テスト 全PASS ($(tail -1 /tmp/input_kbd_coexist_003_out.log))"
+  else
+    ng "INPUT-KBD-COEXIST-003 テスト 失敗"; cat /tmp/input_kbd_coexist_003_out.log
+  fi
+else
+  warn "test_input_kbd_coexist_003.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
