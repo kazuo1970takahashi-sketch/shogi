@@ -2610,6 +2610,18 @@ if [ -f "$SCRIPT_DIR/test_world_std_align_002.js" ]; then
 else
   warn "test_world_std_align_002.js が見つからない"
 fi
+
+echo ""
+echo "【INPUT-KBD-COEXIST-001 (スライス②) サジェストのキーボード共存（visualViewport 追従）】"
+if [ -f "$SCRIPT_DIR/test_input_kbd_coexist_001.js" ]; then
+  if node "$SCRIPT_DIR/test_input_kbd_coexist_001.js" "$TARGET" > /tmp/input_kbd_coexist_001_out.log 2>&1; then
+    ok "INPUT-KBD-COEXIST-001 テスト 全PASS ($(tail -1 /tmp/input_kbd_coexist_001_out.log))"
+  else
+    ng "INPUT-KBD-COEXIST-001 テスト 失敗"; cat /tmp/input_kbd_coexist_001_out.log
+  fi
+else
+  warn "test_input_kbd_coexist_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
