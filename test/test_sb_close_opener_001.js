@@ -8,7 +8,8 @@
 //   B1. opener 無し（URL 直接アクセス相当）→ sb-close-btn を描画しない
 //   B2. opener 有り（運営タブから window.open）→ ✕ 閉じる を描画する
 //   B3. B2 の描画結果にも「運営画面へ」導線が無い（read-only 徹底の E13 対称）
-//   B4. live ルート（?live= あり）は opener があっても描画しない
+//   B4. live ルート＝LIVE-CLOSE-001（案C 作者承認 2026-07-10）で ✕ を描画する（意図的更新）。
+//       opener 経路（sbCanCloseWindow）は live で false のまま・kiosk=1 は描画しない（#712 の据置き誤タップ防止を継承）
 //   B7. クロスオリジン opener（第三者ページ経由）→ 描画しない（L3 Should-1）
 //   B5. ✕ 閉じる click → window.close() が呼ばれる（1回・他の副作用なし）
 //   B6. opener アクセスで例外 → fail-soft で描画しない
@@ -36,9 +37,10 @@ const htmlSrc = fs.readFileSync(targetPath, 'utf8');
   assert(!!fnm && /window\.opener/.test(fnm[0]), 'S1-2 判定条件に window.opener を含む');
   assert(!!fnm && /sbIsLiveRoute/.test(fnm[0]), 'S1-3 live ルート除外を含む');
   assert(!!fnm && /opener\.location/.test(fnm[0]), 'S1-4 同一オリジン限定（opener.location アクセス）を含む（L3 Should-1）');
-  // 束縛箇所: sb-close-btn には window.close のみ（location 遷移・hash 書換を束縛しない）
-  const bindm = htmlSrc.match(/sb-close-btn'\):null;\s*\n\s*if\(sbCloseEl\)sbCloseEl\.addEventListener\('click',function\(\)\{([\s\S]*?)\}\);/);
-  assert(!!bindm, 'S2-1 ✕ 閉じる の click 束縛が存在する');
+  // 束縛箇所: 共通束縛 sbBindCloseBtn（LIVE-CLOSE-001 で関数化）には window.close＋live 終了画面のみ
+  //（location 遷移・hash 書換を束縛しない＝read-only 原則の pin は不変）
+  const bindm = htmlSrc.match(/function sbBindCloseBtn\(view\)\{([\s\S]*?)\n\}/);
+  assert(!!bindm, 'S2-1 ✕ 閉じる の click 束縛（sbBindCloseBtn）が存在する');
   assert(!!bindm && /window\.close\(\)/.test(bindm[1]), 'S2-2 束縛は window.close() を呼ぶ');
   assert(!!bindm && !/location|hash|href/.test(bindm[1]), 'S2-3 束縛に画面遷移（location/hash/href）を含まない');
   assert(/\.sb-close\{/.test(htmlSrc), 'S3 CSS .sb-close が定義されている');
@@ -193,7 +195,8 @@ function crossOriginOpener(){
   assert(!/<input(?![^>]*class="sb-search")/.test(html), 'B3-2 編集系 input は描画されない');
 }
 
-// B4: live ルート（?live= あり）は opener があっても描画しない
+// B4: live ルート＝LIVE-CLOSE-001（案C）で ✕ を描画する（意図的更新 2026-07-10）。
+//     opener 経路の sbCanCloseWindow は live で false のまま（運営タブ判定に live を混ぜない）。
 {
   const env = loadEnv(targetPath);
   env._ctx.window.opener = sameOriginOpener();
@@ -201,8 +204,17 @@ function crossOriginOpener(){
   env._setState(makeState());
   env.renderScoreboard();
   const html = env._ctx.document.getElementById('scoreboard-view').innerHTML;
-  assert(!/sb-close-btn/.test(html), 'B4-1 live ルートでは ✕ 閉じる を描画しない');
-  assert(env.sbCanCloseWindow() === false, 'B4-2 sbCanCloseWindow=false（live）');
+  assert(/sb-close-btn/.test(html), 'B4-1 live ルートでは LIVE-CLOSE-001 の ✕ 閉じる を描画する');
+  assert(env.sbCanCloseWindow() === false, 'B4-2 sbCanCloseWindow=false（live・opener 経路は無効のまま）');
+}
+// B4k: live＋kiosk=1 → 描画しない（#712 の据置き誤タップ防止を kiosk 除外として継承）
+{
+  const env = loadEnv(targetPath);
+  env._ctx.location.search = '?live=kakuu-slug&kiosk=1';
+  env._setState(makeState());
+  env.renderScoreboard();
+  const html = env._ctx.document.getElementById('scoreboard-view').innerHTML;
+  assert(!/sb-close-btn/.test(html), 'B4k-1 kiosk=1 では ✕ 閉じる を描画しない');
 }
 
 // B5: click → window.close() が1回呼ばれる
