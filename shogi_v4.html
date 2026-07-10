@@ -251,7 +251,7 @@ th{background:#e8f0f8;color:#1F3864;font-weight:500;padding:7px 6px;text-align:c
 td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align:middle}
 .history-tag{display:inline-block;background:#eee;border-radius:4px;padding:2px 6px;font-size:11px;color:#666;margin:2px}
 .final-done{background:#eaf3de;border:1px solid #97c459;border-radius:8px;padding:12px;color:#27500A;font-weight:500;margin-bottom:12px}
-.suggest-list{margin-top:6px;border:1px solid #ccc;border-radius:8px;background:#fff;max-height:280px;overflow-y:auto;box-shadow:0 6px 16px rgba(0,0,0,0.18)} /* INPUT-KBD-COEXIST-002: オーバーレイ化に伴い浮きが分かる影へ */
+.suggest-list{margin-top:6px;border:1px solid #ccc;border-radius:8px;background:#fff;max-height:280px;overflow-y:auto;overscroll-behavior:contain;box-shadow:0 6px 16px rgba(0,0,0,0.18)} /* INPUT-KBD-COEXIST-002: オーバーレイ化に伴い浮きが分かる影へ / INPUT-KBD-COEXIST-003 (#731): overscroll-behavior:contain＝リスト端到達時にページへスクロール連鎖させない（連鎖→vv scroll→高さ再計算で「戻る」実機不具合の遮断・非対応環境は従来挙動） */
 .suggest-item{padding:10px 12px;border-bottom:1px solid #eee;cursor:pointer;-webkit-tap-highlight-color:rgba(0,0,0,0.1)}
 .suggest-item:last-child{border-bottom:none}
 .suggest-item:active{background:#eaf3fb}
@@ -6702,7 +6702,11 @@ function fitToVisualViewport(el,minPx,maxPx){
   // getBoundingClientRect は layout viewport 基準。visual viewport の下端は offsetTop+height。
   var avail=Math.floor(vv.offsetTop+vv.height-rect.top)-VV_FIT_MARGIN_PX;
   var h=Math.max(minPx,Math.min(maxPx,avail));
-  el.style.maxHeight=h+'px';
+  // INPUT-KBD-COEXIST-003 (#731): 同値ガード。スクロール連鎖中の vv scroll 連発で同じ値を書き続けると
+  //   ジェスチャ中の再レイアウトで inner scrollTop がクランプされ「スクロールが戻る」体感になるため、
+  //   算出値が変わったときだけ style を更新する。
+  var hpx=h+'px';
+  if(el.style.maxHeight!==hpx)el.style.maxHeight=hpx;
   return h;
 }
 
