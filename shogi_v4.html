@@ -326,6 +326,12 @@ body.sb-active{overflow:hidden}
    URL 直接アクセス（参加者共有・live・キオスク）では opener が無く描画されない。
    第三者ページ経由で opener が付く場合はクロスオリジン判定で除外（L3 Should-1）。新規 class のみ追加。 */
 .sb-close{flex:none;background:transparent;border:1px solid rgba(255,255,255,0.65);color:#fff;border-radius:8px;padding:8px 12px;font-size:13px;font-family:inherit;cursor:pointer;line-height:1;white-space:nowrap}
+/* LIVE-CLOSE-001 (案C 作者承認 2026-07-10): 参加者QRビューの終了画面（✕ 閉じる が close できないブラウザ向け）。新規 class のみ追加。 */
+.sb-done{padding:48px 20px;text-align:center}
+.sb-done-icon{font-size:34px}
+.sb-done-msg{font-size:15px;font-weight:600;color:#1F3864;margin:12px 0 6px}
+.sb-done-sub{font-size:12px;color:#666;line-height:1.7}
+.sb-done-return{margin-top:18px;padding:10px 20px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;border-radius:8px;font-size:13px;font-family:inherit;cursor:pointer;min-height:44px}
 .sb-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;background:#dde7f2}
 .sb-tab{padding:6px 14px;border-radius:16px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:13px;cursor:pointer;font-family:inherit}
 .sb-tab.active{background:#2E75B6;color:#fff;font-weight:600}
@@ -14020,6 +14026,7 @@ var LIVE_POLL_MS=5000;
 var _sbLivePollTimer=null;
 var _sbLiveFetching=false;
 var _sbLivePendingRefetch=false; // Phase4: fetch 実行中に来た broadcast の「追い焚き」要求（take-latest・1回のみ）
+var _sbLiveDone=false; // LIVE-CLOSE-001 案C: 終了画面表示中フラグ（true の間はポーリング/Realtime/再取得を止める・「▶ 星取表に戻る」で解除）
 
 function _livePublicCfgReady(){
   return (typeof window!=='undefined')&&!!window.SHOGI_LIVE_PUBLIC_CONFIG
@@ -14066,6 +14073,7 @@ function sbLiveShowWaitNote(msg){
 }
 // 公開スナップショットを1回取得して反映する（fail-soft・多重発火ガード）。
 function sbLiveFetchOnce(){
+  if(_sbLiveDone)return Promise.resolve(false); // LIVE-CLOSE-001: 終了画面中は通信しない（focus/visibility 経由の再取得も止める）
   var slug=sbLiveSlug();
   if(!slug||_sbLiveFetching)return Promise.resolve(false);
   if(typeof fetch!=='function'){sbLiveShowWaitNote('お使いのブラウザではライブ配信を表示できません（新しいブラウザでお試しください）');return Promise.resolve(false);}
@@ -14102,6 +14110,7 @@ function sbLiveDrainPendingRefetch(){
 }
 // 5秒ポーリング（live ルート表示中のみ・バックグラウンドタブでは打たない＝復帰時に focus/visibilitychange が再取得）。
 function sbLiveStartPolling(){
+  if(_sbLiveDone)return; // LIVE-CLOSE-001: 終了画面中は再開しない（「▶ 星取表に戻る」がフラグ解除後に呼ぶ）
   if(_sbLivePollTimer!=null)return;
   sbLiveFetchOnce();
   try{sbLiveStartRealtime();}catch(eRt){} // LIVE-BROADCAST-001 Phase4: Realtime を上乗せ（fail-soft・無くてもポーリング継続）
@@ -14692,18 +14701,58 @@ function sbCanCloseWindow(){
   }catch(e){return false;}
 }
 
+// LIVE-CLOSE-001 (案C 作者承認 2026-07-10): 参加者QRビュー（live ルート）の「✕ 閉じる」。
+//   #712 の「live ルートは✕を出さない（据置き誤タップ防止）」の意図的更新＝防止は kiosk=1 除外＋
+//   誤タップ時「▶ 星取表に戻る」1タップ復帰で継承する。QR で開いたタブは window.close() が効く
+//   ブラウザ（履歴1件のモバイル等）と効かないブラウザが混在するため、押下→close 試行→閉じなければ
+//   終了画面（sbLiveShowDoneView）へフォールバック。read-only 原則不変（運営画面への導線は追加しない）。
+function sbLiveCanShowClose(){
+  try{return sbIsLiveRoute()&&!sbIsKioskMode();}catch(e){return false;}
+}
+// 終了画面へ切替（通信も止める＝ sbLiveStopPolling がポーリング/Realtime 両方を停止）。描画は renderScoreboard の先頭ゲート。
+function sbLiveShowDoneView(){
+  _sbLiveDone=true;
+  try{sbLiveStopPolling();}catch(e){}
+  renderScoreboard();
+}
+// ✕ 閉じる の束縛（運営 opener 経路と live 経路の共通・window.close ＋ live のみ終了画面フォールバック。
+//   画面遷移（location/hash/href）は束縛しない＝SB-CLOSE-OPENER-001 S2 の原則不変）。
+function sbBindCloseBtn(view){
+  var el=view&&view.querySelector?view.querySelector('#sb-close-btn'):null;
+  if(el)el.addEventListener('click',function(){
+    try{window.close();}catch(e){}
+    if(sbIsLiveRoute())setTimeout(function(){try{if(!window.closed)sbLiveShowDoneView();}catch(e2){}},250);
+  });
+}
+
 function renderScoreboard(){
   var view=document.getElementById('scoreboard-view');
   if(!view)return;
+  // LIVE-CLOSE-001 案C: 終了画面（✕ 閉じる で window.close() が効かないブラウザ向けフォールバック）。
+  //   静的文言のみ（state 非参照）・運営画面への導線なし・「▶ 星取表に戻る」でフラグ解除→ポーリング再開。
+  if(sbIsLiveRoute()&&_sbLiveDone){
+    view.innerHTML='<div class="sb-done">'
+      +'<div class="sb-done-icon">🙇</div>'
+      +'<div class="sb-done-msg">ご覧いただきありがとうございました</div>'
+      +'<div class="sb-done-sub">このタブはもう閉じて大丈夫です。<br>（ブラウザのタブ一覧などから閉じられます）</div>'
+      +'<button type="button" id="sb-live-return-btn" class="sb-done-return">▶ 星取表に戻る</button>'
+      +'</div>';
+    var sbReturnEl=view.querySelector?view.querySelector('#sb-live-return-btn'):null;
+    if(sbReturnEl)sbReturnEl.addEventListener('click',function(){_sbLiveDone=false;try{sbLiveStartPolling();}catch(eL){}renderScoreboard();});
+    return;
+  }
   // LIVE-BROADCAST-001 Phase2 §5.2: live ルートは公開スナップショット（state 部分集合）をデータ源に
   //   既存レンダラを駆動する（withSourceState・順位/星取ロジック非複製）。envelope 未受信なら案内のみ。
   //   「最終更新」は envelope.updated_at（DB write 時刻・設計 P1-2）を正とする。
   if(sbIsLiveRoute()&&state!==_sbLiveViewState){
     if(!_sbLiveViewState){
       // Phase3: 取得できない理由が分かる場合は補足を添える（textContent 相当＝escapeHtml 経由・fail-soft）。
-      view.innerHTML='<div class="sb-empty">ライブ配信のデータを待っています…<br>配信が始まると、ここに星取表が表示されます。'
+      // LIVE-CLOSE-001: 待機画面（配信終了・古いQR等）でも閉じられるよう ✕ を出す（kiosk 除外・sb-head 同意匠）。
+      view.innerHTML=(sbLiveCanShowClose()?'<div class="sb-head"><div><div class="sb-title">ライブ配信</div></div><button type="button" id="sb-close-btn" class="sb-close" aria-label="この配信画面を閉じる">✕ 閉じる</button></div>':'')
+        +'<div class="sb-empty">ライブ配信のデータを待っています…<br>配信が始まると、ここに星取表が表示されます。'
         +(_sbLiveNote?'<br><span style="font-size:12px;color:#b23030">'+escapeHtml(_sbLiveNote)+'</span>':'')
         +'</div>';
+      sbBindCloseBtn(view);
       return;
     }
     var lt=Date.parse(_sbLiveEnvelope&&_sbLiveEnvelope.updated_at);
@@ -14746,8 +14795,9 @@ function renderScoreboard(){
     +'<div class="sb-note">'+(sbIsLiveRoute()?'閲覧専用・ライブ配信（自動更新）':'閲覧専用・自動更新（運営画面の保存に追従）')+'</div>'
     +(updLabel?'<div class="sb-updated">最終更新：'+escapeHtml(updLabel)+'</div>':'')
     +'</div>'
-    // SB-CLOSE-OPENER-001: 運営タブから開かれた場合のみ（window.close のみ・運営導線ではない）。
-    +(sbCanCloseWindow()?'<button type="button" id="sb-close-btn" class="sb-close" aria-label="この画面を閉じて運営画面のタブへ戻る">✕ 閉じる</button>':'')
+    // SB-CLOSE-OPENER-001: 運営タブから開かれた場合のみ／LIVE-CLOSE-001: live ルート（kiosk 除外）でも表示（window.close＋終了画面のみ・運営導線ではない）。
+    +(sbCanCloseWindow()?'<button type="button" id="sb-close-btn" class="sb-close" aria-label="この画面を閉じて運営画面のタブへ戻る">✕ 閉じる</button>'
+      :(sbLiveCanShowClose()?'<button type="button" id="sb-close-btn" class="sb-close" aria-label="この配信画面を閉じる">✕ 閉じる</button>':''))
     +'</div>';
   // フィルタが現存クラスに無ければ all に戻す。
   if(_sbClassFilter!=='all'&&activeClasses.indexOf(_sbClassFilter)===-1)_sbClassFilter='all';
@@ -14815,9 +14865,8 @@ function renderScoreboard(){
   var backBtn=view.querySelector?view.querySelector('[data-sbback]'):null;
   if(backBtn)backBtn.addEventListener('click',function(){_sbFocusId=null;_sbFocusCls=null;renderScoreboard();});
   // Codex Must Fix 1: 「運営画面へ」戻りボタンは廃止。閲覧ビューには運営画面への導線を束縛しない。
-  // SB-CLOSE-OPENER-001: ✕ 閉じるは window.close() のみ束縛（運営画面へのナビゲーションを提供しない）。
-  var sbCloseEl=view.querySelector?view.querySelector('#sb-close-btn'):null;
-  if(sbCloseEl)sbCloseEl.addEventListener('click',function(){try{window.close();}catch(e){}});
+  // SB-CLOSE-OPENER-001 / LIVE-CLOSE-001: ✕ 閉じるの束縛は sbBindCloseBtn（window.close＋live のみ終了画面フォールバック・画面遷移なし）。
+  sbBindCloseBtn(view);
 }
 
 // hash に応じて閲覧専用ビューと運営画面を切り替える。
