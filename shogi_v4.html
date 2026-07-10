@@ -3422,6 +3422,8 @@ function handlePpDenseTap(memberId){
   renderRegList();save();
   var inp=document.getElementById('pp-search');
   renderPastParticipantsPanel(inp?inp.value:'');
+  // INPUT-KBD-COEXIST-004 (L2 P2-1): 検索中の受付タップ後は focus を復元しオーバーレイ位置を維持（誤受付防止）。
+  restorePpSearchFocusAfterTap();
   showToast('['+r.player.name+'] を '+ppDenseClsName(cls)+'で受付しました');
   if(!verifyPlayerPersistedById(r.player.id,cls,r.player.name)){
     notifySaveWarning({
@@ -3529,7 +3531,7 @@ function bindPastParticipantsPanelEvents(){
     //   反映遅延に合わせ②と同型の 300ms 遅延・vv resize と二段構え）。blur は 200ms 遅延で解除＝
     //   結果セルのタップ（blur→合成 click の順で届く）が通常フロー復帰前に元の位置で成立する。
     input.addEventListener('focus',function(){setTimeout(function(){ensurePpSearchVisible();fitPpGridToViewport();},300);});
-    input.addEventListener('blur',function(){setTimeout(fitPpGridToViewport,200);});
+    input.addEventListener('blur',function(){_ppSearchBlurTs=Date.now();setTimeout(fitPpGridToViewport,200);});
     input.addEventListener('compositionstart',function(){composing=true;});
     input.addEventListener('compositionend',function(){composing=false;renderPastParticipantsPanel(input.value);refocusPpSearch();});
     input.addEventListener('input',function(){if(!composing){renderPastParticipantsPanel(input.value);refocusPpSearch();}});
@@ -6791,7 +6793,9 @@ function ensureRegNameInputVisible(){
 //   （.pp-dense-grid）を検索欄行の直下へ absolute 配置（間の50音タブ/クイックフィルタを一時的に
 //   覆う＝②b と同じ標準UX・STYLE-GUIDE §10.4）し、fitToVisualViewport（②）で max-height を可視域へ
 //   追従＋内側スクロール化（overscroll-behavior:contain＝②c の知見で scroll chaining を遮断）。
-//   デスクトップ・キーボード無し・visualViewport 非対応では常に非活性＝挙動完全不変（fail-soft）。
+//   デスクトップ・キーボード無し・visualViewport 非対応では常に非活性＝オーバーレイ/fit は不変（fail-soft）。
+//   ※フォーカス時スクロール（ensurePpSearchVisible）だけは②の ensureRegNameInputVisible と同型で
+//     キーボード判定にゲートしない（余白不足のときだけ動く既承認パターン・L2 P3-1）。
 //   HTML ビルダー（_buildPpControlsHtml / buildPpDenseListHtml）の出力は不変＝すべて実行時 inline style。
 var PP_GRID_FIT_MIN_PX=96;    // 候補1件強（suggest と同値の下限）
 var PP_GRID_FIT_MAX_PX=480;   // 内側スクロールの上限（非活性時は制約を全除去＝overlay スクロール1本のまま）
@@ -6882,6 +6886,20 @@ function ensurePpSearchVisible(){
       var st=el.scrollTop+delta;
       el.scrollTop=st<0?0:st;
     }
+  }catch(e){}
+}
+// INPUT-KBD-COEXIST-004 (L2 P2-1): セルタップ（受付）→再描画の直後、タップ前まで検索欄がフォーカス
+//   （＝オーバーレイ活性）だった場合に focus を復元してオーバーレイ位置を維持する。再描画で新グリッドが
+//   通常フロー（約150px 下方）へジャンプした直後の連続タップが別セルに落ちる誤受付を防ぎ、
+//   「検索→連続受付」の導線も保つ。時系列は touch→blur→合成 click の順のため、判定は
+//   「#pp-search の blur からの経過時間」（400ms 以内）で行う。完全 fail-soft。
+var _ppSearchBlurTs=0;
+function restorePpSearchFocusAfterTap(){
+  try{
+    if(!_ppSearchBlurTs||(Date.now()-_ppSearchBlurTs)>=400)return;
+    var ni=document.getElementById('pp-search');
+    if(ni&&ni.focus){ ni.focus(); var L=(ni.value||'').length; if(ni.setSelectionRange)ni.setSelectionRange(L,L); }
+    if(typeof fitPpGridToViewport==='function')fitPpGridToViewport();
   }catch(e){}
 }
 

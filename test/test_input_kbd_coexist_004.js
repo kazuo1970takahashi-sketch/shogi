@@ -37,8 +37,10 @@ const RAW = fs.readFileSync(targetPath,'utf8');
     'S1-2 キーボード検出閾値(100)・検索欄余白(140) 定数');
   assert(/input\.addEventListener\('focus',function\(\)\{setTimeout\(function\(\)\{ensurePpSearchVisible\(\);fitPpGridToViewport\(\);\},300\);\}\);/.test(RAW),
     'S2-1 #pp-search focus は 300ms 遅延でスクロール＋適用');
-  assert(/input\.addEventListener\('blur',function\(\)\{setTimeout\(fitPpGridToViewport,200\);\}\);/.test(RAW),
-    'S2-2 #pp-search blur は 200ms 遅延で解除（セルタップ競合回避）');
+  assert(/input\.addEventListener\('blur',function\(\)\{_ppSearchBlurTs=Date\.now\(\);setTimeout\(fitPpGridToViewport,200\);\}\);/.test(RAW),
+    'S2-2 #pp-search blur は時刻記録＋200ms 遅延で解除（セルタップ競合回避）');
+  assert(/renderPastParticipantsPanel\(inp\?inp\.value:''\);\s*\n\s*\/\/ INPUT-KBD-COEXIST-004[^\n]*\n\s*restorePpSearchFocusAfterTap\(\);/.test(RAW),
+    'S2-2b 受付タップ→再描画直後に focus 復元（L2 P2-1・グリッドジャンプ誤受付防止）');
   assert(/if\(ni&&ni\.focus\)\{ ni\.focus\(\);[^\n]*\n[^\n]*\n\s*if\(typeof fitPpGridToViewport==='function'\)fitPpGridToViewport\(\);/.test(RAW),
     'S2-3 再描画後の refocus 直後に再適用');
   assert(/window\.visualViewport\.addEventListener\('resize',function\(\)\{queuePpGridFit\(\);ensurePpSearchVisible\(\);\}\);/.test(RAW) &&
@@ -106,7 +108,8 @@ function loadEnv(){
               positionPpGridOverlay:positionPpGridOverlay,
               resetPpGridOverlay:resetPpGridOverlay,
               fitPpGridToViewport:fitPpGridToViewport,
-              ensurePpSearchVisible:ensurePpSearchVisible };`
+              ensurePpSearchVisible:ensurePpSearchVisible,
+              restorePpSearchFocusAfterTap:restorePpSearchFocusAfterTap };`
   );
   const api = fn(
     ctx.document, ctx.window, ctx.localStorage, {randomUUID:function(){return '00000000-0000-4000-8000-000000000000';}},
@@ -225,6 +228,17 @@ function setupActive(api,opts){
   api3.ensurePpSearchVisible();
   assert(s3.fsEl.scrollTop===0,                            // 20 + (60-112) = -32 → 0
     'B5-3 バー下に潜ったら巻き戻す（負値は 0 クランプ・実測 '+s3.fsEl.scrollTop+'）');
+}
+
+// B6: restorePpSearchFocusAfterTap は blur 記録が無ければ何もしない（誤 focus 奪取なし）
+{
+  const api=loadEnv();
+  const s=setupActive(api);
+  let focusCalls=0;
+  s.inp.focus=function(){focusCalls++;};
+  api._ctx.document.activeElement=null;   // タップ後＝フォーカス無し・blur 記録も無し（初期値0）
+  api.restorePpSearchFocusAfterTap();
+  assert(focusCalls===0, 'B6 blur 記録が無ければ focus を奪わない（実測 '+focusCalls+'回）');
 }
 
 console.log('INPUT-KBD-COEXIST-004: PASS='+pass+' FAIL='+fail);
