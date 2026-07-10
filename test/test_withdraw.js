@@ -85,7 +85,9 @@ ok(E6.withdrawMarkHtml('p2','A')==='','W2 在籍者はマークなし（既存�
 console.log('=== 配線（RAW）===');
 ok(/if\(p&&p\.withdrawn===true\)pp\.withdrawn=true/.test(RAW),'R1 normalizeState で withdrawn 保持');
 ok(/\.filter\(function\(p\)\{return !\(p&&p\.withdrawn\);\}\)/.test(RAW),'R2 generatePairing で棄権者除外');
-ok(/isClassStarted\(cls\)\)\{[\s\S]{0,400}toggleWithdrawn\(pid,c\)/.test(RAW),'R3 受付一覧: 開始後のみ棄権トグル→toggleWithdrawn');
+// REG-TAB-TIDY-001 (#743) ⑤b: 棄権/復帰の導線は行ボタン→「⋯ 編集」シート項目（pes-withdraw）へ移設。
+//   意図（開始後のみ棄権導線が出る・呼び先は toggleWithdrawn）は不変のまま、新しい配線を検証する。
+ok(/isClassStarted\(cls\)\)\{[\s\S]{0,600}pes-withdraw/.test(RAW)&&RAW.indexOf('toggleWithdrawn(playerId,cls)')>=0,'R3 受付一覧: 開始後のみ棄権導線（編集シート）→toggleWithdrawn');
 ok(RAW.indexOf('nameWithNoRubyHtml(f.p.id,cls)+withdrawMarkHtml(f.p.id,cls)')>=0,'R4 順位表(モバイル/PC)に棄権マーク付与');
 
 console.log('WITHDRAW: PASS='+pass+' FAIL='+fail);

@@ -538,7 +538,12 @@ body.sb-active{overflow:hidden}
       <div id="past-participants-section" style="display:none;margin:10px 0 6px">
         <button type="button" class="btn-primary" id="ppToggleBtn" style="width:100%">📋 名簿から受付（過去参加者から選ぶ）<span id="pp-summary" style="font-weight:400;font-size:12px;opacity:.85;margin-left:6px"></span></button>
       </div>
-      <div style="font-size:11px;color:#888;margin:0 0 4px">名簿にない新規の方は下の欄で手入力:</div>
+      <!-- REG-TAB-TIDY-001 (#743) ⑤b 案B: 手入力欄を details へ格納（既定閉・名簿未取込/0名時は renderPastParticipantsPanel が自動 open）。
+           #inp-name / #inp-class / #addBtn / #inp-yomi / #suggest-list の id・bind 経路は不変（格納のみ）。
+           #reg-msg は details の外に残す（⑤d notifyRegTapErr / showMsg が details 閉でも常時書けること）。 -->
+      <details id="reg-manual-details" style="margin:10px 0 6px">
+        <summary style="font-size:14px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">＋ 名簿にない新規の方（手入力）<span style="font-weight:400;font-size:11px;color:#888">　タップで開く</span></summary>
+      <div style="font-size:11px;color:#888;margin:8px 0 4px">名簿にない新規の方は下の欄で手入力:</div>
       <div class="flex">
         <input type="text" id="inp-name" placeholder="氏名を入力" style="width:150px" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next">
         <select id="inp-class">
@@ -552,6 +557,7 @@ body.sb-active{overflow:hidden}
         <span style="font-size:11px;color:#888;margin-left:6px">自動入力されない場合は手入力してください</span>
       </div>
       <div id="suggest-list" class="suggest-list" style="display:none"></div>
+      </details>
       <div id="reg-msg"></div>
       <!-- ROUND-CLASS-START-006 (spec §15.1): 受付一覧 grid を id="reg-class-grid" で
            参照可能にし、ensureClassRegDomNodes() で C クラス以降の受付 section を動的補完できる
@@ -3882,7 +3888,14 @@ function renderPastParticipantsPanel(filter){
   if(!section)return;
   var master=loadBranchMaster();
   var members=(master&&Array.isArray(master.members))?master.members.filter(function(m){return !m.deleted;}):[];
-  if(members.length===0){section.style.display='none';return;}
+  if(members.length===0){
+    section.style.display='none';
+    // REG-TAB-TIDY-001 (#743) ⑤b 案B-④: 名簿が未取込/0名（＝📋 名簿から受付 非表示）のときは
+    //   手入力 details を自動で開く（初回・名簿未整備の支部でも迷わない）。閉じる強制はしない（開くのみ）。
+    var manualDet=document.getElementById('reg-manual-details');
+    if(manualDet&&!manualDet.open)manualDet.open=true;
+    return;
+  }
   section.style.display='block';
   var summary=document.getElementById('pp-summary');
   if(summary)summary.textContent='名簿 '+members.length+'名';
@@ -6406,6 +6419,10 @@ function renderRegList(){
     var countEl=document.getElementById(regClassCountId(cls));
     var listEl=document.getElementById(regClassListId(cls));
     if(countEl)countEl.textContent='('+players.length+'名)';
+    // REG-TAB-TIDY-001 (#743) ⑤b 案A-②: 0名クラスの「名前を一括編集」は非表示（1名以上で従来どおり表示）。
+    //   静的 A/B（bulkEditA/B）・動的 C+（class-bulkedit-*）とも regClassBulkEditId 経由で同経路。
+    var bulkBtn=document.getElementById(regClassBulkEditId(cls));
+    if(bulkBtn)bulkBtn.style.display=players.length>0?'':'none';
     // CLASS-VARIABLE-001 (CV-1): 改名を受付見出しへ反映（A/B 静的 a-name/b-name span ＋ C+ 動的 span を同経路で更新）。
     var nameEl=document.getElementById(regClassNameId(cls));
     if(nameEl)nameEl.textContent=clsList[ci].name||(cls+'クラス');
@@ -6583,41 +6600,80 @@ function makePlayerRow(p,cls,i){
   var buttonsDiv=document.createElement('div');
   buttonsDiv.className='player-row-buttons';
 
+  // REG-TAB-TIDY-001 (#743) ⑤b 案A: 「名前編集/ふりがな/削除(+棄権)」の常時3〜4ボタン → 「⋯ 編集」1ボタンに集約。
+  //   タップで openPlayerEditSheet（受付グリッド済セルの openPpDenseActionSheet と同型のシート）。
+  //   旧ボタンの呼び先（editPlayer/editPlayerYomi/removePlayer/toggleWithdrawn）はシート項目として不変に温存。
   var editBtn=document.createElement('button');
   editBtn.className='btn-sm';
-  editBtn.textContent='名前編集';
-  editBtn.addEventListener('click',(function(pid,c){return function(){editPlayer(pid,c);};})(p.id,cls));
+  editBtn.style.cssText='border-color:#2E75B6;color:#2E75B6';
+  editBtn.textContent='⋯ 編集';
+  editBtn.addEventListener('click',(function(pid,c){return function(){openPlayerEditSheet(pid,c);};})(p.id,cls));
   buttonsDiv.appendChild(editBtn);
-
-  // START-FRP-UX-001: 参加者一覧から ふりがな（player.yomi）を登録後でも編集できる導線。
-  //   名前編集（editPlayer / 会員マスタ同期）とは独立した別ボタン。空欄でルビなしに戻せる。
-  //   click は addEventListener（innerHTML 連結しない＝未エスケープ検査ヒューリスティクスを踏まない）。
-  var yomiBtn=document.createElement('button');
-  yomiBtn.className='btn-sm';
-  yomiBtn.textContent='ふりがな';
-  yomiBtn.addEventListener('click',(function(pid,c){return function(){editPlayerYomi(pid,c);};})(p.id,cls));
-  buttonsDiv.appendChild(yomiBtn);
-
-  var delBtn=document.createElement('button');
-  delBtn.className='btn-sm btn-danger';
-  delBtn.textContent='削除';
-  delBtn.addEventListener('click',(function(pid,c){return function(){removePlayer(pid,c);};})(p.id,cls));
-  buttonsDiv.appendChild(delBtn);
-
-  // WITHDRAW-001: 開始後のみ「棄権/復帰」トグル（開始前は削除で足りる）。棄権＝以降の組み合わせ対象外。
-  if(isClassStarted(cls)){
-    var wdBtn=document.createElement('button');
-    wdBtn.className='btn-sm';
-    wdBtn.textContent=p.withdrawn?'復帰':'棄権';
-    if(p.withdrawn)wdBtn.style.cssText='border-color:#2E75B6;color:#2E75B6';
-    wdBtn.addEventListener('click',(function(pid,c){return function(){toggleWithdrawn(pid,c);};})(p.id,cls));
-    buttonsDiv.appendChild(wdBtn);
-  }
 
   actionsDiv.appendChild(buttonsDiv);
   div.appendChild(actionsDiv);
 
   return div;
+}
+
+// REG-TAB-TIDY-001 (#743) ⑤b: 参加者カードの操作シート。openPpDenseActionSheet と同型（build/bind 分離・
+//   選択時に閉じてから既存関数を呼ぶ＝新規の破壊ロジックを作らない）。
+//   項目の出し分け: クラス変更は member_id 連携者かつ現クラスが ppDenseSelectableClasses() 内の場合のみ
+//   （CV-2 の A/B 限定を UI に出さない・手入力者には出さない）。棄権/復帰は従来ボタンと同条件（開始後のみ）。
+function openPlayerEditSheet(playerId,cls){
+  var existing=document.getElementById('player-edit-sheet');
+  if(existing&&existing.remove)existing.remove();
+  var players=(state&&state.players&&state.players[cls])||[];
+  var p=null;
+  for(var i=0;i<players.length;i++){ if(players[i]&&players[i].id===playerId){p=players[i];break;} }
+  if(!p)return;
+  var clsName=cls+'クラス';
+  var clsList=getRegistrationClassList();
+  for(var ci=0;ci<clsList.length;ci++){ if(clsList[ci].id===cls){clsName=clsList[ci].name||clsName;break;} }
+  var fee=getFee(p.member||'member',p.grade||'ippan');
+  var html='<div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:320px">';
+  html+='<div style="font-size:15px;font-weight:600;color:#1F3864;margin-bottom:4px">'+escapeHtml(p.name||'')+'</div>';
+  html+='<div style="font-size:12px;color:#666;margin-bottom:12px">'+escapeHtml(clsName)+' '+escapeHtml(entryNoOf(cls,p.id))+'・'+escapeHtml(fee===0?'無料':fee.toLocaleString()+'円')+'</div>';
+  html+='<button type="button" id="pes-name" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">✏️ 名前を編集</button>';
+  html+='<button type="button" id="pes-yomi" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">ふりがなを編集</button>';
+  // クラス変更（member_id 連携者のみ・A/B=CV-2 の範囲内のみ・handlePastParticipantClassAdd 経由＝confirm/master 更新は既存フロー）
+  var selectable=(typeof ppDenseSelectableClasses==='function')?ppDenseSelectableClasses():[];
+  var curSelectable=false;
+  for(var si=0;si<selectable.length;si++){ if(selectable[si].id===cls){curSelectable=true;break;} }
+  if(p.member_id&&curSelectable){
+    for(var sj=0;sj<selectable.length;sj++){
+      if(selectable[sj].id===cls)continue;
+      html+='<button type="button" class="pes-change" data-cls="'+escapeHtml(selectable[sj].id)+'" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">'+escapeHtml(selectable[sj].name)+'へ変更</button>';
+    }
+  }
+  // WITHDRAW-001 と同条件（開始後のみ）: 棄権/復帰
+  if(isClassStarted(cls)){
+    html+='<button type="button" id="pes-withdraw" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">'+(p.withdrawn?'復帰する（組み合わせに戻す）':'棄権にする（以降の組み合わせから外す）')+'</button>';
+  }
+  html+='<button type="button" id="pes-remove" class="btn-danger" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border-radius:8px;padding:8px 12px;font-size:14px">受付を取り消す（一覧から削除）</button>';
+  html+='<button type="button" id="pes-cancel" style="display:block;width:100%;min-height:44px;border:1px solid #ccc;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">キャンセル</button>';
+  html+='</div>';
+  var modal=document.createElement('div');
+  modal.id='player-edit-sheet';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9700;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=html;
+  document.body.appendChild(modal);
+  function closeSheet(){ var m=document.getElementById('player-edit-sheet'); if(m&&m.remove)m.remove(); }
+  modal.addEventListener('click',function(ev){ if(ev.target===modal)closeSheet(); });
+  var nmBtn=document.getElementById('pes-name');
+  if(nmBtn)nmBtn.addEventListener('click',function(){ closeSheet(); editPlayer(playerId,cls); });
+  var yoBtn=document.getElementById('pes-yomi');
+  if(yoBtn)yoBtn.addEventListener('click',function(){ closeSheet(); editPlayerYomi(playerId,cls); });
+  var chBtns=modal.querySelectorAll('.pes-change');
+  for(var bi=0;bi<chBtns.length;bi++){
+    chBtns[bi].addEventListener('click',(function(c,mid){return function(){ closeSheet(); handlePastParticipantClassAdd(mid,c); };})(chBtns[bi].getAttribute('data-cls'),p.member_id));
+  }
+  var wdBtn2=document.getElementById('pes-withdraw');
+  if(wdBtn2)wdBtn2.addEventListener('click',function(){ closeSheet(); toggleWithdrawn(playerId,cls); });
+  var rmBtn=document.getElementById('pes-remove');
+  if(rmBtn)rmBtn.addEventListener('click',function(){ closeSheet(); removePlayer(playerId,cls); });
+  var caBtn=document.getElementById('pes-cancel');
+  if(caBtn)caBtn.addEventListener('click',closeSheet);
 }
 
 function updateField(id,cls,field,value){

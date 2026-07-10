@@ -171,7 +171,8 @@ function fxPlayer(id,name,no){
   assert(actions.childNodes.length===2,'B1-9 actions は 2 子（参加費 + 操作ボタン群）');
   assert(actions.childNodes[0].className==='player-fee','B1-10 参加費は .player-fee');
   assert(actions.childNodes[1].className==='player-row-buttons','B1-11 操作は .player-row-buttons');
-  assert(actions.childNodes[1].childNodes.length===3,'B1-12 未開始クラスの操作ボタンは 3 個（名前編集/ふりがな/削除）');
+  // REG-TAB-TIDY-001 (#743) ⑤b: 操作は「⋯ 編集」1ボタンに集約（名前編集/ふりがな/削除はシートへ）。
+  assert(actions.childNodes[1].childNodes.length===1&&actions.childNodes[1].childNodes[0].textContent==='⋯ 編集','B1-12 未開始クラスの操作は「⋯ 編集」1 個（3ボタンはシートへ集約）');
 }
 
 // ============================================================

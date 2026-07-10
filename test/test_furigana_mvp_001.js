@@ -276,7 +276,11 @@ function rowState(player){ const s=makeEmptyState(); s.players.A=[player]; retur
 
   env._setState(rowState({id:'p3',name:'鈴木',cls:'A',member:'member',grade:'ippan',entry_no:1,yomi:'すずき'}));
   const h3 = serialize(env.makePlayerRow(env._getState().players.A[0],'A',0));
-  assert(h3.indexOf('名前編集')>=0 && h3.indexOf('削除')>=0, 'E3 編集・削除ボタンが保持される（退行なし）');
+  // REG-TAB-TIDY-001 (#743) ⑤b: 行の「名前編集/削除」は「⋯ 編集」1ボタン＋シート（openPlayerEditSheet）へ集約。
+  //   意図（編集・削除の導線が退行しない）は、行の集約ボタン＋シート内項目の静的存在で検証する。
+  assert(h3.indexOf('⋯ 編集')>=0, 'E3-a 行に「⋯ 編集」集約ボタンが保持される（退行なし）');
+  const rawHtml = fs.readFileSync(process.argv[2], 'utf8');
+  assert(rawHtml.indexOf('✏️ 名前を編集')>=0 && rawHtml.indexOf('受付を取り消す（一覧から削除）')>=0, 'E3-b 編集シートに名前編集・削除項目が保持される');
 
   env._setState(rowState({id:'p4',name:'<script>x</script>',cls:'A',member:'member',grade:'ippan',entry_no:1,yomi:''}));
   const h4 = serialize(env.makePlayerRow(env._getState().players.A[0],'A',0));
