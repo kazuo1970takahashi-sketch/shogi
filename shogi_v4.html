@@ -251,7 +251,7 @@ th{background:#e8f0f8;color:#1F3864;font-weight:500;padding:7px 6px;text-align:c
 td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align:middle}
 .history-tag{display:inline-block;background:#eee;border-radius:4px;padding:2px 6px;font-size:11px;color:#666;margin:2px}
 .final-done{background:#eaf3de;border:1px solid #97c459;border-radius:8px;padding:12px;color:#27500A;font-weight:500;margin-bottom:12px}
-.suggest-list{margin-top:6px;border:1px solid #ccc;border-radius:8px;background:#fff;max-height:280px;overflow-y:auto;box-shadow:0 2px 6px rgba(0,0,0,0.06)}
+.suggest-list{margin-top:6px;border:1px solid #ccc;border-radius:8px;background:#fff;max-height:280px;overflow-y:auto;box-shadow:0 6px 16px rgba(0,0,0,0.18)} /* INPUT-KBD-COEXIST-002: オーバーレイ化に伴い浮きが分かる影へ */
 .suggest-item{padding:10px 12px;border-bottom:1px solid #eee;cursor:pointer;-webkit-tap-highlight-color:rgba(0,0,0,0.1)}
 .suggest-item:last-child{border-bottom:none}
 .suggest-item:active{background:#eaf3fb}
@@ -262,6 +262,9 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
   .winner-btn{padding:10px 8px;font-size:14px}
   .tab{font-size:12px;padding:10px 2px}
   .header h1{font-size:13px}
+  /* INPUT-KBD-COEXIST-002 (#728): キーボード表示中の可視行数確保のため候補行を圧縮（行高 約63px→約48px・44px タップ標的は維持・si-name 15px は可読性のため不変） */
+  .suggest-item{padding:7px 12px}
+  .suggest-item .si-meta{font-size:11px;margin-top:1px}
 }
 /* MOBILE-TAB-001: 320px 級の極小幅で active タブ「参加者登録」(5文字) が2行に折り返す件の改善。
    .tab は flex:1 の等幅配分のため最長ラベルが基準になる。font-size を 11px に下げ、tab-bar の
@@ -6703,6 +6706,40 @@ function fitToVisualViewport(el,minPx,maxPx){
   return h;
 }
 
+// SUGGEST-TAP-SCROLL (INPUT-KBD-COEXIST-002 #728): タップ判定の許容移動量。これを超えて指が動いたらスクロール扱い。
+var SUGGEST_TAP_SLOP_PX=10;
+
+// INPUT-KBD-COEXIST-002 (#728): サジェストを氏名入力行の直下に absolute 配置（一般的なコンボボックスUX）。
+//   キーボード表示中の可視域では「ふりがな行＋ヒント文」(約60px)が候補約1行ぶんを奪うため、表示中だけ
+//   リストをその上に重ねて縦空間を稼ぐ（候補約2行→約4行・機種依存）。close で通常フローへ復帰。
+//   氏名行(.flex)とサジェストは同一親の兄弟＝親を position:relative 化して offsetTop 基準で配置。
+//   z-index=30（sticky .tab-bar の 40 未満）。位置計算に必要な値が無い環境（テストモック等）では何も
+//   しない＝従来のインラインフロー表示のまま（fail-soft）。
+function positionSuggestOverlay(list){
+  try{
+    var inp=document.getElementById('inp-name');
+    var row=inp?inp.parentNode:null;
+    var parent=list.parentNode;
+    if(!row||!parent||row.parentNode!==parent)return;
+    if(typeof row.offsetTop!=='number'||typeof row.offsetHeight!=='number')return;
+    if(parent.style&&!parent.style.position)parent.style.position='relative';
+    list.style.position='absolute';
+    list.style.left='0';
+    list.style.right='0';
+    list.style.zIndex='30';
+    // margin-top:6px（CSS）が top からの隙間として効く
+    list.style.top=(row.offsetTop+row.offsetHeight)+'px';
+  }catch(e){}
+}
+function resetSuggestOverlay(list){
+  if(!list||!list.style)return;
+  list.style.position='';
+  list.style.left='';
+  list.style.right='';
+  list.style.zIndex='';
+  list.style.top='';
+}
+
 // サジェストリストへの適用（表示中のみ・完全 fail-soft）。
 //   renderSuggestList（表示直後）と visualViewport の resize/scroll（キーボード開閉・可視域移動）の両方から呼ばれる。
 function fitSuggestListToViewport(){
@@ -6770,14 +6807,31 @@ function renderSuggestList(suggestions){
       meta.textContent=parts.join(' / ');
       info.appendChild(meta);
       item.appendChild(info);
-      // mousedown は input の blur より先に発火するため、blur-close で取りこぼさない
+      // mousedown は input の blur より先に発火するため、blur-close で取りこぼさない（デスクトップ）
       item.addEventListener('mousedown',function(e){
         e.preventDefault();
         onSuggestTap(m);
       });
-      // タッチ環境用フォールバック
+      // SUGGEST-TAP-SCROLL (INPUT-KBD-COEXIST-002 #728): タッチは「タップ=選択／指が動いたら=スクロール」を判別。
+      //   旧実装（touchstart 即選択＋preventDefault）はリスト内スクロールが物理的に不可能で、候補3件目以降へ
+      //   到達しようとした指で選択が確定してしまった（?v=114 実機フィードバック）。
+      //   touchstart/touchmove は passive（ネイティブスクロールを妨げない・座標追跡のみ）。移動が
+      //   SUGGEST_TAP_SLOP_PX 以下のまま touchend したときだけタップ確定＝preventDefault（合成 mouse
+      //   イベント→blur→close の競合を抑止）して選択。スクロール時は何もしない（blur も発生しない）。
+      var _tx=0,_ty=0,_tMoved=false;
       item.addEventListener('touchstart',function(e){
-        e.preventDefault();
+        if(!e.touches||e.touches.length!==1){_tMoved=true;return;}
+        _tMoved=false;_tx=e.touches[0].clientX;_ty=e.touches[0].clientY;
+      },{passive:true});
+      item.addEventListener('touchmove',function(e){
+        if(_tMoved)return;
+        var t=e.touches&&e.touches[0];
+        if(!t)return;
+        if(Math.abs(t.clientX-_tx)>SUGGEST_TAP_SLOP_PX||Math.abs(t.clientY-_ty)>SUGGEST_TAP_SLOP_PX)_tMoved=true;
+      },{passive:true});
+      item.addEventListener('touchend',function(e){
+        if(_tMoved)return;
+        if(e.cancelable!==false&&e.preventDefault)e.preventDefault();
         onSuggestTap(m);
       });
       // ENTRY-ADD-CONFIRM-001 (#599): サジェスト行の A/B 直接追加ボタンは廃止（誤タップ即登録の防止）。
@@ -6786,6 +6840,8 @@ function renderSuggestList(suggestions){
       list.appendChild(item);
     })(suggestions[i]);
   }
+  // INPUT-KBD-COEXIST-002 (#728): 氏名行直下オーバーレイ → 表示 → 可視域フィットの順（top 確定後に高さ計算）
+  positionSuggestOverlay(list);
   list.style.display='block';
   // INPUT-KBD-COEXIST-001: 表示直後に現在の可視域へ高さを合わせる（キーボード表示中の初回表示・候補数変化対策）
   fitSuggestListToViewport();
@@ -6798,6 +6854,8 @@ function closeSuggestList(){
   list.innerHTML='';
   // INPUT-KBD-COEXIST-001: 追従で付けたインライン max-height を除去し CSS 既定へ戻す
   if(list.style)list.style.maxHeight='';
+  // INPUT-KBD-COEXIST-002 (#728): オーバーレイ配置を解除し通常フローへ復帰
+  resetSuggestOverlay(list);
 }
 
 function onSuggestTap(member){
