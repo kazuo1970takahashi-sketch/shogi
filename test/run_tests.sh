@@ -2707,6 +2707,18 @@ else
   warn "test_header_tidy_001.js が見つからない"
 fi
 echo ""
+echo "【LIVE-CLOSE-001 参加者QR配信ビューの ✕ 閉じる＋終了画面フォールバック（kiosk除外）】"
+if [ -f "$SCRIPT_DIR/test_live_close_001.js" ]; then
+  if node "$SCRIPT_DIR/test_live_close_001.js" "$TARGET" > /tmp/live_close_001_out.log 2>&1; then
+    ok "LIVE-CLOSE-001 テスト 全PASS ($(tail -1 /tmp/live_close_001_out.log))"
+  else
+    ng "LIVE-CLOSE-001 テスト 失敗"; cat /tmp/live_close_001_out.log
+  fi
+else
+  warn "test_live_close_001.js が見つからない"
+fi
+
+echo ""
 echo "【MANUAL-SYNC-001 当日マニュアル（docs/manual_sp・manual_print）⇄ 実UI 同期ゲート】"
 if [ -f "$SCRIPT_DIR/test_manual_sync_001.js" ]; then
   if node "$SCRIPT_DIR/test_manual_sync_001.js" "$TARGET" > /tmp/manual_sync_001_out.log 2>&1; then
