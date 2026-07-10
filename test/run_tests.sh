@@ -2670,6 +2670,18 @@ if [ -f "$SCRIPT_DIR/test_tap_target_dense_001.js" ]; then
 else
   warn "test_tap_target_dense_001.js が見つからない"
 fi
+
+echo ""
+echo "【REG-ALERT-TOAST-001 (#740 / スライス⑤d) 登録/受付系 alert のトースト化】"
+if [ -f "$SCRIPT_DIR/test_reg_alert_toast_001.js" ]; then
+  if node "$SCRIPT_DIR/test_reg_alert_toast_001.js" "$TARGET" > /tmp/reg_alert_toast_001_out.log 2>&1; then
+    ok "REG-ALERT-TOAST-001 テスト 全PASS ($(tail -1 /tmp/reg_alert_toast_001_out.log))"
+  else
+    ng "REG-ALERT-TOAST-001 テスト 失敗"; cat /tmp/reg_alert_toast_001_out.log
+  fi
+else
+  warn "test_reg_alert_toast_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================

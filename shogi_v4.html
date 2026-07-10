@@ -70,6 +70,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 /* 当日UX: 操作の成功を控えめに知らせるトースト（対局管理タブでも見える固定表示）。 */
 .app-toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);max-width:90%;background:#27500A;color:#fff;padding:10px 18px;border-radius:10px;font-size:15px;font-weight:500;z-index:10000;box-shadow:0 2px 10px rgba(0,0,0,.3);opacity:0;transition:opacity .2s;pointer-events:none;text-align:center}
 .app-toast.show{opacity:1}
+.app-toast.err{background:#A32D2D}
 .app-modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
 .app-modal-box{background:#fff;border-radius:12px;max-width:420px;width:100%;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,0.28)}
 .app-modal-msg{font-size:14px;color:#222;line-height:1.65;white-space:pre-wrap;word-break:break-word}
@@ -3408,15 +3409,16 @@ function handlePpDenseTap(memberId){
   if(master&&Array.isArray(master.members)){
     for(var mi=0;mi<master.members.length;mi++){ if(master.members[mi]&&master.members[mi].id===memberId){member=master.members[mi];break;} }
   }
-  if(!member){alert('該当する参加者が見つかりません');return;}
-  if(member.deleted===true){alert('この参加者は削除済みのため追加できません');return;}
+  // REG-ALERT-TOAST-001 (#740) ⑤d: エラーも非阻害トースト＝OK タップ不要で連続受付が止まらない（済セル化しないことでも失敗が判る）。
+  if(!member){notifyRegTapErr('該当する参加者が見つかりません');return;}
+  if(member.deleted===true){notifyRegTapErr('この参加者は削除済みのため追加できません');return;}
   var r=addPlayerFromMaster(memberId,cls,master,state);
   if(!r||!r.success){
     var err=r&&r.error;
-    if(err==='duplicate_name')alert('同じ名前の参加者がいます。別人の場合は手入力で区別してください');
-    else if(err==='duplicate_member')alert('この参加者はすでに登録されています');
-    else if(err==='invalid_class')alert('このクラスへの受付は現在未対応です。登録画面の手入力をご利用ください');
-    else alert('受付に失敗しました');
+    if(err==='duplicate_name')notifyRegTapErr('同じ名前の参加者がいます。別人の場合は手入力で区別してください');
+    else if(err==='duplicate_member')notifyRegTapErr('この参加者はすでに登録されています');
+    else if(err==='invalid_class')notifyRegTapErr('このクラスへの受付は現在未対応です。登録画面の手入力をご利用ください');
+    else notifyRegTapErr('受付に失敗しました');
     return;
   }
   renderRegList();save();
@@ -3474,7 +3476,7 @@ function openPpDenseActionSheet(memberId,currentCls){
     closeSheet();
     var pid=null;var arr=(state.players&&state.players[currentCls])||[];
     for(var pi=0;pi<arr.length;pi++){ if(arr[pi]&&arr[pi].member_id===memberId){pid=arr[pi].id;break;} }
-    if(pid==null){alert('該当する受付が見つかりません');return;}
+    if(pid==null){notifyRegTapErr('該当する受付が見つかりません');return;} // REG-ALERT-TOAST-001 (#740)
     // IN-APP-MODAL-001 (#606): removePlayer は appConfirm で非同期化。削除後の pp パネル再描画を onDone 継続として渡す（元の同期後処理と同一順序＝OK/取消いずれも実行）。
     removePlayer(pid,currentCls,function(){
       var inp=document.getElementById('pp-search');
@@ -3602,9 +3604,10 @@ function handlePastParticipantClassAdd(memberId,cls){
     }
     if(existingCls)break;
   }
-  // ケース 3: 同クラス登録済（alert OK のみ、削除提案なし）
+  // ケース 3: 同クラス登録済（情報通知のみ、削除提案なし）
+  // REG-ALERT-TOAST-001 (#740) ⑤d: 何も変更しない情報通知＝blocking alert→非阻害トースト（文言不変）。
   if(existingCls===cls){
-    alert(memberName+'さんは既に '+cls+'クラス に登録されています。');
+    notifyRegTapErr(memberName+'さんは既に '+cls+'クラス に登録されています。');
     return;
   }
   // ケース 2: 別クラス登録済（変更 confirm）
@@ -3801,7 +3804,7 @@ function addSelectedPastParticipants(){
       if(master.members[j].id===mid){picked.push(master.members[j]);break;}
     }
   }
-  if(picked.length===0){alert('追加する参加者を選択してください');return;}
+  if(picked.length===0){notifyRegTapErr('追加する参加者を選択してください');return;} // REG-ALERT-TOAST-001 (#740)
   // 仕様書 v6 §3.1: yomi 空の人だけダイアログを出す（方式 Y）
   var yomiEmpty=picked.filter(function(m){return !normalizeYomi(m.yomi);});
   if(yomiEmpty.length===0){
@@ -6051,16 +6054,25 @@ function showMsg(text,type){
   el.innerHTML=text?'<div class="alert alert-'+type+'">'+escapeHtml(text)+'</div>':'';
 }
 // 当日UX: 成功フィードバックの軽量トースト（#app-toast）。textContent のみ・自動で消える・例外は握りつぶす。
+// REG-ALERT-TOAST-001 (#740) ⑤d: opts.kind='err' でエラートースト（danger 色 .err・3秒）。第2引数省略＝従来の成功トースト（挙動不変）。
 var _toastTimer=null;
-function showToast(text){
+function showToast(text,opts){
   try{
     var el=document.getElementById('app-toast');
     if(!el)return;
+    var isErr=!!(opts&&opts.kind==='err');
     el.textContent=String(text==null?'':text);
-    el.className='app-toast show';
+    el.className=isErr?'app-toast show err':'app-toast show';
     if(_toastTimer)clearTimeout(_toastTimer);
-    _toastTimer=setTimeout(function(){ var e2=document.getElementById('app-toast'); if(e2)e2.className='app-toast'; },1800);
+    _toastTimer=setTimeout(function(){ var e2=document.getElementById('app-toast'); if(e2)e2.className='app-toast'; },isErr?3000:1800);
   }catch(e){}
+}
+// REG-ALERT-TOAST-001 (#740) ⑤d: 登録/受付系の軽度エラー通知（blocking alert の置換先・STYLE-GUIDE §3 N3）。
+//   showMsg=履歴として #reg-msg に残す＋showToast(err)=全画面ピッカー中でも見える（PP-FULLSCREEN-001 と同型）。
+//   見落とすと事故になる失敗（クラス変更失敗の L3 P2 判断・removePlayer ガードの長文説明）は従来どおり blocking alert を維持（#740 仕分けB）。
+function notifyRegTapErr(text){
+  showMsg(text,'err');
+  showToast(text,{kind:'err'});
 }
 
 // IN-APP-MODAL-001 (#606) Phase 0: 汎用アプリ内モーダル（confirm / prompt / alert）。
