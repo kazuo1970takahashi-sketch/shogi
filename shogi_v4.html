@@ -6683,6 +6683,59 @@ function getCurrentlyRegisteredMemberIds(){
   return ids;
 }
 
+// INPUT-KBD-COEXIST-001 (スライス②): ソフトキーボード共存ユーティリティ。
+//   visualViewport はソフトキーボード表示で縮んだ「実際に見えている範囲」を表す（iOS Safari 13+ / Android Chrome 61+）。
+//   el の max-height を「可視域下端 − el 上端 − 余白」へ追従させ、候補リストがキーボードの下に隠れないようにする。
+//   非対応環境（visualViewport 無し）ではインライン max-height を除去して CSS 既定へ戻す（挙動不変）。
+//   戻り値=適用した max-height(px)。非対応・要素無しは null。スライス④（#pp-fullscreen 合流）でも再利用する汎用形。
+var VV_FIT_MARGIN_PX=8;      // 可視域下端との余白
+var SUGGEST_FIT_MIN_PX=96;   // 最低でも候補1件強は見せる（これ未満に潰すと候補が読めず逆効果）
+var SUGGEST_FIT_MAX_PX=280;  // CSS .suggest-list の max-height と同値（キーボード無しでは既定と一致）
+function fitToVisualViewport(el,minPx,maxPx){
+  if(!el||!el.getBoundingClientRect)return null;
+  var vv=window.visualViewport;
+  if(!vv){el.style.maxHeight='';return null;}
+  var rect=el.getBoundingClientRect();
+  // getBoundingClientRect は layout viewport 基準。visual viewport の下端は offsetTop+height。
+  var avail=Math.floor(vv.offsetTop+vv.height-rect.top)-VV_FIT_MARGIN_PX;
+  var h=Math.max(minPx,Math.min(maxPx,avail));
+  el.style.maxHeight=h+'px';
+  return h;
+}
+
+// サジェストリストへの適用（表示中のみ・完全 fail-soft）。
+//   renderSuggestList（表示直後）と visualViewport の resize/scroll（キーボード開閉・可視域移動）の両方から呼ばれる。
+function fitSuggestListToViewport(){
+  try{
+    var list=document.getElementById('suggest-list');
+    if(!list||!list.style||list.style.display==='none')return;
+    fitToVisualViewport(list,SUGGEST_FIT_MIN_PX,SUGGEST_FIT_MAX_PX);
+  }catch(e){}
+}
+
+// INPUT-KBD-COEXIST-001: 氏名欄のフォーカス時スクロール。
+//   キーボードで可視域が狭まり「入力欄の下にサジェスト用の余白」が無いときだけ、入力欄を sticky タブバー
+//   直下へ引き上げる（goToLiveBroadcastSection と同型のスクロール）。余白が既にあるときは何もしない
+//   （不要スクロールで画面を跳ねさせない）。完全 fail-soft（失敗しても入力継続）。
+var REG_NAME_HEADROOM_PX=150; // ふりがな行(約40px)＋候補 SUGGEST_FIT_MIN_PX ＋余白
+function ensureRegNameInputVisible(){
+  try{
+    var inp=document.getElementById('inp-name');
+    if(!inp||document.activeElement!==inp||!inp.getBoundingClientRect)return;
+    var vv=window.visualViewport;
+    var visTop=vv?vv.offsetTop:0;
+    var visBottom=vv?(vv.offsetTop+vv.height):(window.innerHeight||0);
+    if(!visBottom)return;
+    var rect=inp.getBoundingClientRect();
+    var tb=document.querySelector('.tab-bar');
+    var barH=(tb&&tb.getBoundingClientRect)?tb.getBoundingClientRect().height:0;
+    if(rect.top>=visTop+barH&&rect.bottom+REG_NAME_HEADROOM_PX<=visBottom)return;
+    var y=(window.pageYOffset||0)+rect.top-barH-8;
+    if(y<0)y=0;
+    try{window.scrollTo({top:y,behavior:'smooth'});}catch(e2){window.scrollTo(0,y);}
+  }catch(e){}
+}
+
 function renderSuggestList(suggestions){
   var list=document.getElementById('suggest-list');
   if(!list)return;
@@ -6734,6 +6787,8 @@ function renderSuggestList(suggestions){
     })(suggestions[i]);
   }
   list.style.display='block';
+  // INPUT-KBD-COEXIST-001: 表示直後に現在の可視域へ高さを合わせる（キーボード表示中の初回表示・候補数変化対策）
+  fitSuggestListToViewport();
 }
 
 function closeSuggestList(){
@@ -6741,6 +6796,8 @@ function closeSuggestList(){
   if(!list)return;
   list.style.display='none';
   list.innerHTML='';
+  // INPUT-KBD-COEXIST-001: 追従で付けたインライン max-height を除去し CSS 既定へ戻す
+  if(list.style)list.style.maxHeight='';
 }
 
 function onSuggestTap(member){
@@ -12888,6 +12945,23 @@ function bindRegistrationEvents(){
   });
   inpName.addEventListener('focus',function(){if(!composing)updateSuggestList();});
   inpName.addEventListener('blur',function(){setTimeout(closeSuggestList,150);});
+  // INPUT-KBD-COEXIST-001 (スライス②): キーボード共存の結線（bind は DOMContentLoaded から一度だけ＝解除不要）。
+  //   - visualViewport の resize/scroll（キーボード開閉・可視域の移動/ズーム）でサジェスト高さを追従。
+  //     rAF で1フレーム1回に間引く（scroll は高頻度発火のため）。
+  //   - resize（≒キーボード出現/消失）時は氏名欄の可視位置も確保。フォーカス直後は iOS の visualViewport
+  //     反映が遅れるため、focus 側の遅延スクロール（300ms）と二段構えにする。
+  if(window.visualViewport){
+    var _vvFitQueued=false;
+    var queueSuggestFit=function(){
+      if(_vvFitQueued)return;
+      _vvFitQueued=true;
+      var run=function(){_vvFitQueued=false;fitSuggestListToViewport();};
+      if(typeof requestAnimationFrame==='function')requestAnimationFrame(run);else setTimeout(run,16);
+    };
+    window.visualViewport.addEventListener('resize',function(){queueSuggestFit();ensureRegNameInputVisible();});
+    window.visualViewport.addEventListener('scroll',queueSuggestFit);
+  }
+  inpName.addEventListener('focus',function(){setTimeout(ensureRegNameInputVisible,300);});
 
   // A-4 §3.1.2: ふりがな欄の手動編集を追跡。Stage 1 では追跡のみ。
   var inpYomi=document.getElementById('inp-yomi');
