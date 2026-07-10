@@ -2,6 +2,9 @@
 // MANUAL-SYNC-001 (2026-07-10): 当日マニュアル（docs/manual_sp.html / docs/manual_print.html）と
 // アプリ実UI（shogi_v4.html）の同期ゲート。v107→v121 のマニュアル乖離（保存状態バー撤去・
 // ヘッダ再編⑤c・登録タブ⑤b 等）を手動点検で拾っていたのを自動化する。
+// DOC-SYNC-001 (2026-07-10 拡張): 対象を4面に拡大 — F=アプリ内ヘルプ（HELP_TEXTS）・
+// G=運営サイト（index.html・☰「📖 案内」から届く公開面）・H=インストールガイド
+// （docs/install_guide.html）・I=版数整合（index.html ?v == sw.js CACHE）。
 // 方針（抽出駆動＝両側をハードコードしない）:
 //   A. 抽出照合: タブ / ヘッダ常時ボタン / ☰シート項目をアプリのソースから抽出し、
 //      マニュアルに載っていることを要求（UI を変えるとマニュアル未更新で FAIL）。
@@ -113,6 +116,66 @@ BOTH.forEach(([name,doc])=>{
 BOTH.forEach(([name,doc])=>{
   ok(doc.indexOf('kazuo1970takahashi-sketch.github.io/shogi')>=0,'E1 '+name+' にアプリの公開URL');
 });
+
+// ============================================================
+// DOC-SYNC-001 拡張: 残り3面＋版数整合
+// ============================================================
+
+// ---- F. アプリ内ヘルプ（HELP_TEXTS）
+{
+  const hm=RAW.match(/var HELP_TEXTS=\{[\s\S]*?\n\};/);
+  ok(!!hm,'F0 HELP_TEXTS が抽出できること');
+  if(hm){
+    // コメント行（撤去記録など）は対象外＝ユーザー向け文字列だけを検査する
+    const H=hm[0].split('\n').filter(l=>!/^\s*\/\//.test(l)).join('\n');
+    const HELP_TOMBSTONES=['保存状態','⋯ その他','一覧で「棄権」','一括追加','大会データをコピー'];
+    const found=HELP_TOMBSTONES.filter(t=>H.indexOf(t)>=0);
+    ok(found.length===0,'F1 ヘルプに撤去/旧UIへの言及がない（検出: '+found.join('・')+'）');
+    ok(H.indexOf('⋯ 編集')>=0&&H.indexOf('棄権にする')>=0,'F2 棄権の導線はカード「⋯ 編集」経由の記述');
+    ok(H.indexOf('名簿から受付')>=0,'F3 受付はタップ受付（📋 名簿から受付）の記述');
+    ok(H.indexOf('☰メニューの「バックアップ」')>=0,'F4 バックアップの場所（☰メニュー）を明記');
+  }
+}
+
+// ---- G. 運営サイト（index.html）
+let IDX=null;
+try{IDX=fs.readFileSync(path.join(root,'index.html'),'utf8');}catch(e){}
+ok(!!IDX,'G0 index.html を読めること');
+if(IDX){
+  const SITE_TOMBSTONES=['大会データをコピー','「読み込み」ボタン','登録完了・対局開始','「マスタ」タブ','保存状態','⋯ その他','ブラウザを閉じないで'];
+  const found=SITE_TOMBSTONES.filter(t=>IDX.indexOf(t)>=0);
+  ok(found.length===0,'G1 運営サイトに撤去/旧UIへの言及がない（検出: '+found.join('・')+'）');
+  ok(IDX.indexOf('会員名簿')>=0&&IDX.indexOf('対局管理')>=0&&IDX.indexOf('最終結果')>=0,'G2 現行タブ名（会員名簿/対局管理/最終結果）で記述');
+  ok(IDX.indexOf('ライブ配信')>=0&&IDX.indexOf('スマホ星取表')>=0&&IDX.indexOf('バックアップ')>=0&&IDX.indexOf('クラウド')>=0,'G3 現行の主要機能（配信/星取表/バックアップ/クラウド）に言及');
+  // 主要ラベルの逆照合（運営サイトが言及するボタンは実UIに存在すること）
+  const SITE_LABELS=['📋 名簿から受付（過去参加者から選ぶ）','＋ 名簿にない新規の方（手入力）','☁ クラウドから取得','報告書を印刷 / PDF保存','⋯ 編集','☁ クラウドへ送信','📋 名簿を更新','⏹ 配信を停止','このクラスを部分開始'];
+  const stale=SITE_LABELS.filter(l=>IDX.indexOf(l)>=0&&RAW.indexOf(l)<0);
+  ok(stale.length===0,'G4 運営サイト記載のボタン名は実UIに存在（乖離: '+stale.join('・')+'）');
+}
+
+// ---- H. インストールガイド（docs/install_guide.html）
+{
+  let IG=null;
+  try{IG=fs.readFileSync(path.join(root,'docs','install_guide.html'),'utf8');}catch(e){}
+  ok(!!IG,'H0 install_guide.html を読めること');
+  if(IG){
+    ok(IG.indexOf('「マスタ」タブ')<0,'H1 旧タブ名「マスタ」への言及がない');
+    ok(IG.indexOf('会員名簿')>=0,'H2 現行タブ名（会員名簿）で記述');
+    ok(IG.indexOf('☁ クラウドから取得')<0||RAW.indexOf('☁ クラウドから取得')>=0,'H3 記載ボタンは実UIに存在');
+  }
+}
+
+// ---- I. 版数整合（index.html ?v == sw.js CACHE・version-sync-drift の自動検出）
+{
+  let SW=null;
+  try{SW=fs.readFileSync(path.join(root,'sw.js'),'utf8');}catch(e){}
+  ok(!!SW,'I0 sw.js を読めること');
+  if(SW&&IDX){
+    const mv=IDX.match(/shogi_v4\.html\?v=(\d+)/);
+    const ms=SW.match(/shogi-tour-v(\d+)/);
+    ok(!!mv&&!!ms&&mv[1]===ms[1],'I1 index.html ?v='+(mv?mv[1]:'?')+' と sw.js v'+(ms?ms[1]:'?')+' が一致');
+  }
+}
 
 console.log('MANUAL-SYNC-001: PASS='+pass+', FAIL='+fail);
 process.exit(fail===0?0:1);

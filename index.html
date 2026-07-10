@@ -72,19 +72,19 @@ th.cell-amt{text-align:right}
     <a class="app-link" href="docs/manual_sp.html" target="_blank" rel="noopener noreferrer" style="background:#2E75B6">📖 運営マニュアル（はじめに読む）</a>
     <p style="font-size:13px;color:#888;text-align:center">別タブで開きます　／　<a href="docs/manual_print.html" target="_blank" rel="noopener noreferrer" style="color:#2E75B6">印刷用マニュアルはこちら</a></p>
     <div style="margin-top:12px">
-      <span class="badge badge-blue">参加者登録・会費計算</span>
+      <span class="badge badge-blue">名簿から名前をタップで受付・会費計算</span>
       <span class="badge badge-blue">ペアリング自動生成・再生成</span>
       <span class="badge badge-blue">対戦相手変更</span>
       <span class="badge badge-blue">勝敗入力・修正</span>
       <span class="badge badge-blue">順位自動計算（A/B/C）</span>
       <span class="badge badge-blue">対戦成績・報告書を印刷/PDF保存</span>
-      <span class="badge badge-blue">データ保存・復元</span>
-      <span class="badge badge-blue">名前の一括編集</span>
-      <span class="badge badge-green">支部マスタ管理</span>
-      <span class="badge badge-green">過去参加者をワンクリック呼び出し</span>
-      <span class="badge badge-green">漢字・ふりがな検索</span>
-      <span class="badge badge-green">50音タブ</span>
-      <span class="badge badge-green">過去大会データを統合</span>
+      <span class="badge badge-blue">自動保存・バックアップ/復元</span>
+      <span class="badge badge-green">会員名簿（支部マスタ）管理</span>
+      <span class="badge badge-green">☁ クラウド送信・名簿共有</span>
+      <span class="badge badge-green">📡 参加者向けライブ配信（QR）</span>
+      <span class="badge badge-green">📱 スマホ星取表</span>
+      <span class="badge badge-green">漢字・ふりがな・50音検索</span>
+      <span class="badge badge-green">大会履歴</span>
     </div>
   </div>
 
@@ -95,14 +95,14 @@ th.cell-amt{text-align:right}
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-body">
-        <div class="step-title">受付【支部マスタで時間短縮】</div>
-        <p>常連の参加者は支部マスタから呼び出すことで、入力時間を大幅に短縮できる。役割分担は以下。</p>
+        <div class="step-title">受付【名簿からタップで時間短縮】</div>
+        <p>常連の参加者は名簿から名前をタップするだけで受付できる。役割分担は以下。</p>
         <ul>
           <li><strong>受付係</strong>：対局カード記入依頼・集金を担当</li>
-          <li><strong>登録係</strong>：「過去参加者から選ぶ」パネルでマスタから呼び出し（漢字・ふりがな検索 / 50音タブで絞り込み可）。新規参加者のみ手入力。1回戦ペアリング自動生成→対局カードに手合いを記入。</li>
+          <li><strong>登録係</strong>：「📋 名簿から受付（過去参加者から選ぶ）」で①クラスを選ぶ→②名前をタップ、で受付（漢字・ふりがな検索 / 50音で絞り込み可・会費区分も引き継がれる）。名簿にない新規の方のみ「＋ 名簿にない新規の方（手入力）」から入力。</li>
         </ul>
-        <div class="note">初めて使う日は支部マスタが空。「マスタ」タブの「📥 過去大会を支部マスタに統合」から過去大会データを取り込むことで、過去参加者を一括登録できる。</div>
-        <div class="note">奇数になった場合は運営者が参加して偶数にしてから「登録完了・対局開始」を押す</div>
+        <div class="note">クラウドを使う日は先に「会員名簿」タブからログインしておく（送信・ライブ配信・名簿取得に必要）。初めて使う端末で名簿が空のときは「会員名簿」タブの「☁ クラウドから取得」で共有名簿を取り込める。</div>
+        <div class="note">奇数になった場合は運営者が参加して偶数にしてから、対局管理タブの「〇クラス全員で1局目を開始」を押す（来た人から始めるなら「このクラスを部分開始」）</div>
       </div>
     </div>
 
@@ -112,10 +112,9 @@ th.cell-amt{text-align:right}
         <div class="step-title">1回戦対局中に情報を整備</div>
         <p>1回戦の対局中に余裕を持って以下を行う。</p>
         <ul>
-          <li>「名前を一括編集」ボタンでフルネームに修正</li>
-          <li>各行のドロップダウンで支部員区分・種別を入力→会費が自動計算される</li>
+          <li>氏名・ふりがな・会費区分の直しは、参加者カードの「⋯ 編集」から（会費は自動計算される）</li>
           <li>集金額とアプリの計算結果を突き合わせ</li>
-          <li><strong>新規参加者にはふりがな入力ダイアログが出るので、入力しておくと次回以降の検索が楽になる</strong></li>
+          <li><strong>新規参加者はふりがなを入れておくと次回以降の検索が楽になる</strong></li>
         </ul>
       </div>
     </div>
@@ -140,10 +139,24 @@ th.cell-amt{text-align:right}
     <div class="step">
       <div class="step-num">5</div>
       <div class="step-body">
-        <div class="step-title">報告書の出力</div>
-        <p>「最終結果」タブ下部の報告書情報欄に開催日・時間・担当役員・申し送り事項を入力し、「報告書を印刷 / PDF保存」ボタンを押す。印刷ダイアログで「PDFとして保存」を選ぶ。</p>
+        <div class="step-title">終了後（クラウド送信・報告書・名簿反映）</div>
+        <ul>
+          <li>「☁ クラウドへ送信」で結果をクラウドに残す・共有する（ログイン時）</li>
+          <li>「最終結果」タブ下部の報告書情報欄に開催日・時間・担当役員・申し送り事項を入力し、「報告書を印刷 / PDF保存」ボタンを押す。印刷ダイアログで「PDFとして保存」を選ぶ</li>
+          <li>「📋 名簿を更新」で今日の参加者を会員名簿へ反映する</li>
+        </ul>
       </div>
     </div>
+  </div>
+
+  <!-- 参加者・会場に見せる（任意） -->
+  <div class="card">
+    <h2>参加者・会場に成績を見せる（任意）</h2>
+    <ul>
+      <li><strong>📱 スマホ星取表</strong>（ヘッダのボタン）：同じ端末の別タブで星取表を全画面表示。会場ディスプレイやサブ画面向け（ネット不要・自動更新）。</li>
+      <li><strong>📡 参加者向けライブ配信</strong>：参加者が自分のスマホで順位・星取を見られるように公開する。「最終結果」タブ先頭の配信欄で表示名（既定は「姓＋番号のみ」）を選んで開始し、QRを印刷して会場に掲示する。終わったら「⏹ 配信を停止」。</li>
+    </ul>
+    <div class="note"><strong>ライブ配信はインターネット公開です。</strong>掲示物には「氏名・成績を公開する」旨を必ず明記する。フルネーム表示は告知・同意の運用を決めた場合のみ。</div>
   </div>
 
   <!-- 参加費 -->
@@ -230,12 +243,11 @@ th.cell-amt{text-align:right}
   <div class="card">
     <h2>注意事項</h2>
     <ul>
-      <li>データはお使いの端末のブラウザ内に自動保存されます。他の端末とは共有できません。</li>
-      <li><strong>支部マスタ（過去参加者の氏名・参加履歴）も同じ端末内に保存されます。「マスタ」タブで確認・統合できます。</strong></li>
-      <li>「大会データをコピー」ボタンでクリップボードにコピーできます。誤ってブラウザを閉じた場合は「読み込み」ボタンで貼り付けて復元できます。</li>
-      <li><strong>大会データをコピーする時に支部マスタも自動更新されるため、毎月のコピー習慣を続けるだけで参加履歴が蓄積されます。</strong></li>
-      <li>大会中はブラウザを閉じないでください。データが消える場合があります。</li>
-      <li>氏名以外の個人情報は扱っていないため、セキュリティ上の心配はありません。</li>
+      <li>データは入力のたびに端末のブラウザ内へ<strong>自動保存</strong>されます（操作は不要）。誤ってブラウザを閉じても消えません。</li>
+      <li>ただし<strong>端末の故障・紛失には自動保存では備えられません</strong>。端末事故から復元できるのは ☰メニューの「バックアップ」（JSONファイルの保存／復元）だけです。節目で控えを取っておくと安心です。</li>
+      <li>「☁ クラウドへ送信」は結果の共有・控えになります（ログインとネット接続が必要・任意）。<strong>バックアップの代わりにはなりません。</strong></li>
+      <li><strong>会員名簿（過去参加者の氏名・参加履歴）も同じ端末内に保存されます。「会員名簿」タブで確認でき、「☁ クラウドから取得」で共有名簿を取り込めます。</strong></li>
+      <li><strong>📡 ライブ配信は氏名・成績のインターネット公開です。</strong>表示名は既定で「姓＋番号のみ」。掲示物に公開する旨を明記してください。</li>
       <li>大会結果はHP掲載のため、当日夜までメールにて沼津支部事務局へ送付してください。</li>
     </ul>
   </div>

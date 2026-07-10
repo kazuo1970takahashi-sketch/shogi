@@ -114,7 +114,7 @@ assert(j.indexOf('受付番号は自動')>=0, 'R5 (1)受付番号は自動採番
 assert(j.indexOf('ふりがな')>=0 && j.indexOf('50音')>=0 && j.indexOf('後から編集')>=0, 'R6 (2)ふりがなの説明（50音・編集可）を含む');
 assert(j.indexOf('会費区分')>=0 && j.indexOf('一般')>=0 && j.indexOf('中学生以下')>=0 && j.indexOf('女性')>=0, 'R7 (3)会費区分（一般/中学生以下/女性）の説明を含む');
 assert(j.indexOf('A・Bは削除できません')>=0, 'R8 (4)クラス管理・A・Bは削除不可の説明を含む');
-assert(j.indexOf('過去参加者から選ぶ')>=0 && j.indexOf('一括追加')>=0, 'R9 (5)過去参加者の一括追加の説明を含む');
+assert(j.indexOf('名簿から受付')>=0 && j.indexOf('名前をタップ')>=0 && j.indexOf('手入力')>=0, 'R9 (5)名簿からのタップ受付＋手入力の説明を含む（DOC-SYNC-001 意図保持追随・旧文言=一括追加）');
 assert(j.indexOf('編集で直せます')>=0, 'R10 (6)登録後も編集で直せる説明を含む');
 assert(env.HELP_TEXTS && env.HELP_TEXTS['first-round'] && Array.isArray(env.HELP_TEXTS['first-round'].lines), 'R11 #309 first-round トピックは非劣化で残る');
 assert(env.HELP_TEXTS && env.HELP_TEXTS['report'] && Array.isArray(env.HELP_TEXTS['report'].lines), 'R12 #323 report トピックは非劣化で残る');
