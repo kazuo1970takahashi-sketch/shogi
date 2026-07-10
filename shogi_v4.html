@@ -529,7 +529,7 @@ body.sb-active{overflow:hidden}
     <div class="section">
       <div class="section-head">
         <h2 style="margin:0">参加者を登録する</h2>
-        <button type="button" id="helpBtnReg" class="btn-sm" title="登録・受付の使い方をヘルプで表示します" aria-label="登録・受付ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
+        <button type="button" id="helpBtnReg" class="btn-sm" title="登録・受付の使い方をヘルプで表示します" aria-label="登録・受付ヘルプ" style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>
       </div>
       <!-- REG-TAB-IA-001 / PP-FULLSCREEN-001: 常連の主経路＝名簿から受付（全画面ピッカー）。登録セクション先頭の primary。
            #past-participants-section / #ppToggleBtn / #pp-summary の id は温存（renderPastParticipantsPanel が
@@ -597,7 +597,7 @@ body.sb-active{overflow:hidden}
          click は bindReportEvents 側で openHelpModal('tournament') へ結線する（standings help #341 と同経路・golden 非接触）。 -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px" class="no-print">
       <span style="font-size:14px;font-weight:600;color:#1F3864">対局管理の使い方</span>
-      <button type="button" id="helpBtnTournament" class="btn-sm" title="対局管理の使い方をヘルプで表示します" aria-label="対局管理の使い方ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
+      <button type="button" id="helpBtnTournament" class="btn-sm" title="対局管理の使い方をヘルプで表示します" aria-label="対局管理の使い方ヘルプ" style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>
     </div>
     <!-- REPORT-PRINT-003: 全クラスの現ラウンド組み合わせを印刷するボタン。
          no-print: 印刷時はボタン自体を隠す（クリックはブラウザ印刷経路ではなく専用 HTML 経路）。
@@ -650,7 +650,7 @@ body.sb-active{overflow:hidden}
          click は bindReportEvents 側で openHelpModal('standings') へ結線する（report help と同経路・golden 非接触）。 -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px" class="no-print">
       <span style="font-size:14px;font-weight:600;color:#1F3864">順位の見方</span>
-      <button type="button" id="helpBtnStandings" class="btn-sm" title="順位の決め方をヘルプで表示します" aria-label="順位の見方ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
+      <button type="button" id="helpBtnStandings" class="btn-sm" title="順位の決め方をヘルプで表示します" aria-label="順位の見方ヘルプ" style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>
     </div>
     <!-- ROUND-CLASS-START-005: result-{classId} を state.classes 駆動で append できるよう
          result-list ラッパーで囲む。A/B は既存互換のため静的に保持し、
@@ -675,7 +675,7 @@ body.sb-active{overflow:hidden}
       <!-- HELP-UX-002 (#322): 見出し脇「？ ヘルプ」。click は bindReportEvents で openHelpModal('report') に結線。 -->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
         <h2 style="margin:0">大会報告書</h2>
-        <button type="button" id="helpBtnReport" class="btn-sm" title="報告書の作り方をヘルプで表示します" aria-label="報告書の作り方ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>
+        <button type="button" id="helpBtnReport" class="btn-sm" title="報告書の作り方をヘルプで表示します" aria-label="報告書の作り方ヘルプ" style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>
       </div>
       <!-- REPORT-FORM-UI-001: 入力欄は .rep-form のスコープ CSS で幅/高さ/枠線/角丸/文字を統一（見た目のみ・id/保存復元/出力は不変）。 -->
       <!-- REPORT-UX-004: 大会名（state.report.title）。downloadReport の title/h2/ファイル名で参照。既定 '沼津支部月例将棋大会'。 -->
@@ -3963,7 +3963,7 @@ function buildMasterTabHtml(master){
   });
   // HELP-UX-005 (#342): 見出し脇に「？ ヘルプ」（id=helpBtnMaster）。click は bindMasterTabEvents 側で
   //   openHelpModal('master') へ結線（renderMasterTab 後に毎回 bind・#309/#323 と同じ build/bind 分離）。
-  var html='<div class="section"><div class="section-head"><h2 style="margin:0">沼津支部 参加者マスタ</h2><button type="button" id="helpBtnMaster" class="btn-sm" title="支部マスタの使い方をヘルプで表示します" aria-label="支部マスタヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button></div>';
+  var html='<div class="section"><div class="section-head"><h2 style="margin:0">沼津支部 参加者マスタ</h2><button type="button" id="helpBtnMaster" class="btn-sm" title="支部マスタの使い方をヘルプで表示します" aria-label="支部マスタヘルプ" style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button></div>';
   // A-4 §3.5.2 → CLEANUP-P3-001: 旧サマリ行「登録: N名（うちふりがな未入力: N名）」は撤去（MASTER-SHEET-002 の
   //   シートヘッダサマリ「名簿 N名（ふりがな未入力 N名）」と重複＝?v=61 P3 申し送りの消化）。noYomiCount の算出は
   //   ヘッダサマリ側（下記）で使うため維持。
@@ -4126,7 +4126,8 @@ function buildMasterEditModalHtml(member){
   html+='</fieldset>';
 
   // Phase 3 §2.1: 履歴情報をアコーディオン式(初期閉じ)に変更。F7 縦長を抑え保存/キャンセルを 375px viewport 内に収める
-  html+='<div style="margin-bottom:8px"><button type="button" id="me-history-toggle" class="btn-sm" style="background:#fff;color:#444;font-size:12px;padding:4px 10px;border:1px solid #ccc;border-radius:6px;cursor:pointer">▼ 履歴情報を開く</button></div>';
+  // TAP-TARGET-DENSE-001 (#737 / スライス⑤a): 44px タップ標的（見た目の文字サイズ 12px は不変）。
+  html+='<div style="margin-bottom:8px"><button type="button" id="me-history-toggle" class="btn-sm" style="background:#fff;color:#444;font-size:12px;padding:4px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer;min-height:44px">▼ 履歴情報を開く</button></div>';
   html+='<div id="me-history" style="display:none;margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:12px;color:#444;line-height:1.6">';
   html+='<div style="font-size:11px;color:#888;margin-bottom:4px">履歴情報（読み取り専用）</div>';
   html+='<div>初回参加：'+escapeHtml(firstAt)+'</div>';
@@ -9513,10 +9514,15 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       labelsHtml+='<span style="display:inline-block;padding:2px 6px;margin-right:4px;font-size:11px;color:'+labColor+';background:'+labBg+';border-radius:4px">['+escapeHtml(lab)+']</span>';
     }
     html+='<div class="pairing-card" style="position:relative">'
+      // TAP-TARGET-DENSE-001 (#737 / スライス⑤a): absolute の卓バッジ＋「変更」を flow ヘッダ行へ再設計。
+      //   「変更」は 44px タップ標的（STYLE-GUIDE §10.3・M6 本対応）。id/bind/文言/confirm 導線は不変。
+      //   winner-row の margin-top:28px（absolute 回避余白）は本行が flow に入ったため撤去。
       // A-4 §3 MF6-a: 卓番号バッジ（配列 index+1 から算出。永続化なし）
-      +'<div style="position:absolute;top:6px;left:6px;padding:2px 8px;border-radius:4px;background:#1F3864;color:#fff;font-size:11px;font-weight:bold">第 '+(i+1)+' 卓</div>'
-      +'<button style="position:absolute;top:6px;right:6px;padding:4px 10px;border-radius:5px;border:1px solid #ccc;background:#fff;font-size:12px;color:#888;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
-      +'<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;margin-top:28px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">'
+      +'<div style="padding:2px 8px;border-radius:4px;background:#1F3864;color:#fff;font-size:11px;font-weight:bold">第 '+(i+1)+' 卓</div>'
+      +'<button style="min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:13px;color:#666;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
+      +'</div>'
+      +'<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
       +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+nameWithNoRubyHtml(m.p1,cls)+'</button>'
       // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT: formatParticipantLabel による勝敗数併記補助ラベル
@@ -9865,7 +9871,7 @@ function buildFirstRoundPartialSectionHtml(cls){
   //   既存テスト pin '1局目 未割当参加者' は前方一致で維持（見出し本文は不変・flex で横並びにするだけ）。
   html+='<div style="display:flex;align-items:center;gap:8px;margin:0 0 4px">';
   html+='<h3 style="margin:0;font-size:14px;color:#1F3864">1局目 未割当参加者（'+unassigned.length+'名）</h3>';
-  html+='<button type="button" id="helpBtnFirstRound_'+escapeHtml(cls)+'" class="btn-sm" title="1局目の作り方をヘルプで表示します" aria-label="1局目の作り方ヘルプ" style="font-size:12px;padding:2px 8px;font-weight:400;white-space:nowrap">？ ヘルプ</button>';
+  html+='<button type="button" id="helpBtnFirstRound_'+escapeHtml(cls)+'" class="btn-sm" title="1局目の作り方をヘルプで表示します" aria-label="1局目の作り方ヘルプ" style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>';
   html+='</div>';
   // FRP-SMALL-UX-001 (post FRP-UNASSIGNED-COUNT-001 / #245): 未割当人数から「全員を1局目に入れると
   //   何組できて誰が待つか」を派生表示する1行。#245 の見出し人数を、運営が次に取る操作の結果（作れる
@@ -15425,7 +15431,7 @@ function renderHistoryList(flashMessage){
   // HISTORY-CLOUD: クラウドの過去大会セクション（別セクション・①案）。読み込みは押下時（fail-soft）。
   html+='<hr class="separator">';
   // HELP-UX-006 (STYLE-GUIDE §9 M2): クラウド見出し脇「？ ヘルプ」→ openHelpModal('cloud')（topic は順位タブ送信ボタン脇と共用・下で bind）。
-  html+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px"><h2 style="font-size:16px;margin:0;color:#1F3864">☁ クラウドの過去大会（みんなで共有）</h2><span style="display:flex;gap:6px;align-items:center"><button type="button" class="btn-sm" id="history-cloud-help" title="クラウド送信・取得の意味をヘルプで表示します" aria-label="クラウド送信・取得ヘルプ" style="background:#fff;font-weight:400;white-space:nowrap">？ ヘルプ</button><button type="button" class="btn-sm" id="history-cloud-load" style="background:#fff;border:1px solid #1F3864;color:#1F3864">読み込む</button></span></div>';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px"><h2 style="font-size:16px;margin:0;color:#1F3864">☁ クラウドの過去大会（みんなで共有）</h2><span style="display:flex;gap:6px;align-items:center"><button type="button" class="btn-sm" id="history-cloud-help" title="クラウド送信・取得の意味をヘルプで表示します" aria-label="クラウド送信・取得ヘルプ" style="background:#fff;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button><button type="button" class="btn-sm" id="history-cloud-load" style="background:#fff;border:1px solid #1F3864;color:#1F3864;min-height:44px">読み込む</button></span></div>';
   html+='<div style="font-size:12px;color:#888;margin-bottom:6px">クラウドに保存された過去大会の結果一覧です（ログイン＋オンライン時）。</div>';
   html+='<div id="history-cloud-status" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-bottom:6px"></div>';
   html+='<div id="history-cloud-list"></div>';
