@@ -2646,6 +2646,18 @@ if [ -f "$SCRIPT_DIR/test_input_kbd_coexist_003.js" ]; then
 else
   warn "test_input_kbd_coexist_003.js が見つからない"
 fi
+
+echo ""
+echo "【INPUT-KBD-COEXIST-004 (#734 / スライス④) 過去参加者ピッカー検索のキーボード共存】"
+if [ -f "$SCRIPT_DIR/test_input_kbd_coexist_004.js" ]; then
+  if node "$SCRIPT_DIR/test_input_kbd_coexist_004.js" "$TARGET" > /tmp/input_kbd_coexist_004_out.log 2>&1; then
+    ok "INPUT-KBD-COEXIST-004 テスト 全PASS ($(tail -1 /tmp/input_kbd_coexist_004_out.log))"
+  else
+    ng "INPUT-KBD-COEXIST-004 テスト 失敗"; cat /tmp/input_kbd_coexist_004_out.log
+  fi
+else
+  warn "test_input_kbd_coexist_004.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================

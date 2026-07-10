@@ -166,10 +166,10 @@
 - タップ可能要素の実効ヒット領域は **44×44px 以上**（§2.2-2 の全面化。Apple HIG 44pt / WCAG 2.5.5）。
 - 例外: レイアウト再設計が必要な密集部（対局カード右上の絶対配置「変更」等）は M6 の残件として明示し、font-size/padding の底上げで暫定対応する。
 
-### 10.4 キーボード共存（INPUT-KBD-COEXIST-001/002 / スライス②・②b）
+### 10.4 キーボード共存（INPUT-KBD-COEXIST-001/002/004 / スライス②・②b・④）
 
 - フォーカスした入力欄・その直下の候補リストはソフトキーボードに隠れないこと（visualViewport 追従・フォーカス時スクロール）。
-- 実装ユーティリティは `fitToVisualViewport(el,minPx,maxPx)`（スライス②で導入済み・2026-07-10）。要素の max-height を「visualViewport 下端 − 要素上端 − 余白」へ追従させる。参加者登録のサジェスト（`#suggest-list`）が第1適用先。スライス④（#pp-fullscreen 合流）でも同ユーティリティを再利用する。
+- 実装ユーティリティは `fitToVisualViewport(el,minPx,maxPx)`（スライス②で導入済み・2026-07-10）。要素の max-height を「visualViewport 下端 − 要素上端 − 余白」へ追従させる。参加者登録のサジェスト（`#suggest-list`）が第1適用先。スライス④（#734・2026-07-10）で過去参加者ピッカー全画面ビュー（`#pp-fullscreen` の `#pp-search`→`.pp-dense-grid`）にも合流済み（キーボード活性時のみオーバーレイ＋内側スクロール化・非活性時は挙動不変）。
 - 結線の定石: 追従は「表示直後＋visualViewport の resize/scroll（rAF 間引き）」。フォーカス時スクロールは「余白不足のときだけ sticky タブバー直下へ」（不要スクロールで画面を跳ねさせない）。非対応環境ではインライン max-height を除去して CSS 既定に戻す（挙動不変）。
 - 候補リストのタッチ選択は**「タップ=選択／指が動いたら=スクロール」を必ず判別**する（`touchstart` 即選択＋preventDefault はリスト内スクロールを不可能にするため禁止。閾値10px・タップ確定は touchend で preventDefault＋選択。INPUT-KBD-COEXIST-002 / #728）。
 - 候補リストは入力欄直下の absolute オーバーレイ配置が標準（キーボード表示中の可視行数を確保・表示中は下の行を一時的に覆ってよい・close で通常フロー復帰・z-index は sticky タブバー未満）。
