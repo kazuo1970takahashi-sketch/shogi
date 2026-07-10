@@ -3521,8 +3521,15 @@ function bindPastParticipantsPanelEvents(){
       try{
         var ni=document.getElementById('pp-search');
         if(ni&&ni.focus){ ni.focus(); var L=(ni.value||'').length; if(ni.setSelectionRange)ni.setSelectionRange(L,L); }
+        // INPUT-KBD-COEXIST-004 (#734): 再描画でグリッドが新しい DOM になるため、focus 復元直後に再適用。
+        if(typeof fitPpGridToViewport==='function')fitPpGridToViewport();
       }catch(e){}
     };
+    // INPUT-KBD-COEXIST-004 (#734): フォーカスで「見える位置へ」＋オーバーレイ適用（iOS の visualViewport
+    //   反映遅延に合わせ②と同型の 300ms 遅延・vv resize と二段構え）。blur は 200ms 遅延で解除＝
+    //   結果セルのタップ（blur→合成 click の順で届く）が通常フロー復帰前に元の位置で成立する。
+    input.addEventListener('focus',function(){setTimeout(function(){ensurePpSearchVisible();fitPpGridToViewport();},300);});
+    input.addEventListener('blur',function(){setTimeout(fitPpGridToViewport,200);});
     input.addEventListener('compositionstart',function(){composing=true;});
     input.addEventListener('compositionend',function(){composing=false;renderPastParticipantsPanel(input.value);refocusPpSearch();});
     input.addEventListener('input',function(){if(!composing){renderPastParticipantsPanel(input.value);refocusPpSearch();}});
@@ -3915,6 +3922,8 @@ function closePpFullscreen(){
   el.style.display='none';
   if(el.setAttribute)el.setAttribute('aria-hidden','true');
   try{document.body.style.overflow='';}catch(e){}
+  // INPUT-KBD-COEXIST-004 (#734): 閉時はオーバーレイ由来の inline style を確実に解除（再オープン時の残留防止）。
+  if(typeof resetPpGridOverlay==='function')resetPpGridOverlay(null);
 }
 
 function bindPastParticipantsToggle(){
@@ -6774,6 +6783,105 @@ function ensureRegNameInputVisible(){
     var y=(window.pageYOffset||0)+rect.top-barH-8;
     if(y<0)y=0;
     try{window.scrollTo({top:y,behavior:'smooth'});}catch(e2){window.scrollTo(0,y);}
+  }catch(e){}
+}
+
+// INPUT-KBD-COEXIST-004 (#734 / スライス④): 過去参加者ピッカー（#pp-fullscreen）検索のキーボード共存。
+//   #pp-search フォーカス中にソフトキーボードで可視域が縮んでいるときだけ、絞り込み結果
+//   （.pp-dense-grid）を検索欄行の直下へ absolute 配置（間の50音タブ/クイックフィルタを一時的に
+//   覆う＝②b と同じ標準UX・STYLE-GUIDE §10.4）し、fitToVisualViewport（②）で max-height を可視域へ
+//   追従＋内側スクロール化（overscroll-behavior:contain＝②c の知見で scroll chaining を遮断）。
+//   デスクトップ・キーボード無し・visualViewport 非対応では常に非活性＝挙動完全不変（fail-soft）。
+//   HTML ビルダー（_buildPpControlsHtml / buildPpDenseListHtml）の出力は不変＝すべて実行時 inline style。
+var PP_GRID_FIT_MIN_PX=96;    // 候補1件強（suggest と同値の下限）
+var PP_GRID_FIT_MAX_PX=480;   // 内側スクロールの上限（非活性時は制約を全除去＝overlay スクロール1本のまま）
+var PP_KBD_SHRINK_PX=100;     // キーボード検出閾値: layout viewport と visual viewport の高さ差(px)
+var PP_SEARCH_HEADROOM_PX=140; // 検索欄の下に確保したい余白（結果グリッド min 96px＋余白）
+function isPpSearchKbdActive(){
+  try{
+    if(typeof isPpFullscreenOpen!=='function'||!isPpFullscreenOpen())return false;
+    var inp=document.getElementById('pp-search');
+    if(!inp||document.activeElement!==inp)return false;
+    var vv=window.visualViewport;
+    if(!vv)return false;
+    // vv.height は CSS px（scale で割られた値）。scale を掛けて layout px に戻して innerHeight と
+    // 比較すると、ピンチズーム（scale≠1）では差が出ず誤検出しない＝差を作るのはキーボードだけ。
+    var vvLayoutH=vv.height*(vv.scale||1);
+    return (window.innerHeight-vvLayoutH)>PP_KBD_SHRINK_PX;
+  }catch(e){return false;}
+}
+// 活性中: グリッドを検索欄行（#pp-search の親 .flex）の直下へ absolute 配置。
+//   基準は #ppPanel（position:relative 化）。z-index はモードバー(4)・全画面ヘッダ(5)未満。
+//   背景 #eef2f7（overlay 地色）でグリッドの隙間から覆った50音タブ等を見せない。
+function positionPpGridOverlay(grid){
+  try{
+    var inp=document.getElementById('pp-search');
+    var row=inp?inp.parentNode:null;
+    var panel=document.getElementById('ppPanel');
+    if(!grid||!row||!panel||!row.getBoundingClientRect||!panel.getBoundingClientRect)return;
+    if(panel.style&&!panel.style.position)panel.style.position='relative';
+    var rowRect=row.getBoundingClientRect();
+    var panelRect=panel.getBoundingClientRect();
+    grid.style.position='absolute';
+    grid.style.left='0';
+    grid.style.right='0';
+    grid.style.zIndex='3';
+    grid.style.background='#eef2f7';
+    // ②c の知見: 同値ガード（vv scroll 連発時の無駄な再レイアウトでジェスチャ中の scrollTop を跳ねさせない）
+    var topPx=Math.round(rowRect.bottom-panelRect.top+6)+'px';
+    if(grid.style.top!==topPx)grid.style.top=topPx;
+  }catch(e){}
+}
+function resetPpGridOverlay(grid){
+  try{
+    if(!grid){
+      var panel=document.getElementById('ppPanel');
+      grid=(panel&&panel.querySelector)?panel.querySelector('.pp-dense-grid'):null;
+    }
+    if(!grid||!grid.style)return;
+    grid.style.position='';grid.style.left='';grid.style.right='';grid.style.zIndex='';
+    grid.style.background='';grid.style.top='';
+    grid.style.maxHeight='';grid.style.overflowY='';grid.style.overscrollBehavior='';
+  }catch(e){}
+}
+// 適用の単一入口（完全 fail-soft）。非活性なら通常フローへ復帰させる＝どこから何度呼んでも安全。
+//   呼び元: #pp-search focus(300ms 遅延)/blur(200ms 遅延)・再描画後の refocus 直後・
+//   visualViewport resize/scroll・#pp-fullscreen scroll（いずれも rAF 間引き）・closePpFullscreen。
+function fitPpGridToViewport(){
+  try{
+    var panel=document.getElementById('ppPanel');
+    var grid=(panel&&panel.querySelector)?panel.querySelector('.pp-dense-grid'):null;
+    if(!grid||!grid.style)return;
+    if(!isPpSearchKbdActive()){resetPpGridOverlay(grid);return;}
+    positionPpGridOverlay(grid);
+    if(grid.style.overflowY!=='auto')grid.style.overflowY='auto';
+    if(grid.style.overscrollBehavior!=='contain')grid.style.overscrollBehavior='contain';
+    fitToVisualViewport(grid,PP_GRID_FIT_MIN_PX,PP_GRID_FIT_MAX_PX);
+  }catch(e){}
+}
+// INPUT-KBD-COEXIST-004: 検索欄行を sticky ヘッダ＋モードバー直下へ引き上げる。
+//   overlay（#pp-fullscreen）自身がスクロール容器なので window ではなく el.scrollTop を動かす。
+//   余白が既にあるときは何もしない（②の ensureRegNameInputVisible と同型・完全 fail-soft）。
+function ensurePpSearchVisible(){
+  try{
+    var el=document.getElementById('pp-fullscreen');
+    var inp=document.getElementById('pp-search');
+    if(!el||!inp||document.activeElement!==inp||!inp.getBoundingClientRect)return;
+    if(typeof isPpFullscreenOpen==='function'&&!isPpFullscreenOpen())return;
+    var vv=window.visualViewport;
+    var visTop=vv?vv.offsetTop:0;
+    var visBottom=vv?(vv.offsetTop+vv.height):(window.innerHeight||0);
+    if(!visBottom)return;
+    // sticky バー下端の実測（モードバーが無い環境は既定値 56+48）
+    var mb=el.querySelector?el.querySelector('.pp-mode-bar'):null;
+    var barBottom=(mb&&mb.getBoundingClientRect)?mb.getBoundingClientRect().bottom:(visTop+104);
+    var rect=inp.getBoundingClientRect();
+    if(rect.top>=barBottom&&rect.bottom+PP_SEARCH_HEADROOM_PX<=visBottom)return;
+    var delta=rect.top-(barBottom+8);
+    if(typeof el.scrollTop==='number'){
+      var st=el.scrollTop+delta;
+      el.scrollTop=st<0?0:st;
+    }
   }catch(e){}
 }
 
@@ -13022,6 +13130,20 @@ function bindRegistrationEvents(){
     };
     window.visualViewport.addEventListener('resize',function(){queueSuggestFit();ensureRegNameInputVisible();});
     window.visualViewport.addEventListener('scroll',queueSuggestFit);
+    // INPUT-KBD-COEXIST-004 (#734 / スライス④): 過去参加者ピッカー検索の追従（②と同型・別系統の rAF 間引き。
+    //   既存 queueSuggestFit の結線・文言は 001 テストの静的契約のため不変）。
+    var _vvPpFitQueued=false;
+    var queuePpGridFit=function(){
+      if(_vvPpFitQueued)return;
+      _vvPpFitQueued=true;
+      var run=function(){_vvPpFitQueued=false;fitPpGridToViewport();};
+      if(typeof requestAnimationFrame==='function')requestAnimationFrame(run);else setTimeout(run,16);
+    };
+    window.visualViewport.addEventListener('resize',function(){queuePpGridFit();ensurePpSearchVisible();});
+    window.visualViewport.addEventListener('scroll',queuePpGridFit);
+    // 全画面ピッカー自身がスクロール容器のため、その scroll でも位置/高さを追従（passive）。
+    var ppOverlayEl=document.getElementById('pp-fullscreen');
+    if(ppOverlayEl&&ppOverlayEl.addEventListener)ppOverlayEl.addEventListener('scroll',queuePpGridFit,{passive:true});
   }
   inpName.addEventListener('focus',function(){setTimeout(ensureRegNameInputVisible,300);});
 
