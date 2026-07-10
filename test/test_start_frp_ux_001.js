@@ -324,9 +324,10 @@ function fxState(){
   // yomi あり（a1=かくうたろう）→ 行にルビ
   const row = serialize(env.makePlayerRow(env._getState().players.A[0],'A',0));
   assert(row.indexOf('<ruby>')>=0 && row.indexOf('<rt>かくうたろう</rt>')>=0, 'C7-1 yomi ありの参加者は一覧にルビ表示（<ruby>氏名<rt>よみ</rt></ruby>）');
-  // 行に「名前編集 / ふりがな / 削除」ボタンが揃う（既存ボタン退行なし＋新ふりがな編集ボタン）
-  assert(row.indexOf('名前編集')>=0 && row.indexOf('削除')>=0, 'C7-2 既存の「名前編集」「削除」ボタンは保持（退行なし）');
-  assert(row.indexOf('ふりがな')>=0, 'C7-3 参加者一覧に「ふりがな」編集ボタンが追加されている');
+  // 行の編集導線（REG-TAB-TIDY-001 (#743) ⑤b: 3ボタン→「⋯ 編集」1ボタン＋シートへ集約。
+  //   意図＝名前編集/ふりがな編集/削除の導線が退行しないこと・呼び先関数（editPlayer/editPlayerYomi/removePlayer）不変）
+  assert(row.indexOf('⋯ 編集')>=0, 'C7-2 行に「⋯ 編集」集約ボタン（旧: 名前編集/削除ボタン）');
+  assert(RAW.indexOf('ふりがなを編集')>=0 && RAW.indexOf('editPlayerYomi(playerId,cls)')>=0, 'C7-3 編集シートに「ふりがなを編集」項目→editPlayerYomi');
 
   // editPlayerYomi: 登録後でも yomi を編集・保存できる（a2 は yomi 空 → 入力で付与）
   const env2 = loadEnv({promptValue:'かくうじろう'});

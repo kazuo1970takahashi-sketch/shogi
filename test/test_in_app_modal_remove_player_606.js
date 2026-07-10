@@ -32,7 +32,9 @@ assert(RAW.indexOf("removePlayer(pid,currentCls,function(){") >= 0, 'C1 pp-sheet
 assert(RAW.indexOf("renderPastParticipantsPanel(inp?inp.value:'');") >= 0, 'C2 pp パネル再描画は onDone 内に移設（順序保持）');
 
 // B. click 削除は従来どおり2引数（onDone なし）
-assert(RAW.indexOf("removePlayer(pid,c);") >= 0, 'B1 delBtn click 削除は removePlayer(pid,c)（onDone なし＝従来挙動）');
+// REG-TAB-TIDY-001 (#743) ⑤b: 行の削除ボタンは「⋯ 編集」シート項目（pes-remove）へ移設。
+//   呼び出しは従来どおり2引数（onDone なし）＝confirm/ガードの挙動不変。
+assert(RAW.indexOf("removePlayer(playerId,cls);") >= 0, 'B1 編集シートの削除は removePlayer(playerId,cls)（onDone なし＝従来挙動）');
 
 // E. 厳密同値: ガードブロック経路でも onDone を実行（元の「removePlayer 後に無条件で後処理」を全経路で再現）＋ ガード文言不変
 assert((RAW.match(/if\(typeof onDone==='function'\)onDone\(\);/g) || []).length >= 3, 'E1 onDone は confirm callback ＋ 2ガード（inPairings/pastMatches）の計3経路で実行＝全経路で後処理（厳密同値）');

@@ -2682,6 +2682,18 @@ if [ -f "$SCRIPT_DIR/test_reg_alert_toast_001.js" ]; then
 else
   warn "test_reg_alert_toast_001.js が見つからない"
 fi
+
+echo ""
+echo "【REG-TAB-TIDY-001 (#743 / スライス⑤b) 登録タブのボタン整理（カード集約＋手入力格納）】"
+if [ -f "$SCRIPT_DIR/test_reg_tab_tidy_001.js" ]; then
+  if node "$SCRIPT_DIR/test_reg_tab_tidy_001.js" "$TARGET" > /tmp/reg_tab_tidy_001_out.log 2>&1; then
+    ok "REG-TAB-TIDY-001 テスト 全PASS ($(tail -1 /tmp/reg_tab_tidy_001_out.log))"
+  else
+    ng "REG-TAB-TIDY-001 テスト 失敗"; cat /tmp/reg_tab_tidy_001_out.log
+  fi
+else
+  warn "test_reg_tab_tidy_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================

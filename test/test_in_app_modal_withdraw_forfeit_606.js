@@ -30,8 +30,10 @@ assert(RAW.indexOf("function _finishWithdraw(){") >= 0, 'S1 後処理を _finish
 assert(RAW.indexOf("}else{\n    _finishWithdraw();\n  }") >= 0, 'S2 対象なし（oppId/mIdx 無効）でも後処理は実行（元コードと同一順序）');
 assert(RAW.indexOf("renderRegList();") >= 0, 'S3 renderRegList は後処理内に温存');
 
-// B. 結線不変（wdBtn → toggleWithdrawn）
-assert(RAW.indexOf("toggleWithdrawn(pid,c)") >= 0, 'B1 棄権ボタン bind 温存（wdBtn→toggleWithdrawn）');
+// B. 結線不変（棄権導線 → toggleWithdrawn）
+// REG-TAB-TIDY-001 (#743) ⑤b: 行ボタン（wdBtn→toggleWithdrawn(pid,c)）は「⋯ 編集」シート（pes-withdraw→
+//   toggleWithdrawn(playerId,cls)）へ移設。呼び先関数と開始後のみ条件は不変。
+assert(RAW.indexOf("toggleWithdrawn(playerId,cls)") >= 0, 'B1 棄権導線 bind 温存（編集シート→toggleWithdrawn）');
 
 // M. モーダル基盤
 assert(RAW.indexOf('function appConfirm(') >= 0, 'M1 appConfirm 基盤');
