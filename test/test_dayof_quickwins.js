@@ -22,7 +22,8 @@ ok(/function showTab\(t\)\{[\s\S]*?window\.scrollTo\(0,0\)/.test(RAW),'①showTa
 console.log('=== ② 保存成功トースト ===');
 ok(RAW.indexOf('id="app-toast"')>=0,'②a トースト要素 #app-toast');
 ok(/\.app-toast\{/.test(RAW)&&/\.app-toast\.show\{/.test(RAW),'②b トースト CSS');
-ok(/function showToast\(text\)\{/.test(RAW),'②c showToast 関数');
+// REG-ALERT-TOAST-001 (#740) ⑤d: showToast は opts 第2引数（kind='err'）対応＝省略時は従来挙動（②e/②f で実挙動を検証済）。
+ok(/function showToast\(text(,opts)?\)\{/.test(RAW),'②c showToast 関数');
 ok(/showToast\('[\\\\u0-9a-fA-F]*\s*結果を保存しました'\)/.test(RAW)||RAW.indexOf('結果を保存しました')>=0,'②d submitRound 成功でトースト');
 var L=loadEnv();
 ok(typeof L.env.showToast==='function','②e showToast 取得');
