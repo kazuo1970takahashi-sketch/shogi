@@ -23,11 +23,8 @@ function assert(cond,msg){if(cond)ok(msg);else ng(msg);}
 
 const RAW = fs.readFileSync(targetPath,'utf8');
 
-// S1: 「変更」ボタン
+// S1: 「変更」ボタン（テンプレート文字列としての出現＝1箇所を直接検査）
 {
-  const chgMatches = RAW.match(/<button[^>]*id="chgbtn_'\+cls\+'_'\+i\+'"[^>]*>変更<\/button>/g) ||
-                     RAW.match(/<button[^>]*chgbtn_[^>]*>変更<\/button>/g) || [];
-  // テンプレート文字列としての出現（1箇所）を直接検査
   const m = RAW.match(/\+'<button style="([^"]*)" id="chgbtn_'\+cls\+'_'\+i\+'">変更<\/button>'/);
   assert(!!m, 'S1-1 chgbtn テンプレートが存在（id/文言 不変）');
   if(m){
@@ -35,7 +32,6 @@ const RAW = fs.readFileSync(targetPath,'utf8');
     assert(m[1].indexOf('min-height:44px')>=0, 'S1-3 min-height:44px（タップ標的）');
     assert(m[1].indexOf('min-width:64px')>=0, 'S1-4 min-width 64px（横も確保）');
   }
-  void chgMatches;
 }
 
 // S2: ヘッダ行の構造と winner-row
@@ -65,6 +61,14 @@ const RAW = fs.readFileSync(targetPath,'utf8');
 {
   assert(/id="me-history-toggle" class="btn-sm" style="[^"]*min-height:44px[^"]*">▼ 履歴情報を開く<\/button>/.test(RAW),
     'S4 me-history-toggle に min-height:44px');
+}
+
+// S4b: 大会履歴タブのクラウド行（L2 P2-1: ？ヘルプ＋読み込む＝6px gap の密集ペア）
+{
+  assert(/id="history-cloud-help"[^>]*style="[^"]*min-height:44px[^"]*">？ ヘルプ<\/button>/.test(RAW),
+    'S4b-1 history-cloud-help に min-height:44px');
+  assert(/id="history-cloud-load"[^>]*style="[^"]*min-height:44px[^"]*">読み込む<\/button>/.test(RAW),
+    'S4b-2 history-cloud-load に min-height:44px');
 }
 
 // S5: ①(#715) 既対応分の非劣化
