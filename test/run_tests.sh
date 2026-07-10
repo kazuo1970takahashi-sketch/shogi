@@ -2719,7 +2719,7 @@ else
 fi
 
 echo ""
-echo "【MANUAL-SYNC-001 当日マニュアル（docs/manual_sp・manual_print）⇄ 実UI 同期ゲート】"
+echo "【MANUAL-SYNC-001 マニュアル/ヘルプ/運営サイト/ガイド ⇄ 実UI 同期ゲート（DOC-SYNC-001 で4面に拡張）】"
 if [ -f "$SCRIPT_DIR/test_manual_sync_001.js" ]; then
   if node "$SCRIPT_DIR/test_manual_sync_001.js" "$TARGET" > /tmp/manual_sync_001_out.log 2>&1; then
     ok "MANUAL-SYNC-001 テスト 全PASS ($(tail -1 /tmp/manual_sync_001_out.log))"
