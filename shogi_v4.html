@@ -38,7 +38,7 @@ body{font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:15px;color:#222;b
 .hm-label-danger{color:#A32D2D}
 .hm-item{display:block;width:100%;text-align:left;margin-bottom:6px;min-height:44px;padding:10px 12px;border:1px solid #ccc;border-radius:8px;background:#fff;color:#222;font-size:14px;font-family:inherit;cursor:pointer;text-decoration:none}
 a.hm-item{display:flex;align-items:center}
-.hm-item.btn-danger{background:#A32D2D;color:#fff;border-color:#A32D2D} /* .hm-item が後勝ちで白地に戻さないよう意味色を再宣言（§1 danger） */
+.hm-item.btn-danger{background:#A32D2D;color:#fff;border-color:#A32D2D} /* 意味色（§1 danger）を定義順に依存せず明示固定（specificity 0,2,0） */
 .hm-close-row{margin-top:10px;padding-top:10px;border-top:1px solid #eee;text-align:center}
 .hm-close-row button{min-height:36px;padding:6px 22px;color:#555;font-size:14px}
 .container{max-width:1100px;margin:0 auto;padding:10px 8px}
@@ -133,7 +133,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
      詰めるとボタン群が圧縮され、長い日本語ラベル（例「大会データを全リセット」）が 1 文字ずつ
      縦に割れていた。ヘッダー自体を flex-wrap で折り返し、ボタン群(:last-child=操作側)を全幅・
      折返し可にして 1 行強制を解く。各ボタンは white-space:nowrap で文字の縦割れを防止する。
-     危険操作ボタン（全リセット / 進行リセット）は btn-sm サイズのまま維持し縮小しない。
+     （HEADER-TIDY-001 (#746) 以降、危険操作ボタンはヘッダ常時表示から ☰シートへ移設済み）
      PC 幅はこの @media 外なので従来の 1 行レイアウトのまま不変。 */
   .header{flex-wrap:wrap;gap:8px}
   .header>div:last-child{width:100%;flex-wrap:wrap}
@@ -420,7 +420,7 @@ body.sb-active{overflow:hidden}
     <!-- ⑨-a: 「読み込み」ボタンは撤去（復元は「バックアップ」に集約＝ファイル/貼り付けの両方をバックアップ画面で行う）。
          loadFile input は温存（loadData の受け皿・import_routing 資産）。openLoadModal/loadData/loadFromPaste は温存。 -->
     <input type="file" id="loadFile" accept=".json" style="display:none">
-    <button type="button" class="btn-sm no-print header-menu-btn" id="headerMenuBtn" aria-haspopup="true" aria-expanded="false" aria-label="その他のメニュー" title="その他のメニュー">☰</button>
+    <button type="button" class="btn-sm no-print header-menu-btn" id="headerMenuBtn" aria-haspopup="dialog" aria-expanded="false" aria-label="その他のメニュー" title="その他のメニュー">☰</button>
   </div>
 </div>
 <!-- HEADER-TIDY-001 (#746): ☰メニュー（ボトムシート・既定 display:none・背景タップ/✕で閉じる）。
@@ -13065,9 +13065,17 @@ function resetAll(){
 function toggleHeaderMenu(forceClose){
   var sheet=document.getElementById('header-menu-sheet'); var btn=document.getElementById('headerMenuBtn');
   if(!sheet||!btn)return;
-  var open=(forceClose===true)?false:(sheet.style.display==='none'||sheet.style.display==='');
+  var wasOpen=(sheet.style.display==='block');
+  var open=(forceClose===true)?false:!wasOpen;
   sheet.style.display=open?'block':'none';
   btn.setAttribute('aria-expanded',open?'true':'false');
+  // L2レビュー Should Fix (#746): aria-modal="true" と宣言する以上、開時はシート内へ・閉時は ☰ へ
+  //   フォーカスを移す（最小限のフォーカス管理・fail-soft）。閉時の復帰は「開いていた場合」のみ
+  //   ＝初期化などの forceClose(true) 連打でヘッダへ勝手にフォーカスを奪わない。
+  try{
+    if(open){ var first=document.getElementById('headerMenuCloseBtn'); if(first&&first.focus)first.focus(); }
+    else if(wasOpen){ if(btn.focus)btn.focus(); }
+  }catch(e){}
 }
 function bindHeaderMenuEvents(){
   var btn=document.getElementById('headerMenuBtn');
@@ -13077,8 +13085,8 @@ function bindHeaderMenuEvents(){
   if(sheet)sheet.addEventListener('click',function(e){ if(e&&e.target===sheet)toggleHeaderMenu(true); });
   var closeBtn=document.getElementById('headerMenuCloseBtn');
   if(closeBtn)closeBtn.addEventListener('click',function(){ toggleHeaderMenu(true); });
-  // Esc でも閉じる（開いているときのみ意味を持つ・fail-soft）
-  if(typeof document!=='undefined'&&document.addEventListener)document.addEventListener('keydown',function(e){ var k=e&&(e.key||e.keyCode); if(k==='Escape'||k==='Esc'||k===27)toggleHeaderMenu(true); });
+  // Esc でも閉じる（シートが開いているときのみ反応＝将来シート上にモーダルを重ねても Esc を横取りしない・fail-soft）
+  if(typeof document!=='undefined'&&document.addEventListener)document.addEventListener('keydown',function(e){ var k=e&&(e.key||e.keyCode); var s=document.getElementById('header-menu-sheet'); if((k==='Escape'||k==='Esc'||k===27)&&s&&s.style.display==='block')toggleHeaderMenu(true); });
   // 項目タップでシートを閉じてから既存動作（各動作の bind は従来どおり bindHeaderEvents 側＝結線不変）
   var itemIds=['openGuideLink','liveNavBtn','backupBtn','resetProgressBtn','resetBtn'];
   for(var i=0;i<itemIds.length;i++){

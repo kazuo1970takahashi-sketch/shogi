@@ -31,7 +31,7 @@ ok(RAW.indexOf('id="resetBtn"')>=0 && RAW.indexOf('id="resetProgressBtn"')>=0,'M
 // ヘッダ常時表示に裸の危険ボタンが残っていない（1段深く）= シートより前に resetBtn が出ない
 ok(RAW.indexOf('id="header-menu-sheet"')>=0 && RAW.indexOf('id="header-menu-sheet"')<RAW.indexOf('id="resetBtn"'),'M5 危険ボタンは header-menu-sheet 配下に退避');
 var hmBtnTag=(function(){var p=RAW.indexOf('id="headerMenuBtn"');if(p<0)return '';return RAW.slice(RAW.lastIndexOf('<button',p),RAW.indexOf('>',p)+1);})();
-ok(hmBtnTag.indexOf('aria-haspopup="true"')>=0&&hmBtnTag.indexOf('aria-expanded=')>=0,'M6 a11y 属性（haspopup/expanded）');
+ok(hmBtnTag.indexOf('aria-haspopup="dialog"')>=0&&hmBtnTag.indexOf('aria-expanded=')>=0,'M6 a11y 属性（haspopup=dialog/expanded）');
 // 危険グループの説明文言（誤タップ防止の教育文言）を維持
 ok(RAW.indexOf('危険な操作（元に戻すで1回分復旧できます）')>=0,'M7 危険グループの説明文言を維持');
 // 旧⋯ドロップダウンの残骸が無い（二重メニュー禁止）

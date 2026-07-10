@@ -29,7 +29,7 @@ ok(linkTag.indexOf('no-print') >= 0, 'H5 印刷には出さない（no-print）'
 // HEADER-TIDY-001 (#746 / ⑤c) 追随: 意図（ヘッダからワンアクションで案内に到達・新規タブ）は不変のまま、
 //   置き場所を常時ボタン → ☰ボトムシート（#header-menu-sheet・参加者向けグループ）へ移設。
 var sheetPos = RAW.indexOf('id="header-menu-sheet"');
-ok(sheetPos >= 0 && linkPos > sheetPos && linkPos < RAW.indexOf('id="headerMenuCloseBtn"'), 'H6 ☰メニューシート配下に配置（ヘッダから1タップで到達）');
+ok(sheetPos >= 0 && linkPos > sheetPos && linkPos < RAW.indexOf('id="headerMenuCloseBtn"'), 'H6 ☰メニューシート配下に配置（ヘッダの☰経由で到達）');
 
 console.log('DAYOF-UX-HINT-001: PASS=' + pass + ' FAIL=' + fail);
 process.exit(fail === 0 ? 0 : 1);

@@ -53,6 +53,8 @@ ok(bindBody.indexOf("'openGuideLink'")>=0&&bindBody.indexOf("'liveNavBtn'")>=0&&
 ok(bindBody.indexOf('headerMenuCloseBtn')>=0&&/e\.target===sheet/.test(bindBody),'C9 ✕/背景タップで閉じる');
 ok(/keydown/.test(bindBody)&&/Escape/.test(bindBody),'C10 Esc で閉じる（fail-soft）');
 ok(!/function toggleDangerMenu\(|function bindDangerMenuEvents\(|bindDangerMenuEvents\(\)|toggleDangerMenu\(/.test(JS),'C11 旧⋯メニューのロジック残骸なし（定義・呼び出しゼロ／コメント言及は許容）');
+var toggleBody=(JS.match(/function toggleHeaderMenu\(forceClose\)\{[\s\S]*?\n\}/)||[''])[0];
+ok(/headerMenuCloseBtn/.test(toggleBody)&&/\.focus\(\)/.test(toggleBody),'C12 フォーカス管理（開時=シート内へ・閉時=☰へ・aria-modal との整合／L2レビュー Should Fix）');
 
 // ---- スマホ配置（承認モック: タイトル行右端に ☰・ボタン1行）
 ok(/@media\(max-width:600px\)\{[\s\S]*?\.header \.header-menu-btn\{position:absolute/.test(RAW),'D1 スマホ幅で ☰ をタイトル行右端に absolute 配置');
