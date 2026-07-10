@@ -131,6 +131,46 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .sb-table ruby,#pane-result ruby{ruby-position:over}
 .sb-table rt,#pane-result rt{font-size:.6em;font-weight:400;color:#777;line-height:1}
 .player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:14px}
+/* WORLD-STD-ALIGN-002 (#717 作者決定 2026-07-09): 受付リストの固定列グリッド化（世界標準の揃え②）。
+   .player-row を flex→grid に切替え、.player-row-main / .player-row-actions は display:contents で
+   子要素（No./氏名/会員区分/種別/参加費/操作）を親 grid の item として直接参加させる
+   （makePlayerRow の DOM 構造は不変・CSS 主体）。既存の flex 宣言は削除せず後勝ちで上書き（純追加）。
+   レイアウトは「リストの実幅」による自動切替（作者決定 2026-07-09・container query）:
+   - 既定（狭幅・container query 非対応環境のフォールバック）= 縮退グリッド3段
+     （1段目=No.+氏名+参加費が行間で縦に揃う／2段目=会員区分+種別／3段目=操作ボタン・列見出しなし）
+   - リスト実幅が広い場合（@container）= 承認済み6列 grid
+     （No.34px/氏名 minmax(120px,1fr) 左寄せ+ellipsis/会員区分118px/種別92px/参加費74px 右寄せ+tabular-nums/操作auto）＋列見出し行
+   受付リストは PC で A/B クラス2列並び（1クラス≒470px @1024px 窓）のため viewport 幅では判定できない。
+   grid-area の割当は makePlayerRow の DOM 順（span=No.→.player-name→select=会員区分→select=種別）に
+   依存する構造セレクタ（makePlayerRow の子要素順を変えるときはここも更新すること）。
+   承認済み挙動変更スライス（拘束ルール3 の例外扱いを Issue #717 で明示）。 */
+.player-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;grid-template-areas:"pno pname pfee" "pmember pmember pgrade" "pops pops pops";align-items:center}
+.player-row-main,.player-row-actions{display:contents}
+.player-row .player-row-main>span:first-child{grid-area:pno}
+.player-row .player-name{grid-area:pname;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.player-row .player-row-main>select:nth-of-type(1){grid-area:pmember}
+.player-row .player-row-main>select:nth-of-type(2){grid-area:pgrade}
+.player-row .player-fee{grid-area:pfee;text-align:right;font-variant-numeric:tabular-nums}
+.player-row .player-row-buttons{grid-area:pops;justify-content:space-between}
+/* 列見出し行（renderRegList が 1 クラス 1 行だけ純追加・textContent のみ）。既定=非表示・
+   広幅（@container）でのみ表示。透明 border で .player-row の border 1px と横位置を一致させる。 */
+.player-row-head{display:none}
+/* 受付タブのクラス section は縦積み（作者決定 2026-07-09）: .grid2 の 2列並びだと
+   .container(max-width:1100px) 配下で 1 クラス実幅が最大約530px となり 6列が発動する画面が実在しないため、
+   受付タブ（#reg-class-grid）限定で常に 1 列にしてリストへ全幅を与える（他タブの .grid2 は不変）。 */
+#reg-class-grid{grid-template-columns:1fr}
+/* コンテナ = 受付リスト要素そのもの（id は regClassListId: A/B 静的 a-list/b-list ＋ C+ 動的 class-list-*）。
+   inline-size containment のみ（高さは auto のまま）。 */
+#a-list,#b-list,[id^="class-list-"]{container-type:inline-size}
+@container (min-width:720px){
+  .player-row{grid-template-columns:34px minmax(120px,1fr) 118px 92px 74px auto;grid-template-areas:none}
+  .player-row .player-row-main>span:first-child,.player-row .player-name,
+  .player-row .player-row-main>select:nth-of-type(1),.player-row .player-row-main>select:nth-of-type(2),
+  .player-row .player-fee,.player-row .player-row-buttons{grid-area:auto}
+  .player-row .player-row-buttons{justify-content:flex-start}
+  .player-row-head{display:grid;grid-template-columns:34px minmax(120px,1fr) 118px 92px 74px auto;gap:6px;align-items:center;padding:2px 10px;border:1px solid transparent;margin-bottom:2px;font-size:11px;font-weight:600;color:#555}
+  .player-row-head span:nth-child(5){text-align:right}
+}
 .sel-sm{height:44px;padding:0 6px;border:1px solid #ccc;border-radius:6px;font-size:16px;background:#fff;font-family:inherit} /* INPUT-STD-001 (#715): 会費区分等は当日最多用＝13px/34px→16px/44px（iOS 自動ズーム防止＋44px タップ標的） */
 /* ROUND-CLASS-START-007 (spec §15.1 .grid2 3+ クラス棚卸し):
    現状 A/B 2 クラス前提で `1fr 1fr` 固定。C クラス以降を追加すると 3 番目以降が
@@ -6344,6 +6384,20 @@ function renderRegList(){
     if(nameEl)nameEl.textContent=clsList[ci].name||(cls+'クラス');
     if(listEl){
       listEl.innerHTML='';
+      // WORLD-STD-ALIGN-002 (#717): 固定列グリッドの列見出し行（1クラス1行・0名時は出さない）。
+      //   PC幅のみ表示（スマホ非表示は CSS .player-row-head の @media で制御）。
+      //   textContent のみで組み立てる（innerHTML 連結なし＝escape ヒューリスティック非接触）。
+      if(players.length>0){
+        var headRow=document.createElement('div');
+        headRow.className='player-row-head';
+        var headLabels=['No.','氏名','会員区分','種別','参加費','操作'];
+        for(var hi=0;hi<headLabels.length;hi++){
+          var hSpan=document.createElement('span');
+          hSpan.textContent=headLabels[hi];
+          headRow.appendChild(hSpan);
+        }
+        listEl.appendChild(headRow);
+      }
       for(var i=0;i<players.length;i++){
         listEl.appendChild(makePlayerRow(players[i],cls,i));
       }
