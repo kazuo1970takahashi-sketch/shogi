@@ -2694,6 +2694,18 @@ if [ -f "$SCRIPT_DIR/test_reg_tab_tidy_001.js" ]; then
 else
   warn "test_reg_tab_tidy_001.js が見つからない"
 fi
+
+echo ""
+echo "【HEADER-TIDY-001 (#746 / スライス⑤c) ヘッダ再編（常時2ボタン＋☰ボトムシート）】"
+if [ -f "$SCRIPT_DIR/test_header_tidy_001.js" ]; then
+  if node "$SCRIPT_DIR/test_header_tidy_001.js" "$TARGET" > /tmp/header_tidy_001_out.log 2>&1; then
+    ok "HEADER-TIDY-001 テスト 全PASS ($(tail -1 /tmp/header_tidy_001_out.log))"
+  else
+    ng "HEADER-TIDY-001 テスト 失敗"; cat /tmp/header_tidy_001_out.log
+  fi
+else
+  warn "test_header_tidy_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================

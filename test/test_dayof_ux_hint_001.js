@@ -26,8 +26,10 @@ ok(linkTag.indexOf('href="index.html"') >= 0, 'H2 リンク先は index.html');
 ok(linkTag.indexOf('target="_blank"') >= 0 && linkTag.indexOf('rel="noopener"') >= 0, 'H3 新規タブ＋noopener（運営状態を離れない）');
 ok(linkTag.indexOf('📖 案内') >= 0, 'H4 リンク文言');
 ok(linkTag.indexOf('no-print') >= 0, 'H5 印刷には出さない（no-print）');
-var headerPos = RAW.indexOf('<div class="header">');
-ok(headerPos >= 0 && linkPos > headerPos && linkPos < RAW.indexOf('id="openScoreboardBtn"'), 'H6 ヘッダ内・スマホ星取表の前に配置');
+// HEADER-TIDY-001 (#746 / ⑤c) 追随: 意図（ヘッダからワンアクションで案内に到達・新規タブ）は不変のまま、
+//   置き場所を常時ボタン → ☰ボトムシート（#header-menu-sheet・参加者向けグループ）へ移設。
+var sheetPos = RAW.indexOf('id="header-menu-sheet"');
+ok(sheetPos >= 0 && linkPos > sheetPos && linkPos < RAW.indexOf('id="headerMenuCloseBtn"'), 'H6 ☰メニューシート配下に配置（ヘッダから1タップで到達）');
 
 console.log('DAYOF-UX-HINT-001: PASS=' + pass + ' FAIL=' + fail);
 process.exit(fail === 0 ? 0 : 1);
