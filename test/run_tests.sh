@@ -2622,6 +2622,18 @@ if [ -f "$SCRIPT_DIR/test_input_kbd_coexist_001.js" ]; then
 else
   warn "test_input_kbd_coexist_001.js が見つからない"
 fi
+
+echo ""
+echo "【INPUT-KBD-COEXIST-002 (#728 / スライス②b) サジェストのタップ/スクロール判別＋行圧縮＋直下オーバーレイ】"
+if [ -f "$SCRIPT_DIR/test_input_kbd_coexist_002.js" ]; then
+  if node "$SCRIPT_DIR/test_input_kbd_coexist_002.js" "$TARGET" > /tmp/input_kbd_coexist_002_out.log 2>&1; then
+    ok "INPUT-KBD-COEXIST-002 テスト 全PASS ($(tail -1 /tmp/input_kbd_coexist_002_out.log))"
+  else
+    ng "INPUT-KBD-COEXIST-002 テスト 失敗"; cat /tmp/input_kbd_coexist_002_out.log
+  fi
+else
+  warn "test_input_kbd_coexist_002.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
