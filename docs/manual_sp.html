@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>大会運営マニュアル（スマホ版）</title>
+<title>大会運営マニュアル（スマホ版・要点）</title>
 <style>
   body {
     font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
@@ -18,12 +18,12 @@
     color: #27500A;
     border-bottom: 2px solid #27500A;
     padding-bottom: 6px;
-    margin: 0 0 12px;
+    margin: 0 0 10px;
   }
   .section {
     background: #fff;
     border-radius: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
     overflow: hidden;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   }
@@ -32,73 +32,48 @@
     color: #fff;
     font-size: 14px;
     font-weight: bold;
-    padding: 8px 12px;
+    padding: 7px 12px;
   }
-  .section-header.trouble {
-    background: #c0392b;
-  }
-  .section-body {
-    padding: 10px 12px;
-  }
-  ul.check {
-    list-style: none;
+  .section-header.live { background: #2b6cb0; }
+  .section-header.trouble { background: #c0392b; }
+  .section-body { padding: 8px 12px; }
+  ol.steps, ul.plain {
     margin: 0;
-    padding: 0;
+    padding-left: 1.2em;
+    line-height: 1.55;
   }
-  ul.check li {
-    padding: 6px 0;
-    border-bottom: 1px solid #eee;
-    line-height: 1.5;
+  ol.steps li, ul.plain li { padding: 3px 0; }
+  .btn {
+    display: inline-block;
+    font-size: 12px;
+    background: #eef2f7;
+    border: 1px solid #c3cfdd;
+    border-radius: 5px;
+    padding: 0 5px;
+    white-space: nowrap;
   }
-  ul.check li:last-child { border-bottom: none; }
-  ul.check li::before {
-    content: "□ ";
-    font-size: 16px;
-    color: #27500A;
-  }
-  .important::before {
-    content: "⚠️ ";
-  }
-  .important {
-    color: #c0392b;
-    font-weight: bold;
-  }
-  .note {
-    background: #fff8e1;
-    border-left: 3px solid #f39c12;
-    padding: 8px 10px;
-    margin: 8px 0 0;
-    font-size: 13px;
-    border-radius: 0 4px 4px 0;
-    line-height: 1.6;
-  }
-  .note.intro {
-    margin: 0 0 12px;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  td {
-    border: 1px solid #ddd;
-    padding: 7px 8px;
-    vertical-align: top;
-    line-height: 1.5;
-  }
-  td:first-child {
-    background: #f9f9f9;
-    font-weight: bold;
-    width: 38%;
+  .important { color: #c0392b; font-weight: bold; }
+  code {
+    font-size: 12px;
+    background: #f2f2f2;
+    padding: 0 3px;
+    border-radius: 3px;
+    word-break: break-all;
   }
   .url-box {
     background: #f0f0f0;
     border-radius: 6px;
-    padding: 8px 10px;
+    padding: 7px 10px;
     font-family: monospace;
     font-size: 12px;
     word-break: break-all;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+  }
+  .tip {
+    font-size: 12px;
+    color: #555;
+    margin: 6px 0 0;
+    line-height: 1.5;
   }
   .footer {
     text-align: center;
@@ -110,113 +85,68 @@
 </head>
 <body>
 
-<h1>月例将棋大会 当日マニュアル</h1>
+<h1>月例将棋大会 当日マニュアル（要点）</h1>
 
-<div class="note intro">
-  このマニュアルは<strong>事前準備・全体像・困ったときの指針</strong>です。細かなボタン操作は、画面内のヘルプ（？）や確認メッセージに従ってください。記載の例はすべて架空です。
-</div>
+<div class="tip" style="margin:0 0 10px">当日の流れの要点だけをまとめています。詳しい説明は<strong>印刷版マニュアル</strong>か、画面内の「？ ヘルプ」を見てください。上部タブ＝参加者登録／対局管理／最終結果／会員名簿／大会履歴。ヘッダは<span class="btn">📱 スマホ星取表</span>と<span class="btn">📋 名簿を更新</span>の2ボタン＋<span class="btn">☰</span>メニュー（案内・ライブ配信・バックアップ・リセットはこの中）。</div>
 
 <div class="section">
-  <div class="section-header">1. 大会開始前</div>
+  <div class="section-header">1. 開始前（参加者登録タブ）</div>
   <div class="section-body">
     <div class="url-box">https://kazuo1970takahashi-sketch.github.io/shogi/</div>
-    <ul class="check">
-      <li>参加者を登録する</li>
-      <li class="important">「JSONバックアップ保存」を押す</li>
-      <li>「大会開始」を押す</li>
+    <ol class="steps">
+      <li>クラウドを使うなら、先に「会員名簿」タブからログイン</li>
+      <li>「回戦数」を確認（既定4回戦・開始後は変更不可）</li>
+      <li>参加者を受付：<span class="btn">📋 名簿から受付（過去参加者から選ぶ）</span>で名前をタップ。名簿にない方は<span class="btn">＋ 名簿にない新規の方（手入力）</span>を開いて氏名・会費区分・ふりがなを入力</li>
+    </ol>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header">2. 各回戦（対局管理タブ）</div>
+  <div class="section-body">
+    <ol class="steps">
+      <li><span class="btn">〇クラス全員で1局目を開始</span>（来た人からなら<span class="btn">このクラスを部分開始</span>）</li>
+      <li>勝った人のボタンを押して勝者を入力</li>
+      <li><span class="btn">○回戦 確定して次へ</span></li>
+    </ol>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header live">3. 参加者に見せる（任意）</div>
+  <div class="section-body">
+    <ul class="plain">
+      <li><span class="btn">📱 スマホ星取表</span>…同じ端末の別タブで星取表を全画面表示</li>
+      <li><span class="btn">📡 ライブ配信</span>…参加者のスマホで見せる。QRを掲示（表示名は既定「姓＋番号のみ」）。開始は最終結果タブの配信欄から（☰メニューの<span class="btn">📡 ライブ配信</span>でも移動可）</li>
     </ul>
+    <div class="tip"><span class="important">ライブ配信はインターネット公開です。</span>掲示物に「氏名・成績を公開する」旨を明記。終わったら<span class="btn">⏹ 配信を停止</span>。</div>
   </div>
 </div>
 
 <div class="section">
-  <div class="section-header">2. 各ラウンド（毎回）</div>
+  <div class="section-header">4. 終了後（最終結果タブ）</div>
   <div class="section-body">
-    <ul class="check">
-      <li>「ペアリング生成」で組み合わせ確認</li>
-      <li>対局実施 → 勝者を入力</li>
-      <li>「ラウンド確定」を押す</li>
-      <li class="important">「JSONバックアップ保存」を押す</li>
+    <ol class="steps">
+      <li>順位を確認</li>
+      <li><span class="btn">☁ クラウドへ送信</span>で結果を残す・共有する</li>
+      <li><span class="btn">報告書を印刷 / PDF保存</span></li>
+      <li><span class="btn">📋 名簿を更新</span>で参加者を会員名簿へ反映</li>
+    </ol>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header trouble">5. 困ったとき</div>
+  <div class="section-body">
+    <ul class="plain">
+      <li><strong>端末が壊れた・誤ってリセットした</strong>：別端末でアプリを開き、☰メニューの<span class="btn">バックアップ</span>画面で直前の JSON を復元</li>
+      <li>JSON は端末のダウンロードフォルダに <code>shogi_backup_…</code> で保存されます</li>
     </ul>
-    <div class="note">
-      保存すると shogi_YYYYMMDD_HHMM.json がダウンロードされます。ファイルの存在を必ず確認してください。
-    </div>
+    <div class="tip">保存はふだん自動なので操作は不要です。端末事故が心配なら、節目で ☰メニューの<span class="btn">バックアップ</span>を押してJSONの控えを取れます（任意）。※クラウド送信はバックアップの代わりにはなりません。</div>
   </div>
 </div>
 
-<div class="section">
-  <div class="section-header">3. 大会終了後</div>
-  <div class="section-body">
-    <ul class="check">
-      <li>「成績」タブで順位確認</li>
-      <li class="important">「JSONバックアップ保存」を押す（最終）</li>
-      <li>印刷 または 報告書ダウンロード</li>
-    </ul>
-    <div class="note">
-      報告書・印刷を出したら、<strong>日時／各対局の勝敗／参加人数</strong>が正しいか目視で確認してください。
-    </div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-header">4. 知っておくと困らない運用の考え方</div>
-  <div class="section-body">
-    <table>
-      <tbody>
-      <tr>
-        <td>来た人だけで始める<br>（部分開始・逐次手合）</td>
-        <td>全員そろわなくても1局目を始められます。受付順に2人ずつ「1卓追加」、または今いる人を一気に「まとめて1局目作成」。後から来た人も同じ操作で足せて、<strong>すでにある対局・結果は変わりません</strong>。手合いがまだの人は「未割当」として表示されます。</td>
-      </tr>
-      <tr>
-        <td>奇数のときの待機</td>
-        <td>人数が奇数だと1名が待機になります（対局には入らず次を待つだけ）。<strong>待機は不戦勝ではありません</strong>（勝ち点は付きません）。次のラウンドで対局に戻ります。1局目はできるだけ偶数になるよう受付・手合いを調整するとスムーズです。</td>
-      </tr>
-      <tr>
-        <td>クラスを増やす<br>（C 以降）</td>
-        <td>A・B 以外の組（C…）を必要に応じて追加・改名できます。<strong>A・B は削除できません</strong>。開始済み・参加者がいるクラスも削除できません（混乱防止）。</td>
-      </tr>
-      <tr>
-        <td>ふりがな</td>
-        <td>氏名にふりがなを表示でき、同姓や読みづらい名前の取り違えを防げます。登録後でも編集でき、空にするとふりがな表示は消えます。</td>
-      </tr>
-      <tr>
-        <td>支部マスタ・<br>過去大会の統合</td>
-        <td>会員の元データです。当日は大きくいじらず、参加者登録の素材として使います。万一データが壊れても当日の大会運営は止まらない設計で、元データは保全されます。</td>
-      </tr>
-      <tr>
-        <td>履歴</td>
-        <td>過去大会の記録は「履歴」で閲覧できます。<strong>いま進行中の大会とは別もの</strong>です。履歴を見ても今の大会は変わりません。</td>
-      </tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-header trouble">5. トラブル時</div>
-  <div class="section-body">
-    <table>
-      <tbody>
-      <tr>
-        <td>ブラウザが落ちた</td>
-        <td>「読み込み」→ 直前の JSON を選択</td>
-      </tr>
-      <tr>
-        <td>端末が壊れた</td>
-        <td>別端末でアプリを開き同じ JSON を「読み込み」</td>
-      </tr>
-      <tr>
-        <td>JSON が見当たらない</td>
-        <td>ダウンロードフォルダで「shogi_」で検索</td>
-      </tr>
-      </tbody>
-    </table>
-    <div class="note">
-      ℹ️ 連絡先は別途ご確認ください。
-    </div>
-  </div>
-</div>
-
-<div class="footer">沼津将棋支部 月例大会運営ツール — docs/manual_sp.html</div>
+<div class="footer">沼津将棋支部 月例大会運営ツール — docs/manual_sp.html（要点版・詳細は印刷版へ）</div>
 
 </body>
 </html>

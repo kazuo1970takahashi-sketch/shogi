@@ -2706,6 +2706,17 @@ if [ -f "$SCRIPT_DIR/test_header_tidy_001.js" ]; then
 else
   warn "test_header_tidy_001.js が見つからない"
 fi
+echo ""
+echo "【MANUAL-SYNC-001 当日マニュアル（docs/manual_sp・manual_print）⇄ 実UI 同期ゲート】"
+if [ -f "$SCRIPT_DIR/test_manual_sync_001.js" ]; then
+  if node "$SCRIPT_DIR/test_manual_sync_001.js" "$TARGET" > /tmp/manual_sync_001_out.log 2>&1; then
+    ok "MANUAL-SYNC-001 テスト 全PASS ($(tail -1 /tmp/manual_sync_001_out.log))"
+  else
+    ng "MANUAL-SYNC-001 テスト 失敗（UIを変えたらマニュアル2種も追随のこと）"; cat /tmp/manual_sync_001_out.log
+  fi
+else
+  warn "test_manual_sync_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
