@@ -2830,7 +2830,7 @@ function addPlayerFromMaster(memberId,cls,master,state){
   // 重複チェック：member_id 一致を最優先（duplicate_member）。なければ normalizePersonName 同名（duplicate_name）。
   // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定 concat をやめ、渡された state の全クラスを横断して重複判定する。
   //   純粋関数のため global の allRegisteredPlayers() ではなく引数 state.players を走査する（A/B のみなら従来同一）。
-  //   追加先クラス自体は上の hard reject で A/B に限定済み（非A/B への追加は CV-2 まで不可）。
+  //   追加先クラスの受理は上のガード（isSafeClassId＋受け皿配列実在＝CLASS-VARIABLE-002 #768 で全クラス化）。
   var memberNameNorm=normalizePersonName(member.name||'');
   var all=[];
   var dupClsKeys=Object.keys(state.players);
@@ -3536,7 +3536,7 @@ function openPpDenseActionSheet(memberId,currentCls){
   var html='<div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:320px">';
   html+='<div style="font-size:15px;font-weight:600;color:#1F3864;margin-bottom:4px">'+escapeHtml(name)+'</div>';
   html+='<div style="font-size:12px;color:#666;margin-bottom:12px">受付済（'+escapeHtml(ppDenseClsName(currentCls))+'）</div>';
-  // L3 P1-a: 変更先も受理可能クラス（CV-2 まで A/B）に限定＝changePlayerClass の hard reject を UI に出さない。
+  // 変更先候補は ppDenseSelectableClasses()＝全クラス（CLASS-VARIABLE-002 #768 で CV-2 実装済み・changePlayerClass も全クラス受理）。
   var list=ppDenseSelectableClasses();
   for(var ci=0;ci<list.length;ci++){
     if(list[ci].id===currentCls)continue;
@@ -3678,7 +3678,7 @@ function handlePastParticipantClassAdd(memberId,cls){
   var memberName=member.name||'';
   // 現在の登録クラスを取得
   // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定をやめ全クラス横断で現登録クラスを判定（C 在籍も検知）。A/B のみなら従来同一。
-  //   C 在籍者が A/B ボタンを押すと別クラス登録済み扱いになる。クラス変更自体は changePlayerClass が A/B 限定（CV-2）。
+  //   C 在籍者が別クラスボタンを押すと別クラス登録済み扱い→変更 confirm。クラス変更は CLASS-VARIABLE-002 (#768) で全クラス受理。
   var existingCls=null;
   var existClasses=Object.keys(state.players);
   for(var eci=0;eci<existClasses.length;eci++){
@@ -6778,7 +6778,7 @@ function makePlayerRow(p,cls,i){
 // REG-TAB-TIDY-001 (#743) ⑤b: 参加者カードの操作シート。openPpDenseActionSheet と同型（build/bind 分離・
 //   選択時に閉じてから既存関数を呼ぶ＝新規の破壊ロジックを作らない）。
 //   項目の出し分け: クラス変更は member_id 連携者かつ現クラスが ppDenseSelectableClasses() 内の場合のみ
-//   （CV-2 の A/B 限定を UI に出さない・手入力者には出さない）。棄権/復帰は従来ボタンと同条件（開始後のみ）。
+//   （#768 で全クラス化済み・手入力者には出さない）。棄権/復帰は従来ボタンと同条件（開始後のみ）。
 function openPlayerEditSheet(playerId,cls){
   var existing=document.getElementById('player-edit-sheet');
   if(existing&&existing.remove)existing.remove();
@@ -6795,7 +6795,7 @@ function openPlayerEditSheet(playerId,cls){
   html+='<div style="font-size:12px;color:#666;margin-bottom:12px">'+escapeHtml(clsName)+' '+escapeHtml(entryNoOf(cls,p.id))+'・'+escapeHtml(fee===0?'無料':fee.toLocaleString()+'円')+'</div>';
   html+='<button type="button" id="pes-name" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">✏️ 名前を編集</button>';
   html+='<button type="button" id="pes-yomi" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">ふりがなを編集</button>';
-  // クラス変更（member_id 連携者のみ・A/B=CV-2 の範囲内のみ・handlePastParticipantClassAdd 経由＝confirm/master 更新は既存フロー）
+  // クラス変更（member_id 連携者のみ・全クラス対応=#768・handlePastParticipantClassAdd 経由＝confirm/master 更新は既存フロー）
   var selectable=(typeof ppDenseSelectableClasses==='function')?ppDenseSelectableClasses():[];
   var curSelectable=false;
   for(var si=0;si<selectable.length;si++){ if(selectable[si].id===cls){curSelectable=true;break;} }

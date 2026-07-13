@@ -4,13 +4,14 @@
 //     1. updateBranchMasterFromTournament（「大会データをコピー」時のマスタ同期）のクラス列挙を
 //        state.classes / Object.keys(state.players) 駆動へ。
 //     2. mergeTournamentParticipantsIntoMaster（「マスタ」タブの過去大会統合）も同様に全クラス対応。
-//     3. last_class は A/B/null 不変条件（createMemberFromParticipant / normalize / validation / verify が
-//        全て A/B/null 前提）のため、関数内 last_class ガードは温存（C は null のまま同期＝整合維持）。
+//     3. last_class ガードは CLASS-VARIABLE-002 (#768) で「isSafeClassId 以外は null」へ一般化
+//        （createMemberFromParticipant / normalize / validation / verify も同スライスで追随済み。
+//        旧 #273 時点の「A/B/null 不変条件・C は null のまま同期」は撤廃）。
 //   観点:
 //     SYNC    A2+B2+C2 → master 6 名（C 以降が同期に反映・member_id でリンク）。
 //     SYNCAB  A/B のみは件数・行順（A→B・各クラス内 players 順）が不変。
-//     LASTCLS 同期後 A→last_class='A' / C→last_class=null（A/B/null 不変条件を破らない）。
-//     LASTCLS-STALE Codex P1: 既存 member の stale last_class を最新出席のクラスで是正（C 最新→null /
+//     LASTCLS 同期後 A→last_class='A' / C→last_class='C'（#768: isSafeClassId のみ採用・不正値は null）。
+//     LASTCLS-STALE Codex P1: 既存 member の stale last_class を最新出席のクラスで是正（C 最新→'C' #768 /
 //                   古い大会の同期・統合は新しい last_class を潰さない）。
 //     MERGE   過去大会統合で A+B+C → master 3 名（C 以降が統合に反映）。A/B のみは不変。
 //     HELPER  listClassIdsForMasterSync の union/dedup/順序/空入力。
