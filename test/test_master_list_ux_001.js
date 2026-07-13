@@ -15,7 +15,7 @@ ok(RAW.indexOf('>前回</th>')<0&&RAW.indexOf('>最終参加</th>')<0,'L1b 前�
 ok(RAW.indexOf("前回:'+escapeHtml(lastCls)+' ・ 最終:'")>=0,'L2 サブ情報行「前回:X ・ 最終:日付」を常時描画');
 
 // L3: 空欄は「－」（前回=lastCls 既定・最終=_masterSheetFmtDate の falsy 分岐）
-ok(/var lastCls=\(m\.last_class==='A'\|\|m\.last_class==='B'\)\?m\.last_class:'－';/.test(RAW),'L3a 前回クラス空欄は「－」');
+ok(RAW.indexOf("var lastCls=isSafeClassId(m.last_class)?m.last_class:'－';")>=0,'L3a 前回クラス空欄は「－」（#768: C+ も表示・不正 id のみ －）');
 ok(/if\(!m\)return s\?String\(s\):'－';/.test(RAW),'L3b _masterSheetFmtDate は空入力で「－」');
 
 // L4: 削除行はサブ情報を「削除:日付」に差し替え（同位置・列構造不変）

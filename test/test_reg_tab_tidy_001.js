@@ -123,7 +123,7 @@ assert(RAW.indexOf('removePlayer(playerId,cls);')>=0, 'A11 削除→removePlayer
 assert(RAW.indexOf('toggleWithdrawn(playerId,cls)')>=0, 'A12 棄権/復帰→toggleWithdrawn');
 assert(/isClassStarted\(cls\)\)\{[\s\S]{0,600}pes-withdraw/.test(RAW), 'A13 棄権項目は isClassStarted ゲート内（開始後のみ）');
 assert(/pes-change[\s\S]{0,400}handlePastParticipantClassAdd\(mid,c\)/.test(RAW), 'A14 クラス変更→handlePastParticipantClassAdd（confirm/master 更新は既存フロー）');
-assert(/p\.member_id&&curSelectable/.test(RAW), 'A15 クラス変更は member_id×selectable の二重ガード（CV-2 を UI に出さない）');
+assert(/p\.member_id&&curSelectable/.test(RAW), 'A15 クラス変更は member_id×selectable の二重ガード（手入力者には出さない・#768 で全クラス化）');
 
 // ---- B: 0名クラスの一括編集非表示（静的） ----
 assert(/regClassBulkEditId\(cls\)\);\s*\n\s*if\(bulkBtn\)bulkBtn\.style\.display=players\.length>0\?'':'none';/.test(RAW), 'B1 renderRegList が bulkEdit を人数で表示切替（A/B 静的・C+ 動的とも同経路）');

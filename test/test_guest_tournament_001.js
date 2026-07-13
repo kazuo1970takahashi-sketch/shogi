@@ -128,7 +128,7 @@ assert(RAW.indexOf("changePlayerClass(memberId,cls,master,state,_guestClsChg?{sk
 
 // C. changePlayerClass: skipMasterUpdate の有無で master.last_class の扱いだけが変わる（player 側は同一）
 {
-  const src = ['isValidEntryNo','reconcileEntryNos','nextEntryNoForClass','changePlayerClass'].map(extractFn);
+  const src = ['isValidEntryNo','reconcileEntryNos','nextEntryNoForClass','isSafeClassId','listClassIdsForMasterSync','changePlayerClass'].map(extractFn);  // CLASS-VARIABLE-002 (#768): changePlayerClass の新依存2関数を供給
   assert(src.every(s => !!s), 'C0 changePlayerClass と依存関数が抽出できる');
   const env = new Function('var state=null;' + src.join('\n') + '; return {changePlayerClass:changePlayerClass};')();
   function fxState(){

@@ -161,3 +161,10 @@
 - **根拠**: 設計 §6 で予定した文言は 004B（強化 confirm「現在の組み合わせをすべて作り直します…」）＋後続スライス（FRP-UNASSIGNED-COUNT-001 / FRP-SMALL-UX-001 / PROGRESSIVE-PAIRING-IMPL-P2 / HELP-UX-001）で全て充足済み。監査 `docs/notes/20260702_shogi_system_audit_colorcoded_v0.md` §3 の条件付き決定（迷い所なければクローズ）と整合。当該画面は情報密度過多の指摘（同監査 🟡-7）があり追加文言はむしろ逆行。
 - **再開条件**: 今後の月例で FRP 周辺の迷い所が実地で出た場合、その箇所だけの新スライス（別 ID）で対応する（004C としては再開しない）。
 - **変更ファイル**: `docs/notes/20260703_frp_impl_004c_close.md`（新規）/ `docs/CHANGELOG.md`（本追記）。`shogi_v4.html` / `test/` / `index.html` / `package*` / `.github` は無変更。production / main / orphan clean base への直接変更なし。Draft PR・Ready化 / merge / deploy は未実施。
+
+## CLASS-VARIABLE-002 (#768): 受付コアの A/B 固定を全クラス化（CV-2・C クラス分割運用の解禁）
+
+- **受付コア**: `addPlayerFromMaster` / `changePlayerClass` の A/B hard reject を「isSafeClassId＋受け皿配列実在」へ置換（error 名不変）。`changePlayerClass` の探索は `listClassIdsForMasterSync` 流用で全クラス走査。`ppDenseSelectableClasses` は `getRegistrationClassList()` 素通し（モードバー/受付シート/編集シートの候補が C+ に追随・旧「A/B 以外は手入力」注記撤去）。`finalizeAddPastParticipants` は第4引数 `cls` 化（未指定はピッカー選択クラス fallback→'A'。#761 一括登録 UI が自前 cls を渡す想定）。
+- **last_class 不変条件の一般化**: #273 の「非 A/B は null」を「isSafeClassId 以外は null」へ（load 正規化 / createMemberFromParticipant / 📋名簿更新 / 統合 / ☁復元収集・マージ / verify helper / 表示2箇所）。Phase2 レガシー importer・マスタ編集フォームの前回クラス radio（A/B のみ・C 保持者は未チェック=変更しない）・旧 GOLDEN ビルダーは意図的に不変。
+- **後方互換**: last_class に C 等が入った master を旧版（?v≤126）で開くと load 正規化が null に落とす（安全側・データ構造破壊なし・最新出席の再同期で復元）。
+- **テスト**: `test_class_variable_002.js` 新設（31 checks）＋既存4本を新契約に追随（`test_branch_master_all_classes_273` LASTCLS-3/STALE-1/STALE-5・`test_master_rebuild_from_cloud_001` BUILD-NONAB-1・`test_master_list_ux_001` L3a ピン・`test_guest_tournament_001` 抽出環境に依存2関数追加）。設計レビュー（独立 L3）= conditional-go 条件反映済み。

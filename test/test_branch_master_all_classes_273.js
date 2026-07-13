@@ -4,13 +4,14 @@
 //     1. updateBranchMasterFromTournament（「大会データをコピー」時のマスタ同期）のクラス列挙を
 //        state.classes / Object.keys(state.players) 駆動へ。
 //     2. mergeTournamentParticipantsIntoMaster（「マスタ」タブの過去大会統合）も同様に全クラス対応。
-//     3. last_class は A/B/null 不変条件（createMemberFromParticipant / normalize / validation / verify が
-//        全て A/B/null 前提）のため、関数内 last_class ガードは温存（C は null のまま同期＝整合維持）。
+//     3. last_class ガードは CLASS-VARIABLE-002 (#768) で「isSafeClassId 以外は null」へ一般化
+//        （createMemberFromParticipant / normalize / validation / verify も同スライスで追随済み。
+//        旧 #273 時点の「A/B/null 不変条件・C は null のまま同期」は撤廃）。
 //   観点:
 //     SYNC    A2+B2+C2 → master 6 名（C 以降が同期に反映・member_id でリンク）。
 //     SYNCAB  A/B のみは件数・行順（A→B・各クラス内 players 順）が不変。
-//     LASTCLS 同期後 A→last_class='A' / C→last_class=null（A/B/null 不変条件を破らない）。
-//     LASTCLS-STALE Codex P1: 既存 member の stale last_class を最新出席のクラスで是正（C 最新→null /
+//     LASTCLS 同期後 A→last_class='A' / C→last_class='C'（#768: isSafeClassId のみ採用・不正値は null）。
+//     LASTCLS-STALE Codex P1: 既存 member の stale last_class を最新出席のクラスで是正（C 最新→'C' #768 /
 //                   古い大会の同期・統合は新しい last_class を潰さない）。
 //     MERGE   過去大会統合で A+B+C → master 3 名（C 以降が統合に反映）。A/B のみは不変。
 //     HELPER  listClassIdsForMasterSync の union/dedup/順序/空入力。
@@ -144,7 +145,7 @@ function memberById(master,id){ for(var i=0;i<master.members.length;i++){ if(mas
   var cMem=memberById(master,s.players.C[0].member_id);
   assert(aMem&&aMem.last_class==='A','LASTCLS-1 A 参加者の last_class は "A"（従来どおり）');
   assert(bMem&&bMem.last_class==='B','LASTCLS-2 B 参加者の last_class は "B"（従来どおり）');
-  assert(cMem&&cMem.last_class===null,'LASTCLS-3 C 参加者の last_class は null（A/B/null 不変条件を破らず同期）');
+  assert(cMem&&cMem.last_class==='C','LASTCLS-3 C 参加者の last_class は "C"（CLASS-VARIABLE-002 #768: 非A/B→null を isSafeClassId 以外→null へ一般化）');
 }
 
 // ============================================================
@@ -164,7 +165,7 @@ function memberById(master,id){ for(var i=0;i<master.members.length;i++){ if(mas
   }]};
   env.updateBranchMasterFromTournament(s,master,{tournament_id:'t_new',tournament_date:'2026-06-21'});
   var m1=memberById(master,'m_stale_sync');
-  assert(m1&&m1.last_class===null,'LASTCLS-STALE-1 同期: C で最新出席になった既存 member の stale last_class("A") を null にクリア');
+  assert(m1&&m1.last_class==='C','LASTCLS-STALE-1 同期: C で最新出席になった既存 member の stale last_class("A") が "C" に是正される（#768）');
   assert(m1&&m1.last_attended==='2026-06-21','LASTCLS-STALE-2 同期: last_attended が今回の最新日に更新される');
 
   // 同期: 既存 member(last_class=null, 新しい last_attended) を「過去日」の A で同期 → null のまま（潰さない）
@@ -194,7 +195,7 @@ function memberById(master,id){ for(var i=0;i<master.members.length;i++){ if(mas
     pairings:{},results:{},tournament_id:'t_merge_c_latest',tournament_date:'2026-06-21',report:{date:'2026年6月21日'}};
   env3.mergeTournamentParticipantsIntoMaster([{raw:raw3,filename:'20260621_merge.json'}],master3);
   var m3=memberById(master3,'m_stale_merge');
-  assert(m3&&m3.last_class===null,'LASTCLS-STALE-5 統合: C の最新統合で既存 member の stale last_class("B") を null にクリア');
+  assert(m3&&m3.last_class==='C','LASTCLS-STALE-5 統合: C の最新統合で既存 member の stale last_class("B") が "C" に是正される（#768）');
 }
 
 // ============================================================

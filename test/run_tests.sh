@@ -2765,6 +2765,18 @@ if [ -f "$SCRIPT_DIR/test_scale_modal_001.js" ]; then
 else
   warn "test_scale_modal_001.js が見つからない"
 fi
+
+echo ""
+echo "【CLASS-VARIABLE-002 (#768) 受付コアの A/B 固定を全クラス化（C 受付/移動/last_class 解禁）】"
+if [ -f "$SCRIPT_DIR/test_class_variable_002.js" ]; then
+  if node "$SCRIPT_DIR/test_class_variable_002.js" "$TARGET" > /tmp/class_variable_002_out.log 2>&1; then
+    ok "CLASS-VARIABLE-002 テスト 全PASS ($(tail -1 /tmp/class_variable_002_out.log))"
+  else
+    ng "CLASS-VARIABLE-002 テスト 失敗"; cat /tmp/class_variable_002_out.log
+  fi
+else
+  warn "test_class_variable_002.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
