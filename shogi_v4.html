@@ -7851,16 +7851,28 @@ function applyParticipantRenameWithMaster(p,newName,expectedMemberId,oldName){
 //   ドメイン上は「席（参加枠）は不変・座る人が変わる」＝member_id の付け替えが唯一整合。
 // ============================================================
 
-// 純粋関数: playerId の確定済み対局数（winner あり）を数える。差し替え確認文言の「N局」用。
+// 純粋関数: playerId の勝敗入力済み対局数（winner あり）を数える。差し替え確認文言の「N局」用。
+//   [PR #759 レビュー SHOULD-5] 確定済み回戦（state.results）に加えて進行中回戦（state.pairings・
+//   回戦確定 submitRound で results へ移動＝二重計上なし）の入力済み勝敗も数える。
+//   進行中の局も確定後は差し替え先の成績になるため、過少表示は警告として不正確。
 function countPlayerDecidedGames(playerId,cls,state){
   var n=0;
-  if(!state||!state.results||!Array.isArray(state.results[cls]))return 0;
-  var rounds=state.results[cls];
-  for(var r=0;r<rounds.length;r++){
-    var ms=Array.isArray(rounds[r])?rounds[r]:[];
-    for(var i=0;i<ms.length;i++){
-      var m=ms[i];
-      if(m&&(m.p1===playerId||m.p2===playerId)&&m.winner)n++;
+  if(!state)return 0;
+  if(state.results&&Array.isArray(state.results[cls])){
+    var rounds=state.results[cls];
+    for(var r=0;r<rounds.length;r++){
+      var ms=Array.isArray(rounds[r])?rounds[r]:[];
+      for(var i=0;i<ms.length;i++){
+        var m=ms[i];
+        if(m&&(m.p1===playerId||m.p2===playerId)&&m.winner)n++;
+      }
+    }
+  }
+  if(state.pairings&&Array.isArray(state.pairings[cls])){
+    var cur=state.pairings[cls];
+    for(var j=0;j<cur.length;j++){
+      var q=cur[j];
+      if(q&&(q.p1===playerId||q.p2===playerId)&&q.winner)n++;
     }
   }
   return n;
@@ -7914,16 +7926,44 @@ function applyParticipantSwapFromMaster(p,memberId,master,state){
 //   member_id を解除して既存の未連携ルート（☁送信時「名簿を更新して送信」で新規会員化）に乗せる。
 //   旧会員の人に固有なスナップショット（yomi / city）は残すとキメラになるためクリア。
 //   会費区分（member/grade）は差し替え先が不明のため黙って変えない（金額に直結・受付一覧の編集で直せる）。
-function applyParticipantSwapToUnlinked(p,newName){
+//   [PR #759 レビュー BLOCK-1] 同名参加者ガード（FromMaster 側と同基準・全クラス横断）:
+//   同名を許すと「📋名簿を更新」の同名1件自動紐付け（updateBranchMasterFromTournament）で
+//   2 player が同一 member_id を共有し、クラウド upsert（onConflict: tournament_id,player_id）で
+//   片方の成績が黙って上書き消失し得るため、必ず拒否する。
+function applyParticipantSwapToUnlinked(p,newName,state){
   if(!p||typeof p!=='object')return {success:false,error:'invalid_player'};
   var nm=(typeof newName==='string')?newName.replace(/^\s+|\s+$/g,''):'';
   if(!nm)return {success:false,error:'invalid_name'};
+  if(!state||!state.players||typeof state.players!=='object')return {success:false,error:'invalid_state'};
+  var nmNorm=normalizePersonName(nm);
+  var clsKeys=Object.keys(state.players);
+  for(var ck=0;ck<clsKeys.length;ck++){
+    var arr=state.players[clsKeys[ck]];
+    if(!Array.isArray(arr))continue;
+    for(var pi=0;pi<arr.length;pi++){
+      var q=arr[pi];
+      if(!q||q.id===p.id)continue;
+      if(nmNorm&&normalizePersonName(q.name||'')===nmNorm)return {success:false,error:'duplicate_name'};
+    }
+  }
   p.name=nm;
   delete p.member_id;
   p.yomi='';
   p.city='';
   delete p.yomiDirty;
   return {success:true,player:p};
+}
+
+// [PR #759 レビュー SHOULD-1] この大会が☁送信済み（cloud_sent_tid が現 tournament_id と一致）のとき、
+//   差し替え確認に添える警告文。クラウド entries は upsert のみ（削除経路なし）のため、差し替え後に
+//   再送信しても旧会員の行は自動では消えない（放置すると二重計上）。根治（送信時の不在エントリ掃除）は別スライス。
+function playerSwapSentWarning(){
+  try{
+    if(typeof state!=='undefined'&&state&&typeof state.cloud_sent_tid==='string'&&state.cloud_sent_tid&&state.cloud_sent_tid===state.tournament_id){
+      return '\n\n⚠ この大会はすでに☁送信済みです。差し替え後に再送信しても、クラウド側の元の方の行は自動では消えません（管理者画面での削除が必要です）。';
+    }
+  }catch(e){}
+  return '';
 }
 
 function closePlayerSwapPicker(){
@@ -8008,7 +8048,7 @@ function handlePlayerSwapPick(p,memberId){
   var oldName=p.name||'';
   var newName=String(member.name||'');
   var games=countPlayerDecidedGames(p.id,p.cls,state);
-  appConfirm('「'+oldName+'」を名簿の「'+newName+'」さんに差し替えます。\n\nこの参加者のこれまでの対局結果（'+games+'局）もすべて「'+newName+'」さんの成績になります。\n（「'+oldName+'」さんの名簿（氏名・ふりがな）は変更されません）',function(ok){
+  appConfirm('「'+oldName+'」を名簿の「'+newName+'」さんに差し替えます。\n\nこの参加者のこれまでの対局結果（'+games+'局）もすべて「'+newName+'」さんの成績になります。\n（「'+oldName+'」さんの名簿（氏名・ふりがな）は変更されません）'+playerSwapSentWarning(),function(ok){
     if(!ok)return;
     var freshMaster=null;
     try{freshMaster=loadBranchMaster();}catch(e){freshMaster=null;}
@@ -8029,10 +8069,10 @@ function handlePlayerSwapUnlinked(p,newName){
   var nm=(typeof newName==='string')?newName.replace(/^\s+|\s+$/g,''):'';
   if(!nm){showMsg('差し替え先の氏名を検索欄に入力してください','warn');return;}
   var games=countPlayerDecidedGames(p.id,p.cls,state);
-  appConfirm('「'+oldName+'」を名簿にない新規の方「'+nm+'」として差し替えます（名簿とは未連携になります）。\n\nこれまでの対局結果（'+games+'局）もすべて「'+nm+'」さんの成績になります。ふりがなは空になります（あとから編集できます）。\n☁送信時に「名簿を更新して送信」を選ぶと、新規会員として名簿に登録できます。',function(ok){
+  appConfirm('「'+oldName+'」を名簿にない新規の方「'+nm+'」として差し替えます（名簿とは未連携になります）。\n\nこれまでの対局結果（'+games+'局）もすべて「'+nm+'」さんの成績になります。ふりがなは空になります（あとから編集できます）。\n☁送信時に「名簿を更新して送信」を選ぶと名簿に載ります（同じ名前の会員が名簿に1名だけいる場合は、新規ではなくその方に紐付きます）。'+playerSwapSentWarning(),function(ok){
     if(!ok)return;
-    var r=applyParticipantSwapToUnlinked(p,nm);
-    if(!r||!r.success){showMsg('差し替えできませんでした','warn');return;}
+    var r=applyParticipantSwapToUnlinked(p,nm,state);
+    if(!r||!r.success){showMsg(playerSwapErrorMessage(r&&r.error),'warn');return;}
     finalizePlayerSwap(p,oldName,'「'+oldName+'」を「'+nm+'」（未連携）に差し替えました（これまでの結果は「'+nm+'」さんの成績になります）');
   },{danger:true});
 }
@@ -8070,6 +8110,11 @@ function openPlayerSwapPicker(p,newName){
   modal.addEventListener('click',function(e){if(e&&e.target===modal)closePlayerSwapPicker();});
   if(typeof document!=='undefined'&&document.addEventListener){
     _playerSwapKeydownHandler=function(e){
+      // [PR #759 レビュー SHOULD-3] IME 合成中の Esc（変換キャンセル）でピッカーを閉じない
+      if(e&&(e.isComposing||e.keyCode===229))return;
+      // [PR #759 レビュー SHOULD-2] appConfirm 表示中は confirm 側の Esc（キャンセル）だけを効かせる
+      //   （showAppModal の keydown は capture・stopPropagation なしのため、ここまで届く）
+      if(document.getElementById('app-modal'))return;
       if(e&&(e.key==='Escape'||e.keyCode===27))closePlayerSwapPicker();
     };
     try{document.addEventListener('keydown',_playerSwapKeydownHandler);}catch(e){_playerSwapKeydownHandler=null;}

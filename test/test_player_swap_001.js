@@ -22,7 +22,6 @@ assert(RAW.indexOf('openPlayerSwapPicker(p,newName)') >= 0, 'S3 3択目クリッ
 assert(RAW.indexOf('findMasterSuggestions(q,master,getCurrentlyRegisteredMemberIds())') >= 0, 'S4 候補は既存サジェスト流用＋既登録 member_id 除外（参加済みは選べない）');
 assert(RAW.indexOf('名簿にない新規の方として差し替え') >= 0, 'S5 未連携差し替えの導線がある');
 assert(RAW.indexOf('delete _pendingNewYomi[p.id];') >= 0, 'S6 差し替え時に in-memory の _pendingNewYomi[p.id] をクリア（旧会員へのふりがな上書き遮断）');
-assert((RAW.split('},{danger:true});').length - 1) >= 2, 'S7 差し替え確認（名簿/未連携の両方）は danger 確認（Enter 誤爆防止）');
 assert(RAW.indexOf('さんの成績になります') >= 0, 'S8 確認文言に成績帰属の警告（これまでの対局結果が差し替え先の成績になる）');
 // YOMI-SYNC-OVERWRITE の文言同乗修正: 行の主語を「名簿の◯◯さん」に固定（Issue #758 §文言の同時修正）
 assert(RAW.indexOf("_lines.push('名簿の「'+_ydiffs[_li].name+'」さんのふりがな：'") >= 0, 'S9 YOMI 上書き確認の行は「名簿の◯◯さんのふりがな」形式（マスタ側であることを誤読させない）');
@@ -44,6 +43,26 @@ const SRC = ['normalizePersonName', 'normalizeYomi', 'normalizeCity', 'normalize
   'countPlayerDecidedGames', 'applyParticipantSwapFromMaster', 'applyParticipantSwapToUnlinked']
   .map(extractFn);
 assert(SRC.every(s => !!s), 'X1 対象関数がすべて抽出できる');
+
+// ---- S 続き（関数抽出ベースの強いピン・PR #759 レビュー反映）
+{
+  const pick = extractFn('handlePlayerSwapPick') || '';
+  const unlinked = extractFn('handlePlayerSwapUnlinked') || '';
+  assert(pick.indexOf('{danger:true}') >= 0 && unlinked.indexOf('{danger:true}') >= 0,
+    'S7 差し替え確認（名簿/未連携の両方）は danger 確認（Enter 誤爆防止・関数抽出内で検査）');
+  // [SHOULD-1] 送信済み大会での差し替えは旧会員の行がクラウドに残る旨を両 confirm に条件付き警告
+  const warn = extractFn('playerSwapSentWarning') || '';
+  assert(warn.indexOf('state.cloud_sent_tid===state.tournament_id') >= 0, 'S11a 送信済み判定は cloud_sent_tid===tournament_id');
+  assert(warn.indexOf('自動では消えません') >= 0, 'S11b 警告文＝旧会員の行は自動では消えない');
+  assert(pick.indexOf('playerSwapSentWarning()') >= 0 && unlinked.indexOf('playerSwapSentWarning()') >= 0,
+    'S11c 両方の差し替え confirm に送信済み警告が乗る');
+  // [SHOULD-2/3] Esc ハンドラ: appConfirm 表示中と IME 合成中は閉じない
+  const picker = extractFn('openPlayerSwapPicker') || '';
+  assert(picker.indexOf("document.getElementById('app-modal')") >= 0, 'S12a appConfirm 表示中の Esc でピッカーを閉じない');
+  assert(picker.indexOf('e.isComposing||e.keyCode===229') >= 0, 'S12b IME 合成中の Esc（変換キャンセル）でピッカーを閉じない');
+  // [SHOULD-4] 未連携の案内は同名会員1件時の自動紐付けを明示（「新規会員として登録できます」と断言しない）
+  assert(unlinked.indexOf('その方に紐付きます') >= 0, 'S13 未連携差し替えの案内に同名1件自動紐付けの注記');
+}
 const env = new Function(SRC.join('\n') + `;
   return {
     countPlayerDecidedGames: countPlayerDecidedGames,
@@ -90,6 +109,10 @@ function fxState(){
   assert(env.countPlayerDecidedGames('px', 'A', st) === 0, 'C2 winner=null の局は数えない');
   assert(env.countPlayerDecidedGames('p1', 'B', st) === 0, 'C3 別クラスは数えない');
   assert(env.countPlayerDecidedGames('p1', 'A', null) === 0, 'C4 state 無しでも落ちず 0');
+  // [PR #759 レビュー SHOULD-5] 進行中回戦（state.pairings・未確定）の入力済み勝敗も数える
+  const st2 = fxState();
+  st2.pairings.A = [ { p1: 'p1', p2: 'p2', winner: 'p2' }, { p1: 'px', p2: 'p1', winner: null } ];
+  assert(env.countPlayerDecidedGames('p1', 'A', st2) === 3, 'C5 進行中回戦の入力済み勝敗を加算（未入力は数えない）');
 }
 
 // ---- P. applyParticipantSwapFromMaster（受入基準 1〜3）
@@ -140,15 +163,29 @@ function fxState(){
 {
   const st = fxState();
   const p = st.players.A[0];
-  const r = env.applyParticipantSwapToUnlinked(p, '　架空　三郎　');
+  const r = env.applyParticipantSwapToUnlinked(p, '　架空　三郎　', st);
   assert(r && r.success === true, 'U1 未連携差し替えできる');
   assert(p.name === '架空　三郎', 'U1a 前後空白（全角含む）は除去・名前が入る');
   assert(!('member_id' in p), 'U2 member_id が解除される（未連携ルートへ）');
   assert(p.yomi === '' && p.city === '', 'U3 旧会員の yomi / city はクリア（キメラ残滓を残さない）');
   assert(!('yomiDirty' in p), 'U4 yomiDirty がクリアされる');
   assert(p.member === 'member' && p.grade === 'ippan', 'U5 会費区分は据え置き（黙って金額を変えない）');
-  const r2 = env.applyParticipantSwapToUnlinked(st.players.A[1], '   ');
+  const r2 = env.applyParticipantSwapToUnlinked(st.players.A[1], '   ', st);
   assert(r2 && r2.success === false && r2.error === 'invalid_name', 'U6 空名は拒否');
+  // [PR #759 レビュー BLOCK-1] 同名参加者ガード（同名2人 → 名簿更新の同名1件自動紐付け →
+  //   member_id 共有 → クラウド upsert で片方の成績消失、の連鎖を入口で遮断）
+  const st3 = fxState();
+  const r3 = env.applyParticipantSwapToUnlinked(st3.players.A[0], '架空参加済', st3);
+  assert(r3 && r3.success === false && r3.error === 'duplicate_name', 'U7 既存参加者と同名への未連携差し替えは拒否');
+  assert(st3.players.A[0].name === '架空幹事' && st3.players.A[0].member_id === 'm-old', 'U7a 拒否時は player 無改変');
+  const r4 = env.applyParticipantSwapToUnlinked(st3.players.A[0], '　架空参加済　', st3);
+  assert(r4 && r4.success === false && r4.error === 'duplicate_name', 'U7b normalize 同値（前後の全角空白差）も同名として拒否');
+  const r5 = env.applyParticipantSwapToUnlinked(st3.players.A[0], '架空四郎', null);
+  assert(r5 && r5.success === false && r5.error === 'invalid_state', 'U8 state 無しは適用しない（ガード必須化）');
+  // 自分自身と同名（＝実質リネームなし）は他 player と衝突しない限り通る（q.id!==p.id 除外の検証）
+  const st4 = fxState();
+  const r6 = env.applyParticipantSwapToUnlinked(st4.players.A[0], '架空幹事', st4);
+  assert(r6 && r6.success === true && !('member_id' in st4.players.A[0]), 'U9 自分自身の名前は同名判定から除外（未連携化は実行される）');
 }
 
 console.log('PLAYER-SWAP-001: PASS=' + pass + ', FAIL=' + fail);
