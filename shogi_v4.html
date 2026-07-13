@@ -88,7 +88,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .app-toast.show{opacity:1}
 .app-toast.err{background:#A32D2D}
 .app-modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
-.app-modal-box{background:#fff;border-radius:12px;max-width:420px;width:100%;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,0.28)}
+.app-modal-box{background:#fff;border-radius:12px;max-width:420px;width:100%;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,0.28);max-height:85vh;overflow-y:auto}/* SCALE-MODAL-001 (#767): 長文でも OK/キャンセルへ到達できるよう箱内スクロール（個別モーダル群の 85vh+scroll と同値） */
 .app-modal-msg{font-size:14px;color:#222;line-height:1.65;white-space:pre-wrap;word-break:break-word}
 .app-modal-input{width:100%;box-sizing:border-box;height:42px;border:1px solid #ccc;border-radius:8px;padding:8px 10px;font-size:16px;margin-top:12px;font-family:inherit}
 .app-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
@@ -8978,18 +8978,25 @@ function buildFirstRoundPartialPairs(selected){
 }
 
 // FRP-IMPL-003 (FRP-DESIGN-002 §6.3 / §8.4): native confirm 用の確認文（純粋・state からの氏名解決のみ）。
-//   「Mペア / N名を追加」「各対局の氏名」「奇数なら待機（未割当のまま残す）1名」を要約する。
+//   「Mペア / N名を追加」「先頭数組の氏名＋残り組数」「奇数なら待機（未割当のまま残す）1名」を要約する。
 //   完成形・一括開始と混同しない文言にし、既存対局・結果が不変であることを明記する。
+//   SCALE-MODAL-001 (#767): 旧・全組列挙は大人数（実測 24組=789px>375×667 画面）で確認文がモーダルを溢れさせ
+//   OK/キャンセル押下不能を起こしたため、先頭5組＋「…ほかM組」の要約形へ変更（5組以下は従来どおり全列挙＝不変）。
 function buildFrpAppendConfirmMessage(cls,pairs,leftover){
   // 文言は native confirm() のプレーンテキスト（innerHTML ではないため escapeHtml 不要・適用すると &lt; 等が見えてしまう）。
   //   氏名は一旦ローカルに解決してから連結する（HTML 流入用の未エスケープ検査ヒューリスティクスを踏まないため）。
+  var PREVIEW_MAX=5;   // 全列挙をやめる閾値（超過分は「…ほかM組」に畳む）
   var lines=[];
   lines.push((pairs.length)+'組（'+(pairs.length*2)+'名）を1局目に追加します。');
-  for(var i=0;i<pairs.length;i++){
+  var shown=(pairs.length>PREVIEW_MAX)?PREVIEW_MAX:pairs.length;
+  for(var i=0;i<shown;i++){
     var m=pairs[i];
     var pa=getName(m.p1,cls);
     var pb=getName(m.p2,cls);
     lines.push('　・'+pa+' vs '+pb);
+  }
+  if(pairs.length>shown){
+    lines.push('　・…ほか'+(pairs.length-shown)+'組');
   }
   if(leftover){
     var lo=getName(leftover.id,cls);
@@ -9204,7 +9211,7 @@ function onClickAddOneTable(cls){
 //   - 生成は既存 buildFirstRoundPartialPairs（全員 → 偶数は全ペア・奇数は末尾1人 leftover）＋ append は既存
 //     appendFirstRoundPairs に委譲（実行時再検証・既存対局保持・重複拒否・SAVE-FRP-002・save／復元）。
 //     新しい保存スキーマや状態は持たない（待機＝奇数末尾1人は派生 getUnassignedFirstRoundPlayers に自動的に残る）。
-//   - confirm 文は既存 buildFrpAppendConfirmMessage を再利用（全組の氏名・奇数末尾の待機者・非破壊を明記）。
+//   - confirm 文は既存 buildFrpAppendConfirmMessage を再利用（組数＋先頭5組の氏名（超過分は「…ほかM組」）・奇数末尾の待機者・非破壊を明記。#767 要約形）。
 //   - 再入防止は onClickAddOneTable / onClickAppendFirstRound と **共有** の単一フラグ
 //     firstRoundAppendInFlight（#274・confirm 中の二重発火・連打・他導線とのクロス再入を弾く）。
 //   - 全員一括の開始経路（旧 start 系・全員上書き）は流用しない＝append 経由のみ（既存逐次卓・選択式 append と無干渉）。
