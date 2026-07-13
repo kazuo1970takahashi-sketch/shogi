@@ -7843,6 +7843,284 @@ function applyParticipantRenameWithMaster(p,newName,expectedMemberId,oldName){
   return {success:true,masterPersisted:masterPersisted,duplicateCount:r.duplicateCount||0};
 }
 
+// ============================================================
+// PLAYER-SWAP-001 (#758): 名前編集の3択目「別の人に差し替える（名簿から選ぶ）」
+//   背景: 幹事が数合わせでエントリー→本参加者が来場して席を譲る運用（頻出）で、
+//   「この大会のみ修正」は p.name しか変えず member_id が旧会員のまま残るため、
+//   クラウドにキメラ行（氏名=旧会員/ふりがな=新会員）ができ成績も旧会員に付いた。
+//   ドメイン上は「席（参加枠）は不変・座る人が変わる」＝member_id の付け替えが唯一整合。
+// ============================================================
+
+// 純粋関数: playerId の勝敗入力済み対局数（winner あり）を数える。差し替え確認文言の「N局」用。
+//   [PR #759 レビュー SHOULD-5] 確定済み回戦（state.results）に加えて進行中回戦（state.pairings・
+//   回戦確定 submitRound で results へ移動＝二重計上なし）の入力済み勝敗も数える。
+//   進行中の局も確定後は差し替え先の成績になるため、過少表示は警告として不正確。
+function countPlayerDecidedGames(playerId,cls,state){
+  var n=0;
+  if(!state)return 0;
+  if(state.results&&Array.isArray(state.results[cls])){
+    var rounds=state.results[cls];
+    for(var r=0;r<rounds.length;r++){
+      var ms=Array.isArray(rounds[r])?rounds[r]:[];
+      for(var i=0;i<ms.length;i++){
+        var m=ms[i];
+        if(m&&(m.p1===playerId||m.p2===playerId)&&m.winner)n++;
+      }
+    }
+  }
+  if(state.pairings&&Array.isArray(state.pairings[cls])){
+    var cur=state.pairings[cls];
+    for(var j=0;j<cur.length;j++){
+      var q=cur[j];
+      if(q&&(q.p1===playerId||q.p2===playerId)&&q.winner)n++;
+    }
+  }
+  return n;
+}
+
+// 純粋関数: 既登録 player を名簿の別会員へ丸ごと差し替える。
+//   受付時に名簿から選んだとき（addPlayerFromMaster）と同一のフィールドコピー
+//   （member_id / name / yomi / member / grade / city）＝新概念なし。
+//   pairings/results は player 内部 id で繋がっているため無改変＝これまでの勝敗は差し替え先の成績になる。
+//   yomiDirty はクリア（旧会員へのふりがな上書き経路 YOMI-SYNC-OVERWRITE-001 を遮断）。
+//   in-memory の _pendingNewYomi[p.id] は呼出側でクリアする（純粋関数はグローバルを触らない）。
+//   ガード: 差し替え先が既にこの大会に参加済み（同 member_id）→ already_registered、
+//           同名の別 player がいる → duplicate_name（同名非統合ポリシー・addPlayerFromMaster と同基準）。
+function applyParticipantSwapFromMaster(p,memberId,master,state){
+  if(!p||typeof p!=='object')return {success:false,error:'invalid_player'};
+  if(typeof memberId!=='string'||memberId==='')return {success:false,error:'invalid_id'};
+  if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
+  if(master._loaded_with_corruption===true)return {success:false,error:'corrupted'};
+  if(!state||!state.players||typeof state.players!=='object')return {success:false,error:'invalid_state'};
+  if(typeof p.member_id==='string'&&p.member_id===memberId)return {success:false,error:'same_member'};
+  var member=null;
+  for(var mi=0;mi<master.members.length;mi++){
+    if(master.members[mi]&&master.members[mi].id===memberId){member=master.members[mi];break;}
+  }
+  if(!member)return {success:false,error:'not_found'};
+  if(member.deleted===true)return {success:false,error:'deleted'};
+  var memberNameNorm=normalizePersonName(member.name||'');
+  var clsKeys=Object.keys(state.players);
+  for(var ck=0;ck<clsKeys.length;ck++){
+    var arr=state.players[clsKeys[ck]];
+    if(!Array.isArray(arr))continue;
+    for(var pi=0;pi<arr.length;pi++){
+      var q=arr[pi];
+      if(!q||q.id===p.id)continue;
+      if(typeof q.member_id==='string'&&q.member_id===memberId)return {success:false,error:'already_registered'};
+      if(memberNameNorm&&normalizePersonName(q.name||'')===memberNameNorm)return {success:false,error:'duplicate_name'};
+    }
+  }
+  var feeFields=normalizeMasterFeeFields(member);
+  p.member_id=member.id;
+  p.name=memberNameNorm||String(member.name||'');
+  p.yomi=normalizeYomi(member.yomi||'');
+  p.member=feeFields.member;
+  p.grade=feeFields.grade;
+  p.city=normalizeCity(member.city);
+  delete p.yomiDirty;
+  return {success:true,player:p,memberName:p.name};
+}
+
+// 純粋関数: 名簿にいない人への差し替え＝未連携化。
+//   member_id を解除して既存の未連携ルート（☁送信時「名簿を更新して送信」で新規会員化）に乗せる。
+//   旧会員の人に固有なスナップショット（yomi / city）は残すとキメラになるためクリア。
+//   会費区分（member/grade）は差し替え先が不明のため黙って変えない（金額に直結・受付一覧の編集で直せる）。
+//   [PR #759 レビュー BLOCK-1] 同名参加者ガード（FromMaster 側と同基準・全クラス横断）:
+//   同名を許すと「📋名簿を更新」の同名1件自動紐付け（updateBranchMasterFromTournament）で
+//   2 player が同一 member_id を共有し、クラウド upsert（onConflict: tournament_id,player_id）で
+//   片方の成績が黙って上書き消失し得るため、必ず拒否する。
+function applyParticipantSwapToUnlinked(p,newName,state){
+  if(!p||typeof p!=='object')return {success:false,error:'invalid_player'};
+  var nm=(typeof newName==='string')?newName.replace(/^\s+|\s+$/g,''):'';
+  if(!nm)return {success:false,error:'invalid_name'};
+  if(!state||!state.players||typeof state.players!=='object')return {success:false,error:'invalid_state'};
+  var nmNorm=normalizePersonName(nm);
+  var clsKeys=Object.keys(state.players);
+  for(var ck=0;ck<clsKeys.length;ck++){
+    var arr=state.players[clsKeys[ck]];
+    if(!Array.isArray(arr))continue;
+    for(var pi=0;pi<arr.length;pi++){
+      var q=arr[pi];
+      if(!q||q.id===p.id)continue;
+      if(nmNorm&&normalizePersonName(q.name||'')===nmNorm)return {success:false,error:'duplicate_name'};
+    }
+  }
+  p.name=nm;
+  delete p.member_id;
+  p.yomi='';
+  p.city='';
+  delete p.yomiDirty;
+  return {success:true,player:p};
+}
+
+// [PR #759 レビュー SHOULD-1] この大会が☁送信済み（cloud_sent_tid が現 tournament_id と一致）のとき、
+//   差し替え確認に添える警告文。クラウド entries は upsert のみ（削除経路なし）のため、差し替え後に
+//   再送信しても旧会員の行は自動では消えない（放置すると二重計上）。根治（送信時の不在エントリ掃除）は別スライス。
+function playerSwapSentWarning(){
+  try{
+    if(typeof state!=='undefined'&&state&&typeof state.cloud_sent_tid==='string'&&state.cloud_sent_tid&&state.cloud_sent_tid===state.tournament_id){
+      return '\n\n⚠ この大会はすでに☁送信済みです。差し替え後に再送信しても、クラウド側の元の方の行は自動では消えません（管理者画面での削除が必要です）。';
+    }
+  }catch(e){}
+  return '';
+}
+
+function closePlayerSwapPicker(){
+  var m=document.getElementById('player-swap-modal');
+  if(m&&m.remove)m.remove();
+  if(_playerSwapKeydownHandler&&typeof document!=='undefined'&&document.removeEventListener){
+    try{document.removeEventListener('keydown',_playerSwapKeydownHandler);}catch(e){}
+    _playerSwapKeydownHandler=null;
+  }
+}
+var _playerSwapKeydownHandler=null;
+
+// 差し替え適用後の共通 tail: 保存＋保存検証＋再描画は applyParticipantRenameOnly に委譲
+//   （p.name は適用済みのため rename は no-op・save/verify/renderRegList の既存経路 SAVE-003b を流用）。
+function finalizePlayerSwap(p,oldName,okMsg){
+  try{delete _pendingNewYomi[p.id];}catch(e){}
+  closePlayerSwapPicker();
+  var local=applyParticipantRenameOnly(p,p.name);
+  if(local&&local.persisted){
+    showMsg(okMsg,'ok');
+  } else {
+    // showMsg は内部で escapeHtml 済み（run_tests.sh 2-1 の除外パターン外の変数名を使う）
+    var fromNm=oldName,toNm=p.name;
+    showMsg('「'+fromNm+'」を「'+toNm+'」に差し替えましたが、保存できていない可能性があります','warn');
+  }
+}
+
+function playerSwapErrorMessage(err){
+  if(err==='already_registered')return 'この会員はすでにこの大会に参加しています（差し替えできません）';
+  if(err==='duplicate_name')return '同じ名前の参加者がすでにいるため差し替えできません';
+  if(err==='same_member')return 'すでにこの会員に連携されています';
+  if(err==='deleted')return 'この会員は名簿から削除されています';
+  if(err==='not_found')return '名簿に該当会員が見つかりませんでした（名簿が変更された可能性があります）';
+  return '差し替えできませんでした（'+String(err||'unknown')+'）';
+}
+
+// 候補リスト再描画（検索入力のたびに #ps-list だけ差し替え＝input の focus を保つ）。
+//   候補抽出は既存の findMasterSuggestions を流用（deleted・既登録 member_id 除外＝
+//   参加済み会員はそもそも選べない。適用時にも already_registered ガードで二重防御）。
+function renderPlayerSwapCandidates(p,query){
+  var box=document.getElementById('ps-list');
+  if(!box)return;
+  var master=null;
+  try{master=loadBranchMaster();}catch(e){master=null;}
+  if(!master||master._loaded_with_corruption===true||!Array.isArray(master.members)){
+    box.innerHTML='<div style="font-size:12px;color:#a05000;padding:8px 0">名簿が利用できないため、「名簿にない新規の方として差し替え」のみ使えます。</div>';
+    return;
+  }
+  var q=(typeof query==='string')?query:'';
+  var list=findMasterSuggestions(q,master,getCurrentlyRegisteredMemberIds());
+  var html='';
+  if(!q.replace(/^\s+|\s+$/g,'')){
+    html='<div style="font-size:12px;color:#888;padding:8px 0">氏名またはふりがなで検索してください。</div>';
+  } else if(list.length===0){
+    html='<div style="font-size:12px;color:#888;padding:8px 0">該当する会員がいません（参加済みの会員は表示されません）。下の「名簿にない新規の方として差し替え」を使ってください。</div>';
+  } else {
+    for(var i=0;i<list.length;i++){
+      var m=list[i];
+      var sub=[];
+      if(m.yomi)sub.push(escapeHtml(m.yomi));
+      if(m.city)sub.push(escapeHtml(m.city));
+      html+='<button type="button" class="ps-candidate" data-member-id="'+escapeHtml(m.id)+'" style="display:block;width:100%;text-align:left;margin-bottom:6px;min-height:44px;border:1px solid #2E75B6;color:#1F3864;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">'+escapeHtml(m.name||'')+(sub.length?'<span style="color:#888;font-size:12px;margin-left:8px">'+sub.join('・')+'</span>':'')+'</button>';
+    }
+  }
+  box.innerHTML=html;
+  var btns=box.querySelectorAll?box.querySelectorAll('.ps-candidate'):[];
+  for(var bi=0;bi<btns.length;bi++){
+    btns[bi].addEventListener('click',(function(mid){return function(){handlePlayerSwapPick(p,mid);};})(btns[bi].getAttribute('data-member-id')));
+  }
+}
+
+function handlePlayerSwapPick(p,memberId){
+  var master=null;
+  try{master=loadBranchMaster();}catch(e){master=null;}
+  var member=null;
+  if(master&&Array.isArray(master.members)){
+    for(var mi=0;mi<master.members.length;mi++){
+      if(master.members[mi]&&master.members[mi].id===memberId){member=master.members[mi];break;}
+    }
+  }
+  if(!member){showMsg(playerSwapErrorMessage('not_found'),'warn');return;}
+  var oldName=p.name||'';
+  var newName=String(member.name||'');
+  var games=countPlayerDecidedGames(p.id,p.cls,state);
+  appConfirm('「'+oldName+'」を名簿の「'+newName+'」さんに差し替えます。\n\nこの参加者のこれまでの対局結果（'+games+'局）もすべて「'+newName+'」さんの成績になります。\n（「'+oldName+'」さんの名簿（氏名・ふりがな）は変更されません）'+playerSwapSentWarning(),function(ok){
+    if(!ok)return;
+    var freshMaster=null;
+    try{freshMaster=loadBranchMaster();}catch(e){freshMaster=null;}
+    var r=applyParticipantSwapFromMaster(p,memberId,freshMaster,state);
+    if(!r||!r.success){
+      showMsg(playerSwapErrorMessage(r&&r.error),'warn');
+      var inp=document.getElementById('ps-search');
+      renderPlayerSwapCandidates(p,inp?inp.value:'');
+      return;
+    }
+    var toNm=p.name;  // showMsg は内部で escapeHtml 済み（run_tests.sh 2-1 の除外パターン外の変数名を使う）
+    finalizePlayerSwap(p,oldName,'「'+oldName+'」を「'+toNm+'」に差し替えました（これまでの結果は「'+toNm+'」さんの成績になります）');
+  },{danger:true});
+}
+
+function handlePlayerSwapUnlinked(p,newName){
+  var oldName=p.name||'';
+  var nm=(typeof newName==='string')?newName.replace(/^\s+|\s+$/g,''):'';
+  if(!nm){showMsg('差し替え先の氏名を検索欄に入力してください','warn');return;}
+  var games=countPlayerDecidedGames(p.id,p.cls,state);
+  appConfirm('「'+oldName+'」を名簿にない新規の方「'+nm+'」として差し替えます（名簿とは未連携になります）。\n\nこれまでの対局結果（'+games+'局）もすべて「'+nm+'」さんの成績になります。ふりがなは空になります（あとから編集できます）。\n☁送信時に「名簿を更新して送信」を選ぶと名簿に載ります（同じ名前の会員が名簿に1名だけいる場合は、新規ではなくその方に紐付きます）。'+playerSwapSentWarning(),function(ok){
+    if(!ok)return;
+    var r=applyParticipantSwapToUnlinked(p,nm,state);
+    if(!r||!r.success){showMsg(playerSwapErrorMessage(r&&r.error),'warn');return;}
+    finalizePlayerSwap(p,oldName,'「'+oldName+'」を「'+nm+'」（未連携）に差し替えました（これまでの結果は「'+nm+'」さんの成績になります）');
+  },{danger:true});
+}
+
+// 差し替えピッカー本体。newName（名前編集で入力された新しい名前）を検索初期値に流用する。
+function openPlayerSwapPicker(p,newName){
+  closePlayerSwapPicker();
+  var modal=document.createElement('div');
+  modal.id='player-swap-modal';
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  var games=countPlayerDecidedGames(p.id,p.cls,state);
+  var html='<div style="background:#fff;border-radius:12px;padding:24px;width:420px;max-width:90vw;max-height:85vh;overflow-y:auto">';
+  html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">別の人に差し替える</h3>';
+  html+='<div style="font-size:12px;color:#666;line-height:1.7;margin-bottom:10px">現在：<strong>'+escapeHtml(p.name||'')+'</strong>（これまでの対局結果 '+games+'局）<br>席（参加枠）はそのままで、座っている人だけを入れ替えます。これまでの結果は差し替え先の方の成績になります。</div>';
+  html+='<input type="text" id="ps-search" value="'+escapeHtml(newName||'')+'" placeholder="氏名またはふりがなで検索" autocapitalize="off" autocorrect="off" spellcheck="false" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:16px;border:1px solid #ccc;border-radius:8px;margin-bottom:8px">';
+  html+='<div id="ps-list" style="margin-bottom:8px"></div>';
+  html+='<div style="border-top:1px solid #eee;padding-top:10px;display:flex;flex-direction:column;gap:8px">';
+  html+='<button type="button" id="ps-unlinked" style="padding:10px 16px;font-size:14px;border-radius:8px;background:#fff;color:#1F3864;border:1px solid #1F3864;cursor:pointer">名簿にない新規の方として差し替え</button>';
+  html+='<button type="button" id="ps-cancel" style="padding:10px 16px;font-size:14px;border-radius:8px;background:#fff;color:#666;border:1px solid #ccc;cursor:pointer">キャンセル</button>';
+  html+='</div>';
+  html+='<p style="font-size:11px;color:#888;margin-top:10px;line-height:1.5">参加済みの会員は候補に出ません。Esc キー / 背景クリックでもキャンセルできます。</p>';
+  html+='</div>';
+  modal.innerHTML=html;
+  document.body.appendChild(modal);
+  renderPlayerSwapCandidates(p,newName||'');
+  var inp=document.getElementById('ps-search');
+  if(inp){
+    inp.addEventListener('input',function(){renderPlayerSwapCandidates(p,inp.value);});
+    try{inp.focus();}catch(e){}
+  }
+  var uBtn=document.getElementById('ps-unlinked');
+  if(uBtn)uBtn.addEventListener('click',function(){var i2=document.getElementById('ps-search');handlePlayerSwapUnlinked(p,i2?i2.value:newName);});
+  var cBtn=document.getElementById('ps-cancel');
+  if(cBtn)cBtn.addEventListener('click',function(){closePlayerSwapPicker();});
+  modal.addEventListener('click',function(e){if(e&&e.target===modal)closePlayerSwapPicker();});
+  if(typeof document!=='undefined'&&document.addEventListener){
+    _playerSwapKeydownHandler=function(e){
+      // [PR #759 レビュー SHOULD-3] IME 合成中の Esc（変換キャンセル）でピッカーを閉じない
+      if(e&&(e.isComposing||e.keyCode===229))return;
+      // [PR #759 レビュー SHOULD-2] appConfirm 表示中は confirm 側の Esc（キャンセル）だけを効かせる
+      //   （showAppModal の keydown は capture・stopPropagation なしのため、ここまで届く）
+      if(document.getElementById('app-modal'))return;
+      if(e&&(e.key==='Escape'||e.keyCode===27))closePlayerSwapPicker();
+    };
+    try{document.addEventListener('keydown',_playerSwapKeydownHandler);}catch(e){_playerSwapKeydownHandler=null;}
+  }
+}
+
 function buildMasterSyncModalHtml(oldName,newName,targetInfo){
   var html='<div style="background:#fff;border-radius:12px;padding:24px;width:420px;max-width:90vw;max-height:85vh;overflow-y:auto">';
   html+='<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">参加者名の修正と会員マスタ反映</h3>';
@@ -7875,9 +8153,11 @@ function buildMasterSyncModalHtml(oldName,newName,targetInfo){
   var disabledStyle='background:#eee;color:#999;border:1px solid #ddd;cursor:not-allowed';
   var btnStyle=masterEnabled?enabledStyle:disabledStyle;
   html+='<button type="button" id="ms-master-too" style="padding:10px 16px;font-size:14px;border-radius:8px;'+btnStyle+'"'+disabledAttr+'>会員マスタも更新する</button>';
+  // PLAYER-SWAP-001 (#758): 3択目。上2つは「同一人物の名前修正」、これは「座る人ごと入れ替える」。
+  html+='<button type="button" id="ms-swap-person" style="padding:10px 16px;font-size:14px;border-radius:8px;'+enabledStyle+'">別の人に差し替える（名簿から選ぶ）</button>';
   html+='<button type="button" id="ms-cancel" style="padding:10px 16px;font-size:14px;border-radius:8px;background:#fff;color:#666;border:1px solid #ccc;cursor:pointer">キャンセル</button>';
   html+='</div>';
-  html+='<p style="font-size:11px;color:#888;margin-top:10px;line-height:1.5">「会員マスタも更新する」は対象会員が安全に1件特定できる場合のみ有効です。Esc キー / 背景クリックでもキャンセルできます。</p>';
+  html+='<p style="font-size:11px;color:#888;margin-top:10px;line-height:1.5">「会員マスタも更新する」は対象会員が安全に1件特定できる場合のみ有効です。席を譲るなど<strong>本当に別の人に変わった</strong>ときは「別の人に差し替える」を使ってください（これまでの結果ごと差し替え先の成績になります）。Esc キー / 背景クリックでもキャンセルできます。</p>';
   html+='</div>';
   return html;
 }
@@ -7961,6 +8241,9 @@ function bindMasterSyncModalEvents(p,newName,targetInfo){
   if(tBtn)tBtn.addEventListener('click',handleTournamentOnly);
   var mBtn=document.getElementById('ms-master-too');
   if(mBtn&&!mBtn.disabled)mBtn.addEventListener('click',handleMasterToo);
+  // PLAYER-SWAP-001 (#758): 別人差し替え＝名簿ピッカーへ（入力済みの新しい名前を検索初期値に流用）。
+  var sBtn=document.getElementById('ms-swap-person');
+  if(sBtn)sBtn.addEventListener('click',function(){close();openPlayerSwapPicker(p,newName);});
   var cBtn=document.getElementById('ms-cancel');
   if(cBtn)cBtn.addEventListener('click',function(){close();});
   // Codex Should Fix §4: 背景クリックでキャンセル（モーダル本体のクリックは伝播しない）
@@ -9840,7 +10123,7 @@ var HELP_TEXTS={
       '会費区分：一般／中学生以下／女性 から選びます。中学生以下と女性は同額（支部員＝無料・支部員以外＝500円）、一般は支部員500円・支部員以外1,000円です。',
       'クラスを管理する：A・B以外のクラス（Cなど）を追加・改名できます。A・Bは削除できません（参加者がいる／開始済みのクラスも削除できません）。',
       '名簿にない新規の方：「＋ 名簿にない新規の方（手入力）」を開いて氏名を入れて登録します（漢字・ふりがな・50音で名簿を検索して見つからないときも同様です）。',
-      '登録した後でも、氏名・ふりがな・会費区分は編集で直せます。間違えても直せます。'
+      '登録した後でも、氏名・ふりがな・会費区分は編集で直せます。間違えても直せます。席を譲るなど別の人に変わったときは、名前の編集から「別の人に差し替える（名簿から選ぶ）」で、これまでの結果ごと正しい人に付け替えられます。'
     ]
   },
   // HELP-UX-004 (#341): 順位タブ（最終結果）の順位決定ルールの迷子防止ヘルプ。#309/#323 機構流用・topic 追加のみ。
@@ -11822,7 +12105,9 @@ function syncBranchMasterOnSave(onDone){
       _ydiffsReady=true;
     }catch(_ye){ if(typeof console!=='undefined'&&console.warn)console.warn('YOMI-SYNC-OVERWRITE-001 skip',_ye); }
     if(_ydiffsReady&&_ydiffs.length>0){
-      var _lines=[]; for(var _li=0;_li<_ydiffs.length;_li++){ _lines.push(_ydiffs[_li].name+'：'+_ydiffs[_li].from+' → '+_ydiffs[_li].to); }
+      // PLAYER-SWAP-001 (#758) 同乗: 行の主語を「名簿の◯◯さん」に固定（対象がマスタ側であることを誤読させない。
+      //   旧「氏名：from → to」は当日改名した頭では自分ごとと誤認して OK しやすかった＝2026-07-12 キメラ行の一因）。
+      var _lines=[]; for(var _li=0;_li<_ydiffs.length;_li++){ _lines.push('名簿の「'+_ydiffs[_li].name+'」さんのふりがな：'+_ydiffs[_li].from+' → '+_ydiffs[_li].to); }
       // 上書き＝肯定操作ゆえ danger 無し（Enter=OK 維持）。OK 時のみ上書き→tail、キャンセル時はそのまま tail＝旧 confirm 分岐と同値。
       appConfirm('当日編集したふりがなが名簿と異なる会員がいます。名簿のふりがなを次のとおり更新しますか？\n\n'+_lines.join('\n')+'\n\n（キャンセルすると名簿のふりがなは変更しません）',function(_ok){
         if(_ok){ try{ for(var _ai=0;_ai<_ydiffs.length;_ai++){ _ydiffs[_ai].mem.yomi=_ydiffs[_ai].to; } }catch(_ye2){ if(typeof console!=='undefined'&&console.warn)console.warn('YOMI-SYNC-OVERWRITE-001 skip',_ye2); } }
