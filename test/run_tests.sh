@@ -2753,6 +2753,18 @@ if [ -f "$SCRIPT_DIR/test_player_swap_001.js" ]; then
 else
   warn "test_player_swap_001.js が見つからない"
 fi
+
+echo ""
+echo "【SCALE-MODAL-001 (#767) 汎用確認モーダルのスクロール＋FRP append 確認文の要約（大人数対策）】"
+if [ -f "$SCRIPT_DIR/test_scale_modal_001.js" ]; then
+  if node "$SCRIPT_DIR/test_scale_modal_001.js" "$TARGET" > /tmp/scale_modal_001_out.log 2>&1; then
+    ok "SCALE-MODAL-001 テスト 全PASS ($(tail -1 /tmp/scale_modal_001_out.log))"
+  else
+    ng "SCALE-MODAL-001 テスト 失敗"; cat /tmp/scale_modal_001_out.log
+  fi
+else
+  warn "test_scale_modal_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
