@@ -2061,7 +2061,8 @@ function normalizeBranchMaster(raw){
     seenIds[id]=true;
 
     var yomi=typeof m.yomi==='string'?m.yomi:'';
-    var last_class=(m.last_class==='A'||m.last_class==='B')?m.last_class:null;
+    // CLASS-VARIABLE-002 (#768): 「非 A/B は null」(#273) を「isSafeClassId 以外は null」へ一般化（C+ の前回クラスを load で消さない）。
+    var last_class=isSafeClassId(m.last_class)?m.last_class:null;
     var last_attended=isValidYmd(m.last_attended)?m.last_attended:'';
     var first_attended=isValidYmd(m.first_attended)?m.first_attended:'';
     if(!last_attended&&first_attended)last_attended=first_attended;
@@ -2815,7 +2816,11 @@ function addPlayerFromMaster(memberId,cls,master,state){
   if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
   if(!state||!state.players||!Array.isArray(state.players.A)||!Array.isArray(state.players.B))return {success:false,error:'invalid_state'};
   if(typeof memberId!=='string'||memberId==='')return {success:false,error:'invalid_id'};
-  if(cls!=='A'&&cls!=='B')return {success:false,error:'invalid_class'};
+  // CLASS-VARIABLE-002 (#768): A/B 固定 hard reject を廃止し全クラス受付を解禁（CV-2）。
+  //   受理条件=DOM 安全な classId かつ渡された state に受け皿配列が実在すること（normalizeState/addClass が
+  //   state.classes の全クラスに players 配列を常置するため、正規経路では state.classes 在籍と等価）。
+  //   error 名 'invalid_class' は不変（未知クラス/破損 state への defensive として温存）。
+  if(!isSafeClassId(cls)||!Array.isArray(state.players[cls]))return {success:false,error:'invalid_class'};
   var member=null;
   for(var mi=0;mi<master.members.length;mi++){
     if(master.members[mi]&&master.members[mi].id===memberId){member=master.members[mi];break;}
@@ -2825,7 +2830,7 @@ function addPlayerFromMaster(memberId,cls,master,state){
   // 重複チェック：member_id 一致を最優先（duplicate_member）。なければ normalizePersonName 同名（duplicate_name）。
   // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定 concat をやめ、渡された state の全クラスを横断して重複判定する。
   //   純粋関数のため global の allRegisteredPlayers() ではなく引数 state.players を走査する（A/B のみなら従来同一）。
-  //   追加先クラス自体は上の hard reject で A/B に限定済み（非A/B への追加は CV-2 まで不可）。
+  //   追加先クラスの受理は上のガード（isSafeClassId＋受け皿配列実在＝CLASS-VARIABLE-002 #768 で全クラス化）。
   var memberNameNorm=normalizePersonName(member.name||'');
   var all=[];
   var dupClsKeys=Object.keys(state.players);
@@ -2881,11 +2886,15 @@ function changePlayerClass(memberId,newCls,master,state,opts){
   if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
   if(!state||!state.players||!Array.isArray(state.players.A)||!Array.isArray(state.players.B))return {success:false,error:'invalid_state'};
   if(typeof memberId!=='string'||memberId==='')return {success:false,error:'invalid_id'};
-  if(newCls!=='A'&&newCls!=='B')return {success:false,error:'invalid_class'};
+  // CLASS-VARIABLE-002 (#768): 移動先の A/B 固定を廃止（addPlayerFromMaster と同一の受理条件・error 名不変）。
+  if(!isSafeClassId(newCls)||!Array.isArray(state.players[newCls]))return {success:false,error:'invalid_class'};
   var target=null,oldCls=null,oldIdx=-1;
-  var classes=['A','B'];
+  // CLASS-VARIABLE-002 (#768): 探索も ['A','B'] 固定をやめ全クラス走査へ。listClassIdsForMasterSync（#273 の
+  //   既存純関数・state.classes 主＋players キー union）を流用＝A/B のみの state では ['A','B'] と同順・同結果。
+  var classes=listClassIdsForMasterSync(state);
   for(var ci=0;ci<classes.length;ci++){
     var arr=state.players[classes[ci]];
+    if(!Array.isArray(arr))continue;
     for(var pi=0;pi<arr.length;pi++){
       if(arr[pi]&&arr[pi].member_id===memberId){target=arr[pi];oldCls=classes[ci];oldIdx=pi;break;}
     }
@@ -2932,7 +2941,7 @@ function createMemberFromParticipant(p,master,date){
     id:generateMemberId(master),
     name:normalizePersonName(p.name||''),
     yomi:normalizeYomi((p&&typeof p.yomi==='string')?p.yomi:''),
-    last_class:(p.cls==='A'||p.cls==='B')?p.cls:null,
+    last_class:isSafeClassId(p.cls)?p.cls:null,  // CLASS-VARIABLE-002 (#768): C+ も記録（不正 id のみ null）
     last_attended:date,
     first_attended:date,
     attendance_count:0,
@@ -3039,17 +3048,17 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
         }
       }
       addTournamentIdOnce(member,tid);
-      // Issue #273 / Codex P1: last_class は「最新出席の所属クラス」を表す（A/B→その文字・C 以降→null）。
-      //   この大会が member の最新出席になるとき（既存 last_attended 以降、または初出席）だけ last_class を
-      //   上書きし、より古い大会で新しいクラスを潰さない。C 以降は A/B/null 不変条件を保つため null に揃える。
-      //   旧実装は A/B のときだけ上書きし、C 以降の参加では過去の stale な "A"/"B" が残って「前回:A/B」を
-      //   誤表示し、サジェスト・過去参加者追加が古いクラスを優先してしまっていた（最新出席で必ず是正する）。
+      // Issue #273 / Codex P1: last_class は「最新出席の所属クラス」を表す。この大会が member の最新出席に
+      //   なるとき（既存 last_attended 以降、または初出席）だけ last_class を上書きし、より古い大会で新しい
+      //   クラスを潰さない（最新出席で必ず是正する）。
+      // CLASS-VARIABLE-002 (#768): 不変条件を「非 A/B は null」→「isSafeClassId 以外は null」へ一般化
+      //   （C+ の所属クラスも記録する。不正 id のみ null）。
       var isLatestAttendance273=isValidYmd(date)&&(!member.last_attended||date>=member.last_attended);
       if(isValidYmd(date)){
         if(!member.last_attended||date>=member.last_attended)member.last_attended=date;
         if(!member.first_attended||date<member.first_attended)member.first_attended=date;
       }
-      if(isLatestAttendance273)member.last_class=(p.cls==='A'||p.cls==='B')?p.cls:null;
+      if(isLatestAttendance273)member.last_class=isSafeClassId(p.cls)?p.cls:null;
       // A-3: 支部員区分・中学生以下区分の前回値を記録（次回サジェスト引き継ぎ用）
       if(p.member==='member'||p.member==='other')member.member=p.member;
       if(p.grade==='ippan'||p.grade==='chu'||p.grade==='josei')member.grade=p.grade;
@@ -3356,14 +3365,11 @@ function ppDenseClsPalette(clsId){
   for(var i=0;i<list.length;i++){ if(list[i].id===clsId)return PP_DENSE_PALETTES[i%PP_DENSE_PALETTES.length]; }
   return PP_DENSE_PALETTES[0];
 }
-// L3 P1-a: addPlayerFromMaster / changePlayerClass は CV-2 未実装のため A/B 以外を hard reject する。
-//   モードバー/シートに受付できないクラスを出すと主導線が無言失敗するため、選択肢を受理可能クラスに限定する。
-//   CV-2（非A/B への追加）実装時はこのフィルタを外すだけで全クラス対応になる。
+// CLASS-VARIABLE-002 (#768): CV-2 実装済み＝addPlayerFromMaster / changePlayerClass が全クラスを受理するため、
+//   旧 L3 P1-a の A/B 限定フィルタを撤去し getRegistrationClassList() 素通しにする（モードバー/受付シート/
+//   編集シートのクラス候補が C+ にも追随）。関数は呼び出し3箇所の互換のため温存する。
 function ppDenseSelectableClasses(){
-  var list=getRegistrationClassList();
-  var out=[];
-  for(var i=0;i<list.length;i++){ if(list[i].id==='A'||list[i].id==='B')out.push(list[i]); }
-  return out.length?out:list;
+  return getRegistrationClassList();
 }
 function ppDenseActiveCls(){
   var list=ppDenseSelectableClasses();
@@ -3380,7 +3386,6 @@ function _buildPpModeBarHtml(){
   var active=ppDenseActiveCls();
   var pal=ppDenseClsPalette(active);
   var list=ppDenseSelectableClasses();
-  var allList=getRegistrationClassList();
   var html='<div class="pp-mode-bar" style="background:'+pal.light+';border:1px solid '+pal.bd+';border-radius:8px;padding:8px 10px;margin-bottom:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">';
   // DAYOF-UX-HINT-001 (作者依頼 2026-07-03): 「クラスを選んでから名前をタップ」の2段階操作を
   //   手順番号 ①② で伝える（行数は増やさない・既存バー内の文言のみ）。②側には選択中クラス名を
@@ -3392,10 +3397,7 @@ function _buildPpModeBarHtml(){
       +(on?('background:'+p.bd+';color:#fff;border:1px solid '+p.bd+';font-weight:600'):'background:#fff;color:#444;border:1px solid #bbb')+'">'
       +escapeHtml(c.name)+(on?' ✓':'')+'</button>';
   }
-  // L3 P1-a: A/B 以外のクラスがあるときは手入力への誘導を明示（無言で選択肢から消さない）。
-  if(allList.length>list.length){
-    html+='<span style="font-size:11px;color:'+pal.fg+'">※A/B 以外は登録画面の手入力で受付</span>';
-  }
+  // CLASS-VARIABLE-002 (#768): 旧 L3 P1-a の「A/B 以外は手入力へ」誘導注記は撤去（全クラス受付可＝恒久到達不能）。
   html+='<span style="margin-left:auto;font-size:12px;font-weight:600;color:'+pal.fg+'">② 名前をタップ → '+escapeHtml(ppDenseClsName(active))+'に受付</span>';
   html+='</div>';
   return html;
@@ -3499,7 +3501,7 @@ function handlePpDenseTap(memberId){
     var err=r&&r.error;
     if(err==='duplicate_name')notifyRegTapErr('同じ名前の参加者がいます。別人の場合は手入力で区別してください');
     else if(err==='duplicate_member')notifyRegTapErr('この参加者はすでに登録されています');
-    else if(err==='invalid_class')notifyRegTapErr('このクラスへの受付は現在未対応です。登録画面の手入力をご利用ください');
+    else if(err==='invalid_class')notifyRegTapErr('このクラスには受付できません。クラス設定を確認してください');
     else notifyRegTapErr('受付に失敗しました');
     return;
   }
@@ -3534,7 +3536,7 @@ function openPpDenseActionSheet(memberId,currentCls){
   var html='<div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:320px">';
   html+='<div style="font-size:15px;font-weight:600;color:#1F3864;margin-bottom:4px">'+escapeHtml(name)+'</div>';
   html+='<div style="font-size:12px;color:#666;margin-bottom:12px">受付済（'+escapeHtml(ppDenseClsName(currentCls))+'）</div>';
-  // L3 P1-a: 変更先も受理可能クラス（CV-2 まで A/B）に限定＝changePlayerClass の hard reject を UI に出さない。
+  // 変更先候補は ppDenseSelectableClasses()＝全クラス（CLASS-VARIABLE-002 #768 で CV-2 実装済み・changePlayerClass も全クラス受理）。
   var list=ppDenseSelectableClasses();
   for(var ci=0;ci<list.length;ci++){
     if(list[ci].id===currentCls)continue;
@@ -3676,7 +3678,7 @@ function handlePastParticipantClassAdd(memberId,cls){
   var memberName=member.name||'';
   // 現在の登録クラスを取得
   // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定をやめ全クラス横断で現登録クラスを判定（C 在籍も検知）。A/B のみなら従来同一。
-  //   C 在籍者が A/B ボタンを押すと別クラス登録済み扱いになる。クラス変更自体は changePlayerClass が A/B 限定（CV-2）。
+  //   C 在籍者が別クラスボタンを押すと別クラス登録済み扱い→変更 confirm。クラス変更は CLASS-VARIABLE-002 (#768) で全クラス受理。
   var existingCls=null;
   var existClasses=Object.keys(state.players);
   for(var eci=0;eci<existClasses.length;eci++){
@@ -3899,24 +3901,33 @@ function addSelectedPastParticipants(){
   //   saveBranchMaster＝マスタ書込）を出さずにそのまま受付する。yomi 空のまま追加された場合は
   //   従来の allEmpty 警告（「他」タブ表示の案内）だけ出す。
   if((typeof isGuestTournament==='function')&&isGuestTournament(state)){
-    finalizeAddPastParticipants(picked,master,yomiEmpty.length>0);
+    finalizeAddPastParticipants(picked,master,yomiEmpty.length>0,(typeof ppDenseActiveCls==='function')?ppDenseActiveCls():'A');
     return;
   }
   if(yomiEmpty.length===0){
-    finalizeAddPastParticipants(picked,master,false);
+    finalizeAddPastParticipants(picked,master,false,(typeof ppDenseActiveCls==='function')?ppDenseActiveCls():'A');
     return;
   }
   openYomiInputDialog(yomiEmpty,function(yomiInputs,isCancel){
     if(isCancel)return;  // ChatGPT M1 反映: キャンセルは何もしない
     var result=applyYomiInputsToMaster(master,yomiEmpty,yomiInputs||{});
     if(result.updatedCount>0)saveBranchMaster(master);
-    finalizeAddPastParticipants(picked,master,result.allEmpty);
+    finalizeAddPastParticipants(picked,master,result.allEmpty,(typeof ppDenseActiveCls==='function')?ppDenseActiveCls():'A');
   });
 }
 
-function finalizeAddPastParticipants(picked,master,allEmptyYomi){
+// CLASS-VARIABLE-002 (#768): 第4引数 cls（追加先クラス）を追加。未指定はピッカーの選択クラス
+//   ppDenseActiveCls() に fallback（さらに不成立なら従来既定 'A'）。#761（一括登録 UI）は自前の cls を渡す想定。
+function finalizeAddPastParticipants(picked,master,allEmptyYomi,cls){
   var existingNames={};
   var existingMids={};
+  // PRESET-REMOVE-001 (#551 派生)→CLASS-VARIABLE-002 (#768): 前回クラス(last_class)による人ごとの自動割当は
+  //   廃止のまま（#551 の決定不変）。追加先は「A 固定」から「呼び出し元指定 or ピッカー選択クラス」へ変更
+  //   （全員同一クラスに入る点は従来どおり）。
+  if(!(typeof cls==='string'&&isSafeClassId(cls)&&state&&state.players&&Array.isArray(state.players[cls]))){
+    cls=(typeof ppDenseActiveCls==='function')?ppDenseActiveCls():'A';
+    if(!(state&&state.players&&Array.isArray(state.players[cls])))cls='A';
+  }
   // CLASS-VARIABLE-001 (CV-1 Codex P1): A/B 固定 concat をやめ allRegisteredPlayers() で全クラス横断に既登録を集約（C 在籍も重複スキップ対象）。A/B のみなら従来同一。
   var allCurrent=allRegisteredPlayers();
   for(var k=0;k<allCurrent.length;k++){
@@ -3929,8 +3940,6 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi){
   for(var p=0;p<picked.length;p++){
     var m=picked[p];
     if(existingMids[m.id]||existingNames[m.name]){skipped++;continue;}
-    // PRESET-REMOVE-001 (#551 派生): 前回クラス(last_class)による自動割当は廃止。中立既定(A)で追加する。
-    var cls='A';
     var pid='p'+Date.now()+Math.floor(Math.random()*1000)+'_'+p;
     // PAST-ADD-FEE-INHERIT-001: 旧実装は member:'member'/grade:'ippan' をハードコードし、中学生以下・女性・
     //   支部員以外の会費区分を取りこぼしていた。単発 addPlayerFromMaster と同じ normalizeMasterFeeFields で
@@ -4144,7 +4153,7 @@ function buildMasterTabHtml(master){
       var isDel=(m.deleted===true);
       var checked=_masterSelected[m.id]?' checked':'';
       var gradeLabel=(m.grade==='chu')?'中学以下':(m.grade==='josei')?'女性':'一般';
-      var lastCls=(m.last_class==='A'||m.last_class==='B')?m.last_class:'－';
+      var lastCls=isSafeClassId(m.last_class)?m.last_class:'－';  // CLASS-VARIABLE-002 (#768): C+ も表示
       var rowStyle=isDel?'background:#f5f5f5;color:#888;text-decoration:line-through':'';
       // MASTER-SHEET-003: tr に data-mid を付与（更新後の行追跡＝scroll＋ハイライトのフック）。
       html+='<tr class="master-sheet-row'+(isDel?' master-row-deleted':'')+'" data-mid="'+mid+'" style="border-bottom:1px solid #eef1f5;'+rowStyle+'">';
@@ -5636,14 +5645,14 @@ function mergeTournamentParticipantsIntoMaster(tournaments,master){
         addTournamentIdOnce(member,meta.tournament_id);
         // Issue #273 / Codex P1: 統合経路も同様に last_class を「最新出席のクラス」に揃える。
         //   この大会が member の最新出席（既存 last_attended 以降、または初出席）になるときだけ上書きし、
-        //   古い大会で新しいクラスを潰さない。C 以降は A/B/null 不変条件を保つため null に揃える
-        //   （旧実装は A/B のみ上書きし、C 以降の統合で stale な "A"/"B" が残って C→null 不変条件を破っていた）。
+        //   古い大会で新しいクラスを潰さない。CLASS-VARIABLE-002 (#768): 不変条件は「isSafeClassId 以外は null」
+        //   へ一般化（C+ も記録・不正 id のみ null）。
         var isLatestAttendance273=isValidYmd(meta.tournament_date)&&(!member.last_attended||meta.tournament_date>=member.last_attended);
         if(isValidYmd(meta.tournament_date)){
           if(!member.last_attended||meta.tournament_date>=member.last_attended)member.last_attended=meta.tournament_date;
           if(!member.first_attended||meta.tournament_date<member.first_attended)member.first_attended=meta.tournament_date;
         }
-        if(isLatestAttendance273)member.last_class=(p.cls==='A'||p.cls==='B')?p.cls:null;
+        if(isLatestAttendance273)member.last_class=isSafeClassId(p.cls)?p.cls:null;  // CLASS-VARIABLE-002 (#768): C+ も記録
         recalcMemberAttendance(member);
       }
     }
@@ -6769,7 +6778,7 @@ function makePlayerRow(p,cls,i){
 // REG-TAB-TIDY-001 (#743) ⑤b: 参加者カードの操作シート。openPpDenseActionSheet と同型（build/bind 分離・
 //   選択時に閉じてから既存関数を呼ぶ＝新規の破壊ロジックを作らない）。
 //   項目の出し分け: クラス変更は member_id 連携者かつ現クラスが ppDenseSelectableClasses() 内の場合のみ
-//   （CV-2 の A/B 限定を UI に出さない・手入力者には出さない）。棄権/復帰は従来ボタンと同条件（開始後のみ）。
+//   （#768 で全クラス化済み・手入力者には出さない）。棄権/復帰は従来ボタンと同条件（開始後のみ）。
 function openPlayerEditSheet(playerId,cls){
   var existing=document.getElementById('player-edit-sheet');
   if(existing&&existing.remove)existing.remove();
@@ -6786,7 +6795,7 @@ function openPlayerEditSheet(playerId,cls){
   html+='<div style="font-size:12px;color:#666;margin-bottom:12px">'+escapeHtml(clsName)+' '+escapeHtml(entryNoOf(cls,p.id))+'・'+escapeHtml(fee===0?'無料':fee.toLocaleString()+'円')+'</div>';
   html+='<button type="button" id="pes-name" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">✏️ 名前を編集</button>';
   html+='<button type="button" id="pes-yomi" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">ふりがなを編集</button>';
-  // クラス変更（member_id 連携者のみ・A/B=CV-2 の範囲内のみ・handlePastParticipantClassAdd 経由＝confirm/master 更新は既存フロー）
+  // クラス変更（member_id 連携者のみ・全クラス対応=#768・handlePastParticipantClassAdd 経由＝confirm/master 更新は既存フロー）
   var selectable=(typeof ppDenseSelectableClasses==='function')?ppDenseSelectableClasses():[];
   var curSelectable=false;
   for(var si=0;si<selectable.length;si++){ if(selectable[si].id===cls){curSelectable=true;break;} }
@@ -7151,7 +7160,7 @@ function renderSuggestList(suggestions){
       var parts=[];
       if(m.yomi)parts.push(m.yomi);
       // A-4.2 §3.4.3: 「前回:Xクラス」テキスト併記
-      if(m.last_class==='A'||m.last_class==='B')parts.push('前回:'+m.last_class+'クラス');
+      if(isSafeClassId(m.last_class))parts.push('前回:'+m.last_class+'クラス');  // CLASS-VARIABLE-002 (#768): C+ も表示
       if(m.last_attended)parts.push('最終参加 '+m.last_attended);
       meta.textContent=parts.join(' / ');
       info.appendChild(meta);
@@ -7863,7 +7872,7 @@ function verifyPlayerFieldPersisted(cls,playerId,field,expected){
 // 引数:
 //   memberId : master member 側の id（= player.member_id に格納される値）
 //   field    : ALLOWED_FIELDS 内のキー
-//   expected : last_class は 'A' / 'B' / null、member / grade / city は文字列
+//   expected : last_class は isSafeClassId な classId / null（#768 で A/B から一般化）、member / grade / city は文字列
 //
 // 注意（callsite 向け）:
 //   - expected はフォーム生値ではなく applyMasterMemberEdit / changePlayerClass 適用後の
@@ -7891,11 +7900,12 @@ function verifyMasterFieldPersisted(memberId,field,expected){
     if(!found)return false;
     var actual=found[field];
     if(field==='last_class'){
-      // 'A' / 'B' / null の三値のみ受理。undefined（raw 側に key 不在を含む）は null と
-      // 同一視しない（raw JSON 直接検証の目的: 「保存された実データそのものが期待値と
-      // 一致するか」を確認するため、normalize による null 補完を持ち込まない）。
-      var allowedA=(expected==='A'||expected==='B'||expected===null);
-      var allowedP=(actual==='A'||actual==='B'||actual===null);
+      // CLASS-VARIABLE-002 (#768): 受理集合を「'A'/'B'/null」から「isSafeClassId な classId / null」へ一般化
+      //   （C+ のクラス変更 S03/S22 verify を通す）。undefined（raw 側に key 不在を含む）は null と
+      //   同一視しない（raw JSON 直接検証の目的: 「保存された実データそのものが期待値と
+      //   一致するか」を確認するため、normalize による null 補完を持ち込まない）。
+      var allowedA=(isSafeClassId(expected)||expected===null);
+      var allowedP=(isSafeClassId(actual)||actual===null);
       if(!allowedA)return false;
       if(!allowedP)return false;
       return actual===expected;
@@ -10947,10 +10957,10 @@ function syncTournamentToCloud(client, master, opts){
 //   tournaments: [{ id, app_tournament_id, date, season }]（id=DB uuid・app_tournament_id=t_YYYY_MM_DD[_n]）
 //   players:     [{ id, member_id }]（id=DB uuid・member_id=ローカル member.id）
 //   entries:     [{ tournament_id, player_id, class }]（tournament_id/player_id=DB uuid）
-//   stat = { member_id, last_class(A/B/null), last_attended(ymd|''), first_attended(ymd|''), tournament_ids:[app_tid…] }
+//   stat = { member_id, last_class(classId|null), last_attended(ymd|''), first_attended(ymd|''), tournament_ids:[app_tid…] }
 //   規則（設計 v2 §2-5）:
 //     - 決定的 tie-break: date 昇順 → app_tournament_id 昇順（null/'' は先頭）で並べた最後を「最新」。
-//     - last_class = 最新大会の class を A/B のみ採用しそれ以外は null（#273 不変条件「非 A/B は null」と同義）。
+//     - last_class = 最新大会の class（CLASS-VARIABLE-002 #768: isSafeClassId のみ採用・不正値は null。旧「非 A/B は null」#273 を一般化）。
 //     - last_attended = 最新大会の date（有効 ymd のみ・全て無効なら ''）／ first_attended = 最古の有効 date。
 //     - date 無効（''/非 ymd）の大会は日付導出から除外するが tie-break・last_class 算入には残す。
 //     - tournament_ids = 参加大会の app_tournament_id（NULL/'' の大会は skip・重複除去）。
@@ -10977,7 +10987,7 @@ function buildDerivedMemberStatsFromCloud(tournaments, players, entries){
     if(!mid)continue;
     var tt=tourById[String(e.tournament_id)];
     if(!tt)continue;
-    var cls=(e['class']==='A'||e['class']==='B')?e['class']:null;
+    var cls=isSafeClassId(e['class'])?e['class']:null;  // CLASS-VARIABLE-002 (#768): C+ も採用（不正値のみ null）
     if(!attByMember[mid])attByMember[mid]=[];
     attByMember[mid].push({date:tt.date,app_tid:tt.app_tid,cls:cls});
   }
@@ -11002,7 +11012,7 @@ function buildDerivedMemberStatsFromCloud(tournaments, players, entries){
     }
     stats[m]={
       member_id:m,
-      last_class:latest.cls,          // 収集時に非 A/B→null 済み
+      last_class:latest.cls,          // 収集時に isSafeClassId 以外→null 済み（#768）
       last_attended:latest.date||'',  // 全て '' なら ''
       first_attended:first_attended,
       tournament_ids:tids
@@ -11037,7 +11047,7 @@ function mergeDerivedStatsIntoMaster(master, stats){
     var changed=false;
     var localTids=Array.isArray(m.tournament_ids)?m.tournament_ids:[];
     var dTids=Array.isArray(st.tournament_ids)?st.tournament_ids:[];
-    var dLastClass=(st.last_class==='A'||st.last_class==='B')?st.last_class:null;
+    var dLastClass=isSafeClassId(st.last_class)?st.last_class:null;  // CLASS-VARIABLE-002 (#768): C+ も採用
     var dLast=isValidYmd(st.last_attended)?st.last_attended:'';
     var dFirst=isValidYmd(st.first_attended)?st.first_attended:'';
     if(localTids.length===0){
