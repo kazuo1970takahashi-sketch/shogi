@@ -2729,6 +2729,18 @@ if [ -f "$SCRIPT_DIR/test_manual_sync_001.js" ]; then
 else
   warn "test_manual_sync_001.js が見つからない"
 fi
+
+echo ""
+echo "【PLAYER-SWAP-001 (#758) 名前編集「別の人に差し替える（名簿から選ぶ）」＝member_id 付け替え】"
+if [ -f "$SCRIPT_DIR/test_player_swap_001.js" ]; then
+  if node "$SCRIPT_DIR/test_player_swap_001.js" "$TARGET" > /tmp/player_swap_001_out.log 2>&1; then
+    ok "PLAYER-SWAP-001 テスト 全PASS ($(tail -1 /tmp/player_swap_001_out.log))"
+  else
+    ng "PLAYER-SWAP-001 テスト 失敗"; cat /tmp/player_swap_001_out.log
+  fi
+else
+  warn "test_player_swap_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
