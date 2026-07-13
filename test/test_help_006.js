@@ -116,7 +116,7 @@ assert(jt.indexOf('棄権')>=0 && jt.indexOf('成績は残ります')>=0, 'R8 �
 assert(jt.indexOf('印刷')>=0, 'R9 組み合わせ印刷の説明を含む');
 const ct = env.HELP_TEXTS && env.HELP_TEXTS['cloud'];
 assert(!!ct && ct.title==='クラウド送信・取得ヘルプ', 'R10 cloud の title が「クラウド送信・取得ヘルプ」');
-assert(ct && Array.isArray(ct.lines) && ct.lines.length===8, 'R11 cloud の lines が8項目の配列（ID共有説明＋キーなし合流 #588）');
+assert(ct && Array.isArray(ct.lines) && ct.lines.length===9, 'R11 cloud の lines が9項目の配列（ID共有#588＋ゲスト大会送信不可 GUEST-TOURNAMENT-MODE-001 #760）');
 const jc = ct ? ct.lines.join('\n') : '';
 assert(jc.indexOf('運営共通キーを発行')>=0 && jc.indexOf('１つの大会にまとまります')>=0, 'R11b cloud ヘルプに2台分担の運営共通キー手順を含む');
 assert(jc.indexOf('今日の大会に合流')>=0, 'R11c cloud ヘルプにキーなし合流の手順を含む（Phase D #588）');
@@ -126,6 +126,7 @@ assert(jc.indexOf('二重にはなりません')>=0, 'R14 再送信しても二�
 assert(jc.indexOf('端末に残っています')>=0, 'R15 失敗しても当日データは端末に残る説明を含む');
 assert(jc.indexOf('クラウドの過去大会')>=0 && jc.indexOf('読み込む')>=0, 'R16 大会履歴での取得の説明を含む');
 assert(jc.indexOf('バックアップ')>=0, 'R17 クラウドはバックアップの代わりではない説明を含む');
+assert(jc.indexOf('ゲスト大会')>=0 && jc.indexOf('送信できません')>=0, 'R17b ゲスト大会の結果は送信不可の説明を含む（GUEST-TOURNAMENT-MODE-001 #760）');
 // 既存 topic 非劣化
 assert(env.HELP_TEXTS['first-round'] && env.HELP_TEXTS['report'] && env.HELP_TEXTS['reg'] && env.HELP_TEXTS['standings'] && env.HELP_TEXTS['master'] && env.HELP_TEXTS['save-warning'], 'R18 既存6 topic 非劣化');
 

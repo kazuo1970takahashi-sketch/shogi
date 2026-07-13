@@ -23,7 +23,9 @@ function extractScripts(src){
 const code = extractScripts(html);
 
 function extractFunction(src, name){
-  const start = src.indexOf('function ' + name);
+  // GUEST-TOURNAMENT-MODE-001 (#760): 前方一致だと renderTournament が renderTournamentKindControl に
+  //   先取りされるため '(' まで含めて厳密一致にする（test_player_swap_001 と同流儀・チェック内容は不変）。
+  const start = src.indexOf('function ' + name + '(');
   if(start < 0) return null;
   let i = src.indexOf('{', start), depth = 0;
   for(; i < src.length; i++){

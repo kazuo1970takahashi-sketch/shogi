@@ -108,7 +108,7 @@ assert(env.HELP_TEXTS && typeof env.HELP_TEXTS==='object', 'R1 HELP_TEXTS レジ
 const reg = env.HELP_TEXTS && env.HELP_TEXTS['reg'];
 assert(!!reg && typeof reg==='object', 'R2 reg トピックが存在する');
 assert(reg && reg.title==='登録・受付ヘルプ', 'R3 reg の title が「登録・受付ヘルプ」');
-assert(reg && Array.isArray(reg.lines) && reg.lines.length===6, 'R4 reg の lines が6項目の配列');
+assert(reg && Array.isArray(reg.lines) && reg.lines.length===7, 'R4 reg の lines が7項目の配列（GUEST-TOURNAMENT-MODE-001 #760 でゲスト大会の案内を追加）');
 const j = reg ? reg.lines.join('\n') : '';
 assert(j.indexOf('受付番号は自動')>=0, 'R5 (1)受付番号は自動採番の説明を含む');
 assert(j.indexOf('ふりがな')>=0 && j.indexOf('50音')>=0 && j.indexOf('後から編集')>=0, 'R6 (2)ふりがなの説明（50音・編集可）を含む');
@@ -116,6 +116,7 @@ assert(j.indexOf('会費区分')>=0 && j.indexOf('一般')>=0 && j.indexOf('中�
 assert(j.indexOf('A・Bは削除できません')>=0, 'R8 (4)クラス管理・A・Bは削除不可の説明を含む');
 assert(j.indexOf('名簿から受付')>=0 && j.indexOf('名前をタップ')>=0 && j.indexOf('手入力')>=0, 'R9 (5)名簿からのタップ受付＋手入力の説明を含む（DOC-SYNC-001 意図保持追随・旧文言=一括追加）');
 assert(j.indexOf('編集で直せます')>=0, 'R10 (6)登録後も編集で直せる説明を含む');
+assert(j.indexOf('ゲスト大会')>=0 && j.indexOf('名簿（会員マスタ）に記録されなくなります')>=0, 'R10b (7)ゲスト大会（大会の種類）の説明を含む（GUEST-TOURNAMENT-MODE-001 #760）');
 assert(env.HELP_TEXTS && env.HELP_TEXTS['first-round'] && Array.isArray(env.HELP_TEXTS['first-round'].lines), 'R11 #309 first-round トピックは非劣化で残る');
 assert(env.HELP_TEXTS && env.HELP_TEXTS['report'] && Array.isArray(env.HELP_TEXTS['report'].lines), 'R12 #323 report トピックは非劣化で残る');
 
