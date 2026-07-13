@@ -399,6 +399,9 @@ body.sb-active{overflow:hidden}
 .sb-hrow{display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid #eef1f5;font-size:14px;color:#333}
 .sb-hrow-r{font-size:11px;color:#777;width:44px;flex-shrink:0}
 .sb-hrow-no{margin-left:auto;font-size:11px;color:#777}
+/* GUEST-TOURNAMENT-MODE-001 (#760): ヘッダの🎪ゲスト大会バッジ。既定 display:none（renderGuestModeUI が表示切替）。
+   色は warn 意味色（STYLE-GUIDE §1: #633806 文字・#faeeda 地・#EF9F27 枠）＝紺ヘッダ上で視認性が高い。 */
+.guest-badge{display:none;font-size:12px;font-weight:600;color:#633806;background:#faeeda;border:1px solid #EF9F27;border-radius:6px;padding:2px 8px;margin-left:8px;vertical-align:middle;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -414,7 +417,9 @@ body.sb-active{overflow:hidden}
      操作UI（入力/保存/編集ボタン）は一切含めない。 -->
 <div id="scoreboard-view" aria-hidden="true"></div>
 <div class="header">
-  <div><h1>沼津支部 月例将棋大会 運営ツール</h1></div>
+  <!-- GUEST-TOURNAMENT-MODE-001 (#760): 🎪ゲスト大会バッジ。ゲスト大会中のみ renderGuestModeUI が表示し、
+       「いまどちらのモードか」をどのタブでも常時視認できる（迷わない）。色は warn 意味色（STYLE-GUIDE §1）。 -->
+  <div><h1>沼津支部 月例将棋大会 運営ツール</h1><span id="guest-mode-badge" class="guest-badge no-print">🎪 ゲスト大会</span></div>
   <!-- HEADER-TIDY-001 (#746 / ⑤c 案B・作者承認 2026-07-10): 常時表示は当日頻用の2ボタン（44px化）＋☰のみ。
        案内/ライブ配信/バックアップ/リセット2種は直下の ☰ボトムシート（#header-menu-sheet）へ格納。 -->
   <div style="display:flex;gap:8px;align-items:center">
@@ -512,7 +517,22 @@ body.sb-active{overflow:hidden}
          HTML 再配置のみ＝各 section/ボタンの id・bind・レンダラ（renderClassManager/renderRoundsControl/
          renderPastParticipantsPanel/bindPastParticipantsToggle）は全て不変。 -->
     <details id="reg-setup-details" style="margin-bottom:12px">
-      <summary style="font-size:14px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">⚙ 大会の設定（クラス・回戦数）<span style="font-weight:400;font-size:11px;color:#888">　大会開始前に確認</span></summary>
+      <summary style="font-size:14px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">⚙ 大会の設定（種類・クラス・回戦数）<span style="font-weight:400;font-size:11px;color:#888">　大会開始前に確認</span></summary>
+      <!-- GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類（入り口で選ぶ）。📘通常の大会（既定・名簿とつなぐ）／
+           🎪ゲスト大会（参加者を名簿に記録しない・別大会/オープン大会向け）。開始後は renderTournamentKindControl が
+           ロック（ROUNDS-CONFIG-001 と同型）。参加者登録後の切替は onChangeTournamentKind が confirm。
+           select は 16px（INPUT-STD-001 §10.1 iOS 自動ズーム防止）。 -->
+      <div class="section" id="tournament-kind-section">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <h2 style="margin:0;font-size:15px">大会の種類</h2>
+          <select id="inp-tournament-kind" style="font-size:16px;padding:4px 8px">
+            <option value="normal">📘 通常の大会（名簿とつなぐ）</option>
+            <option value="guest">🎪 ゲスト大会（名簿に記録しない）</option>
+          </select>
+          <span id="tournament-kind-note" style="font-size:11px;color:#888"></span>
+        </div>
+        <div style="font-size:11px;color:#888;margin-top:6px">ゲスト大会では、参加者が名簿に登録されず、名簿の参加記録も変わりません。名簿からの受付・検索はどちらの種類でも使えます。</div>
+      </div>
       <!-- CLASS-VARIABLE-001 (CV-1): クラス管理UI。state.classes を runtime で追加/改名/削除する。
            A/B はアプリ既定クラス（normalizeClasses が読込毎に必ず補完するため）削除不可。
            renderClassManager() が #class-manager-list を描画し、追加は #addClassBtn / #inp-new-class。
@@ -1213,6 +1233,10 @@ function normalizeState(raw){
   var base={
     players:emptyClassDict(classes,function(){return [];}),
     rounds:(isNaN(rn)||rn<1)?4:rn,
+    // GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類（'normal'=通常の大会・既定／'guest'=ゲスト大会）。
+    //   'guest' 明示時のみ guest、それ以外（不在/不正値/旧データ）はすべて 'normal' に正規化（rounds と同じ既定補完パターン）。
+    //   判定は必ず述語 isGuestTournament(state) を通す（フラグ直読みを増やさない）。
+    tournament_kind:(s.tournament_kind==='guest')?'guest':'normal',
     pairings:emptyClassDict(classes,function(){return [];}),
     results:emptyClassDict(classes,function(){return [];}),
     started:false,
@@ -1371,6 +1395,15 @@ function normalizeState(raw){
   //   normalizeState は §8.2 例外3関数の1つ（直接代入を許容、ただし最終必ず同期）。
   base.started=classes.some(function(c){return c.started===true;});
   return base;
+}
+
+// GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会判定の単一述語（Issue #760 設計・遮断7経路はすべてここを通す）。
+//   ゲスト大会＝「この大会は名簿（支部マスタ）に記録しない」大会。true のとき、
+//   大会→名簿の全書込経路（syncBranchMasterOnSave ほか）と ☁結果送信を遮断する。
+//   読み取り（名簿サジェスト・📋名簿から受付・名簿タブ「☁クラウドから取得」・ライブ配信）は許可（作者決定 2026-07-13）。
+//   state-like を読むだけの純関数（未設定/旧データ/null は false＝通常の大会）。
+function isGuestTournament(st){
+  return !!(st&&st.tournament_kind==='guest');
 }
 
 // ROUND-CLASS-START-003 (spec §8.2):
@@ -2841,7 +2874,10 @@ function addPlayerFromMaster(memberId,cls,master,state){
 // A-4.3 §3.1: 既登録 player のクラスを変更する純粋関数。
 // state.players[oldCls] から削除し、state.players[newCls] に同 id で再追加。
 // マスタの last_class も即時更新する（addPlayerFromMaster とは責務が分かれる）。
-function changePlayerClass(memberId,newCls,master,state){
+// GUEST-TOURNAMENT-MODE-001 (#760): 第5引数 opts（任意）を追加。opts.skipMasterUpdate===true のとき
+//   master.members[].last_class を更新しない（player 側のクラス移動・entry_no 採番は従来どおり）。
+//   省略時（既存呼び出し・既存テスト）は従来挙動と完全同一。
+function changePlayerClass(memberId,newCls,master,state,opts){
   if(!master||!Array.isArray(master.members))return {success:false,error:'invalid_master'};
   if(!state||!state.players||!Array.isArray(state.players.A)||!Array.isArray(state.players.B))return {success:false,error:'invalid_state'};
   if(typeof memberId!=='string'||memberId==='')return {success:false,error:'invalid_id'};
@@ -2864,10 +2900,13 @@ function changePlayerClass(memberId,newCls,master,state){
   //   max(entry_no)+1 を採る。
   target.entry_no=nextEntryNoForClass(newCls,state);
   state.players[newCls].push(target);
-  for(var mi=0;mi<master.members.length;mi++){
-    if(master.members[mi]&&master.members[mi].id===memberId){
-      master.members[mi].last_class=newCls;
-      break;
+  // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会（呼び出し元が skipMasterUpdate を指定）ではマスタ側を触らない。
+  if(!(opts&&opts.skipMasterUpdate===true)){
+    for(var mi=0;mi<master.members.length;mi++){
+      if(master.members[mi]&&master.members[mi].id===memberId){
+        master.members[mi].last_class=newCls;
+        break;
+      }
     }
   }
   return {success:true,player:target,oldCls:oldCls,newCls:newCls};
@@ -3659,9 +3698,14 @@ function handlePastParticipantClassAdd(memberId,cls){
     //   async 化に伴い appConfirm の後に return を足し、モーダル表示中にケース1（追加）へ落ちないようにする。
     appConfirm(memberName+'さんは現在 '+existingCls+'クラス に登録されています。\n'+cls+'クラス に変更しますか?',function(_ok2){
     if(!_ok2)return;
-    var r2=changePlayerClass(memberId,cls,master,state);
+    // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中は master.last_class の即時更新・保存・verify をスキップ
+    //   （player 側のクラス変更は通常どおり）。マスタ未変更＝S03 verify も対象なし（成功メッセージは従来どおり出す）。
+    var _guestClsChg=(typeof isGuestTournament==='function')&&isGuestTournament(state);
+    var r2=changePlayerClass(memberId,cls,master,state,_guestClsChg?{skipMasterUpdate:true}:undefined);
     // L3 P2: 全画面ビュー中は #reg-msg が背面で見えないため、失敗も blocking alert で確実に伝える。
     if(!r2||!r2.success){showMsg('クラス変更に失敗しました','err');if(typeof isPpFullscreenOpen==='function'&&isPpFullscreenOpen())alert('クラス変更に失敗しました');return;}
+    var s03MasterVerifyOk=true;
+    if(!_guestClsChg){
     saveBranchMaster(master);
     // MASTER-V2-LASTCLASS S03: 既登録者クラス変更分岐限定の master.last_class 保存検証。
     // changePlayerClass が master.members[i].last_class を新クラスに更新済み（line 1250）。
@@ -3670,7 +3714,7 @@ function handlePastParticipantClassAdd(memberId,cls){
     // SAVE-UX-DESIGN Level 1: console.warn + showMsg。最終表示が warn になるよう、
     // master verify 失敗時は後段の成功 showMsg を出さない（直後の ok 上書きを防ぐ）。
     // 詳細は docs/specs/20260513_shogi_save_ux_design.md
-    var s03MasterVerifyOk=verifyMasterFieldPersisted(memberId,'last_class',cls);
+    s03MasterVerifyOk=verifyMasterFieldPersisted(memberId,'last_class',cls);
     if(!s03MasterVerifyOk){
       if(typeof console!=='undefined'&&console.warn){
         console.warn('[MASTER-V2-LASTCLASS] S03 last_class verify failed',{memberId:memberId,expected:cls});
@@ -3686,6 +3730,7 @@ function handlePastParticipantClassAdd(memberId,cls){
         severity:'warn'
       });
     }
+    } // end if(!_guestClsChg) — GUEST-TOURNAMENT-MODE-001 (#760)
     renderRegList();save();
     var searchInp2=document.getElementById('pp-search');
     renderPastParticipantsPanel(searchInp2?searchInp2.value:'');
@@ -3850,6 +3895,13 @@ function addSelectedPastParticipants(){
   if(picked.length===0){notifyRegTapErr('追加する参加者を選択してください');return;} // REG-ALERT-TOAST-001 (#740)
   // 仕様書 v6 §3.1: yomi 空の人だけダイアログを出す（方式 Y）
   var yomiEmpty=picked.filter(function(m){return !normalizeYomi(m.yomi);});
+  // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中は一括 yomi 補完ダイアログ（applyYomiInputsToMaster→
+  //   saveBranchMaster＝マスタ書込）を出さずにそのまま受付する。yomi 空のまま追加された場合は
+  //   従来の allEmpty 警告（「他」タブ表示の案内）だけ出す。
+  if((typeof isGuestTournament==='function')&&isGuestTournament(state)){
+    finalizeAddPastParticipants(picked,master,yomiEmpty.length>0);
+    return;
+  }
   if(yomiEmpty.length===0){
     finalizeAddPastParticipants(picked,master,false);
     return;
@@ -6430,6 +6482,64 @@ function onChangeRounds(){
   if(typeof showMsg==='function')showMsg('回戦数を'+v+'回戦に設定しました。','ok');
 }
 
+// GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類セレクタ(#inp-tournament-kind)の描画同期。
+//   renderRoundsControl と同型（value/disabled/注記を毎描画同期・開始後は state.started でロック）。
+//   バッジ・📋ボタンの見た目同期（renderGuestModeUI）もここから常に道連れにする＝表示の食い違いを作らない。
+function renderTournamentKindControl(){
+  var sel=document.getElementById('inp-tournament-kind');
+  if(sel){
+    sel.value=isGuestTournament(typeof state!=='undefined'?state:null)?'guest':'normal';
+    var started=!!(state&&state.started);
+    sel.disabled=started;
+    var note=document.getElementById('tournament-kind-note');
+    if(note)note.textContent=started?'開始後は変更できません（新規大会または全リセット後に設定してください）':'開始前に設定してください（全リセットで「通常の大会」に戻ります）';
+  }
+  renderGuestModeUI();
+}
+
+// GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中の常時表示（ヘッダ🎪バッジ＋📋名簿を更新ボタンの淡色化）。
+//   📋ボタンは disabled にしない（押下時に saveData が理由を toast で説明する＝無反応で迷わせない・fail-soft）。
+//   見た目のみの同期であり、遮断の実体は saveData / syncBranchMasterOnSave 側のガード（二重防御）。
+function renderGuestModeUI(){
+  var guest=isGuestTournament(typeof state!=='undefined'?state:null);
+  var badge=document.getElementById('guest-mode-badge');
+  if(badge)badge.style.display=guest?'inline-block':'';
+  var sb=document.getElementById('saveBtn');
+  if(sb){
+    sb.style.opacity=guest?'0.45':'';
+    // setAttribute のみ使用（テストの fake DOM は removeAttribute を持たない・aria-disabled="false" は有効値）。
+    sb.setAttribute('aria-disabled',guest?'true':'false');
+    sb.setAttribute('title',guest?'🎪 ゲスト大会のため名簿には反映しません':'');
+  }
+}
+
+// GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類セレクタの change ハンドラ（onChangeRounds と同型）。
+//   開始後は変更拒否（disabled すり抜けの保険）。参加者登録後の切替は appConfirm で明示確認
+//   （切替は破壊操作ではないため danger なし・キャンセルで表示を現状へ戻す）。
+function onChangeTournamentKind(){
+  var sel=document.getElementById('inp-tournament-kind');
+  if(!sel)return;
+  if(state&&state.started){renderTournamentKindControl();if(typeof showMsg==='function')showMsg('開始後は大会の種類を変更できません。','warn');return;}
+  var next=(sel.value==='guest')?'guest':'normal';
+  var cur=isGuestTournament(state)?'guest':'normal';
+  if(next===cur){renderTournamentKindControl();return;}
+  var n=(typeof allRegisteredPlayers==='function')?allRegisteredPlayers().length:0;
+  function _apply(){
+    state.tournament_kind=next;
+    save();
+    renderTournamentKindControl();
+    if(typeof showMsg==='function')showMsg(next==='guest'?'この大会を「🎪 ゲスト大会」にしました。参加者・結果は名簿（会員マスタ）に記録されません。':'この大会を「📘 通常の大会」にしました。「📋 名簿を更新」で参加者を名簿へ反映できます。','ok');
+  }
+  if(n>0){
+    var msg=(next==='guest')
+      ?'すでに参加者が'+n+'名 登録されています。\n🎪 ゲスト大会に切り替えると、この大会の参加者・結果は名簿（会員マスタ）に記録されなくなります。\nよろしいですか？'
+      :'すでに参加者が'+n+'名 登録されています。\n📘 通常の大会に切り替えると、「📋 名簿を更新」や「☁ クラウドへ送信」でこの大会の参加者が名簿に反映されるようになります。\nよろしいですか？';
+    appConfirm(msg,function(_ok){ if(_ok){_apply();} else {renderTournamentKindControl();} });
+  } else {
+    _apply();
+  }
+}
+
 function renderRegList(){
   // ROUND-CLASS-START-006 (spec §15.1):
   //   受付一覧を classes-driven にする。fallback で state.classes 不在時も安全に動作する（Codex S4）。
@@ -6447,6 +6557,9 @@ function renderRegList(){
   populateClassSelect();
   renderClassManager();
   renderRoundsControl();
+  // GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類セレクタ＋ヘッダ🎪バッジ＋📋ボタン見た目を毎描画同期
+  //   （init/全リセット/バックアップ復元は renderRegList を必ず通る＝モード表示の消し忘れ/残留を作らない）。
+  renderTournamentKindControl();
   var clsList=getRegistrationClassList();
   var allCount=0;
   for(var ci=0;ci<clsList.length;ci++){
@@ -7223,8 +7336,12 @@ function addPlayer(){
   //   参加者登録自体は成功する（後続の showMsg('ok')）が、ふりがなのマスタ反映が保存できなかったことを
   //   後続成功表示の後に再掲する（空 catch / 戻り値無視の是正）。
   var yomiMasterSaveFailed=false;
+  // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中はサジェスト由来の「マスタ空 yomi 即時補完保存」をスキップ
+  //   （名簿への書込ゼロを守る）。player.yomi（当日 snapshot）は通常どおり保持。_pendingNewYomi / yomiDirty の
+  //   遅延反映経路は syncBranchMasterOnSave 冒頭ガードが遮断するため従来どおり積んでよい
+  //   （開始前に通常の大会へ切り替え直した場合はそのまま生きる）。
   if(suggestSelected){
-    if(yomiForMaster && !normalizeYomi(suggestSelected.yomi||'')){
+    if(yomiForMaster && !normalizeYomi(suggestSelected.yomi||'') && !(typeof isGuestTournament==='function'&&isGuestTournament(state))){
       try{
         var masterToSave=loadBranchMaster();
         if(masterToSave&&Array.isArray(masterToSave.members)){
@@ -7814,6 +7931,10 @@ function applyParticipantRenameOnly(p,newName){
 //   {success:false, error:'<other>'}                 ← edit / load / save 段階の失敗
 // success=false の場合、member_id 後付け補完は呼出側で行わない（Must Fix §4）。
 function applyParticipantRenameWithMaster(p,newName,expectedMemberId,oldName){
+  // GUEST-TOURNAMENT-MODE-001 (#760・L3レビュー NIT-3): UI 非表示（ms-master-too 非生成）に加えた関数内ガード。
+  //   将来の呼び出し元追加や console 直呼びでも guest 中はマスタを書かない（choke point 型の二重防御）。
+  //   既存の {success:false,error} fail-soft 契約に揃える＝呼び出し元は「大会参加者名のみ修正」へフォールバック。
+  if(typeof isGuestTournament==='function'&&isGuestTournament(typeof state!=='undefined'?state:null))return {success:false,error:'guest_mode'};
   if(typeof expectedMemberId!=='string'||!expectedMemberId)return {success:false,error:'invalid_member_id'};
   var master=null;
   try{master=loadBranchMaster();}catch(e){return {success:false,error:'load_failed'};}
@@ -8069,7 +8190,12 @@ function handlePlayerSwapUnlinked(p,newName){
   var nm=(typeof newName==='string')?newName.replace(/^\s+|\s+$/g,''):'';
   if(!nm){showMsg('差し替え先の氏名を検索欄に入力してください','warn');return;}
   var games=countPlayerDecidedGames(p.id,p.cls,state);
-  appConfirm('「'+oldName+'」を名簿にない新規の方「'+nm+'」として差し替えます（名簿とは未連携になります）。\n\nこれまでの対局結果（'+games+'局）もすべて「'+nm+'」さんの成績になります。ふりがなは空になります（あとから編集できます）。\n☁送信時に「名簿を更新して送信」を選ぶと名簿に載ります（同じ名前の会員が名簿に1名だけいる場合は、新規ではなくその方に紐付きます）。'+playerSwapSentWarning(),function(ok){
+  // GUEST-TOURNAMENT-MODE-001 (#760・L3レビュー NIT-2): guest 中は「☁送信時に名簿に載ります」の案内が実現しない
+  //   （☁送信・名簿更新は遮断済み）ため末尾の案内文を出し分ける（normal は従来文言と完全同一）。
+  var _swapUnlinkedTail=(typeof isGuestTournament==='function'&&isGuestTournament(typeof state!=='undefined'?state:null))
+    ?'🎪 ゲスト大会のため、この方が名簿に登録されることはありません。'
+    :'☁送信時に「名簿を更新して送信」を選ぶと名簿に載ります（同じ名前の会員が名簿に1名だけいる場合は、新規ではなくその方に紐付きます）。';
+  appConfirm('「'+oldName+'」を名簿にない新規の方「'+nm+'」として差し替えます（名簿とは未連携になります）。\n\nこれまでの対局結果（'+games+'局）もすべて「'+nm+'」さんの成績になります。ふりがなは空になります（あとから編集できます）。\n'+_swapUnlinkedTail+playerSwapSentWarning(),function(ok){
     if(!ok)return;
     var r=applyParticipantSwapToUnlinked(p,nm,state);
     if(!r||!r.success){showMsg(playerSwapErrorMessage(r&&r.error),'warn');return;}
@@ -8129,8 +8255,13 @@ function buildMasterSyncModalHtml(oldName,newName,targetInfo){
   html+='<div><span style="color:#888">変更後：</span><strong>'+escapeHtml(newName)+'</strong></div>';
   html+='</div>';
   html+='<div style="border-top:1px solid #eee;padding-top:12px;margin-bottom:12px;font-size:13px;line-height:1.7;color:#333">';
+  // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中は「会員マスタも更新する」を提示しない（非表示・MASTER-001 の意図的縮退）。
+  //   残る選択肢＝「この大会のみ修正」＋「別の人に差し替える」（#758・マスタ読み取りのみ＝guest 中も使用可）＋キャンセル。
+  var guestMode=(typeof isGuestTournament==='function')&&isGuestTournament(typeof state!=='undefined'?state:null);
   var masterEnabled=false;
-  if(targetInfo.status==='by_member_id'||targetInfo.status==='unique'){
+  if(guestMode){
+    html+='<div style="color:#a05000">🎪 ゲスト大会のため名簿（会員マスタ）は更新しません。修正はこの大会の中だけに反映されます。</div>';
+  } else if(targetInfo.status==='by_member_id'||targetInfo.status==='unique'){
     masterEnabled=true;
     var label=(targetInfo.status==='by_member_id')?'対象会員（member_id で特定）':'対象会員（同名1件で特定）';
     var mName=escapeHtml((targetInfo.member&&targetInfo.member.name)||'');
@@ -8152,12 +8283,19 @@ function buildMasterSyncModalHtml(oldName,newName,targetInfo){
   var enabledStyle='background:#fff;color:#1F3864;border:1px solid #1F3864;cursor:pointer';
   var disabledStyle='background:#eee;color:#999;border:1px solid #ddd;cursor:not-allowed';
   var btnStyle=masterEnabled?enabledStyle:disabledStyle;
-  html+='<button type="button" id="ms-master-too" style="padding:10px 16px;font-size:14px;border-radius:8px;'+btnStyle+'"'+disabledAttr+'>会員マスタも更新する</button>';
+  // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中は「会員マスタも更新する」ボタン自体を出さない
+  //   （bindMasterSyncModalEvents は if(mBtn) ガード済み＝bind 側は無改変で安全）。
+  if(!guestMode)html+='<button type="button" id="ms-master-too" style="padding:10px 16px;font-size:14px;border-radius:8px;'+btnStyle+'"'+disabledAttr+'>会員マスタも更新する</button>';
   // PLAYER-SWAP-001 (#758): 3択目。上2つは「同一人物の名前修正」、これは「座る人ごと入れ替える」。
   html+='<button type="button" id="ms-swap-person" style="padding:10px 16px;font-size:14px;border-radius:8px;'+enabledStyle+'">別の人に差し替える（名簿から選ぶ）</button>';
   html+='<button type="button" id="ms-cancel" style="padding:10px 16px;font-size:14px;border-radius:8px;background:#fff;color:#666;border:1px solid #ccc;cursor:pointer">キャンセル</button>';
   html+='</div>';
-  html+='<p style="font-size:11px;color:#888;margin-top:10px;line-height:1.5">「会員マスタも更新する」は対象会員が安全に1件特定できる場合のみ有効です。席を譲るなど<strong>本当に別の人に変わった</strong>ときは「別の人に差し替える」を使ってください（これまでの結果ごと差し替え先の成績になります）。Esc キー / 背景クリックでもキャンセルできます。</p>';
+  // GUEST-TOURNAMENT-MODE-001 (#760): 注記もモードで出し分け（非表示ボタンの説明を残さない）。
+  if(guestMode){
+    html+='<p style="font-size:11px;color:#888;margin-top:10px;line-height:1.5">席を譲るなど<strong>本当に別の人に変わった</strong>ときは「別の人に差し替える」を使ってください（これまでの結果ごと差し替え先の成績になります）。Esc キー / 背景クリックでもキャンセルできます。</p>';
+  } else {
+    html+='<p style="font-size:11px;color:#888;margin-top:10px;line-height:1.5">「会員マスタも更新する」は対象会員が安全に1件特定できる場合のみ有効です。席を譲るなど<strong>本当に別の人に変わった</strong>ときは「別の人に差し替える」を使ってください（これまでの結果ごと差し替え先の成績になります）。Esc キー / 背景クリックでもキャンセルできます。</p>';
+  }
   html+='</div>';
   return html;
 }
@@ -10123,7 +10261,9 @@ var HELP_TEXTS={
       '会費区分：一般／中学生以下／女性 から選びます。中学生以下と女性は同額（支部員＝無料・支部員以外＝500円）、一般は支部員500円・支部員以外1,000円です。',
       'クラスを管理する：A・B以外のクラス（Cなど）を追加・改名できます。A・Bは削除できません（参加者がいる／開始済みのクラスも削除できません）。',
       '名簿にない新規の方：「＋ 名簿にない新規の方（手入力）」を開いて氏名を入れて登録します（漢字・ふりがな・50音で名簿を検索して見つからないときも同様です）。',
-      '登録した後でも、氏名・ふりがな・会費区分は編集で直せます。間違えても直せます。席を譲るなど別の人に変わったときは、名前の編集から「別の人に差し替える（名簿から選ぶ）」で、これまでの結果ごと正しい人に付け替えられます。'
+      '登録した後でも、氏名・ふりがな・会費区分は編集で直せます。間違えても直せます。席を譲るなど別の人に変わったときは、名前の編集から「別の人に差し替える（名簿から選ぶ）」で、これまでの結果ごと正しい人に付け替えられます。',
+      // GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類（ゲスト大会）の案内を追加（7行目・test_help_003 R4 追随）。
+      'ゲスト大会：名簿にない参加者が大半の別大会は、「⚙ 大会の設定」の「大会の種類」で「🎪 ゲスト大会」を選んでください。参加者・結果が名簿（会員マスタ）に記録されなくなります（名簿からの受付・検索はそのまま使えます・開始後は変更不可）。'
     ]
   },
   // HELP-UX-004 (#341): 順位タブ（最終結果）の順位決定ルールの迷子防止ヘルプ。#309/#323 機構流用・topic 追加のみ。
@@ -10190,7 +10330,9 @@ var HELP_TEXTS={
       '「大会履歴」タブの「☁ クラウドの過去大会」→「読み込む」で、共有された過去大会の結果を見られます。',
       'クラウドはバックアップの代わりではありません。端末の控えは ☰メニューの「バックアップ」で保存してください。',
       '【A級・B級を2台で分担する場合】受付タブの「▷ 2台で分担して入力するとき」を開き、１台目で「運営共通キーを発行」→表示された4桁を２台目に伝え、２台目で入力して「このキーに合わせる」を押します。両方の送信が同じ１つの大会にまとまります（各端末は自分の級だけを送るのがコツ）。１台で運営するなら操作は不要です。',
-      '【あとから2台目を足すとき】１台目がキーを発行せずに送信済みの場合は、２台目で「今日の大会に合流」を押してください（キー入力は不要・同じ日のうちに）。'
+      '【あとから2台目を足すとき】１台目がキーを発行せずに送信済みの場合は、２台目で「今日の大会に合流」を押してください（キー入力は不要・同じ日のうちに）。',
+      // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会の送信不可の案内を追加（9行目・test_help_006 R11 追随）。
+      '🎪 ゲスト大会（⚙ 大会の設定で選択）の結果はクラウドに送信できません（名簿・会員成績を守るため）。ライブ配信と名簿タブの「☁ クラウドから取得」は使えます。'
     ]
   }
   // SAVE-STATUS-BAR-REMOVE-001: 'save-systems' topic（保存4系統の説明）は撤去。
@@ -11677,6 +11819,15 @@ function _unlinkedSkippedNote(count){
 function sendTournamentToCloud(setStatus){
   setStatus=setStatus||function(){};
   return new Promise(function(resolve){
+    // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会の結果はクラウドへ送信しない（冒頭ガード・fail-soft）。
+    //   buildCloudSyncPayload はマスタ正本＝未連携者スキップのため、ゲスト大会を送ると「ほぼ全員欠落」か
+    //   「同名1件自動紐付けで部外者成績が会員履歴へ混入」のどちらかになる。説明メッセージで中止し運営は続行。
+    //   ライブ配信（live テーブルのみ・名簿/成績に無書込）と名簿タブ「☁ クラウドから取得」は従来どおり使える（作者決定 2026-07-13）。
+    if(typeof isGuestTournament==='function'&&isGuestTournament(typeof state!=='undefined'?state:null)){
+      setStatus('🎪 ゲスト大会の結果はクラウドに送信できません（名簿・会員成績を守るため）。ライブ配信は使えます。');
+      resolve({ok:false,step:'guest-mode'});
+      return;
+    }
     // CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 複数級を持つ端末の誤送信ガード（明示＋確認）。
     //   送信対象が2級以上なら級名を挙げて confirm。キャンセルで中止（fail-soft・当日運営は続行）。
     //   IN-APP-MODAL-001: appConfirm 非同期化（Promise 契約維持・戻り値ネイティブ同値）。
@@ -12030,6 +12181,12 @@ function syncBranchMasterOnSave(onDone){
   // IN-APP-MODAL-001 (#606): YOMI 上書き確認を appConfirm へ非同期化したため、完了通知（呼び出し元 saveData の
   //   showToast）を onDone コールバックで受け、tail 完了／corruption スキップ／例外の全経路で1回だけ呼ぶ＝旧同期完了順序を保持。
   function _done(){ if(typeof onDone==='function')onDone(); }
+  // GUEST-TOURNAMENT-MODE-001 (#760・fail-safe の要): ゲスト大会は名簿（支部マスタ）へ一切書き込まない。
+  //   本関数は大会→名簿同期の choke point（呼び出し2経路＝📋saveBtn の saveData／☁送信の未連携ガード
+  //   「①名簿を更新して送信」CLOUD-SEND-UNLINKED-GUARD-001）であり、関数冒頭の no-op（_done() のみ）で
+  //   両経路を一括遮断する。新規追加(createMemberFromParticipant)・同名1件自動紐付け(attachMemberIdToPlayer)・
+  //   参加履歴/last_class/yomi 付与のすべてがここで止まる。UI 側の説明は saveData / renderGuestModeUI が担当。
+  if(typeof isGuestTournament==='function'&&isGuestTournament(typeof state!=='undefined'?state:null)){_done();return;}
   try{
     var master=loadBranchMaster();
     // 仕様書 v5 §3.5 / Codex MF #3: 破損由来の空マスタは保存しない。
@@ -12127,6 +12284,13 @@ function syncBranchMasterOnSave(onDone){
 //   単機能に一本化した（旧「大会データをコピー」のクリップボード書き出しは撤去）。データの控え/バックアップは
 //   専用の「バックアップ」ボタンに一本化（役割の重複を解消）。saveDataAsFile は互換のため定義を温存（未使用）。
 function saveData(){
+  // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中は「📋 名簿を更新」を実行せず理由を説明する
+  //   （ボタンは disabled にせず押下時 toast＝無反応で迷わせない。#757 のトースト結果報告化と方向を揃える）。
+  //   同期の実体遮断は syncBranchMasterOnSave 冒頭ガードが二重防御。
+  if(typeof isGuestTournament==='function'&&isGuestTournament(typeof state!=='undefined'?state:null)){
+    showToast('🎪 ゲスト大会のため名簿には反映しません（この大会の参加者は名簿に載りません）');
+    return;
+  }
   // F2: 名簿を更新（支部マスタへ同期）。当日の参加者・クラス構成を名簿へ反映する。
   // IN-APP-MODAL-001 (#606): syncBranchMasterOnSave は YOMI 上書き確認が appConfirm（非同期）化したため、
   //   完了通知 showToast を onDone 継続で受ける＝旧「同期反映後に通知」の順序を保持（差分なし/確認キャンセル/OK いずれも反映完了後に1回）。
@@ -13507,6 +13671,11 @@ function bindRegistrationEvents(){
   //   値の反映/保存は onChangeRounds が担い、表示同期(value/disabled/選択肢)は renderRoundsControl。
   var inpRounds=document.getElementById('inp-rounds');
   if(inpRounds)inpRounds.addEventListener('change',onChangeRounds);
+
+  // GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類セレクタ(#inp-tournament-kind)の change を onChangeTournamentKind へ bind。
+  //   値の反映/保存/confirm は onChangeTournamentKind が担い、表示同期(value/disabled/注記/バッジ)は renderTournamentKindControl。
+  var inpKind=document.getElementById('inp-tournament-kind');
+  if(inpKind)inpKind.addEventListener('change',onChangeTournamentKind);
 
   // 参加者名入力欄: IME対応 + Enterで追加
   var inpName=document.getElementById('inp-name');
