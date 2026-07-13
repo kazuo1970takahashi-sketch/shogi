@@ -2731,6 +2731,18 @@ else
 fi
 
 echo ""
+echo "【GUEST-TOURNAMENT-MODE-001 (#760) ゲスト大会モード（名簿に記録しない大会・7経路遮断）】"
+if [ -f "$SCRIPT_DIR/test_guest_tournament_001.js" ]; then
+  if node "$SCRIPT_DIR/test_guest_tournament_001.js" "$TARGET" > /tmp/guest_tournament_001_out.log 2>&1; then
+    ok "GUEST-TOURNAMENT-MODE-001 テスト 全PASS ($(tail -1 /tmp/guest_tournament_001_out.log))"
+  else
+    ng "GUEST-TOURNAMENT-MODE-001 テスト 失敗"; cat /tmp/guest_tournament_001_out.log
+  fi
+else
+  warn "test_guest_tournament_001.js が見つからない"
+fi
+
+echo ""
 echo "【PLAYER-SWAP-001 (#758) 名前編集「別の人に差し替える（名簿から選ぶ）」＝member_id 付け替え】"
 if [ -f "$SCRIPT_DIR/test_player_swap_001.js" ]; then
   if node "$SCRIPT_DIR/test_player_swap_001.js" "$TARGET" > /tmp/player_swap_001_out.log 2>&1; then

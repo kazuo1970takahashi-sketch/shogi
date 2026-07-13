@@ -191,5 +191,22 @@ ok(RAW.indexOf('名簿にない新規の方として差し替え')>=0,'J3 アプ
   ok(!!hm2&&hm2[0].indexOf('別の人に差し替える')>=0,'J4 アプリ内ヘルプに別人差し替えの案内');
 }
 
+// ---- K. GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会モードの同期ピン
+//      「ゲスト大会モードがあれば押してはいけないボタンは存在しない」状態を4面ドキュメントが案内し続けることを
+//      ゲートする（アプリに導線がある限り、両マニュアル・運営サイト・ヘルプが追随している）。
+ok(RAW.indexOf('id="inp-tournament-kind"')>=0,'K1 アプリに大会の種類セレクタ（inp-tournament-kind）');
+ok(RAW.indexOf('id="guest-mode-badge"')>=0&&RAW.indexOf('🎪 ゲスト大会')>=0,'K2 アプリにヘッダの🎪ゲスト大会バッジ');
+BOTH.forEach(([name,doc])=>{
+  ok(doc.indexOf('ゲスト大会')>=0,'K3 '+name+' にゲスト大会（大会の種類）の記述');
+});
+ok(!!IDX&&IDX.indexOf('ゲスト大会')>=0,'K4 運営サイト（index.html）にゲスト大会の言及');
+{
+  const hm3=RAW.match(/var HELP_TEXTS=\{[\s\S]*?\n\};/);
+  ok(!!hm3&&hm3[0].indexOf('ゲスト大会')>=0,'K5 アプリ内ヘルプにゲスト大会の案内');
+}
+// 遮断2ボタンの説明文言（押した理由がわかる）＝アプリ側ピン
+ok(RAW.indexOf('🎪 ゲスト大会のため名簿には反映しません')>=0,'K6 📋名簿を更新の押下時説明（ゲスト大会）');
+ok(RAW.indexOf('🎪 ゲスト大会の結果はクラウドに送信できません')>=0,'K7 ☁送信ガードの説明（ゲスト大会）');
+
 console.log('MANUAL-SYNC-001: PASS='+pass+', FAIL='+fail);
 process.exit(fail===0?0:1);
