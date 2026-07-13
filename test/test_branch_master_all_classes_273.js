@@ -144,7 +144,7 @@ function memberById(master,id){ for(var i=0;i<master.members.length;i++){ if(mas
   var cMem=memberById(master,s.players.C[0].member_id);
   assert(aMem&&aMem.last_class==='A','LASTCLS-1 A 参加者の last_class は "A"（従来どおり）');
   assert(bMem&&bMem.last_class==='B','LASTCLS-2 B 参加者の last_class は "B"（従来どおり）');
-  assert(cMem&&cMem.last_class===null,'LASTCLS-3 C 参加者の last_class は null（A/B/null 不変条件を破らず同期）');
+  assert(cMem&&cMem.last_class==='C','LASTCLS-3 C 参加者の last_class は "C"（CLASS-VARIABLE-002 #768: 非A/B→null を isSafeClassId 以外→null へ一般化）');
 }
 
 // ============================================================
@@ -164,7 +164,7 @@ function memberById(master,id){ for(var i=0;i<master.members.length;i++){ if(mas
   }]};
   env.updateBranchMasterFromTournament(s,master,{tournament_id:'t_new',tournament_date:'2026-06-21'});
   var m1=memberById(master,'m_stale_sync');
-  assert(m1&&m1.last_class===null,'LASTCLS-STALE-1 同期: C で最新出席になった既存 member の stale last_class("A") を null にクリア');
+  assert(m1&&m1.last_class==='C','LASTCLS-STALE-1 同期: C で最新出席になった既存 member の stale last_class("A") が "C" に是正される（#768）');
   assert(m1&&m1.last_attended==='2026-06-21','LASTCLS-STALE-2 同期: last_attended が今回の最新日に更新される');
 
   // 同期: 既存 member(last_class=null, 新しい last_attended) を「過去日」の A で同期 → null のまま（潰さない）
@@ -194,7 +194,7 @@ function memberById(master,id){ for(var i=0;i<master.members.length;i++){ if(mas
     pairings:{},results:{},tournament_id:'t_merge_c_latest',tournament_date:'2026-06-21',report:{date:'2026年6月21日'}};
   env3.mergeTournamentParticipantsIntoMaster([{raw:raw3,filename:'20260621_merge.json'}],master3);
   var m3=memberById(master3,'m_stale_merge');
-  assert(m3&&m3.last_class===null,'LASTCLS-STALE-5 統合: C の最新統合で既存 member の stale last_class("B") を null にクリア');
+  assert(m3&&m3.last_class==='C','LASTCLS-STALE-5 統合: C の最新統合で既存 member の stale last_class("B") が "C" に是正される（#768）');
 }
 
 // ============================================================

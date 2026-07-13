@@ -4,7 +4,7 @@
 //   設計 v2（docs/specs/20260704_master_rebuild_from_cloud_001_design.md §2・§3・§6 Phase 1）準拠。
 //   観点:
 //     BUILD-BASIC  entries→member_id 結合で last_class/last_attended/first_attended/tournament_ids を導出。
-//     BUILD-NONAB  最新大会の class が非 A/B → last_class=null（#273 不変条件）。
+//     BUILD-NONAB  最新大会の class が C 等 → last_class に採用（CLASS-VARIABLE-002 #768: isSafeClassId のみ・不正値は null）。
 //     BUILD-DATENULL date 無効の大会は日付導出から除外・tie-break/last_class には算入。
 //     BUILD-TIEBREAK 同日複数大会は app_tournament_id 昇順の最後を最新（決定的）。
 //     BUILD-APPTIDNULL app_tournament_id NULL の大会は tournament_ids へ入れない（date/last_class は算入）。
@@ -99,7 +99,7 @@ assert(typeof env.mergeDerivedStatsIntoMaster==='function','SETUP mergeDerivedSt
 }
 
 // ============================================================
-// BUILD-NONAB: 最新大会 class が非 A/B → last_class=null。
+// BUILD-NONAB: 最新大会 class が C → last_class="C"（#768 一般化・不正値のみ null）。
 // ============================================================
 {
   var tournaments=[
@@ -112,8 +112,8 @@ assert(typeof env.mergeDerivedStatsIntoMaster==='function','SETUP mergeDerivedSt
     {tournament_id:'T2',player_id:'P1','class':'C'}   // 最新が C
   ];
   var stats=env.buildDerivedMemberStatsFromCloud(tournaments,players,entries);
-  assert(stats.mC.last_class===null,'BUILD-NONAB-1 最新 class=C → last_class=null');
-  assert(stats.mC.last_attended==='2026-06-14','BUILD-NONAB-2 last_attended は最新大会（非 A/B でも date は採用）');
+  assert(stats.mC.last_class==='C','BUILD-NONAB-1 最新 class=C → last_class="C"（CLASS-VARIABLE-002 #768: isSafeClassId のみ採用へ一般化）');
+  assert(stats.mC.last_attended==='2026-06-14','BUILD-NONAB-2 last_attended は最新大会の date を採用');
 }
 
 // ============================================================

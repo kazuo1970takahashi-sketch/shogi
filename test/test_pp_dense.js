@@ -124,13 +124,13 @@ em._setDenseCls('ZZZ');
 assert(em.ppDenseActiveCls()==='A', 'M5 不正クラスは先頭へフォールバック');
 assert(/#pp-fullscreen \.pp-mode-bar\{[^}]*position:sticky/.test(RAW), 'M6 モードバーは overlay 内 sticky（scoped CSS）');
 
-// M7/M8: L3 P1-a＝CV-2 未実装クラス（C 等）はモードバーに出さず手入力へ誘導
+// M7/M8: CLASS-VARIABLE-002 (#768)＝CV-2 実装済み。C 等もモードバーに出す（全クラス受付）・旧注記は撤去。
 const ec=loadEnv();
 ec._ctx.localStorage.setItem(ec.BRANCH_MASTER_KEY,FIX);
 var stC=ec._get();stC.classes.push({id:'C',name:'Cクラス',started:false});
 const barC=ec._buildPpModeBarHtml();
-assert(barC.indexOf('data-cls="C"')<0, 'M7 受付不可クラス（C・CV-2未実装）はモードバーに出さない');
-assert(barC.indexOf('手入力で受付')>=0, 'M8 A/B 以外があるときは手入力への誘導を明示');
+assert(barC.indexOf('data-cls="C"')>=0, 'M7 C クラスもモードバーに出す（#768 CV-2 実装済み）');
+assert(barC.indexOf('手入力で受付')<0, 'M8 旧「※A/B 以外は手入力」注記は撤去（#768）');
 
 // B: ビルダー
 const eb=loadEnv();
