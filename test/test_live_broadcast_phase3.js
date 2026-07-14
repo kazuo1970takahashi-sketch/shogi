@@ -155,6 +155,7 @@ function makeSrc(){
 {
   ok(/id="liveToggleBtn"/.test(RAW),'H1 配信トグル（liveToggleBtn）が静的 HTML にある');
   ok(/id="liveDisplayMode"/.test(RAW),'H2 表示名セレクト（liveDisplayMode）がある');
+  ok(/id="liveDisplayMode"[^>]*max-width:100%;min-width:0/.test(RAW),'H2b 表示名セレクトに max-width:100%;min-width:0 がある（SB-LIVE-SELECT-WIDTH-001: 最長 option の intrinsic 幅457pxが <478px 画面でページ横スクロールを起こすのを防ぐ）');
   ok(/value="given\+no" selected/.test(RAW),'H3 表示名の既定選択は「姓＋番号のみ」（氏名公開を既定にしない・受入 #17）');
   ok(/id="live-bar"/.test(RAW)&&/id="liveBarStopBtn"/.test(RAW),'H4 📡 配信中バー＋停止ボタンがある（J1）');
   ok(/id="liveQrBox"/.test(RAW)&&/id="liveCopyUrlBtn"/.test(RAW),'H5 QR 掲示ボックス＋URLコピーがある（J2）');

@@ -700,7 +700,10 @@ body.sb-active{overflow:hidden}
       <div style="font-size:12px;color:#555;margin-top:4px">参加者が自分のスマホで順位・星取・手合せを見られるようにします（インターネット公開）。使わなくても大会運営・報告書には影響しません。QRの掲示物には「氏名・成績をインターネット公開する」旨の告知を含めてください。</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
         <label for="liveDisplayMode" style="font-size:12px;color:#333">表示名</label>
-        <select id="liveDisplayMode" style="font-size:16px;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-family:inherit">
+        <!-- SB-LIVE-SELECT-WIDTH-001: native select は最長 option の intrinsic 幅（457px）に広がり、
+             flex item の既定 min-width:auto と相まって <478px 画面でページ横スクロールを起こす。
+             max-width:100% + min-width:0 で親行内に収める（広い画面では intrinsic 幅のまま＝見た目不変）。 -->
+        <select id="liveDisplayMode" style="font-size:16px;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-family:inherit;max-width:100%;min-width:0">
           <option value="given+no" selected>姓＋番号のみ（おすすめ）</option>
           <option value="full">フルネーム（主催者が告知・同意運用を決定済みの場合）</option>
         </select>
