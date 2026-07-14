@@ -2789,6 +2789,18 @@ if [ -f "$SCRIPT_DIR/test_result_card_6r_001.js" ]; then
 else
   warn "test_result_card_6r_001.js が見つからない"
 fi
+
+echo ""
+echo "【SB-HEADER-STICKY-001 (#770) スマホ星取表の列ヘッダを縦スクロールに追従（50行対応）】"
+if [ -f "$SCRIPT_DIR/test_sb_header_sticky_001.js" ]; then
+  if node "$SCRIPT_DIR/test_sb_header_sticky_001.js" "$TARGET" > /tmp/sb_header_sticky_001_out.log 2>&1; then
+    ok "SB-HEADER-STICKY-001 テスト 全PASS ($(tail -1 /tmp/sb_header_sticky_001_out.log))"
+  else
+    ng "SB-HEADER-STICKY-001 テスト 失敗"; cat /tmp/sb_header_sticky_001_out.log
+  fi
+else
+  warn "test_sb_header_sticky_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================

@@ -338,7 +338,12 @@ body.sb-active{overflow:hidden}
 .sb-body{padding:8px 0 48px}
 .sb-class{margin-bottom:16px}
 .sb-class-h{font-size:14px;font-weight:600;color:#1F3864;padding:8px 12px 6px}
-.sb-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-top:1px solid #d3dbe5;border-bottom:1px solid #d3dbe5;background:#fff}
+/* SB-HEADER-STICKY-001 (#770): 縦スクロールを .sb-scroll の内側へ閉じ込め（max-height＋overflow-y:auto）、
+   thead の position:sticky;top:0 を成立させる（50行でも回戦列ヘッダが上端に残る）。横スクロール＋左列 sticky は不変。
+   小人数（表が max-height 未満）ではスクロールバーが出ず見た目・挙動は従来どおり。100vh は 100dvh 非対応ブラウザ用の先行フォールバック。
+   減算値 230px は上部（sb-head＋検索＋クラス見出し）の実高（実測 約212〜252px）を覆う概算。過大でも header は sticky 成立、
+   過小でも外側の僅少スクロールに留まり header は残る（実測: 内側スクロール後も thead th top=216px を維持）。 */
+.sb-scroll{overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 230px);max-height:calc(100dvh - 230px);-webkit-overflow-scrolling:touch;border-top:1px solid #d3dbe5;border-bottom:1px solid #d3dbe5;background:#fff}
 .sb-table{border-collapse:separate;border-spacing:0;font-size:13px;width:auto;min-width:100%}
 .sb-table th,.sb-table td{border-right:1px solid #e0e6ee;border-bottom:1px solid #e0e6ee;padding:5px 7px;text-align:center;white-space:nowrap;vertical-align:middle}
 .sb-table thead th{background:#1F3864;color:#fff;font-weight:500;position:sticky;top:0;z-index:2}
