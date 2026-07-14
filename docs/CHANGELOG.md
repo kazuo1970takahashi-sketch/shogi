@@ -183,3 +183,10 @@
 - **修正（CSS 1ルールのみ）**: `.sb-scroll` に `overflow-y:auto` ＋ `max-height:calc(100dvh - 230px)`（100vh フォールバック先行）を付与し、縦スクロールを `.sb-scroll` 内側へ閉じ込めて thead sticky を成立させる。横スクロール・左列 sticky・thead sticky 指定・保存スキーマ・公開範囲は不変。小人数（表が max-height 未満）はスクロールバーが出ず従来どおり。
 - **実測（feat ツリー・playwright）**: 390×844 / 375×667 × {50名1クラス, 12名1クラス, 40+40名2クラス} の6構成で、縦スクロール後も回戦見出し th が上端維持（216/264px 不変）・左列 sticky 不変・多クラスは各表の見出しが独立追従。12名×tall 画面は内側スクロール非発生＝見た目不変（短い画面では内側スクロールが出るが header は残る＝劣化なし）。
 - テスト: `test_sb_header_sticky_001.js` 新設（9 checks・CSS ソース静的担保）。既存 `test_live_scoreboard_001` A7（overflow-x ピン）・golden（builder 出力）に影響なし。Review Level L2。
+
+## SB-LIVE-SELECT-WIDTH-001: ライブ配信「表示名」セレクタの固定幅457pxを撤廃（狭幅スマホのページ横スクロール解消）
+
+- **問題**: 最終結果タブの `#liveDisplayMode`（表示名セレクタ）に幅制約が無く、native select が最長 option（「フルネーム（主催者が告知・同意運用を決定済みの場合）」）の intrinsic 幅 **457px** に広がる。親行は flex（wrap あり）だが flex item の既定 `min-width:auto` により縮まず、**478px 未満の画面でページ全体が横スクロール**（実測: 320px で +158px・375px で +103px・390px で +88px）。#769 調査で真因特定済みの「既知の別件」。
+- **修正（インライン CSS 1箇所のみ）**: `#liveDisplayMode` の style に `max-width:100%;min-width:0` を追加。狭幅では親行内に収まり、478px 以上では従来どおり intrinsic 幅を維持（見た目実質不変）。選択肢・既定選択（姓＋番号のみ・受入 #17）・bind・文言は不変。
+- **実測（playwright・showTab('result')）**: 修正前 320/375/390px で scrollWidth=478px 固定（はみ出し）→ 修正後 320/375/390/478/600px 全てはみ出しゼロ（scrollWidth=clientWidth）・600px で select 幅457px 維持。既定選択の表示文字列は狭幅でも切れない（最長 option はドロップダウン一覧＝native 描画で全文可読）。
+- テスト: `test_live_broadcast_phase3.js` に H2b ピン追加（max-width:100%;min-width:0 の存在）。既存 H2（id 存在）等は不変。ドキュメント4面は挙動説明に変化なし＝追随不要（表示名の選択肢・既定は不変）。Review Level L2。
