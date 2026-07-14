@@ -176,3 +176,10 @@
 - **実測（320/390/599px × 3〜7回戦 × 架空50名）**: カードはみ出しゼロ・320px で 3/4回戦1行・390/599px で 5回戦1行。
 - **既知の別件（範囲外・記録）**: 最終結果タブの `#liveDisplayMode` select（幅457px）が <478px 画面でページ横スクロールを起こす既存問題を実測で特定（回戦数と無関係・ベースラインから存在）。別 Issue で対応。
 - テスト: `test_result_card_6r_001.js` 新設（14 checks）。独立L3設計レビュー conditional-go（golden 工程化・minmax 56px 化）条件反映済み。
+
+## SB-HEADER-STICKY-001 (#770): スマホ星取表の列ヘッダを縦スクロールに追従（50行対応）
+
+- **問題**: `.sb-table thead th` は `position:sticky;top:0` 指定済みだが、縦スクロールが `#scoreboard-view`（overflow-y:auto）で起き、sticky の基準になる `.sb-scroll` は横スクロール専用（overflow-x:auto・max-height なし）で縦に伸び切るため sticky が機能せず、50行スクロールで回戦列ヘッダが画面外（実測 top=-984px）へ消えた。左の順位/氏名列（横 sticky）は正常。
+- **修正（CSS 1ルールのみ）**: `.sb-scroll` に `overflow-y:auto` ＋ `max-height:calc(100dvh - 230px)`（100vh フォールバック先行）を付与し、縦スクロールを `.sb-scroll` 内側へ閉じ込めて thead sticky を成立させる。横スクロール・左列 sticky・thead sticky 指定・保存スキーマ・公開範囲は不変。小人数（表が max-height 未満）はスクロールバーが出ず従来どおり。
+- **実測（feat ツリー・playwright）**: 390×844 / 375×667 × {50名1クラス, 12名1クラス, 40+40名2クラス} の6構成で、縦スクロール後も回戦見出し th が上端維持（216/264px 不変）・左列 sticky 不変・多クラスは各表の見出しが独立追従。12名×tall 画面は内側スクロール非発生＝見た目不変（短い画面では内側スクロールが出るが header は残る＝劣化なし）。
+- テスト: `test_sb_header_sticky_001.js` 新設（9 checks・CSS ソース静的担保）。既存 `test_live_scoreboard_001` A7（overflow-x ピン）・golden（builder 出力）に影響なし。Review Level L2。
