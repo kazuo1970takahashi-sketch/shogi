@@ -548,7 +548,7 @@ body.sb-active{overflow:hidden}
       </div>
       <!-- ROUNDS-CONFIG-001: 回戦数の設定（既定4）。ペアリング/順位/星取/報告書は全て state.rounds を参照するため、
            ここを変えるだけで N 回戦制に対応する。開始後(state.started)は誤操作防止のため変更不可＝renderRoundsControl が
-           value/disabled/注記を毎描画同期し、選択肢(3/4/5＋現在値)も renderRoundsControl が動的生成する。 -->
+           value/disabled/注記を毎描画同期し、選択肢(3〜7＋現在値・#769)も renderRoundsControl が動的生成する。 -->
       <div class="section" id="rounds-config-section">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <h2 style="margin:0;font-size:15px">回戦数（全クラス既定）</h2>
@@ -6008,11 +6008,11 @@ function renderClassManager(){
       var n=(state&&state.players&&Array.isArray(state.players[c.id]))?state.players[c.id].length:0;
       statusSpan.textContent='('+n+'名'+(isClassStarted(c.id)?'・開始済み':'')+')';
       row.appendChild(statusSpan);
-      // ROUNDS-PER-CLASS-001: クラス別の回戦数上書き。既定（全クラス共通）＋3/4/5。開始後はロック。
-      //   「既定」を選ぶと上書きを外して全体既定に戻す。選択肢は現在の上書き値が3/4/5以外でも必ず含める。
+      // ROUNDS-PER-CLASS-001: クラス別の回戦数上書き。既定（全クラス共通）＋3〜7（#769 で 6/7 解禁）。開始後はロック。
+      //   「既定」を選ぶと上書きを外して全体既定に戻す。選択肢は現在の上書き値が選択肢外でも必ず含める。
       var gdef=Math.floor(Number(state&&state.rounds)); if(isNaN(gdef)||gdef<1)gdef=4;
       var curOv=(c&&c.rounds!=null)?Math.floor(Number(c.rounds)):NaN;
-      var nums=[3,4,5];
+      var nums=[3,4,5,6,7];  // RESULT-CARD-6R-001 (#769): 50名1クラス=6回戦必要（ceil(log2 50)）につき 6/7 解禁
       if(!isNaN(curOv)&&curOv>=1&&nums.indexOf(curOv)<0)nums.push(curOv);
       nums.sort(function(a,b){return a-b;});
       var roundsSel=document.createElement('select');
@@ -6454,7 +6454,7 @@ function onChangeClassRounds(classId,val){
 }
 
 // ROUNDS-CONFIG-001: 回戦数セレクタ(#inp-rounds)の描画同期。
-//   - 選択肢は 3/4/5 を基本とし、現在値(state.rounds)がそれ以外(旧データ/将来値)でも必ず option を含める。
+//   - 選択肢は 3〜7 を基本とし（#769 で 6/7 解禁）、現在値(state.rounds)がそれ以外(旧データ/将来値)でも必ず option を含める。
 //   - value を state.rounds に同期。開始後(state.started)は disabled＋注記でロック（誤操作防止）。
 //   renderRegList から毎描画呼ばれるので、開始状態やインポート後も表示が追従する。build/bind とは分離（値/状態同期のみ）。
 function renderRoundsControl(){
@@ -6462,7 +6462,7 @@ function renderRoundsControl(){
   if(!sel)return;
   var cur=Math.floor(Number(state&&state.rounds));
   if(isNaN(cur)||cur<1)cur=4;
-  var opts=[3,4,5];
+  var opts=[3,4,5,6,7];  // RESULT-CARD-6R-001 (#769): 6/7 解禁（既定4・開始後ロック・選択肢外現在値の保険は不変）
   if(opts.indexOf(cur)<0)opts.push(cur);
   opts.sort(function(a,b){return a-b;});
   var html='';
@@ -12076,9 +12076,11 @@ function _resultsRankBadgeHtml(rank){
 // 1ラウンド分のセル(スマホ用カード形式)
 function buildResultsRoundCellMobileHtml(cls, playerId, roundIdx, wins){
   var core=_buildResultsRoundCellCore(cls, playerId, roundIdx, wins);
-  if(!core)return '<div style="background:#f8f8f8;border:1px solid #eee;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;color:#ccc"><div style="font-size:10px">'+(roundIdx+1)+'回戦</div><div>-</div></div>';
+  // RESULT-CARD-6R-001 (#769): 両セルに min-width:0;overflow:hidden を統一（未対局セルは従来どちらも無し＝
+  //   ruby の min-content が行を押し広げる一因）。flex:1 は grid 下で無効だが差分最小のため残置。
+  if(!core)return '<div style="background:#f8f8f8;border:1px solid #eee;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;min-width:0;overflow:hidden;color:#ccc"><div style="font-size:10px">'+(roundIdx+1)+'回戦</div><div>-</div></div>';
   var markColor=core.won?'#27500A':'#A32D2D';
-  return '<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;overflow:hidden">'
+  return '<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;min-width:0;overflow:hidden">'
     +'<div style="color:#888;font-size:10px;margin-bottom:2px">'+(roundIdx+1)+'回戦</div>'
     +'<div style="font-weight:bold;color:'+markColor+';font-size:16px;line-height:1">'+core.markStr+'</div>'
     +'<div style="color:#555;font-size:10px;margin-top:2px">'+nameWithNoRubyHtml(core.oppId,cls)+'('+core.oppWins+')</div>'
@@ -12114,7 +12116,10 @@ function buildResultsMobileHtml(cls, finals, wins){
     html+=buildPlayerAttrDisplayHtml(f.p); // MEMBER-ATTR-SNAPSHOT-001 (#607) Phase2-2: 会員属性（当日＝当時値・注記なし）
     html+='</div>';
     html+='</div>';
-    html+='<div style="display:flex;gap:4px">';
+    // RESULT-CARD-6R-001 (#769): 旧 display:flex;gap:4px（wrap なし・4回戦想定の等分）は 5回戦以上で
+    //   カードが横に +88px はみ出した（監査 S4・390px 実測）。auto-fit grid 化で「入る分は等分1行・
+    //   入らない分は自動折り返し」に変更（3/4回戦は 320px 級でも従来同様1行＝min 56px はその成立条件）。
+    html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(56px,1fr));gap:4px">';
     for(var r=0;r<roundsForClass(cls);r++){
       html+=buildResultsRoundCellMobileHtml(cls, f.p.id, r, wins);
     }

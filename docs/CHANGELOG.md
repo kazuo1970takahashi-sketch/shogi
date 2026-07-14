@@ -168,3 +168,11 @@
 - **last_class 不変条件の一般化**: #273 の「非 A/B は null」を「isSafeClassId 以外は null」へ（load 正規化 / createMemberFromParticipant / 📋名簿更新 / 統合 / ☁復元収集・マージ / verify helper / 表示2箇所）。Phase2 レガシー importer・マスタ編集フォームの前回クラス radio（A/B のみ・C 保持者は未チェック=変更しない）・旧 GOLDEN ビルダーは意図的に不変。
 - **後方互換**: last_class に C 等が入った master を旧版（?v≤126）で開くと load 正規化が null に落とす（安全側・データ構造破壊なし・最新出席の再同期で復元）。
 - **テスト**: `test_class_variable_002.js` 新設（31 checks）＋既存4本を新契約に追随（`test_branch_master_all_classes_273` LASTCLS-3/STALE-1/STALE-5・`test_master_rebuild_from_cloud_001` BUILD-NONAB-1・`test_master_list_ux_001` L3a ピン・`test_guest_tournament_001` 抽出環境に依存2関数追加）。設計レビュー（独立 L3）= conditional-go 条件反映済み。
+
+## RESULT-CARD-6R-001 (#769): 最終結果スマホカードのはみ出し修正＋回戦数 6/7 解禁（50名1クラス対応）
+
+- **S4（先行）**: 回戦セル行を `display:flex;gap:4px`（wrap なし）→ `display:grid;grid-template-columns:repeat(auto-fit,minmax(56px,1fr));gap:4px` に。両セルへ `min-width:0;overflow:hidden` 統一。320px 級でも 3/4回戦は従来同様1行・5回戦以上は自動折り返し＝はみ出し構造の根絶（意図的 UI 修正＝golden `buildResultsClassHtml__A_sp` を UPDATE_GOLDEN=1 で再採取・diff は当該1ケースのみ）。
+- **S1（後）**: 回戦数選択肢 `[3,4,5]`→`[3,4,5,6,7]`（renderRoundsControl / renderClassManager の2箇所）。既定4・開始後ロック・選択肢外現在値の保険は不変。下流は roundsForClass/state.rounds live 参照で追従。
+- **実測（320/390/599px × 3〜7回戦 × 架空50名）**: カードはみ出しゼロ・320px で 3/4回戦1行・390/599px で 5回戦1行。
+- **既知の別件（範囲外・記録）**: 最終結果タブの `#liveDisplayMode` select（幅457px）が <478px 画面でページ横スクロールを起こす既存問題を実測で特定（回戦数と無関係・ベースラインから存在）。別 Issue で対応。
+- テスト: `test_result_card_6r_001.js` 新設（14 checks）。独立L3設計レビュー conditional-go（golden 工程化・minmax 56px 化）条件反映済み。
