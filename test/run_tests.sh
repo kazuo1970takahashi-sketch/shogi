@@ -2777,6 +2777,18 @@ if [ -f "$SCRIPT_DIR/test_class_variable_002.js" ]; then
 else
   warn "test_class_variable_002.js が見つからない"
 fi
+
+echo ""
+echo "【RESULT-CARD-6R-001 (#769) 最終結果スマホカードのはみ出し修正＋回戦数 6/7 解禁】"
+if [ -f "$SCRIPT_DIR/test_result_card_6r_001.js" ]; then
+  if node "$SCRIPT_DIR/test_result_card_6r_001.js" "$TARGET" > /tmp/result_card_6r_001_out.log 2>&1; then
+    ok "RESULT-CARD-6R-001 テスト 全PASS ($(tail -1 /tmp/result_card_6r_001_out.log))"
+  else
+    ng "RESULT-CARD-6R-001 テスト 失敗"; cat /tmp/result_card_6r_001_out.log
+  fi
+else
+  warn "test_result_card_6r_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
