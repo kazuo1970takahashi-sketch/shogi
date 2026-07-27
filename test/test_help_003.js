@@ -108,7 +108,7 @@ assert(env.HELP_TEXTS && typeof env.HELP_TEXTS==='object', 'R1 HELP_TEXTS レジ
 const reg = env.HELP_TEXTS && env.HELP_TEXTS['reg'];
 assert(!!reg && typeof reg==='object', 'R2 reg トピックが存在する');
 assert(reg && reg.title==='登録・受付ヘルプ', 'R3 reg の title が「登録・受付ヘルプ」');
-assert(reg && Array.isArray(reg.lines) && reg.lines.length===7, 'R4 reg の lines が7項目の配列（GUEST-TOURNAMENT-MODE-001 #760 でゲスト大会の案内を追加）');
+assert(reg && Array.isArray(reg.lines) && reg.lines.length===8, 'R4 reg の lines が8項目の配列（BULK-ENTRY-001 #761 でまとめて登録の案内を追加）');
 const j = reg ? reg.lines.join('\n') : '';
 assert(j.indexOf('受付番号は自動')>=0, 'R5 (1)受付番号は自動採番の説明を含む');
 assert(j.indexOf('ふりがな')>=0 && j.indexOf('50音')>=0 && j.indexOf('後から編集')>=0, 'R6 (2)ふりがなの説明（50音・編集可）を含む');
