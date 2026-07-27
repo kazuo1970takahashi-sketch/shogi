@@ -506,6 +506,27 @@ body.sb-active{overflow:hidden}
     <div id="ppPanel"></div>
   </div>
 </div>
+<!-- BULK-ENTRY-001 (#761): まとめて登録（エクセルから貼り付け）全画面ビュー（#pp-fullscreen と同型の fixed overlay・既定非表示・no-print）。
+     貼り付け→プレビュー→確定の2段構え（finalizeAddPastParticipants と同思想）。プレビュー表（#bulk-entry-preview）は
+     updateBulkEntryPreview が DOM API（textContent）で描画し、innerHTML への自由文流入を作らない。
+     マスタ（会員名簿）は読みも書きもしない＝通常/ゲスト大会どちらでも同一動作。 -->
+<div id="bulk-entry-fullscreen" class="no-print" aria-hidden="true" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#eef2f7;z-index:9500;overflow-y:auto;-webkit-overflow-scrolling:touch">
+  <div style="position:sticky;top:0;z-index:5;background:#1F3864;color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px">
+    <span style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📥 まとめて登録（エクセルから貼り付け）</span>
+    <button type="button" class="btn-sm" id="bulkEntryCloseBtn" style="background:#fff;color:#1F3864;min-height:36px;white-space:nowrap;flex-shrink:0">✕ 閉じる</button>
+  </div>
+  <div style="padding:10px 14px 60px;max-width:720px;margin:0 auto">
+    <div style="font-size:12px;color:#555;line-height:1.6;margin:8px 0">1行に1人、<strong>氏名 → ふりがな → クラス</strong> の順で貼り付けてください（Excel からのコピー＝タブ区切りをそのまま貼れます。カンマ区切りも可）。ふりがな・クラスの列は省略できます。同姓同名の方は「名前(地域)」のように書き分けてください。ここで登録した参加者は名簿（会員名簿）には登録されません。</div>
+    <textarea id="bulk-entry-text" rows="8" aria-label="参加者リストの貼り付け欄" placeholder="例：&#10;沼津太郎&#9;ぬまづたろう&#9;A&#10;三島花子&#9;みしまはなこ&#9;B" style="width:100%;box-sizing:border-box;font-size:16px;padding:8px;border:1px solid #c3ccd8;border-radius:6px;font-family:inherit" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin:10px 0">
+      <label style="font-size:12px;color:#1F3864;font-weight:600">クラス列が無い行のクラス<br><select id="bulk-entry-class" style="font-size:16px;padding:4px 8px;margin-top:4px"></select></label>
+      <label style="font-size:12px;color:#1F3864;font-weight:600">区分の既定（全行に適用）<br><select id="bulk-entry-member" style="font-size:16px;padding:4px 8px;margin-top:4px"><option value="member">支部員</option><option value="other">一般（支部員以外）</option></select></label>
+    </div>
+    <div id="bulk-entry-preview" style="margin-top:8px;overflow-x:auto"></div>
+    <div id="bulk-entry-summary" style="font-size:13px;font-weight:600;color:#1F3864;margin:10px 0;min-height:1.2em" role="status" aria-live="polite"></div>
+    <button type="button" class="btn-primary" id="bulkEntryConfirmBtn" style="width:100%;min-height:48px" disabled>登録を確定する</button>
+  </div>
+</div>
 <div class="container">
   <div class="tab-bar no-print">
     <button type="button" class="tab active" id="tab-reg">参加者登録</button>
@@ -599,6 +620,13 @@ body.sb-active{overflow:hidden}
            マスタ空なら section 非表示・件数を #pp-summary に同期／bindPastParticipantsToggle が openPpFullscreen へ結線＝全て無改変）。 -->
       <div id="past-participants-section" style="display:none;margin:10px 0 6px">
         <button type="button" class="btn-primary" id="ppToggleBtn" style="width:100%">📋 名簿から受付（過去参加者から選ぶ）<span id="pp-summary" style="font-weight:400;font-size:12px;opacity:.85;margin-left:6px"></span></button>
+      </div>
+      <!-- BULK-ENTRY-001 (#761): 事前リスト（Excel/CSV）貼り付けの一括登録導線。開始前限定＝renderBulkEntryButton が
+           state.started で disabled＋注記を毎描画同期する（ROUNDS-CONFIG-001 と同型）。マスタ空でも表示する
+           （名簿から受付と違いマスタ非依存＝ゲスト大会・初回利用でも使える）。 -->
+      <div id="bulk-entry-section" style="margin:10px 0 6px">
+        <button type="button" class="btn-sm" id="bulkEntryBtn" style="width:100%;border-color:#2E75B6;color:#2E75B6;min-height:44px">📥 まとめて登録（エクセルから貼り付け）</button>
+        <div id="bulk-entry-note" style="font-size:11px;color:#888;margin-top:4px;display:none">大会開始後はまとめて登録できません。途中参加は「＋ 名簿にない新規の方（手入力）」で1人ずつ追加してください。</div>
       </div>
       <!-- REG-TAB-TIDY-001 (#743) ⑤b 案B: 手入力欄を details へ格納（既定閉・名簿未取込/0名時は renderPastParticipantsPanel が自動 open）。
            #inp-name / #inp-class / #addBtn / #inp-yomi / #suggest-list の id・bind 経路は不変（格納のみ）。
@@ -4101,6 +4129,344 @@ function bindPastParticipantsToggle(){
 }
 
 // ============================================================
+// BULK-ENTRY-001 (#761): 参加者の一括登録（エクセル/CSV 貼り付け）
+//   事前に集めた参加者リストを貼り付け1回で当日大会へ直接登録する（別大会・約30名の受付ボトルネック解消）。
+//   設計（Issue #761 作者決定 2026-07-13）:
+//   - マスタ（会員名簿）は読みも書きもしない＝サジェスト・自動紐付けの経路に一切乗せない
+//     （部外者成績の混入源を作らない）。通常/ゲスト大会どちらでも同一動作（#760 と直交）。
+//   - 検証→確定の2段構え（finalizeAddPastParticipants と同思想）。エラー行は登録から除外し
+//     プレビューで理由を表示する。クラスは自動作成しない（タイプミスで謎クラスが生まれる事故防止）。
+//   - 生成 player の形状は受付手入力 addPlayer と完全同一
+//     （id/name/cls/member/grade/city:''/member_id なし/yomi=normalizeYomi/entry_no=nextEntryNoForClass）。
+//   - 開始前限定（state.started で導線を無効化）。開始後の追い足しは従来の単発追加（#272 ガード）で行う。
+//   純関数群（parse/resolve/validate/bulkAddPlayers/format）は DOM・localStorage・マスタへ触れない。
+
+// 貼り付けテキストを行配列へ分解する純関数。1行1人・タブがあればタブ区切り（Excel コピペ）、
+// 無ければカンマ区切り（CSV）。空行はスキップ。4列目以降は無視（Excel の余り列対策）。
+// lineNo は貼り付けテキスト内の行番号（1始まり）＝プレビューから元リストの行を特定できる。
+function parseBulkEntryText(text){
+  var out=[];
+  if(typeof text!=='string')return out;
+  var lines=text.split(/\r\n|\r|\n/);
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i];
+    if(!line||!line.replace(/[\s　]/g,''))continue;
+    var cells=(line.indexOf('\t')>=0)?line.split('\t'):line.split(',');
+    out.push({
+      lineNo:i+1,
+      name:(cells[0]||'').replace(/^[\s　]+|[\s　]+$/g,''),
+      yomi:(cells[1]||'').replace(/^[\s　]+|[\s　]+$/g,''),
+      clsRaw:(cells[2]||'').replace(/^[\s　]+|[\s　]+$/g,'')
+    });
+  }
+  return out;
+}
+
+// クラス列の表記を classId へ解決する純関数。受理＝クラス名の完全一致（例「Aクラス」）／
+// classId 一致（例「A」）／「クラス」接尾辞の省略（例「A」→「Aクラス」）。未知の表記は null
+//（自動作成しない）。空文字は「クラス列なし」＝呼び出し側が既定クラスで埋める。
+function resolveBulkEntryClassId(clsRaw,classList){
+  if(typeof clsRaw!=='string'||!clsRaw)return null;
+  for(var i=0;i<classList.length;i++){
+    var c=classList[i];
+    if(!c)continue;
+    var nm=c.name||(c.id+'クラス');
+    if(clsRaw===c.id||clsRaw===nm||clsRaw+'クラス'===nm)return c.id;
+  }
+  return null;
+}
+
+// 行単位バリデーションの純関数。stateObj（classes/players）だけを読む＝マスタ非経由・DOM 非接触・無変更。
+//   defaultClsId: クラス列が空の行に適用する既定クラス／memberValue: 区分の既定（'member'|'other'・全行適用）。
+//   戻り値: [{lineNo,name,yomi,clsId,clsRaw,member,error}]。error は
+//   'empty-name'（空氏名）/'unknown-class'（未知クラス名）/'dup-registered'（既登録者と同名）/
+//   'dup-paste'（貼り付け内の同名重複・後発側）/ null（登録可）。
+//   同名比較は normalizePersonName（addPlayer の同名拒否と同じ規則＝Issue #761 設計）。
+function validateBulkEntryRows(parsedRows,defaultClsId,memberValue,stateObj){
+  var s=stateObj||{};
+  var classList=[];
+  if(Array.isArray(s.classes)){
+    for(var ci=0;ci<s.classes.length;ci++){
+      var c=s.classes[ci];
+      if(c&&isSafeClassId(c.id))classList.push({id:c.id,name:c.name||(c.id+'クラス')});
+    }
+  }
+  var registered={};
+  for(var li=0;li<classList.length;li++){
+    var arr=s.players&&s.players[classList[li].id];
+    if(!Array.isArray(arr))continue;
+    for(var pi=0;pi<arr.length;pi++){
+      var rn=normalizePersonName((arr[pi]&&arr[pi].name)||'');
+      if(rn)registered[rn]=true;
+    }
+  }
+  var seen={};
+  var out=[];
+  var mem=(memberValue==='other')?'other':'member';
+  for(var i=0;i<parsedRows.length;i++){
+    var row=parsedRows[i]||{};
+    var name=normalizePersonName(row.name||'');
+    var error=null;
+    var clsId=null;
+    if(!name)error='empty-name';
+    if(!error){
+      clsId=resolveBulkEntryClassId(row.clsRaw?row.clsRaw:defaultClsId,classList);
+      if(!clsId)error='unknown-class';
+    }
+    if(!error&&registered[name])error='dup-registered';
+    if(!error&&seen[name])error='dup-paste';
+    if(!error)seen[name]=true;
+    out.push({lineNo:row.lineNo,name:name,yomi:normalizeYomi(row.yomi||''),clsId:clsId,clsRaw:row.clsRaw||'',member:mem,error:error});
+  }
+  return out;
+}
+
+// 一括追加の純関数（Issue #761 設計の中核）。validateBulkEntryRows の戻り値と stateObj だけを受け取り、
+// error のない行を stateObj.players[clsId] へ追加する。DOM・localStorage・マスタ（会員名簿）へは一切
+// 触れない（保存・再描画・通知は呼び出し元 confirmBulkEntry の責務＝finalizeAddPastParticipants と同じ分担）。
+// 生成 player は addPlayer の手入力（サジェスト非選択）と完全同一形状で member_id を持たない＝未連携。
+// 通常大会では「📋 参加者を名簿に反映」で従来どおり名簿へ新規追加される（受け入れ基準5）。
+function bulkAddPlayers(rows,stateObj){
+  var s=stateObj||state;
+  var result={added:0,skipped:0,skippedByReason:{},players:[]};
+  for(var i=0;i<rows.length;i++){
+    var row=rows[i];
+    if(!row)continue;
+    if(row.error){
+      result.skipped++;
+      result.skippedByReason[row.error]=(result.skippedByReason[row.error]||0)+1;
+      continue;
+    }
+    if(!row.name||!row.clsId||!s.players||!Array.isArray(s.players[row.clsId])){
+      result.skipped++;
+      result.skippedByReason['unknown-class']=(result.skippedByReason['unknown-class']||0)+1;
+      continue;
+    }
+    // id は finalizeAddPastParticipants と同じ衝突回避（同一 ms 内の連番 suffix）
+    var pid='p'+Date.now()+Math.floor(Math.random()*1000)+'_'+i;
+    var newPlayer={id:pid,name:row.name,cls:row.clsId,member:(row.member==='other')?'other':'member',grade:'ippan'};
+    newPlayer.city='';
+    newPlayer.yomi=normalizeYomi(row.yomi||'');
+    // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（push 順に連番・欠番維持）
+    newPlayer.entry_no=nextEntryNoForClass(row.clsId,s);
+    s.players[row.clsId].push(newPlayer);
+    result.added++;
+    result.players.push(newPlayer);
+  }
+  return result;
+}
+
+// 確定トーストの文言を組み立てる純関数（#757 formatMasterSyncResultToast と同型＝実際に起きたことを数字で報告）。
+// スキップ理由: 1種類のみなら「スキップ 2行: 同名」、複数種は「スキップ 3行: 同名 2・クラス名不明 1」。
+// dup-registered / dup-paste はどちらも利用者から見れば「同名」なので1語に集約する。
+function formatBulkEntryResultToast(result){
+  if(!result)return '📥 登録しました';
+  var added=result.added||0,skipped=result.skipped||0;
+  var head=(added>0)?('📥 '+added+'人を登録しました'):'📥 登録できる行がありませんでした';
+  if(skipped<=0)return head;
+  var LABELS={'dup-registered':'同名','dup-paste':'同名','empty-name':'空の氏名','unknown-class':'クラス名不明'};
+  var byLabel={};
+  var order=[];
+  var reasons=result.skippedByReason||{};
+  for(var k in reasons){
+    if(!Object.prototype.hasOwnProperty.call(reasons,k))continue;
+    var label=LABELS[k]||k;
+    if(!Object.prototype.hasOwnProperty.call(byLabel,label)){byLabel[label]=0;order.push(label);}
+    byLabel[label]+=reasons[k];
+  }
+  var parts=[];
+  for(var oi=0;oi<order.length;oi++){
+    parts.push(order.length===1?order[oi]:(order[oi]+' '+byLabel[order[oi]]));
+  }
+  return head+'（スキップ '+skipped+'行: '+parts.join('・')+'）';
+}
+
+// エラー理由のプレビュー表示文言（表示専用）。
+function bulkEntryErrorLabel(error){
+  if(error==='empty-name')return '氏名が空です';
+  if(error==='dup-paste')return '貼り付け内で同名が重複しています';
+  if(error==='dup-registered')return '同じ名前の参加者がすでに登録されています';
+  if(error==='unknown-class')return 'クラスが見つかりません（「クラスを管理する」で先に追加してください）';
+  return '登録できません';
+}
+
+// 開始前限定の導線同期（renderRegList から毎描画呼ばれる＝ROUNDS-CONFIG-001 と同型）。
+// state.started（全クラス OR の互換フィールド）で disabled＋注記を切り替える。
+function renderBulkEntryButton(){
+  var btn=document.getElementById('bulkEntryBtn');
+  var note=document.getElementById('bulk-entry-note');
+  var started=!!(state&&state.started);
+  if(btn)btn.disabled=started;
+  if(note)note.style.display=started?'block':'none';
+}
+
+// 既定クラス select を state.classes 駆動で再生成（populateClassSelect と同ソース・選択値は維持・idempotent）。
+function populateBulkEntryClassSelect(){
+  var sel=document.getElementById('bulk-entry-class');
+  if(!sel)return;
+  var clsList=getRegistrationClassList();
+  var prev=sel.value;
+  sel.innerHTML='';
+  var hasPrev=false;
+  for(var i=0;i<clsList.length;i++){
+    var opt=document.createElement('option');
+    opt.value=clsList[i].id;
+    opt.textContent=clsList[i].name||(clsList[i].id+'クラス');
+    sel.appendChild(opt);
+    if(clsList[i].id===prev)hasPrev=true;
+  }
+  if(hasPrev)sel.value=prev;
+  else if(clsList.length>0)sel.value=clsList[0].id;
+}
+
+// モーダルの現在値から検証済み行を作る単一窓口（プレビューと確定が必ず同じ判定を通る）。
+function collectBulkEntryRows(){
+  var textEl=document.getElementById('bulk-entry-text');
+  var clsSel=document.getElementById('bulk-entry-class');
+  var memSel=document.getElementById('bulk-entry-member');
+  var parsed=parseBulkEntryText(textEl?textEl.value:'');
+  return validateBulkEntryRows(parsed,clsSel?clsSel.value:'',memSel?memSel.value:'member',state);
+}
+
+// プレビュー表＋サマリ＋確定ボタンの描画。DOM API（createElement/textContent）のみで組み立て、
+// innerHTML への自由文流入を作らない（貼り付け値＝任意文字列を扱うため）。
+function updateBulkEntryPreview(){
+  var host=document.getElementById('bulk-entry-preview');
+  var summary=document.getElementById('bulk-entry-summary');
+  var confirmBtn=document.getElementById('bulkEntryConfirmBtn');
+  if(!host)return;
+  var rows=collectBulkEntryRows();
+  host.innerHTML='';
+  var okCount=0,ngCount=0;
+  if(rows.length>0){
+    var table=document.createElement('table');
+    table.style.cssText='width:100%;border-collapse:collapse;font-size:12px;background:#fff';
+    var headRow=document.createElement('tr');
+    var heads=['行','氏名','ふりがな','クラス','状態'];
+    for(var hi=0;hi<heads.length;hi++){
+      var th=document.createElement('th');
+      th.textContent=heads[hi];
+      th.style.cssText='border:1px solid #d3dbe5;padding:4px 6px;background:#f4f6f9;color:#1F3864;text-align:left;white-space:nowrap';
+      headRow.appendChild(th);
+    }
+    table.appendChild(headRow);
+    var clsNames={};
+    var clsList=getRegistrationClassList();
+    for(var ci=0;ci<clsList.length;ci++)clsNames[clsList[ci].id]=clsList[ci].name||(clsList[ci].id+'クラス');
+    for(var i=0;i<rows.length;i++){
+      var row=rows[i];
+      var tr=document.createElement('tr');
+      var cells=[
+        String(row.lineNo),
+        row.name||(row.error==='empty-name'?'（空）':''),
+        row.yomi||'',
+        row.clsId?(clsNames[row.clsId]||row.clsId):row.clsRaw,
+        row.error?('⚠ '+bulkEntryErrorLabel(row.error)):'✅ 登録できます'
+      ];
+      for(var cj=0;cj<cells.length;cj++){
+        var td=document.createElement('td');
+        td.textContent=cells[cj];
+        td.style.cssText='border:1px solid #d3dbe5;padding:4px 6px'+((cj===4&&row.error)?';color:#A32D2D':'');
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+      if(row.error)ngCount++;else okCount++;
+    }
+    host.appendChild(table);
+  }
+  if(summary)summary.textContent=(rows.length===0)?'':('登録できる '+okCount+'人・エラー '+ngCount+'行');
+  if(confirmBtn){
+    confirmBtn.disabled=(okCount===0);
+    confirmBtn.textContent=(okCount>0)?('📥 '+okCount+'人を登録する'):'登録を確定する';
+  }
+}
+
+// 全画面ビューの open/close（openPpFullscreen / closePpFullscreen と同型・DOM は静的）。
+function isBulkEntryFullscreenOpen(){
+  var el=document.getElementById('bulk-entry-fullscreen');
+  return !!(el&&el.style.display!=='none');
+}
+function openBulkEntryFullscreen(){
+  // 開始前限定（renderBulkEntryButton の disabled と二重防御）。開始後の途中受付は従来の単発追加（#272 ガード）で。
+  if(state&&state.started){
+    if(typeof notifyRegTapErr==='function')notifyRegTapErr('大会開始後はまとめて登録できません（追加は手入力で1人ずつ）');
+    return;
+  }
+  var el=document.getElementById('bulk-entry-fullscreen');
+  if(!el)return;
+  populateBulkEntryClassSelect();
+  el.style.display='block';
+  if(el.setAttribute)el.setAttribute('aria-hidden','false');
+  try{document.body.style.overflow='hidden';}catch(e){}
+  updateBulkEntryPreview();
+  el.scrollTop=0;
+}
+function closeBulkEntryFullscreen(){
+  var el=document.getElementById('bulk-entry-fullscreen');
+  if(!el)return;
+  el.style.display='none';
+  if(el.setAttribute)el.setAttribute('aria-hidden','true');
+  try{document.body.style.overflow='';}catch(e){}
+}
+
+// 確定＝検証をやり直してから一括追加（プレビュー表示後に受付状況が変わっても古い判定のまま登録しない）。
+// 保存・再描画・SAVE-003b 保存確認は finalizeAddPastParticipants と同じ分担。マスタには触れない。
+function confirmBulkEntry(){
+  if(state&&state.started){
+    if(typeof notifyRegTapErr==='function')notifyRegTapErr('大会開始後はまとめて登録できません（追加は手入力で1人ずつ）');
+    closeBulkEntryFullscreen();
+    return;
+  }
+  var rows=collectBulkEntryRows();
+  var result=bulkAddPlayers(rows,state);
+  if(result.added===0){
+    updateBulkEntryPreview();
+    if(typeof notifyRegTapErr==='function')notifyRegTapErr('登録できる行がありません（プレビューのエラー理由を確認してください）');
+    return;
+  }
+  renderRegList();save();
+  // A-5.1-SAVE-003b: バッチ追加の保存確認（finalizeAddPastParticipants と同型・warn は件数集約して1回のみ）。
+  // rollback しない・運営は継続する。alert も使わない。
+  var unverified=0;
+  for(var vi=0;vi<result.players.length;vi++){
+    var t=result.players[vi];
+    if(!verifyPlayerPersistedById(t.id,t.cls,t.name))unverified++;
+  }
+  if(unverified>0){
+    notifySaveWarning({
+      message:result.added+'人を登録しましたが、'+unverified+'人分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-003b: bulkAddPlayers の保存が確認できませんでした ('+unverified+'/'+result.players.length+' 件未確認)',
+      callsiteId:'SAVE-003b-bulkAddPlayers',
+      kind:'save-verify',
+      aggregateKey:'save-verify:bulk',
+      severity:'warn'
+    });
+  }
+  var textEl=document.getElementById('bulk-entry-text');
+  if(textEl)textEl.value='';
+  updateBulkEntryPreview();
+  closeBulkEntryFullscreen();
+  // MASTER-SYNC-CLARITY-001 (#757) の結果報告型: 純関数で文言を組み立て showToast（textContent）で通知。
+  showToast(formatBulkEntryResultToast(result));
+}
+
+// BULK-ENTRY-001 (#761): 導線の結線（bindRegistrationEvents から1回・build/bind 分離）。
+function bindBulkEntryEvents(){
+  var openBtn=document.getElementById('bulkEntryBtn');
+  if(openBtn)openBtn.addEventListener('click',openBulkEntryFullscreen);
+  var closeBtn=document.getElementById('bulkEntryCloseBtn');
+  if(closeBtn)closeBtn.addEventListener('click',closeBulkEntryFullscreen);
+  var confirmBtn=document.getElementById('bulkEntryConfirmBtn');
+  if(confirmBtn)confirmBtn.addEventListener('click',confirmBulkEntry);
+  var textEl=document.getElementById('bulk-entry-text');
+  if(textEl)textEl.addEventListener('input',updateBulkEntryPreview);
+  var clsSel=document.getElementById('bulk-entry-class');
+  if(clsSel)clsSel.addEventListener('change',updateBulkEntryPreview);
+  var memSel=document.getElementById('bulk-entry-member');
+  if(memSel)memSel.addEventListener('change',updateBulkEntryPreview);
+}
+
+// ============================================================
 // MASTER TAB (F11, F10): 最小マスタタブ + 利用目的表示
 // ============================================================
 
@@ -6618,6 +6984,8 @@ function renderRegList(){
   // GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類セレクタ＋ヘッダ🎪バッジ＋📋ボタン見た目を毎描画同期
   //   （init/全リセット/バックアップ復元は renderRegList を必ず通る＝モード表示の消し忘れ/残留を作らない）。
   renderTournamentKindControl();
+  // BULK-ENTRY-001 (#761): まとめて登録の導線（開始前限定）を毎描画同期（disabled＋注記）。
+  renderBulkEntryButton();
   var clsList=getRegistrationClassList();
   var allCount=0;
   for(var ci=0;ci<clsList.length;ci++){
@@ -10329,7 +10697,10 @@ var HELP_TEXTS={
       '名簿にない新規の方：「＋ 名簿にない新規の方（手入力）」を開いて氏名を入れて登録します（漢字・ふりがな・50音で名簿を検索して見つからないときも同様です）。',
       '登録した後でも、氏名・ふりがな・会費区分は編集で直せます。間違えても直せます。席を譲るなど別の人に変わったときは、名前の編集から「別の人に差し替える（名簿から選ぶ）」で、これまでの結果ごと正しい人に付け替えられます。',
       // GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類（ゲスト大会）の案内を追加（7行目・test_help_003 R4 追随）。
-      'ゲスト大会：名簿にない参加者が大半の別大会は、「⚙ 大会の設定」の「大会の種類」で「🎪 ゲスト大会」を選んでください。参加者・結果が名簿（会員マスタ）に記録されなくなります（名簿からの受付・検索はそのまま使えます・開始後は変更不可）。'
+      'ゲスト大会：名簿にない参加者が大半の別大会は、「⚙ 大会の設定」の「大会の種類」で「🎪 ゲスト大会」を選んでください。参加者・結果が名簿（会員マスタ）に記録されなくなります（名簿からの受付・検索はそのまま使えます・開始後は変更不可）。',
+      // BULK-ENTRY-001 (#761): 事前リスト貼り付けのまとめて登録の案内を追加（8行目・test_help_003 R4 追随）。
+      //   「いつ使う／何が起きる／間違えても／ゲスト大会では」の型（#757/#760 で確立）で書く。
+      'まとめて登録：事前に参加者リスト（Excel など）を集めてある大会は、大会開始前に「📥 まとめて登録（エクセルから貼り付け）」へ貼り付け→プレビュー→確定で、まとめて受付できます。エラー行（同名・空の氏名・クラス名不明）は自動で除外され、理由がプレビューに表示されます（確定後も1人ずつの編集・削除で直せます）。登録した方は名簿（会員名簿）には載りません（通常の大会では「📋 参加者を名簿に反映」で名簿に新規追加・🎪 ゲスト大会でもそのまま使えます）。'
     ]
   },
   // HELP-UX-004 (#341): 順位タブ（最終結果）の順位決定ルールの迷子防止ヘルプ。#309/#323 機構流用・topic 追加のみ。
@@ -13726,6 +14097,8 @@ function bindRegistrationEvents(){
   //   bindClassBulkEditHandlers() で同経路 bind する。重複 bind は data-bulkedit-bound で抑止。
   bindClassBulkEditHandlers();
   document.getElementById('addBtn').addEventListener('click',addPlayer);
+  // BULK-ENTRY-001 (#761): まとめて登録（エクセルから貼り付け）の全画面ビュー導線。
+  bindBulkEntryEvents();
   // HELP-UX-003 (#338): 登録受付タブ見出し脇「？ ヘルプ」（静的 HTML・id=helpBtnReg）→ openHelpModal('reg')。
   var helpBtnReg=document.getElementById('helpBtnReg');
   if(helpBtnReg)helpBtnReg.addEventListener('click',function(){openHelpModal('reg');});

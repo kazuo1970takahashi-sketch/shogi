@@ -2813,6 +2813,18 @@ if [ -f "$SCRIPT_DIR/test_master_sync_clarity_001.js" ]; then
 else
   warn "test_master_sync_clarity_001.js が見つからない"
 fi
+
+echo ""
+echo "【BULK-ENTRY-001 (#761) 参加者の一括登録（エクセル/CSV コピペ・マスタ非経由）】"
+if [ -f "$SCRIPT_DIR/test_bulk_entry_001.js" ]; then
+  if node "$SCRIPT_DIR/test_bulk_entry_001.js" "$TARGET" > /tmp/bulk_entry_001_out.log 2>&1; then
+    ok "BULK-ENTRY-001 テスト 全PASS ($(tail -1 /tmp/bulk_entry_001_out.log))"
+  else
+    ng "BULK-ENTRY-001 テスト 失敗（純関数／マスタ非経由／開始前限定／4面文言のいずれか）"; cat /tmp/bulk_entry_001_out.log
+  fi
+else
+  warn "test_bulk_entry_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
