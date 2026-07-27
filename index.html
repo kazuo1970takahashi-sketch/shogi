@@ -65,7 +65,7 @@ th.cell-amt{text-align:right}
   <!-- アプリリンク -->
   <div class="card">
     <h2>運営ツール</h2>
-    <a class="app-link" href="shogi_v4.html?v=130">大会運営アプリを開く</a>
+    <a class="app-link" href="shogi_v4.html?v=131">大会運営アプリを開く</a>
     <p style="font-size:13px;color:#888;text-align:center">スマートフォンのブラウザで開いてください</p>
     <a class="app-link" href="docs/install_guide.html" target="_blank" rel="noopener noreferrer" style="background:#2E75B6">📱 ホーム画面に追加する方法（かんたん手順）</a>
     <!-- 運営マニュアル導線（事前リファレンス・別タブ起動 / #316 MANUAL-LINK-001） -->
@@ -143,8 +143,16 @@ th.cell-amt{text-align:right}
         <ul>
           <li>「☁ クラウドへ送信」で結果をクラウドに残す・共有する（ログイン時）</li>
           <li>「最終結果」タブ下部の報告書情報欄に開催日・時間・担当役員・申し送り事項を入力し、「報告書を印刷 / PDF保存」ボタンを押す。印刷ダイアログで「PDFとして保存」を選ぶ</li>
-          <li>「📋 名簿を更新」で今日の参加者を会員名簿へ反映する</li>
+          <li>「📋 参加者を名簿に反映」で今日の参加者を会員名簿へ反映する</li>
         </ul>
+        <!-- MASTER-SYNC-CLARITY-001 (#757): 4面共通の型（いつ押す／何が起きる／間違えても／ゲスト大会では）。 -->
+        <div class="note">
+          <strong>「📋 参加者を名簿に反映」（ヘッダの緑ボタン）とは</strong><br>
+          <strong>いつ押す</strong>：受付が落ち着いたら1回（終了時は「☁ クラウドへ送信」でも確認が出ます）。<br>
+          <strong>何が起きる</strong>：今日の参加者が会員名簿に載り、参加記録が付く（<strong>名簿から消えるものはありません</strong>）。押すと「新規追加 ○人・参加記録 ○人」と結果が表示されます。<br>
+          <strong>間違えても</strong>：何度押しても結果は同じで安全（2回目は「反映済みです（変更なし）」と出ます）。当日編集したふりがなが名簿と違うときだけ確認が出ます。<br>
+          <strong>ゲスト大会では</strong>：自動で止まります（理由が表示され、名簿は変わりません）。
+        </div>
       </div>
     </div>
   </div>
