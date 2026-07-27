@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// IN-APP-MODAL-001 (#606) スライス: YOMI 上書き確認（名簿を更新時のふりがな上書き）confirm 1件のアプリ内モーダル化（静的担保）。
+// IN-APP-MODAL-001 (#606) スライス: YOMI 上書き確認（📋 参加者を名簿に反映 時のふりがな上書き）confirm 1件のアプリ内モーダル化（静的担保）。
 //   対象: syncBranchMasterOnSave 内の native confirm('当日編集したふりがな…更新しますか？') → appConfirm。
 //   難所: confirm の答えを saveBranchMaster 前に確定する必要がある（confirm OK 時のみ master.yomi を上書きしてから保存）。
 //   方針:
@@ -35,10 +35,12 @@ assert(count(RAW, '_finishMasterSync();') >= 2, 'D3 _finishMasterSync は 確認
 
 // C. 呼び出し元 saveData は完了通知を onDone 継続で受ける（順序保持）
 assert(RAW.indexOf('syncBranchMasterOnSave(function(){') >= 0, 'C1 saveData は onDone 継続を渡す');
-assert(/syncBranchMasterOnSave\(function\(\)\{[\s\S]{0,300}showToast\('📋 名簿を更新しました'\);[\s\S]{0,20}\}\);/.test(RAW), 'C2 showToast は onDone 内へ移設（同期反映後に通知）');
+// MASTER-SYNC-CLARITY-001 (#757): onDone は counts を受け取り、文言は formatMasterSyncResultToast に委譲（位置＝onDone 内は不変）。
+assert(/syncBranchMasterOnSave\(function\(counts\)\{[\s\S]{0,600}showToast\(formatMasterSyncResultToast\(counts\)\);[\s\S]{0,20}\}\);/.test(RAW), 'C2 showToast は onDone 内へ移設（同期反映後に通知）');
 
 // E. 完了通知の全経路担保: _done ヘルパ＋corruption/例外経路
-assert(/function _done\(\)\{ if\(typeof onDone===['"]function['"]\)onDone\(\); \}/.test(RAW), 'E1 _done ヘルパ（onDone を安全に1回呼ぶ）');
+// MASTER-SYNC-CLARITY-001 (#757): onDone は同期結果の内訳（_counts）を引数で受ける（呼び出し回数・経路は不変）。
+assert(/function _done\(\)\{ if\(typeof onDone===['"]function['"]\)onDone\(_counts\); \}/.test(RAW), 'E1 _done ヘルパ（onDone を安全に1回呼ぶ）');
 assert(RAW.indexOf('      save();\n      _done();\n      return;') >= 0, 'E2 corruption スキップ経路でも _done を呼ぶ（完了通知）');
 
 // F. 関数構造: 単一定義

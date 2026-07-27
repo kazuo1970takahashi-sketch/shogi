@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2 / 監査 Step4 第1スライス): 保存・読込・バックアップ系の
 //   「成功通知」5箇所を blocking alert → showToast へ移行（作者承認済 2026-07-02）。
-//   対象: ①saveData（名簿を更新）②loadData ファイル読込成功 ③loadFromPaste 貼り付け読込成功
+//   対象: ①saveData（📋 参加者を名簿に反映）②loadData ファイル読込成功 ③loadFromPaste 貼り付け読込成功
 //         ④exportTournamentBackup 保存成功 ⑤importTournamentBackupFromText 復元成功
 //   失敗・警告系 alert と復元前 confirm は全維持（STYLE-GUIDE §3 の例外＝必ず認知すべき事象）。
 //   検証:
@@ -39,8 +39,9 @@ let pass=0,fail=0;const ok=(c,m)=>{c?pass++:(fail++,console.log('  FAIL: '+m));}
 console.log('=== NOTIFY-N2-SAVE-001（保存系成功通知の toast 化） ===');
 
 console.log('=== S: ソース検証（成功 alert 撤去・toast 存在・失敗系維持） ===');
-ok(RAW.indexOf("alert('名簿を更新しました")<0,'S1 saveData の成功 alert が無い');
-ok(RAW.indexOf("showToast('📋 名簿を更新しました')")>=0,'S2 saveData は toast で通知');
+ok(RAW.indexOf("alert('名簿を更新しました")<0&&RAW.indexOf("alert('📋 名簿に反映しました")<0,'S1 saveData の成功 alert が無い');
+// MASTER-SYNC-CLARITY-001 (#757): 固定文言 → formatMasterSyncResultToast(counts) の結果報告へ（toast 経路は不変）。
+ok(RAW.indexOf("showToast(formatMasterSyncResultToast(counts))")>=0,'S2 saveData は toast で通知（結果報告文言）');
 ok(RAW.indexOf("alert('データを読み込みました')")<0,'S3 読込成功 alert が無い（ファイル/貼り付けとも）');
 ok((RAW.match(/showToast\('データを読み込みました'\)/g)||[]).length===2,'S4 読込成功 toast が2箇所（ファイル＋貼り付け）');
 ok(!/alert\([^)]*にバックアップを保存しました/.test(RAW),'S5 バックアップ保存成功 alert が無い');
@@ -68,7 +69,7 @@ ok(String(Er.els['app-toast'].textContent).indexOf('バックアップを復元�
 ok(Er.alerts.length===0,'F7 復元成功経路で alert が出ない');
 var Em=makeEnv();
 Em.env.saveData();
-ok(String(Em.els['app-toast'].textContent).indexOf('名簿を更新しました')>=0,'F8 名簿更新成功が toast に出る');
+ok(String(Em.els['app-toast'].textContent).indexOf('📋 名簿')>=0,'F8 名簿反映の結果が toast に出る');
 ok(Em.alerts.length===0,'F9 名簿更新で alert が出ない');
 var stM=Em.env.loadSaveStatus();
 ok(typeof stM.meibo==='number'&&stM.meibo>0,'F10 保存状態バーの meibo 時刻も記録される（非劣化）');

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // ROUNDS-PER-CLASS-001 + SAVE-BTN-MEIBO-001:
 //   (1) 回戦数をクラス別に上書きできる（state.classes[i].rounds・roundsForClass(cls) で解決・全体既定は state.rounds）。
-//   (2) 保存ボタンを「📋 名簿を更新」に一本化＝syncBranchMasterOnSave のみ（クリップボードコピー撤去）。
+//   (2) 保存ボタンを「📋 参加者を名簿に反映」（MASTER-SYNC-CLARITY-001 #757 改名前は「📋 名簿を更新」）に
+//       一本化＝syncBranchMasterOnSave のみ（クリップボードコピー撤去）。
 const fs=require('fs');
 const target=process.argv[2]||'shogi_v4.html';
 const RAW=fs.readFileSync(target,'utf8');
@@ -59,21 +60,23 @@ var norm=En.env.normalizeState({classes:[{id:'A',name:'Aクラス',started:false
 ok(classOf(norm,'A').rounds===5,'N1 正の整数上書きを保持');
 ok(classOf(norm,'B').rounds==null,'N2 不正上書き(0)はキーを落とす（既定に従う）');
 
-console.log('=== 保存ボタン「名簿を更新」一本化（挙動） ===');
+console.log('=== 保存ボタン「参加者を名簿に反映」一本化（挙動） ===');
 var Es=makeEnv();
 Es.env.saveData();
 ok(Es.clip.called===false,'S1 saveData はクリップボードへコピーしない');
 // NOTIFY-N2-SAVE-001: 成功通知は alert → toast へ移行（STYLE-GUIDE §3 N2）。旧「控えはバックアップ」誘導は
 // 保存状態バー＋save-systems ヘルプ（?v=56）へ移管済みのため S3 は「成功に alert を使わない」検証へ差し替え。
-ok(Es.els['app-toast']&&String(Es.els['app-toast'].textContent).indexOf('名簿を更新しました')>=0,'S2 「名簿を更新しました」を toast で通知');
-ok(Es.alerts.every(a=>a.indexOf('名簿を更新しました')<0),'S3 成功通知に blocking alert を使わない（N2）');
+// MASTER-SYNC-CLARITY-001 (#757): 固定文言 → 結果報告の3型へ。参加者ゼロの env では差分ゼロ型になる。
+ok(Es.els['app-toast']&&String(Es.els['app-toast'].textContent).indexOf('📋 名簿は反映済みです（変更なし）')>=0,'S2 反映結果を toast で通知（差分ゼロ型）');
+ok(Es.alerts.every(a=>a.indexOf('名簿に反映')<0&&a.indexOf('名簿は反映済み')<0),'S3 成功通知に blocking alert を使わない（N2）');
 
 console.log('=== 静的HTML / 配線（RAW） ===');
-ok(RAW.indexOf('>📋 名簿を更新</button>')>=0,'R1 ボタン名は「📋 名簿を更新」');
+ok(RAW.indexOf('>📋 参加者を名簿に反映</button>')>=0,'R1 ボタン名は「📋 参加者を名簿に反映」（MASTER-SYNC-CLARITY-001 #757）');
 ok(!/function saveData\(\)\{[\s\S]{0,400}navigator\.clipboard/.test(RAW),'R2 saveData にクリップボード書き出しが無い');
 // IN-APP-MODAL-001 (#606): YOMI 上書き確認の appConfirm 非同期化に伴い、saveData は完了通知(showToast)を
 //   syncBranchMasterOnSave の onDone 継続で受ける（引数付き呼び出し）。名簿同期の維持（呼出の存在）を担保する意図は不変。
-ok(/function saveData\(\)\{[\s\S]{0,600}syncBranchMasterOnSave\(/.test(RAW),'R3 saveData は名簿同期を維持（onDone 継続付き）');
+// MASTER-SYNC-CLARITY-001 (#757): saveData 冒頭の注釈が増えたため走査幅のみ 600→900（担保する意図は不変）。
+ok(/function saveData\(\)\{[\s\S]{0,900}syncBranchMasterOnSave\(/.test(RAW),'R3 saveData は名簿同期を維持（onDone 継続付き）');
 ok(RAW.indexOf('回戦数（全クラス既定）')>=0,'R4 共通欄は「全クラス既定」と明示');
 ok(/renderClassManager\(\)\{[\s\S]*createElement\('select'\)[\s\S]*onChangeClassRounds/.test(RAW),'R5 クラス管理行に回戦数selectと結線');
 ok(/roundsSel\.disabled=isClassStarted\(c\.id\)/.test(RAW),'R6 クラス別selectは開始後ロック');
