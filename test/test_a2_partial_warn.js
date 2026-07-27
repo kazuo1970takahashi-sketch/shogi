@@ -53,7 +53,7 @@ const env=loadEnv();
   ok(C('送信しました（名簿 2 名・結果 2 件）')==='ok','M2 完全成功→ok(緑)');
   // CLOUD-SEND-UNLINKED-GUARD-001: #377 の「skipped は中立注記(ok/緑)」を、未連携者が共有結果から
   //   黙って欠落する（1位が消える）問題を受けて ⚠ 警告(warn/橙) に格上げ。M3 の期待も warn へ更新。
-  ok(C('送信しました（名簿 2 名・結果 1 件）　⚠ 未連携 1 名（最上位：1位 甲）は共有結果に未反映です。「📋 名簿を更新」→ 再送信で反映できます。')==='warn','M3 未連携ありは⚠→warn(橙・CLOUD-SEND-UNLINKED-GUARD-001 で中立注記から格上げ)');
+  ok(C('送信しました（名簿 2 名・結果 1 件）　⚠ 未連携 1 名（最上位：1位 甲）は共有結果に未反映です。「📋 参加者を名簿に反映」→ 再送信で反映できます。')==='warn','M3 未連携ありは⚠→warn(橙・CLOUD-SEND-UNLINKED-GUARD-001 で中立注記から格上げ)');
 
   console.log('=== A-2 配線（RAW）===');
   ok(/\{ok:true,warn:\(counts\.unresolved>0\),counts:counts,tournament_id:tid\}/.test(RAW),'W1 ok 返却に warn フラグ');

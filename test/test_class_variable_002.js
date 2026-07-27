@@ -5,7 +5,7 @@
 //     ADD.  addPlayerFromMaster: C への追加成功（採番/属性/重複判定は A/B と同等）・未知/不正クラス reject・A/B 従来不変。
 //     CHG.  changePlayerClass: A⇄C/B⇄C 移動・master.last_class=C 記録・skipMasterUpdate(#760) 契約不変・探索の全クラス化。
 //     LCLS. last_class 不変条件の一般化（isSafeClassId 以外→null）: createMemberFromParticipant / normalizeBranchMaster(load) /
-//           updateBranchMasterFromTournament(📋名簿を更新) / ☁復元（buildDerivedMemberStatsFromCloud / mergeDerivedStatsIntoMaster）。
+//           updateBranchMasterFromTournament(📋 参加者を名簿に反映) / ☁復元（buildDerivedMemberStatsFromCloud / mergeDerivedStatsIntoMaster）。
 //     PIN.  ppDenseSelectableClasses=getRegistrationClassList 素通し・旧「※A/B 以外は手入力」注記撤去・
 //           finalizeAddPastParticipants 第4引数 cls 化・verifyMasterFieldPersisted の受理集合一般化。
 //   データは完全架空のみ。

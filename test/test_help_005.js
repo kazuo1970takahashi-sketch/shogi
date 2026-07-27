@@ -107,12 +107,17 @@ assert(env.HELP_TEXTS && typeof env.HELP_TEXTS==='object', 'R1 HELP_TEXTS レジ
 const ms = env.HELP_TEXTS && env.HELP_TEXTS['master'];
 assert(!!ms && typeof ms==='object', 'R2 master トピックが存在する');
 assert(ms && ms.title==='支部マスタの使い方ヘルプ', 'R3 master の title が「支部マスタの使い方ヘルプ」');
-assert(ms && Array.isArray(ms.lines) && ms.lines.length===6, 'R4 master の lines が6項目の配列');
+assert(ms && Array.isArray(ms.lines) && ms.lines.length===7, 'R4 master の lines が7項目の配列（MASTER-SYNC-CLARITY-001 #757 で反映ボタンの型の説明を1行追加）');
 const j = ms ? ms.lines.join('\n') : '';
 assert(j.indexOf('名簿')>=0 && j.indexOf('大会データとは別物')>=0, 'R5 (1)支部マスタは名簿・大会データと別物の説明を含む');
 // MASTER-MIGRATE-RETIRE-001: 統合は撤去→一括送信の説明に差し替え（MASTER-BULK-PUSH-001）。
 assert(j.indexOf('一括送信')>=0, 'R6 (2)名簿全体の一括送信の説明を含む');
-assert(j.indexOf('名簿を更新')>=0 && j.indexOf('同期')>=0, 'R7 (3)「名簿を更新」時の自動同期の説明を含む');
+assert(j.indexOf('参加者を名簿に反映')>=0 && j.indexOf('同期')>=0, 'R7 (3)「📋 参加者を名簿に反映」時の自動同期の説明を含む');
+// MASTER-SYNC-CLARITY-001 (#757): 4面共通の型（いつ押す/何が起きる/間違えても/ゲスト大会では）をヘルプにも要求。
+assert(j.indexOf('受付が落ち着いたら1回')>=0, 'R7b (3)いつ押すか（受付が落ち着いたら1回）を含む');
+assert(j.indexOf('名簿から消えるものはありません')>=0, 'R7c (4)何が起きるか（消えるものは無い）を含む');
+assert(j.indexOf('何度押しても結果は同じ')>=0, 'R7d (4)何度押しても安全（冪等）を含む');
+assert(j.indexOf('ゲスト大会では自動で止まります')>=0, 'R7e (4)ゲスト大会では自動で止まる（理由が表示される）を含む');
 assert(j.indexOf('エクスポート')>=0 && j.indexOf('インポート')>=0 && j.indexOf('保管')>=0, 'R8 (4)エクスポート/インポート・保管推奨の説明を含む');
 assert(j.indexOf('壊れている')>=0 && j.indexOf('黙って消えません')>=0, 'R9 (5)破損/未対応版は取り込み中止・既存温存の説明を含む');
 assert(j.indexOf('リセット')>=0 && j.indexOf('退避')>=0, 'R10 (6)リセットは全消去・事前退避の説明を含む');

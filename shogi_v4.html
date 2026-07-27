@@ -26,7 +26,7 @@ body{font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:15px;color:#222;b
 .header{background:#1F3864;color:#fff;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;position:relative} /* HEADER-TIDY-001 (#746): position:relative＝スマホ幅で ☰ をタイトル行右端に absolute 配置するための基準 */
 .header h1{font-size:15px;font-weight:500}
 /* HEADER-TIDY-001 (#746 / ⑤c 案B・作者承認 2026-07-10): ヘッダ再編。常時表示は当日頻用の
-   「📱 スマホ星取表」「📋 名簿を更新」(min-height:44px)＋「☰」のみに削減（6→2＋☰）。
+   「📱 スマホ星取表」「📋 参加者を名簿に反映」(min-height:44px)＋「☰」のみに削減（6→2＋☰）。
    案内/ライブ配信/バックアップ/リセット2種は ☰ボトムシート（#header-menu-sheet・
    ⑤b openPlayerEditSheet と同系の overlay＋44px全幅ボタン）へ格納。id・bind・confirm 導線は不変。
    リセットを常時表示から1段深くする構造（RESET-MENU）はシートの危険グループとして継続。 */
@@ -432,7 +432,7 @@ body.sb-active{overflow:hidden}
          運営画面（このタブ）はそのまま維持し、閲覧専用ビューは #scoreboard hash で起動する。
          同一ブラウザの localStorage(state) を参照し、運営タブの保存に追従してリアルタイム更新する。 -->
     <button type="button" class="btn-sm no-print" id="openScoreboardBtn" style="background:#2E75B6;color:#fff;border-color:#2E75B6;min-height:44px">📱 スマホ星取表</button>
-    <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A;min-height:44px">📋 名簿を更新</button>
+    <button type="button" class="btn-sm no-print" id="saveBtn" style="background:#27500A;color:#fff;border-color:#27500A;min-height:44px">📋 参加者を名簿に反映</button>
     <!-- ⑨-a: 「読み込み」ボタンは撤去（復元は「バックアップ」に集約＝ファイル/貼り付けの両方をバックアップ画面で行う）。
          loadFile input は温存（loadData の受け皿・import_routing 資産）。openLoadModal/loadData/loadFromPaste は温存。 -->
     <input type="file" id="loadFile" accept=".json" style="display:none">
@@ -1280,7 +1280,7 @@ function normalizeState(raw){
       //   棄権者は generatePairing の対象外（以降の組み合わせに入らない）＝成績はそのまま順位表に残す。
       if(p&&p.withdrawn===true)pp.withdrawn=true;
       // YOMI-SYNC-OVERWRITE-001 (Codex P2b): 当日ふりがな編集の意図フラグを永続化。reload/PWA eviction 後も
-      //   「名簿を更新」時の非空マスタ上書き対象を復元する。true のときのみ保持（withdrawn と同じ default 補完）。
+      //   「📋 参加者を名簿に反映」時の非空マスタ上書き対象を復元する。true のときのみ保持（withdrawn と同じ default 補完）。
       if(p&&p.yomiDirty===true)pp.yomiDirty=true;
       return pp;
     }).filter(function(p){return p.name;});
@@ -2967,7 +2967,7 @@ function createMemberFromParticipant(p,master,date){
 // Issue #273: 支部マスタ同期/統合のクラス列挙を「全クラス対応」にするための純関数。
 //   旧実装は updateBranchMasterFromTournament / mergeTournamentParticipantsIntoMaster の双方で
 //   var classes=['A','B'] とハードコードしており、addClass()/nextClassId() で追加できる C 以降の
-//   クラス参加者がマスタ同期（「📋 名簿を更新」）・過去大会統合（「マスタ」タブ）の両経路から
+//   クラス参加者がマスタ同期（「📋 参加者を名簿に反映」）・過去大会統合（「マスタ」タブ）の両経路から
 //   黙って取りこぼされていた。state.classes（normalizeState が常に整える権威リスト・A/B を必ず含む）
 //   の id を主とし、保存揺れに備えて Object.keys(state.players) も union する（重複除外・順序は
 //   classes 優先 → players のみに存在する id を後置）。A/B のみの state では ['A','B'] と同順・同一
@@ -2992,9 +2992,42 @@ function listClassIdsForMasterSync(st){
   return ids;
 }
 
+// MASTER-SYNC-CLARITY-001 (#757): 同期結果の内訳（counts）を戻り値に添えるための helper。
+//   戻り値は従来どおり master 本体（既存呼び出しは無改修でそのまま動く）。counts は **非列挙**
+//   プロパティとして添えるため JSON.stringify（localStorage 保存・クラウド送信・テストの JSON 比較）
+//   には現れない＝保存スキーマ/保存形は不変。読み出しは readMasterSyncCounts()。
+function attachMasterSyncCounts(master,counts){
+  if(!master||typeof master!=='object')return master;
+  try{
+    Object.defineProperty(master,'_syncCounts',{value:counts,enumerable:false,writable:true,configurable:true});
+  }catch(e){
+    // 古い環境で defineProperty が使えないときは内訳なし（呼び出し側は null 扱いで中立文言へフォールバック）。
+    if(typeof console!=='undefined'&&console.warn)console.warn('MASTER-SYNC-CLARITY-001: counts を添付できません',e);
+  }
+  return master;
+}
+
+// MASTER-SYNC-CLARITY-001 (#757): counts の読み出し（純関数・副作用なし）。
+//   形が揃っていないときは null を返し、呼び出し側（トースト）は数字を出さない中立文言へ落とす。
+function readMasterSyncCounts(ret){
+  var c=(ret&&typeof ret==='object')?ret._syncCounts:null;
+  if(!c||typeof c!=='object')return null;
+  function _n(v){return (typeof v==='number'&&isFinite(v)&&v>=0)?v:0;}
+  return {added:_n(c.added),marked:_n(c.marked),yomiFilled:_n(c.yomiFilled),skipped:_n(c.skipped)};
+}
+
+// MASTER-SYNC-CLARITY-001 (#757): 戻り値に counts（added/marked/yomiFilled/skipped）を添える。
+//   マージ内容（何を追加し何を書くか）は一切変更しない＝数え上げのみの追加。定義:
+//     added      新規に名簿へ追加した会員数（createMemberFromParticipant 成功分）
+//     marked     この大会の参加記録（tournament_ids）が今回付いた会員数（新規追加分を含む＝今日の参加が
+//                名簿に記録された人数。2回目の押下では 0 になる＝冪等性がそのまま数字に出る）
+//     yomiFilled 既存会員の空のふりがなを今回補完した人数（新規追加分は added に含めるためここでは数えない。
+//                ふりがな衝突の上書き（YOMI-SYNC-OVERWRITE-001）は confirm 経由の別操作なので対象外）
+//     skipped    同名候補が複数あり同期を保留した参加者数（既存の警告 showMsg と同じ母数）
 function updateBranchMasterFromTournament(state,master,tournamentMeta){
+  var counts={added:0,marked:0,yomiFilled:0,skipped:0};
   if(!state||!master||!Array.isArray(master.members))return master;
-  if(!tournamentMeta||!tournamentMeta.tournament_id)return master;
+  if(!tournamentMeta||!tournamentMeta.tournament_id)return attachMasterSyncCounts(master,counts);
   var tid=tournamentMeta.tournament_id;
   var date=isValidYmd(tournamentMeta.tournament_date)?tournamentMeta.tournament_date:todayYmd();
   // A-4 §3.1.5: tournamentMeta.yomiMap[player.id] = yomi（オプショナル、Should Fix 1: id キー）
@@ -3012,6 +3045,7 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
       var p=players[pi];
       if(!p||!p.name)continue;
       var member=null;
+      var isNewMember=false;  // MASTER-SYNC-CLARITY-001 (#757): counts 用（新規追加のふりがなは yomiFilled に数えない）
       if(typeof p.member_id==='string'&&p.member_id){
         for(var mi=0;mi<master.members.length;mi++){
           if(master.members[mi].id===p.member_id){member=master.members[mi];break;}
@@ -3040,6 +3074,8 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
             }
             master.members.push(member);
             attachMemberIdToPlayer(p,member);
+            isNewMember=true;
+            counts.added++;  // MASTER-SYNC-CLARITY-001 (#757): 名簿へ新規追加した人数
           }catch(e){
             if(typeof console!=='undefined'&&console.warn)console.warn('member_id 生成失敗。スキップ',e);
             // 仕様書 v6 §3.7 / Codex Minor #2: crypto.randomUUID 不在の専用通知
@@ -3055,7 +3091,8 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
           }
         }
       }
-      addTournamentIdOnce(member,tid);
+      // MASTER-SYNC-CLARITY-001 (#757): 戻り値（今回追加できたか）を数えるだけ。呼び出し自体は不変。
+      if(addTournamentIdOnce(member,tid))counts.marked++;
       // Issue #273 / Codex P1: last_class は「最新出席の所属クラス」を表す。この大会が member の最新出席に
       //   なるとき（既存 last_attended 以降、または初出席）だけ last_class を上書きし、より古い大会で新しい
       //   クラスを潰さない（最新出席で必ず是正する）。
@@ -3077,7 +3114,10 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
         var yFill='';
         if(yomiMap&&typeof yomiMap[p.id]==='string')yFill=normalizeYomi(yomiMap[p.id]);
         if(!yFill&&typeof p.yomi==='string')yFill=normalizeYomi(p.yomi);
-        if(yFill)member.yomi=yFill;
+        if(yFill){
+          member.yomi=yFill;
+          if(!isNewMember)counts.yomiFilled++;  // MASTER-SYNC-CLARITY-001 (#757): 既存会員の空欄補完のみ数える
+        }
       }
       affected[member.id]=member;
     }
@@ -3089,7 +3129,8 @@ function updateBranchMasterFromTournament(state,master,tournamentMeta){
   if(pendingSkippedNames.length>0&&typeof showMsg==='function'){
     showMsg('同名候補が複数あるため次の '+pendingSkippedNames.length+' 名のマスタ同期を保留しました：'+pendingSkippedNames.join('、'),'warn');
   }
-  return master;
+  counts.skipped=pendingSkippedNames.length;  // MASTER-SYNC-CLARITY-001 (#757)
+  return attachMasterSyncCounts(master,counts);
 }
 
 // ============================================================
@@ -4101,7 +4142,7 @@ function buildMasterTabHtml(master){
   html+='<details class="master-maint" style="margin:0 0 12px"'+(_masterShowDeleted?' open':'')+'>';
   // MASTER-MIGRATE-RETIRE-001 (作者判断 2026-07-02): 「📥 過去大会を統合」はブートストラップ用で役目を終えたため
   //   UI 導線を撤去（openMigrationWizard・bind・テスト資産は温存＝onClickAddOneTable 前例）。過去大会 JSON から
-  //   会員を回収したい場合は「バックアップ画面で復元→📋 名簿を更新」で代替できる（誘導文言も更新済み）。
+  //   会員を回収したい場合は「バックアップ画面で復元→📋 参加者を名簿に反映」で代替できる（誘導文言も更新済み）。
   // MASTER-BULK-PUSH-001: 代わりに「☁ 名簿全体を一括送信」＝ローカル全会員（区分・市町村込み）をクラウドへ
   //   冪等 upsert する初期同期ボタンを置く（ローカルのみ会員の解消・CLOUD-MEMBER-FIELDS-001 とセット）。
   html+='<summary style="cursor:pointer;font-size:13px;color:#1F3864;padding:6px 0">⚙ 名簿のメンテナンス（バックアップ・クラウド一括送信・削除済み・リセット）</summary>';
@@ -4738,7 +4779,7 @@ function processMasterImportText(text,mode,setStatus){
   if(mode==='overwrite'){
     var result=applyOverwriteImport(parsed);
     if(!result.success){
-      if(result.error==='tournament_format')setStatus('これは過去大会データの形式です。会員を名簿へ取り込むには、バックアップ画面の「貼り付けから復元」等で大会として読み込み、「📋 名簿を更新」を押してください');
+      if(result.error==='tournament_format')setStatus('これは過去大会データの形式です。会員を名簿へ取り込むには、バックアップ画面の「貼り付けから復元」等で大会として読み込み、「📋 参加者を名簿に反映」を押してください');
       else if(result.error==='invalid_format')setStatus('マスタの形式として認識できませんでした（schema_version / members を確認してください）');
       else setStatus('インポートに失敗しました');
       return;
@@ -4782,7 +4823,7 @@ function processMasterImportText(text,mode,setStatus){
     }
     var mr=applyMergeImport(parsed,current);
     if(!mr.success){
-      if(mr.error==='tournament_format')setStatus('これは過去大会データの形式です。会員を名簿へ取り込むには、バックアップ画面の「貼り付けから復元」等で大会として読み込み、「📋 名簿を更新」を押してください');
+      if(mr.error==='tournament_format')setStatus('これは過去大会データの形式です。会員を名簿へ取り込むには、バックアップ画面の「貼り付けから復元」等で大会として読み込み、「📋 参加者を名簿に反映」を押してください');
       else if(mr.error==='invalid_format')setStatus('マスタの形式として認識できませんでした（schema_version / members を確認してください）');
       else setStatus('インポートに失敗しました');
       return;
@@ -6514,7 +6555,7 @@ function renderTournamentKindControl(){
   renderGuestModeUI();
 }
 
-// GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中の常時表示（ヘッダ🎪バッジ＋📋名簿を更新ボタンの淡色化）。
+// GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中の常時表示（ヘッダ🎪バッジ＋📋参加者を名簿に反映ボタンの淡色化）。
 //   📋ボタンは disabled にしない（押下時に saveData が理由を toast で説明する＝無反応で迷わせない・fail-soft）。
 //   見た目のみの同期であり、遮断の実体は saveData / syncBranchMasterOnSave 側のガード（二重防御）。
 function renderGuestModeUI(){
@@ -6545,12 +6586,12 @@ function onChangeTournamentKind(){
     state.tournament_kind=next;
     save();
     renderTournamentKindControl();
-    if(typeof showMsg==='function')showMsg(next==='guest'?'この大会を「🎪 ゲスト大会」にしました。参加者・結果は名簿（会員マスタ）に記録されません。':'この大会を「📘 通常の大会」にしました。「📋 名簿を更新」で参加者を名簿へ反映できます。','ok');
+    if(typeof showMsg==='function')showMsg(next==='guest'?'この大会を「🎪 ゲスト大会」にしました。参加者・結果は名簿（会員マスタ）に記録されません。':'この大会を「📘 通常の大会」にしました。「📋 参加者を名簿に反映」でこの大会の参加者を名簿へ反映できます。','ok');
   }
   if(n>0){
     var msg=(next==='guest')
       ?'すでに参加者が'+n+'名 登録されています。\n🎪 ゲスト大会に切り替えると、この大会の参加者・結果は名簿（会員マスタ）に記録されなくなります。\nよろしいですか？'
-      :'すでに参加者が'+n+'名 登録されています。\n📘 通常の大会に切り替えると、「📋 名簿を更新」や「☁ クラウドへ送信」でこの大会の参加者が名簿に反映されるようになります。\nよろしいですか？';
+      :'すでに参加者が'+n+'名 登録されています。\n📘 通常の大会に切り替えると、「📋 参加者を名簿に反映」や「☁ クラウドへ送信」でこの大会の参加者が名簿に反映されるようになります。\nよろしいですか？';
     appConfirm(msg,function(_ok){ if(_ok){_apply();} else {renderTournamentKindControl();} });
   } else {
     _apply();
@@ -7378,7 +7419,7 @@ function addPlayer(){
       }
     } else if(yomiForMaster && normalizeYomi(suggestSelected.yomi||'') && yomiForMaster!==normalizeYomi(suggestSelected.yomi||'')){
       // Codex 追P2-1: 既存マスタ候補を選びつつ、登録欄で非空マスタ yomi と異なるふりがなに手修正した場合。
-      //   直接上書きはせず dirty 印を立て、「名簿を更新」時の confirm 上書き対象に載せる（誤上書き防止＋反映漏れ防止）。
+      //   直接上書きはせず dirty 印を立て、「📋 参加者を名簿に反映」時の confirm 上書き対象に載せる（誤上書き防止＋反映漏れ防止）。
       _pendingNewYomi[id]=yomiForMaster;
       newPlayer.yomiDirty=true;
     }
@@ -8066,7 +8107,7 @@ function applyParticipantSwapFromMaster(p,memberId,master,state){
 //   旧会員の人に固有なスナップショット（yomi / city）は残すとキメラになるためクリア。
 //   会費区分（member/grade）は差し替え先が不明のため黙って変えない（金額に直結・受付一覧の編集で直せる）。
 //   [PR #759 レビュー BLOCK-1] 同名参加者ガード（FromMaster 側と同基準・全クラス横断）:
-//   同名を許すと「📋名簿を更新」の同名1件自動紐付け（updateBranchMasterFromTournament）で
+//   同名を許すと「📋 参加者を名簿に反映」の同名1件自動紐付け（updateBranchMasterFromTournament）で
 //   2 player が同一 member_id を共有し、クラウド upsert（onConflict: tournament_id,player_id）で
 //   片方の成績が黙って上書き消失し得るため、必ず拒否する。
 function applyParticipantSwapToUnlinked(p,newName,state){
@@ -8480,7 +8521,7 @@ function editPlayerYomi(id,cls){
     if(normalized===cur)return;             // 変更なしは保存しない
     p.yomiDirty=true;                       // YOMI-SYNC-OVERWRITE-001 (Codex P2b): 当日編集の意図を state に永続化（reload後も上書き対象を復元）
     updateField(id,cls,'yomi',normalized);  // save() + 保存検証(SAVE-003b) + renderRegList は updateField 側に委譲
-    // YOMI-SYNC-OVERWRITE-001: 当日その場で編集した意図を記録し、「名簿を更新」時の非空マスタ上書き対象にする。
+    // YOMI-SYNC-OVERWRITE-001: 当日その場で編集した意図を記録し、「📋 参加者を名簿に反映」時の非空マスタ上書き対象にする。
     //   登録時にマスタからコピーしただけの player.yomi（＝古い値の残存）を誤検知しないよう、明示編集のみ印を付ける。
     _pendingNewYomi[id]=normalized;
     showMsg(displayName+' のふりがなを更新しました','ok');
@@ -10310,7 +10351,10 @@ var HELP_TEXTS={
     lines:[
       '支部マスタは過去の参加者を蓄える名簿です。当日の大会データとは別物で、ここを直接いじらなくても大会運営はできます。',
       '「☁ 名簿全体をクラウドへ一括送信」（「⚙ 名簿のメンテナンス」内）：この端末の名簿全員（区分・市町村込み）をクラウドへ反映します（ログインが必要）。',
-      '受付・対局の画面で「📋 名簿を更新」を押すと、その大会の参加者が支部マスタ（名簿）に反映されます（同期）。',
+      // MASTER-SYNC-CLARITY-001 (#757): 「いつ押す／何が起きる／間違えても／ゲスト大会では」の4点を同じ型で。
+      //   4面ドキュメント（ヘルプ・運営サイト・マニュアル2種）で同じ型・同じ順序に揃える（DOC-SYNC-001 ゲート対象）。
+      '受付・対局の画面で「📋 参加者を名簿に反映」を押すと、その大会の参加者が支部マスタ（名簿）に反映されます（同期）。受付が落ち着いたら1回押してください（終了時は「☁ クラウドへ送信」でも確認が出ます）。',
+      '押すと起きること：今日の参加者が名簿に載る・参加記録が付く・空のふりがなが埋まる。名簿から消えるものはありません。何度押しても結果は同じで安全です（当日編集したふりがなが名簿と違うときだけ確認が出ます）。🎪 ゲスト大会では自動で止まります（理由が表示され、名簿は変わりません）。',
       '「📤 エクスポート」で名簿をファイル保存、「📂 インポート」で読み込みできます。端末の移行や万一の消失に備え、ときどきエクスポートして保管してください。',
       '取り込むファイルが壊れている・対応していない版のときは、取り込みを中止して既存の名簿を守ります（黙って消えません）。',
       '「📛 リセット」は名簿を全消去します。実行前に必ずエクスポートで退避してください。当日は無理にマスタをいじらなくて大丈夫です。'
@@ -11839,7 +11883,7 @@ function _unlinkedSkippedNote(count){
   var label=''; try{ label=_unlinkedTopLabel(collectUnlinkedParticipantsForSend()); }catch(e){ label=''; }
   // 表示先は applyCloudStatus（textContent・.cloud-status に pre-wrap なし）＝'\n' は改行にならないため
   // 区切りは全角スペース（L3 レビュー指摘3・CSS は拘束ルール3で不変のまま）。
-  return '　⚠ 未連携 '+count+' 名'+(label?('（'+label+'）'):'')+'は共有結果に未反映です。「📋 名簿を更新」→ 再送信で反映できます。';
+  return '　⚠ 未連携 '+count+' 名'+(label?('（'+label+'）'):'')+'は共有結果に未反映です。「📋 参加者を名簿に反映」→ 再送信で反映できます。';
 }
 function sendTournamentToCloud(setStatus){
   setStatus=setStatus||function(){};
@@ -11894,7 +11938,7 @@ function sendTournamentToCloud(setStatus){
       _confirmUnlinkedBeforeSend(_u,
         function(){ if(typeof syncBranchMasterOnSave==='function'){ syncBranchMasterOnSave(function(){ _send(); }); } else { _send(); } },
         function(){ _send(); },
-        function(){ setStatus('送信を中止しました（「📋 名簿を更新」→ 再送信で未連携者も反映できます）'); resolve({ok:false,step:'cancelled-unlinked'}); });
+        function(){ setStatus('送信を中止しました（「📋 参加者を名簿に反映」→ 再送信で未連携者も反映できます）'); resolve({ok:false,step:'cancelled-unlinked'}); });
     }
     function _send(){
       setStatus('クラウドへ送信中…');
@@ -12210,7 +12254,12 @@ function getTournamentDateFromReport(r){
 function syncBranchMasterOnSave(onDone){
   // IN-APP-MODAL-001 (#606): YOMI 上書き確認を appConfirm へ非同期化したため、完了通知（呼び出し元 saveData の
   //   showToast）を onDone コールバックで受け、tail 完了／corruption スキップ／例外の全経路で1回だけ呼ぶ＝旧同期完了順序を保持。
-  function _done(){ if(typeof onDone==='function')onDone(); }
+  // MASTER-SYNC-CLARITY-001 (#757): 同期結果の内訳を onDone(counts) で呼び出し元へ渡す（引数追加のみ＝
+  //   引数を見ない既存呼び出し（☁送信の未連携ガード CLOUD-SEND-UNLINKED-GUARD-001）は完全に無影響）。
+  //   counts が null のままの経路（ゲスト no-op／マスタ破損スキップ／保存失敗／例外）は「内訳不明」＝
+  //   呼び出し元が数字を出さない中立文言へフォールバックする（名簿に残っていない数字を報告しない）。
+  var _counts=null;
+  function _done(){ if(typeof onDone==='function')onDone(_counts); }
   // GUEST-TOURNAMENT-MODE-001 (#760・fail-safe の要): ゲスト大会は名簿（支部マスタ）へ一切書き込まない。
   //   本関数は大会→名簿同期の choke point（呼び出し2経路＝📋saveBtn の saveData／☁送信の未連携ガード
   //   「①名簿を更新して送信」CLOUD-SEND-UNLINKED-GUARD-001）であり、関数冒頭の no-op（_done() のみ）で
@@ -12242,10 +12291,11 @@ function syncBranchMasterOnSave(onDone){
     // 仕様書 v5 §3.3 / Codex MF #1: 大会日を ensureTournamentId に明示的に渡す
     ensureTournamentId(state,master,date);
     // A-4 §3.1.5: 登録画面ふりがな欄から退避した値（_pendingNewYomi）をマスタへ反映
-    updateBranchMasterFromTournament(state,master,{tournament_id:state.tournament_id,tournament_date:date,yomiMap:_pendingNewYomi});
+    // MASTER-SYNC-CLARITY-001 (#757): 戻り値から内訳を読むだけ（マージ内容・引数は不変）。
+    _counts=readMasterSyncCounts(updateBranchMasterFromTournament(state,master,{tournament_id:state.tournament_id,tournament_date:date,yomiMap:_pendingNewYomi}));
     // SAVE-UX-NONQUOTA-NOTIFY-001 (Codex P2-B): yomi バックフィルを含む master 同期の保存失敗を握り潰さない。
     //   saveBranchMaster は失敗時に notifySaveWarning（showMsg('warn')＋console.warn＋indicator +1）を
-    //   既に発火する（kind:'storage-error' は集約対象外＝確実に可視化）。「名簿を更新」完了の alert（saveData の
+    //   既に発火する（kind:'storage-error' は集約対象外＝確実に可視化）。反映完了の alert（saveData の
     //   後続表示）は native alert で別経路のため、この inline 警告は上書きされない。よって二重通知は避け、
     //   ここでは戻り値を受けて「保存できなかった一時マップ（_pendingNewYomi）を破棄しない」ことで
     //   ふりがなの反映漏れを握り潰さない（成功時のみクリアして次回再試行に委ねる）。
@@ -12261,14 +12311,18 @@ function syncBranchMasterOnSave(onDone){
         if(masterSaved!==false){
           // 反映済みのため一時マップをクリア（保存成功時のみ。失敗時は次回 saveData での再試行に備えて保持）。
           _pendingNewYomi={};
-          // YOMI-SYNC-OVERWRITE-001 (Codex P2b): 永続マーカーも解除（解決済みを次回「名簿を更新」で再prompt しない）。
+          // YOMI-SYNC-OVERWRITE-001 (Codex P2b): 永続マーカーも解除（解決済みを次回の反映で再prompt しない）。
           try{var _yck2=(state&&state.players)?Object.keys(state.players):[];for(var _yk=0;_yk<_yck2.length;_yk++){var _yar=state.players[_yck2[_yk]];if(Array.isArray(_yar)){for(var _yj=0;_yj<_yar.length;_yj++){if(_yar[_yj]&&_yar[_yj].yomiDirty)delete _yar[_yj].yomiDirty;}}}}catch(_yce){}
           // SAVE-STATUS-BAR-001: 名簿同期成功の時刻を記録（fail-soft・破損スキップ/保存失敗時は記録しない）。
           markSaveStatus('meibo');
         }
+        // MASTER-SYNC-CLARITY-001 (#757): 保存できなかったときは内訳を報告しない（数字＝名簿に残った事実の報告）。
+        //   保存失敗自体の通知は saveBranchMaster 内の notifySaveWarning が従来どおり担当（二重通知にしない）。
+        if(masterSaved===false)_counts=null;
         save();
       }catch(e2){
         if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタ同期に失敗（既存大会運営は継続）',e2);
+        _counts=null;  // MASTER-SYNC-CLARITY-001 (#757): 例外経路も内訳不明（中立文言へ）
       }
       _done();
     };
@@ -12305,30 +12359,50 @@ function syncBranchMasterOnSave(onDone){
     _finishMasterSync();
   }catch(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('支部マスタ同期に失敗（既存大会運営は継続）',e);
+    _counts=null;  // MASTER-SYNC-CLARITY-001 (#757): 保存到達前の例外＝内訳不明（中立文言へ）
     _done();
   }
 }
 
+// MASTER-SYNC-CLARITY-001 (#757): 反映結果のトースト文言を組み立てる純関数（表示のみ・副作用なし）。
+//   狙い＝「押したら何が起きたか」を数字で報告する（旧「📋 名簿を更新しました」は起きたことを伝えていなかった）。
+//   3型:
+//     ① 反映あり  📋 名簿に反映しました: 新規追加 N人・参加記録 M人（ふりがな補完があれば末尾に追記）
+//     ② 差分ゼロ  📋 名簿は反映済みです（変更なし）  ＝ 何度押しても安全（冪等）が数字で見える
+//     ③ 内訳不明  📋 名簿に反映しました              ＝ counts=null（破損スキップ/保存失敗/例外）の中立文言
+//   skipped（同名候補が複数で保留）は載せない: updateBranchMasterFromTournament が氏名つきの
+//   警告（showMsg 'warn'）を別途出しており、同じ事実の二重通知になるため。
+function formatMasterSyncResultToast(counts){
+  if(!counts)return '📋 名簿に反映しました';
+  var added=counts.added||0,marked=counts.marked||0,yomi=counts.yomiFilled||0;
+  if(added===0&&marked===0&&yomi===0)return '📋 名簿は反映済みです（変更なし）';
+  var parts=[];
+  if(added>0||marked>0){parts.push('新規追加 '+added+'人');parts.push('参加記録 '+marked+'人');}
+  if(yomi>0)parts.push('ふりがな補完 '+yomi+'人');
+  return '📋 名簿に反映しました: '+parts.join('・');
+}
+
 // クリップボード優先、非対応(http等)はファイルダウンロードにフォールバック
-// SAVE-BTN-MEIBO-001: 保存ボタンは「名簿を更新」＝この大会の参加者を支部マスタ（名簿）へ反映するだけの
+// SAVE-BTN-MEIBO-001: 保存ボタンは「📋 参加者を名簿に反映」（#757 改名前は「📋 名簿を更新」）＝この大会の参加者を支部マスタ（名簿）へ反映するだけの
 //   単機能に一本化した（旧「大会データをコピー」のクリップボード書き出しは撤去）。データの控え/バックアップは
 //   専用の「バックアップ」ボタンに一本化（役割の重複を解消）。saveDataAsFile は互換のため定義を温存（未使用）。
 function saveData(){
-  // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中は「📋 名簿を更新」を実行せず理由を説明する
+  // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中は「📋 参加者を名簿に反映」を実行せず理由を説明する
   //   （ボタンは disabled にせず押下時 toast＝無反応で迷わせない。#757 のトースト結果報告化と方向を揃える）。
   //   同期の実体遮断は syncBranchMasterOnSave 冒頭ガードが二重防御。
   if(typeof isGuestTournament==='function'&&isGuestTournament(typeof state!=='undefined'?state:null)){
     showToast('🎪 ゲスト大会のため名簿には反映しません（この大会の参加者は名簿に載りません）');
     return;
   }
-  // F2: 名簿を更新（支部マスタへ同期）。当日の参加者・クラス構成を名簿へ反映する。
+  // F2: 参加者を名簿に反映（支部マスタへ同期）。当日の参加者・クラス構成を名簿へ反映する。
   // IN-APP-MODAL-001 (#606): syncBranchMasterOnSave は YOMI 上書き確認が appConfirm（非同期）化したため、
   //   完了通知 showToast を onDone 継続で受ける＝旧「同期反映後に通知」の順序を保持（差分なし/確認キャンセル/OK いずれも反映完了後に1回）。
-  syncBranchMasterOnSave(function(){
+  syncBranchMasterOnSave(function(counts){
     // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は blocking alert をやめ toast へ（OK タップ不要）。
     //   旧 alert にあった「控えはバックアップ」案内は backup-nudge＋save-warning ヘルプがカバー
     //   （SAVE-STATUS-BAR-REMOVE-001: 旧・保存状態バー＋save-systems ヘルプは撤去済み）。
-    showToast('📋 名簿を更新しました');
+    // MASTER-SYNC-CLARITY-001 (#757): 旧「📋 名簿を更新しました」（固定文言）→ 実際に起きたことの結果報告へ。
+    showToast(formatMasterSyncResultToast(counts));
   });
 }
 

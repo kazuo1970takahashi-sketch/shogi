@@ -333,7 +333,7 @@ assert(RAW.indexOf('id="masterMigrateBtn"')<0&&RAW.indexOf('function openMigrati
 assert(RAW.indexOf('id="masterBulkPushBtn"')>=0, 'S6 一括送信ボタンが details 内に存在');
 const bmeS=RAW.slice(RAW.indexOf('function bindMasterTabEvents'),RAW.indexOf('function bindMasterTabEvents')+12000);
 assert(bmeS.indexOf('masterBulkPushBtn')>=0&&bmeS.indexOf('上書きされます')>=0, 'S7 一括送信は confirm（クラウド上書きの明示）付きで bind');
-assert(RAW.indexOf('「📋 名簿を更新」を押してください')>=0, 'S8 大会形式ファイルの誘導は「復元→名簿を更新」へ更新');
+assert(RAW.indexOf('「📋 参加者を名簿に反映」を押してください')>=0, 'S8 大会形式ファイルの誘導は「復元→📋 参加者を名簿に反映」へ更新');
 
 const sBulk=(function(){
   const e=envWithFix();

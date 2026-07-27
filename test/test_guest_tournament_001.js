@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会モード（「この大会は名簿に記録しない」を大会の種類として選ぶ）の受入テスト。
 //   背景: 別大会（マスタ未登録参加者が大半・約30名）を月例会と同じ端末で運営すると、
-//   「📋 名簿を更新」/☁送信未連携ガードの2経路で updateBranchMasterFromTournament が走り
+//   「📋 参加者を名簿に反映」/☁送信未連携ガードの2経路で updateBranchMasterFromTournament が走り
 //   支部名簿が汚染される（自動新規追加・同名1件自動紐付け・参加履歴付与）。
 //   受入基準（Issue #760）:
 //     1. ゲスト大会で運営しても支部マスタが一切変化しない（choke point=syncBranchMasterOnSave 冒頭 no-op ほか7経路遮断）。
 //     2. 通常の大会（フラグ OFF）の挙動は完全不変。
-//     3. ゲスト大会中は「📋 名簿を更新」「☁ クラウドへ送信」が理由の説明つきで実行されない。
+//     3. ゲスト大会中は「📋 参加者を名簿に反映」「☁ クラウドへ送信」が理由の説明つきで実行されない。
 //        ライブ配信・名簿からの受付・サジェスト・名簿タブ「☁ クラウドから取得」は従来どおり。
 //     4. ヘッダのバッジで常時視認でき、開始後はモードを切り替えられない。
 //   データは完全架空のみ・読み取り専用。
@@ -53,7 +53,7 @@ assert(RAW.indexOf('ゲスト大会では、参加者が名簿に登録されず
 {
   const sd = extractFn('saveData') || '';
   assert(sd.indexOf('isGuestTournament') >= 0 && sd.indexOf('🎪 ゲスト大会のため名簿には反映しません') >= 0,
-    'S9 saveData は guest 中に理由説明つきで中止（📋名簿を更新）');
+    'S9 saveData は guest 中に理由説明つきで中止（📋 参加者を名簿に反映）');
   assert(sd.indexOf('showToast') >= 0, 'S9b 説明は toast（どのタブでも視認・#757 のトースト化と整合）');
 }
 // 経路3: addPlayer サジェスト由来の空 yomi 即時補完保存のスキップ
@@ -186,6 +186,7 @@ assert(RAW.indexOf("changePlayerClass(memberId,cls,master,state,_guestClsChg?{sk
     function isGuestTournament(s){ return !!(s && s.tournament_kind === 'guest'); }
     function syncBranchMasterOnSave(cb){ calls.sync++; if (typeof cb === 'function') cb(); }
     function showToast(m){ calls.toasts.push(m); }
+    ${extractFn('formatMasterSyncResultToast')}
     ${src}
     saveData();
     return calls;
@@ -194,7 +195,8 @@ assert(RAW.indexOf("changePlayerClass(memberId,cls,master,state,_guestClsChg?{sk
   assert(g.sync === 0 && g.toasts.length === 1 && g.toasts[0].indexOf('ゲスト大会のため名簿には反映しません') >= 0,
     'D1 guest: 同期せず理由説明の toast のみ');
   const n = harness({tournament_kind:'normal'});
-  assert(n.sync === 1 && n.toasts.length === 1 && n.toasts[0].indexOf('名簿を更新しました') >= 0,
+  // MASTER-SYNC-CLARITY-001 (#757): 成功 toast は結果報告文言（counts=undefined の stub 経路＝中立文言）。同期呼び出しの有無は不変。
+  assert(n.sync === 1 && n.toasts.length === 1 && n.toasts[0].indexOf('📋 名簿に反映しました') >= 0,
     'D2 normal: 従来どおり同期＋成功 toast（挙動不変）');
 }
 

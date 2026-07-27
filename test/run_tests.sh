@@ -2801,6 +2801,18 @@ if [ -f "$SCRIPT_DIR/test_sb_header_sticky_001.js" ]; then
 else
   warn "test_sb_header_sticky_001.js が見つからない"
 fi
+
+echo ""
+echo "【MASTER-SYNC-CLARITY-001 (#757) 「📋 参加者を名簿に反映」改名＋結果報告トースト＋4面文言】"
+if [ -f "$SCRIPT_DIR/test_master_sync_clarity_001.js" ]; then
+  if node "$SCRIPT_DIR/test_master_sync_clarity_001.js" "$TARGET" > /tmp/master_sync_clarity_001_out.log 2>&1; then
+    ok "MASTER-SYNC-CLARITY-001 テスト 全PASS ($(tail -1 /tmp/master_sync_clarity_001_out.log))"
+  else
+    ng "MASTER-SYNC-CLARITY-001 テスト 失敗（改名の掃引漏れ／counts／4面文言のいずれか）"; cat /tmp/master_sync_clarity_001_out.log
+  fi
+else
+  warn "test_master_sync_clarity_001.js が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
