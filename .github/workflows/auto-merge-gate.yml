@@ -1,0 +1,181 @@
+# =============================================================================
+# auto-merge-gate.yml — AUTO-MERGE-GATE-001 自動マージゲート（憲章 v2.0/v2.1 §5）
+# -----------------------------------------------------------------------------
+# `codex-go` ラベル ＋ 必須 CI green の PR を、無人で
+#   Ready化 → head-CAS 付き squash merge → branch削除 → 完了コメント
+# まで進める。停止条件（1 つでも該当なら何もしない）:
+#   needs-codex / codex-block ラベル / CI 赤・未完了 / base=production（最重要）/
+#   head 不一致（merge API の sha CAS で原子的に拒否）/ PR closed・merged 済み。
+#
+# 発火/停止の判定本体は scripts/auto_merge_gate_decision.sh（純関数・単体テスト済み）。
+#
+# トリガ設計（ラベル先/CI 先のどちらの順序でも拾う）:
+#   - pull_request[labeled]: codex-go 付与時。CI が未完了なら最大 30 分 poll して待つ
+#     （= 「ラベル先→CI 後」の順序をこのトリガ 1 本で吸収する）。
+#   - workflow_run[E2E completed]: CI 再実行で green 化した場合の拾い直し。
+#     ※ GitHub 仕様上 workflow_run はデフォルトブランチ(main)上の本ファイルからしか
+#       発火しない。本ファイルが列車で main に届くまでは workflow_dispatch で代替。
+#   - workflow_dispatch: 手動起動（pr_number 指定）。dry_run=true なら判定のみで
+#     mutating 操作ゼロ（L4 dry-run 証明・受け入れ検証用）。
+#
+# 権限: 最小（contents: write + pull-requests: write）。デフォルト GITHUB_TOKEN のみ・
+#       新規 secret なし。fork PR では GITHUB_TOKEN が read-only のため安全側に失敗する。
+# =============================================================================
+name: Auto Merge Gate
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_run:
+    workflows: ["E2E"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: '対象 PR 番号'
+        required: true
+        type: string
+      dry_run:
+        description: 'true なら判定のみ（Ready化/merge/コメントを一切しない）'
+        required: false
+        default: 'true'
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge-gate-${{ github.event.pull_request.number || inputs.pr_number || github.event.workflow_run.head_sha || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  auto-merge-gate:
+    # codex-go 付与以外の labeled イベントでは起動しない（needs-codex 付与等で merge 評価を走らせない）
+    if: github.event_name != 'pull_request' || github.event.label.name == 'codex-go'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      # ゲート自身の check run 名（CI 集計から除外する）
+      SELF_CHECK_NAME: auto-merge-gate
+      # CI 完了待ち: 30 秒間隔 × 60 回 = 最大 30 分
+      POLL_INTERVAL: 30
+      POLL_MAX: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 対象 PR を解決
+        id: resolve
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            pull_request)
+              echo "prs=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+              echo "dry_run=false" >> "$GITHUB_OUTPUT"
+              ;;
+            workflow_dispatch)
+              echo "prs=${{ inputs.pr_number }}" >> "$GITHUB_OUTPUT"
+              echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
+              ;;
+            workflow_run)
+              # 完了した CI の head SHA に一致する open PR を探す
+              HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+              PRS=$(gh pr list --repo "$REPO" --state open --json number,headRefOid \
+                    --jq ".[] | select(.headRefOid == \"$HEAD_SHA\") | .number" | tr '\n' ' ')
+              echo "prs=$PRS" >> "$GITHUB_OUTPUT"
+              echo "dry_run=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: ゲート判定と実行
+        if: steps.resolve.outputs.prs != ''
+        run: |
+          set -euo pipefail
+          DRY_RUN="${{ steps.resolve.outputs.dry_run }}"
+
+          # --- PR の事実を収集して判定用 env を組み立てる ---------------------
+          gather_facts() {
+            PR="$1"
+            PR_JSON=$(gh pr view "$PR" --repo "$REPO" \
+              --json state,isDraft,baseRefName,headRefName,headRefOid,labels,statusCheckRollup)
+            AMG_BASE_REF=$(echo "$PR_JSON" | jq -r '.baseRefName')
+            AMG_STATE=$(echo "$PR_JSON"    | jq -r '.state')
+            IS_DRAFT=$(echo "$PR_JSON"     | jq -r '.isDraft')
+            HEAD_SHA=$(echo "$PR_JSON"     | jq -r '.headRefOid')
+            AMG_LABELS=$(echo "$PR_JSON"   | jq -r '[.labels[].name] | join(",")')
+            # ゲート自身を除いた check 集計（CheckRun / StatusContext 両対応）
+            COUNTS=$(echo "$PR_JSON" | jq -r --arg self "$SELF_CHECK_NAME" '
+              [ .statusCheckRollup[]?
+                | select((.name // .context // "") != $self) ] as $c
+              | [ ($c | length),
+                  ($c | map(select(
+                      (.__typename == "CheckRun" and .status == "COMPLETED"
+                        and (.conclusion as $cc | ["FAILURE","TIMED_OUT","CANCELLED","ACTION_REQUIRED","STARTUP_FAILURE"] | index($cc) != null))
+                      or (.__typename == "StatusContext" and (.state == "FAILURE" or .state == "ERROR"))
+                    )) | length),
+                  ($c | map(select(
+                      (.__typename == "CheckRun" and .status != "COMPLETED")
+                      or (.__typename == "StatusContext" and (.state == "PENDING" or .state == "EXPECTED"))
+                    )) | length)
+                ] | @tsv')
+            AMG_CHECKS_TOTAL=$(echo "$COUNTS"   | cut -f1)
+            AMG_CHECKS_FAILED=$(echo "$COUNTS"  | cut -f2)
+            AMG_CHECKS_PENDING=$(echo "$COUNTS" | cut -f3)
+            export AMG_BASE_REF AMG_STATE AMG_LABELS \
+                   AMG_CHECKS_TOTAL AMG_CHECKS_FAILED AMG_CHECKS_PENDING
+          }
+
+          for PR in ${{ steps.resolve.outputs.prs }}; do
+            echo "::group::PR #$PR"
+            gather_facts "$PR"
+
+            # --- CI 完了待ち（ラベル先→CI 後の順序を吸収。判定自体は decision script） ---
+            TRIES=0
+            while [ "$AMG_CHECKS_PENDING" -gt 0 ] && [ "$TRIES" -lt "$POLL_MAX" ] && [ "$DRY_RUN" != "true" ]; do
+              DECISION=$(bash scripts/auto_merge_gate_decision.sh)
+              case "$DECISION" in
+                "SKIP ci-pending") ;;                      # 待つ価値あり → poll 継続
+                *) break ;;                                # それ以外は即確定（FIRE か別理由の SKIP）
+              esac
+              TRIES=$((TRIES+1))
+              echo "CI 未完了 (pending=$AMG_CHECKS_PENDING) — ${POLL_INTERVAL}s 待機 ($TRIES/$POLL_MAX)"
+              sleep "$POLL_INTERVAL"
+              gather_facts "$PR"
+            done
+
+            # --- 最終判定（merge 直前に事実を取り直した状態で評価） ---
+            gather_facts "$PR"
+            HEAD_AT_DECISION="$HEAD_SHA"
+            DECISION=$(bash scripts/auto_merge_gate_decision.sh)
+            echo "decision: $DECISION (base=$AMG_BASE_REF state=$AMG_STATE labels=$AMG_LABELS checks=$AMG_CHECKS_TOTAL/fail=$AMG_CHECKS_FAILED/pend=$AMG_CHECKS_PENDING head=$HEAD_AT_DECISION)"
+            echo "## PR #$PR — $DECISION" >> "$GITHUB_STEP_SUMMARY"
+            echo "base=\`$AMG_BASE_REF\` state=$AMG_STATE labels=\`$AMG_LABELS\` checks(total/fail/pend)=$AMG_CHECKS_TOTAL/$AMG_CHECKS_FAILED/$AMG_CHECKS_PENDING head=\`$HEAD_AT_DECISION\`" >> "$GITHUB_STEP_SUMMARY"
+
+            if [ "$DECISION" != "FIRE" ]; then
+              echo "停止条件該当 → 何もしない（Draft 維持）"
+              echo "::endgroup::"
+              continue
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "DRY-RUN: FIRE だが mutating 操作は行わない（Ready化/merge/コメント なし）"
+              echo "（dry-run のため merge せず）" >> "$GITHUB_STEP_SUMMARY"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # --- 実行: Ready化 → head-CAS squash merge → branch削除 → 完了コメント ---
+            if [ "$IS_DRAFT" = "true" ]; then
+              gh pr ready "$PR" --repo "$REPO"
+            fi
+            # --match-head-commit = head-CAS。判定時点から head が進んでいれば
+            # GitHub 側で原子的に merge が拒否される（TOCTOU 防止）。
+            gh pr merge "$PR" --repo "$REPO" --squash --delete-branch \
+              --match-head-commit "$HEAD_AT_DECISION"
+            MERGE_SHA=$(gh pr view "$PR" --repo "$REPO" --json mergeCommit --jq '.mergeCommit.oid')
+            gh pr comment "$PR" --repo "$REPO" --body "🤖 auto-merge-gate: codex-go ＋ CI green を確認し squash merge しました。merge SHA: \`$MERGE_SHA\`（head-CAS: \`$HEAD_AT_DECISION\`）。branch は削除済み。"
+            echo "merged: $MERGE_SHA" >> "$GITHUB_STEP_SUMMARY"
+            echo "::endgroup::"
+          done

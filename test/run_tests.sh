@@ -884,6 +884,26 @@ else
 fi
 
 # ============================================
+# AUTO-MERGE-GATE-001 自動マージゲート発火判定（decision script）の shell テスト
+#   憲章 §5 の発火/停止条件（base=production 最重要ガード / needs-codex / codex-block /
+#   CI 赤・未完了・ゼロ / closed・merged）を純関数で全分岐検証し、
+#   workflow の静的安全（最小権限 / head-CAS / 新規 secret なし / dry-run モード）を固定する。
+#   ※ network / gh / git 不使用・mutating 操作ゼロ（L4 dry-run 証明）。
+# ============================================
+echo ""
+echo "【AUTO-MERGE-GATE-001 発火判定（decision 純関数 / workflow 静的安全）】"
+if [ -f "$SCRIPT_DIR/test_auto_merge_gate_decision.sh" ]; then
+  if bash "$SCRIPT_DIR/test_auto_merge_gate_decision.sh" > /tmp/auto_merge_gate_decision_out.log 2>&1; then
+    ok "AUTO-MERGE-GATE-001 テスト 全PASS ($(tail -2 /tmp/auto_merge_gate_decision_out.log | head -1))"
+  else
+    ng "AUTO-MERGE-GATE-001 テスト 失敗"
+    cat /tmp/auto_merge_gate_decision_out.log
+  fi
+else
+  warn "test_auto_merge_gate_decision.sh が見つからない"
+fi
+
+# ============================================
 # PROGRESSIVE-PAIRING-IMPL-P1 1局目逐次手合「クラス別『1卓追加』（受付順の先頭2名）」
 #   部分開始中クラスの未手合い（受付順）先頭2名で round=1 の1卓を append する onClickAddOneTable と
 #   その導線ボタン/bind/disabled を検証する。生成は buildFirstRoundPartialPairs、append は

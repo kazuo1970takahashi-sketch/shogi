@@ -3,7 +3,12 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # AUTO-MERGE-GATE-001: orphan clean base 宛て PR でも必須 CI を走らせる
+    # （自動マージゲートは「CI green の証明」が無い PR では発火しない仕様のため、
+    #   base=orphan の開発 PR に CI が付かない現状のままだとゲートが成立しない）
+    branches:
+      - main
+      - chore/shogi-tour-apphq-003h-2d-orphan-clean-base
 
 jobs:
   unit-test:
