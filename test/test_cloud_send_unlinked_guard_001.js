@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // CLOUD-SEND-UNLINKED-GUARD-001: クラウド送信時、会員マスタ未連携（member_id 無し）の参加者は
 //   buildCloudSyncPayload で entries が作られず「対象外」＝クラウドの共有結果に載らない（1位でも黙って欠落し得る）。
-//   (A) 送信前ガード＝未連携者がいれば confirm（名簿を更新して送信／このまま送信／中止）。
+//   (A) 送信前ガード＝未連携者がいれば confirm（名簿に反映して送信／このまま送信／中止。
+//       L2-SWEEP-01 ④ #782 レビュー Nice-2: 旧「名簿を更新して送信」から新語彙へ・文言のみ・分岐不変）。
 //   (C) 送信後注記＝skipped>0 を ⚠(warn/橙) に格上げし最上位者＋直し方を明示（#377 の中立注記を格上げ）。
 //   本テストは (R/C) 純関数・(W) ソース配線に加え、(B) __setAppModalTestResolver によるガード3経路の
 //   挙動テスト（L3 レビュー指摘1対応）を固定する。B 系は loadCloudDeps を config 不在で止め、
@@ -69,7 +70,7 @@ function runSend(answers){
   env.__setAppModalTestResolver(function(type,message){
     var m=String(message==null?'':message); prompts.push(m);
     if(m.indexOf('実施日')>=0)return answers.date;
-    if(m.indexOf('名簿を更新してから送信しますか')>=0)return answers.guard1;
+    if(m.indexOf('名簿に反映してから送信しますか')>=0)return answers.guard1;
     if(m.indexOf('このまま送信しますか')>=0)return answers.guard2;
     unexpected.push(m); return true;
   });
@@ -92,7 +93,7 @@ function stage2Shown(prompts){ var c=0; for(var i=0;i<prompts.length;i++){ if(pr
   ok(r1&&r1.ok===false&&r1.step==='config','B1-2 従来どおり _send へ到達（step:config）');
   ok(t1.unexpected.length===0,'B1-3 想定外の confirm は表示されない');
 
-  // B2: 未連携あり・1段目=更新しない・2段目=中止 → cancelled-unlinked（送信未到達）
+  // B2: 未連携あり・1段目=反映しない・2段目=中止 → cancelled-unlinked（送信未到達）
   var t2=runSend({date:true,guard1:false,guard2:false});
   t2.env._setState(mkState());
   var r2=await t2.send();
@@ -101,14 +102,14 @@ function stage2Shown(prompts){ var c=0; for(var i=0;i<prompts.length;i++){ if(pr
   ok(t2.statuses.length&&t2.statuses[t2.statuses.length-1].indexOf('送信を中止しました')>=0,'B2-3 中止 status に再送信案内');
   ok(t2.unexpected.length===0,'B2-4 想定外の confirm は表示されない');
 
-  // B3: 未連携あり・1段目=更新しない・2段目=このまま送信 → _send 到達
+  // B3: 未連携あり・1段目=反映しない・2段目=このまま送信 → _send 到達
   var t3=runSend({date:true,guard1:false,guard2:true});
   t3.env._setState(mkState());
   var r3=await t3.send();
   ok(r3&&r3.step==='config','B3-1 このまま送信→ _send へ到達（step:config）');
   ok(t3.unexpected.length===0,'B3-2 想定外の confirm は表示されない');
 
-  // B4: 未連携あり・1段目=名簿を更新して送信 → syncBranchMasterOnSave が member_id を付与してから _send 到達
+  // B4: 未連携あり・1段目=名簿に反映して送信 → syncBranchMasterOnSave が member_id を付与してから _send 到達
   var t4=runSend({date:true,guard1:true});
   t4.env._setState(mkState());
   var before=t4.env.collectUnlinkedParticipantsForSend();
@@ -116,11 +117,11 @@ function stage2Shown(prompts){ var c=0; for(var i=0;i<prompts.length;i++){ if(pr
   var after=t4.env.collectUnlinkedParticipantsForSend();
   var members=(t4.env.loadBranchMaster()||{}).members||[];
   var hasKo=false; for(var mi=0;mi<members.length;mi++){ if(members[mi]&&members[mi].name==='甲')hasKo=true; }
-  ok(before.length===1&&after.length===0,'B4-1 更新して送信→未連携が解消される（member_id 付与）');
+  ok(before.length===1&&after.length===0,'B4-1 反映して送信→未連携が解消される（member_id 付与）');
   ok(hasKo,'B4-2 初参加者が支部マスタへ新規登録される');
-  ok(r4&&r4.step==='config','B4-3 名簿更新後に _send へ到達（step:config）');
+  ok(r4&&r4.step==='config','B4-3 名簿反映後に _send へ到達（step:config）');
   ok(stage2Shown(t4.prompts)===0,'B4-4 1段目 OK なら2段目は表示されない');
-  ok(t4.unexpected.length===0,'B4-5 想定外の confirm は表示されない（名簿更新経路含む）');
+  ok(t4.unexpected.length===0,'B4-5 想定外の confirm は表示されない（名簿反映経路含む）');
 
   clearTimeout(_wd);
   console.log('CLOUD-SEND-UNLINKED-GUARD-001: PASS='+pass+' FAIL='+fail);
@@ -132,8 +133,8 @@ ok(RAW.indexOf('function collectUnlinkedParticipantsForSend(')>=0,'W1 未連携�
 ok(RAW.indexOf('function _confirmUnlinkedBeforeSend(')>=0,'W2 送信前ガードの確認関数が存在');
 ok(RAW.indexOf('function _guardThenSend(')>=0,'W3 _guardThenSend が存在');
 ok(RAW.indexOf('} else { _guardThenSend(); }')>=0&&RAW.indexOf('_guardThenSend();\n        });')>=0,'W4 送信は _dateGate→_guardThenSend 経由（_send 直呼びを置換）');
-ok(RAW.indexOf("syncBranchMasterOnSave(function(){ _send(); })")>=0,'W5 「名簿を更新して送信」は既存 syncBranchMasterOnSave→送信');
-ok(RAW.indexOf("okText:'名簿を更新して送信'")>=0&&RAW.indexOf("okText:'このまま送信'")>=0,'W6 3択（更新して送信／このまま送信）の文言を appConfirm 2 段で構成');
+ok(RAW.indexOf("syncBranchMasterOnSave(function(){ _send(); })")>=0,'W5 「名簿に反映して送信」は既存 syncBranchMasterOnSave→送信');
+ok(RAW.indexOf("okText:'名簿に反映して送信'")>=0&&RAW.indexOf("okText:'このまま送信'")>=0,'W6 3択（反映して送信／このまま送信）の文言を appConfirm 2 段で構成');
 ok(RAW.indexOf("step:'cancelled-unlinked'")>=0,'W7 中止は step:cancelled-unlinked（fail-soft・運営続行）');
 ok(RAW.indexOf('if(c.skipped)base+=_unlinkedSkippedNote(c.skipped)')>=0,'W8 送信後 skipped は _unlinkedSkippedNote で⚠格上げ');
 // 総括・exit は非同期 B 系（上の async IIFE）が担う（同期側で exit すると B 実行前に落ちるため置かない）。

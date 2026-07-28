@@ -2,14 +2,15 @@
 // ============================================================
 // WORLD-STD-ALIGN-002 (#717): 受付リストの固定列グリッド化（世界標準の揃え②）
 //   検証内容:
-//   S1. CSS: 既定の .player-row は縮退グリッド3段（No.+氏名+参加費 / 会員区分+種別 / 操作）
+//   S1. CSS: 既定の .player-row は縮退グリッド3段（No.+氏名+参加費 / 会員区分+会費区分 / 操作）
+//       ※ L2-SWEEP-01 ① で列見出しの「種別」を「会費区分」へ改名（文言のみ・grid 定義は不変）
 //       ＝狭幅・container query 非対応環境のフォールバック
 //   S2. CSS: .player-row-main / .player-row-actions が display:contents（DOM 維持で grid 参加）
 //   S3. CSS: 氏名=左(既定)+ellipsis / 参加費=右寄せ+tabular-nums / 縮退時の操作は space-between
 //   S4. CSS: 列見出し行 .player-row-head は既定で非表示
 //   S5. CSS: コンテナ幅による自動切替 — 受付リスト要素がコンテナ（container-type:inline-size）で、
 //       @container 広幅時のみ承認済み6列 grid（No.34px/氏名 minmax(120px,1fr)/会員区分118px/
-//       種別92px/参加費74px/操作auto）＋列見出し行（行と同一列定義）
+//       会費区分92px/参加費74px/操作auto）＋列見出し行（行と同一列定義）
 //   S6. JS: renderRegList の列見出し行は textContent のみで組立（escape ヒューリスティック非接触）・0名時は出さない
 //   B1. makePlayerRow の DOM 構造不変（.player-row > main(4子) + actions(2子)・操作ボタン3個）
 //   B2. renderRegList: 参加者ありのクラスは先頭に .player-row-head（span 6個・ラベル一致）＋人数分の .player-row
@@ -36,7 +37,7 @@ const RAW = fs.readFileSync(targetPath,'utf8');
 {
   // 既定（狭幅・container query 非対応環境のフォールバック）= 縮退グリッド3段
   assert(/\.player-row\{display:grid;grid-template-columns:34px minmax\(0,1fr\) auto;grid-template-areas:"pno pname pfee" "pmember pmember pgrade" "pops pops pops";align-items:center\}/.test(RAW),
-    'S1 既定の .player-row は縮退グリッド3段（No.+氏名+参加費 / 会員区分+種別 / 操作）');
+    'S1 既定の .player-row は縮退グリッド3段（No.+氏名+参加費 / 会員区分+会費区分 / 操作）');
   assert(/\.player-row-main,\.player-row-actions\{display:contents\}/.test(RAW),
     'S2 main/actions は display:contents（makePlayerRow の DOM 維持）');
   assert(/\.player-row \.player-name\{grid-area:pname;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\}/.test(RAW),
@@ -164,10 +165,10 @@ function fxPlayer(id,name,no){
   const main=row.childNodes[0], actions=row.childNodes[1];
   assert(main.className==='player-row-main','B1-3 1つ目は player-row-main');
   assert(actions.className==='player-row-actions','B1-4 2つ目は player-row-actions');
-  assert(main.childNodes.length===4,'B1-5 main は 4 子（No./氏名/会員区分/種別）＝grid 参加要素数が仕様どおり');
+  assert(main.childNodes.length===4,'B1-5 main は 4 子（No./氏名/会員区分/会費区分）＝grid 参加要素数が仕様どおり');
   assert(main.childNodes[0].tagName==='span','B1-6 No. は span');
   assert(main.childNodes[1].className==='player-name','B1-7 氏名は .player-name');
-  assert(main.childNodes[2].tagName==='select'&&main.childNodes[3].tagName==='select','B1-8 会員区分/種別は select×2');
+  assert(main.childNodes[2].tagName==='select'&&main.childNodes[3].tagName==='select','B1-8 会員区分/会費区分は select×2');
   assert(actions.childNodes.length===2,'B1-9 actions は 2 子（参加費 + 操作ボタン群）');
   assert(actions.childNodes[0].className==='player-fee','B1-10 参加費は .player-fee');
   assert(actions.childNodes[1].className==='player-row-buttons','B1-11 操作は .player-row-buttons');
@@ -192,7 +193,8 @@ function fxPlayer(id,name,no){
   const headSpans=(kidsA.length>0&&kidsA[0].childNodes)||[];
   assert(headSpans.length===6,'B2-4 見出しは span 6 個（6列と同数）');
   const labels=headSpans.map(function(s){return s.textContent;}).join('|');
-  assert(labels==='No.|氏名|会員区分|種別|参加費|操作','B2-5 見出しラベル（No./氏名/会員区分/種別/参加費/操作）');
+  // L2-SWEEP-01 ① (UX評価 P2-③): 「種別」→「会費区分」（select の aria-label / 凡例と用語を一致・文言ピンのみ追随）。
+  assert(labels==='No.|氏名|会員区分|会費区分|参加費|操作','B2-5 見出しラベル（No./氏名/会員区分/会費区分/参加費/操作）');
   assert(kidsA.length===3&&kidsA[1].className==='player-row'&&kidsA[2].className==='player-row','B2-6 見出しの後に .player-row が人数分');
   const listB = env._ctx._elements[env.regClassListId('B')];
   const kidsB = (listB&&listB.childNodes)||[];

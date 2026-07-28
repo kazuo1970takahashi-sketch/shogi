@@ -196,8 +196,9 @@ assert(RAW.indexOf("changePlayerClass(memberId,cls,master,state,_guestClsChg?{sk
     'D1 guest: 同期せず理由説明の toast のみ');
   const n = harness({tournament_kind:'normal'});
   // MASTER-SYNC-CLARITY-001 (#757): 成功 toast は結果報告文言（counts=undefined の stub 経路＝中立文言）。同期呼び出しの有無は不変。
-  assert(n.sync === 1 && n.toasts.length === 1 && n.toasts[0].indexOf('📋 名簿に反映しました') >= 0,
-    'D2 normal: 従来どおり同期＋成功 toast（挙動不変）');
+  // L2-SWEEP-01 ③ (#782 レビュー Nice-1): 中立文言を非断定へ（stub 経路の期待文字列のみ追随・挙動不変）。
+  assert(n.sync === 1 && n.toasts.length === 1 && n.toasts[0].indexOf('📋 名簿への反映を確認できませんでした') >= 0,
+    'D2 normal: 従来どおり同期＋結果報告 toast（挙動不変・stub は counts=undefined＝中立文言）');
 }
 
 // W. sendTournamentToCloud: guest 中は説明つき fail-soft で即 resolve（Promise 契約維持）

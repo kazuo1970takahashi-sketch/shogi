@@ -127,12 +127,14 @@ function fxState() {
   const before = JSON.stringify(st2);
   env.validate(parsed, 'B', 'other', st2);
   assert(JSON.stringify(st2) === before, 'D8 validate は state を変更しない（プレビューは無副作用）');
-  // normalizePersonName 規則＝前後空白除去・全角空白→半角空白・連続空白圧縮（空白の除去はしない＝addPlayer と同一）
+  // normalizePersonName 規則＝前後空白除去・全角空白→半角空白・連続空白圧縮（空白の除去はしない）。
+  // L2-SWEEP-01 ⑤ (#784 レビュー Nice-1): 旧記述「＝addPlayer と同一」は不正確だったため修正。
+  //   addPlayer の同名拒否は trim 後の生文字列一致であり、正規化まで行う bulk 側の方が厳しい（安全側に非対称・挙動不変）。
   const stSp = fxState();
   stSp.players.A.push({ id: 'pSp', name: '既登録 二郎', cls: 'A', entry_no: 2 });
   const rowsZ = env.validate(env.parse('既登録　二郎,よみ\n  既登録一郎  ,よみ'), 'A', 'member', stSp);
   assert(rowsZ[0].error === 'dup-registered' && rowsZ[1].error === 'dup-registered',
-    'D9 全角空白→半角空白・前後空白除去の normalizePersonName 同名規則で検知');
+    'D9 normalizePersonName 同名規則で検知（addPlayer の生文字列一致より厳しい正規化比較＝安全側）');
 }
 
 // ============================================================

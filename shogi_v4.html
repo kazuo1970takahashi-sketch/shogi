@@ -155,15 +155,15 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:14px}
 /* WORLD-STD-ALIGN-002 (#717 作者決定 2026-07-09): 受付リストの固定列グリッド化（世界標準の揃え②）。
    .player-row を flex→grid に切替え、.player-row-main / .player-row-actions は display:contents で
-   子要素（No./氏名/会員区分/種別/参加費/操作）を親 grid の item として直接参加させる
+   子要素（No./氏名/会員区分/会費区分/参加費/操作）を親 grid の item として直接参加させる
    （makePlayerRow の DOM 構造は不変・CSS 主体）。既存の flex 宣言は削除せず後勝ちで上書き（純追加）。
    レイアウトは「リストの実幅」による自動切替（作者決定 2026-07-09・container query）:
    - 既定（狭幅・container query 非対応環境のフォールバック）= 縮退グリッド3段
-     （1段目=No.+氏名+参加費が行間で縦に揃う／2段目=会員区分+種別／3段目=操作ボタン・列見出しなし）
+     （1段目=No.+氏名+参加費が行間で縦に揃う／2段目=会員区分+会費区分／3段目=操作ボタン・列見出しなし）
    - リスト実幅が広い場合（@container）= 承認済み6列 grid
-     （No.34px/氏名 minmax(120px,1fr) 左寄せ+ellipsis/会員区分118px/種別92px/参加費74px 右寄せ+tabular-nums/操作auto）＋列見出し行
+     （No.34px/氏名 minmax(120px,1fr) 左寄せ+ellipsis/会員区分118px/会費区分92px/参加費74px 右寄せ+tabular-nums/操作auto）＋列見出し行
    受付リストは PC で A/B クラス2列並び（1クラス≒470px @1024px 窓）のため viewport 幅では判定できない。
-   grid-area の割当は makePlayerRow の DOM 順（span=No.→.player-name→select=会員区分→select=種別）に
+   grid-area の割当は makePlayerRow の DOM 順（span=No.→.player-name→select=会員区分→select=会費区分）に
    依存する構造セレクタ（makePlayerRow の子要素順を変えるときはここも更新すること）。
    承認済み挙動変更スライス（拘束ルール3 の例外扱いを Issue #717 で明示）。 */
 .player-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;grid-template-areas:"pno pname pfee" "pmember pmember pgrade" "pops pops pops";align-items:center}
@@ -644,7 +644,9 @@ body.sb-active{overflow:hidden}
       </div>
       <div style="margin-top:6px">
         <input type="text" id="inp-yomi" inputmode="kana" placeholder="ふりがな" style="width:200px;font-size:16px" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
-        <span style="font-size:11px;color:#888;margin-left:6px">自動入力されない場合は手入力してください</span>
+        <!-- L2-SWEEP-01 ② (UX評価 P2-④): 補足文をブロック化して入力欄の下へ（390px で折返し2行目が
+             欄外に孤立する崩れの修正・スタイルのみ・id/bind 非接触）。 -->
+        <span style="display:block;font-size:11px;color:#888;margin-top:4px">自動入力されない場合は手入力してください</span>
       </div>
       <div id="suggest-list" class="suggest-list" style="display:none"></div>
       </details>
@@ -654,6 +656,10 @@ body.sb-active{overflow:hidden}
            土台にする。A/B section は静的 DOM のまま維持し、互換 id (a-count/b-count/a-list/b-list)
            を温存する。新規 class section は class-section-{classId} / class-count-{classId} /
            class-list-{classId} / class-bulkedit-{classId} で構成。 -->
+      <!-- L2-SWEEP-01 ① (UX評価 P2-③): 一覧の区分 select×2 の視覚ラベル。狭幅では列見出し行
+           (.player-row-head) が出ないため、タブ内に凡例を1行だけ置く（静的 HTML の純追加・
+           行の DOM/レイアウト非接触＝WORLD-STD-ALIGN-002 の構造ピン無破壊）。 -->
+      <div style="font-size:11px;color:#888;margin-top:12px">一覧の各行: 左の選択=会員区分（支部員/支部員以外）／右の選択=会費区分（一般/中学生以下/女性・参加費に反映）</div>
       <div class="grid2" id="reg-class-grid" style="margin-top:12px">
         <div data-class-id="A">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -4181,7 +4187,9 @@ function resolveBulkEntryClassId(clsRaw,classList){
 //   戻り値: [{lineNo,name,yomi,clsId,clsRaw,member,error}]。error は
 //   'empty-name'（空氏名）/'unknown-class'（未知クラス名）/'dup-registered'（既登録者と同名）/
 //   'dup-paste'（貼り付け内の同名重複・後発側）/ null（登録可）。
-//   同名比較は normalizePersonName（addPlayer の同名拒否と同じ規則＝Issue #761 設計）。
+//   同名比較は normalizePersonName で行う。addPlayer の同名拒否は trim 後の生文字列一致なので、
+//   全角空白→半角空白・連続空白圧縮まで行う本関数の方が厳しい（安全側に非対称・挙動は Issue #761 設計どおり。
+//   L2-SWEEP-01 ⑤ (#784 レビュー Nice-1) で「addPlayer と同じ規則」という不正確な記述のみ修正・コード無改変）。
 function validateBulkEntryRows(parsedRows,defaultClsId,memberValue,stateObj){
   var s=stateObj||{};
   var classList=[];
@@ -7010,7 +7018,8 @@ function renderRegList(){
       if(players.length>0){
         var headRow=document.createElement('div');
         headRow.className='player-row-head';
-        var headLabels=['No.','氏名','会員区分','種別','参加費','操作'];
+        // L2-SWEEP-01 ① (UX評価 P2-③): 「種別」→「会費区分」（select の aria-label / 凡例と用語を一致・文言のみ）。
+        var headLabels=['No.','氏名','会員区分','会費区分','参加費','操作'];
         for(var hi=0;hi<headLabels.length;hi++){
           var hSpan=document.createElement('span');
           hSpan.textContent=headLabels[hi];
@@ -7135,6 +7144,10 @@ function makePlayerRow(p,cls,i){
 
   var mSel=document.createElement('select');
   mSel.className='sel-sm';
+  // L2-SWEEP-01 ① (UX評価 P2-③): 視覚ラベルの無い区分 select×2 に aria-label / title を付与（表示注釈のみ・
+  //   DOM の子要素数/順序は不変＝WORLD-STD-ALIGN-002 の構造セレクタ非接触）。狭幅の視覚面は受付タブの凡例1行が担う。
+  mSel.setAttribute('aria-label','会員区分');
+  mSel.title='会員区分（支部員/支部員以外）';
   var o1=document.createElement('option');o1.value='member';o1.textContent='支部員';
   var o2=document.createElement('option');o2.value='other';o2.textContent='支部員以外';
   if((p.member||'member')==='other')o2.selected=true; else o1.selected=true;
@@ -7146,6 +7159,8 @@ function makePlayerRow(p,cls,i){
 
   var gSel=document.createElement('select');
   gSel.className='sel-sm';
+  gSel.setAttribute('aria-label','会費区分');
+  gSel.title='会費区分（一般/中学生以下/女性）＝参加費に反映';
   var g1=document.createElement('option');g1.value='ippan';g1.textContent='一般';
   var g2=document.createElement('option');g2.value='chu';g2.textContent='中学生以下';
   // FEE-JOSEI-001 (#325): 会費区分に「女性」(josei) を追加（chu と同額）。josei 選択時は g3 を選択表示。
@@ -8471,7 +8486,7 @@ function applyParticipantSwapFromMaster(p,memberId,master,state){
 }
 
 // 純粋関数: 名簿にいない人への差し替え＝未連携化。
-//   member_id を解除して既存の未連携ルート（☁送信時「名簿を更新して送信」で新規会員化）に乗せる。
+//   member_id を解除して既存の未連携ルート（☁送信時「名簿に反映して送信」で新規会員化）に乗せる。
 //   旧会員の人に固有なスナップショット（yomi / city）は残すとキメラになるためクリア。
 //   会費区分（member/grade）は差し替え先が不明のため黙って変えない（金額に直結・受付一覧の編集で直せる）。
 //   [PR #759 レビュー BLOCK-1] 同名参加者ガード（FromMaster 側と同基準・全クラス横断）:
@@ -8621,7 +8636,7 @@ function handlePlayerSwapUnlinked(p,newName){
   //   （☁送信・名簿更新は遮断済み）ため末尾の案内文を出し分ける（normal は従来文言と完全同一）。
   var _swapUnlinkedTail=(typeof isGuestTournament==='function'&&isGuestTournament(typeof state!=='undefined'?state:null))
     ?'🎪 ゲスト大会のため、この方が名簿に登録されることはありません。'
-    :'☁送信時に「名簿を更新して送信」を選ぶと名簿に載ります（同じ名前の会員が名簿に1名だけいる場合は、新規ではなくその方に紐付きます）。';
+    :'☁送信時に「名簿に反映して送信」を選ぶと名簿に載ります（同じ名前の会員が名簿に1名だけいる場合は、新規ではなくその方に紐付きます）。';
   appConfirm('「'+oldName+'」を名簿にない新規の方「'+nm+'」として差し替えます（名簿とは未連携になります）。\n\nこれまでの対局結果（'+games+'局）もすべて「'+nm+'」さんの成績になります。ふりがなは空になります（あとから編集できます）。\n'+_swapUnlinkedTail+playerSwapSentWarning(),function(ok){
     if(!ok)return;
     var r=applyParticipantSwapToUnlinked(p,nm,state);
@@ -12238,16 +12253,18 @@ function _unlinkedTopLabel(list){
   return (arr[0]&&arr[0].name)||'';
 }
 // 送信前ガードの確認（3択を既存 appConfirm 2 段で構成＝新規モーダル部品を増やさない）:
-//   ①名簿を更新して送信 → onUpdateAndSend ／ ②このまま送信 → onSendAsIs ／ ③中止 → onCancel。
+//   ①名簿に反映して送信 → onUpdateAndSend ／ ②このまま送信 → onSendAsIs ／ ③中止 → onCancel。
+//   L2-SWEEP-01 ④ (#782 レビュー Nice-2): #757 改名前は旧称系の文言（本ダイアログにのみ残存）だったため
+//   新語彙「名簿に反映」へ（文言のみ・選択肢の数/順序/既定/分岐は完全不変）。
 function _confirmUnlinkedBeforeSend(unlinked, onUpdateAndSend, onSendAsIs, onCancel){
   var n=(unlinked&&unlinked.length)||0;
   var label=_unlinkedTopLabel(unlinked);
-  var m1='⚠ 名簿に未連携の参加者が '+n+' 名います（'+label+'）。\nこのまま送信すると、この方々はクラウドの共有結果に載りません（当日アプリの表示は変わりません）。\n\n名簿を更新してから送信しますか？（初参加の方を名簿に登録してから全員まとめて送ります）';
+  var m1='⚠ 名簿に未連携の参加者が '+n+' 名います（'+label+'）。\nこのまま送信すると、この方々はクラウドの共有結果に載りません（当日アプリの表示は変わりません）。\n\n名簿に反映してから送信しますか？（初参加の方を名簿に登録してから全員まとめて送ります）';
   appConfirm(m1,function(ok1){
     if(ok1){ onUpdateAndSend(); return; }
-    var m2='名簿を更新せずに送信します。\n未連携の '+n+' 名（'+label+'）は、クラウドの共有結果に載りません。\n\nこのまま送信しますか？';
+    var m2='名簿に反映せずに送信します。\n未連携の '+n+' 名（'+label+'）は、クラウドの共有結果に載りません。\n\nこのまま送信しますか？';
     appConfirm(m2,function(ok2){ if(ok2)onSendAsIs(); else onCancel(); },{okText:'このまま送信',cancelText:'中止'});
-  },{okText:'名簿を更新して送信',cancelText:'更新しない'});
+  },{okText:'名簿に反映して送信',cancelText:'反映しない'});
 }
 // 送信後（skipped>0）の⚠注記（C）: 未連携者が共有結果に未反映であること・最上位者・直し方を明示。
 function _unlinkedSkippedNote(count){
@@ -12301,7 +12318,7 @@ function sendTournamentToCloud(setStatus){
       } else { _guardThenSend(); }
     }
     // CLOUD-SEND-UNLINKED-GUARD-001: 送信直前ガード。未連携者がいれば確認（無ければ従来どおり即送信）。
-    //   ①名簿を更新して送信＝既存 syncBranchMasterOnSave（初参加者に member_id 付与）→送信 ②このまま送信 ③中止。
+    //   ①名簿に反映して送信＝既存 syncBranchMasterOnSave（初参加者に member_id 付与）→送信 ②このまま送信 ③中止。
     //   走査失敗時は空扱いで従来どおり送信（fail-open＝ガードで送信を止めない）。
     function _guardThenSend(){
       var _u=[]; try{ _u=collectUnlinkedParticipantsForSend(); }catch(eU){ _u=[]; }
@@ -12633,7 +12650,7 @@ function syncBranchMasterOnSave(onDone){
   function _done(){ if(typeof onDone==='function')onDone(_counts); }
   // GUEST-TOURNAMENT-MODE-001 (#760・fail-safe の要): ゲスト大会は名簿（支部マスタ）へ一切書き込まない。
   //   本関数は大会→名簿同期の choke point（呼び出し2経路＝📋saveBtn の saveData／☁送信の未連携ガード
-  //   「①名簿を更新して送信」CLOUD-SEND-UNLINKED-GUARD-001）であり、関数冒頭の no-op（_done() のみ）で
+  //   「①名簿に反映して送信」CLOUD-SEND-UNLINKED-GUARD-001）であり、関数冒頭の no-op（_done() のみ）で
   //   両経路を一括遮断する。新規追加(createMemberFromParticipant)・同名1件自動紐付け(attachMemberIdToPlayer)・
   //   参加履歴/last_class/yomi 付与のすべてがここで止まる。UI 側の説明は saveData / renderGuestModeUI が担当。
   if(typeof isGuestTournament==='function'&&isGuestTournament(typeof state!=='undefined'?state:null)){_done();return;}
@@ -12740,11 +12757,13 @@ function syncBranchMasterOnSave(onDone){
 //   3型:
 //     ① 反映あり  📋 名簿に反映しました: 新規追加 N人・参加記録 M人（ふりがな補完があれば末尾に追記）
 //     ② 差分ゼロ  📋 名簿は反映済みです（変更なし）  ＝ 何度押しても安全（冪等）が数字で見える
-//     ③ 内訳不明  📋 名簿に反映しました              ＝ counts=null（破損スキップ/保存失敗/例外）の中立文言
+//     ③ 内訳不明  📋 名簿への反映を確認できませんでした（保存状態をご確認ください）
+//                  ＝ counts=null（破損スキップ/保存失敗/例外）の中立文言。L2-SWEEP-01 ③ (#782 レビュー Nice-1):
+//                  保存失敗時にも「反映しました」と読める断定を避け非断定へ（分岐条件・counts の作り方は無改変）。
 //   skipped（同名候補が複数で保留）は載せない: updateBranchMasterFromTournament が氏名つきの
 //   警告（showMsg 'warn'）を別途出しており、同じ事実の二重通知になるため。
 function formatMasterSyncResultToast(counts){
-  if(!counts)return '📋 名簿に反映しました';
+  if(!counts)return '📋 名簿への反映を確認できませんでした（保存状態をご確認ください）';
   var added=counts.added||0,marked=counts.marked||0,yomi=counts.yomiFilled||0;
   if(added===0&&marked===0&&yomi===0)return '📋 名簿は反映済みです（変更なし）';
   var parts=[];
