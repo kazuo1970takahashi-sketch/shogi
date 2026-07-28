@@ -16290,7 +16290,8 @@ function fetchCloudEntriesForTournament(client, tid, clubId){
 }
 // CLOUD-HISTORY-SCOREBOARD-001 (#765): 送信時同梱スナップショット（tournament_snapshots）の下り読み取り。
 //   snapshot が無い旧大会・取得エラーは snapshot:null で返す（呼び出し側が現行順位表のみ表示へフォールバック
-//   ＝後方互換・表示劣化なし・fail-soft）。RLS は entries と同じ authenticated クラブメンバー read のみ。
+//   ＝後方互換・表示劣化なし・fail-soft）。RLS は同クラブの幹事以上のみ read（氏名入りのため・Must-1）＝
+//   閲覧ロール(viewer)では 0 行が返り、エラーにならず星取表なし＝現行順位表のみ表示に落ちる。
 function fetchCloudSnapshotForTournament(client, tid){
   if(!client||!client.from)return Promise.resolve({ok:false,snapshot:null});
   return client.from('tournament_snapshots').select('snapshot').eq('tournament_id',tid).then(function(res){

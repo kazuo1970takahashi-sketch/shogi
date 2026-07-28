@@ -114,6 +114,11 @@ const master={ members:[{id:'m_a1',name:'架空甲',yomi:'かくうこう'},{id:
   ok(frE.ok===false&&frE.snapshot===null,'D9 取得エラーは snapshot:null（順位表のみ表示へフォールバック）');
   var frN=await env.fetchCloudSnapshotForTournament(makeClient({tournament_snapshots:{data:[]}}),'t-uuid');
   ok(frN.ok===true&&frN.snapshot===null,'D10 行なし（旧大会）は snapshot:null');
+  // Must-1（L3 レビュー・作者決定 2026-07-28）: select=app_is_active_organizer のため viewer は 0 行になる。
+  // RLS の deny は「エラー」でなく「0 行」で返るので、D10 と同じ経路で snapshot:null → 星取表なし＝現行順位表のみ。
+  var frV=await env.fetchCloudSnapshotForTournament(makeClient({tournament_snapshots:{data:[]}}),'t-uuid');
+  ok(frV.ok===true&&frV.snapshot===null&&env.buildCloudSnapshotScoreboardHtml(frV.snapshot)==='',
+    'D11 viewer（RLS で 0 行）は snapshot:null＋星取表は空文字＝現行順位表のみ表示にフォールバック（機能は壊れない）');
 
   // ---- S. 静的ピン（2段構成・フォールバック無改変）----
   function extractFn(name){

@@ -96,11 +96,14 @@ insert into public.tournament_snapshots(tournament_id,club_id,snapshot) values
 SQL
 [ $? -eq 0 ] && ok "架空 fixture 投入（snapshot 1件＝club A の大会）" || ng "架空 fixture 投入に失敗"
 
-echo "  -- read（受入基準3: anon 拒否 / 他クラブ拒否 / 自クラブ authenticated 許可）"
+echo "  -- read（受入基準3: anon 拒否 / 他クラブ拒否 / 自クラブ幹事のみ許可）"
 assert_eq "$(probe anon '' "select count(*) from public.tournament_snapshots;")" "0" "R1 anon は snapshot を1行も読めない（RLS 全拒否）"
 assert_eq "$(probe authenticated "$U_BORG" "select count(*) from public.tournament_snapshots where club_id='$CA';")" "0" "R2 他クラブ member は club A の snapshot を読めない"
 assert_eq "$(probe authenticated "$U_ORG" "select count(*) from public.tournament_snapshots where tournament_id='$TA';")" "1" "R3 自クラブ organizer は読める"
-assert_eq "$(probe authenticated "$U_VIEWER" "select count(*) from public.tournament_snapshots where tournament_id='$TA';")" "1" "R4 自クラブ viewer も読める（entries_select と同じ app_is_active_member）"
+# Must-1（L3 レビュー・作者決定 2026-07-28）: snapshot は氏名入りのため read は幹事以上に限定。
+# viewer は 0 行＝下りは既存 fail-soft で現行順位表のみ表示に落ちる（機能は壊れない）。
+assert_eq "$(probe authenticated "$U_VIEWER" "select count(*) from public.tournament_snapshots where tournament_id='$TA';")" "0" "R4 自クラブ viewer は読めない（select=app_is_active_organizer・氏名入り snapshot は幹事以上）"
+assert_eq "$(probe anon '' "select count(*) from pg_policies where tablename='tournament_snapshots' and policyname='tournament_snapshots_select' and qual like '%app_is_active_organizer%';")" "1" "R5 select ポリシーの述語が app_is_active_organizer（app_is_active_member でない）"
 
 echo "  -- write（organizer 以上のみ・他クラブ大会への貼り付け拒否）"
 assert_eq "$(probe_write authenticated "$U_ORG" "update public.tournament_snapshots set snapshot='{}'::jsonb, updated_at=now() where tournament_id='$TA'")" "OK" "W1 自クラブ organizer は update できる（冪等 upsert の update 側）"

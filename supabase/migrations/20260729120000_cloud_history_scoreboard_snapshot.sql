@@ -8,8 +8,14 @@
 --     （tournaments への列追加でなく別テーブル＝既存テーブル無改変・行サイズ分離・#765 設計時判断）。
 --   - 内容は buildPublicLiveSnapshot(state,{display_mode:'full'}) のホワイトリスト部分集合
 --     （回戦別 results / players の id・name・yomi・entry_no のみ。member/grade 等は載らない）。
---   - RLS は entries と同じ「authenticated クラブメンバー read のみ」:
---       select = app_is_active_member(club_id)（viewer 含む・entries_select と同一述語）
+--   - RLS は「authenticated かつ幹事以上」のみ read（L3 レビュー Must-1・作者決定 2026-07-28）:
+--       select = app_is_active_organizer(club_id)
+--         ※ snapshot は display_mode:'full'＝氏名・よみ入り。stagea RLS の既存設計では氏名の read は
+--           幹事以上に限定されている（viewer 向けクラウド詳細は氏名なし表示）。select を
+--           app_is_active_member にすると viewer が初めてクラウド経由で氏名を読めてしまうため、
+--           entries_select と同型ではなく「幹事以上」に寄せる。
+--         ※ viewer は snapshot が 0 行になり、下りは既存 fail-soft で現行順位表のみ表示へ落ちる
+--           （機能は壊れない・後方互換＝snapshot 無し旧大会と同じ表示）。
 --       insert/update = app_is_active_organizer(club_id)（書込は organizer 以上・viewer 不可）
 --       delete = app_is_admin(club_id)
 --     anon には SELECT 権限を付与した上で許可ポリシー無し＝RLS が全拒否
@@ -30,7 +36,7 @@ create table if not exists public.tournament_snapshots (
 );
 
 comment on table public.tournament_snapshots is
-  'CLOUD-HISTORY-SCOREBOARD-001 (#765): 送信時同梱の星取表スナップショット（buildPublicLiveSnapshot full 形・read は authenticated クラブメンバーのみ・anon 直 SELECT 不可）';
+  'CLOUD-HISTORY-SCOREBOARD-001 (#765): 送信時同梱の星取表スナップショット（buildPublicLiveSnapshot full 形・氏名入りのため read は同クラブの幹事以上のみ・viewer/anon は不可）';
 
 create index if not exists idx_tournament_snapshots_club
   on public.tournament_snapshots (club_id);
@@ -41,10 +47,12 @@ alter table public.tournament_snapshots enable row level security;
 grant select, insert, update, delete on public.tournament_snapshots to authenticated;
 grant select on public.tournament_snapshots to anon;
 
--- ---- policies（entries と同型・許可リスト方式・既定拒否）----
+-- ---- policies（許可リスト方式・既定拒否）----
+-- select は「幹事以上」限定（Must-1）。氏名入り snapshot を viewer に開かないため entries_select
+-- （app_is_active_member）ではなく app_is_active_organizer を使う。
 drop policy if exists tournament_snapshots_select on public.tournament_snapshots;
 create policy tournament_snapshots_select on public.tournament_snapshots
-  for select using (public.app_is_active_member(club_id));
+  for select using (public.app_is_active_organizer(club_id));
 
 drop policy if exists tournament_snapshots_insert on public.tournament_snapshots;
 create policy tournament_snapshots_insert on public.tournament_snapshots
