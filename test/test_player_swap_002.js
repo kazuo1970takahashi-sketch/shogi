@@ -37,7 +37,10 @@ const sheetSrc = extractFn('openPlayerEditSheet');
 assert(!!sheetSrc, 'A0 openPlayerEditSheet を抽出できる');
 assert(!!sheetSrc && sheetSrc.indexOf('id="pes-swap"') >= 0, 'A1 編集シートに独立ボタン（pes-swap）がある');
 assert(!!sheetSrc && sheetSrc.indexOf('🔁 別の人に差し替える') >= 0, 'A2 ラベルは「🔁 別の人に差し替える」');
-assert(!!sheetSrc && sheetSrc.indexOf("openPlayerSwapPicker(p,'')") >= 0, 'A3 クリックで openPlayerSwapPicker(p,\'\') を直接呼ぶ（検索初期値は空）');
+// L2-SWEEP-02 ② (#788 レビュー Nice-1): シート開時捕捉の p 直渡しをやめ、クリック時に playerId+cls で
+//   再解決して渡す（pes-name と同型・検索初期値は空のまま）。A3 は新しい形をピンする。
+assert(!!sheetSrc && sheetSrc.indexOf("openPlayerSwapPicker(cur,'')") >= 0, 'A3 クリックで openPlayerSwapPicker(再解決した参加者,\'\') を直接呼ぶ（検索初期値は空）');
+assert(!!sheetSrc && sheetSrc.indexOf('curPs[pi2].id===playerId') >= 0, 'A3b クリック時に playerId で state.players[cls] から再解決する（開時捕捉 p の stale 参照を使わない）');
 assert(!!sheetSrc && sheetSrc.indexOf('appPrompt') < 0, 'A4 編集シートの差し替え導線は名前入力プロンプトを経由しない');
 // ボタンは pes-yomi（ふりがな）より後・クラス変更より前（編集系→差し替え→棄権/削除の順序）
 if (sheetSrc) {
@@ -77,8 +80,11 @@ if (candSrc) {
   const shortIdx = candSrc.indexOf('検索語を短くしてみてください');
   const unlinkedIdx = candSrc.indexOf('名簿にいない新規の方のときだけ');
   assert(shortIdx >= 0 && unlinkedIdx > shortIdx, 'D2 「検索語を短く」が先・未連携誘導は「名簿にいない新規の方のときだけ」に限定');
-  assert(candSrc.indexOf('。下の「名簿にない新規の方として差し替え」を使ってください') < 0 || unlinkedIdx >= 0,
-    'D3 旧文言（無条件の未連携誘導）が先頭に残っていない');
+  // L2-SWEEP-02 ① (#788 レビュー Should-1): 旧 D3 は「A < 0 || unlinkedIdx >= 0」で D2 が通る限り恒真
+  //   （判別力ゼロ）。旧文言（無条件誘導＝「。」直後に「下の…を使ってください」）が候補ゼロ文言の
+  //   先頭側に復活していないことを、単独の否定 assert でピンし直す（現行文言は「のときだけ、下の…」）。
+  assert(candSrc.indexOf('。下の「名簿にない新規の方として差し替え」を使ってください') < 0,
+    'D3 旧文言（無条件の未連携誘導「。下の…を使ってください」）が復活していない');
 }
 
 // ---- E. 同乗②: withdrawn 引き継ぎの confirm 明記（PR #759 NIT-3）
