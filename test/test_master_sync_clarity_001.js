@@ -41,15 +41,13 @@ assert(RAW.indexOf('id="saveBtn"') >= 0 && RAW.indexOf('>' + NEW_NAME + '</butto
 assert(/getElementById\('saveBtn'\)\.addEventListener\('click',saveData\)/.test(RAW),
   'A2 id / click 結線は不変（saveBtn → saveData）');
 {
-  // 旧名称の残存参照ゼロ。例外は2種のみ:
-  //   ①☁送信の未連携ガード（CLOUD-SEND-UNLINKED-GUARD-001）自身のダイアログ文言「名簿を更新して送信 / 更新してから送信 / 更新せずに送信」
-  //     ＝ヘッダボタン名の参照ではなく当該ダイアログ固有のラベル（本スライスは挙動・文言とも無改変）。
-  //   ②改名の履歴を明示した注釈（「#757 改名前は…」「旧「📋 名簿を更新しました」」）。
+  // 旧名称の残存参照ゼロ。例外は改名の履歴を明示した注釈（「#757 改名前は…」「旧「📋 名簿を更新しました」」）のみ。
+  //   旧例外①（☁送信の未連携ガード CLOUD-SEND-UNLINKED-GUARD-001 固有のダイアログ文言）は
+  //   L2-SWEEP-01 ④ (#782 レビュー Nice-2) で新語彙「名簿に反映」へ追随したため例外リストから撤去。
   const lines = RAW.split('\n');
   const stale = [];
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].indexOf('名簿を更新') < 0) continue;
-    if (lines[i].indexOf('名簿を更新して送信') >= 0 || lines[i].indexOf('名簿を更新してから送信') >= 0 || lines[i].indexOf('名簿を更新せずに送信') >= 0) continue;
     if (lines[i].indexOf('改名前は') >= 0 || lines[i].indexOf('旧「📋 名簿を更新しました」') >= 0) continue;
     stale.push((i + 1) + ': ' + lines[i].trim().slice(0, 60));
   }
@@ -150,8 +148,9 @@ const META = { tournament_id: 't-0001', tournament_date: '2026-07-27' };
     'C1 ①反映あり: 新規追加/参加記録を数字で報告');
   assert(f({ added: 0, marked: 0, yomiFilled: 0, skipped: 0 }) === '📋 名簿は反映済みです（変更なし）',
     'C2 ②差分ゼロ: 「反映済みです（変更なし）」');
-  assert(f(null) === '📋 名簿に反映しました',
-    'C3 ③内訳不明（破損スキップ/保存失敗/例外）: 数字を出さない中立文言');
+  // L2-SWEEP-01 ③ (#782 レビュー Nice-1): 内訳不明の中立文言を非断定へ（「反映しました」と読める断定を避ける）。
+  assert(f(null) === '📋 名簿への反映を確認できませんでした（保存状態をご確認ください）',
+    'C3 ③内訳不明（破損スキップ/保存失敗/例外）: 数字を出さず「反映した」と断定しない中立文言');
   assert(f({ added: 0, marked: 0, yomiFilled: 2, skipped: 0 }) === '📋 名簿に反映しました: ふりがな補完 2人',
     'C4 ふりがな補完だけのときは「変更なし」と言わない（起きたことを報告する）');
   assert(f({ added: 1, marked: 3, yomiFilled: 1, skipped: 0 }).indexOf('ふりがな補完 1人') > 0,
@@ -213,8 +212,8 @@ const META = { tournament_id: 't-0001', tournament_date: '2026-07-27' };
     state: { players: {} }, master: master, saveOk: false,
     updateReturn: { _counts: { added: 2, marked: 5, yomiFilled: 0, skipped: 0 } }
   });
-  assert(ngRun.toasts.length === 1 && ngRun.toasts[0] === '📋 名簿に反映しました',
-    'D8 マスタ保存失敗時: 数字を出さず中立文言（保存失敗自体は notifySaveWarning が別途通知）');
+  assert(ngRun.toasts.length === 1 && ngRun.toasts[0] === '📋 名簿への反映を確認できませんでした（保存状態をご確認ください）',
+    'D8 マスタ保存失敗時: 数字を出さず「反映した」と断定しない中立文言（保存失敗自体は notifySaveWarning が別途通知）');
 }
 {
   // ☁送信の未連携ガード経路（CLOUD-SEND-UNLINKED-GUARD-001）は onDone の引数を見ない＝表示は現行のまま
