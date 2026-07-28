@@ -4039,7 +4039,11 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi,cls){
   renderPastParticipantsPanel('');
   // ChatGPT M4 反映: 全員空欄追加だった場合は専用通知（既存の成功メッセージを置き換え）
   if(allEmptyYomi&&added>0){
-    showMsg('ふりがな未登録のまま '+added+'名を追加しました。未登録者は「他」タブに表示されます。','warn');
+    // L2-SWEEP-02 ③ (#760/#764 レビュー NIT-1): ゲスト大会中は yomi 補完ダイアログを出さない（#760）ため
+    //   この warn だけが出て「全員名簿に未登録」と読める。「未登録」＝ふりがなの話であり名簿への登録は
+    //   そもそも行われない旨の一文を添える（表示のみ・分岐/追加ロジック無改変）。
+    var _guestBulkNote=((typeof isGuestTournament==='function')&&isGuestTournament(state))?'（🎪 ゲスト大会のため名簿への登録は行われません）':'';
+    showMsg('ふりがな未登録のまま '+added+'名を追加しました。未登録者は「他」タブに表示されます。'+_guestBulkNote,'warn');
   }else{
     showMsg(added+'名を追加しました'+(skipped>0?'（同名・同 member_id 重複 '+skipped+'名はスキップ）':''),'ok');
   }
@@ -7262,8 +7266,15 @@ function openPlayerEditSheet(playerId,cls){
   if(yoBtn)yoBtn.addEventListener('click',function(){ closeSheet(); editPlayerYomi(playerId,cls); });
   // PLAYER-SWAP-002 (#763): 名前入力を経由しない直接導線。ガード（参加済み拒否・同名拒否・
   //   danger 確認・送信済み警告）はピッカー以降の既存経路がそのまま効く。
+  //   L2-SWEEP-02 ② (#788 レビュー Nice-1): シート開時に捕捉した p をそのまま使わず、pes-name と同型に
+  //   クリック時へ playerId+cls で再解決（挙動同値・stale 参照への堅牢性のみ。不在なら何もしない）。
   var swBtn=document.getElementById('pes-swap');
-  if(swBtn)swBtn.addEventListener('click',function(){ closeSheet(); openPlayerSwapPicker(p,''); });
+  if(swBtn)swBtn.addEventListener('click',function(){
+    closeSheet();
+    var cur=null,curPs=(state&&state.players&&state.players[cls])||[];
+    for(var pi2=0;pi2<curPs.length;pi2++){ if(curPs[pi2]&&curPs[pi2].id===playerId){cur=curPs[pi2];break;} }
+    if(cur)openPlayerSwapPicker(cur,'');
+  });
   var chBtns=modal.querySelectorAll('.pes-change');
   for(var bi=0;bi<chBtns.length;bi++){
     chBtns[bi].addEventListener('click',(function(c,mid){return function(){ closeSheet(); handlePastParticipantClassAdd(mid,c); };})(chBtns[bi].getAttribute('data-cls'),p.member_id));
