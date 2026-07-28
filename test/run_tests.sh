@@ -2843,6 +2843,31 @@ if [ -f "$SCRIPT_DIR/test_bulk_entry_001.js" ]; then
 else
   warn "test_bulk_entry_001.js が見つからない"
 fi
+
+echo ""
+echo "【CLOUD-HISTORY-SCOREBOARD-001 (#765) クラウド過去大会の星取表（送信時スナップショット同梱・案A）】"
+if [ -f "$SCRIPT_DIR/test_cloud_history_scoreboard_765.js" ]; then
+  if node "$SCRIPT_DIR/test_cloud_history_scoreboard_765.js" "$TARGET" > /tmp/cloud_history_scoreboard_765_out.log 2>&1; then
+    ok "CLOUD-HISTORY-SCOREBOARD-001 テスト 全PASS ($(tail -1 /tmp/cloud_history_scoreboard_765_out.log))"
+  else
+    ng "CLOUD-HISTORY-SCOREBOARD-001 テスト 失敗（上り fail-soft／下りフォールバック／ゲストガードのいずれか）"; cat /tmp/cloud_history_scoreboard_765_out.log
+  fi
+else
+  warn "test_cloud_history_scoreboard_765.js が見つからない"
+fi
+
+echo ""
+echo "【CLOUD-HISTORY-SCOREBOARD-001 (#765) — tournament_snapshots RLS 実 PostgreSQL 検証（psql 無ければ SKIP）】"
+if [ -f "$SCRIPT_DIR/cloud_history_snapshot_pgtest.sh" ]; then
+  if bash "$SCRIPT_DIR/cloud_history_snapshot_pgtest.sh" > /tmp/cloud_history_snapshot_pgtest_out.log 2>&1; then
+    ok "CLOUD-HISTORY snapshot pgtest OK/SKIP ($(tail -1 /tmp/cloud_history_snapshot_pgtest_out.log))"
+  else
+    ng "CLOUD-HISTORY snapshot pgtest 失敗"
+    cat /tmp/cloud_history_snapshot_pgtest_out.log
+  fi
+else
+  warn "cloud_history_snapshot_pgtest.sh が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================

@@ -10814,7 +10814,7 @@ var HELP_TEXTS={
       '「☁ クラウドへ送信」：確定した結果をクラウドに保存します。クラウド管理ページ（app/）でのログインとネット接続が必要です。',
       '同じ大会を何度送信しても二重にはなりません。',
       '送信に失敗しても当日のデータは端末に残っています。運営はそのまま続けて、あとで再送信できます。',
-      '「大会履歴」タブの「☁ クラウドの過去大会」→「読み込む」で、共有された過去大会の結果を見られます。',
+      '「大会履歴」タブの「☁ クラウドの過去大会」→「読み込む」で、共有された過去大会の結果を見られます。送信済みの大会は、回戦ごとの ○● が分かる星取表つきで表示されます（星取表がない古い大会は順位表のみ。もう一度「☁ クラウドへ送信」すると星取表が付きます）。',
       'クラウドはバックアップの代わりではありません。端末の控えは ☰メニューの「バックアップ」で保存してください。',
       '【A級・B級を2台で分担する場合】受付タブの「▷ 2台で分担して入力するとき」を開き、１台目で「運営共通キーを発行」→表示された4桁を２台目に伝え、２台目で入力して「このキーに合わせる」を押します。両方の送信が同じ１つの大会にまとまります（各端末は自分の級だけを送るのがコツ）。１台で運営するなら操作は不要です。',
       '【あとから2台目を足すとき】１台目がキーを発行せずに送信済みの場合は、２台目で「今日の大会に合流」を押してください（キー入力は不要・同じ日のうちに）。',
@@ -11408,10 +11408,30 @@ function syncTournamentToCloud(client, master, opts){
           entryRows.push(row);
         }
         counts.entries=entryRows.length;
-        if(!entryRows.length)return {ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid};
+        // CLOUD-HISTORY-SCOREBOARD-001 (#765): entries 成立後に星取表スナップショットを同梱 upsert（冪等・fail-soft）。
+        //   内容は buildPublicLiveSnapshot(state,{display_mode:'full'})＝ライブ配信と同じホワイトリスト部分集合
+        //   （回戦別 results 入り）。tournament_snapshots(tournament_id PK) へ onConflict 冪等 upsert。
+        //   スナップショットが作れない/送れない場合も送信結果は ok のまま snapshot_ok:false を返すだけ
+        //   ＝星取表が付かないだけで entries 送信・現行トーストは成立する（受入基準4）。
+        //   snapshotSource はテスト注入用（既定＝global state。buildCloudSyncPayload と同じ typeof ガード）。
+        function _withSnapshot(result){
+          var snap=null;
+          try{
+            var src=(opts.snapshotSource!==undefined)?opts.snapshotSource:((typeof state!=='undefined')?state:null);
+            if(src&&typeof buildPublicLiveSnapshot==='function')snap=buildPublicLiveSnapshot(src,{display_mode:'full'});
+          }catch(eS){ snap=null; }
+          if(!snap){ result.snapshot_ok=false; return Promise.resolve(result); }
+          var row={tournament_id:result.tournament_id,club_id:clubId,snapshot:snap,updated_at:new Date().toISOString()};
+          return client.from('tournament_snapshots').upsert(row,{onConflict:'tournament_id'}).then(function(r5){
+            result.snapshot_ok=!(r5&&r5.error);
+            if(r5&&r5.error&&typeof console!=='undefined'&&console.warn)console.warn('[cloud] 星取表スナップショット送信に失敗（結果送信は成立・再送信で付きます）:',(r5.error&&r5.error.message)||'');
+            return result;
+          },function(eU){ result.snapshot_ok=false; if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 星取表スナップショット送信例外（結果送信は成立・再送信で付きます）:',(eU&&eU.message)||eU); return result; });
+        }
+        if(!entryRows.length)return _withSnapshot({ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid});
         return client.from('entries').upsert(entryRows,{onConflict:'tournament_id,player_id'}).then(function(r4){
           if(r4&&r4.error)return fail('entries',r4);
-          return {ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid};
+          return _withSnapshot({ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid});
         });
       });
     });
@@ -16279,6 +16299,18 @@ function fetchCloudEntriesForTournament(client, tid, clubId){
     });
   });
 }
+// CLOUD-HISTORY-SCOREBOARD-001 (#765): 送信時同梱スナップショット（tournament_snapshots）の下り読み取り。
+//   snapshot が無い旧大会・取得エラーは snapshot:null で返す（呼び出し側が現行順位表のみ表示へフォールバック
+//   ＝後方互換・表示劣化なし・fail-soft）。RLS は同クラブの幹事以上のみ read（氏名入りのため・Must-1）＝
+//   閲覧ロール(viewer)では 0 行が返り、エラーにならず星取表なし＝現行順位表のみ表示に落ちる。
+function fetchCloudSnapshotForTournament(client, tid){
+  if(!client||!client.from)return Promise.resolve({ok:false,snapshot:null});
+  return client.from('tournament_snapshots').select('snapshot').eq('tournament_id',tid).then(function(res){
+    if(res&&res.error){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 星取表スナップショット取得エラー（順位表のみ表示）:',cloudErrDetail(res.error)); return {ok:false,snapshot:null}; }
+    var rows=(res&&res.data)||[]; var row=rows[0]||null;
+    return {ok:true,snapshot:(row&&row.snapshot&&typeof row.snapshot==='object')?row.snapshot:null};
+  },function(){ return {ok:false,snapshot:null}; });
+}
 // CLOUD-TOURNEY-NAMING-001 (#608): クラウド過去大会一覧/詳細の表記統一（表示側正規化・純関数3本）。
 //   元データ tournaments.name は書き換えず、表示時のみ「YYYY年M月度＋正規化した大会名」に整える。
 //   すべて副作用なし・fail-soft（想定外入力でも例外を投げない）。設計 docs/specs/20260707_cloud_tourney_naming_001_design.md。
@@ -16429,23 +16461,52 @@ function buildCloudMergedReportHtml(entries, isSP){
   html+=buildCloudResultBlocksHtml(entries, isSP);
   return html;
 }
+// CLOUD-HISTORY-SCOREBOARD-001 (#765): snapshot（buildPublicLiveSnapshot full 形）→ ローカル履歴詳細と同経路の
+//   星取表 HTML（閲覧専用・純関数）。normalizeState → buildScoreboardClassTableHtml(cid, vs)（sourceState 渡し
+//   ＝withSourceState が global state を退避→finally で必ず復元）。参加者のいるクラスのみ描画し、
+//   1件も組めなければ ''（呼び出し側は現行順位表のみ表示＝snapshot 無し旧大会と同じ後方互換）。
+//   schema_version 差はローカル履歴と同じ normalize-on-read（normalizeState）で吸収する。
+function buildCloudSnapshotScoreboardHtml(snap){
+  if(!snap||typeof snap!=='object'||!snap.state||typeof snap.state!=='object')return '';
+  var vs=null;
+  try{ vs=normalizeState(snap.state); }catch(eN){ vs=null; }
+  if(!vs||!Array.isArray(vs.classes))return '';
+  var body='';
+  try{
+    for(var i=0;i<vs.classes.length;i++){
+      var cid=vs.classes[i]&&vs.classes[i].id; if(!cid)continue;
+      var ps=(vs.players&&Array.isArray(vs.players[cid]))?vs.players[cid]:[];
+      if(!ps.length)continue;
+      body+=buildScoreboardClassTableHtml(cid,vs);
+    }
+  }catch(eB){ body=''; }
+  if(!body)return '';
+  return '<div style="background:#eef2f7;padding:8px;border-radius:8px;margin-bottom:10px">'+body+'</div>';
+}
 // タップした大会の結果を「履歴一覧を差し替えて先頭に大きく表示」する（renderHistoryDetail と同じ全画面パターン）。
+//   CLOUD-HISTORY-SCOREBOARD-001 (#765): snapshot があれば星取表（上段）＋現行の順位表（下段・#607 会員属性行
+//   を含む・無改変）の2段構成。無い旧大会は現行の順位表のみ＝従来と同一表示（後方互換）。
 function renderCloudTournamentDetail(client,clubId,tid,label,date){
   var host=document.getElementById('history-content'); if(!host)return;
   host.innerHTML='<div style="padding:24px;text-align:center;color:#888">読み込み中…</div>';
   if(typeof window!=='undefined'&&window.scrollTo)window.scrollTo(0,0);
   fetchCloudEntriesForTournament(client,tid,clubId).then(function(r){
+    // CLOUD-HISTORY-SCOREBOARD-001 (#765): snapshot も取得（fail-soft・エラー/無しは星取表なし＝従来表示）。
+    return fetchCloudSnapshotForTournament(client,tid).then(function(sr){
     var h=document.getElementById('history-content'); if(!h)return;
     var html='';
     html+='<div style="margin-bottom:10px"><button type="button" class="btn-sm" id="cloud-history-back-btn" style="background:#fff;color:#444;font-size:13px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← クラウドの大会一覧へ戻る</button></div>';
     html+='<div style="background:#e8f0f8;border:1px solid #9DB7D5;color:#1F3864;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">☁ クラウドの過去大会（閲覧専用・みんなで共有）</div>';
     var _head=(typeof buildCloudTournamentDisplayTitle==='function')?buildCloudTournamentDisplayTitle(label,date):(label||'');
     html+='<div style="margin-bottom:10px"><div style="font-size:16px;font-weight:700;color:#1F3864">'+escapeHtml(_head||'(大会名未設定)')+'</div>'+(date?'<div style="font-size:12px;color:#666;margin-top:2px">開催日 '+escapeHtml(date)+'</div>':'')+'</div>';
-    html+= r.ok ? buildCloudResultBlocksHtml(r.entries) : '<div class="alert alert-err" style="font-size:13px">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
+    // #765: 2段構成＝星取表（snapshot ある送信済み大会のみ・上段）＋現行の順位表（下段・無改変＝#607 属性行を保持）。
+    var _sb=''; try{ _sb=(r.ok&&sr&&sr.snapshot)?buildCloudSnapshotScoreboardHtml(sr.snapshot):''; }catch(eSb){ _sb=''; }
+    html+= r.ok ? (_sb+buildCloudResultBlocksHtml(r.entries)) : '<div class="alert alert-err" style="font-size:13px">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
     h.innerHTML=html;
     if(typeof window!=='undefined'&&window.scrollTo)window.scrollTo(0,0);
     var back=document.getElementById('cloud-history-back-btn');
     if(back)back.addEventListener('click',function(){ renderHistoryList(); });
+    }); // end fetchCloudSnapshotForTournament.then（#765）
   });
 }
 function bindCloudHistoryRows(client, clubId){
