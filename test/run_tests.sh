@@ -2754,6 +2754,24 @@ else
   warn "test_player_swap_001.js が見つからない"
 fi
 
+# ============================================
+# PLAYER-SWAP-002 (#763) 差し替え導線の到達性改善（名前入力を経由しない独立ボタン・案B）
+#   編集シートの「🔁 別の人に差し替える」（openPlayerSwapPicker(p,'') 直呼び）・既存3択導線温存・
+#   ガード共通経路の無改変ピン・候補ゼロ時メッセージ是正・withdrawn 引き継ぎ confirm 明記（NIT-3）。
+# ============================================
+echo ""
+echo "【PLAYER-SWAP-002 (#763) 差し替え導線の到達性改善（独立ボタン・同乗2件）】"
+if [ -f "$SCRIPT_DIR/test_player_swap_002.js" ]; then
+  if node "$SCRIPT_DIR/test_player_swap_002.js" "$TARGET" > /tmp/player_swap_002_out.log 2>&1; then
+    ok "PLAYER-SWAP-002 テスト 全PASS ($(tail -1 /tmp/player_swap_002_out.log))"
+  else
+    ng "PLAYER-SWAP-002 テスト 失敗"
+    cat /tmp/player_swap_002_out.log
+  fi
+else
+  warn "test_player_swap_002.js が見つからない"
+fi
+
 echo ""
 echo "【SCALE-MODAL-001 (#767) 汎用確認モーダルのスクロール＋FRP append 確認文の要約（大人数対策）】"
 if [ -f "$SCRIPT_DIR/test_scale_modal_001.js" ]; then
