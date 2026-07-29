@@ -2868,6 +2868,19 @@ if [ -f "$SCRIPT_DIR/cloud_history_snapshot_pgtest.sh" ]; then
 else
   warn "cloud_history_snapshot_pgtest.sh が見つからない"
 fi
+
+echo ""
+echo "【KEEPALIVE-001 Supabase auto-pause 再発防止 workflow の静的ゲート（secret 非使用／公開窓は get_live_snapshot のみ）】"
+if [ -f "$SCRIPT_DIR/test_supabase_keepalive_workflow.sh" ]; then
+  if bash "$SCRIPT_DIR/test_supabase_keepalive_workflow.sh" > /tmp/supabase_keepalive_workflow_out.log 2>&1; then
+    ok "KEEPALIVE-001 workflow 静的ゲート 全PASS ($(tail -2 /tmp/supabase_keepalive_workflow_out.log | head -1))"
+  else
+    ng "KEEPALIVE-001 workflow 静的ゲート 失敗（secret 参照／公開窓の追加／書き込み系のいずれか）"
+    cat /tmp/supabase_keepalive_workflow_out.log
+  fi
+else
+  warn "test_supabase_keepalive_workflow.sh が見つからない"
+fi
 # ============================================
 # 最終結果
 # ============================================
