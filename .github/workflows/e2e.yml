@@ -61,9 +61,13 @@ jobs:
         run: npm audit --audit-level=high
 
       # PHASE0-B-CI-GREEN-001: 検査は残し、初回は non-blocking にする。
-      # base: HEAD~1 は「直前1コミットとの差分」しか見ないため、PR 全体の差分を
-      # 走査できていない（squash 前の複数コミットを取りこぼす）。開発系列との
-      # 比較へ直すのは独立 Issue 候補。ここで走査範囲を広げる変更は行わない。
+      # base: HEAD~1 の実測挙動（run 30442522474）: pull_request では checkout が
+      # マージ ref を出すため HEAD~1 = 第1親 = base 枝の先端に解決され、結果として
+      # PR 全体の差分を走査できていた（base=4fcda31… = 開発本流 tip）。
+      # ただしこれは checkout の既定挙動に依存した偶然であり、push イベントや
+      # 複数コミットの push では取りこぼす。base を
+      # github.event.pull_request.base.sha 等へ明示するのは独立 Issue 候補。
+      # ここで走査範囲を広げる変更は行わない。
       - name: Secrets検出（APIキー・パスワードのコミット漏れ／non-blocking）
         continue-on-error: true
         uses: trufflesecurity/trufflehog@v3.95.3
