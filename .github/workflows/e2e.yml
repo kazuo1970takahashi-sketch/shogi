@@ -9,6 +9,11 @@ on:
     branches:
       - main
       - chore/shogi-tour-apphq-003h-2d-orphan-clean-base
+  # AUTO-MERGE-GATE-001b P2-7: GITHUB_TOKEN による merge は main の push workflow を
+  # 起動しないため、auto-merge-gate が merge 成功後にここを明示 dispatch して
+  # post-merge 検証を温存する（workflow_dispatch / repository_dispatch は
+  # 「GITHUB_TOKEN 由来のイベントでは起動しない」規則の明示的な例外）。
+  workflow_dispatch:
 
 jobs:
   unit-test:
