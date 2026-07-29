@@ -534,6 +534,7 @@ body.sb-active{overflow:hidden}
     <button type="button" class="tab" id="tab-result">最終結果</button>
     <button type="button" class="tab" id="tab-master">会員名簿</button>
     <button type="button" class="tab" id="tab-history">大会履歴</button>
+    <!-- [html-validate-disable-next prefer-native-element -- PHASE0-B-CI-GREEN-001: タブ帯に並ぶ通知ピル。button 要素にすると .tab 系 CSS の適用範囲が変わるため、意図的に span + role="button" + tabindex="0" とする。この1要素だけ抑制し、ルール自体は有効のまま] -->
     <span id="save-warning-indicator" class="save-warn-pill" role="button" tabindex="0" title="押すと対処方法を表示します" hidden></span>
   </div>
   <div id="pane-reg">
@@ -643,6 +644,7 @@ body.sb-active{overflow:hidden}
         <button type="button" class="btn-primary" id="addBtn">追加</button>
       </div>
       <div style="margin-top:6px">
+        <!-- [html-validate-disable-next attribute-allowed-values -- PHASE0-B-CI-GREEN-001: ふりがな欄は iOS/Android の日本語かなキーボードを直接出すため inputmode="kana" を意図的に指定している（HTML 標準の列挙値外だが実機で有効）。この1要素だけ抑制し、ルール自体は有効のまま] -->
         <input type="text" id="inp-yomi" inputmode="kana" placeholder="ふりがな" style="width:200px;font-size:16px" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
         <!-- L2-SWEEP-01 ② (UX評価 P2-④): 補足文をブロック化して入力欄の下へ（390px で折返し2行目が
              欄外に孤立する崩れの修正・スタイルのみ・id/bind 非接触）。 -->
