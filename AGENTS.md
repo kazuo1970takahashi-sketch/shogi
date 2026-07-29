@@ -32,6 +32,8 @@
 
 UI（ボタン・色・文言・通知・ヘルプ）を触る差分は [`docs/STYLE-GUIDE.md`](docs/STYLE-GUIDE.md)（UI 規約正本）への準拠も確認し、違反は **P2** で指摘する（非ブロッキング）。
 
+**リポジトリ運用（STAGE0-CONFLICT-FREE-001 以降）**: 通常スライスの差分に `test/run_tests.sh` の実行行追記や `docs/CHANGELOG.md` の直接編集が含まれていたら **P2** で指摘する。テストは `test/` に置くだけで自動発見され、履歴は `docs/changelog.d/<YYYYMMDD>_<スライスID>.md` に断片で書く（本体への連結はリリース列車の組成時に `bash scripts/changelog_merge.sh` を 1 回だけ）。これは並行スライスの追記点衝突を構造的に消すための規約。
+
 ## Severity 運用
 
 | severity | 対象 | 区分 |

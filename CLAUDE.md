@@ -34,3 +34,4 @@
 - コード設計マップ（関数構造・データ構造）= [`docs/REFERENCE.md`](docs/REFERENCE.md)／実装履歴 = [`docs/CHANGELOG.md`](docs/CHANGELOG.md)／プロセス正本 = [`docs/ai-ops/`](docs/ai-ops/)。
 - **追加/最小改変中心**・`shogi_v4.html` の当日運営は無改変・**Draft PR で停止**（Ready化/merge/squash/branch削除/production は人間の明示承認まで未実施）・**secret/実データ不使用**（テスト fixture は架空のみ）。
 - テスト: `bash test/run_tests.sh shogi_v4.html`（baseline は WARN=0 を維持）。テストの追加は `test/` へファイルを置くだけ（自動発見・`run_tests.sh` への登録不要）。見出しはテストファイル先頭のコメント行から採られる（`// @suite: 説明` で明示可）。
+- **CHANGELOG は断片で書く**（STAGE0-CONFLICT-FREE-001）: 各スライスは `docs/CHANGELOG.md` を直接編集せず、`docs/changelog.d/<YYYYMMDD>_<スライスID>.md` を 1 本置く。本体への連結は**リリース列車の組成時に** `bash scripts/changelog_merge.sh` を 1 回実行するだけ（日付順・冪等）。規約 = [`docs/changelog.d/README.md`](docs/changelog.d/README.md)。
