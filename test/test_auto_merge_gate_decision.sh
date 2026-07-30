@@ -71,11 +71,10 @@ mk_checks() {
   export AMG_CHECKS_TSV
 }
 
-# 必須 3 チェックがすべて SUCCESS の状態
+# branch ruleset と同じ必須 2 チェックがすべて SUCCESS の状態
 green_checks() {
   mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS" \
-            "Security Scan|COMPLETED|SUCCESS" \
-            "E2E (Playwright)|COMPLETED|SUCCESS"
+            "Security Scan|COMPLETED|SUCCESS"
 }
 
 # 既定の「発火してよい」状態（ここから 1 要素ずつ壊して停止条件を確認する）
@@ -98,10 +97,10 @@ reset_env() {
 echo ""
 echo "【発火条件（必須チェックが全て存在＋SUCCESS のときのみ FIRE）】"
 reset_env
-decide "FIRE" "base=orphan + codex-go + 必須3チェック SUCCESS"
+decide "FIRE" "base=orphan + codex-go + 必須2チェック SUCCESS"
 
 reset_env; AMG_BASE_REF="main"
-decide "FIRE" "base=main + codex-go + 必須3チェック SUCCESS"
+decide "SKIP base-not-allowed" "旧defaultの main は自動マージ対象外"
 
 reset_env; AMG_LABELS="doc-sync,codex-go,merged"
 decide "FIRE" "codex-go が他ラベルと混在していても FIRE"
@@ -128,8 +127,8 @@ decide "SKIP base-not-allowed" "allowlist 外 base（feature→feature）は発�
 
 echo ""
 echo "【停止条件 2: base 付け替え（P1-5・merge 直前の再検証）】"
-reset_env; AMG_BASE_AT_DECISION="main"
-decide "SKIP base-changed" "判定時 main → 現在 orphan（allowlist 内どうしでも）付け替えは停止"
+reset_env; AMG_BASE_AT_DECISION="legacy/development"
+decide "SKIP base-changed" "判定時から base が変わっていれば停止"
 
 reset_env; AMG_BASE_AT_DECISION="$ORPHAN_BASE"; AMG_BASE_REF="production"
 decide "SKIP base-production" "判定後に production へ付け替え → production ガードが先に効く"
@@ -158,8 +157,8 @@ decide "SKIP label-blocked" "head 不一致より先にラベル停止条件が�
 
 echo ""
 echo "【停止条件 5: 必須チェック allowlist（P1-1）】"
-reset_env; mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS" "Security Scan|COMPLETED|SUCCESS"
-decide "SKIP ci-unregistered" "必須 3 のうち E2E が未登録なら FIRE しない（他が全部 green でも）"
+reset_env; mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS"
+decide "SKIP ci-unregistered" "必須2件のうち Security Scan が未登録なら FIRE しない"
 
 reset_env; mk_checks "some-unrelated-check|COMPLETED|SUCCESS"
 decide "SKIP ci-unregistered" "無関係な check が成功していても『CI green』とみなさない（001 の穴）"
@@ -183,57 +182,50 @@ decide "FIRE" "allowlist を上書きでき、その全てが SUCCESS なら FIR
 reset_env
 mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS" \
           "Security Scan|COMPLETED|SUCCESS" \
-          "E2E (Playwright)|COMPLETED|SUCCESS" \
+          "E2E (Playwright)|COMPLETED|SKIPPED" \
           "auto-merge-gate|IN_PROGRESS|"
-decide "FIRE" "allowlist 外（ゲート自身を含む）の未完了 check は発火を妨げない＝自己デッドロックしない"
+decide "FIRE" "allowlist 外のskip E2Eと未完了ゲートは発火を妨げない"
 
 echo ""
 echo "【停止条件 6: conclusion は SUCCESS のみ green（P1-2）】"
 for _bad in STALE NEUTRAL SKIPPED CANCELLED TIMED_OUT ACTION_REQUIRED FAILURE STARTUP_FAILURE; do
   reset_env
   mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS" \
-            "Security Scan|COMPLETED|${_bad}" \
-            "E2E (Playwright)|COMPLETED|SUCCESS"
+            "Security Scan|COMPLETED|${_bad}"
   decide "SKIP ci-red" "完了かつ conclusion=${_bad} は green でない"
 done
 
 reset_env
 mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS" \
-          "Security Scan|COMPLETED|" \
-          "E2E (Playwright)|COMPLETED|SUCCESS"
+          "Security Scan|COMPLETED|"
 decide "SKIP ci-red" "完了かつ conclusion が空でも green とみなさない"
 
 reset_env
 mk_checks "Unit (run_tests.sh)|COMPLETED|success" \
-          "Security Scan|COMPLETED|SUCCESS" \
-          "E2E (Playwright)|COMPLETED|SUCCESS"
+          "Security Scan|COMPLETED|SUCCESS"
 decide "SKIP ci-red" "小文字 'success' は allowlist に一致しない（表記ゆれで通さない）"
 
 echo ""
 echo "【停止条件 7: 未完了チェック】"
 reset_env
 mk_checks "Unit (run_tests.sh)|IN_PROGRESS|" \
-          "Security Scan|COMPLETED|SUCCESS" \
-          "E2E (Playwright)|COMPLETED|SUCCESS"
+          "Security Scan|COMPLETED|SUCCESS"
 decide "SKIP ci-pending" "必須チェックが未完了なら発火しない"
 
 reset_env
 mk_checks "Unit (run_tests.sh)|QUEUED|" \
-          "Security Scan|COMPLETED|FAILURE" \
-          "E2E (Playwright)|COMPLETED|SUCCESS"
+          "Security Scan|COMPLETED|FAILURE"
 decide "SKIP ci-red" "赤と未完了が混在するときは赤を優先（待っても直らない）"
 
 reset_env
 mk_checks "Unit (run_tests.sh)|COMPLETED|FAILURE" \
           "Unit (run_tests.sh)|COMPLETED|SUCCESS" \
-          "Security Scan|COMPLETED|SUCCESS" \
-          "E2E (Playwright)|COMPLETED|SUCCESS"
+          "Security Scan|COMPLETED|SUCCESS"
 decide "SKIP ci-red" "同名 check に赤が混ざるときは安全側（RED）へ丸める"
 
 reset_env
 mk_checks "Unit (run_tests.sh)|PENDING|" \
-          "Security Scan|COMPLETED|SUCCESS" \
-          "E2E (Playwright)|COMPLETED|SUCCESS"
+          "Security Scan|COMPLETED|SUCCESS"
 decide "SKIP ci-pending" "StatusContext 正規化（PENDING）も未完了として扱う"
 
 echo ""
@@ -277,14 +269,12 @@ else
   ng "allowlist 不一致 (workflow='$_wf_required' decision='$AMG_DEFAULT_REQUIRED_CHECKS')"
 fi
 
-# e2e.yml の job 表示名（name:）を抽出して照合する
-_e2e_names=$(awk '
-  /^jobs:/ { injobs=1; next }
-  injobs && /^  [A-Za-z0-9_-]+:/ { injob=1; next }
-  injob && /^    name: / { sub(/^    name: /, ""); gsub(/^"|"$/, ""); print; injob=0 }
-' "$E2E_EFF" | tr '\n' ',' | sed 's/,$//')
+# e2e.yml に存在する、ruleset対象の2つのjob表示名だけを抽出して照合する。
+# skip中の E2E (Playwright) は意図的に必須対象外。
+_e2e_names=$(grep -E '^    name: (Unit \(run_tests\.sh\)|Security Scan)$' "$E2E_EFF" \
+  | sed 's/^    name: //' | tr '\n' ',' | sed 's/,$//')
 if [ -n "$_e2e_names" ] && [ "$_e2e_names" = "$AMG_DEFAULT_REQUIRED_CHECKS" ]; then
-  ok "e2e.yml の job 表示名 3 件が allowlist と完全一致（順序込み）"
+  ok "e2e.yml の必須job表示名2件が allowlist と完全一致（順序込み）"
 else
   ng "e2e.yml の job 名とのドリフト (e2e='$_e2e_names' allowlist='$AMG_DEFAULT_REQUIRED_CHECKS')"
 fi

@@ -534,6 +534,7 @@ body.sb-active{overflow:hidden}
     <button type="button" class="tab" id="tab-result">最終結果</button>
     <button type="button" class="tab" id="tab-master">会員名簿</button>
     <button type="button" class="tab" id="tab-history">大会履歴</button>
+    <!-- [html-validate-disable-next prefer-native-element -- PHASE0-B-CI-GREEN-001: タブ帯に並ぶ通知ピル。button 要素にすると .tab 系 CSS の適用範囲が変わるため、意図的に span + role="button" + tabindex="0" とする。この1要素だけ抑制し、ルール自体は有効のまま] -->
     <span id="save-warning-indicator" class="save-warn-pill" role="button" tabindex="0" title="押すと対処方法を表示します" hidden></span>
   </div>
   <div id="pane-reg">
@@ -643,6 +644,7 @@ body.sb-active{overflow:hidden}
         <button type="button" class="btn-primary" id="addBtn">追加</button>
       </div>
       <div style="margin-top:6px">
+        <!-- [html-validate-disable-next attribute-allowed-values -- PHASE0-B-CI-GREEN-001: ふりがな欄は iOS/Android の日本語かなキーボードを直接出すため inputmode="kana" を意図的に指定している（HTML 標準の列挙値外だが実機で有効）。この1要素だけ抑制し、ルール自体は有効のまま] -->
         <input type="text" id="inp-yomi" inputmode="kana" placeholder="ふりがな" style="width:200px;font-size:16px" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
         <!-- L2-SWEEP-01 ② (UX評価 P2-④): 補足文をブロック化して入力欄の下へ（390px で折返し2行目が
              欄外に孤立する崩れの修正・スタイルのみ・id/bind 非接触）。 -->
@@ -4039,7 +4041,11 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi,cls){
   renderPastParticipantsPanel('');
   // ChatGPT M4 反映: 全員空欄追加だった場合は専用通知（既存の成功メッセージを置き換え）
   if(allEmptyYomi&&added>0){
-    showMsg('ふりがな未登録のまま '+added+'名を追加しました。未登録者は「他」タブに表示されます。','warn');
+    // L2-SWEEP-02 ③ (#760/#764 レビュー NIT-1): ゲスト大会中は yomi 補完ダイアログを出さない（#760）ため
+    //   この warn だけが出て「全員名簿に未登録」と読める。「未登録」＝ふりがなの話であり名簿への登録は
+    //   そもそも行われない旨の一文を添える（表示のみ・分岐/追加ロジック無改変）。
+    var _guestBulkNote=((typeof isGuestTournament==='function')&&isGuestTournament(state))?'（🎪 ゲスト大会のため名簿への登録は行われません）':'';
+    showMsg('ふりがな未登録のまま '+added+'名を追加しました。未登録者は「他」タブに表示されます。'+_guestBulkNote,'warn');
   }else{
     showMsg(added+'名を追加しました'+(skipped>0?'（同名・同 member_id 重複 '+skipped+'名はスキップ）':''),'ok');
   }
@@ -7227,6 +7233,11 @@ function openPlayerEditSheet(playerId,cls){
   html+='<div style="font-size:12px;color:#666;margin-bottom:12px">'+escapeHtml(clsName)+' '+escapeHtml(entryNoOf(cls,p.id))+'・'+escapeHtml(fee===0?'無料':fee.toLocaleString()+'円')+'</div>';
   html+='<button type="button" id="pes-name" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">✏️ 名前を編集</button>';
   html+='<button type="button" id="pes-yomi" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">ふりがなを編集</button>';
+  // PLAYER-SWAP-002 (#763・案B): 差し替えを独立ボタン化。editPlayer の同名 early-return により
+  //   「表示名が差し替え先と同じ参加者」は名前編集経由では3択に到達できないため、
+  //   名前入力プロンプトを経由せず openPlayerSwapPicker を直接開く（検索初期値は空＝回避入力を不要に）。
+  //   名前編集→3択ダイアログ経由の既存導線は温存（bindMasterSyncModalEvents 側は無改変）。
+  html+='<button type="button" id="pes-swap" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">🔁 別の人に差し替える</button>';
   // クラス変更（member_id 連携者のみ・全クラス対応=#768・handlePastParticipantClassAdd 経由＝confirm/master 更新は既存フロー）
   var selectable=(typeof ppDenseSelectableClasses==='function')?ppDenseSelectableClasses():[];
   var curSelectable=false;
@@ -7255,6 +7266,17 @@ function openPlayerEditSheet(playerId,cls){
   if(nmBtn)nmBtn.addEventListener('click',function(){ closeSheet(); editPlayer(playerId,cls); });
   var yoBtn=document.getElementById('pes-yomi');
   if(yoBtn)yoBtn.addEventListener('click',function(){ closeSheet(); editPlayerYomi(playerId,cls); });
+  // PLAYER-SWAP-002 (#763): 名前入力を経由しない直接導線。ガード（参加済み拒否・同名拒否・
+  //   danger 確認・送信済み警告）はピッカー以降の既存経路がそのまま効く。
+  //   L2-SWEEP-02 ② (#788 レビュー Nice-1): シート開時に捕捉した p をそのまま使わず、pes-name と同型に
+  //   クリック時へ playerId+cls で再解決（挙動同値・stale 参照への堅牢性のみ。不在なら何もしない）。
+  var swBtn=document.getElementById('pes-swap');
+  if(swBtn)swBtn.addEventListener('click',function(){
+    closeSheet();
+    var cur=null,curPs=(state&&state.players&&state.players[cls])||[];
+    for(var pi2=0;pi2<curPs.length;pi2++){ if(curPs[pi2]&&curPs[pi2].id===playerId){cur=curPs[pi2];break;} }
+    if(cur)openPlayerSwapPicker(cur,'');
+  });
   var chBtns=modal.querySelectorAll('.pes-change');
   for(var bi=0;bi<chBtns.length;bi++){
     chBtns[bi].addEventListener('click',(function(c,mid){return function(){ closeSheet(); handlePastParticipantClassAdd(mid,c); };})(chBtns[bi].getAttribute('data-cls'),p.member_id));
@@ -8529,6 +8551,14 @@ function playerSwapSentWarning(){
   return '';
 }
 
+// PLAYER-SWAP-002 (#763・同乗②＝PR #759 レビュー NIT-3): 棄権中（withdrawn）の参加者を差し替えるとき、
+//   差し替えは席の人だけを入れ替え withdrawn には触れない（＝棄権状態は引き継がれる）ことを confirm に明記する。
+//   復帰は従来どおり「⋯ 編集」の復帰ボタンから。
+function playerSwapWithdrawnNote(p){
+  if(p&&p.withdrawn)return '\n\n⚠ この参加者はいま棄権中です。差し替え後も棄権中のまま引き継がれます（対局に戻すときは「⋯ 編集」から復帰してください）。';
+  return '';
+}
+
 function closePlayerSwapPicker(){
   var m=document.getElementById('player-swap-modal');
   if(m&&m.remove)m.remove();
@@ -8581,7 +8611,9 @@ function renderPlayerSwapCandidates(p,query){
   if(!q.replace(/^\s+|\s+$/g,'')){
     html='<div style="font-size:12px;color:#888;padding:8px 0">氏名またはふりがなで検索してください。</div>';
   } else if(list.length===0){
-    html='<div style="font-size:12px;color:#888;padding:8px 0">該当する会員がいません（参加済みの会員は表示されません）。下の「名簿にない新規の方として差し替え」を使ってください。</div>';
+    // PLAYER-SWAP-002 (#763・同乗①): 名簿に居るはずの人を探している文脈で「名簿にない新規の方として…」を
+    //   先に出すと誤誘導（未連携化→既存会員の二重登録）になるため、「検索語を短く」を先に案内する。
+    html='<div style="font-size:12px;color:#888;padding:8px 0">該当する会員がいません（参加済みの会員は表示されません）。まず検索語を短くしてみてください（姓だけ・ふりがなの一部など）。名簿にいない新規の方のときだけ、下の「名簿にない新規の方として差し替え」を使ってください。</div>';
   } else {
     for(var i=0;i<list.length;i++){
       var m=list[i];
@@ -8611,7 +8643,7 @@ function handlePlayerSwapPick(p,memberId){
   var oldName=p.name||'';
   var newName=String(member.name||'');
   var games=countPlayerDecidedGames(p.id,p.cls,state);
-  appConfirm('「'+oldName+'」を名簿の「'+newName+'」さんに差し替えます。\n\nこの参加者のこれまでの対局結果（'+games+'局）もすべて「'+newName+'」さんの成績になります。\n（「'+oldName+'」さんの名簿（氏名・ふりがな）は変更されません）'+playerSwapSentWarning(),function(ok){
+  appConfirm('「'+oldName+'」を名簿の「'+newName+'」さんに差し替えます。\n\nこの参加者のこれまでの対局結果（'+games+'局）もすべて「'+newName+'」さんの成績になります。\n（「'+oldName+'」さんの名簿（氏名・ふりがな）は変更されません）'+playerSwapWithdrawnNote(p)+playerSwapSentWarning(),function(ok){
     if(!ok)return;
     var freshMaster=null;
     try{freshMaster=loadBranchMaster();}catch(e){freshMaster=null;}
@@ -8637,7 +8669,7 @@ function handlePlayerSwapUnlinked(p,newName){
   var _swapUnlinkedTail=(typeof isGuestTournament==='function'&&isGuestTournament(typeof state!=='undefined'?state:null))
     ?'🎪 ゲスト大会のため、この方が名簿に登録されることはありません。'
     :'☁送信時に「名簿に反映して送信」を選ぶと名簿に載ります（同じ名前の会員が名簿に1名だけいる場合は、新規ではなくその方に紐付きます）。';
-  appConfirm('「'+oldName+'」を名簿にない新規の方「'+nm+'」として差し替えます（名簿とは未連携になります）。\n\nこれまでの対局結果（'+games+'局）もすべて「'+nm+'」さんの成績になります。ふりがなは空になります（あとから編集できます）。\n'+_swapUnlinkedTail+playerSwapSentWarning(),function(ok){
+  appConfirm('「'+oldName+'」を名簿にない新規の方「'+nm+'」として差し替えます（名簿とは未連携になります）。\n\nこれまでの対局結果（'+games+'局）もすべて「'+nm+'」さんの成績になります。ふりがなは空になります（あとから編集できます）。\n'+_swapUnlinkedTail+playerSwapWithdrawnNote(p)+playerSwapSentWarning(),function(ok){
     if(!ok)return;
     var r=applyParticipantSwapToUnlinked(p,nm,state);
     if(!r||!r.success){showMsg(playerSwapErrorMessage(r&&r.error),'warn');return;}
@@ -10710,7 +10742,9 @@ var HELP_TEXTS={
       '会費区分：一般／中学生以下／女性 から選びます。中学生以下と女性は同額（支部員＝無料・支部員以外＝500円）、一般は支部員500円・支部員以外1,000円です。',
       'クラスを管理する：A・B以外のクラス（Cなど）を追加・改名できます。A・Bは削除できません（参加者がいる／開始済みのクラスも削除できません）。',
       '名簿にない新規の方：「＋ 名簿にない新規の方（手入力）」を開いて氏名を入れて登録します（漢字・ふりがな・50音で名簿を検索して見つからないときも同様です）。',
-      '登録した後でも、氏名・ふりがな・会費区分は編集で直せます。間違えても直せます。席を譲るなど別の人に変わったときは、名前の編集から「別の人に差し替える（名簿から選ぶ）」で、これまでの結果ごと正しい人に付け替えられます。',
+      // PLAYER-SWAP-002 (#763): 独立ボタン「🔁 別の人に差し替える」を正規導線として案内（名前入力不要）。
+      //   名前編集→3択経由も温存のため併記。
+      '登録した後でも、氏名・ふりがな・会費区分は編集で直せます。間違えても直せます。席を譲るなど別の人に変わったときは、参加者の「⋯ 編集」の「🔁 別の人に差し替える」で名簿から選ぶと、これまでの結果ごと正しい人に付け替えられます（名前の編集から「別の人に差し替える（名簿から選ぶ）」でも同じです）。',
       // GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類（ゲスト大会）の案内を追加（7行目・test_help_003 R4 追随）。
       'ゲスト大会：名簿にない参加者が大半の別大会は、「⚙ 大会の設定」の「大会の種類」で「🎪 ゲスト大会」を選んでください。参加者・結果が名簿（会員マスタ）に記録されなくなります（名簿からの受付・検索はそのまま使えます・開始後は変更不可）。',
       // BULK-ENTRY-001 (#761): 事前リスト貼り付けのまとめて登録の案内を追加（8行目・test_help_003 R4 追随）。
@@ -10782,7 +10816,7 @@ var HELP_TEXTS={
       '「☁ クラウドへ送信」：確定した結果をクラウドに保存します。クラウド管理ページ（app/）でのログインとネット接続が必要です。',
       '同じ大会を何度送信しても二重にはなりません。',
       '送信に失敗しても当日のデータは端末に残っています。運営はそのまま続けて、あとで再送信できます。',
-      '「大会履歴」タブの「☁ クラウドの過去大会」→「読み込む」で、共有された過去大会の結果を見られます。',
+      '「大会履歴」タブの「☁ クラウドの過去大会」→「読み込む」で、共有された過去大会の結果を見られます。送信済みの大会は、回戦ごとの ○● が分かる星取表つきで表示されます（星取表がない古い大会は順位表のみ。もう一度「☁ クラウドへ送信」すると星取表が付きます）。',
       'クラウドはバックアップの代わりではありません。端末の控えは ☰メニューの「バックアップ」で保存してください。',
       '【A級・B級を2台で分担する場合】受付タブの「▷ 2台で分担して入力するとき」を開き、１台目で「運営共通キーを発行」→表示された4桁を２台目に伝え、２台目で入力して「このキーに合わせる」を押します。両方の送信が同じ１つの大会にまとまります（各端末は自分の級だけを送るのがコツ）。１台で運営するなら操作は不要です。',
       '【あとから2台目を足すとき】１台目がキーを発行せずに送信済みの場合は、２台目で「今日の大会に合流」を押してください（キー入力は不要・同じ日のうちに）。',
@@ -11376,10 +11410,30 @@ function syncTournamentToCloud(client, master, opts){
           entryRows.push(row);
         }
         counts.entries=entryRows.length;
-        if(!entryRows.length)return {ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid};
+        // CLOUD-HISTORY-SCOREBOARD-001 (#765): entries 成立後に星取表スナップショットを同梱 upsert（冪等・fail-soft）。
+        //   内容は buildPublicLiveSnapshot(state,{display_mode:'full'})＝ライブ配信と同じホワイトリスト部分集合
+        //   （回戦別 results 入り）。tournament_snapshots(tournament_id PK) へ onConflict 冪等 upsert。
+        //   スナップショットが作れない/送れない場合も送信結果は ok のまま snapshot_ok:false を返すだけ
+        //   ＝星取表が付かないだけで entries 送信・現行トーストは成立する（受入基準4）。
+        //   snapshotSource はテスト注入用（既定＝global state。buildCloudSyncPayload と同じ typeof ガード）。
+        function _withSnapshot(result){
+          var snap=null;
+          try{
+            var src=(opts.snapshotSource!==undefined)?opts.snapshotSource:((typeof state!=='undefined')?state:null);
+            if(src&&typeof buildPublicLiveSnapshot==='function')snap=buildPublicLiveSnapshot(src,{display_mode:'full'});
+          }catch(eS){ snap=null; }
+          if(!snap){ result.snapshot_ok=false; return Promise.resolve(result); }
+          var row={tournament_id:result.tournament_id,club_id:clubId,snapshot:snap,updated_at:new Date().toISOString()};
+          return client.from('tournament_snapshots').upsert(row,{onConflict:'tournament_id'}).then(function(r5){
+            result.snapshot_ok=!(r5&&r5.error);
+            if(r5&&r5.error&&typeof console!=='undefined'&&console.warn)console.warn('[cloud] 星取表スナップショット送信に失敗（結果送信は成立・再送信で付きます）:',(r5.error&&r5.error.message)||'');
+            return result;
+          },function(eU){ result.snapshot_ok=false; if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 星取表スナップショット送信例外（結果送信は成立・再送信で付きます）:',(eU&&eU.message)||eU); return result; });
+        }
+        if(!entryRows.length)return _withSnapshot({ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid});
         return client.from('entries').upsert(entryRows,{onConflict:'tournament_id,player_id'}).then(function(r4){
           if(r4&&r4.error)return fail('entries',r4);
-          return {ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid};
+          return _withSnapshot({ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid});
         });
       });
     });
@@ -16247,6 +16301,18 @@ function fetchCloudEntriesForTournament(client, tid, clubId){
     });
   });
 }
+// CLOUD-HISTORY-SCOREBOARD-001 (#765): 送信時同梱スナップショット（tournament_snapshots）の下り読み取り。
+//   snapshot が無い旧大会・取得エラーは snapshot:null で返す（呼び出し側が現行順位表のみ表示へフォールバック
+//   ＝後方互換・表示劣化なし・fail-soft）。RLS は同クラブの幹事以上のみ read（氏名入りのため・Must-1）＝
+//   閲覧ロール(viewer)では 0 行が返り、エラーにならず星取表なし＝現行順位表のみ表示に落ちる。
+function fetchCloudSnapshotForTournament(client, tid){
+  if(!client||!client.from)return Promise.resolve({ok:false,snapshot:null});
+  return client.from('tournament_snapshots').select('snapshot').eq('tournament_id',tid).then(function(res){
+    if(res&&res.error){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 星取表スナップショット取得エラー（順位表のみ表示）:',cloudErrDetail(res.error)); return {ok:false,snapshot:null}; }
+    var rows=(res&&res.data)||[]; var row=rows[0]||null;
+    return {ok:true,snapshot:(row&&row.snapshot&&typeof row.snapshot==='object')?row.snapshot:null};
+  },function(){ return {ok:false,snapshot:null}; });
+}
 // CLOUD-TOURNEY-NAMING-001 (#608): クラウド過去大会一覧/詳細の表記統一（表示側正規化・純関数3本）。
 //   元データ tournaments.name は書き換えず、表示時のみ「YYYY年M月度＋正規化した大会名」に整える。
 //   すべて副作用なし・fail-soft（想定外入力でも例外を投げない）。設計 docs/specs/20260707_cloud_tourney_naming_001_design.md。
@@ -16397,23 +16463,52 @@ function buildCloudMergedReportHtml(entries, isSP){
   html+=buildCloudResultBlocksHtml(entries, isSP);
   return html;
 }
+// CLOUD-HISTORY-SCOREBOARD-001 (#765): snapshot（buildPublicLiveSnapshot full 形）→ ローカル履歴詳細と同経路の
+//   星取表 HTML（閲覧専用・純関数）。normalizeState → buildScoreboardClassTableHtml(cid, vs)（sourceState 渡し
+//   ＝withSourceState が global state を退避→finally で必ず復元）。参加者のいるクラスのみ描画し、
+//   1件も組めなければ ''（呼び出し側は現行順位表のみ表示＝snapshot 無し旧大会と同じ後方互換）。
+//   schema_version 差はローカル履歴と同じ normalize-on-read（normalizeState）で吸収する。
+function buildCloudSnapshotScoreboardHtml(snap){
+  if(!snap||typeof snap!=='object'||!snap.state||typeof snap.state!=='object')return '';
+  var vs=null;
+  try{ vs=normalizeState(snap.state); }catch(eN){ vs=null; }
+  if(!vs||!Array.isArray(vs.classes))return '';
+  var body='';
+  try{
+    for(var i=0;i<vs.classes.length;i++){
+      var cid=vs.classes[i]&&vs.classes[i].id; if(!cid)continue;
+      var ps=(vs.players&&Array.isArray(vs.players[cid]))?vs.players[cid]:[];
+      if(!ps.length)continue;
+      body+=buildScoreboardClassTableHtml(cid,vs);
+    }
+  }catch(eB){ body=''; }
+  if(!body)return '';
+  return '<div style="background:#eef2f7;padding:8px;border-radius:8px;margin-bottom:10px">'+body+'</div>';
+}
 // タップした大会の結果を「履歴一覧を差し替えて先頭に大きく表示」する（renderHistoryDetail と同じ全画面パターン）。
+//   CLOUD-HISTORY-SCOREBOARD-001 (#765): snapshot があれば星取表（上段）＋現行の順位表（下段・#607 会員属性行
+//   を含む・無改変）の2段構成。無い旧大会は現行の順位表のみ＝従来と同一表示（後方互換）。
 function renderCloudTournamentDetail(client,clubId,tid,label,date){
   var host=document.getElementById('history-content'); if(!host)return;
   host.innerHTML='<div style="padding:24px;text-align:center;color:#888">読み込み中…</div>';
   if(typeof window!=='undefined'&&window.scrollTo)window.scrollTo(0,0);
   fetchCloudEntriesForTournament(client,tid,clubId).then(function(r){
+    // CLOUD-HISTORY-SCOREBOARD-001 (#765): snapshot も取得（fail-soft・エラー/無しは星取表なし＝従来表示）。
+    return fetchCloudSnapshotForTournament(client,tid).then(function(sr){
     var h=document.getElementById('history-content'); if(!h)return;
     var html='';
     html+='<div style="margin-bottom:10px"><button type="button" class="btn-sm" id="cloud-history-back-btn" style="background:#fff;color:#444;font-size:13px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← クラウドの大会一覧へ戻る</button></div>';
     html+='<div style="background:#e8f0f8;border:1px solid #9DB7D5;color:#1F3864;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">☁ クラウドの過去大会（閲覧専用・みんなで共有）</div>';
     var _head=(typeof buildCloudTournamentDisplayTitle==='function')?buildCloudTournamentDisplayTitle(label,date):(label||'');
     html+='<div style="margin-bottom:10px"><div style="font-size:16px;font-weight:700;color:#1F3864">'+escapeHtml(_head||'(大会名未設定)')+'</div>'+(date?'<div style="font-size:12px;color:#666;margin-top:2px">開催日 '+escapeHtml(date)+'</div>':'')+'</div>';
-    html+= r.ok ? buildCloudResultBlocksHtml(r.entries) : '<div class="alert alert-err" style="font-size:13px">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
+    // #765: 2段構成＝星取表（snapshot ある送信済み大会のみ・上段）＋現行の順位表（下段・無改変＝#607 属性行を保持）。
+    var _sb=''; try{ _sb=(r.ok&&sr&&sr.snapshot)?buildCloudSnapshotScoreboardHtml(sr.snapshot):''; }catch(eSb){ _sb=''; }
+    html+= r.ok ? (_sb+buildCloudResultBlocksHtml(r.entries)) : '<div class="alert alert-err" style="font-size:13px">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
     h.innerHTML=html;
     if(typeof window!=='undefined'&&window.scrollTo)window.scrollTo(0,0);
     var back=document.getElementById('cloud-history-back-btn');
     if(back)back.addEventListener('click',function(){ renderHistoryList(); });
+    }); // end fetchCloudSnapshotForTournament.then（#765）
   });
 }
 function bindCloudHistoryRows(client, clubId){

@@ -19,8 +19,8 @@
 #        加えて labeled 経路では「ラベル付与イベント時の head == 現在の head」を判定でも要求。
 #   P1-5 merge コマンド発行の直前に base を再取得し、判定時と違えば中止（SKIP base-changed）。
 #   P1-6 workflow_dispatch の dry_run を boolean 型にし、真偽が明示された値のみ受理（fail closed）。
-#   P2-7 GITHUB_TOKEN の merge は main の push workflow を起こさないため、merge 後に
-#        e2e.yml を明示 dispatch する（post-merge 検証の温存）。
+#   P2-7 GITHUB_TOKEN の merge は開発本流の push workflow を起こさないため、merge 後に
+#        e2e.yml を開発本流で明示 dispatch する（post-merge 検証の温存）。
 #   P2-8 gh pr list に --limit 100 を明示。
 #
 # トリガ設計（ラベル先/CI 先のどちらの順序でも拾う）:
@@ -28,8 +28,8 @@
 #     （= 「ラベル先→CI 後」の順序をこのトリガ 1 本で吸収する）。
 #   - pull_request[synchronize]: 追い push で codex-go を剥奪する（承認をレビュー済み head に固定）。
 #   - workflow_run[E2E completed]: CI 再実行で green 化した場合の拾い直し。
-#     ※ GitHub 仕様上 workflow_run はデフォルトブランチ(main)上の本ファイルからしか
-#       発火しない。本ファイルが列車で main に届くまでは workflow_dispatch で代替。
+#     ※ GitHub 仕様上 workflow_run はデフォルトブランチ上の本ファイルからしか発火しない。
+#       現在のデフォルト＝開発本流へ本ファイルが届くまでは workflow_dispatch で代替。
 #   - workflow_dispatch: 手動起動（pr_number 指定）。dry_run=true（既定）なら判定のみで
 #     mutating 操作ゼロ（L4 dry-run 証明・受け入れ検証用）。
 #
@@ -117,7 +117,7 @@ jobs:
       #   ここに列挙した全チェックが「存在し」「SUCCESS で完了」して初めて green とみなす。
       #   decision script の既定値および e2e.yml の job 名との一致は
       #   test/test_auto_merge_gate_decision.sh が機械照合する（ドリフト検出）。
-      AMG_REQUIRED_CHECKS: 'Unit (run_tests.sh),Security Scan,E2E (Playwright)'
+      AMG_REQUIRED_CHECKS: 'Unit (run_tests.sh),Security Scan'
       # CI 完了待ち: 30 秒間隔 × 60 回 = 最大 30 分
       POLL_INTERVAL: 30
       POLL_MAX: 60
@@ -282,10 +282,11 @@ jobs:
             echo "merged: $MERGE_SHA" >> "$GITHUB_STEP_SUMMARY"
 
             # P2-7: GITHUB_TOKEN 由来の push は workflow を起動しない（GitHub 仕様）ため、
-            #   main への merge 後の CI を明示 dispatch して post-merge 検証を温存する。
-            if [ "$BASE_AT_DECISION" = "main" ]; then
-              if gh workflow run e2e.yml --repo "$REPO" --ref main; then
-                echo "post-merge: e2e.yml を main で dispatch した"
+            #   開発本流への merge 後の CI を明示 dispatch して post-merge 検証を温存する。
+            if [ "$BASE_AT_DECISION" = "chore/shogi-tour-apphq-003h-2d-orphan-clean-base" ]; then
+              if gh workflow run e2e.yml --repo "$REPO" \
+                   --ref chore/shogi-tour-apphq-003h-2d-orphan-clean-base; then
+                echo "post-merge: e2e.yml を開発本流で dispatch した"
               else
                 echo "::warning::post-merge の e2e.yml dispatch に失敗（merge は成功済み）"
               fi

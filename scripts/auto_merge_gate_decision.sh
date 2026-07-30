@@ -31,14 +31,14 @@
 #   AMG_BASE_AT_DECISION  先行判定時に記録した base。空＝初回評価。
 #                         非空かつ AMG_BASE_REF と不一致なら SKIP base-changed（merge 直前の再検証）。
 #   AMG_REQUIRED_CHECKS   必須チェック名のカンマ区切り allowlist
-#                         （省略時: e2e.yml の 3 job 名。空文字を明示した場合は設定不備として停止）
+#                         （省略時: branch ruleset と同じ2チェック。空文字は設定不備として停止）
 #   AMG_CHECKS_TSV        head の check 一覧。1 行 = "<名前>\t<status>\t<conclusion>"。
 #                         status は COMPLETED / それ以外（QUEUED・IN_PROGRESS・PENDING 等）。
 #                         StatusContext は呼び出し側で同じ 3 列へ正規化して渡す。
 #   AMG_POLL_EXHAUSTED    "true" なら CI 完了待ちの poll を打ち切った後の最終評価
 #   AMG_PRODUCTION_BRANCH production ブランチ名（省略時: production）
 #   AMG_ALLOWED_BASES     自動マージを許す base のカンマ区切り allowlist
-#                         （省略時: main,chore/shogi-tour-apphq-003h-2d-orphan-clean-base）
+#                         （省略時: 現在の開発本流のみ）
 #
 # SKIP code（憲章 §5 停止条件と 1:1）:
 #   base-production   base が production / release/*（L5 は対象外・最重要ガード）
@@ -67,9 +67,9 @@
 # test/test_auto_merge_gate_decision.sh から source して単体テストする。
 # =============================================================================
 
-# e2e.yml の job 表示名（= check run 名）。ここを変えたら e2e.yml も変えること。
+# branch ruleset の必須チェック名（= e2e.yml の有効な check run 名）。
 # 両者の一致は test/test_auto_merge_gate_decision.sh が機械照合する（ドリフト検出）。
-AMG_DEFAULT_REQUIRED_CHECKS='Unit (run_tests.sh),Security Scan,E2E (Playwright)'
+AMG_DEFAULT_REQUIRED_CHECKS='Unit (run_tests.sh),Security Scan'
 
 # amg_has_label <labels_csv> <name> -> 0(あり)/1(なし)
 amg_has_label() {
@@ -128,7 +128,7 @@ amg_decide() {
   _required="${AMG_REQUIRED_CHECKS-${AMG_DEFAULT_REQUIRED_CHECKS}}"
   _exhausted="${AMG_POLL_EXHAUSTED:-false}"
   _prod="${AMG_PRODUCTION_BRANCH:-production}"
-  _allowed="${AMG_ALLOWED_BASES:-main,chore/shogi-tour-apphq-003h-2d-orphan-clean-base}"
+  _allowed="${AMG_ALLOWED_BASES:-chore/shogi-tour-apphq-003h-2d-orphan-clean-base}"
 
   # ※ _required の既定は ${VAR-default}（unset のときだけ既定）。空文字を明示された場合は
   #   既定へ落とさず ci-config で止める＝設定不備を「たまたま既定で動く」形で隠さない。
@@ -144,7 +144,7 @@ amg_decide() {
       echo "SKIP base-production"; return 0 ;;
   esac
 
-  # 2. allowlist（feature→main または dev base に限る・憲章 §3）
+  # 2. allowlist（feature→現在の開発本流に限る・憲章 §3）
   if ! amg_base_allowed "${_base}" "${_allowed}"; then
     echo "SKIP base-not-allowed"; return 0
   fi

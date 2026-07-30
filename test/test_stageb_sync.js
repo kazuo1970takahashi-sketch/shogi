@@ -45,7 +45,8 @@ const master={ members:[{id:'m_a1',name:'甲',yomi:'こう'},{id:'m_a2',name:'�
   ok(r.tournament_id==='t-uuid','H2 tournament_id 解決');
   ok(r.counts&&r.counts.entries===2,'H3 entries 2件');
   var tbls=cli._calls.map(function(c){return c.table;});
-  ok(tbls.join(',')==='members,players,tournaments,entries','H4 upsert 順 members→players→tournaments→entries (got '+tbls.join(',')+')');
+  // CLOUD-HISTORY-SCOREBOARD-001 (#765): entries 成立後に星取表スナップショットを同梱 upsert（末尾工程・fail-soft）。
+  ok(tbls.join(',')==='members,players,tournaments,entries,tournament_snapshots','H4 upsert 順 members→players→tournaments→entries→tournament_snapshots (got '+tbls.join(',')+')');
   var mc=cli._calls.filter(function(c){return c.table==='members';})[0];
   ok(mc.onConflict==='club_id,member_id','H5 members onConflict=club_id,member_id');
   var pc=cli._calls.filter(function(c){return c.table==='players';})[0];

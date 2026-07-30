@@ -2774,6 +2774,24 @@ else
   warn "test_player_swap_001.js が見つからない"
 fi
 
+# ============================================
+# PLAYER-SWAP-002 (#763) 差し替え導線の到達性改善（名前入力を経由しない独立ボタン・案B）
+#   編集シートの「🔁 別の人に差し替える」（openPlayerSwapPicker(p,'') 直呼び）・既存3択導線温存・
+#   ガード共通経路の無改変ピン・候補ゼロ時メッセージ是正・withdrawn 引き継ぎ confirm 明記（NIT-3）。
+# ============================================
+echo ""
+echo "【PLAYER-SWAP-002 (#763) 差し替え導線の到達性改善（独立ボタン・同乗2件）】"
+if [ -f "$SCRIPT_DIR/test_player_swap_002.js" ]; then
+  if node "$SCRIPT_DIR/test_player_swap_002.js" "$TARGET" > /tmp/player_swap_002_out.log 2>&1; then
+    ok "PLAYER-SWAP-002 テスト 全PASS ($(tail -1 /tmp/player_swap_002_out.log))"
+  else
+    ng "PLAYER-SWAP-002 テスト 失敗"
+    cat /tmp/player_swap_002_out.log
+  fi
+else
+  warn "test_player_swap_002.js が見つからない"
+fi
+
 echo ""
 echo "【SCALE-MODAL-001 (#767) 汎用確認モーダルのスクロール＋FRP append 確認文の要約（大人数対策）】"
 if [ -f "$SCRIPT_DIR/test_scale_modal_001.js" ]; then
@@ -2844,6 +2862,31 @@ if [ -f "$SCRIPT_DIR/test_bulk_entry_001.js" ]; then
   fi
 else
   warn "test_bulk_entry_001.js が見つからない"
+fi
+
+echo ""
+echo "【CLOUD-HISTORY-SCOREBOARD-001 (#765) クラウド過去大会の星取表（送信時スナップショット同梱・案A）】"
+if [ -f "$SCRIPT_DIR/test_cloud_history_scoreboard_765.js" ]; then
+  if node "$SCRIPT_DIR/test_cloud_history_scoreboard_765.js" "$TARGET" > /tmp/cloud_history_scoreboard_765_out.log 2>&1; then
+    ok "CLOUD-HISTORY-SCOREBOARD-001 テスト 全PASS ($(tail -1 /tmp/cloud_history_scoreboard_765_out.log))"
+  else
+    ng "CLOUD-HISTORY-SCOREBOARD-001 テスト 失敗（上り fail-soft／下りフォールバック／ゲストガードのいずれか）"; cat /tmp/cloud_history_scoreboard_765_out.log
+  fi
+else
+  warn "test_cloud_history_scoreboard_765.js が見つからない"
+fi
+
+echo ""
+echo "【CLOUD-HISTORY-SCOREBOARD-001 (#765) — tournament_snapshots RLS 実 PostgreSQL 検証（psql 無ければ SKIP）】"
+if [ -f "$SCRIPT_DIR/cloud_history_snapshot_pgtest.sh" ]; then
+  if bash "$SCRIPT_DIR/cloud_history_snapshot_pgtest.sh" > /tmp/cloud_history_snapshot_pgtest_out.log 2>&1; then
+    ok "CLOUD-HISTORY snapshot pgtest OK/SKIP ($(tail -1 /tmp/cloud_history_snapshot_pgtest_out.log))"
+  else
+    ng "CLOUD-HISTORY snapshot pgtest 失敗"
+    cat /tmp/cloud_history_snapshot_pgtest_out.log
+  fi
+else
+  warn "cloud_history_snapshot_pgtest.sh が見つからない"
 fi
 # ============================================
 # 最終結果

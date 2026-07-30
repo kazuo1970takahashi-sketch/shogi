@@ -132,7 +132,7 @@ SLUG2=$(as_user "$U1" "select public.start_live_session()")
 VR=$(as_user "$U1" "select public.publish_live_snapshot('$SLUG2','{\"schema_version\":1,\"state\":{\"rounds\":1}}'::jsonb)")
 assert_eq "$VR" "1" "ローテーション前の publish（旧 slug に payload を積む・P2-1 前提）"
 SLUG3=$(as_user "$U1" "select public.start_live_session()")
-[ -n "$SLUG2" ] && [ -n "$SLUG3" ] && [ "$SLUG2" != "$SLUG3" ] && ok "再発行で新 slug（$SLUG3）" || ng "再発行の slug が不正"
+[ -n "$SLUG2" ] && [ -n "$SLUG3" ] && [ "$SLUG2" != "$SLUG3" ] && ok "再発行で新 slug（${SLUG3}）" || ng "再発行の slug が不正"
 OLD2=$(as_anon "select coalesce((public.get_live_snapshot('$SLUG2'))::text,'null')")
 assert_eq "$OLD2" "null" "再発行で旧 slug は失効（ローテーション）"
 ROTPAY=$(psql -X -qtA -d "$DB" -c "select payload is null from public.public_live_snapshots where slug='$SLUG2'")
