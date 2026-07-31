@@ -70,7 +70,7 @@ check '[ "$rc" = 3 ]' "active/staleを推測せずlock存在はrc3"
 rmdir "$SBX/docs/.changelog_merge.lock"
 setup; frag 20260730_lock_signal.md LOCK-SIGNAL
 RUN_ENV='CHANGELOG_MERGE_TEST_SIGNAL_AT=lock_acquired'; run; rc=$?; RUN_ENV=
-check '[ "$rc" = 0 ] && [ ! -d "$SBX/docs/.changelog_merge.lock" ]' "lock取得クリティカル区間のsignalでstale lockを残さない"
+check '[ "$rc" != 0 ] && [ ! -d "$SBX/docs/.changelog_merge.lock" ] && [ -f "$SBX/docs/changelog.d/20260730_lock_signal.md" ]' "lock取得中signalを保留処理し、mergeせずlockを解放"
 
 echo "【same-filesystem保証】"
 setup; frag 20260730_crossfs.md CROSSFS
@@ -86,6 +86,9 @@ setup; frag 20260730_pre.md PRE
 RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine'; run; rc=$?; RUN_ENV=
 check '[ "$rc" = 97 ] && [ "$(state)" = prepared ]' "quarantine後crashを保持"
 check '[ -f "$(tx_latest)/quarantine/1.frag" ]' "crash後も元断片保持"
+oldtx="$(tx_latest)"; oldstate="$(state)"
+run --dry-run; rc=$?
+check '[ "$rc" = 3 ] && [ "$(cat "$oldtx/state")" = "$oldstate" ] && [ ! -e "$SBX/docs/changelog.d/20260730_pre.md" ] && [ -f "$oldtx/quarantine/1.frag" ]' "dry-runは残存transactionを変更せず拒否"
 run; rc=$?
 check '[ "$rc" = 0 ] && [ "$(grep -c "^## PRE$" "$SBX/docs/CHANGELOG.md")" = 1 ]' "次回にatomic復元後1回だけmerge"
 
@@ -100,6 +103,12 @@ check 'grep -q NEW-LIVE "$SBX/docs/changelog.d/20260730_race.md"' "新liveを上
 check 'grep -q ORIGINAL "$oldtx/quarantine/1.frag"' "quarantine原本も保持"
 
 echo "【commit境界crash / signal】"
+setup; frag 20260730_before.md BEFORE
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=before_commit'; run; rc=$?; RUN_ENV=
+check '[ "$rc" = 98 ] && [ "$(state)" = publishing ]' "旧版退避前crashはpublishingを保持"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ "$(grep -c "^## BEFORE$" "$SBX/docs/CHANGELOG.md")" = 1 ]' "旧版退避前crashを復元後1回だけmerge"
+
 setup; frag 20260730_commit.md COMMIT
 RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_commit'; run; rc=$?; RUN_ENV=
 check '[ "$rc" = 99 ] && [ "$(state)" = committing ] && grep -q "^## COMMIT$" "$SBX/docs/CHANGELOG.md"' "commit後crashはcommittingを保持"
@@ -118,6 +127,19 @@ RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_commit'; run; RUN_ENV=
 printf '%s\n' '# EXTERNAL' > "$SBX/docs/CHANGELOG.md"
 run; rc=$?
 check '[ "$rc" = 3 ] && grep -q "曖昧" "$SBX/out"' "before/published不一致はrc3"
+
+echo "【公開直前CHANGELOG競合】"
+setup; frag 20260730_concurrent.md CONCURRENT-FRAG
+RUN_ENV='CHANGELOG_MERGE_TEST_CONCURRENT_AT=before_publish'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 3 ] && grep -q "^# CONCURRENT$" "$SBX/docs/CHANGELOG.md"' "退避直前の並行編集を上書きしない"
+check 'grep -q "^# CHANGELOG test$" "$tx/changelog.before" && grep -q "^## CONCURRENT-FRAG$" "$tx/published.image"' "競合時に旧版と公開予定版を保持"
+
+setup; frag 20260730_concurrent2.md CONCURRENT-FRAG-2
+RUN_ENV='CHANGELOG_MERGE_TEST_CONCURRENT_AT=after_displace'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 3 ] && grep -q "^# CONCURRENT$" "$SBX/docs/CHANGELOG.md"' "退避後の並行作成をatomic no-clobberで保護"
+check 'grep -q "^# CHANGELOG test$" "$tx/changelog.displaced" && grep -q "^## CONCURRENT-FRAG-2$" "$tx/published.image"' "no-clobber競合時も全版を保持"
 
 echo "【open fd post-rename write】"
 setup; frag 20260730_fd.md FD

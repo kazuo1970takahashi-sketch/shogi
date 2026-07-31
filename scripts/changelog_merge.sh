@@ -10,6 +10,7 @@ POSITION=end
 DRY_RUN=no
 LOCK=""
 LOCK_HELD=no
+PENDING_SIGNAL=""
 
 usage() {
   echo "usage: changelog_merge.sh [--dry-run] [--position end|top] [--changelog PATH] [--fragments DIR]"
@@ -45,10 +46,15 @@ on_signal() {
   echo "シグナル $1: transactionは保持し、次回の安全判定に委ねる" >&2
   exit 1
 }
+defer_signal() {
+  [ -n "$PENDING_SIGNAL" ] || PENDING_SIGNAL="$1"
+}
 trap release_lock EXIT
 
-# lock取得クリティカル区間ではsignalを一時保留し、owner無しlockを残さない。
-trap '' INT TERM HUP
+# lock取得クリティカル区間ではsignalを記録し、owner確立後に処理する。
+trap 'defer_signal INT' INT
+trap 'defer_signal TERM' TERM
+trap 'defer_signal HUP' HUP
 if ! mkdir "$LOCK" 2>/dev/null; then
   echo "排他lockが存在するため中止（active/staleを自動判定しない）: $LOCK" >&2
   echo "実行プロセスが無いことを人間が確認してからlockを除去すること。" >&2
@@ -60,6 +66,7 @@ printf '%s\n' "$$" > "$LOCK/owner" || exit 1
 trap 'on_signal INT' INT
 trap 'on_signal TERM' TERM
 trap 'on_signal HUP' HUP
+[ -z "$PENDING_SIGNAL" ] || on_signal "$PENDING_SIGNAL"
 
 write_state() {
   local dir="$1" value="$2" tmp="$1/state.tmp.$$"
@@ -100,6 +107,23 @@ recover_transactions() {
         echo "未commit transactionを復元: $tx" >&2
         restore_precommit "$tx" || { echo "自動復元不能。transactionを保持: $tx" >&2; return 3; }
         ;;
+      publishing)
+        if [ -f "$tx/published.image" ] && [ -f "$CHANGELOG_ABS" ] && cmp -s "$CHANGELOG_ABS" "$tx/published.image"; then
+          write_state "$tx" committed || return 3
+          echo "commit済みtransactionを確定: $tx" >&2
+        elif [ ! -e "$tx/changelog.displaced" ] && [ -f "$CHANGELOG_ABS" ] &&
+             [ "$CHANGELOG_ABS" -ef "$tx/changelog.before.link" ] && cmp -s "$CHANGELOG_ABS" "$tx/changelog.before"; then
+          restore_precommit "$tx" || { echo "公開前transactionを復元不能: $tx" >&2; return 3; }
+        elif [ ! -e "$CHANGELOG_ABS" ] && [ -f "$tx/changelog.displaced" ]; then
+          ln "$tx/changelog.displaced" "$CHANGELOG_ABS" 2>/dev/null || return 3
+          restore_precommit "$tx" || { echo "公開前transactionを復元不能: $tx" >&2; return 3; }
+        elif [ -f "$tx/changelog.displaced" ] && cmp -s "$CHANGELOG_ABS" "$tx/changelog.displaced"; then
+          restore_precommit "$tx" || { echo "公開前transactionを復元不能: $tx" >&2; return 3; }
+        else
+          echo "CHANGELOG競合または曖昧なpublish state。全版を保持: $tx" >&2
+          return 3
+        fi
+        ;;
       committing)
         if [ -f "$tx/published.image" ] && cmp -s "$CHANGELOG_ABS" "$tx/published.image"; then
           write_state "$tx" committed || return 3
@@ -116,7 +140,19 @@ recover_transactions() {
   done
   return 0
 }
-recover_transactions || exit $?
+if [ "$DRY_RUN" = yes ]; then
+  for tx in "$CHANGELOG_DIR"/.changelog_merge.txn.*; do
+    [ -d "$tx" ] || continue
+    [ -f "$tx/state" ] || { echo "--dry-run: 状態不明transactionを変更せず中止: $tx" >&2; exit 3; }
+    IFS= read -r state < "$tx/state" || exit 3
+    case "$state" in
+      committed|aborted) ;;
+      *) echo "--dry-run: 残存transactionを変更せず中止 ($state): $tx" >&2; exit 3 ;;
+    esac
+  done
+else
+  recover_transactions || exit $?
+fi
 
 FRAGS=$(printf '%s\n' "$FRAG_DIR"/*.md 2>/dev/null |
   while IFS= read -r f; do
@@ -145,7 +181,8 @@ EOF
 
 TX="$(mktemp -d "$CHANGELOG_DIR/.changelog_merge.txn.XXXXXX")" || exit 1
 mkdir "$TX/quarantine" "$TX/snapshot" "$TX/paths" || exit 1
-cp -p "$CHANGELOG_ABS" "$TX/changelog.before" || exit 1
+ln "$CHANGELOG_ABS" "$TX/changelog.before.link" || exit 1
+cp -p "$TX/changelog.before.link" "$TX/changelog.before" || exit 1
 write_state "$TX" preparing || exit 1
 
 n=1
@@ -204,10 +241,30 @@ printf '\n' >> "$NEW" || exit 1
 [ -s "$NEW" ] || exit 1
 cp -p "$NEW" "$TX/published.image" || exit 1
 
-# ここから先はrollbackしない。committing + before/publishedでcrashを判定できる。
-write_state "$TX" committing || exit 1
+# 旧版を退避して同一inodeを検証し、新版をno-clobberで公開する。
+# 非協調writerが間に作成した版は上書きせず、transaction内の全版も保持する。
+write_state "$TX" publishing || exit 1
 [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = before_commit ] && { echo "test crash before_commit" >&2; exit 98; }
-if ! mv -f "$NEW" "$CHANGELOG_ABS"; then
+[ "${CHANGELOG_MERGE_TEST_CONCURRENT_AT:-}" = before_publish ] && printf '%s\n' '# CONCURRENT' > "$CHANGELOG_ABS"
+if ! mv "$CHANGELOG_ABS" "$TX/changelog.displaced"; then
+  echo "CHANGELOG退避に失敗。transactionを保持: $TX" >&2
+  exit 1
+fi
+if [ ! "$TX/changelog.displaced" -ef "$TX/changelog.before.link" ] || ! cmp -s "$TX/changelog.displaced" "$TX/changelog.before"; then
+  ln "$TX/changelog.displaced" "$CHANGELOG_ABS" 2>/dev/null || :
+  echo "CHANGELOGの並行編集を検出。競合版とtransactionを保持: $TX" >&2
+  exit 3
+fi
+[ "${CHANGELOG_MERGE_TEST_CONCURRENT_AT:-}" = after_displace ] && printf '%s\n' '# CONCURRENT' > "$CHANGELOG_ABS"
+if ! ln "$NEW" "$CHANGELOG_ABS" 2>/dev/null; then
+  echo "CHANGELOG公開先に並行版を検出。全版を保持: $TX" >&2
+  exit 3
+fi
+write_state "$TX" committing || {
+  echo "CHANGELOG commit済みだがstate確定に失敗。transactionを保持: $TX" >&2
+  exit 1
+}
+if ! rm -f "$NEW"; then
   echo "CHANGELOG commitに失敗。transactionを保持: $TX" >&2
   exit 1
 fi
