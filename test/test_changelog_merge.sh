@@ -208,9 +208,32 @@ chmod 755 "$SBX/docs/changelog.d"
 [ "$BEFORE6" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && ok "削除不能なら CHANGELOG を事前に保護" || ng "削除不能なのに CHANGELOG が変わった"
 [ -f "$SBX/docs/changelog.d/20260729_nodelete.md" ] && ok "削除不能なら断片は保持" || ng "削除不能なのに断片が消えた"
 
-# --- 12. repo 本体の CHANGELOG を触っていない --------------------------------
+# --- 12. top 挿入でも断片生成失敗を見逃さない -------------------------------
 echo ""
-echo "【12】repo の docs/CHANGELOG.md は不変"
+echo "【12】--position top の断片生成失敗は fail closed"
+setup
+frag "20260729_top-io-fail.md" "TOP-IO-FAIL"
+BEFORE7="$(cat "$SBX/docs/CHANGELOG.md")"
+REAL_AWK="$(command -v awk)"
+mkdir -p "$SBX/bin"
+cat > "$SBX/bin/awk" <<'EOF'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    *top-io-fail.md) exit 1 ;;
+  esac
+done
+exec "$REAL_AWK" "$@"
+EOF
+chmod 755 "$SBX/bin/awk"
+REAL_AWK="$REAL_AWK" PATH="$SBX/bin:$PATH" run_merge --position top; RC=$?
+[ "$RC" != "0" ] && ok "top 挿入中の断片生成失敗は非ゼロ終了" || ng "top 挿入中の断片生成失敗を成功扱いした"
+[ "$BEFORE7" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && ok "top 断片生成失敗で CHANGELOG は不変" || ng "top 断片生成失敗で CHANGELOG が変わった"
+[ -f "$SBX/docs/changelog.d/20260729_top-io-fail.md" ] && ok "top 断片生成失敗でも断片は保持" || ng "top 断片生成失敗で断片が消えた"
+
+# --- 13. repo 本体の CHANGELOG を触っていない --------------------------------
+echo ""
+echo "【13】repo の docs/CHANGELOG.md は不変"
 [ "$REPO_BEFORE" = "$(repo_fingerprint)" ] && ok "repo の CHANGELOG.md は 1 byte も変わっていない" \
   || ng "repo の CHANGELOG.md が変わった（テストが本体を触っている）"
 

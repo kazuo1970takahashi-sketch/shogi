@@ -139,12 +139,16 @@ else
   # `---` が無い場合は先頭 1 行（見出し）の直後に入れる。
   SPLIT=$(awk '$0 == "---" { print NR; exit }' "$CHANGELOG")
   [ -n "$SPLIT" ] || SPLIT=1
-  if ! {
-    awk -v n="$SPLIT" 'NR <= n' "$CHANGELOG"
-    emit_fragments
-    printf '\n'
-    awk -v n="$SPLIT" 'NR > n' "$CHANGELOG" | strip_blank_edges /dev/stdin
-  } > "$TMP"; then
+  if ! awk -v n="$SPLIT" 'NR <= n' "$CHANGELOG" > "$TMP"; then
+    echo "ヘッダの生成に失敗 → 中止（CHANGELOG.md は不変）" >&2
+    exit 1
+  fi
+  if ! emit_fragments >> "$TMP"; then
+    echo "断片の生成に失敗 → 中止（CHANGELOG.md は不変）" >&2
+    exit 1
+  fi
+  printf '\n' >> "$TMP" || { echo "一時ファイルへの書き込みに失敗" >&2; exit 1; }
+  if ! awk -v n="$SPLIT" 'NR > n' "$CHANGELOG" | strip_blank_edges /dev/stdin >> "$TMP"; then
     echo "連結内容の生成に失敗 → 中止（CHANGELOG.md は不変）" >&2
     exit 1
   fi

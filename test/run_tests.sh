@@ -405,6 +405,11 @@ EOF
   # 現在の index だけでは、PR 内で削除・別名移動されたテストが一覧から消えて検出できない。
   # CI から渡す安定した base revision と比較し、削除・パターン外への rename を fail closed にする。
   _inventory_base="${TEST_INVENTORY_BASE:-}"
+  # ブランチ作成 push の github.event.before は全ゼロ SHA。比較元が存在しない正常ケースなので
+  # revision エラーにはせず、workflow_dispatch の未指定時と同様に committed deletion 検査を省略する。
+  case "$_inventory_base" in
+    0000000000000000000000000000000000000000) _inventory_base='' ;;
+  esac
   if [ -n "$_inventory_base" ]; then
     if git -C "$SCRIPT_DIR" cat-file -e "${_inventory_base}^{commit}" 2>/dev/null; then
       _deleted=$(git -C "$SCRIPT_DIR" diff --no-renames --diff-filter=D --name-only \
