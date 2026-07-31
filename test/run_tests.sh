@@ -403,27 +403,20 @@ EOF
   fi
 
   # 現在の index だけでは、PR 内で削除・別名移動されたテストが一覧から消えて検出できない。
-  # CI から渡す安定した base revision と比較し、削除・パターン外への rename を fail closed にする。
-  _inventory_base="${TEST_INVENTORY_BASE:-}"
-  # ブランチ作成 push の github.event.before は全ゼロ SHA。比較元が存在しない正常ケースなので
-  # revision エラーにはせず、workflow_dispatch の未指定時と同様に committed deletion 検査を省略する。
-  case "$_inventory_base" in
-    0000000000000000000000000000000000000000) _inventory_base='' ;;
-  esac
-  if [ -n "$_inventory_base" ]; then
-    if git -C "$SCRIPT_DIR" cat-file -e "${_inventory_base}^{commit}" 2>/dev/null; then
-      _deleted=$(git -C "$SCRIPT_DIR" diff --no-renames --diff-filter=D --name-only \
-        "$_inventory_base" HEAD -- 'test_*.js' 'test_*.sh' '*_pgtest.sh' 2>/dev/null)
-      if [ -n "$_deleted" ]; then
-        ng "base revision から削除・パターン外へ移動されたテスト: $(printf '%s' "$_deleted" | tr '\n' ' ')"
-      else
-        echo "  ・base revision からのテスト削除なし"
-      fi
+  # CI から渡す安定した base revision との突合は scripts/check_test_inventory.sh に切り出した
+  # （[TEST-INVENTORY-RENAME-001]）。旧実装はここに直書きの `--no-renames --diff-filter=D` で、
+  # test/test_foo_001.js → test/test_foo_002.js のような**在庫が減らない改名**まで削除として
+  # 落としていた。切り出し先は rename を検出し、移動先が自動発見の対象かどうかで判定する。
+  # 単体テストは test/test_check_test_inventory.sh（このスイートからは呼び出さない＝自己再帰なし）。
+  _inventory_guard="$SCRIPT_DIR/../scripts/check_test_inventory.sh"
+  if [ -f "$_inventory_guard" ]; then
+    if _inventory_out=$(bash "$_inventory_guard" "${TEST_INVENTORY_BASE:-}" --test-dir "$SCRIPT_DIR" 2>&1); then
+      printf '%s\n' "$_inventory_out" | sed 's/^/  ・/'
     else
-      ng "テスト在庫の比較元 revision を取得できない: $_inventory_base"
+      ng "テスト在庫ガード: $(printf '%s' "$_inventory_out" | tr '\n' ' ')"
     fi
   else
-    echo "  ・TEST_INVENTORY_BASE 未指定 → committed deletion 検査は SKIP"
+    ng "テスト在庫ガードが見つからない: scripts/check_test_inventory.sh"
   fi
 else
   echo "  ・git 不在 → 網羅性検査は SKIP（自動発見自体は実行済み）"
