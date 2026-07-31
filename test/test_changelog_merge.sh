@@ -167,9 +167,50 @@ run_merge --nonsense; RC=$?
 bash "$MERGE" --changelog "$SBX/does-not-exist.md" --fragments "$SBX/docs/changelog.d" >/dev/null 2>&1; RC=$?
 [ "$RC" = "2" ] && ok "CHANGELOG 不在は rc=2 で拒否" || ng "CHANGELOG 不在が rc=$RC"
 
-# --- 10. repo 本体の CHANGELOG を触っていない --------------------------------
+# --- 10. 値が必要なオプションの欠落は即座に拒否 -----------------------------
 echo ""
-echo "【10】repo の docs/CHANGELOG.md は不変"
+echo "【10】値が必要なオプションの欠落は rc=2"
+for opt in --position --changelog --fragments; do
+  bash "$MERGE" "$opt" >"$SBX/out.log" 2>&1; RC=$?
+  [ "$RC" = "2" ] && ok "$opt の値欠落は rc=2 で拒否" || ng "$opt の値欠落が rc=$RC"
+done
+
+# --- 11. 読み書き・削除不能時は fail closed ----------------------------------
+echo ""
+echo "【11】I/O 失敗では上書き・削除せず終了する"
+setup
+frag "20260729_unreadable.md" "UNREADABLE"
+BEFORE4="$(cat "$SBX/docs/CHANGELOG.md")"
+chmod 000 "$SBX/docs/changelog.d/20260729_unreadable.md"
+run_merge; RC=$?
+chmod 600 "$SBX/docs/changelog.d/20260729_unreadable.md"
+[ "$RC" != "0" ] && ok "読めない断片は非ゼロ終了" || ng "読めない断片を成功扱いした"
+[ "$BEFORE4" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && ok "読めない断片で CHANGELOG は不変" || ng "読めない断片で CHANGELOG が変わった"
+[ -f "$SBX/docs/changelog.d/20260729_unreadable.md" ] && ok "読めない断片は保持" || ng "読めない断片が削除された"
+
+setup
+frag "20260729_readonly.md" "READONLY"
+BEFORE5="$(cat "$SBX/docs/CHANGELOG.md")"
+chmod 444 "$SBX/docs/CHANGELOG.md"
+run_merge; RC=$?
+chmod 600 "$SBX/docs/CHANGELOG.md"
+[ "$RC" != "0" ] && ok "書けない CHANGELOG は非ゼロ終了" || ng "書けない CHANGELOG を成功扱いした"
+[ "$BEFORE5" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && ok "書き込み失敗で CHANGELOG は不変" || ng "書き込み失敗で CHANGELOG が変わった"
+[ -f "$SBX/docs/changelog.d/20260729_readonly.md" ] && ok "書き込み失敗時も断片は保持" || ng "書き込み失敗時に断片が削除された"
+
+setup
+frag "20260729_nodelete.md" "NODELETE"
+BEFORE6="$(cat "$SBX/docs/CHANGELOG.md")"
+chmod 555 "$SBX/docs/changelog.d"
+run_merge; RC=$?
+chmod 755 "$SBX/docs/changelog.d"
+[ "$RC" != "0" ] && ok "削除不能ディレクトリは非ゼロ終了" || ng "削除不能を成功扱いした"
+[ "$BEFORE6" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && ok "削除不能なら CHANGELOG を事前に保護" || ng "削除不能なのに CHANGELOG が変わった"
+[ -f "$SBX/docs/changelog.d/20260729_nodelete.md" ] && ok "削除不能なら断片は保持" || ng "削除不能なのに断片が消えた"
+
+# --- 12. repo 本体の CHANGELOG を触っていない --------------------------------
+echo ""
+echo "【12】repo の docs/CHANGELOG.md は不変"
 [ "$REPO_BEFORE" = "$(repo_fingerprint)" ] && ok "repo の CHANGELOG.md は 1 byte も変わっていない" \
   || ng "repo の CHANGELOG.md が変わった（テストが本体を触っている）"
 

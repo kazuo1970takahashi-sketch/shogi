@@ -1,0 +1,295 @@
+# =============================================================================
+# auto-merge-gate.yml — AUTO-MERGE-GATE-001 自動マージゲート（憲章 v2.0/v2.1 §5）
+# -----------------------------------------------------------------------------
+# `codex-go` ラベル ＋ 必須 CI green の PR を、無人で
+#   Ready化 → head-CAS 付き squash merge → branch削除 → 完了コメント
+# まで進める。停止条件（1 つでも該当なら何もしない）:
+#   needs-codex / codex-block ラベル / 必須 CI が SUCCESS でない・未完了・未登録 /
+#   base=production（最重要）/ 判定後の base 付け替え / 承認 head と現在の head の不一致 /
+#   head 不一致（merge API の sha CAS で原子的に拒否）/ PR closed・merged 済み。
+#
+# 発火/停止の判定本体は scripts/auto_merge_gate_decision.sh（純関数・単体テスト済み）。
+#
+# 001b（Codex レビュー P1×6 / P2×2 の反映）:
+#   P1-1 必須チェック名の allowlist（REQUIRED_CHECKS）で green を判定する。
+#        「自分以外の check が 1 つでも成功していれば green」を廃止。
+#   P1-2 conclusion は SUCCESS のみ green。STALE/NEUTRAL/SKIPPED/CANCELLED 等は停止条件。
+#   P1-3 check が 0 件でも poll 対象（ci-unregistered）。打ち切って初めて ci-none。
+#   P1-4 pull_request[synchronize] で codex-go を自動剥奪する job を追加。
+#        加えて labeled 経路では「ラベル付与イベント時の head == 現在の head」を判定でも要求。
+#   P1-5 merge コマンド発行の直前に base を再取得し、判定時と違えば中止（SKIP base-changed）。
+#   P1-6 workflow_dispatch の dry_run を boolean 型にし、真偽が明示された値のみ受理（fail closed）。
+#   P2-7 GITHUB_TOKEN の merge は開発本流の push workflow を起こさないため、merge 後に
+#        e2e.yml を開発本流で明示 dispatch する（post-merge 検証の温存）。
+#   P2-8 gh pr list に --limit 100 を明示。
+#
+# トリガ設計（ラベル先/CI 先のどちらの順序でも拾う）:
+#   - pull_request[labeled]: codex-go 付与時。必須 CI が未登録/未完了なら最大 30 分 poll して待つ
+#     （= 「ラベル先→CI 後」の順序をこのトリガ 1 本で吸収する）。
+#   - pull_request[synchronize]: 追い push で codex-go を剥奪する（承認をレビュー済み head に固定）。
+#   - workflow_run[E2E completed]: CI 再実行で green 化した場合の拾い直し。
+#     ※ GitHub 仕様上 workflow_run はデフォルトブランチ上の本ファイルからしか発火しない。
+#       現在のデフォルト＝開発本流へ本ファイルが届くまでは workflow_dispatch で代替。
+#   - workflow_dispatch: 手動起動（pr_number 指定）。dry_run=true（既定）なら判定のみで
+#     mutating 操作ゼロ（L4 dry-run 証明・受け入れ検証用）。
+#
+# 権限: job ごとに最小化。デフォルト GITHUB_TOKEN のみ・新規 secret なし。
+#       fork PR では GITHUB_TOKEN が read-only のため安全側に失敗する。
+# =============================================================================
+name: Auto Merge Gate
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_run:
+    workflows: ["E2E"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: '対象 PR 番号'
+        required: true
+        type: string
+      dry_run:
+        description: 'true なら判定のみ（Ready化/merge/コメントを一切しない）'
+        required: true
+        default: true
+        type: boolean
+
+# 既定はゼロ権限。必要な job だけが必要な分を持つ。
+permissions: {}
+
+concurrency:
+  group: auto-merge-gate-${{ github.event.pull_request.number || inputs.pr_number || github.event.workflow_run.head_sha || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # P1-4: 追い push が来たら codex-go を剥奪する。
+  #   ラベルは「レビュー済み head への承認」であって PR への恒久承認ではない。
+  #   これにより workflow_run 経路（承認 head を主張できない）でも、
+  #   「codex-go が付いている = 最後の push 以降にレビューされた」が成り立つ。
+  # ---------------------------------------------------------------------------
+  revoke-codex-go-on-push:
+    name: Revoke codex-go on push
+    if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read          # gh pr view がリポジトリを解決するための最小読み取り
+      pull-requests: write    # ラベル剥奪 / コメント
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      NEW_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: codex-go を剥奪（付いている場合のみ）
+        run: |
+          set -euo pipefail
+          LABELS=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '[.labels[].name] | join(",")')
+          case ",$LABELS," in
+            *,codex-go,*)
+              gh pr edit "$PR" --repo "$REPO" --remove-label codex-go
+              gh pr comment "$PR" --repo "$REPO" --body "🤖 auto-merge-gate: 追い push を検出したため \`codex-go\` を剥奪しました（承認はレビュー済み head に紐づきます）。新しい head \`$NEW_HEAD\` を再レビューのうえ、改めて \`codex-go\` を付けてください。"
+              echo "codex-go を剥奪した（new head=$NEW_HEAD）"
+              ;;
+            *)
+              echo "codex-go は付いていない → 何もしない"
+              ;;
+          esac
+
+  auto-merge-gate:
+    name: auto-merge-gate
+    # codex-go 付与以外の pull_request イベントでは起動しない
+    # （synchronize は上の剥奪 job の担当。needs-codex 付与等で merge 評価を走らせない）
+    if: github.event_name != 'pull_request' || (github.event.action == 'labeled' && github.event.label.name == 'codex-go')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write         # squash merge / branch 削除
+      pull-requests: write    # Ready 化 / コメント
+      actions: write          # P2-7: merge 後の e2e.yml 明示 dispatch
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      # P1-1: 必須チェック名の allowlist（= e2e.yml の job 表示名）。
+      #   ここに列挙した全チェックが「存在し」「SUCCESS で完了」して初めて green とみなす。
+      #   decision script の既定値および e2e.yml の job 名との一致は
+      #   test/test_auto_merge_gate_decision.sh が機械照合する（ドリフト検出）。
+      AMG_REQUIRED_CHECKS: 'Unit (run_tests.sh),Security Scan'
+      # CI 完了待ち: 30 秒間隔 × 60 回 = 最大 30 分
+      POLL_INTERVAL: 30
+      POLL_MAX: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 対象 PR を解決
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_FROM_EVENT: ${{ github.event.pull_request.number }}
+          PR_FROM_INPUT: ${{ inputs.pr_number }}
+          # P1-4: labeled イベント時点の head SHA（= レビュー済みとみなす head）
+          HEAD_AT_LABEL: ${{ github.event.pull_request.head.sha }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request)
+              echo "prs=$PR_FROM_EVENT" >> "$GITHUB_OUTPUT"
+              echo "dry_run=false" >> "$GITHUB_OUTPUT"
+              echo "approved_head=$HEAD_AT_LABEL" >> "$GITHUB_OUTPUT"
+              ;;
+            workflow_dispatch)
+              # P1-6: boolean input なので値は必ず 'true' / 'false'。
+              #       それ以外（型変更・空・表記ゆれ）は fail closed で即エラー終了する。
+              case "$DRY_RUN_INPUT" in
+                true|false) : ;;
+                *) echo "::error::dry_run の値が真偽で明示されていない ('$DRY_RUN_INPUT') → 中止"; exit 1 ;;
+              esac
+              echo "prs=$PR_FROM_INPUT" >> "$GITHUB_OUTPUT"
+              echo "dry_run=$DRY_RUN_INPUT" >> "$GITHUB_OUTPUT"
+              # 手動経路では承認 head を主張しない（剥奪 job が保証側）
+              echo "approved_head=" >> "$GITHUB_OUTPUT"
+              ;;
+            workflow_run)
+              # 完了した CI の head SHA に一致する open PR を探す
+              # P2-8: --limit を明示しないと既定 30 件で取りこぼす
+              PRS=$(gh pr list --repo "$REPO" --state open --limit 100 --json number,headRefOid \
+                    --jq ".[] | select(.headRefOid == \"$WORKFLOW_RUN_HEAD_SHA\") | .number" | tr '\n' ' ')
+              echo "prs=$PRS" >> "$GITHUB_OUTPUT"
+              echo "dry_run=false" >> "$GITHUB_OUTPUT"
+              echo "approved_head=" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: ゲート判定と実行
+        if: steps.resolve.outputs.prs != ''
+        env:
+          PR_LIST: ${{ steps.resolve.outputs.prs }}
+          DRY_RUN: ${{ steps.resolve.outputs.dry_run }}
+          APPROVED_HEAD: ${{ steps.resolve.outputs.approved_head }}
+        run: |
+          set -euo pipefail
+
+          # P1-6 の二重化: 実行モードは 'true' / 'false' 以外を受け付けない
+          case "$DRY_RUN" in
+            true|false) : ;;
+            *) echo "::error::dry_run が真偽で確定していない ('$DRY_RUN') → 中止"; exit 1 ;;
+          esac
+
+          # --- PR の事実を収集して判定用 env を組み立てる ---------------------
+          gather_facts() {
+            PR="$1"
+            PR_JSON=$(gh pr view "$PR" --repo "$REPO" \
+              --json state,isDraft,baseRefName,headRefName,headRefOid,labels,statusCheckRollup)
+            AMG_BASE_REF=$(echo "$PR_JSON" | jq -r '.baseRefName')
+            AMG_STATE=$(echo "$PR_JSON"    | jq -r '.state')
+            IS_DRAFT=$(echo "$PR_JSON"     | jq -r '.isDraft')
+            AMG_HEAD_SHA=$(echo "$PR_JSON" | jq -r '.headRefOid')
+            AMG_LABELS=$(echo "$PR_JSON"   | jq -r '[.labels[].name] | join(",")')
+            # P1-1/P1-2: 集計せず生の (名前, status, conclusion) を渡す。
+            #   green の定義（必須名がそろい、かつ SUCCESS）は decision script 側の allowlist が持つ。
+            #   StatusContext は CheckRun と同じ 3 列へ正規化する。
+            AMG_CHECKS_TSV=$(echo "$PR_JSON" | jq -r '
+              .statusCheckRollup[]?
+              | if .__typename == "CheckRun" then
+                  [(.name // ""), (.status // ""), (.conclusion // "")]
+                else
+                  [ (.context // ""),
+                    (if (.state == "PENDING" or .state == "EXPECTED") then "PENDING" else "COMPLETED" end),
+                    (.state // "") ]
+                end
+              | @tsv')
+            export AMG_BASE_REF AMG_STATE AMG_LABELS AMG_HEAD_SHA AMG_CHECKS_TSV
+          }
+
+          for PR in $PR_LIST; do
+            echo "::group::PR #$PR"
+            export AMG_APPROVED_HEAD_SHA="$APPROVED_HEAD"
+            export AMG_BASE_AT_DECISION=""
+            export AMG_POLL_EXHAUSTED="false"
+            gather_facts "$PR"
+
+            # --- CI 完了待ち（ラベル先→CI 後の順序を吸収。判定自体は decision script） ---
+            # P1-3: 未登録（ci-unregistered）も待機対象にする。0 件だからと即 ci-none にしない。
+            TRIES=0
+            while [ "$TRIES" -lt "$POLL_MAX" ] && [ "$DRY_RUN" != "true" ]; do
+              DECISION=$(bash scripts/auto_merge_gate_decision.sh)
+              case "$DECISION" in
+                "SKIP ci-pending"|"SKIP ci-unregistered") ;;   # 待つ価値あり → poll 継続
+                *) break ;;                                    # それ以外は即確定（FIRE か別理由の SKIP）
+              esac
+              TRIES=$((TRIES+1))
+              echo "必須 CI 未確定 ($DECISION) — ${POLL_INTERVAL}s 待機 ($TRIES/$POLL_MAX)"
+              sleep "$POLL_INTERVAL"
+              gather_facts "$PR"
+            done
+            # 待ち切った場合は「未登録 = green の証明なし」を確定させる（ci-unregistered -> ci-none）
+            if [ "$TRIES" -ge "$POLL_MAX" ]; then export AMG_POLL_EXHAUSTED="true"; fi
+
+            # --- 判定（merge 直前に事実を取り直した状態で評価） ---
+            gather_facts "$PR"
+            HEAD_AT_DECISION="$AMG_HEAD_SHA"
+            BASE_AT_DECISION="$AMG_BASE_REF"
+            DECISION=$(bash scripts/auto_merge_gate_decision.sh)
+            echo "decision: $DECISION (base=$AMG_BASE_REF state=$AMG_STATE labels=$AMG_LABELS head=$HEAD_AT_DECISION approved_head=${AMG_APPROVED_HEAD_SHA:-<未主張>})"
+            echo "checks:"; echo "$AMG_CHECKS_TSV" | sed 's/^/  /'
+            echo "## PR #$PR — $DECISION" >> "$GITHUB_STEP_SUMMARY"
+            echo "base=\`$AMG_BASE_REF\` state=$AMG_STATE labels=\`$AMG_LABELS\` head=\`$HEAD_AT_DECISION\`" >> "$GITHUB_STEP_SUMMARY"
+
+            if [ "$DECISION" != "FIRE" ]; then
+              echo "停止条件該当 → 何もしない（Draft 維持）"
+              echo "::endgroup::"
+              continue
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "DRY-RUN: FIRE だが mutating 操作は行わない（Ready化/merge/コメント なし）"
+              echo "（dry-run のため merge せず）" >> "$GITHUB_STEP_SUMMARY"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # --- 実行: Ready化 → base 再検証 → head-CAS squash merge → branch削除 → 完了コメント ---
+            if [ "$IS_DRAFT" = "true" ]; then
+              gh pr ready "$PR" --repo "$REPO"
+            fi
+
+            # P1-5: merge 発行の直前に base を取り直して再検証する。
+            #   Ready 化と merge の間に base を production へ付け替えられる TOCTOU を潰す。
+            #   ※原子的な完全防御は production 側の branch protection の領分（作者タスク）。
+            export AMG_BASE_AT_DECISION="$BASE_AT_DECISION"
+            gather_facts "$PR"
+            RECHECK=$(bash scripts/auto_merge_gate_decision.sh)
+            if [ "$RECHECK" != "FIRE" ]; then
+              echo "::warning::merge 直前の再検証で停止条件に該当 ($RECHECK) → merge しない"
+              echo "（merge 直前の再検証で中止: $RECHECK）" >> "$GITHUB_STEP_SUMMARY"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # --match-head-commit = head-CAS。判定時点から head が進んでいれば
+            # GitHub 側で原子的に merge が拒否される（TOCTOU 防止）。
+            gh pr merge "$PR" --repo "$REPO" --squash --delete-branch \
+              --match-head-commit "$HEAD_AT_DECISION"
+            MERGE_SHA=$(gh pr view "$PR" --repo "$REPO" --json mergeCommit --jq '.mergeCommit.oid')
+            gh pr comment "$PR" --repo "$REPO" --body "🤖 auto-merge-gate: codex-go ＋ 必須 CI green を確認し squash merge しました。merge SHA: \`$MERGE_SHA\`（head-CAS: \`$HEAD_AT_DECISION\`）。branch は削除済み。"
+            echo "merged: $MERGE_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+            # P2-7: GITHUB_TOKEN 由来の push は workflow を起動しない（GitHub 仕様）ため、
+            #   開発本流への merge 後の CI を明示 dispatch して post-merge 検証を温存する。
+            if [ "$BASE_AT_DECISION" = "chore/shogi-tour-apphq-003h-2d-orphan-clean-base" ]; then
+              if gh workflow run e2e.yml --repo "$REPO" \
+                   --ref chore/shogi-tour-apphq-003h-2d-orphan-clean-base; then
+                echo "post-merge: e2e.yml を開発本流で dispatch した"
+              else
+                echo "::warning::post-merge の e2e.yml dispatch に失敗（merge は成功済み）"
+              fi
+            fi
+            echo "::endgroup::"
+          done

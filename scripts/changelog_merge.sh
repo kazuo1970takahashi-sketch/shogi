@@ -34,7 +34,7 @@
 #   （bash 3.2 + UTF-8 ロケール + set -u で「未割り当ての変数」になるため）。
 # =============================================================================
 
-set -u
+set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHANGELOG="$REPO_ROOT/docs/CHANGELOG.md"
@@ -42,12 +42,19 @@ FRAG_DIR="$REPO_ROOT/docs/changelog.d"
 POSITION="end"
 DRY_RUN="no"
 
+require_option_value() {
+  if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+    echo "${1} には値が必要" >&2
+    exit 2
+  fi
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run)    DRY_RUN="yes"; shift ;;
-    --position)   POSITION="${2:-}"; shift 2 ;;
-    --changelog)  CHANGELOG="${2:-}"; shift 2 ;;
-    --fragments)  FRAG_DIR="${2:-}"; shift 2 ;;
+    --position)   require_option_value "$@"; POSITION="$2"; shift 2 ;;
+    --changelog)  require_option_value "$@"; CHANGELOG="$2"; shift 2 ;;
+    --fragments)  require_option_value "$@"; FRAG_DIR="$2"; shift 2 ;;
     -h|--help)    sed -n '2,30p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "不明な引数: ${1}" >&2; exit 2 ;;
   esac
@@ -59,6 +66,7 @@ case "$POSITION" in
 esac
 
 [ -f "$CHANGELOG" ] || { echo "CHANGELOG がない: ${CHANGELOG}" >&2; exit 2; }
+[ -r "$CHANGELOG" ] || { echo "CHANGELOG を読めない: ${CHANGELOG}" >&2; exit 1; }
 
 if [ ! -d "$FRAG_DIR" ]; then
   echo "断片ディレクトリがない: ${FRAG_DIR} → 何もしない"
@@ -87,6 +95,16 @@ if [ "$DRY_RUN" = "yes" ]; then
   exit 0
 fi
 
+# 読み取り・削除不能が明らかな場合は、CHANGELOG を上書きする前に中止する。
+# 実際の書き込み・削除も個別に終了コードを確認し、途中の失敗を成功扱いしない。
+while IFS= read -r f; do
+  [ -r "$f" ] || { echo "断片を読めない: ${f}" >&2; exit 1; }
+done <<EOF
+$FRAGS
+EOF
+[ -w "$CHANGELOG" ] || { echo "CHANGELOG に書き込めない: ${CHANGELOG}" >&2; exit 1; }
+[ -w "$FRAG_DIR" ] || { echo "断片を削除できないディレクトリ: ${FRAG_DIR}" >&2; exit 1; }
+
 # --- 前後の空行を落として本文だけを出す --------------------------------------
 strip_blank_edges() {
   awk '
@@ -99,32 +117,40 @@ TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
 emit_fragments() {
-  printf '%s\n' "$FRAGS" | while IFS= read -r f; do
-    [ -f "$f" ] || continue
+  while IFS= read -r f; do
+    [ -f "$f" ] || { echo "断片が消失した: ${f}" >&2; return 1; }
     printf '\n'
-    strip_blank_edges "$f"
-  done
+    strip_blank_edges "$f" || return 1
+  done <<EOF
+$FRAGS
+EOF
 }
 
 if [ "$POSITION" = "end" ]; then
-  {
+  if ! {
     strip_blank_edges "$CHANGELOG"
     emit_fragments
-  } > "$TMP"
+  } > "$TMP"; then
+    echo "連結内容の生成に失敗 → 中止（CHANGELOG.md は不変）" >&2
+    exit 1
+  fi
 else
   # ヘッダブロック（先頭から最初の水平線 `---` まで）の直後へ挿入する。
   # `---` が無い場合は先頭 1 行（見出し）の直後に入れる。
   SPLIT=$(awk '$0 == "---" { print NR; exit }' "$CHANGELOG")
   [ -n "$SPLIT" ] || SPLIT=1
-  {
+  if ! {
     awk -v n="$SPLIT" 'NR <= n' "$CHANGELOG"
     emit_fragments
     printf '\n'
     awk -v n="$SPLIT" 'NR > n' "$CHANGELOG" | strip_blank_edges /dev/stdin
-  } > "$TMP"
+  } > "$TMP"; then
+    echo "連結内容の生成に失敗 → 中止（CHANGELOG.md は不変）" >&2
+    exit 1
+  fi
 fi
 
-printf '\n' >> "$TMP"
+printf '\n' >> "$TMP" || { echo "一時ファイルへの書き込みに失敗" >&2; exit 1; }
 
 # 空になっていないことを最低限確認してから差し替える
 if [ ! -s "$TMP" ]; then
@@ -132,12 +158,20 @@ if [ ! -s "$TMP" ]; then
   exit 1
 fi
 
-cat "$TMP" > "$CHANGELOG"
+if ! cat "$TMP" > "$CHANGELOG"; then
+  echo "CHANGELOG の書き込みに失敗（断片は保持）: ${CHANGELOG}" >&2
+  exit 1
+fi
 
 # --- 連結が成功したので断片を削除する ----------------------------------------
-printf '%s\n' "$FRAGS" | while IFS= read -r f; do
-  [ -f "$f" ] || continue
-  rm -f "$f"
-done
+while IFS= read -r f; do
+  [ -f "$f" ] || { echo "削除前に断片が消失した: ${f}" >&2; exit 1; }
+  if ! rm -f "$f"; then
+    echo "連結済み断片の削除に失敗: ${f}" >&2
+    exit 1
+  fi
+done <<EOF
+$FRAGS
+EOF
 
 echo "連結完了。断片は削除した（残りは ${FRAG_DIR}/README.md のみ）。"

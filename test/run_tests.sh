@@ -401,6 +401,25 @@ EOF
   else
     ng "git が追跡しているのに実行されなかったテスト:$_missing"
   fi
+
+  # 現在の index だけでは、PR 内で削除・別名移動されたテストが一覧から消えて検出できない。
+  # CI から渡す安定した base revision と比較し、削除・パターン外への rename を fail closed にする。
+  _inventory_base="${TEST_INVENTORY_BASE:-}"
+  if [ -n "$_inventory_base" ]; then
+    if git -C "$SCRIPT_DIR" cat-file -e "${_inventory_base}^{commit}" 2>/dev/null; then
+      _deleted=$(git -C "$SCRIPT_DIR" diff --no-renames --diff-filter=D --name-only \
+        "$_inventory_base" HEAD -- 'test_*.js' 'test_*.sh' '*_pgtest.sh' 2>/dev/null)
+      if [ -n "$_deleted" ]; then
+        ng "base revision から削除・パターン外へ移動されたテスト: $(printf '%s' "$_deleted" | tr '\n' ' ')"
+      else
+        echo "  ・base revision からのテスト削除なし"
+      fi
+    else
+      ng "テスト在庫の比較元 revision を取得できない: $_inventory_base"
+    fi
+  else
+    echo "  ・TEST_INVENTORY_BASE 未指定 → committed deletion 検査は SKIP"
+  fi
 else
   echo "  ・git 不在 → 網羅性検査は SKIP（自動発見自体は実行済み）"
 fi
