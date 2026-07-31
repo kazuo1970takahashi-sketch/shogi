@@ -66,7 +66,31 @@ trap 'on_signal HUP' HUP
 
 write_state() {
   local dir="$1" value="$2" tmp="$1/state.tmp.$$"
-  printf '%s\n' "$value" > "$tmp" && mv -f "$tmp" "$dir/state"
+  printf '%s\n' "$value" > "$tmp" || return 1
+  [ "$value" = initializing ] && [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_initial_state_tmp ] && {
+    echo "test crash after_initial_state_tmp" >&2
+    exit 103
+  }
+  mv -f "$tmp" "$dir/state"
+}
+
+is_pristine_transaction() {
+  local tx="$1" listing count
+  listing=$(LC_ALL=C ls -A "$tx" 2>/dev/null) || return 1
+  [ -z "$listing" ] && return 0
+  count=$(printf '%s\n' "$listing" | wc -l | tr -d ' ')
+  [ "$count" = 1 ] || return 1
+  case "$listing" in state.tmp.[0-9]*) return 0 ;; *) return 1 ;; esac
+}
+
+write_path() {
+  local tx="$1" n="$2" value="$3" tmp="$1/paths/$2.path.tmp.$$"
+  printf '%s\n' "$value" > "$tmp" || return 1
+  [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_path_tmp ] && [ "$n" = 1 ] && {
+    echo "test crash after_path_tmp" >&2
+    exit 104
+  }
+  mv -f "$tmp" "$tx/paths/$n.path"
 }
 
 # quarantineから元パスへの復元はhard-link作成をcommit pointにする。
@@ -109,13 +133,32 @@ restore_precommit() {
 
 # 前回crashの判定。committingだけがcommit境界を跨いだ可能性を持つ。
 recover_transactions() {
-  local tx state
+  local tx state target
   for tx in "$CHANGELOG_DIR"/.changelog_merge.txn.*; do
     [ -d "$tx" ] || continue
-    [ -f "$tx/state" ] || { echo "状態不明transaction: $tx" >&2; return 3; }
+    if [ ! -f "$tx/state" ]; then
+      if is_pristine_transaction "$tx"; then
+        rm -f "$tx"/state.tmp.[0-9]* 2>/dev/null || return 3
+        rmdir "$tx" || return 3
+        echo "初期化前の空transactionを除去: $tx" >&2
+        continue
+      fi
+      echo "状態不明transaction: $tx" >&2
+      return 3
+    fi
     IFS= read -r state < "$tx/state" || return 3
     case "$state" in
-      committed|aborted) ;;
+      committed|aborted) continue ;;
+      initializing)
+        write_state "$tx" aborted || return 3
+        echo "初期化中transactionを中止状態へ確定: $tx" >&2
+        continue
+        ;;
+    esac
+    [ -f "$tx/target" ] || { echo "対象不明transaction: $tx" >&2; return 3; }
+    IFS= read -r target < "$tx/target" || return 3
+    [ "$target" = "$CHANGELOG_ABS" ] || continue
+    case "$state" in
       preparing|prepared)
         echo "未commit transactionを復元: $tx" >&2
         restore_precommit "$tx" || { echo "自動復元不能。transactionを保持: $tx" >&2; return 3; }
@@ -156,11 +199,22 @@ recover_transactions() {
 if [ "$DRY_RUN" = yes ]; then
   for tx in "$CHANGELOG_DIR"/.changelog_merge.txn.*; do
     [ -d "$tx" ] || continue
-    [ -f "$tx/state" ] || { echo "--dry-run: 状態不明transactionを変更せず中止: $tx" >&2; exit 3; }
+    if [ ! -f "$tx/state" ]; then
+      is_pristine_transaction "$tx" && continue
+      echo "--dry-run: 状態不明transactionを変更せず中止: $tx" >&2
+      exit 3
+    fi
     IFS= read -r state < "$tx/state" || exit 3
     case "$state" in
       committed|aborted) ;;
-      *) echo "--dry-run: 残存transactionを変更せず中止 ($state): $tx" >&2; exit 3 ;;
+      initializing) echo "--dry-run: 残存transactionを変更せず中止 ($state): $tx" >&2; exit 3 ;;
+      *)
+        [ -f "$tx/target" ] || { echo "--dry-run: 対象不明transactionを変更せず中止: $tx" >&2; exit 3; }
+        IFS= read -r target < "$tx/target" || exit 3
+        [ "$target" = "$CHANGELOG_ABS" ] || continue
+        echo "--dry-run: 残存transactionを変更せず中止 ($state): $tx" >&2
+        exit 3
+        ;;
     esac
   done
 else
@@ -170,6 +224,7 @@ fi
 [ -f "$CHANGELOG" ] || { echo "CHANGELOG がない: $CHANGELOG" >&2; exit 2; }
 [ -r "$CHANGELOG" ] || { echo "CHANGELOG を読めない: $CHANGELOG" >&2; exit 1; }
 [ -d "$FRAG_DIR" ] || { echo "断片ディレクトリがない: $FRAG_DIR → 何もしない"; exit 0; }
+FRAG_DIR="$(cd "$FRAG_DIR" && pwd)" || exit 1
 
 FRAGS=$(printf '%s\n' "$FRAG_DIR"/*.md 2>/dev/null |
   while IFS= read -r f; do
@@ -202,6 +257,9 @@ EOF
 [ "$DRY_RUN" = yes ] && { echo "--dry-run のため書き換えない（断片も削除しない）"; exit 0; }
 
 TX="$(mktemp -d "$CHANGELOG_DIR/.changelog_merge.txn.XXXXXX")" || exit 1
+[ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_mktemp ] && { echo "test crash after_mktemp" >&2; exit 102; }
+write_state "$TX" initializing || exit 1
+printf '%s\n' "$CHANGELOG_ABS" > "$TX/target" || exit 1
 mkdir "$TX/quarantine" "$TX/snapshot" "$TX/paths" || exit 1
 ln "$CHANGELOG_ABS" "$TX/changelog.before.link" || exit 1
 cp -p "$TX/changelog.before.link" "$TX/changelog.before" || exit 1
@@ -209,7 +267,7 @@ write_state "$TX" preparing || exit 1
 
 n=1
 while IFS= read -r f; do
-  printf '%s\n' "$f" > "$TX/paths/$n.path" || exit 1
+  write_path "$TX" "$n" "$f" || exit 1
   # hard-link probeはsame-deviceでだけ成功する。cross-FSのmv(copy+unlink)を禁止する。
   if ! ln "$f" "$TX/.same-fs-probe" 2>/dev/null; then
     echo "断片とCHANGELOGが同一filesystemでないためatomic quarantine不能: $f" >&2
@@ -219,6 +277,9 @@ while IFS= read -r f; do
   rm -f "$TX/.same-fs-probe" || exit 1
   if [ "${CHANGELOG_MERGE_TEST_SYMLINK_AT:-}" = before_quarantine ] && [ "$n" = 1 ]; then
     rm -f "$f" && ln -s ../target.md "$f"
+  fi
+  if [ "${CHANGELOG_MERGE_TEST_EMPTY_AT:-}" = before_quarantine ] && [ "$n" = 1 ]; then
+    : > "$f"
   fi
   if ! mv "$f" "$TX/quarantine/$n.frag"; then
     echo "断片のquarantine移動に失敗: $f" >&2
@@ -230,10 +291,26 @@ while IFS= read -r f; do
     restore_precommit "$TX" || exit 3
     exit 2
   fi
+  if [ ! -f "$TX/quarantine/$n.frag" ]; then
+    echo "quarantine直前に非regularへ変更された断片を拒否: $f" >&2
+    restore_precommit "$TX" || exit 3
+    exit 2
+  fi
+  if [ "${CHANGELOG_MERGE_TEST_EMPTY_AT:-}" = before_snapshot ] && [ "$n" = 1 ]; then
+    : > "$TX/quarantine/$n.frag"
+  fi
   cp -p "$TX/quarantine/$n.frag" "$TX/snapshot/$n.frag" || {
     restore_precommit "$TX" || exit 3
     exit 1
   }
+  [ -f "$TX/snapshot/$n.frag" ] || { restore_precommit "$TX" || exit 3; exit 1; }
+  grep -q '[^[:space:]]' "$TX/snapshot/$n.frag" 2>/dev/null
+  rc=$?
+  if [ "$rc" != 0 ]; then
+    echo "snapshot断片が空または読取不能のため拒否: $f" >&2
+    restore_precommit "$TX" || exit 3
+    [ "$rc" = 1 ] && exit 2 || exit 1
+  fi
   n=$((n + 1))
 done <<EOF
 $FRAGS

@@ -82,6 +82,25 @@ RUN_ENV="PATH=$SBX/bin:$PATH"; run; rc=$?; RUN_ENV=
 check '[ "$rc" != 0 ] && [ -f "$SBX/docs/changelog.d/20260730_crossfs.md" ] && [ "$before" = "$(cat "$SBX/docs/CHANGELOG.md")" ]' "hard-link probe失敗は変更前にfail closed"
 
 echo "【commit前crash recovery】"
+setup; frag 20260730_emptytx.md EMPTY-TX
+emptytx="$SBX/docs/.changelog_merge.txn.EMPTY"; mkdir "$emptytx"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ ! -d "$emptytx" ] && grep -q "^## EMPTY-TX$" "$SBX/docs/CHANGELOG.md"' "state作成前の空transactionを安全に除去"
+
+setup; frag 20260730_statetmp.md STATE-TMP
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_initial_state_tmp'; run; rc=$?; RUN_ENV=
+tmptx="$(tx_latest)"
+check '[ "$rc" = 103 ] && [ ! -f "$tmptx/state" ] && [ -f "$tmptx"/state.tmp.* ]' "初回state tmp作成後crashを保持"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ ! -d "$tmptx" ] && grep -q "^## STATE-TMP$" "$SBX/docs/CHANGELOG.md"' "state tmpだけのtransactionを安全に除去・再実行"
+
+setup; frag 20260730_pathtmp.md PATH-TMP
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_path_tmp'; run; rc=$?; RUN_ENV=
+pathtx="$(tx_latest)"
+check '[ "$rc" = 104 ] && [ "$(cat "$pathtx/state")" = preparing ] && [ -f "$pathtx"/paths/1.path.tmp.* ] && [ ! -f "$pathtx/paths/1.path" ]' "path tmp作成後crashで不完全pathを公開しない"
+run; rc=$?
+check '[ "$rc" = 0 ] && grep -q "^## PATH-TMP$" "$SBX/docs/CHANGELOG.md"' "path tmp crashを自動回復して再実行"
+
 setup; frag 20260730_pre.md PRE
 RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine'; run; rc=$?; RUN_ENV=
 check '[ "$rc" = 97 ] && [ "$(state)" = prepared ]' "quarantine後crashを保持"
@@ -97,6 +116,22 @@ RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine'; run; rc=$?; RUN_ENV=
 oldtx="$(tx_latest)"; rm -rf "$SBX/docs/changelog.d"
 run --dry-run; rc=$?
 check '[ "$rc" = 3 ] && [ "$(cat "$oldtx/state")" = prepared ] && [ -f "$oldtx/quarantine/1.frag" ]' "fragment dir消失時もdry-runは残存transactionを変更せず拒否"
+
+setup
+printf '%s\n' '# A' > "$SBX/docs/A.md"; printf '%s\n' '# B' > "$SBX/docs/B.md"
+frag 20260730_scope.md SCOPE-A
+env CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine bash "$MERGE" --changelog "$SBX/docs/A.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
+atx="$(tx_latest)"
+env bash "$MERGE" --changelog "$SBX/docs/B.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc2=$?
+check '[ "$rc" = 97 ] && [ "$rc2" = 0 ] && [ "$(cat "$atx/state")" = prepared ] && ! grep -q SCOPE-A "$SBX/docs/B.md"' "別CHANGELOGのtransactionを回復・混入しない"
+env bash "$MERGE" --changelog "$SBX/docs/A.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
+check '[ "$rc" = 0 ] && grep -q SCOPE-A "$SBX/docs/A.md"' "対象CHANGELOGだけが自身のtransactionを回復"
+
+setup; frag 20260730_relative.md RELATIVE
+mkdir "$SBX/one" "$SBX/two"
+(cd "$SBX/docs" && env CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine bash "$MERGE" --changelog "$SBX/docs/CHANGELOG.md" --fragments changelog.d > "$SBX/out" 2>&1); rc=$?
+(cd "$SBX/two" && env bash "$MERGE" --changelog "$SBX/docs/CHANGELOG.md" --fragments ../docs/changelog.d > "$SBX/out" 2>&1); rc2=$?
+check '[ "$rc" = 97 ] && [ "$rc2" = 0 ] && grep -q "^## RELATIVE$" "$SBX/docs/CHANGELOG.md" && [ ! -e "$SBX/two/changelog.d/20260730_relative.md" ]' "相対fragment pathを絶対化して元位置へ復元"
 
 echo "【atomic no-clobber recovery】"
 setup; frag 20260730_race.md ORIGINAL
@@ -164,6 +199,18 @@ check '[ "$rc" = 3 ] && grep -q "^# CONCURRENT$" "$SBX/docs/CHANGELOG.md"' "退�
 check 'grep -q "^# CHANGELOG test$" "$tx/changelog.displaced" && grep -q "^## CONCURRENT-FRAG-2$" "$tx/published.image"' "no-clobber競合時も全版を保持"
 
 echo "【symlink fragment】"
+setup; frag 20260730_empty_swap.md EMPTY-SWAP
+RUN_ENV='CHANGELOG_MERGE_TEST_EMPTY_AT=before_quarantine'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 2 ] && [ -f "$SBX/docs/changelog.d/20260730_empty_swap.md" ] && [ -f "$tx/quarantine/1.frag" ]' "validation後の空regular差替えをpost-moveで拒否・保持"
+check '! grep -q "^## EMPTY-SWAP$" "$SBX/docs/CHANGELOG.md"' "空regular差替えを誤ってmergeしない"
+
+setup; frag 20260730_snapshot_empty.md SNAPSHOT-EMPTY
+RUN_ENV='CHANGELOG_MERGE_TEST_EMPTY_AT=before_snapshot'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 2 ] && [ -f "$tx/snapshot/1.frag" ] && [ ! -s "$tx/snapshot/1.frag" ]' "copy直前truncateで空snapshotを検出"
+check '! grep -q "^## SNAPSHOT-EMPTY$" "$SBX/docs/CHANGELOG.md"' "空snapshotを成功commitしない"
+
 setup
 printf '%s\n' '## LINK-TARGET' > "$SBX/docs/target.md"
 ln -s ../target.md "$SBX/docs/changelog.d/20260730_link.md"
