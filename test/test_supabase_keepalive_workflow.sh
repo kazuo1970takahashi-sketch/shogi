@@ -4,9 +4,10 @@
 #
 #   .github/workflows/supabase-keepalive.yml の「受け入れ基準 2」
 #   （新しい secret・新しい公開窓・DB 書き込みを一切作らない）を機械固定する。
-#   ネットワークには一切触れない（YAML の静的検査のみ）。
+#   外部ネットワークには触れない。YAML全体の静的検査に加え、抽出したrunブロックを
+#   一時ディレクトリ内でmock curlだけに接続して実行する。
 #
-#   外部YAML parserへ依存せず、固定する構造を必須の文字列ゲートで検証する。
+#   前提: Ruby標準ライブラリPsych。YAML全体をparseし、固定構造を正規化後に検証する。
 #
 # 使い方: bash test/test_supabase_keepalive_workflow.sh
 # set -e は使わない（個別に判定するため）。
@@ -37,52 +38,155 @@ if [ ! -f "$WF" ]; then
 fi
 
 # -----------------------------------------------------------------------------
-# 1. YAML 構造（依存追加なし・固定構造をfail closedで検証）
+# 1. YAML 構造（Ruby標準ライブラリで全体parse・正規化後にfail closed検証）
 # -----------------------------------------------------------------------------
 echo ""
 echo "【1】YAML 構造"
-if [ "$(grep -c '^  schedule:$' "$WF")" = "1" ] \
-   && [ "$(grep -c '^  workflow_dispatch:$' "$WF")" = "1" ] \
-   && [ "$(grep -c '^    - cron:' "$WF")" = "1" ] \
-   && [ "$(awk '/^on:$/{inside=1; next} /^permissions:$/{inside=0} inside && /^  [^[:space:]#][^:]*:$/ { print }' "$WF")" = "$(printf '%s\n%s' '  schedule:' '  workflow_dispatch:')" ]; then
-  ok "trigger はschedule 1本＋workflow_dispatchのみ"
-else
-  ng "trigger構造が固定形でない"
-fi
-if [ "$(grep -c '^permissions:$' "$WF")" = "1" ] \
-   && [ "$(grep -c '^  contents: read$' "$WF")" = "1" ] \
-   && [ "$(grep -c '^[[:space:]]*permissions:' "$WF")" = "1" ]; then
-  ok "permissionsはworkflow-level contents:readのみ"
-else
-  ng "permissionsの欠落・過大化・job-level上書きを検出"
-fi
-if [ "$(grep -c '^jobs:$' "$WF")" = "1" ] \
-   && [ "$(awk '/^jobs:$/{inside=1; next} inside && /^  [^[:space:]#][^:]*:$/ { print }' "$WF")" = "  ping:" ] \
-   && [ "$(grep -c '^      - name:' "$WF")" = "2" ] \
-   && [ "$(grep -c '^        run: |$' "$WF")" = "1" ] \
-   && grep -q '^    timeout-minutes: 5$' "$WF"; then
-  ok "jobはtimeout付きping 1本"
-else
-  ng "job構造が固定形でない"
-fi
-USES=$(grep -E '^[[:space:]]*uses:' "$WF" | sed 's/^[[:space:]]*uses:[[:space:]]*//')
-[ "$USES" = "actions/checkout@v4" ] && ok "使用actionはcheckout@v4のみ" || ng "想定外action: $USES"
-grep -q '^          ref: production$' "$WF" \
-  && grep -q '^          sparse-checkout: app/config.public.js$' "$WF" \
-  && grep -q '^          persist-credentials: false$' "$WF" \
-  && ok "checkoutはproduction公開config限定・資格情報非保持" \
-  || ng "checkoutのref/sparse/persist-credentialsが固定形でない"
-
-# run: | の内容は本workflowで1本。10桁indentを外してbash構文を直接検査する。
 RUN_FILE="$KA_TMPDIR/run.sh"
-awk '
-  /^        run: \|$/ { in_run=1; next }
-  in_run && /^          / { sub(/^          /, ""); print; next }
-  in_run && /^[[:space:]]*$/ { print ""; next }
-  in_run { exit }
-' "$WF" > "$RUN_FILE"
+if ! command -v ruby >/dev/null 2>&1; then
+  STRUCT_RESULT=""
+  ng "必須runtime Ruby/Psych が見つからない"
+else
+STRUCT_RESULT=$(WF="$WF" RUN_FILE="$RUN_FILE" ruby <<'RUBY'
+require 'yaml'
+
+def require_exact(actual, expected, label)
+  raise "#{label}: #{actual.inspect}" unless actual == expected
+end
+
+begin
+  doc = YAML.safe_load(
+    File.read(ENV.fetch('WF')),
+    permitted_classes: [],
+    permitted_symbols: [],
+    aliases: false
+  )
+  raise 'rootがmapでない' unless doc.is_a?(Hash)
+  require_exact(doc.keys, ['name', true, 'permissions', 'jobs'], 'root keys')
+
+  triggers = doc.fetch(true)
+  raise 'onがmapでない' unless triggers.is_a?(Hash)
+  require_exact(triggers.keys, ['schedule', 'workflow_dispatch'], 'trigger keys')
+  require_exact(triggers['schedule'], [{'cron' => '17 21 * * 0,2,4'}], 'schedule')
+  require_exact(triggers['workflow_dispatch'], nil, 'workflow_dispatch')
+
+  require_exact(doc['permissions'], {'contents' => 'read'}, 'permissions')
+  jobs = doc.fetch('jobs')
+  require_exact(jobs.keys, ['ping'], 'job keys')
+  job = jobs.fetch('ping')
+  require_exact(job.keys, ['name', 'runs-on', 'timeout-minutes', 'steps'], 'ping keys')
+  require_exact(job['runs-on'], 'ubuntu-latest', 'runner')
+  require_exact(job['timeout-minutes'], 5, 'timeout')
+
+  steps = job.fetch('steps')
+  raise 'stepsは2本でない' unless steps.is_a?(Array) && steps.length == 2
+  checkout, ping = steps
+  require_exact(checkout.keys, ['name', 'uses', 'with'], 'checkout keys')
+  require_exact(checkout['uses'], 'actions/checkout@v4', 'checkout action')
+  require_exact(checkout['with'], {
+    'ref' => 'production',
+    'sparse-checkout' => 'app/config.public.js',
+    'sparse-checkout-cone-mode' => false,
+    'persist-credentials' => false
+  }, 'checkout options')
+  require_exact(ping.keys, ['name', 'env', 'run'], 'ping step keys')
+  require_exact(ping['env'], {'KEEPALIVE_SLUG' => 'keepalive-probe-does-not-exist'}, 'ping env')
+  raise 'runが文字列でない' unless ping['run'].is_a?(String)
+  File.write(ENV.fetch('RUN_FILE'), ping['run'])
+  puts 'YAML全体・trigger・権限・job・2 steps・checkoutを正規化検証済み'
+rescue StandardError => e
+  warn e.message
+  exit 1
+end
+RUBY
+)
+if [ $? -eq 0 ]; then
+  ok "$STRUCT_RESULT"
+else
+  ng "YAML全体または固定構造が不正"
+fi
+fi
 [ -s "$RUN_FILE" ] && bash -n "$RUN_FILE" \
   && ok "runブロックのbash構文OK" || ng "runブロック欠落またはbash構文エラー"
+
+# workflowの実runブロックを架空config＋mock curlで実行し、抽出規則のdriftを検出する。
+# mockを迂回する絶対path curlや別network clientは、実行前にfail closedで拒否する。
+if grep -qE '(^|[[:space:]])/[^[:space:]]*/curl([^A-Za-z0-9_]|$)|(^|[^A-Za-z0-9_])(wget|nc|netcat|telnet)([^A-Za-z0-9_]|$)' "$RUN_FILE"; then
+  ng "runブロックにmockを迂回し得るnetwork commandがある"
+  RUN_FIXTURES_SAFE=0
+else
+  ok "fixture実行はPATH上のmock curlだけに限定"
+  RUN_FIXTURES_SAFE=1
+fi
+MOCK_BIN="$KA_TMPDIR/mock-bin"
+mkdir -p "$MOCK_BIN"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'OUT=""' \
+  'while [ "$#" -gt 0 ]; do' \
+  '  if [ "$1" = "-o" ]; then OUT="$2"; shift 2; continue; fi' \
+  '  if [ "$1" = "-w" ]; then shift 2; continue; fi' \
+  '  shift' \
+  'done' \
+  'printf "null" > "$OUT"' \
+  'printf "200"' > "$MOCK_BIN/curl"
+chmod +x "$MOCK_BIN/curl"
+
+run_config_case() {
+  local name="$1" config="$2" expected="$3"
+  local case_dir="$KA_TMPDIR/$name"
+  mkdir -p "$case_dir/app"
+  printf '%s\n' "$config" > "$case_dir/app/config.public.js"
+  if [ "$RUN_FIXTURES_SAFE" != "1" ]; then
+    ng "config抽出fixture $name: network安全ゲート不成立のため未実行"
+    return
+  elif (cd "$case_dir" && PATH="$MOCK_BIN:$PATH" KEEPALIVE_SLUG=keepalive-probe-does-not-exist bash "$RUN_FILE") > "$case_dir/output.log" 2>&1; then
+    actual=success
+  else
+    actual=failure
+  fi
+  if [ "$actual" = "$expected" ]; then
+    ok "config抽出fixture $name: $expected"
+  else
+    ng "config抽出fixture $name: expected=$expected actual=$actual"
+    sed 's/^/      /' "$case_dir/output.log"
+  fi
+}
+
+run_config_case single-quote \
+  "window.SHOGI_LIVE_PUBLIC_CONFIG = {
+  url: 'https://fixture-one.supabase.co',
+  publishableKey: 'sb_publishable_fixture'
+};" success
+run_config_case double-quote-no-trailing-comma \
+  'window.SHOGI_LIVE_PUBLIC_CONFIG = {
+  publishableKey: "sb_publishable_fixture",
+  url: "https://fixture-two.supabase.co"
+};' success
+run_config_case duplicate-mixed-quote \
+  "window.SHOGI_LIVE_PUBLIC_CONFIG = {
+  url: 'https://old.supabase.co',
+  url: \"https://new.supabase.co\",
+  publishableKey: 'sb_publishable_old',
+  publishableKey: \"sb_publishable_new\"
+};" failure
+run_config_case duplicate-url-only \
+  "window.SHOGI_LIVE_PUBLIC_CONFIG = {
+  url: 'https://old.supabase.co',
+  url: \"https://new.supabase.co\",
+  publishableKey: 'sb_publishable_fixture'
+};" failure
+run_config_case duplicate-key-only \
+  "window.SHOGI_LIVE_PUBLIC_CONFIG = {
+  url: 'https://fixture-three.supabase.co',
+  publishableKey: 'sb_publishable_old',
+  publishableKey: \"sb_publishable_new\"
+};" failure
+run_config_case invalid-host \
+  "window.SHOGI_LIVE_PUBLIC_CONFIG = {
+  url: 'https://example.invalid/path.supabase.co',
+  publishableKey: 'sb_publishable_fixture'
+};" failure
 
 # -----------------------------------------------------------------------------
 # 以降は「コメント行を除いた実効定義」に対して検査する。
@@ -102,8 +206,8 @@ fi
 # -----------------------------------------------------------------------------
 echo ""
 echo "【2】secret 非使用"
-if grep -qE '\$\{\{[^}]*secrets[[:space:]]*(\.|\[)' "$WF_EFF"; then
-  ng "secrets context を参照している（dot/bracket形式とも受け入れ基準 2 違反）"
+if grep -qE '\$\{\{[[:space:]]*secrets([^A-Za-z0-9_]|$)|\$\{\{[^}]*[^A-Za-z0-9_]secrets([^A-Za-z0-9_]|$)' "$WF_EFF"; then
+  ng "secrets context を参照している（whole/dot/bracket形式とも受け入れ基準 2 違反）"
 else
   ok "secrets.* 参照ゼロ"
 fi
@@ -129,10 +233,14 @@ fi
 
 # REST target は既知テーブルのdenylistではなく、唯一のread-only RPCだけをallowlistする。
 REST_TARGETS=$(grep -oE 'rest/v1/[A-Za-z0-9_/-]+' "$WF_EFF" | sort -u)
-if [ "$REST_TARGETS" = "rest/v1/rpc/get_live_snapshot" ]; then
+REST_REF_COUNT=$(grep -o 'rest/v1/' "$WF_EFF" | wc -l | tr -d ' ')
+CURL_COUNT=$(grep -oE '(^|[^A-Za-z0-9_])curl([^A-Za-z0-9_]|$)' "$WF_EFF" | wc -l | tr -d ' ')
+if [ "$REST_TARGETS" = "rest/v1/rpc/get_live_snapshot" ] \
+   && [ "$REST_REF_COUNT" = "2" ] \
+   && [ "$CURL_COUNT" = "1" ]; then
   ok "REST target は read-only get_live_snapshot のみ"
 else
-  ng "想定外のREST targetがある: $(echo "$REST_TARGETS" | tr '\n' ' ')"
+  ng "REST/curl固定形が不正: targets=$(echo "$REST_TARGETS" | tr '\n' ' ') rest_refs=$REST_REF_COUNT curl_refs=$CURL_COUNT"
 fi
 
 # HTTP メソッドは POST（＝RPC 実行）のみ。PostgREST の書き込み動詞を使わない。
@@ -176,13 +284,13 @@ echo ""
 echo "【5】応答本文をログに出さない"
 # echo/printf 系で $BODY を直接展開している行が残っていないこと。
 # 許容パターンは「HTTP コードだけを出す／本文は捨てる」形式のみ。
-if grep -nE '(echo|printf)[^#]*\$(BODY\b|\{BODY\})' "$WF_EFF" >/dev/null; then
+if grep -nE '(echo|printf)[^#]*\$(BODY([^A-Za-z0-9_]|$)|\{BODY([^A-Za-z0-9_]|$))' "$WF_EFF" >/dev/null; then
   ng "失敗時に応答本文 (\$BODY) をログ出力している行がある（不定コンテンツの露出防止のため禁止）"
-  grep -nE '(echo|printf)[^#]*\$(BODY\b|\{BODY\})' "$WF_EFF" | sed 's/^/      /'
+  grep -nE '(echo|printf)[^#]*\$(BODY([^A-Za-z0-9_]|$)|\{BODY([^A-Za-z0-9_]|$))' "$WF_EFF" | sed 's/^/      /'
 else
   ok "応答本文 (\$BODY) をログに出す echo/printf は無い"
 fi
-BODY_FILE_REFS=$(grep -c 'BODY_FILE' "$WF_EFF")
+BODY_FILE_REFS=$(grep -o 'BODY_FILE' "$WF_EFF" | wc -l | tr -d ' ')
 if [ "$BODY_FILE_REFS" = "5" ] \
    && grep -Fq 'BODY_FILE="$(mktemp)"' "$WF_EFF" \
    && grep -Fq 'trap '\''rm -f "$BODY_FILE"'\'' EXIT' "$WF_EFF" \

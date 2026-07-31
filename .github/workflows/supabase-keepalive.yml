@@ -65,8 +65,8 @@ jobs:
           # 設定ファイルをコードとして実行せず、single/double quoteの固定形だけを読む。
           # 同じpropertyが複数あれば、旧値を誤採用しないようfail closedにする。
           URL_MATCHES=$(sed -n \
-            -e "s/^[[:space:]]*url:[[:space:]]*'\([^']*\)'[[:space:]]*,[[:space:]]*$/\1/p" \
-            -e 's/^[[:space:]]*url:[[:space:]]*"\([^"]*\)"[[:space:]]*,[[:space:]]*$/\1/p' \
+            -e "s/^[[:space:]]*url:[[:space:]]*'\([^']*\)'[[:space:]]*,\\{0,1\\}[[:space:]]*$/\1/p" \
+            -e 's/^[[:space:]]*url:[[:space:]]*"\([^"]*\)"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p' \
             "$CONFIG")
           KEY_MATCHES=$(sed -n \
             -e "s/^[[:space:]]*publishableKey:[[:space:]]*'\([^']*\)'[[:space:]]*,\\{0,1\\}[[:space:]]*$/\1/p" \
@@ -84,10 +84,10 @@ jobs:
           # 公開値だがログには出さない（ジョブログの取り違え防止）
           if [ -n "$SUPABASE_KEY" ]; then echo "::add-mask::$SUPABASE_KEY"; fi
 
-          case "$SUPABASE_URL" in
-            https://*.supabase.co) : ;;
-            *) echo "::error::config.public.js から Supabase URL を抽出できない（抽出値の形式が不正）"; exit 1 ;;
-          esac
+          if ! printf '%s' "$SUPABASE_URL" | grep -Eq '^https://[a-z0-9-]+\.supabase\.co$'; then
+            echo "::error::config.public.js から Supabase URL を抽出できない（抽出値の形式が不正）"
+            exit 1
+          fi
           if [ -z "$SUPABASE_KEY" ]; then
             echo "::error::config.public.js から publishable key を抽出できない"
             exit 1
