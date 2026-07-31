@@ -8,6 +8,7 @@ CHANGELOG="$REPO_ROOT/docs/CHANGELOG.md"
 FRAG_DIR="$REPO_ROOT/docs/changelog.d"
 POSITION=end
 DRY_RUN=no
+TEST_MODE=no
 LOCK=""
 LOCK_HELD=no
 PENDING_SIGNAL=""
@@ -22,6 +23,7 @@ while [ "$#" -gt 0 ]; do
     --position) need_value "$@"; POSITION="$2"; shift 2 ;;
     --changelog) need_value "$@"; CHANGELOG="$2"; shift 2 ;;
     --fragments) need_value "$@"; FRAG_DIR="$2"; shift 2 ;;
+    --test-mode) TEST_MODE=yes; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "不明な引数: $1" >&2; exit 2 ;;
   esac
@@ -29,6 +31,7 @@ done
 case "$POSITION" in end|top) : ;; *) echo "--position は end / top のみ" >&2; exit 2 ;; esac
 CHANGELOG_DIR="$(cd "$(dirname "$CHANGELOG")" && pwd)" || exit 1
 CHANGELOG_ABS="$CHANGELOG_DIR/$(basename "$CHANGELOG")"
+[ ! -L "$CHANGELOG_ABS" ] || { echo "symlink CHANGELOGは参照先を安全に公開できないため拒否: $CHANGELOG_ABS" >&2; exit 2; }
 LOCK="$CHANGELOG_DIR/.changelog_merge.lock"
 release_lock() {
   if [ "$LOCK_HELD" = yes ]; then
@@ -58,7 +61,7 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 LOCK_HELD=yes
 printf '%s\n' "$$" > "$LOCK/owner" || exit 1
-[ "${CHANGELOG_MERGE_TEST_SIGNAL_AT:-}" = lock_acquired ] && kill -TERM "$$"
+[ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_SIGNAL_AT:-}" = lock_acquired ] && kill -TERM "$$"
 trap 'on_signal INT' INT
 trap 'on_signal TERM' TERM
 trap 'on_signal HUP' HUP
@@ -67,7 +70,7 @@ trap 'on_signal HUP' HUP
 write_state() {
   local dir="$1" value="$2" tmp="$1/state.tmp.$$"
   printf '%s\n' "$value" > "$tmp" || return 1
-  [ "$value" = initializing ] && [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_initial_state_tmp ] && {
+  [ "$TEST_MODE" = yes ] && [ "$value" = initializing ] && [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_initial_state_tmp ] && {
     echo "test crash after_initial_state_tmp" >&2
     exit 103
   }
@@ -86,11 +89,20 @@ is_pristine_transaction() {
 write_path() {
   local tx="$1" n="$2" value="$3" tmp="$1/paths/$2.path.tmp.$$"
   printf '%s\n' "$value" > "$tmp" || return 1
-  [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_path_tmp ] && [ "$n" = 1 ] && {
+  [ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_path_tmp ] && [ "$n" = 1 ] && {
     echo "test crash after_path_tmp" >&2
     exit 104
   }
   mv -f "$tmp" "$tx/paths/$n.path"
+}
+write_target() {
+  local tx="$1" value="$2" tmp="$1/target.tmp.$$"
+  printf '%s\n' "$value" > "$tmp" || return 1
+  [ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_target_tmp ] && {
+    echo "test crash after_target_tmp" >&2
+    exit 105
+  }
+  mv -f "$tmp" "$tx/target"
 }
 
 # quarantineから元パスへの復元はhard-link作成をcommit pointにする。
@@ -119,7 +131,7 @@ restore_precommit() {
       elif { [ -L "$q" ] && ln -P "$q" "$p" 2>/dev/null; } ||
            { [ ! -L "$q" ] && ln "$q" "$p" 2>/dev/null; }; then
         : # 全復元成功後もopen FD追記を失わないようhard-linkを保持する。
-        [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_restore_link ] && { echo "test crash after_restore_link" >&2; exit 101; }
+        [ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_restore_link ] && { echo "test crash after_restore_link" >&2; exit 101; }
       else
         failed=yes
         echo "復元先が存在するか復元不能。双方を保持: $p / $q" >&2
@@ -150,6 +162,10 @@ recover_transactions() {
     case "$state" in
       committed|aborted) continue ;;
       initializing)
+        if [ -f "$tx/target" ]; then
+          IFS= read -r target < "$tx/target" || return 3
+          [ "$target" = "$CHANGELOG_ABS" ] || continue
+        fi
         write_state "$tx" aborted || return 3
         echo "初期化中transactionを中止状態へ確定: $tx" >&2
         continue
@@ -207,7 +223,13 @@ if [ "$DRY_RUN" = yes ]; then
     IFS= read -r state < "$tx/state" || exit 3
     case "$state" in
       committed|aborted) ;;
-      initializing) echo "--dry-run: 残存transactionを変更せず中止 ($state): $tx" >&2; exit 3 ;;
+      initializing)
+        if [ -f "$tx/target" ]; then
+          IFS= read -r target < "$tx/target" || exit 3
+          [ "$target" = "$CHANGELOG_ABS" ] || continue
+        fi
+        echo "--dry-run: 残存transactionを変更せず中止 ($state): $tx" >&2; exit 3
+        ;;
       *)
         [ -f "$tx/target" ] || { echo "--dry-run: 対象不明transactionを変更せず中止: $tx" >&2; exit 3; }
         IFS= read -r target < "$tx/target" || exit 3
@@ -257,9 +279,9 @@ EOF
 [ "$DRY_RUN" = yes ] && { echo "--dry-run のため書き換えない（断片も削除しない）"; exit 0; }
 
 TX="$(mktemp -d "$CHANGELOG_DIR/.changelog_merge.txn.XXXXXX")" || exit 1
-[ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_mktemp ] && { echo "test crash after_mktemp" >&2; exit 102; }
+[ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_mktemp ] && { echo "test crash after_mktemp" >&2; exit 102; }
 write_state "$TX" initializing || exit 1
-printf '%s\n' "$CHANGELOG_ABS" > "$TX/target" || exit 1
+write_target "$TX" "$CHANGELOG_ABS" || exit 1
 mkdir "$TX/quarantine" "$TX/snapshot" "$TX/paths" || exit 1
 ln "$CHANGELOG_ABS" "$TX/changelog.before.link" || exit 1
 cp -p "$TX/changelog.before.link" "$TX/changelog.before" || exit 1
@@ -275,10 +297,10 @@ while IFS= read -r f; do
     exit 1
   fi
   rm -f "$TX/.same-fs-probe" || exit 1
-  if [ "${CHANGELOG_MERGE_TEST_SYMLINK_AT:-}" = before_quarantine ] && [ "$n" = 1 ]; then
+  if [ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_SYMLINK_AT:-}" = before_quarantine ] && [ "$n" = 1 ]; then
     rm -f "$f" && ln -s ../target.md "$f"
   fi
-  if [ "${CHANGELOG_MERGE_TEST_EMPTY_AT:-}" = before_quarantine ] && [ "$n" = 1 ]; then
+  if [ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_EMPTY_AT:-}" = before_quarantine ] && [ "$n" = 1 ]; then
     : > "$f"
   fi
   if ! mv "$f" "$TX/quarantine/$n.frag"; then
@@ -296,13 +318,16 @@ while IFS= read -r f; do
     restore_precommit "$TX" || exit 3
     exit 2
   fi
-  if [ "${CHANGELOG_MERGE_TEST_EMPTY_AT:-}" = before_snapshot ] && [ "$n" = 1 ]; then
+  if [ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_EMPTY_AT:-}" = before_snapshot ] && [ "$n" = 1 ]; then
     : > "$TX/quarantine/$n.frag"
   fi
   cp -p "$TX/quarantine/$n.frag" "$TX/snapshot/$n.frag" || {
     restore_precommit "$TX" || exit 3
     exit 1
   }
+  if [ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_REPLACE_AT:-}" = after_snapshot ] && [ "$n" = 1 ]; then
+    printf '%s\n' '## REPLACED-COMPLETE' > "$TX/quarantine/$n.frag"
+  fi
   [ -f "$TX/snapshot/$n.frag" ] || { restore_precommit "$TX" || exit 3; exit 1; }
   grep -q '[^[:space:]]' "$TX/snapshot/$n.frag" 2>/dev/null
   rc=$?
@@ -311,6 +336,11 @@ while IFS= read -r f; do
     restore_precommit "$TX" || exit 3
     [ "$rc" = 1 ] && exit 2 || exit 1
   fi
+  if ! cmp -s "$TX/snapshot/$n.frag" "$TX/quarantine/$n.frag"; then
+    echo "snapshot作成中の断片変更を検出。双方を保持: $f" >&2
+    restore_precommit "$TX" || exit 3
+    exit 3
+  fi
   n=$((n + 1))
 done <<EOF
 $FRAGS
@@ -318,7 +348,7 @@ EOF
 COUNT=$((n - 1))
 write_state "$TX" prepared || exit 1
 
-[ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_quarantine ] && { echo "test crash after_quarantine" >&2; exit 97; }
+[ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_quarantine ] && { echo "test crash after_quarantine" >&2; exit 97; }
 
 strip_edges() {
   awk '{ a[NR]=$0; if (NF) { if (!s) s=NR; e=NR } } END { for(i=s;i<=e;i++) print a[i] }' "$1"
@@ -351,19 +381,27 @@ cp -p "$NEW" "$TX/published.image" || exit 1
 # 旧版を退避して同一inodeを検証し、新版をno-clobberで公開する。
 # 非協調writerが間に作成した版は上書きせず、transaction内の全版も保持する。
 write_state "$TX" publishing || exit 1
-[ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = before_commit ] && { echo "test crash before_commit" >&2; exit 98; }
-[ "${CHANGELOG_MERGE_TEST_CONCURRENT_AT:-}" = before_publish ] && printf '%s\n' '# CONCURRENT' > "$CHANGELOG_ABS"
+[ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = before_commit ] && { echo "test crash before_commit" >&2; exit 98; }
+[ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_CONCURRENT_AT:-}" = before_publish ] && printf '%s\n' '# CONCURRENT' > "$CHANGELOG_ABS"
+[ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_CHANGELOG_SYMLINK_AT:-}" = before_displace ] && {
+  rm -f "$CHANGELOG_ABS" && ln -s "$TX/changelog.before.link" "$CHANGELOG_ABS"
+}
 if ! mv "$CHANGELOG_ABS" "$TX/changelog.displaced"; then
   echo "CHANGELOG退避に失敗。transactionを保持: $TX" >&2
   exit 1
 fi
-[ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_displace ] && { echo "test crash after_displace" >&2; exit 100; }
+[ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_displace ] && { echo "test crash after_displace" >&2; exit 100; }
+if [ -L "$TX/changelog.displaced" ]; then
+  ln -P "$TX/changelog.displaced" "$CHANGELOG_ABS" 2>/dev/null || :
+  echo "CHANGELOGが公開直前にsymlinkへ変更されたため拒否。双方を保持: $TX" >&2
+  exit 3
+fi
 if [ ! "$TX/changelog.displaced" -ef "$TX/changelog.before.link" ] || ! cmp -s "$TX/changelog.displaced" "$TX/changelog.before"; then
   ln "$TX/changelog.displaced" "$CHANGELOG_ABS" 2>/dev/null || :
   echo "CHANGELOGの並行編集を検出。競合版とtransactionを保持: $TX" >&2
   exit 3
 fi
-[ "${CHANGELOG_MERGE_TEST_CONCURRENT_AT:-}" = after_displace ] && printf '%s\n' '# CONCURRENT' > "$CHANGELOG_ABS"
+[ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_CONCURRENT_AT:-}" = after_displace ] && printf '%s\n' '# CONCURRENT' > "$CHANGELOG_ABS"
 if ! ln "$NEW" "$CHANGELOG_ABS" 2>/dev/null; then
   echo "CHANGELOG公開先に並行版を検出。全版を保持: $TX" >&2
   exit 3
@@ -376,8 +414,8 @@ if ! rm -f "$NEW"; then
   echo "CHANGELOG commitに失敗。transactionを保持: $TX" >&2
   exit 1
 fi
-[ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_commit ] && { echo "test crash after_commit" >&2; exit 99; }
-[ "${CHANGELOG_MERGE_TEST_SIGNAL_AT:-}" = after_commit ] && kill -TERM "$$"
+[ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_commit ] && { echo "test crash after_commit" >&2; exit 99; }
+[ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_SIGNAL_AT:-}" = after_commit ] && kill -TERM "$$"
 write_state "$TX" committed || {
   echo "commit済みだがstate確定に失敗。次回判定用transactionを保持: $TX" >&2
   exit 1

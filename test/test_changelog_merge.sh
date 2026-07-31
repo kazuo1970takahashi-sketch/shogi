@@ -20,7 +20,7 @@ setup(){
 }
 frag(){ printf '\n## %s\n\n- body\n' "$2" > "$SBX/docs/changelog.d/$1"; }
 run(){
-  env ${RUN_ENV:-} bash "$MERGE" --changelog "$SBX/docs/CHANGELOG.md" \
+  env ${RUN_ENV:-} bash "$MERGE" --test-mode --changelog "$SBX/docs/CHANGELOG.md" \
     --fragments "$SBX/docs/changelog.d" "$@" > "$SBX/out" 2>&1
 }
 tx_latest(){ ls -dt "$SBX/docs"/.changelog_merge.txn.* 2>/dev/null | head -1; }
@@ -62,6 +62,12 @@ topline="$(grep -n '^## TOP$' "$SBX/docs/CHANGELOG.md" | cut -d: -f1)"
 oldline="$(grep -n '^## OLD$' "$SBX/docs/CHANGELOG.md" | cut -d: -f1)"
 check '[ "$rc" = 0 ] && [ "$topline" -lt "$oldline" ]' "top挿入"
 
+setup; frag 20260730_link_changelog.md LINK-CHANGELOG
+mv "$SBX/docs/CHANGELOG.md" "$SBX/docs/REAL.md"
+ln -s REAL.md "$SBX/docs/CHANGELOG.md"
+run; rc=$?
+check '[ "$rc" = 2 ] && [ -L "$SBX/docs/CHANGELOG.md" ] && ! grep -q LINK-CHANGELOG "$SBX/docs/REAL.md"' "symlink CHANGELOGを参照先変更前にfail closed"
+
 echo "【排他lock】"
 setup; frag 20260730_lock.md LOCK
 mkdir "$SBX/docs/.changelog_merge.lock"
@@ -94,6 +100,13 @@ check '[ "$rc" = 103 ] && [ ! -f "$tmptx/state" ] && [ -f "$tmptx"/state.tmp.* ]
 run; rc=$?
 check '[ "$rc" = 0 ] && [ ! -d "$tmptx" ] && grep -q "^## STATE-TMP$" "$SBX/docs/CHANGELOG.md"' "state tmpだけのtransactionを安全に除去・再実行"
 
+setup; frag 20260730_targettmp.md TARGET-TMP
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_target_tmp'; run; rc=$?; RUN_ENV=
+targettx="$(tx_latest)"
+check '[ "$rc" = 105 ] && [ "$(cat "$targettx/state")" = initializing ] && [ -f "$targettx"/target.tmp.* ] && [ ! -f "$targettx/target" ]' "target tmp作成後crashで不完全targetを公開しない"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ "$(cat "$targettx/state")" = aborted ] && grep -q "^## TARGET-TMP$" "$SBX/docs/CHANGELOG.md"' "target partial-write窓を安全に中止して再実行"
+
 setup; frag 20260730_pathtmp.md PATH-TMP
 RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_path_tmp'; run; rc=$?; RUN_ENV=
 pathtx="$(tx_latest)"
@@ -120,16 +133,25 @@ check '[ "$rc" = 3 ] && [ "$(cat "$oldtx/state")" = prepared ] && [ -f "$oldtx/q
 setup
 printf '%s\n' '# A' > "$SBX/docs/A.md"; printf '%s\n' '# B' > "$SBX/docs/B.md"
 frag 20260730_scope.md SCOPE-A
-env CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine bash "$MERGE" --changelog "$SBX/docs/A.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
+env CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine bash "$MERGE" --test-mode --changelog "$SBX/docs/A.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
 atx="$(tx_latest)"
 env bash "$MERGE" --changelog "$SBX/docs/B.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc2=$?
 check '[ "$rc" = 97 ] && [ "$rc2" = 0 ] && [ "$(cat "$atx/state")" = prepared ] && ! grep -q SCOPE-A "$SBX/docs/B.md"' "別CHANGELOGのtransactionを回復・混入しない"
 env bash "$MERGE" --changelog "$SBX/docs/A.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
 check '[ "$rc" = 0 ] && grep -q SCOPE-A "$SBX/docs/A.md"' "対象CHANGELOGだけが自身のtransactionを回復"
 
+setup
+printf '%s\n' '# A' > "$SBX/docs/A.md"; printf '%s\n' '# B' > "$SBX/docs/B.md"
+itx="$SBX/docs/.changelog_merge.txn.INIT"; mkdir "$itx"
+printf '%s\n' initializing > "$itx/state"; printf '%s\n' "$SBX/docs/A.md" > "$itx/target"
+env bash "$MERGE" --changelog "$SBX/docs/B.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
+check '[ "$rc" = 0 ] && [ "$(cat "$itx/state")" = initializing ]' "別targetのinitializing transactionを変更しない"
+env bash "$MERGE" --dry-run --changelog "$SBX/docs/B.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
+check '[ "$rc" = 0 ] && [ "$(cat "$itx/state")" = initializing ]' "dry-runも別targetのinitializing transactionを拒否対象にしない"
+
 setup; frag 20260730_relative.md RELATIVE
 mkdir "$SBX/one" "$SBX/two"
-(cd "$SBX/docs" && env CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine bash "$MERGE" --changelog "$SBX/docs/CHANGELOG.md" --fragments changelog.d > "$SBX/out" 2>&1); rc=$?
+(cd "$SBX/docs" && env CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine bash "$MERGE" --test-mode --changelog "$SBX/docs/CHANGELOG.md" --fragments changelog.d > "$SBX/out" 2>&1); rc=$?
 (cd "$SBX/two" && env bash "$MERGE" --changelog "$SBX/docs/CHANGELOG.md" --fragments ../docs/changelog.d > "$SBX/out" 2>&1); rc2=$?
 check '[ "$rc" = 97 ] && [ "$rc2" = 0 ] && grep -q "^## RELATIVE$" "$SBX/docs/CHANGELOG.md" && [ ! -e "$SBX/two/changelog.d/20260730_relative.md" ]' "相対fragment pathを絶対化して元位置へ復元"
 
@@ -198,6 +220,12 @@ tx="$(tx_latest)"
 check '[ "$rc" = 3 ] && grep -q "^# CONCURRENT$" "$SBX/docs/CHANGELOG.md"' "退避後の並行作成をatomic no-clobberで保護"
 check 'grep -q "^# CHANGELOG test$" "$tx/changelog.displaced" && grep -q "^## CONCURRENT-FRAG-2$" "$tx/published.image"' "no-clobber競合時も全版を保持"
 
+setup; frag 20260730_changelog_symlink_swap.md CHANGELOG-SYMLINK-SWAP
+RUN_ENV='CHANGELOG_MERGE_TEST_CHANGELOG_SYMLINK_AT=before_displace'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 3 ] && [ -L "$SBX/docs/CHANGELOG.md" ] && [ -L "$tx/changelog.displaced" ]' "公開直前のCHANGELOG symlink差替えを退避後に検出・物理link保持"
+check '! grep -q CHANGELOG-SYMLINK-SWAP "$SBX/docs/CHANGELOG.md" && grep -q CHANGELOG-SYMLINK-SWAP "$tx/published.image"' "symlink差替え時に参照先を更新せず公開予定版を保持"
+
 echo "【symlink fragment】"
 setup; frag 20260730_empty_swap.md EMPTY-SWAP
 RUN_ENV='CHANGELOG_MERGE_TEST_EMPTY_AT=before_quarantine'; run; rc=$?; RUN_ENV=
@@ -210,6 +238,16 @@ RUN_ENV='CHANGELOG_MERGE_TEST_EMPTY_AT=before_snapshot'; run; rc=$?; RUN_ENV=
 tx="$(tx_latest)"
 check '[ "$rc" = 2 ] && [ -f "$tx/snapshot/1.frag" ] && [ ! -s "$tx/snapshot/1.frag" ]' "copy直前truncateで空snapshotを検出"
 check '! grep -q "^## SNAPSHOT-EMPTY$" "$SBX/docs/CHANGELOG.md"' "空snapshotを成功commitしない"
+
+setup; frag 20260730_snapshot_race.md SNAPSHOT-RACE
+RUN_ENV='CHANGELOG_MERGE_TEST_REPLACE_AT=after_snapshot'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 3 ] && grep -q SNAPSHOT-RACE "$tx/snapshot/1.frag" && grep -q REPLACED-COMPLETE "$tx/quarantine/1.frag"' "snapshot完成後のquarantine不一致を検出して双方保持"
+check '! grep -q SNAPSHOT-RACE "$SBX/docs/CHANGELOG.md"' "不一致snapshotを公開しない"
+
+setup; frag 20260730_inherited_hook.md INHERITED-HOOK
+env CHANGELOG_MERGE_TEST_EMPTY_AT=before_quarantine bash "$MERGE" --changelog "$SBX/docs/CHANGELOG.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
+check '[ "$rc" = 0 ] && grep -q "^## INHERITED-HOOK$" "$SBX/docs/CHANGELOG.md"' "故障注入環境変数だけでは本番経路を変更しない"
 
 setup
 printf '%s\n' '## LINK-TARGET' > "$SBX/docs/target.md"
