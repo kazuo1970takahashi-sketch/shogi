@@ -62,10 +62,16 @@ jobs:
             exit 1
           fi
 
-          # コメントや部分一致を拾わず、有効なプロパティ行が各1本だけであることを要求する。
-          # 重複・旧値の残置・構成変更は、誤った別プロジェクトをpingせずfail closedにする。
-          URL_MATCHES=$(sed -n "s/^[[:space:]]*url:[[:space:]]*'\([^']*\)'[[:space:]]*,[[:space:]]*$/\1/p" "$CONFIG")
-          KEY_MATCHES=$(sed -n "s/^[[:space:]]*publishableKey:[[:space:]]*'\([^']*\)'[[:space:]]*,\\{0,1\\}[[:space:]]*$/\1/p" "$CONFIG")
+          # 設定ファイルをコードとして実行せず、single/double quoteの固定形だけを読む。
+          # 同じpropertyが複数あれば、旧値を誤採用しないようfail closedにする。
+          URL_MATCHES=$(sed -n \
+            -e "s/^[[:space:]]*url:[[:space:]]*'\([^']*\)'[[:space:]]*,[[:space:]]*$/\1/p" \
+            -e 's/^[[:space:]]*url:[[:space:]]*"\([^"]*\)"[[:space:]]*,[[:space:]]*$/\1/p' \
+            "$CONFIG")
+          KEY_MATCHES=$(sed -n \
+            -e "s/^[[:space:]]*publishableKey:[[:space:]]*'\([^']*\)'[[:space:]]*,\\{0,1\\}[[:space:]]*$/\1/p" \
+            -e 's/^[[:space:]]*publishableKey:[[:space:]]*"\([^"]*\)"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p' \
+            "$CONFIG")
           URL_COUNT=$(printf '%s\n' "$URL_MATCHES" | awk 'NF { n++ } END { print n + 0 }')
           KEY_COUNT=$(printf '%s\n' "$KEY_MATCHES" | awk 'NF { n++ } END { print n + 0 }')
           if [ "$URL_COUNT" != "1" ] || [ "$KEY_COUNT" != "1" ]; then

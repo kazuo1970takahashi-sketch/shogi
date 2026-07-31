@@ -6,7 +6,7 @@
 #   （新しい secret・新しい公開窓・DB 書き込みを一切作らない）を機械固定する。
 #   ネットワークには一切触れない（YAML の静的検査のみ）。
 #
-#   PyYAML が無い環境では構造検査を省略せず FAIL にする（安全ゲートのfalse green防止）。
+#   外部YAML parserへ依存せず、固定する構造を必須の文字列ゲートで検証する。
 #
 # 使い方: bash test/test_supabase_keepalive_workflow.sh
 # set -e は使わない（個別に判定するため）。
@@ -37,110 +37,52 @@ if [ ! -f "$WF" ]; then
 fi
 
 # -----------------------------------------------------------------------------
-# 1. YAML 構造（PyYAML 必須・不在は fail closed）
+# 1. YAML 構造（依存追加なし・固定構造をfail closedで検証）
 # -----------------------------------------------------------------------------
 echo ""
 echo "【1】YAML 構造"
-if python3 -c 'import yaml' >/dev/null 2>&1; then
-  STRUCT=$(WF="$WF" KA_TMPDIR="$KA_TMPDIR" python3 - <<'PY'
-import os, sys, yaml
-
-errs = []
-with open(os.environ['WF']) as f:
-    doc = yaml.safe_load(f)
-
-# PyYAML は素の on: を True(bool) に解決する（YAML 1.1 の真偽値）
-triggers = doc.get('on', doc.get(True))
-if not isinstance(triggers, dict):
-    errs.append('on: がマップでない')
-else:
-    if 'workflow_dispatch' not in triggers:
-        errs.append('workflow_dispatch トリガが無い（手動テスト不能）')
-    sched = triggers.get('schedule')
-    if not isinstance(sched, list) or not sched:
-        errs.append('schedule トリガが無い')
-    else:
-        crons = [str(e.get('cron', '')) for e in sched if isinstance(e, dict)]
-        if len(crons) != 1:
-            errs.append('cron 定義は 1 本のはず: %r' % crons)
-        else:
-            fields = crons[0].split()
-            if len(fields) != 5:
-                errs.append('cron のフィールド数が 5 でない: %r' % crons[0])
-            else:
-                dow = fields[4]
-                days = [d for d in dow.split(',') if d != '']
-                if len(days) != 3:
-                    errs.append('週3回でない（曜日フィールド=%r）' % dow)
-                if fields[2] != '*' or fields[3] != '*':
-                    errs.append('日/月フィールドが * でない（週次にならない）: %r' % crons[0])
-
-    if set(triggers) - {'schedule', 'workflow_dispatch'}:
-        errs.append('想定外のトリガがある: %r' % sorted(set(triggers)))
-
-perms = doc.get('permissions')
-if perms != {'contents': 'read'}:
-    errs.append('permissions が {contents: read} でない: %r' % (perms,))
-
-jobs = doc.get('jobs') or {}
-if len(jobs) != 1:
-    errs.append('job は 1 本のはず: %r' % sorted(jobs))
-for name, job in jobs.items():
-    if 'permissions' in job:
-        errs.append('job %s に権限上書きがある（workflow-level contents: read のみを使う）' % name)
-    if 'timeout-minutes' not in job:
-        errs.append('job %s に timeout-minutes が無い' % name)
-    for step in job.get('steps') or []:
-        uses = step.get('uses', '')
-        if uses and not uses.startswith('actions/checkout@'):
-            errs.append('想定外の action を使っている: %r' % uses)
-        if uses.startswith('actions/checkout@'):
-            with_ = step.get('with') or {}
-            if with_.get('persist-credentials') is not False:
-                errs.append('checkout が persist-credentials: false でない')
-            if not with_.get('sparse-checkout'):
-                errs.append('checkout が sparse-checkout でない（全ツリー取得は不要）')
-            # ref を省くと「その時のデフォルトブランチ」を取ってしまう。
-            # 抽出元 app/config.public.js は出荷物＝production ブランチにしか無いので、
-            # デフォルトブランチ任せにせず ref: production を明示していることを固定する。
-            if with_.get('ref') != 'production':
-                errs.append('checkout の ref が production でない（デフォルトブランチ依存は不可）: %r'
-                            % (with_.get('ref'),))
-
-# run ブロックの bash 構文
-#   取り出した run スクリプトは呼び出し側の一時ディレクトリへ書く（EXIT trap で削除される）。
-runs = [s.get('run') for j in jobs.values() for s in (j.get('steps') or []) if s.get('run')]
-print('RUNS=%d' % len(runs))
-rundir = os.environ['KA_TMPDIR']
-for i, r in enumerate(runs):
-    with open(os.path.join(rundir, 'run_%d.sh' % i), 'w') as fh:
-        fh.write(r)
-
-for e in errs:
-    print('ERR:' + e)
-PY
-)
-  if [ $? -ne 0 ]; then
-    ng "YAML parse に失敗（構文エラー）"
-  else
-    ERRS=$(echo "$STRUCT" | grep '^ERR:' | sed 's/^ERR://')
-    if [ -z "$ERRS" ]; then
-      ok "YAML 構造 OK（schedule 週3回＋workflow_dispatch／permissions=contents:read のみ／checkout 以外の action なし）"
-    else
-      while IFS= read -r line; do ng "YAML 構造: $line"; done <<< "$ERRS"
-    fi
-    NRUNS=$(echo "$STRUCT" | sed -n 's/^RUNS=//p')
-    i=0
-    SYNTAX_OK=1
-    while [ "$i" -lt "${NRUNS:-0}" ]; do
-      bash -n "$KA_TMPDIR/run_$i.sh" 2>/dev/null || SYNTAX_OK=0
-      i=$((i + 1))
-    done
-    [ "$SYNTAX_OK" = "1" ] && ok "run ブロックの bash 構文 OK（${NRUNS:-0} 本）" || ng "run ブロックに bash 構文エラー"
-  fi
+if [ "$(grep -c '^  schedule:$' "$WF")" = "1" ] \
+   && [ "$(grep -c '^  workflow_dispatch:$' "$WF")" = "1" ] \
+   && [ "$(grep -c '^    - cron:' "$WF")" = "1" ] \
+   && [ "$(awk '/^on:$/{inside=1; next} /^permissions:$/{inside=0} inside && /^  [^[:space:]#][^:]*:$/ { print }' "$WF")" = "$(printf '%s\n%s' '  schedule:' '  workflow_dispatch:')" ]; then
+  ok "trigger はschedule 1本＋workflow_dispatchのみ"
 else
-  ng "PyYAML 未インストール → YAML 構造検査を省略できないため fail closed"
+  ng "trigger構造が固定形でない"
 fi
+if [ "$(grep -c '^permissions:$' "$WF")" = "1" ] \
+   && [ "$(grep -c '^  contents: read$' "$WF")" = "1" ] \
+   && [ "$(grep -c '^[[:space:]]*permissions:' "$WF")" = "1" ]; then
+  ok "permissionsはworkflow-level contents:readのみ"
+else
+  ng "permissionsの欠落・過大化・job-level上書きを検出"
+fi
+if [ "$(grep -c '^jobs:$' "$WF")" = "1" ] \
+   && [ "$(awk '/^jobs:$/{inside=1; next} inside && /^  [^[:space:]#][^:]*:$/ { print }' "$WF")" = "  ping:" ] \
+   && [ "$(grep -c '^      - name:' "$WF")" = "2" ] \
+   && [ "$(grep -c '^        run: |$' "$WF")" = "1" ] \
+   && grep -q '^    timeout-minutes: 5$' "$WF"; then
+  ok "jobはtimeout付きping 1本"
+else
+  ng "job構造が固定形でない"
+fi
+USES=$(grep -E '^[[:space:]]*uses:' "$WF" | sed 's/^[[:space:]]*uses:[[:space:]]*//')
+[ "$USES" = "actions/checkout@v4" ] && ok "使用actionはcheckout@v4のみ" || ng "想定外action: $USES"
+grep -q '^          ref: production$' "$WF" \
+  && grep -q '^          sparse-checkout: app/config.public.js$' "$WF" \
+  && grep -q '^          persist-credentials: false$' "$WF" \
+  && ok "checkoutはproduction公開config限定・資格情報非保持" \
+  || ng "checkoutのref/sparse/persist-credentialsが固定形でない"
+
+# run: | の内容は本workflowで1本。10桁indentを外してbash構文を直接検査する。
+RUN_FILE="$KA_TMPDIR/run.sh"
+awk '
+  /^        run: \|$/ { in_run=1; next }
+  in_run && /^          / { sub(/^          /, ""); print; next }
+  in_run && /^[[:space:]]*$/ { print ""; next }
+  in_run { exit }
+' "$WF" > "$RUN_FILE"
+[ -s "$RUN_FILE" ] && bash -n "$RUN_FILE" \
+  && ok "runブロックのbash構文OK" || ng "runブロック欠落またはbash構文エラー"
 
 # -----------------------------------------------------------------------------
 # 以降は「コメント行を除いた実効定義」に対して検査する。
@@ -240,10 +182,16 @@ if grep -nE '(echo|printf)[^#]*\$(BODY\b|\{BODY\})' "$WF_EFF" >/dev/null; then
 else
   ok "応答本文 (\$BODY) をログに出す echo/printf は無い"
 fi
-if grep -nE '(cat|head|tail|sed|awk|grep|less|more)[^#]*\$(BODY_FILE\b|\{BODY_FILE\})' "$WF_EFF" >/dev/null; then
-  ng "BODY_FILE を直接ログ出力し得るコマンドがある"
+BODY_FILE_REFS=$(grep -c 'BODY_FILE' "$WF_EFF")
+if [ "$BODY_FILE_REFS" = "5" ] \
+   && grep -Fq 'BODY_FILE="$(mktemp)"' "$WF_EFF" \
+   && grep -Fq 'trap '\''rm -f "$BODY_FILE"'\'' EXIT' "$WF_EFF" \
+   && grep -Fq ': > "$BODY_FILE"' "$WF_EFF" \
+   && grep -Fq -- '-o "$BODY_FILE" -w' "$WF_EFF" \
+   && grep -Fq 'BODY=$(tr -d '\'' \t\r\n'\'' < "$BODY_FILE")' "$WF_EFF"; then
+  ok "BODY_FILE参照はmktemp・削除・空化・curl出力・捕捉読取の5用途だけ"
 else
-  ok "BODY_FILE の直接ログ出力なし"
+  ng "BODY_FILEにallowlist外の参照がある（ログ露出の可能性）"
 fi
 
 # -----------------------------------------------------------------------------
