@@ -22,7 +22,7 @@
 2. **build / bind / coordinator パターンを維持**（HTML 組立・イベント結線・呼び出し束ねの分離。`docs/REFERENCE.md` 参照）。
 3. **CSS の動作を変えない**（特に `<div class="section">` の閉じタグ省略は**元コードからの仕様**＝ブラウザ自動補完で動作。修正禁止）。
 4. **ES5 / 古典的クロージャ / グローバル `state` を維持**（モジュール化・フレームワーク化しない）。
-5. **テストを必ず実行**: `bash test/run_tests.sh shogi_v4.html`（baseline は **WARN=0** を維持＝実在しないテスト参照を増やさない）。
+5. **テストを必ず実行**: `bash test/run_tests.sh shogi_v4.html`（baseline は **WARN=0** を維持）。**テストの追加は `test/` にファイルを置くだけ**（STAGE0-CONFLICT-FREE-001 以降、`test/test_*.js` / `test/test_*.sh` / `test/*_pgtest.sh` は自動発見される。`run_tests.sh` への登録追記は不要＝並行スライスがここで衝突しない）。
 6. **関数構造の意図しない変化がないか確認**（期待関数の present/構造チェック・escape ヒューリスティックを壊さない）。
 7. **挙動変更を伴う改修はリファクタと別フェーズ**として扱う（混在させない）。
 8. **編集対象は `shogi_v4.html`**（当日運営は無改変・**追加/最小改変中心**）。`index.html` / `.github` / `package*` は原則触らない。
@@ -33,4 +33,5 @@
 - ブランチ運用・current HEAD・進行中タスク・制約は [`HANDOFF.md`](HANDOFF.md) が正本（PR の base は orphan clean base `chore/shogi-tour-apphq-003h-2d-orphan-clean-base`・`main` を base にしない／production 反映は別 release PR）。
 - コード設計マップ（関数構造・データ構造）= [`docs/REFERENCE.md`](docs/REFERENCE.md)／実装履歴 = [`docs/CHANGELOG.md`](docs/CHANGELOG.md)／プロセス正本 = [`docs/ai-ops/`](docs/ai-ops/)。
 - **追加/最小改変中心**・`shogi_v4.html` の当日運営は無改変・**Draft PR で停止**（Ready化/merge/squash/branch削除/production は人間の明示承認まで未実施）・**secret/実データ不使用**（テスト fixture は架空のみ）。
-- テスト: `bash test/run_tests.sh shogi_v4.html`（baseline は WARN=0 を維持＝実在しないテスト参照を増やさない）。
+- テスト: `bash test/run_tests.sh shogi_v4.html`（baseline は WARN=0 を維持）。テストの追加は `test/` へファイルを置くだけ（自動発見・`run_tests.sh` への登録不要）。見出しはテストファイル先頭のコメント行から採られる（`// @suite: 説明` で明示可）。
+- **CHANGELOG は断片で書く**（STAGE0-CONFLICT-FREE-001）: 各スライスは `docs/CHANGELOG.md` を直接編集せず、`docs/changelog.d/<YYYYMMDD>_<スライスID>.md` を 1 本置く。本体への連結は**リリース列車の組成時に** `bash scripts/changelog_merge.sh` を 1 回実行するだけ（日付順・冪等）。規約 = [`docs/changelog.d/README.md`](docs/changelog.d/README.md)。
