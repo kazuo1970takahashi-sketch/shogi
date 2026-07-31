@@ -1,0 +1,133 @@
+# KEEPALIVE-001: Supabase 無料枠の auto-pause 再発防止（＋無料の死活監視）
+#
+# 背景: 2026-07-29 にログイン認証が全断した。原因は Supabase 無料枠の auto-pause
+#   （約1週間アクセスが無いとプロジェクトが休止）。月例運用（大会間隔 3〜5 週）では
+#   放置すると毎月再発するため、外形アクセスで pause を防ぐ。
+#
+# 設計の要点:
+#   - 週3回（UTC 日・火・木 21:17 = JST 月・水・金 06:17）。1回欠けても次の成功まで
+#     最大5日なので、pause 閾値約7日に対して余裕を持つ。毎時0分も避ける。
+#   - 叩くのは本番アプリと同じ公開窓 RPC get_live_snapshot(slug) のみ（anon・read-only）。
+#     新しい公開窓・新しい secret・DB 書き込みは一切作らない。
+#   - URL と publishable key は「出荷物」である production ブランチの app/config.public.js から
+#     実行時に抽出する（値を本ファイルへ複写しない＝ドリフトしない）。どちらも公開前提の値で、
+#     GitHub Pages で配信されている。secrets は使用しない。
+#   - 失敗はそのまま workflow の失敗にする＝GitHub の失敗通知メールが作者に届く。
+#     pause 再発・Supabase 障害を最大 3〜4 日以内に検知できる（無料の死活監視）。
+#
+# 注意: schedule も workflow_dispatch も、この workflow ファイルが
+#   リポジトリのデフォルトブランチに取り込まれて初めて実際に発火・実行できるようになる
+#   （GitHub Actions の仕様。ブランチ名は問わない＝デフォルトブランチ側に存在すること自体が条件）。
+#   開発ブランチにしか存在しない期間は、schedule も Actions タブからの workflow_dispatch も動かない。
+#   また公開リポジトリでは60日間リポジトリ活動がないとscheduleが自動停止するため、
+#   人間運用で45日ごとに有効状態と直近成功を確認し、停止時はActions画面から再有効化する。
+name: Supabase Keepalive
+
+on:
+  schedule:
+    # 分 時 日 月 曜日（UTC）。0,2,4=日・火・木 → JST 月・水・金の 06:17。
+    - cron: '17 21 * * 0,2,4'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Ping Supabase (get_live_snapshot)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # 出荷済みの公開 config だけを取得する（sparse-checkout・認証情報は持ち回らない）
+      - name: Checkout published public config (production)
+        uses: actions/checkout@v4
+        with:
+          ref: production
+          sparse-checkout: app/config.public.js
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Ping public read-only RPC
+        env:
+          # 実在し得ない slug。slug は start_live_session が 'live-<uuid32桁>' 形式でのみ発行するため
+          # （supabase/migrations/20260705120000_..._public_snapshots.sql §4.3①）、この値は恒久的に未存在。
+          # → 正常時のレスポンスは常に HTTP 200 / body = null になる。
+          KEEPALIVE_SLUG: keepalive-probe-does-not-exist
+        run: |
+          set -uo pipefail
+
+          CONFIG='app/config.public.js'
+          if [ ! -f "$CONFIG" ]; then
+            echo "::error::$CONFIG が production ブランチに見つからない（出荷物の構成が変わった可能性）"
+            exit 1
+          fi
+
+          # 設定ファイルをコードとして実行せず、single/double quoteの固定形だけを読む。
+          # 同じpropertyが複数あれば、旧値を誤採用しないようfail closedにする。
+          URL_MATCHES=$(sed -n \
+            -e "s/^[[:space:]]*url:[[:space:]]*'\([^']*\)'[[:space:]]*,\\{0,1\\}[[:space:]]*$/\1/p" \
+            -e 's/^[[:space:]]*url:[[:space:]]*"\([^"]*\)"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p' \
+            "$CONFIG")
+          KEY_MATCHES=$(sed -n \
+            -e "s/^[[:space:]]*publishableKey:[[:space:]]*'\([^']*\)'[[:space:]]*,\\{0,1\\}[[:space:]]*$/\1/p" \
+            -e 's/^[[:space:]]*publishableKey:[[:space:]]*"\([^"]*\)"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p' \
+            "$CONFIG")
+          URL_COUNT=$(printf '%s\n' "$URL_MATCHES" | awk 'NF { n++ } END { print n + 0 }')
+          KEY_COUNT=$(printf '%s\n' "$KEY_MATCHES" | awk 'NF { n++ } END { print n + 0 }')
+          if [ "$URL_COUNT" != "1" ] || [ "$KEY_COUNT" != "1" ]; then
+            echo "::error::config.public.js の公開設定が一意でない（url=$URL_COUNT, publishableKey=$KEY_COUNT）"
+            exit 1
+          fi
+          SUPABASE_URL="$URL_MATCHES"
+          SUPABASE_KEY="$KEY_MATCHES"
+
+          # 公開値だがログには出さない（ジョブログの取り違え防止）
+          if [ -n "$SUPABASE_KEY" ]; then echo "::add-mask::$SUPABASE_KEY"; fi
+
+          if ! printf '%s' "$SUPABASE_URL" | grep -Eq '^https://[a-z0-9-]+\.supabase\.co$'; then
+            echo "::error::config.public.js から Supabase URL を抽出できない（抽出値の形式が不正）"
+            exit 1
+          fi
+          if [ -z "$SUPABASE_KEY" ]; then
+            echo "::error::config.public.js から publishable key を抽出できない"
+            exit 1
+          fi
+          echo "target: $SUPABASE_URL/rest/v1/rpc/get_live_snapshot (slug=$KEEPALIVE_SLUG)"
+
+          # 応答本文の受け皿は 1 本の tempfile を使い回し、trap で必ず削除する
+          # （成功時 exit 0・失敗時 exit 1 の両パスで漏れないように EXIT トラップに集約）。
+          BODY_FILE="$(mktemp)"
+          trap 'rm -f "$BODY_FILE"' EXIT
+
+          # 成功時のリクエストは 1 回だけ。再試行は失敗したときのみ行う
+          # （一過性のネットワーク断で「pause 再発」の誤報を出さないため。
+          #   pause 中は 503 が継続するので、本物の異常は再試行しても落ちる）。
+          ATTEMPTS=3
+          SLEEP_SEC=20
+          i=1
+          while [ "$i" -le "$ATTEMPTS" ]; do
+            : > "$BODY_FILE"
+            CODE=$(curl -sS --max-time 30 \
+              -o "$BODY_FILE" -w '%{http_code}' \
+              -X POST "$SUPABASE_URL/rest/v1/rpc/get_live_snapshot" \
+              -H "apikey: $SUPABASE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_KEY" \
+              -H 'Content-Type: application/json' \
+              -d "{\"slug\":\"$KEEPALIVE_SLUG\"}") || CODE='000'
+            BODY=$(tr -d ' \t\r\n' < "$BODY_FILE")
+
+            if [ "$CODE" = "200" ] && [ "$BODY" = "null" ]; then
+              echo "✓ alive: HTTP 200 / body=null（DB まで到達した実クエリ）— 試行 $i/$ATTEMPTS"
+              exit 0
+            fi
+
+            # 失敗時の応答本文は不定（PostgREST のエラーメッセージ・中間層の HTML 5xx ページ・
+            # apikey 由来の識別子等）が混じり得るため、意図せぬ露出を避けて本文はログに出さない。
+            echo "試行 $i/$ATTEMPTS 失敗: HTTP=$CODE（応答本文はログ出力しない）"
+            i=$((i + 1))
+            [ "$i" -le "$ATTEMPTS" ] && sleep "$SLEEP_SEC"
+          done
+
+          echo "::error::Supabase への keepalive が $ATTEMPTS 回とも失敗した。"
+          echo "::error::HTTP 503 ならプロジェクトが Paused の可能性が高い → Supabase ダッシュボードで Resume（数分）。"
+          exit 1
