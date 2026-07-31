@@ -45,8 +45,10 @@ echo "【1】YAML 構造"
 RUN_FILE="$KA_TMPDIR/run.sh"
 if ! command -v ruby >/dev/null 2>&1; then
   STRUCT_RESULT=""
+  RUBY_AVAILABLE=0
   ng "必須runtime Ruby/Psych が見つからない"
 else
+RUBY_AVAILABLE=1
 STRUCT_RESULT=$(WF="$WF" RUN_FILE="$RUN_FILE" ruby <<'RUBY'
 require 'yaml'
 
@@ -106,44 +108,95 @@ else
   ng "YAML全体または固定構造が不正"
 fi
 fi
+[ "$(command -v perl 2>/dev/null)" ] \
+  && ok "fixture timeout用runtime Perlあり" \
+  || ng "fixture timeout用runtime Perlが見つからない"
 [ -s "$RUN_FILE" ] && bash -n "$RUN_FILE" \
   && ok "runブロックのbash構文OK" || ng "runブロック欠落またはbash構文エラー"
 
 # workflowの実runブロックを架空config＋mock curlで実行し、抽出規則のdriftを検出する。
-# mockを迂回する絶対path curlや別network clientは、実行前にfail closedで拒否する。
-if grep -qE '(^|[[:space:]])/[^[:space:]]*/curl([^A-Za-z0-9_]|$)|(^|[^A-Za-z0-9_])(wget|nc|netcat|telnet)([^A-Za-z0-9_]|$)' "$RUN_FILE"; then
-  ng "runブロックにmockを迂回し得るnetwork commandがある"
+# 未レビューのrun変更を外部network可能な環境で実行しないよう、全文digest一致を実行条件にする。
+if [ "$RUBY_AVAILABLE" = "1" ]; then
+  RUN_DIGEST=$(ruby -rdigest -e 's=File.binread(ARGV.fetch(0)).sub(/\n*\z/, "\n"); print Digest::SHA256.hexdigest(s)' "$RUN_FILE")
+else
+  RUN_DIGEST=""
+fi
+EXPECTED_RUN_DIGEST='1b040a1af82bc47f3254bedfa7e748640cf4effddd2c0daf5d31793b1d2fbb59'
+if [ "$RUBY_AVAILABLE" != "1" ]; then
+  ng "runブロックdigest検証に必要なRubyが見つからない"
+  RUN_FIXTURES_SAFE=0
+elif [ "$RUN_DIGEST" != "$EXPECTED_RUN_DIGEST" ]; then
+  ng "runブロックdigestが未承認（fixture実行前に内容とdigestをレビューすること）"
   RUN_FIXTURES_SAFE=0
 else
-  ok "fixture実行はPATH上のmock curlだけに限定"
+  ok "fixture実行対象runはレビュー済みdigestと一致"
   RUN_FIXTURES_SAFE=1
 fi
 MOCK_BIN="$KA_TMPDIR/mock-bin"
 mkdir -p "$MOCK_BIN"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
-  'OUT=""' \
+  'OUT="" METHOD="" URL="" APIKEY="" AUTH="" CONTENT_TYPE="" DATA=""' \
   'while [ "$#" -gt 0 ]; do' \
-  '  if [ "$1" = "-o" ]; then OUT="$2"; shift 2; continue; fi' \
-  '  if [ "$1" = "-w" ]; then shift 2; continue; fi' \
-  '  shift' \
+  '  case "$1" in' \
+  '    -sS) shift ;;' \
+  '    --max-time) [ "$2" = "30" ] || exit 64; shift 2 ;;' \
+  '    -o) OUT="$2"; shift 2 ;;' \
+  '    -w) [ "$2" = "%{http_code}" ] || exit 64; shift 2 ;;' \
+  '    -X) METHOD="$2"; shift 2 ;;' \
+  '    -H)' \
+  '      case "$2" in' \
+  '        "apikey: "*) APIKEY="${2#apikey: }" ;;' \
+  '        "Authorization: Bearer "*) AUTH="${2#Authorization: Bearer }" ;;' \
+  '        "Content-Type: application/json") CONTENT_TYPE="$2" ;;' \
+  '        *) exit 64 ;;' \
+  '      esac' \
+  '      shift 2 ;;' \
+  '    -d) DATA="$2"; shift 2 ;;' \
+  '    https://*) URL="$1"; shift ;;' \
+  '    *) exit 64 ;;' \
+  '  esac' \
   'done' \
+  '[ "$METHOD" = "POST" ] || exit 64' \
+  '[ "$URL" = "$MOCK_EXPECTED_URL/rest/v1/rpc/get_live_snapshot" ] || exit 64' \
+  '[ "$APIKEY" = "$MOCK_EXPECTED_KEY" ] || exit 64' \
+  '[ "$AUTH" = "$MOCK_EXPECTED_KEY" ] || exit 64' \
+  '[ "$CONTENT_TYPE" = "Content-Type: application/json" ] || exit 64' \
+  '[ "$DATA" = "{\"slug\":\"keepalive-probe-does-not-exist\"}" ] || exit 64' \
+  '[ -n "$OUT" ] || exit 64' \
+  'if [ "$MOCK_MODE" = "failure" ]; then : > "$OUT"; exit 22; fi' \
   'printf "null" > "$OUT"' \
   'printf "200"' > "$MOCK_BIN/curl"
 chmod +x "$MOCK_BIN/curl"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$MOCK_BIN/sleep"
+chmod +x "$MOCK_BIN/sleep"
 
 run_config_case() {
   local name="$1" config="$2" expected="$3"
+  local expected_url="${4:-https://fixture-one.supabase.co}"
+  local expected_key="${5:-sb_publishable_fixture}"
+  local mock_mode="${6:-success}"
   local case_dir="$KA_TMPDIR/$name"
   mkdir -p "$case_dir/app"
   printf '%s\n' "$config" > "$case_dir/app/config.public.js"
   if [ "$RUN_FIXTURES_SAFE" != "1" ]; then
     ng "config抽出fixture $name: network安全ゲート不成立のため未実行"
     return
-  elif (cd "$case_dir" && PATH="$MOCK_BIN:$PATH" KEEPALIVE_SLUG=keepalive-probe-does-not-exist bash "$RUN_FILE") > "$case_dir/output.log" 2>&1; then
+  elif (cd "$case_dir" && \
+        PATH="$MOCK_BIN:$PATH" \
+        KEEPALIVE_SLUG=keepalive-probe-does-not-exist \
+        MOCK_EXPECTED_URL="$expected_url" \
+        MOCK_EXPECTED_KEY="$expected_key" \
+        MOCK_MODE="$mock_mode" \
+        perl -e 'alarm shift; exec @ARGV' 5 /bin/bash "$RUN_FILE") > "$case_dir/output.log" 2>&1; then
     actual=success
   else
-    actual=failure
+    run_status=$?
+    if [ "$run_status" = "1" ]; then
+      actual=failure
+    else
+      actual="runtime-error-$run_status"
+    fi
   fi
   if [ "$actual" = "$expected" ]; then
     ok "config抽出fixture $name: $expected"
@@ -162,7 +215,7 @@ run_config_case double-quote-no-trailing-comma \
   'window.SHOGI_LIVE_PUBLIC_CONFIG = {
   publishableKey: "sb_publishable_fixture",
   url: "https://fixture-two.supabase.co"
-};' success
+};' success https://fixture-two.supabase.co
 run_config_case duplicate-mixed-quote \
   "window.SHOGI_LIVE_PUBLIC_CONFIG = {
   url: 'https://old.supabase.co',
@@ -170,6 +223,11 @@ run_config_case duplicate-mixed-quote \
   publishableKey: 'sb_publishable_old',
   publishableKey: \"sb_publishable_new\"
 };" failure
+run_config_case terminal-all-retries-fail \
+  "window.SHOGI_LIVE_PUBLIC_CONFIG = {
+  url: 'https://fixture-one.supabase.co',
+  publishableKey: 'sb_publishable_fixture'
+};" failure https://fixture-one.supabase.co sb_publishable_fixture failure
 run_config_case duplicate-url-only \
   "window.SHOGI_LIVE_PUBLIC_CONFIG = {
   url: 'https://old.supabase.co',
@@ -213,7 +271,7 @@ else
 fi
 
 # 公開値であっても workflow へ直書きしない（production の config.public.js から実行時抽出する設計）
-if grep -qE "sb_publishable_[A-Za-z0-9_-]|https://[a-z0-9]+\.supabase\.co" "$WF_EFF"; then
+if grep -qE "sb_(publishable|secret)_[A-Za-z0-9_-]+|sbp_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|https://[a-z0-9.-]+\.supabase\.(co|in)" "$WF_EFF"; then
   ng "Supabase の URL / キーを workflow へ直書きしている（config.public.js からの抽出に統一すること）"
 else
   ok "URL / publishable key の直書きなし（出荷物 app/config.public.js から抽出）"
@@ -282,13 +340,14 @@ fi
 # -----------------------------------------------------------------------------
 echo ""
 echo "【5】応答本文をログに出さない"
-# echo/printf 系で $BODY を直接展開している行が残っていないこと。
-# 許容パターンは「HTTP コードだけを出す／本文は捨てる」形式のみ。
-if grep -nE '(echo|printf)[^#]*\$(BODY([^A-Za-z0-9_]|$)|\{BODY([^A-Za-z0-9_]|$))' "$WF_EFF" >/dev/null; then
-  ng "失敗時に応答本文 (\$BODY) をログ出力している行がある（不定コンテンツの露出防止のため禁止）"
-  grep -nE '(echo|printf)[^#]*\$(BODY([^A-Za-z0-9_]|$)|\{BODY([^A-Za-z0-9_]|$))' "$WF_EFF" | sed 's/^/      /'
+# BODY token は捕捉代入と成功判定の2用途だけ。出力commandのdenylistには依存しない。
+BODY_TOKEN_REFS=$(grep -oE '(^|[^A-Za-z0-9_])BODY([^A-Za-z0-9_]|$)' "$WF_EFF" | wc -l | tr -d ' ')
+if [ "$BODY_TOKEN_REFS" = "2" ] \
+   && grep -Fq 'BODY=$(tr -d '\'' \t\r\n'\'' < "$BODY_FILE")' "$WF_EFF" \
+   && grep -Fq '[ "$CODE" = "200" ] && [ "$BODY" = "null" ]' "$WF_EFF"; then
+  ok "BODY参照は捕捉代入と成功判定の2用途だけ"
 else
-  ok "応答本文 (\$BODY) をログに出す echo/printf は無い"
+  ng "BODYにallowlist外の参照がある（ログ露出の可能性）"
 fi
 BODY_FILE_REFS=$(grep -o 'BODY_FILE' "$WF_EFF" | wc -l | tr -d ' ')
 if [ "$BODY_FILE_REFS" = "5" ] \
