@@ -127,11 +127,12 @@ EOF
 }
 
 if [ "$POSITION" = "end" ]; then
-  if ! {
-    strip_blank_edges "$CHANGELOG"
-    emit_fragments
-  } > "$TMP"; then
-    echo "連結内容の生成に失敗 → 中止（CHANGELOG.md は不変）" >&2
+  if ! strip_blank_edges "$CHANGELOG" > "$TMP"; then
+    echo "既存CHANGELOGの読み込みに失敗 → 中止（CHANGELOG.md は不変）" >&2
+    exit 1
+  fi
+  if ! emit_fragments >> "$TMP"; then
+    echo "断片の生成に失敗 → 中止（CHANGELOG.md は不変）" >&2
     exit 1
   fi
 else

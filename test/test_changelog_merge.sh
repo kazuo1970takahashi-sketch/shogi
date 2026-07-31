@@ -231,6 +231,14 @@ REAL_AWK="$REAL_AWK" PATH="$SBX/bin:$PATH" run_merge --position top; RC=$?
 [ "$BEFORE7" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && ok "top 断片生成失敗で CHANGELOG は不変" || ng "top 断片生成失敗で CHANGELOG が変わった"
 [ -f "$SBX/docs/changelog.d/20260729_top-io-fail.md" ] && ok "top 断片生成失敗でも断片は保持" || ng "top 断片生成失敗で断片が消えた"
 
+setup
+frag "20260729_top-io-fail.md" "END-IO-FAIL"
+BEFORE8="$(cat "$SBX/docs/CHANGELOG.md")"
+REAL_AWK="$REAL_AWK" PATH="$SBX/bin:$PATH" run_merge; RC=$?
+[ "$RC" != "0" ] && ok "末尾挿入中の断片生成失敗は非ゼロ終了" || ng "末尾挿入中の断片生成失敗を成功扱いした"
+[ "$BEFORE8" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && ok "末尾断片生成失敗で CHANGELOG は不変" || ng "末尾断片生成失敗で CHANGELOG が変わった"
+[ -f "$SBX/docs/changelog.d/20260729_top-io-fail.md" ] && ok "末尾断片生成失敗でも断片は保持" || ng "末尾断片生成失敗で断片が消えた"
+
 # --- 13. repo 本体の CHANGELOG を触っていない --------------------------------
 echo ""
 echo "【13】repo の docs/CHANGELOG.md は不変"
