@@ -6,8 +6,7 @@
 #   （新しい secret・新しい公開窓・DB 書き込みを一切作らない）を機械固定する。
 #   ネットワークには一切触れない（YAML の静的検査のみ）。
 #
-#   PyYAML が無い環境では YAML parse 系の項目のみ SKIP し、文字列レベルの
-#   安全ゲートは常に実行する（＝安全側の判定は環境非依存で必ず走る）。
+#   PyYAML が無い環境では構造検査を省略せず FAIL にする（安全ゲートのfalse green防止）。
 #
 # 使い方: bash test/test_supabase_keepalive_workflow.sh
 # set -e は使わない（個別に判定するため）。
@@ -38,7 +37,7 @@ if [ ! -f "$WF" ]; then
 fi
 
 # -----------------------------------------------------------------------------
-# 1. YAML 構造（PyYAML があるときのみ）
+# 1. YAML 構造（PyYAML 必須・不在は fail closed）
 # -----------------------------------------------------------------------------
 echo ""
 echo "【1】YAML 構造"
@@ -71,8 +70,8 @@ else:
             else:
                 dow = fields[4]
                 days = [d for d in dow.split(',') if d != '']
-                if len(days) != 2:
-                    errs.append('週2回でない（曜日フィールド=%r）' % dow)
+                if len(days) != 3:
+                    errs.append('週3回でない（曜日フィールド=%r）' % dow)
                 if fields[2] != '*' or fields[3] != '*':
                     errs.append('日/月フィールドが * でない（週次にならない）: %r' % crons[0])
 
@@ -87,6 +86,8 @@ jobs = doc.get('jobs') or {}
 if len(jobs) != 1:
     errs.append('job は 1 本のはず: %r' % sorted(jobs))
 for name, job in jobs.items():
+    if 'permissions' in job:
+        errs.append('job %s に権限上書きがある（workflow-level contents: read のみを使う）' % name)
     if 'timeout-minutes' not in job:
         errs.append('job %s に timeout-minutes が無い' % name)
     for step in job.get('steps') or []:
@@ -124,7 +125,7 @@ PY
   else
     ERRS=$(echo "$STRUCT" | grep '^ERR:' | sed 's/^ERR://')
     if [ -z "$ERRS" ]; then
-      ok "YAML 構造 OK（schedule 週2回＋workflow_dispatch／permissions=contents:read のみ／checkout 以外の action なし）"
+      ok "YAML 構造 OK（schedule 週3回＋workflow_dispatch／permissions=contents:read のみ／checkout 以外の action なし）"
     else
       while IFS= read -r line; do ng "YAML 構造: $line"; done <<< "$ERRS"
     fi
@@ -138,7 +139,7 @@ PY
     [ "$SYNTAX_OK" = "1" ] && ok "run ブロックの bash 構文 OK（${NRUNS:-0} 本）" || ng "run ブロックに bash 構文エラー"
   fi
 else
-  echo "  ⚠ PyYAML 未インストール → YAML 構造検査は SKIP（下記の静的ゲートは実行する）"
+  ng "PyYAML 未インストール → YAML 構造検査を省略できないため fail closed"
 fi
 
 # -----------------------------------------------------------------------------
@@ -159,8 +160,8 @@ fi
 # -----------------------------------------------------------------------------
 echo ""
 echo "【2】secret 非使用"
-if grep -qE '\$\{\{[[:space:]]*secrets\.' "$WF_EFF"; then
-  ng "secrets.* を参照している（受け入れ基準 2 違反）"
+if grep -qE '\$\{\{[^}]*secrets[[:space:]]*(\.|\[)' "$WF_EFF"; then
+  ng "secrets context を参照している（dot/bracket形式とも受け入れ基準 2 違反）"
 else
   ok "secrets.* 参照ゼロ"
 fi
@@ -184,17 +185,13 @@ else
   ng "想定外の RPC を呼んでいる: $(echo "$RPCS" | tr '\n' ' ')"
 fi
 
-# anon で書き込み得る RPC / テーブル直叩きが混入していないこと
-FORBIDDEN_HIT=0
-for forbidden in publish_live_snapshot start_live_session stop_live_session \
-                 hard_delete_member rest/v1/members rest/v1/tournaments \
-                 rest/v1/entries rest/v1/public_live_snapshots rest/v1/tournament_snapshots; do
-  if grep -q "$forbidden" "$WF_EFF"; then
-    ng "書き込み系/テーブル直読の参照がある: $forbidden"
-    FORBIDDEN_HIT=1
-  fi
-done
-[ "$FORBIDDEN_HIT" -eq 0 ] && ok "書き込み系 RPC・テーブル直読の参照ゼロ"
+# REST target は既知テーブルのdenylistではなく、唯一のread-only RPCだけをallowlistする。
+REST_TARGETS=$(grep -oE 'rest/v1/[A-Za-z0-9_/-]+' "$WF_EFF" | sort -u)
+if [ "$REST_TARGETS" = "rest/v1/rpc/get_live_snapshot" ]; then
+  ok "REST target は read-only get_live_snapshot のみ"
+else
+  ng "想定外のREST targetがある: $(echo "$REST_TARGETS" | tr '\n' ' ')"
+fi
 
 # HTTP メソッドは POST（＝RPC 実行）のみ。PostgREST の書き込み動詞を使わない。
 METHODS=$(grep -oE "\-X[[:space:]]+[A-Z]+" "$WF_EFF" | awk '{print $2}' | sort -u)
@@ -209,7 +206,15 @@ fi
 # -----------------------------------------------------------------------------
 echo ""
 echo "【4】fail-closed"
-grep -q 'exit 1' "$WF_EFF" && ok "異常時に exit 1（GitHub の失敗通知で検知）" || ng "異常時の exit 1 が無い"
+if awk '
+  /keepalive が .* 回とも失敗した/ { terminal=1; next }
+  terminal && /^[[:space:]]*exit 1[[:space:]]*$/ { found=1 }
+  END { exit(found ? 0 : 1) }
+' "$WF_EFF"; then
+  ok "全retry失敗後のterminal pathが exit 1"
+else
+  ng "全retry失敗後のterminal exit 1が無い"
+fi
 if grep -qE 'continue-on-error:[[:space:]]*true' "$WF_EFF"; then
   ng "continue-on-error: true がある（失敗が通知されない）"
 else
@@ -234,6 +239,11 @@ if grep -nE '(echo|printf)[^#]*\$(BODY\b|\{BODY\})' "$WF_EFF" >/dev/null; then
   grep -nE '(echo|printf)[^#]*\$(BODY\b|\{BODY\})' "$WF_EFF" | sed 's/^/      /'
 else
   ok "応答本文 (\$BODY) をログに出す echo/printf は無い"
+fi
+if grep -nE '(cat|head|tail|sed|awk|grep|less|more)[^#]*\$(BODY_FILE\b|\{BODY_FILE\})' "$WF_EFF" >/dev/null; then
+  ng "BODY_FILE を直接ログ出力し得るコマンドがある"
+else
+  ok "BODY_FILE の直接ログ出力なし"
 fi
 
 # -----------------------------------------------------------------------------
@@ -289,16 +299,16 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# 8. cron の固定（週2回：0 21 * * 1,4）
+# 8. cron の固定（週3回：17 21 * * 0,2,4）
 #    schedule は本 workflow の SLO を規定する重要パラメータ。
 #    誤って書き換えると pause 検知の間隔が伸びるため文字列一致で凍結する。
 # -----------------------------------------------------------------------------
 echo ""
 echo "【8】cron 表現の凍結"
-if grep -qE "cron:[[:space:]]*'0 21 \* \* 1,4'" "$WF_EFF"; then
-  ok "cron は '0 21 * * 1,4'（UTC 月・木 21:00 = JST 火・金 06:00）で凍結"
+if grep -qE "cron:[[:space:]]*'17 21 \* \* 0,2,4'" "$WF_EFF"; then
+  ok "cron は '17 21 * * 0,2,4'（JST 月・水・金 06:17）で凍結"
 else
-  ng "cron が '0 21 * * 1,4' でない（週2回 pause 検知間隔が変わる可能性）"
+  ng "cron が '17 21 * * 0,2,4' でない（週3回の冗長度が崩れる可能性）"
 fi
 
 echo ""

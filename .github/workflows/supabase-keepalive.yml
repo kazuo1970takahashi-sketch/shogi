@@ -5,8 +5,8 @@
 #   放置すると毎月再発するため、外形アクセスで pause を防ぐ。
 #
 # 設計の要点:
-#   - 週2回（UTC 月・木 21:00 = JST 火・金 06:00）＝最大間隔 3〜4 日。pause 閾値約7日に対し
-#     1回失敗しても次で間に合う冗長度を持つ。
+#   - 週3回（UTC 日・火・木 21:17 = JST 月・水・金 06:17）。1回欠けても次の成功まで
+#     最大5日なので、pause 閾値約7日に対して余裕を持つ。毎時0分も避ける。
 #   - 叩くのは本番アプリと同じ公開窓 RPC get_live_snapshot(slug) のみ（anon・read-only）。
 #     新しい公開窓・新しい secret・DB 書き込みは一切作らない。
 #   - URL と publishable key は「出荷物」である production ブランチの app/config.public.js から
@@ -19,12 +19,14 @@
 #   リポジトリのデフォルトブランチに取り込まれて初めて実際に発火・実行できるようになる
 #   （GitHub Actions の仕様。ブランチ名は問わない＝デフォルトブランチ側に存在すること自体が条件）。
 #   開発ブランチにしか存在しない期間は、schedule も Actions タブからの workflow_dispatch も動かない。
+#   また公開リポジトリでは60日間リポジトリ活動がないとscheduleが自動停止するため、
+#   人間運用で45日ごとに有効状態と直近成功を確認し、停止時はActions画面から再有効化する。
 name: Supabase Keepalive
 
 on:
   schedule:
-    # 分 時 日 月 曜日（UTC）。1=月曜, 4=木曜 → JST では火曜・金曜の 06:00。
-    - cron: '0 21 * * 1,4'
+    # 分 時 日 月 曜日（UTC）。0,2,4=日・火・木 → JST 月・水・金の 06:17。
+    - cron: '17 21 * * 0,2,4'
   workflow_dispatch:
 
 permissions:
@@ -60,8 +62,18 @@ jobs:
             exit 1
           fi
 
-          SUPABASE_URL=$(sed -n "s/.*url:[[:space:]]*'\([^']*\)'.*/\1/p" "$CONFIG" | head -n 1)
-          SUPABASE_KEY=$(sed -n "s/.*publishableKey:[[:space:]]*'\([^']*\)'.*/\1/p" "$CONFIG" | head -n 1)
+          # コメントや部分一致を拾わず、有効なプロパティ行が各1本だけであることを要求する。
+          # 重複・旧値の残置・構成変更は、誤った別プロジェクトをpingせずfail closedにする。
+          URL_MATCHES=$(sed -n "s/^[[:space:]]*url:[[:space:]]*'\([^']*\)'[[:space:]]*,[[:space:]]*$/\1/p" "$CONFIG")
+          KEY_MATCHES=$(sed -n "s/^[[:space:]]*publishableKey:[[:space:]]*'\([^']*\)'[[:space:]]*,\\{0,1\\}[[:space:]]*$/\1/p" "$CONFIG")
+          URL_COUNT=$(printf '%s\n' "$URL_MATCHES" | awk 'NF { n++ } END { print n + 0 }')
+          KEY_COUNT=$(printf '%s\n' "$KEY_MATCHES" | awk 'NF { n++ } END { print n + 0 }')
+          if [ "$URL_COUNT" != "1" ] || [ "$KEY_COUNT" != "1" ]; then
+            echo "::error::config.public.js の公開設定が一意でない（url=$URL_COUNT, publishableKey=$KEY_COUNT）"
+            exit 1
+          fi
+          SUPABASE_URL="$URL_MATCHES"
+          SUPABASE_KEY="$KEY_MATCHES"
 
           # 公開値だがログには出さない（ジョブログの取り違え防止）
           if [ -n "$SUPABASE_KEY" ]; then echo "::add-mask::$SUPABASE_KEY"; fi
