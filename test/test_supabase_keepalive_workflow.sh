@@ -16,6 +16,12 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WF="$SCRIPT_DIR/../.github/workflows/supabase-keepalive.yml"
 
+# 中間ファイルは専用の一時ディレクトリに閉じ込め、EXIT トラップでまとめて削除する
+#   （固定名 /tmp/... を使わない＝共有ランナーでの衝突・先回り作成を避ける。
+#     早期 exit の経路も含めて必ず片付くように、以降の処理より前にトラップを張る）。
+KA_TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$KA_TMPDIR"' EXIT
+
 PASS=0
 FAIL=0
 ok() { echo "  ✓ $1"; PASS=$((PASS+1)); }
@@ -37,7 +43,7 @@ fi
 echo ""
 echo "【1】YAML 構造"
 if python3 -c 'import yaml' >/dev/null 2>&1; then
-  STRUCT=$(WF="$WF" python3 - <<'PY'
+  STRUCT=$(WF="$WF" KA_TMPDIR="$KA_TMPDIR" python3 - <<'PY'
 import os, sys, yaml
 
 errs = []
@@ -93,12 +99,21 @@ for name, job in jobs.items():
                 errs.append('checkout が persist-credentials: false でない')
             if not with_.get('sparse-checkout'):
                 errs.append('checkout が sparse-checkout でない（全ツリー取得は不要）')
+            # ref を省くと「その時のデフォルトブランチ」を取ってしまう。
+            # 抽出元 app/config.public.js は出荷物＝production ブランチにしか無いので、
+            # デフォルトブランチ任せにせず ref: production を明示していることを固定する。
+            if with_.get('ref') != 'production':
+                errs.append('checkout の ref が production でない（デフォルトブランチ依存は不可）: %r'
+                            % (with_.get('ref'),))
 
 # run ブロックの bash 構文
+#   取り出した run スクリプトは呼び出し側の一時ディレクトリへ書く（EXIT trap で削除される）。
 runs = [s.get('run') for j in jobs.values() for s in (j.get('steps') or []) if s.get('run')]
 print('RUNS=%d' % len(runs))
+rundir = os.environ['KA_TMPDIR']
 for i, r in enumerate(runs):
-    open('/tmp/keepalive_run_%d.sh' % i, 'w').write(r)
+    with open(os.path.join(rundir, 'run_%d.sh' % i), 'w') as fh:
+        fh.write(r)
 
 for e in errs:
     print('ERR:' + e)
@@ -117,7 +132,7 @@ PY
     i=0
     SYNTAX_OK=1
     while [ "$i" -lt "${NRUNS:-0}" ]; do
-      bash -n "/tmp/keepalive_run_$i.sh" 2>/dev/null || SYNTAX_OK=0
+      bash -n "$KA_TMPDIR/run_$i.sh" 2>/dev/null || SYNTAX_OK=0
       i=$((i + 1))
     done
     [ "$SYNTAX_OK" = "1" ] && ok "run ブロックの bash 構文 OK（${NRUNS:-0} 本）" || ng "run ブロックに bash 構文エラー"
@@ -131,7 +146,7 @@ fi
 # （YAML コメントも run ブロック内のシェルコメントも、行頭 # で始まる行として除去する。
 #   本 workflow は行末コメントを使わない＝この単純な除去で実効行だけが残る。）
 # -----------------------------------------------------------------------------
-WF_EFF="$(mktemp)"
+WF_EFF="$KA_TMPDIR/workflow.effective.yml"
 grep -vE '^[[:space:]]*#' "$WF" > "$WF_EFF"
 if grep -qE '[^[:space:]][[:space:]]+#[[:space:]]' "$WF_EFF"; then
   ng "実効行に行末コメントがある（本テストの前提が崩れる／コメント除去を見直すこと）"
@@ -205,6 +220,85 @@ if grep -qE 'KEEPALIVE_SLUG:[[:space:]]*live-' "$WF_EFF"; then
   ng "keepalive slug が実在し得る形式（live-…）＝誤判定の可能性"
 else
   ok "keepalive slug は実在し得ない形式（正常応答が常に null）"
+fi
+
+# -----------------------------------------------------------------------------
+# 5. 応答本文をログに出さない（HTTP エラー本文の意図せぬ露出防止）
+# -----------------------------------------------------------------------------
+echo ""
+echo "【5】応答本文をログに出さない"
+# echo/printf 系で $BODY を直接展開している行が残っていないこと。
+# 許容パターンは「HTTP コードだけを出す／本文は捨てる」形式のみ。
+if grep -nE '(echo|printf)[^#]*\$(BODY\b|\{BODY\})' "$WF_EFF" >/dev/null; then
+  ng "失敗時に応答本文 (\$BODY) をログ出力している行がある（不定コンテンツの露出防止のため禁止）"
+  grep -nE '(echo|printf)[^#]*\$(BODY\b|\{BODY\})' "$WF_EFF" | sed 's/^/      /'
+else
+  ok "応答本文 (\$BODY) をログに出す echo/printf は無い"
+fi
+
+# -----------------------------------------------------------------------------
+# 6. 一時ファイルの後始末（trap で EXIT 時に必ず削除）
+# -----------------------------------------------------------------------------
+echo ""
+echo "【6】mktemp の後始末（trap による確実な削除）"
+if grep -qE 'mktemp' "$WF_EFF"; then
+  # ループ内で mktemp してリークしないこと（ループ外で1本だけ確保する運用に統一）。
+  if awk '
+    /^[[:space:]]*while / { in_loop=1 }
+    /^[[:space:]]*done/   { in_loop=0 }
+    in_loop && /mktemp/   { found=1 }
+    END { exit(found ? 0 : 1) }
+  ' "$WF_EFF"; then
+    ng "while ループ内で mktemp している（リーク源。ループ外で 1 本確保し使い回すこと）"
+  else
+    ok "while ループ内で mktemp していない（リーク源なし）"
+  fi
+  # 少なくとも 1 本の EXIT trap で rm されていること。
+  # 引数内の引用符は多様（'..."$X"...' 等）なので、trap 行に rm -f と EXIT が
+  # 同居していることのみを確認する（過剰に厳しい正規表現は逆に壊れやすい）。
+  if grep -E '^[[:space:]]*trap[[:space:]]' "$WF_EFF" | grep -q 'rm[[:space:]]\+-f' \
+     && grep -E '^[[:space:]]*trap[[:space:]]' "$WF_EFF" | grep -qE '[[:space:]]EXIT([[:space:]]|$)'; then
+    ok "trap ... EXIT で tempfile を削除している"
+  else
+    ng "mktemp した tempfile を trap ... EXIT で削除していない（漏れリスク）"
+  fi
+else
+  ok "mktemp を使っていない（tempfile 経路そのものが無い）"
+fi
+
+# -----------------------------------------------------------------------------
+# 7. コメントに古いブランチ名（"main" などのハードコード）が残っていないこと
+#    → 「デフォルトブランチに取り込まれた後に発火」という一般化表現に統一済み。
+# -----------------------------------------------------------------------------
+echo ""
+echo "【7】stale なブランチ名の記述が残っていない"
+# 「main に届く」「main ブランチ」等の、ブランチ名決め打ちの古い文言が残っていないこと。
+# （リポジトリのデフォルトブランチは将来変わり得るため、ブランチ名を書かないのが安全側。）
+if grep -nE '(main[[:space:]]*(ブランチ|に届く|に取り込)|デフォルトブランチ[[:space:]]*[（(]main[)）])' "$WF" >/dev/null; then
+  ng "コメントに 'main' 決め打ちの古い記述が残っている（デフォルトブランチという一般表現に統一すること）"
+  grep -nE '(main[[:space:]]*(ブランチ|に届く|に取り込)|デフォルトブランチ[[:space:]]*[（(]main[)）])' "$WF" | sed 's/^/      /'
+else
+  ok "コメントに 'main' 決め打ちのブランチ名記述は残っていない"
+fi
+# 逆に「デフォルトブランチ」への言及は残っていること（schedule/workflow_dispatch の
+# 発火条件を利用者に伝えるため）。
+if grep -qE 'デフォルトブランチ' "$WF"; then
+  ok "デフォルトブランチに取り込み後に発火する旨のコメントが残っている"
+else
+  ng "デフォルトブランチに関する説明コメントが失われている（schedule/workflow_dispatch の発火条件を伝えるため必須）"
+fi
+
+# -----------------------------------------------------------------------------
+# 8. cron の固定（週2回：0 21 * * 1,4）
+#    schedule は本 workflow の SLO を規定する重要パラメータ。
+#    誤って書き換えると pause 検知の間隔が伸びるため文字列一致で凍結する。
+# -----------------------------------------------------------------------------
+echo ""
+echo "【8】cron 表現の凍結"
+if grep -qE "cron:[[:space:]]*'0 21 \* \* 1,4'" "$WF_EFF"; then
+  ok "cron は '0 21 * * 1,4'（UTC 月・木 21:00 = JST 火・金 06:00）で凍結"
+else
+  ng "cron が '0 21 * * 1,4' でない（週2回 pause 検知間隔が変わる可能性）"
 fi
 
 echo ""
