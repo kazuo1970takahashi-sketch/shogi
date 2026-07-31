@@ -1,39 +1,23 @@
-## CHANGELOG-MERGE-ATOMIC-001: changelog_merge.sh を原子的反映 + retry-safe にする（delayed review 指摘 4 件）
+## CHANGELOG-MERGE-ATOMIC-001: 永続transaction方式へ再設計
 
-- **問題（delayed review の CHANGELOG 系 4 指摘）**:
-  1. 反映が `cat "$TMP" > "$CHANGELOG"` の**その場上書き**だったため、書き込みが途中で失敗すると
-     `docs/CHANGELOG.md` が**書きかけの内容で壊れて残る**（原本が失われる）。
-  2. 連結後の断片削除が途中で失敗すると、**CHANGELOG は反映済み・断片は一部だけ残る**中途半端な
-     状態になり、再実行すると残った断片が**二重に連結**される。
-  3. 空 / 空白のみの断片があっても検出せず、そのまま連結して**削除してしまう**（内容が消える）。
-  4. 単体テストの I/O 障害注入が `chmod 000 / 444 / 555` 依存で、**root では権限ビットが効かず**
-     判定が実行ユーザーに依存していた（＝テストが非決定的）。
-
-- **修正 `scripts/changelog_merge.sh`**:
-  - **原子的反映**: 新しい本文は `docs/` 直下に作った作業領域 `.changelog_merge.XXXXXX/` の中で
-    組み立て、空でないことを確認してから `mv`（同一ファイルシステムの `rename(2)`）で差し替える。
-    組み立て中に失敗しても書きかけの内容は原本に届かず、`CHANGELOG.md` は 1 byte も変わらない。
-    作業ファイルは原本の `cp -p` から作るのでモード（権限）も保たれる。
-  - **retry-safe な断片削除**: 実行前に原本と全断片を作業領域へ退避しておき、削除が途中で失敗したら
-    CHANGELOG と削除済み断片を**すべて実行前の状態へ戻して**から非ゼロ終了する。原因を直して
-    再実行すれば **1 回だけ**反映される（重複連結しない）。ロールバック自体が失敗した場合は、
-    退避物を**消さずに残し**、復旧手順と退避先パスを出して **exit 3**（手動復旧が必要）。
-  - **空 / 空白のみの断片は全変更の前に拒否**: 断片を列挙した直後（CHANGELOG も断片も未変更の地点）で
-    全件を検査し、1 本でも空なら**全体を中止**（他の正常な断片も連結しない＝部分反映しない）。
-    `--dry-run` でも同じ検査を行うので事前確認に使える。読み取り可否は root で無効になる `[ -r ]` ではなく
-    実際の読み取り結果で判定する。
-  - 終了コードを整理: `0`=成功/no-op ／ `1`=I/O 失敗（状態は不変 or ロールバック済み）／
-    `2`=引数・入力の不正（空断片を含む）／ `3`=ロールバック失敗（退避物を保持）。
-
-- **修正 `test/test_changelog_merge.sh`**:
-  - `chmod` 依存の障害注入を廃止し、**PATH shim**（sandbox の `bin/` に `awk` / `rm` / `mv` / `grep` の
-    偽物を置き、特定の引数のときだけ失敗させる）による**root でも決定的**な注入へ置き換えた。
-    PATH の差し替えはサブシェル内に閉じ、テスト本体の PATH を汚さない。
-  - 追加した検証: 生成の途中失敗（partial output）で原本が不変（end / top 両方）／反映（差し替え）失敗時の
-    不変性／読めない断片で全体中止／空・空白のみ断片の拒否／正常断片と空断片の混在で全体中止／
-    2 本目の削除失敗 → ロールバック → 再実行で**ちょうど 1 回**反映／ロールバック失敗で退避物保持 + `rc=3`／
-    成功・失敗いずれでも作業領域を残さないこと。
-
-- 編集範囲: `scripts/changelog_merge.sh` / `test/test_changelog_merge.sh` / 本断片のみ。
-  `docs/CHANGELOG.md` 本体・`shogi_v4.html`・`test/run_tests.sh`・GitHub 設定は無改変。
-- テスト: `bash test/test_changelog_merge.sh`（`test/` 直下なので `run_tests.sh` から自動発見される）。
+- `scripts/changelog_merge.sh` の連結処理を、rollback中心の方式から永続transaction方式へ変更。
+- CHANGELOGと同じfilesystemにatomic `mkdir` lockを作り、既存lockはactive/staleを推測せず
+  fail closed（exit 3）にする。lock取得クリティカル区間はsignalを一時保留し、owner無しlockを残さない。
+- live断片は永続transactionのquarantineへ`rename`してからsnapshotを作成する。
+  移動前にhard-link probeで断片とCHANGELOGが同一filesystemであることを確認し、cross-FSは拒否する。
+  成功した同じ実行ではquarantineを削除しないため、rename前から開かれていたfile descriptorによる
+  遅延書込みも元inodeに残り、消失しない。
+- CHANGELOGの同一filesystem `rename`を唯一のcommit pointとし、commit後はrollbackしない。
+  `preparing` / `prepared` / `committing` / `committed` / `aborted` のstateをatomic更新する。
+- crash後の`committing`は、保持した`changelog.before`・`published.image`と現在のCHANGELOGを比較し、
+  commit済み・未commitを確定する。どちらとも一致しない場合は曖昧状態としてexit 3で停止する。
+- commit前の断片復元はhard-link作成をatomic no-clobber pointにする。同名liveが再作成されていれば
+  上書きせず、liveとquarantineの双方を保持してexit 3にする。
+- 空・空白のみの断片は変更前に全件拒否。`--dry-run`、`--position top/end`、決定的なファイル名順、
+  断片ゼロno-opを維持。
+- `test/test_changelog_merge.sh` を新設計に合わせて更新し、排他lock、commit前後crash recovery、
+  signal、曖昧crash、同名再作成race、open fdへのpost-rename write、commit後の並行CHANGELOG更新を
+  sandbox内で直接検証する。
+- 永続transactionとlockは`.gitignore`に登録し、通常の`git add -A`で誤って取り込まれないようにする。
+- 編集範囲はスクリプト本体・専用テスト・本断片のみ。
+  `docs/CHANGELOG.md`本体、`shogi_v4.html`、`test/run_tests.sh`、productionは無変更。

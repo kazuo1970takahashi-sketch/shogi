@@ -30,3 +30,5 @@ ai-requests/local/
 node_modules/
 test-results/
 playwright-report/
+docs/.changelog_merge.lock/
+docs/.changelog_merge.txn.*/
