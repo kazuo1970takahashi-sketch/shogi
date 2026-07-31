@@ -27,10 +27,6 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$POSITION" in end|top) : ;; *) echo "--position は end / top のみ" >&2; exit 2 ;; esac
-[ -f "$CHANGELOG" ] || { echo "CHANGELOG がない: $CHANGELOG" >&2; exit 2; }
-[ -r "$CHANGELOG" ] || { echo "CHANGELOG を読めない: $CHANGELOG" >&2; exit 1; }
-[ -d "$FRAG_DIR" ] || { echo "断片ディレクトリがない: $FRAG_DIR → 何もしない"; exit 0; }
-
 CHANGELOG_DIR="$(cd "$(dirname "$CHANGELOG")" && pwd)" || exit 1
 CHANGELOG_ABS="$CHANGELOG_DIR/$(basename "$CHANGELOG")"
 LOCK="$CHANGELOG_DIR/.changelog_merge.lock"
@@ -75,14 +71,31 @@ write_state() {
 
 # quarantineから元パスへの復元はhard-link作成をcommit pointにする。
 # lnは宛先が既存なら失敗するため、check-then-move raceも上書きも無い。
+same_inode() {
+  local a="$1" b="$2" ai bi
+  if [ -L "$a" ] || [ -L "$b" ]; then
+    [ -L "$a" ] && [ -L "$b" ] || return 1
+    ai=$(LC_ALL=C ls -di "$a" 2>/dev/null) || return 1
+    bi=$(LC_ALL=C ls -di "$b" 2>/dev/null) || return 1
+    ai=${ai%%[[:space:]]*}
+    bi=${bi%%[[:space:]]*}
+    [ -n "$ai" ] && [ "$ai" = "$bi" ]
+  else
+    [ -e "$a" ] && [ "$a" -ef "$b" ]
+  fi
+}
 restore_precommit() {
   local tx="$1" failed=no n=1 p q
   while [ -f "$tx/paths/$n.path" ]; do
     IFS= read -r p < "$tx/paths/$n.path" || failed=yes
     q="$tx/quarantine/$n.frag"
-    if [ -f "$q" ]; then
-      if ln "$q" "$p" 2>/dev/null; then
-        rm -f "$q" || failed=yes
+    if [ -e "$q" ] || [ -L "$q" ]; then
+      if same_inode "$p" "$q"; then
+        : # 前回の部分復元で作成済み。quarantine inodeは永続保持する。
+      elif { [ -L "$q" ] && ln -P "$q" "$p" 2>/dev/null; } ||
+           { [ ! -L "$q" ] && ln "$q" "$p" 2>/dev/null; }; then
+        : # 全復元成功後もopen FD追記を失わないようhard-linkを保持する。
+        [ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_restore_link ] && { echo "test crash after_restore_link" >&2; exit 101; }
       else
         failed=yes
         echo "復元先が存在するか復元不能。双方を保持: $p / $q" >&2
@@ -154,9 +167,13 @@ else
   recover_transactions || exit $?
 fi
 
+[ -f "$CHANGELOG" ] || { echo "CHANGELOG がない: $CHANGELOG" >&2; exit 2; }
+[ -r "$CHANGELOG" ] || { echo "CHANGELOG を読めない: $CHANGELOG" >&2; exit 1; }
+[ -d "$FRAG_DIR" ] || { echo "断片ディレクトリがない: $FRAG_DIR → 何もしない"; exit 0; }
+
 FRAGS=$(printf '%s\n' "$FRAG_DIR"/*.md 2>/dev/null |
   while IFS= read -r f; do
-    [ -f "$f" ] || continue
+    [ -f "$f" ] || [ -L "$f" ] || continue
     [ "$(basename "$f")" = README.md ] && continue
     printf '%s\n' "$f"
   done | LC_ALL=C sort)
@@ -167,6 +184,11 @@ printf '%s\n' "$FRAGS" | while IFS= read -r f; do echo "  - $(basename "$f")"; d
 
 bad=no
 while IFS= read -r f; do
+  if [ -L "$f" ]; then
+    echo "symlink断片は安全にquarantineできないため拒否: $f" >&2
+    bad=symlink
+    continue
+  fi
   grep -q '[^[:space:]]' "$f" 2>/dev/null
   case "$?" in
     0) ;;
@@ -176,7 +198,7 @@ while IFS= read -r f; do
 done <<EOF
 $FRAGS
 EOF
-[ "$bad" = no ] || { [ "$bad" = blank ] && exit 2 || exit 1; }
+[ "$bad" = no ] || { case "$bad" in blank|symlink) exit 2 ;; *) exit 1 ;; esac; }
 [ "$DRY_RUN" = yes ] && { echo "--dry-run のため書き換えない（断片も削除しない）"; exit 0; }
 
 TX="$(mktemp -d "$CHANGELOG_DIR/.changelog_merge.txn.XXXXXX")" || exit 1
@@ -195,10 +217,18 @@ while IFS= read -r f; do
     exit 1
   fi
   rm -f "$TX/.same-fs-probe" || exit 1
+  if [ "${CHANGELOG_MERGE_TEST_SYMLINK_AT:-}" = before_quarantine ] && [ "$n" = 1 ]; then
+    rm -f "$f" && ln -s ../target.md "$f"
+  fi
   if ! mv "$f" "$TX/quarantine/$n.frag"; then
     echo "断片のquarantine移動に失敗: $f" >&2
     restore_precommit "$TX" || exit 3
     exit 1
+  fi
+  if [ -L "$TX/quarantine/$n.frag" ]; then
+    echo "quarantine直前にsymlinkへ変更された断片を拒否: $f" >&2
+    restore_precommit "$TX" || exit 3
+    exit 2
   fi
   cp -p "$TX/quarantine/$n.frag" "$TX/snapshot/$n.frag" || {
     restore_precommit "$TX" || exit 3
@@ -250,6 +280,7 @@ if ! mv "$CHANGELOG_ABS" "$TX/changelog.displaced"; then
   echo "CHANGELOG退避に失敗。transactionを保持: $TX" >&2
   exit 1
 fi
+[ "${CHANGELOG_MERGE_TEST_CRASH_AT:-}" = after_displace ] && { echo "test crash after_displace" >&2; exit 100; }
 if [ ! "$TX/changelog.displaced" -ef "$TX/changelog.before.link" ] || ! cmp -s "$TX/changelog.displaced" "$TX/changelog.before"; then
   ln "$TX/changelog.displaced" "$CHANGELOG_ABS" 2>/dev/null || :
   echo "CHANGELOGの並行編集を検出。競合版とtransactionを保持: $TX" >&2

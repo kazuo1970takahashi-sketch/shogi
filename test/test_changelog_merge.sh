@@ -92,6 +92,12 @@ check '[ "$rc" = 3 ] && [ "$(cat "$oldtx/state")" = "$oldstate" ] && [ ! -e "$SB
 run; rc=$?
 check '[ "$rc" = 0 ] && [ "$(grep -c "^## PRE$" "$SBX/docs/CHANGELOG.md")" = 1 ]' "次回にatomic復元後1回だけmerge"
 
+setup; frag 20260730_nodir.md NODIR
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine'; run; rc=$?; RUN_ENV=
+oldtx="$(tx_latest)"; rm -rf "$SBX/docs/changelog.d"
+run --dry-run; rc=$?
+check '[ "$rc" = 3 ] && [ "$(cat "$oldtx/state")" = prepared ] && [ -f "$oldtx/quarantine/1.frag" ]' "fragment dir消失時もdry-runは残存transactionを変更せず拒否"
+
 echo "【atomic no-clobber recovery】"
 setup; frag 20260730_race.md ORIGINAL
 RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine'; run; rc=$?; RUN_ENV=
@@ -102,12 +108,28 @@ check '[ "$rc" = 3 ]' "同名live競合はrc3"
 check 'grep -q NEW-LIVE "$SBX/docs/changelog.d/20260730_race.md"' "新liveを上書きしない"
 check 'grep -q ORIGINAL "$oldtx/quarantine/1.frag"' "quarantine原本も保持"
 
+setup; frag 20260730_multi1.md MULTI-1; frag 20260730_multi2.md MULTI-2
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine'; run; rc=$?; RUN_ENV=
+oldtx="$(tx_latest)"
+printf '%s\n' '## CONFLICT' > "$SBX/docs/changelog.d/20260730_multi2.md"
+run; rc=$?
+check '[ "$rc" = 3 ] && [ -f "$oldtx/quarantine/1.frag" ] && [ "$SBX/docs/changelog.d/20260730_multi1.md" -ef "$oldtx/quarantine/1.frag" ]' "部分復元失敗でも先行quarantine inodeを保持"
+rm -f "$SBX/docs/changelog.d/20260730_multi2.md"
+run; rc=$?
+check '[ "$rc" = 0 ] && grep -q "^## MULTI-1$" "$SBX/docs/CHANGELOG.md" && grep -q "^## MULTI-2$" "$SBX/docs/CHANGELOG.md"' "部分復元を同一inode判定で安全に再試行"
+
 echo "【commit境界crash / signal】"
 setup; frag 20260730_before.md BEFORE
 RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=before_commit'; run; rc=$?; RUN_ENV=
 check '[ "$rc" = 98 ] && [ "$(state)" = publishing ]' "旧版退避前crashはpublishingを保持"
 run; rc=$?
 check '[ "$rc" = 0 ] && [ "$(grep -c "^## BEFORE$" "$SBX/docs/CHANGELOG.md")" = 1 ]' "旧版退避前crashを復元後1回だけmerge"
+
+setup; frag 20260730_displaced.md DISPLACED
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_displace'; run; rc=$?; RUN_ENV=
+check '[ "$rc" = 100 ] && [ "$(state)" = publishing ] && [ ! -e "$SBX/docs/CHANGELOG.md" ]' "旧版退避後crashはpublishingを保持"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ "$(grep -c "^## DISPLACED$" "$SBX/docs/CHANGELOG.md")" = 1 ]' "CHANGELOG不在でも回復後1回だけmerge"
 
 setup; frag 20260730_commit.md COMMIT
 RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_commit'; run; rc=$?; RUN_ENV=
@@ -140,6 +162,33 @@ RUN_ENV='CHANGELOG_MERGE_TEST_CONCURRENT_AT=after_displace'; run; rc=$?; RUN_ENV
 tx="$(tx_latest)"
 check '[ "$rc" = 3 ] && grep -q "^# CONCURRENT$" "$SBX/docs/CHANGELOG.md"' "退避後の並行作成をatomic no-clobberで保護"
 check 'grep -q "^# CHANGELOG test$" "$tx/changelog.displaced" && grep -q "^## CONCURRENT-FRAG-2$" "$tx/published.image"' "no-clobber競合時も全版を保持"
+
+echo "【symlink fragment】"
+setup
+printf '%s\n' '## LINK-TARGET' > "$SBX/docs/target.md"
+ln -s ../target.md "$SBX/docs/changelog.d/20260730_link.md"
+run; rc=$?
+check '[ "$rc" = 2 ] && [ -L "$SBX/docs/changelog.d/20260730_link.md" ] && [ ! -e "$SBX/docs/.changelog_merge.txn."* ]' "relative symlink断片を移動前にfail closed"
+
+setup
+ln -s ../missing.md "$SBX/docs/changelog.d/20260730_dangling.md"
+run; rc=$?
+check '[ "$rc" = 2 ] && [ -L "$SBX/docs/changelog.d/20260730_dangling.md" ]' "dangling symlink断片も黙って無視せずfail closed"
+
+setup; frag 20260730_swap.md SWAP
+printf '%s\n' '## SWAP-TARGET' > "$SBX/docs/target.md"
+RUN_ENV='CHANGELOG_MERGE_TEST_SYMLINK_AT=before_quarantine'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 2 ] && [ -L "$SBX/docs/changelog.d/20260730_swap.md" ] && [ -L "$tx/quarantine/1.frag" ]' "validation後のsymlink差替えをpost-move検出し双方保持"
+check '! grep -q "^## SWAP-TARGET$" "$SBX/docs/CHANGELOG.md"' "symlink差替えtargetを誤ってmergeしない"
+
+setup; frag 20260730_swap_crash.md SWAP-CRASH
+printf '%s\n' '## SWAP-CRASH-TARGET' > "$SBX/docs/target.md"
+RUN_ENV='CHANGELOG_MERGE_TEST_SYMLINK_AT=before_quarantine CHANGELOG_MERGE_TEST_CRASH_AT=after_restore_link'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 101 ] && [ -L "$SBX/docs/changelog.d/20260730_swap_crash.md" ] && [ -L "$tx/quarantine/1.frag" ]' "symlink復元直後crashでhard-link双方を保持"
+run; rc=$?
+check '[ "$rc" = 2 ] && [ "$(cat "$tx/state")" = aborted ] && [ -L "$SBX/docs/changelog.d/20260730_swap_crash.md" ]' "物理symlink inode一致でcrash後復元を再開"
 
 echo "【open fd post-rename write】"
 setup; frag 20260730_fd.md FD
