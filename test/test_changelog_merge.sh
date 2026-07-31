@@ -1,253 +1,369 @@
 #!/usr/bin/env bash
-# =============================================================================
-# test_changelog_merge.sh — STAGE0-CONFLICT-FREE-001 ② 連結スクリプトの単体テスト
-#   scripts/changelog_merge.sh を、使い捨ての sandbox（mktemp -d）に作った
-#   CHANGELOG と断片に対してだけ実行する。**repo の docs/CHANGELOG.md には一切触れない**。
-#
-#   固定する性質: 順序（ファイル名昇順＝日付順）／冪等（断片ゼロで no-op）／
-#   既存本文の無改変／--dry-run の非破壊／README.md の除外／--position top/end／
-#   連結後の断片削除／不正な --position の拒否。
-#
-# 安全: network / git / gh 不使用。mutating 操作は sandbox 内のみ。
-# 使い方: bash test/test_changelog_merge.sh
-# =============================================================================
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MERGE="$SCRIPT_DIR/../scripts/changelog_merge.sh"
-REPO_CHANGELOG="$SCRIPT_DIR/../docs/CHANGELOG.md"
-
-PASS=0
-FAIL=0
-ok() { echo "  ✓ $1"; PASS=$((PASS+1)); }
-ng() { echo "  ✗ $1"; FAIL=$((FAIL+1)); }
-
-echo "=========================================="
-echo "  STAGE0 ② changelog_merge 単体テスト"
-echo "=========================================="
-
-if [ ! -f "$MERGE" ]; then echo "✗ scripts/changelog_merge.sh がない"; exit 1; fi
-bash -n "$MERGE" && ok "changelog_merge.sh 構文 OK (bash -n)" || ng "changelog_merge.sh 構文エラー"
-
-# repo 本体の CHANGELOG が本テストで変わらないことを最後に確認するための指紋
-repo_fingerprint() { wc -c < "$REPO_CHANGELOG" | tr -d ' '; }
-REPO_BEFORE="$(repo_fingerprint)"
-
+# @suite: STAGE0 ② changelog_merge 永続transaction安全性
+set -uo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MERGE="$DIR/../scripts/changelog_merge.sh"
+REAL_CHANGELOG="$DIR/../docs/CHANGELOG.md"
+PASS=0 FAIL=0
+ok(){ echo "  ✓ $1"; PASS=$((PASS+1)); }
+ng(){ echo "  ✗ $1"; FAIL=$((FAIL+1)); }
+check(){ if eval "$1"; then ok "$2"; else ng "$2"; fi; }
 SBX="$(mktemp -d)"
 trap 'rm -rf "$SBX"' EXIT
+REAL_SIZE="$(wc -c < "$REAL_CHANGELOG" | tr -d ' ')"
 
-# --- sandbox 準備 -------------------------------------------------------------
-setup() {
+setup(){
   rm -rf "$SBX/docs"
   mkdir -p "$SBX/docs/changelog.d"
-  cat > "$SBX/docs/CHANGELOG.md" <<'EOF'
-# CHANGELOG — テスト用
-
-> 記載は原文の並び（おおむね時系列・上が古い）。
-
----
-
-## OLD-001: 既存の古い節
-
-- 既存本文はこの 1 行。
-EOF
-  cat > "$SBX/docs/changelog.d/README.md" <<'EOF'
-# 規約の説明ファイル（断片ではない）
-EOF
+  printf '%s\n' '# CHANGELOG test' '' '---' '' '## OLD' '' '- old' > "$SBX/docs/CHANGELOG.md"
+  printf '%s\n' '# README' > "$SBX/docs/changelog.d/README.md"
 }
-
-frag() {  # frag <ファイル名> <本文1行目>
-  cat > "$SBX/docs/changelog.d/$1" <<EOF
-
-
-## $2
-
-- $2 の本文。
-
-EOF
+frag(){ printf '\n## %s\n\n- body\n' "$2" > "$SBX/docs/changelog.d/$1"; }
+run(){
+  env ${RUN_ENV:-} bash "$MERGE" --test-mode --changelog "$SBX/docs/CHANGELOG.md" \
+    --fragments "$SBX/docs/changelog.d" "$@" > "$SBX/out" 2>&1
 }
+tx_latest(){ ls -dt "$SBX/docs"/.changelog_merge.txn.* 2>/dev/null | head -1; }
+state(){ cat "$(tx_latest)/state" 2>/dev/null; }
 
-run_merge() {
-  bash "$MERGE" --changelog "$SBX/docs/CHANGELOG.md" --fragments "$SBX/docs/changelog.d" "$@" \
-    > "$SBX/out.log" 2>&1
-}
+echo "=========================================="
+echo "  changelog_merge 永続transaction test"
+echo "=========================================="
+bash -n "$MERGE" && ok "script構文" || ng "script構文"
 
-# --- 1. 断片ゼロ → no-op（byte 単位で不変） ----------------------------------
-echo ""
-echo "【1】断片ゼロ = 完全な no-op"
+echo "【基本動作】"
 setup
-BEFORE="$(cat "$SBX/docs/CHANGELOG.md")"
-run_merge; RC=$?
-AFTER="$(cat "$SBX/docs/CHANGELOG.md")"
-[ "$RC" = "0" ] && ok "断片ゼロでも exit 0" || ng "断片ゼロで exit $RC"
-[ "$BEFORE" = "$AFTER" ] && ok "断片ゼロなら CHANGELOG は 1 byte も変わらない" || ng "断片ゼロなのに CHANGELOG が変わった"
-grep -q '何もしない' "$SBX/out.log" && ok "no-op である旨を出力する" || ng "no-op の出力がない"
+run; rc=$?
+check '[ "$rc" = 0 ]' "断片ゼロはno-op"
+frag 20260731_b.md B
+frag 20260730_a.md A
+run; rc=$?
+check '[ "$rc" = 0 ]' "正常merge"
+order="$(grep -E '^## (A|B)$' "$SBX/docs/CHANGELOG.md" | tr '\n' ' ')"
+check '[ "$order" = "## A ## B " ]' "ファイル名順"
+check '[ "$(state)" = committed ]' "transactionはcommitted"
+check '[ ! -e "$SBX/docs/changelog.d/20260730_a.md" ]' "live断片はquarantineへ移動"
+check '[ -f "$(tx_latest)/quarantine/1.frag" ]' "元inodeを成功後も永続保持"
+check '[ -f "$(tx_latest)/quarantine/1.anchor" ] && [ "$(tx_latest)/quarantine/1.frag" -ef "$(tx_latest)/quarantine/1.anchor" ]' "元断片inodeをanchorでも成功後に永続保持"
+before="$(cat "$SBX/docs/CHANGELOG.md")"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ "$before" = "$(cat "$SBX/docs/CHANGELOG.md")" ]' "retryはno-op"
 
-# --- 2. 順序（ファイル名昇順＝日付順） ---------------------------------------
-echo ""
-echo "【2】連結順序はファイル名昇順（＝日付順）"
-setup
-frag "20260731_slice-c.md" "SLICE-C"
-frag "20260729_slice-a.md" "SLICE-A"
-frag "20260730_slice-b.md" "SLICE-B"
-run_merge; RC=$?
-[ "$RC" = "0" ] && ok "連結は exit 0" || ng "連結が exit $RC"
-ORDER=$(grep -o 'SLICE-[ABC]' "$SBX/docs/CHANGELOG.md" | awk '!seen[$0]++' | tr '\n' ',' | sed 's/,$//')
-[ "$ORDER" = "SLICE-A,SLICE-B,SLICE-C" ] && ok "作成順ではなく日付順で連結された ($ORDER)" || ng "順序が違う ($ORDER)"
+echo "【dry-run / validation / top】"
+setup; frag 20260730_dry.md DRY
+before="$(cat "$SBX/docs/CHANGELOG.md")"
+run --dry-run; rc=$?
+check '[ "$rc" = 0 ] && [ "$before" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && [ -f "$SBX/docs/changelog.d/20260730_dry.md" ]' "dry-run非破壊"
+setup; : > "$SBX/docs/changelog.d/20260730_empty.md"
+run; rc=$?
+check '[ "$rc" = 2 ] && [ -f "$SBX/docs/changelog.d/20260730_empty.md" ]' "空断片fail closed"
+setup; frag 20260730_top.md TOP
+run --position top; rc=$?
+topline="$(grep -n '^## TOP$' "$SBX/docs/CHANGELOG.md" | cut -d: -f1)"
+oldline="$(grep -n '^## OLD$' "$SBX/docs/CHANGELOG.md" | cut -d: -f1)"
+check '[ "$rc" = 0 ] && [ "$topline" -lt "$oldline" ]' "top挿入"
 
-# --- 3. 既存本文の無改変＋末尾連結 -------------------------------------------
-echo ""
-echo "【3】既存本文は無改変・既定は末尾連結"
-grep -q '^## OLD-001: 既存の古い節' "$SBX/docs/CHANGELOG.md" && ok "既存の節が残っている" || ng "既存の節が消えた"
-OLD_LINE=$(grep -n '^## OLD-001' "$SBX/docs/CHANGELOG.md" | cut -d: -f1)
-NEW_LINE=$(grep -n '^## SLICE-A' "$SBX/docs/CHANGELOG.md" | cut -d: -f1)
-[ -n "$OLD_LINE" ] && [ -n "$NEW_LINE" ] && [ "$OLD_LINE" -lt "$NEW_LINE" ] \
-  && ok "新しい節は既存節より後ろ（末尾連結・上が古い）" || ng "末尾連結になっていない (old=$OLD_LINE new=$NEW_LINE)"
-HEAD3=$(head -1 "$SBX/docs/CHANGELOG.md")
-[ "$HEAD3" = "# CHANGELOG — テスト用" ] && ok "ヘッダ行は不変" || ng "ヘッダが壊れた ($HEAD3)"
+setup; frag 20260730_link_changelog.md LINK-CHANGELOG
+mv "$SBX/docs/CHANGELOG.md" "$SBX/docs/REAL.md"
+ln -s REAL.md "$SBX/docs/CHANGELOG.md"
+run; rc=$?
+check '[ "$rc" = 2 ] && [ -L "$SBX/docs/CHANGELOG.md" ] && ! grep -q LINK-CHANGELOG "$SBX/docs/REAL.md"' "symlink CHANGELOGを参照先変更前にfail closed"
 
-# --- 4. 連結後に断片が削除される（README は残る） ----------------------------
-echo ""
-echo "【4】連結した断片は削除され、README.md は残る"
-REMAIN=$(ls "$SBX/docs/changelog.d" | tr '\n' ' ')
-[ "$(echo "$REMAIN" | tr -d ' ')" = "README.md" ] && ok "残るのは README.md だけ ($REMAIN)" || ng "断片が残っている ($REMAIN)"
+echo "【排他lock】"
+setup; frag 20260730_lock.md LOCK
+mkdir "$SBX/docs/.changelog_merge.lock"
+run; rc=$?
+check '[ "$rc" = 3 ]' "active/staleを推測せずlock存在はrc3"
+rmdir "$SBX/docs/.changelog_merge.lock"
+setup; frag 20260730_lock_signal.md LOCK-SIGNAL
+RUN_ENV='CHANGELOG_MERGE_TEST_SIGNAL_AT=lock_acquired'; run; rc=$?; RUN_ENV=
+check '[ "$rc" != 0 ] && [ ! -d "$SBX/docs/.changelog_merge.lock" ] && [ -f "$SBX/docs/changelog.d/20260730_lock_signal.md" ]' "lock取得中signalを保留処理し、mergeせずlockを解放"
 
-# --- 5. 冪等（もう一度回しても変わらない） -----------------------------------
-echo ""
-echo "【5】冪等: 連結後にもう一度実行しても変わらない"
-BEFORE2="$(cat "$SBX/docs/CHANGELOG.md")"
-run_merge; RC=$?
-AFTER2="$(cat "$SBX/docs/CHANGELOG.md")"
-[ "$RC" = "0" ] && [ "$BEFORE2" = "$AFTER2" ] && ok "2 回目は no-op（内容一致・exit 0）" || ng "2 回目で内容が変わった (rc=$RC)"
-
-# --- 6. README.md を断片として扱わない ---------------------------------------
-echo ""
-echo "【6】README.md は断片として連結しない"
-grep -q '規約の説明ファイル' "$SBX/docs/CHANGELOG.md" && ng "README.md の中身が連結された" || ok "README.md は連結対象外"
-
-# --- 7. --dry-run は何も壊さない ---------------------------------------------
-echo ""
-echo "【7】--dry-run は CHANGELOG も断片も変えない"
-setup
-frag "20260729_dry.md" "DRY-ONE"
-BEFORE3="$(cat "$SBX/docs/CHANGELOG.md")"
-run_merge --dry-run; RC=$?
-AFTER3="$(cat "$SBX/docs/CHANGELOG.md")"
-[ "$RC" = "0" ] && ok "--dry-run は exit 0" || ng "--dry-run が exit $RC"
-[ "$BEFORE3" = "$AFTER3" ] && ok "--dry-run で CHANGELOG は不変" || ng "--dry-run なのに CHANGELOG が変わった"
-[ -f "$SBX/docs/changelog.d/20260729_dry.md" ] && ok "--dry-run で断片は削除されない" || ng "--dry-run なのに断片が消えた"
-grep -q '20260729_dry.md' "$SBX/out.log" && ok "--dry-run が対象断片を列挙する" || ng "--dry-run の列挙がない"
-
-# --- 8. --position top -------------------------------------------------------
-echo ""
-echo "【8】--position top はヘッダ直後へ挿入する"
-setup
-frag "20260729_top.md" "TOP-ONE"
-run_merge --position top; RC=$?
-OLD_LINE=$(grep -n '^## OLD-001' "$SBX/docs/CHANGELOG.md" | cut -d: -f1)
-NEW_LINE=$(grep -n '^## TOP-ONE' "$SBX/docs/CHANGELOG.md" | cut -d: -f1)
-HR_LINE=$(grep -n '^---$' "$SBX/docs/CHANGELOG.md" | head -1 | cut -d: -f1)
-[ "$RC" = "0" ] && ok "--position top は exit 0" || ng "--position top が exit $RC"
-if [ -n "$HR_LINE" ] && [ -n "$NEW_LINE" ] && [ -n "$OLD_LINE" ] \
-   && [ "$HR_LINE" -lt "$NEW_LINE" ] && [ "$NEW_LINE" -lt "$OLD_LINE" ]; then
-  ok "水平線の直後・既存節より前に入った (hr=$HR_LINE new=$NEW_LINE old=$OLD_LINE)"
-else
-  ng "top 挿入位置が違う (hr=$HR_LINE new=$NEW_LINE old=$OLD_LINE)"
-fi
-grep -q '^# CHANGELOG — テスト用' "$SBX/docs/CHANGELOG.md" && ok "top 挿入でもヘッダは不変" || ng "top 挿入でヘッダが壊れた"
-grep -q '^## OLD-001' "$SBX/docs/CHANGELOG.md" && ok "top 挿入でも既存節は残る" || ng "top 挿入で既存節が消えた"
-
-# --- 9. 不正な引数は拒否 -----------------------------------------------------
-echo ""
-echo "【9】不正入力は fail closed"
-setup
-run_merge --position sideways; RC=$?
-[ "$RC" = "2" ] && ok "不正な --position は rc=2 で拒否" || ng "不正な --position が rc=$RC"
-run_merge --nonsense; RC=$?
-[ "$RC" = "2" ] && ok "未知の引数は rc=2 で拒否" || ng "未知の引数が rc=$RC"
-bash "$MERGE" --changelog "$SBX/does-not-exist.md" --fragments "$SBX/docs/changelog.d" >/dev/null 2>&1; RC=$?
-[ "$RC" = "2" ] && ok "CHANGELOG 不在は rc=2 で拒否" || ng "CHANGELOG 不在が rc=$RC"
-
-# --- 10. 値が必要なオプションの欠落は即座に拒否 -----------------------------
-echo ""
-echo "【10】値が必要なオプションの欠落は rc=2"
-for opt in --position --changelog --fragments; do
-  bash "$MERGE" "$opt" >"$SBX/out.log" 2>&1; RC=$?
-  [ "$RC" = "2" ] && ok "$opt の値欠落は rc=2 で拒否" || ng "$opt の値欠落が rc=$RC"
-done
-
-# --- 11. 読み書き・削除不能時は fail closed ----------------------------------
-echo ""
-echo "【11】I/O 失敗では上書き・削除せず終了する"
-setup
-frag "20260729_unreadable.md" "UNREADABLE"
-BEFORE4="$(cat "$SBX/docs/CHANGELOG.md")"
-chmod 000 "$SBX/docs/changelog.d/20260729_unreadable.md"
-run_merge; RC=$?
-chmod 600 "$SBX/docs/changelog.d/20260729_unreadable.md"
-[ "$RC" != "0" ] && ok "読めない断片は非ゼロ終了" || ng "読めない断片を成功扱いした"
-[ "$BEFORE4" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && ok "読めない断片で CHANGELOG は不変" || ng "読めない断片で CHANGELOG が変わった"
-[ -f "$SBX/docs/changelog.d/20260729_unreadable.md" ] && ok "読めない断片は保持" || ng "読めない断片が削除された"
-
-setup
-frag "20260729_readonly.md" "READONLY"
-BEFORE5="$(cat "$SBX/docs/CHANGELOG.md")"
-chmod 444 "$SBX/docs/CHANGELOG.md"
-run_merge; RC=$?
-chmod 600 "$SBX/docs/CHANGELOG.md"
-[ "$RC" != "0" ] && ok "書けない CHANGELOG は非ゼロ終了" || ng "書けない CHANGELOG を成功扱いした"
-[ "$BEFORE5" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && ok "書き込み失敗で CHANGELOG は不変" || ng "書き込み失敗で CHANGELOG が変わった"
-[ -f "$SBX/docs/changelog.d/20260729_readonly.md" ] && ok "書き込み失敗時も断片は保持" || ng "書き込み失敗時に断片が削除された"
-
-setup
-frag "20260729_nodelete.md" "NODELETE"
-BEFORE6="$(cat "$SBX/docs/CHANGELOG.md")"
-chmod 555 "$SBX/docs/changelog.d"
-run_merge; RC=$?
-chmod 755 "$SBX/docs/changelog.d"
-[ "$RC" != "0" ] && ok "削除不能ディレクトリは非ゼロ終了" || ng "削除不能を成功扱いした"
-[ "$BEFORE6" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && ok "削除不能なら CHANGELOG を事前に保護" || ng "削除不能なのに CHANGELOG が変わった"
-[ -f "$SBX/docs/changelog.d/20260729_nodelete.md" ] && ok "削除不能なら断片は保持" || ng "削除不能なのに断片が消えた"
-
-# --- 12. top 挿入でも断片生成失敗を見逃さない -------------------------------
-echo ""
-echo "【12】--position top の断片生成失敗は fail closed"
-setup
-frag "20260729_top-io-fail.md" "TOP-IO-FAIL"
-BEFORE7="$(cat "$SBX/docs/CHANGELOG.md")"
-REAL_AWK="$(command -v awk)"
+echo "【same-filesystem保証】"
+setup; frag 20260730_crossfs.md CROSSFS
 mkdir -p "$SBX/bin"
-cat > "$SBX/bin/awk" <<'EOF'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  case "$arg" in
-    *top-io-fail.md) exit 1 ;;
-  esac
-done
-exec "$REAL_AWK" "$@"
-EOF
-chmod 755 "$SBX/bin/awk"
-REAL_AWK="$REAL_AWK" PATH="$SBX/bin:$PATH" run_merge --position top; RC=$?
-[ "$RC" != "0" ] && ok "top 挿入中の断片生成失敗は非ゼロ終了" || ng "top 挿入中の断片生成失敗を成功扱いした"
-[ "$BEFORE7" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && ok "top 断片生成失敗で CHANGELOG は不変" || ng "top 断片生成失敗で CHANGELOG が変わった"
-[ -f "$SBX/docs/changelog.d/20260729_top-io-fail.md" ] && ok "top 断片生成失敗でも断片は保持" || ng "top 断片生成失敗で断片が消えた"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 18' > "$SBX/bin/ln"
+chmod +x "$SBX/bin/ln"
+before="$(cat "$SBX/docs/CHANGELOG.md")"
+RUN_ENV="PATH=$SBX/bin:$PATH"; run; rc=$?; RUN_ENV=
+check '[ "$rc" != 0 ] && [ -f "$SBX/docs/changelog.d/20260730_crossfs.md" ] && [ "$before" = "$(cat "$SBX/docs/CHANGELOG.md")" ]' "hard-link probe失敗は変更前にfail closed"
+
+echo "【commit前crash recovery】"
+setup; frag 20260730_emptytx.md EMPTY-TX
+emptytx="$SBX/docs/.changelog_merge.txn.EMPTY"; mkdir "$emptytx"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ ! -d "$emptytx" ] && grep -q "^## EMPTY-TX$" "$SBX/docs/CHANGELOG.md"' "state作成前の空transactionを安全に除去"
+
+setup; frag 20260730_statetmp.md STATE-TMP
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_initial_state_tmp'; run; rc=$?; RUN_ENV=
+tmptx="$(tx_latest)"
+check '[ "$rc" = 103 ] && [ ! -f "$tmptx/state" ] && [ -f "$tmptx"/state.tmp.* ]' "初回state tmp作成後crashを保持"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ ! -d "$tmptx" ] && grep -q "^## STATE-TMP$" "$SBX/docs/CHANGELOG.md"' "state tmpだけのtransactionを安全に除去・再実行"
+
+setup; frag 20260730_targettmp.md TARGET-TMP
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_target_tmp'; run; rc=$?; RUN_ENV=
+targettx="$(tx_latest)"
+check '[ "$rc" = 105 ] && [ "$(cat "$targettx/state")" = initializing ] && [ -f "$targettx"/target.tmp.* ] && [ ! -f "$targettx/target" ]' "target tmp作成後crashで不完全targetを公開しない"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ "$(cat "$targettx/state")" = aborted ] && grep -q "^## TARGET-TMP$" "$SBX/docs/CHANGELOG.md"' "target partial-write窓を安全に中止して再実行"
+
+setup; frag 20260730_pathtmp.md PATH-TMP
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_path_tmp'; run; rc=$?; RUN_ENV=
+pathtx="$(tx_latest)"
+check '[ "$rc" = 104 ] && [ "$(cat "$pathtx/state")" = preparing ] && [ -f "$pathtx"/paths/1.path.tmp.* ] && [ ! -f "$pathtx/paths/1.path" ]' "path tmp作成後crashで不完全pathを公開しない"
+run; rc=$?
+check '[ "$rc" = 0 ] && grep -q "^## PATH-TMP$" "$SBX/docs/CHANGELOG.md"' "path tmp crashを自動回復して再実行"
+
+setup; frag 20260730_pre.md PRE
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine'; run; rc=$?; RUN_ENV=
+check '[ "$rc" = 97 ] && [ "$(state)" = prepared ]' "quarantine後crashを保持"
+check '[ -f "$(tx_latest)/quarantine/1.frag" ]' "crash後も元断片保持"
+oldtx="$(tx_latest)"; oldstate="$(state)"
+run --dry-run; rc=$?
+check '[ "$rc" = 3 ] && [ "$(cat "$oldtx/state")" = "$oldstate" ] && [ ! -e "$SBX/docs/changelog.d/20260730_pre.md" ] && [ -f "$oldtx/quarantine/1.frag" ]' "dry-runは残存transactionを変更せず拒否"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ "$(grep -c "^## PRE$" "$SBX/docs/CHANGELOG.md")" = 1 ]' "次回にatomic復元後1回だけmerge"
+
+setup; frag 20260730_nodir.md NODIR
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine'; run; rc=$?; RUN_ENV=
+oldtx="$(tx_latest)"; rm -rf "$SBX/docs/changelog.d"
+run --dry-run; rc=$?
+check '[ "$rc" = 3 ] && [ "$(cat "$oldtx/state")" = prepared ] && [ -f "$oldtx/quarantine/1.frag" ]' "fragment dir消失時もdry-runは残存transactionを変更せず拒否"
 
 setup
-frag "20260729_top-io-fail.md" "END-IO-FAIL"
-BEFORE8="$(cat "$SBX/docs/CHANGELOG.md")"
-REAL_AWK="$REAL_AWK" PATH="$SBX/bin:$PATH" run_merge; RC=$?
-[ "$RC" != "0" ] && ok "末尾挿入中の断片生成失敗は非ゼロ終了" || ng "末尾挿入中の断片生成失敗を成功扱いした"
-[ "$BEFORE8" = "$(cat "$SBX/docs/CHANGELOG.md")" ] && ok "末尾断片生成失敗で CHANGELOG は不変" || ng "末尾断片生成失敗で CHANGELOG が変わった"
-[ -f "$SBX/docs/changelog.d/20260729_top-io-fail.md" ] && ok "末尾断片生成失敗でも断片は保持" || ng "末尾断片生成失敗で断片が消えた"
+printf '%s\n' '# A' > "$SBX/docs/A.md"; printf '%s\n' '# B' > "$SBX/docs/B.md"
+frag 20260730_scope.md SCOPE-A
+env CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine bash "$MERGE" --test-mode --changelog "$SBX/docs/A.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
+atx="$(tx_latest)"
+env bash "$MERGE" --changelog "$SBX/docs/B.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc2=$?
+check '[ "$rc" = 97 ] && [ "$rc2" = 0 ] && [ "$(cat "$atx/state")" = prepared ] && ! grep -q SCOPE-A "$SBX/docs/B.md"' "別CHANGELOGのtransactionを回復・混入しない"
+env bash "$MERGE" --changelog "$SBX/docs/A.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
+check '[ "$rc" = 0 ] && grep -q SCOPE-A "$SBX/docs/A.md"' "対象CHANGELOGだけが自身のtransactionを回復"
 
-# --- 13. repo 本体の CHANGELOG を触っていない --------------------------------
-echo ""
-echo "【13】repo の docs/CHANGELOG.md は不変"
-[ "$REPO_BEFORE" = "$(repo_fingerprint)" ] && ok "repo の CHANGELOG.md は 1 byte も変わっていない" \
-  || ng "repo の CHANGELOG.md が変わった（テストが本体を触っている）"
+setup
+printf '%s\n' '# A' > "$SBX/docs/A.md"; printf '%s\n' '# B' > "$SBX/docs/B.md"
+itx="$SBX/docs/.changelog_merge.txn.INIT"; mkdir "$itx"
+printf '%s\n' initializing > "$itx/state"; printf '%s\n' "$SBX/docs/A.md" > "$itx/target"
+env bash "$MERGE" --changelog "$SBX/docs/B.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
+check '[ "$rc" = 0 ] && [ "$(cat "$itx/state")" = initializing ]' "別targetのinitializing transactionを変更しない"
+env bash "$MERGE" --dry-run --changelog "$SBX/docs/B.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
+check '[ "$rc" = 0 ] && [ "$(cat "$itx/state")" = initializing ]' "dry-runも別targetのinitializing transactionを拒否対象にしない"
 
-echo ""
+setup; frag 20260730_relative.md RELATIVE
+mkdir "$SBX/one" "$SBX/two"
+(cd "$SBX/docs" && env CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine bash "$MERGE" --test-mode --changelog "$SBX/docs/CHANGELOG.md" --fragments changelog.d > "$SBX/out" 2>&1); rc=$?
+(cd "$SBX/two" && env bash "$MERGE" --changelog "$SBX/docs/CHANGELOG.md" --fragments ../docs/changelog.d > "$SBX/out" 2>&1); rc2=$?
+check '[ "$rc" = 97 ] && [ "$rc2" = 0 ] && grep -q "^## RELATIVE$" "$SBX/docs/CHANGELOG.md" && [ ! -e "$SBX/two/changelog.d/20260730_relative.md" ]' "相対fragment pathを絶対化して元位置へ復元"
+
+echo "【atomic no-clobber recovery】"
+setup; frag 20260730_race.md ORIGINAL
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine'; run; rc=$?; RUN_ENV=
+printf '%s\n' '## NEW-LIVE' > "$SBX/docs/changelog.d/20260730_race.md"
+oldtx="$(tx_latest)"
+run; rc=$?
+check '[ "$rc" = 3 ]' "同名live競合はrc3"
+check 'grep -q NEW-LIVE "$SBX/docs/changelog.d/20260730_race.md"' "新liveを上書きしない"
+check 'grep -q ORIGINAL "$oldtx/quarantine/1.frag"' "quarantine原本も保持"
+
+setup; frag 20260730_multi1.md MULTI-1; frag 20260730_multi2.md MULTI-2
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_quarantine'; run; rc=$?; RUN_ENV=
+oldtx="$(tx_latest)"
+printf '%s\n' '## CONFLICT' > "$SBX/docs/changelog.d/20260730_multi2.md"
+run; rc=$?
+check '[ "$rc" = 3 ] && [ -f "$oldtx/quarantine/1.frag" ] && [ "$SBX/docs/changelog.d/20260730_multi1.md" -ef "$oldtx/quarantine/1.frag" ]' "部分復元失敗でも先行quarantine inodeを保持"
+rm -f "$SBX/docs/changelog.d/20260730_multi2.md"
+run; rc=$?
+check '[ "$rc" = 0 ] && grep -q "^## MULTI-1$" "$SBX/docs/CHANGELOG.md" && grep -q "^## MULTI-2$" "$SBX/docs/CHANGELOG.md"' "部分復元を同一inode判定で安全に再試行"
+
+echo "【commit境界crash / signal】"
+setup; frag 20260730_before.md BEFORE
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=before_commit'; run; rc=$?; RUN_ENV=
+check '[ "$rc" = 98 ] && [ "$(state)" = publishing ]' "旧版退避前crashはpublishingを保持"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ "$(grep -c "^## BEFORE$" "$SBX/docs/CHANGELOG.md")" = 1 ]' "旧版退避前crashを復元後1回だけmerge"
+
+setup; frag 20260730_displaced.md DISPLACED
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_displace'; run; rc=$?; RUN_ENV=
+check '[ "$rc" = 100 ] && [ "$(state)" = publishing ] && [ ! -e "$SBX/docs/CHANGELOG.md" ]' "旧版退避後crashはpublishingを保持"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ "$(grep -c "^## DISPLACED$" "$SBX/docs/CHANGELOG.md")" = 1 ]' "CHANGELOG不在でも回復後1回だけmerge"
+
+setup; frag 20260730_commit.md COMMIT
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_commit'; run; rc=$?; RUN_ENV=
+check '[ "$rc" = 99 ] && [ "$(state)" = committing ] && grep -q "^## COMMIT$" "$SBX/docs/CHANGELOG.md"' "commit後crashはcommittingを保持"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ "$(grep -c "^## COMMIT$" "$SBX/docs/CHANGELOG.md")" = 1 ]' "次回にcommit済み判定・重複なし"
+
+setup; frag 20260730_signal.md SIGNAL
+RUN_ENV='CHANGELOG_MERGE_TEST_SIGNAL_AT=after_commit'; run; rc=$?; RUN_ENV=
+check '[ "$rc" != 0 ] && [ "$(state)" = committing ]' "commit後signalでもrollbackしない"
+run; rc=$?
+check '[ "$rc" = 0 ] && [ "$(grep -c "^## SIGNAL$" "$SBX/docs/CHANGELOG.md")" = 1 ]' "signal後も次回確定"
+
+echo "【曖昧crashはfail closed】"
+setup; frag 20260730_amb.md AMB
+RUN_ENV='CHANGELOG_MERGE_TEST_CRASH_AT=after_commit'; run; RUN_ENV=
+printf '%s\n' '# EXTERNAL' > "$SBX/docs/CHANGELOG.md"
+run; rc=$?
+check '[ "$rc" = 3 ] && grep -q "曖昧" "$SBX/out"' "before/published不一致はrc3"
+
+echo "【公開直前CHANGELOG競合】"
+setup; frag 20260730_concurrent.md CONCURRENT-FRAG
+RUN_ENV='CHANGELOG_MERGE_TEST_CONCURRENT_AT=before_publish'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 3 ] && grep -q "^# CONCURRENT$" "$SBX/docs/CHANGELOG.md"' "退避直前の並行編集を上書きしない"
+check 'grep -q "^# CHANGELOG test$" "$tx/changelog.before" && grep -q "^## CONCURRENT-FRAG$" "$tx/published.image"' "競合時に旧版と公開予定版を保持"
+
+setup; frag 20260730_concurrent2.md CONCURRENT-FRAG-2
+RUN_ENV='CHANGELOG_MERGE_TEST_CONCURRENT_AT=after_displace'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 3 ] && grep -q "^# CONCURRENT$" "$SBX/docs/CHANGELOG.md"' "退避後の並行作成をatomic no-clobberで保護"
+check 'grep -q "^# CHANGELOG test$" "$tx/changelog.displaced" && grep -q "^## CONCURRENT-FRAG-2$" "$tx/published.image"' "no-clobber競合時も全版を保持"
+
+setup; frag 20260730_changelog_symlink_swap.md CHANGELOG-SYMLINK-SWAP
+RUN_ENV='CHANGELOG_MERGE_TEST_CHANGELOG_SYMLINK_AT=before_displace'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 3 ] && [ -L "$SBX/docs/CHANGELOG.md" ] && [ -L "$tx/changelog.displaced" ]' "公開直前のCHANGELOG symlink差替えを退避後に検出・物理link保持"
+check '! grep -q CHANGELOG-SYMLINK-SWAP "$SBX/docs/CHANGELOG.md" && grep -q CHANGELOG-SYMLINK-SWAP "$tx/published.image"' "symlink差替え時に参照先を更新せず公開予定版を保持"
+
+echo "【recovery後のsymlink CHANGELOG】"
+setup; frag 20260730_recov_symlink.md RECOV-SYMLINK
+RUN_ENV='CHANGELOG_MERGE_TEST_CHANGELOG_SYMLINK_AT=before_displace CHANGELOG_MERGE_TEST_CRASH_AT=after_displace'
+run; rc=$?; RUN_ENV=
+tx1="$(tx_latest)"
+check '[ "$rc" = 100 ] && [ "$(cat "$tx1/state")" = publishing ] && [ ! -e "$SBX/docs/CHANGELOG.md" ] && [ -L "$tx1/changelog.displaced" ]' "symlink差替え＋退避後crashでCHANGELOG不在のpublishingを保持"
+run; rc=$?
+txcount="$(ls -d "$SBX/docs"/.changelog_merge.txn.* 2>/dev/null | wc -l | tr -d ' ')"
+check '[ "$rc" = 2 ]' "recoveryが復元したsymlink CHANGELOGを起動時と同じ拒否で停止"
+check '[ "$txcount" = 1 ]' "recovery後にsymlinkのまま新transactionを開始しない"
+check '[ -L "$SBX/docs/CHANGELOG.md" ] && [ -f "$SBX/docs/changelog.d/20260730_recov_symlink.md" ] && [ ! -L "$SBX/docs/changelog.d/20260730_recov_symlink.md" ]' "live断片をchangelog.dへ戻したうえで停止"
+check '[ "$(cat "$tx1/state")" = aborted ]' "復元済みtransactionはabortedで確定"
+rm -f "$SBX/docs/CHANGELOG.md"
+
+echo "【symlink fragment】"
+setup; frag 20260730_empty_swap.md EMPTY-SWAP
+RUN_ENV='CHANGELOG_MERGE_TEST_EMPTY_AT=before_quarantine'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 2 ] && [ -f "$SBX/docs/changelog.d/20260730_empty_swap.md" ] && [ -f "$tx/quarantine/1.frag" ]' "validation後の空regular差替えをpost-moveで拒否・保持"
+check '! grep -q "^## EMPTY-SWAP$" "$SBX/docs/CHANGELOG.md"' "空regular差替えを誤ってmergeしない"
+
+setup; frag 20260730_snapshot_empty.md SNAPSHOT-EMPTY
+RUN_ENV='CHANGELOG_MERGE_TEST_EMPTY_AT=before_snapshot'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 2 ] && [ -f "$tx/snapshot/1.frag" ] && [ ! -s "$tx/snapshot/1.frag" ]' "copy直前truncateで空snapshotを検出"
+check '! grep -q "^## SNAPSHOT-EMPTY$" "$SBX/docs/CHANGELOG.md"' "空snapshotを成功commitしない"
+
+setup; frag 20260730_snapshot_race.md SNAPSHOT-RACE
+RUN_ENV='CHANGELOG_MERGE_TEST_REPLACE_AT=after_snapshot'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 3 ] && grep -q SNAPSHOT-RACE "$tx/snapshot/1.frag" && grep -q REPLACED-COMPLETE "$tx/quarantine/1.frag"' "snapshot完成後のquarantine不一致を検出して双方保持"
+check '! grep -q SNAPSHOT-RACE "$SBX/docs/CHANGELOG.md"' "不一致snapshotを公開しない"
+
+setup; frag 20260730_snapshot_inode.md SNAPSHOT-INODE
+RUN_ENV='CHANGELOG_MERGE_TEST_REPLACE_AT=after_snapshot_same_content'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 3 ] && grep -q "別inode" "$SBX/out"' "同一内容・別inodeへのatomic replaceをcmpでなくanchorで検出"
+check '[ -f "$tx/quarantine/1.anchor" ] && ! [ "$tx/quarantine/1.frag" -ef "$tx/quarantine/1.anchor" ]' "差替え後も元断片inodeをanchorとして保持"
+check 'grep -q SNAPSHOT-INODE "$tx/snapshot/1.frag" && grep -q SNAPSHOT-INODE "$tx/quarantine/1.anchor"' "inode差替え検出時もsnapshotとanchor双方を保持"
+check '! grep -q "^## SNAPSHOT-INODE$" "$SBX/docs/CHANGELOG.md"' "inode差替え後のsnapshotを公開しない"
+
+setup; frag 20260730_inherited_hook.md INHERITED-HOOK
+env CHANGELOG_MERGE_TEST_EMPTY_AT=before_quarantine bash "$MERGE" --changelog "$SBX/docs/CHANGELOG.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
+check '[ "$rc" = 0 ] && grep -q "^## INHERITED-HOOK$" "$SBX/docs/CHANGELOG.md"' "故障注入環境変数だけでは本番経路を変更しない"
+
+setup
+printf '%s\n' '## LINK-TARGET' > "$SBX/docs/target.md"
+ln -s ../target.md "$SBX/docs/changelog.d/20260730_link.md"
+run; rc=$?
+check '[ "$rc" = 2 ] && [ -L "$SBX/docs/changelog.d/20260730_link.md" ] && [ ! -e "$SBX/docs/.changelog_merge.txn."* ]' "relative symlink断片を移動前にfail closed"
+
+setup
+ln -s ../missing.md "$SBX/docs/changelog.d/20260730_dangling.md"
+run; rc=$?
+check '[ "$rc" = 2 ] && [ -L "$SBX/docs/changelog.d/20260730_dangling.md" ]' "dangling symlink断片も黙って無視せずfail closed"
+
+setup; frag 20260730_swap.md SWAP
+printf '%s\n' '## SWAP-TARGET' > "$SBX/docs/target.md"
+RUN_ENV='CHANGELOG_MERGE_TEST_SYMLINK_AT=before_quarantine'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 2 ] && [ -L "$SBX/docs/changelog.d/20260730_swap.md" ] && [ -L "$tx/quarantine/1.frag" ]' "validation後のsymlink差替えをpost-move検出し双方保持"
+check '! grep -q "^## SWAP-TARGET$" "$SBX/docs/CHANGELOG.md"' "symlink差替えtargetを誤ってmergeしない"
+
+setup; frag 20260730_swap_crash.md SWAP-CRASH
+printf '%s\n' '## SWAP-CRASH-TARGET' > "$SBX/docs/target.md"
+RUN_ENV='CHANGELOG_MERGE_TEST_SYMLINK_AT=before_quarantine CHANGELOG_MERGE_TEST_CRASH_AT=after_restore_link'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 101 ] && [ -L "$SBX/docs/changelog.d/20260730_swap_crash.md" ] && [ -L "$tx/quarantine/1.frag" ]' "symlink復元直後crashでhard-link双方を保持"
+run; rc=$?
+check '[ "$rc" = 2 ] && [ "$(cat "$tx/state")" = aborted ] && [ -L "$SBX/docs/changelog.d/20260730_swap_crash.md" ]' "物理symlink inode一致でcrash後復元を再開"
+
+echo "【open fd post-rename write】"
+setup; frag 20260730_fd.md FD
+ready="$SBX/ready"; go="$SBX/go"
+(
+  exec 9>> "$SBX/docs/changelog.d/20260730_fd.md"
+  : > "$ready"
+  while [ ! -f "$go" ]; do sleep 0.02; done
+  printf '%s\n' 'LATE-OPEN-FD-WRITE' >&9
+) &
+writer=$!
+while [ ! -f "$ready" ]; do sleep 0.02; done
+run; rc=$?
+tx="$(tx_latest)"
+: > "$go"; wait "$writer"
+check '[ "$rc" = 0 ] && grep -q LATE-OPEN-FD-WRITE "$tx/quarantine/1.frag"' "open fd後書込を永続quarantineに保持"
+check '! grep -q LATE-OPEN-FD-WRITE "$SBX/docs/CHANGELOG.md"' "snapshot後書込を誤って連結しない"
+
+echo "【concurrent CHANGELOGをrollbackで上書きしない】"
+printf '%s\n' '# CONCURRENT-NEWER' > "$SBX/docs/CHANGELOG.md"
+run; rc=$?
+check '[ "$rc" = 0 ] && grep -q CONCURRENT-NEWER "$SBX/docs/CHANGELOG.md"' "commit後にrollback経路なし"
+
+echo "【symlink directoryを物理パスへ解決】"
+setup
+mkdir -p "$SBX/real_frags"
+rm -rf "$SBX/docs/changelog.d"
+ln -s ../real_frags "$SBX/docs/changelog.d"
+printf '\n## FRAGDIR-PHYS\n\n- body\n' > "$SBX/real_frags/20260730_fragdir.md"
+run; rc=$?
+tx="$(tx_latest)"
+phys_frags="$(cd -P "$SBX/real_frags" && pwd -P)"
+check '[ "$rc" = 0 ] && [ "$(cat "$tx/paths/1.path")" = "$phys_frags/20260730_fragdir.md" ]' "symlink fragment dirを物理パスで記録（以後symlinkを経由しない）"
+check 'grep -q "^## FRAGDIR-PHYS$" "$SBX/docs/CHANGELOG.md" && [ ! -e "$SBX/real_frags/20260730_fragdir.md" ]' "symlink fragment dir経由でも通常どおりmerge"
+
+setup
+mkdir -p "$SBX/real_docs/changelog.d"
+printf '%s\n' '# CHANGELOG test' '' '---' '' '## OLD' '' '- old' > "$SBX/real_docs/CHANGELOG.md"
+printf '\n## DOCSDIR-PHYS\n\n- body\n' > "$SBX/real_docs/changelog.d/20260730_docsdir.md"
+rm -rf "$SBX/docs"; ln -s real_docs "$SBX/docs"
+run; rc=$?
+phys_docs="$(cd -P "$SBX/real_docs" && pwd -P)"
+tx="$(ls -dt "$phys_docs"/.changelog_merge.txn.* 2>/dev/null | head -1)"
+check '[ "$rc" = 0 ] && [ -n "$tx" ]' "symlink CHANGELOG dirでもtransactionを物理ディレクトリに作成"
+check '[ "$(cat "$tx/target")" = "$phys_docs/CHANGELOG.md" ]' "targetを物理パスで記録（lockと同一ディレクトリへ解決）"
+check '[ "$(cat "$tx/paths/1.path")" = "$phys_docs/changelog.d/20260730_docsdir.md" ]' "断片pathも同じ物理ディレクトリ配下へ解決"
+check 'grep -q "^## DOCSDIR-PHYS$" "$phys_docs/CHANGELOG.md"' "物理側CHANGELOGへmerge"
+rm -f "$SBX/docs"
+
+echo "【任意配置のCHANGELOGでもtransactionをgitignore】"
+setup
+gi="$SBX/gitrepo"; rm -rf "$gi"; mkdir -p "$gi/other/changelog.d"
+git -C "$gi" init -q >/dev/null 2>&1
+cp "$DIR/../.gitignore" "$gi/.gitignore"
+printf '%s\n' '# CHANGELOG test' '' '---' '' '## OLD' > "$gi/other/CHANGELOG.md"
+printf '\n## GITIGNORE-ANY\n\n- body\n' > "$gi/other/changelog.d/20260730_gi.md"
+env bash "$MERGE" --changelog "$gi/other/CHANGELOG.md" --fragments "$gi/other/changelog.d" > "$SBX/out" 2>&1; rc=$?
+gitx="$(ls -d "$gi/other"/.changelog_merge.txn.* 2>/dev/null | head -1)"
+check '[ "$rc" = 0 ] && [ -n "$gitx" ]' "docs外CHANGELOGでもmergeしてtransactionを残す"
+check 'git -C "$gi" check-ignore -q "$gitx"' "docs外transactionをgitignore"
+mkdir "$gi/other/.changelog_merge.lock"
+check 'git -C "$gi" check-ignore -q "$gi/other/.changelog_merge.lock"' "docs外lockをgitignore"
+check '[ -z "$(git -C "$gi" status --porcelain | grep changelog_merge)" ]' "docs外transaction/lockはgit statusに現れない"
+
+check 'grep -qF ".changelog_merge.txn.*/" "$DIR/../.gitignore" && grep -qF ".changelog_merge.lock/" "$DIR/../.gitignore" && ! grep -qE "^docs/\.changelog_merge" "$DIR/../.gitignore"' "永続transactionとlockはパス非固定でgitignore"
+check '[ "$REAL_SIZE" = "$(wc -c < "$REAL_CHANGELOG" | tr -d " ")" ]' "repo原本CHANGELOG不変"
 echo "=========================================="
 echo "  結果: PASS=$PASS, FAIL=$FAIL"
 echo "=========================================="
-[ "$FAIL" -eq 0 ] || exit 1
-exit 0
+[ "$FAIL" -eq 0 ]
