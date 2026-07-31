@@ -155,15 +155,15 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:14px}
 /* WORLD-STD-ALIGN-002 (#717 作者決定 2026-07-09): 受付リストの固定列グリッド化（世界標準の揃え②）。
    .player-row を flex→grid に切替え、.player-row-main / .player-row-actions は display:contents で
-   子要素（No./氏名/会員区分/種別/参加費/操作）を親 grid の item として直接参加させる
+   子要素（No./氏名/会員区分/会費区分/参加費/操作）を親 grid の item として直接参加させる
    （makePlayerRow の DOM 構造は不変・CSS 主体）。既存の flex 宣言は削除せず後勝ちで上書き（純追加）。
    レイアウトは「リストの実幅」による自動切替（作者決定 2026-07-09・container query）:
    - 既定（狭幅・container query 非対応環境のフォールバック）= 縮退グリッド3段
-     （1段目=No.+氏名+参加費が行間で縦に揃う／2段目=会員区分+種別／3段目=操作ボタン・列見出しなし）
+     （1段目=No.+氏名+参加費が行間で縦に揃う／2段目=会員区分+会費区分／3段目=操作ボタン・列見出しなし）
    - リスト実幅が広い場合（@container）= 承認済み6列 grid
-     （No.34px/氏名 minmax(120px,1fr) 左寄せ+ellipsis/会員区分118px/種別92px/参加費74px 右寄せ+tabular-nums/操作auto）＋列見出し行
+     （No.34px/氏名 minmax(120px,1fr) 左寄せ+ellipsis/会員区分118px/会費区分92px/参加費74px 右寄せ+tabular-nums/操作auto）＋列見出し行
    受付リストは PC で A/B クラス2列並び（1クラス≒470px @1024px 窓）のため viewport 幅では判定できない。
-   grid-area の割当は makePlayerRow の DOM 順（span=No.→.player-name→select=会員区分→select=種別）に
+   grid-area の割当は makePlayerRow の DOM 順（span=No.→.player-name→select=会員区分→select=会費区分）に
    依存する構造セレクタ（makePlayerRow の子要素順を変えるときはここも更新すること）。
    承認済み挙動変更スライス（拘束ルール3 の例外扱いを Issue #717 で明示）。 */
 .player-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;grid-template-areas:"pno pname pfee" "pmember pmember pgrade" "pops pops pops";align-items:center}
@@ -506,6 +506,27 @@ body.sb-active{overflow:hidden}
     <div id="ppPanel"></div>
   </div>
 </div>
+<!-- BULK-ENTRY-001 (#761): まとめて登録（エクセルから貼り付け）全画面ビュー（#pp-fullscreen と同型の fixed overlay・既定非表示・no-print）。
+     貼り付け→プレビュー→確定の2段構え（finalizeAddPastParticipants と同思想）。プレビュー表（#bulk-entry-preview）は
+     updateBulkEntryPreview が DOM API（textContent）で描画し、innerHTML への自由文流入を作らない。
+     マスタ（会員名簿）は読みも書きもしない＝通常/ゲスト大会どちらでも同一動作。 -->
+<div id="bulk-entry-fullscreen" class="no-print" aria-hidden="true" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#eef2f7;z-index:9500;overflow-y:auto;-webkit-overflow-scrolling:touch">
+  <div style="position:sticky;top:0;z-index:5;background:#1F3864;color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px">
+    <span style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📥 まとめて登録（エクセルから貼り付け）</span>
+    <button type="button" class="btn-sm" id="bulkEntryCloseBtn" style="background:#fff;color:#1F3864;min-height:36px;white-space:nowrap;flex-shrink:0">✕ 閉じる</button>
+  </div>
+  <div style="padding:10px 14px 60px;max-width:720px;margin:0 auto">
+    <div style="font-size:12px;color:#555;line-height:1.6;margin:8px 0">1行に1人、<strong>氏名 → ふりがな → クラス</strong> の順で貼り付けてください（Excel からのコピー＝タブ区切りをそのまま貼れます。カンマ区切りも可）。ふりがな・クラスの列は省略できます。同姓同名の方は「名前(地域)」のように書き分けてください。ここで登録した参加者は名簿（会員名簿）には登録されません。</div>
+    <textarea id="bulk-entry-text" rows="8" aria-label="参加者リストの貼り付け欄" placeholder="例：&#10;沼津太郎&#9;ぬまづたろう&#9;A&#10;三島花子&#9;みしまはなこ&#9;B" style="width:100%;box-sizing:border-box;font-size:16px;padding:8px;border:1px solid #c3ccd8;border-radius:6px;font-family:inherit" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin:10px 0">
+      <label style="font-size:12px;color:#1F3864;font-weight:600">クラス列が無い行のクラス<br><select id="bulk-entry-class" style="font-size:16px;padding:4px 8px;margin-top:4px"></select></label>
+      <label style="font-size:12px;color:#1F3864;font-weight:600">区分の既定（全行に適用）<br><select id="bulk-entry-member" style="font-size:16px;padding:4px 8px;margin-top:4px"><option value="member">支部員</option><option value="other">一般（支部員以外）</option></select></label>
+    </div>
+    <div id="bulk-entry-preview" style="margin-top:8px;overflow-x:auto"></div>
+    <div id="bulk-entry-summary" style="font-size:13px;font-weight:600;color:#1F3864;margin:10px 0;min-height:1.2em" role="status" aria-live="polite"></div>
+    <button type="button" class="btn-primary" id="bulkEntryConfirmBtn" style="width:100%;min-height:48px" disabled>登録を確定する</button>
+  </div>
+</div>
 <div class="container">
   <div class="tab-bar no-print">
     <button type="button" class="tab active" id="tab-reg">参加者登録</button>
@@ -513,6 +534,7 @@ body.sb-active{overflow:hidden}
     <button type="button" class="tab" id="tab-result">最終結果</button>
     <button type="button" class="tab" id="tab-master">会員名簿</button>
     <button type="button" class="tab" id="tab-history">大会履歴</button>
+    <!-- [html-validate-disable-next prefer-native-element -- PHASE0-B-CI-GREEN-001: タブ帯に並ぶ通知ピル。button 要素にすると .tab 系 CSS の適用範囲が変わるため、意図的に span + role="button" + tabindex="0" とする。この1要素だけ抑制し、ルール自体は有効のまま] -->
     <span id="save-warning-indicator" class="save-warn-pill" role="button" tabindex="0" title="押すと対処方法を表示します" hidden></span>
   </div>
   <div id="pane-reg">
@@ -600,6 +622,13 @@ body.sb-active{overflow:hidden}
       <div id="past-participants-section" style="display:none;margin:10px 0 6px">
         <button type="button" class="btn-primary" id="ppToggleBtn" style="width:100%">📋 名簿から受付（過去参加者から選ぶ）<span id="pp-summary" style="font-weight:400;font-size:12px;opacity:.85;margin-left:6px"></span></button>
       </div>
+      <!-- BULK-ENTRY-001 (#761): 事前リスト（Excel/CSV）貼り付けの一括登録導線。開始前限定＝renderBulkEntryButton が
+           state.started で disabled＋注記を毎描画同期する（ROUNDS-CONFIG-001 と同型）。マスタ空でも表示する
+           （名簿から受付と違いマスタ非依存＝ゲスト大会・初回利用でも使える）。 -->
+      <div id="bulk-entry-section" style="margin:10px 0 6px">
+        <button type="button" class="btn-sm" id="bulkEntryBtn" style="width:100%;border-color:#2E75B6;color:#2E75B6;min-height:44px">📥 まとめて登録（エクセルから貼り付け）</button>
+        <div id="bulk-entry-note" style="font-size:11px;color:#888;margin-top:4px;display:none">大会開始後はまとめて登録できません。途中参加は「＋ 名簿にない新規の方（手入力）」で1人ずつ追加してください。</div>
+      </div>
       <!-- REG-TAB-TIDY-001 (#743) ⑤b 案B: 手入力欄を details へ格納（既定閉・名簿未取込/0名時は renderPastParticipantsPanel が自動 open）。
            #inp-name / #inp-class / #addBtn / #inp-yomi / #suggest-list の id・bind 経路は不変（格納のみ）。
            #reg-msg は details の外に残す（⑤d notifyRegTapErr / showMsg が details 閉でも常時書けること）。 -->
@@ -615,8 +644,11 @@ body.sb-active{overflow:hidden}
         <button type="button" class="btn-primary" id="addBtn">追加</button>
       </div>
       <div style="margin-top:6px">
+        <!-- [html-validate-disable-next attribute-allowed-values -- PHASE0-B-CI-GREEN-001: ふりがな欄は iOS/Android の日本語かなキーボードを直接出すため inputmode="kana" を意図的に指定している（HTML 標準の列挙値外だが実機で有効）。この1要素だけ抑制し、ルール自体は有効のまま] -->
         <input type="text" id="inp-yomi" inputmode="kana" placeholder="ふりがな" style="width:200px;font-size:16px" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
-        <span style="font-size:11px;color:#888;margin-left:6px">自動入力されない場合は手入力してください</span>
+        <!-- L2-SWEEP-01 ② (UX評価 P2-④): 補足文をブロック化して入力欄の下へ（390px で折返し2行目が
+             欄外に孤立する崩れの修正・スタイルのみ・id/bind 非接触）。 -->
+        <span style="display:block;font-size:11px;color:#888;margin-top:4px">自動入力されない場合は手入力してください</span>
       </div>
       <div id="suggest-list" class="suggest-list" style="display:none"></div>
       </details>
@@ -626,6 +658,10 @@ body.sb-active{overflow:hidden}
            土台にする。A/B section は静的 DOM のまま維持し、互換 id (a-count/b-count/a-list/b-list)
            を温存する。新規 class section は class-section-{classId} / class-count-{classId} /
            class-list-{classId} / class-bulkedit-{classId} で構成。 -->
+      <!-- L2-SWEEP-01 ① (UX評価 P2-③): 一覧の区分 select×2 の視覚ラベル。狭幅では列見出し行
+           (.player-row-head) が出ないため、タブ内に凡例を1行だけ置く（静的 HTML の純追加・
+           行の DOM/レイアウト非接触＝WORLD-STD-ALIGN-002 の構造ピン無破壊）。 -->
+      <div style="font-size:11px;color:#888;margin-top:12px">一覧の各行: 左の選択=会員区分（支部員/支部員以外）／右の選択=会費区分（一般/中学生以下/女性・参加費に反映）</div>
       <div class="grid2" id="reg-class-grid" style="margin-top:12px">
         <div data-class-id="A">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -4005,7 +4041,11 @@ function finalizeAddPastParticipants(picked,master,allEmptyYomi,cls){
   renderPastParticipantsPanel('');
   // ChatGPT M4 反映: 全員空欄追加だった場合は専用通知（既存の成功メッセージを置き換え）
   if(allEmptyYomi&&added>0){
-    showMsg('ふりがな未登録のまま '+added+'名を追加しました。未登録者は「他」タブに表示されます。','warn');
+    // L2-SWEEP-02 ③ (#760/#764 レビュー NIT-1): ゲスト大会中は yomi 補完ダイアログを出さない（#760）ため
+    //   この warn だけが出て「全員名簿に未登録」と読める。「未登録」＝ふりがなの話であり名簿への登録は
+    //   そもそも行われない旨の一文を添える（表示のみ・分岐/追加ロジック無改変）。
+    var _guestBulkNote=((typeof isGuestTournament==='function')&&isGuestTournament(state))?'（🎪 ゲスト大会のため名簿への登録は行われません）':'';
+    showMsg('ふりがな未登録のまま '+added+'名を追加しました。未登録者は「他」タブに表示されます。'+_guestBulkNote,'warn');
   }else{
     showMsg(added+'名を追加しました'+(skipped>0?'（同名・同 member_id 重複 '+skipped+'名はスキップ）':''),'ok');
   }
@@ -4098,6 +4138,346 @@ function bindPastParticipantsToggle(){
   if(btn)btn.addEventListener('click',openPpFullscreen);
   var closeBtn=document.getElementById('ppFullscreenCloseBtn');
   if(closeBtn)closeBtn.addEventListener('click',closePpFullscreen);
+}
+
+// ============================================================
+// BULK-ENTRY-001 (#761): 参加者の一括登録（エクセル/CSV 貼り付け）
+//   事前に集めた参加者リストを貼り付け1回で当日大会へ直接登録する（別大会・約30名の受付ボトルネック解消）。
+//   設計（Issue #761 作者決定 2026-07-13）:
+//   - マスタ（会員名簿）は読みも書きもしない＝サジェスト・自動紐付けの経路に一切乗せない
+//     （部外者成績の混入源を作らない）。通常/ゲスト大会どちらでも同一動作（#760 と直交）。
+//   - 検証→確定の2段構え（finalizeAddPastParticipants と同思想）。エラー行は登録から除外し
+//     プレビューで理由を表示する。クラスは自動作成しない（タイプミスで謎クラスが生まれる事故防止）。
+//   - 生成 player の形状は受付手入力 addPlayer と完全同一
+//     （id/name/cls/member/grade/city:''/member_id なし/yomi=normalizeYomi/entry_no=nextEntryNoForClass）。
+//   - 開始前限定（state.started で導線を無効化）。開始後の追い足しは従来の単発追加（#272 ガード）で行う。
+//   純関数群（parse/resolve/validate/bulkAddPlayers/format）は DOM・localStorage・マスタへ触れない。
+
+// 貼り付けテキストを行配列へ分解する純関数。1行1人・タブがあればタブ区切り（Excel コピペ）、
+// 無ければカンマ区切り（CSV）。空行はスキップ。4列目以降は無視（Excel の余り列対策）。
+// lineNo は貼り付けテキスト内の行番号（1始まり）＝プレビューから元リストの行を特定できる。
+function parseBulkEntryText(text){
+  var out=[];
+  if(typeof text!=='string')return out;
+  var lines=text.split(/\r\n|\r|\n/);
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i];
+    if(!line||!line.replace(/[\s　]/g,''))continue;
+    var cells=(line.indexOf('\t')>=0)?line.split('\t'):line.split(',');
+    out.push({
+      lineNo:i+1,
+      name:(cells[0]||'').replace(/^[\s　]+|[\s　]+$/g,''),
+      yomi:(cells[1]||'').replace(/^[\s　]+|[\s　]+$/g,''),
+      clsRaw:(cells[2]||'').replace(/^[\s　]+|[\s　]+$/g,'')
+    });
+  }
+  return out;
+}
+
+// クラス列の表記を classId へ解決する純関数。受理＝クラス名の完全一致（例「Aクラス」）／
+// classId 一致（例「A」）／「クラス」接尾辞の省略（例「A」→「Aクラス」）。未知の表記は null
+//（自動作成しない）。空文字は「クラス列なし」＝呼び出し側が既定クラスで埋める。
+function resolveBulkEntryClassId(clsRaw,classList){
+  if(typeof clsRaw!=='string'||!clsRaw)return null;
+  for(var i=0;i<classList.length;i++){
+    var c=classList[i];
+    if(!c)continue;
+    var nm=c.name||(c.id+'クラス');
+    if(clsRaw===c.id||clsRaw===nm||clsRaw+'クラス'===nm)return c.id;
+  }
+  return null;
+}
+
+// 行単位バリデーションの純関数。stateObj（classes/players）だけを読む＝マスタ非経由・DOM 非接触・無変更。
+//   defaultClsId: クラス列が空の行に適用する既定クラス／memberValue: 区分の既定（'member'|'other'・全行適用）。
+//   戻り値: [{lineNo,name,yomi,clsId,clsRaw,member,error}]。error は
+//   'empty-name'（空氏名）/'unknown-class'（未知クラス名）/'dup-registered'（既登録者と同名）/
+//   'dup-paste'（貼り付け内の同名重複・後発側）/ null（登録可）。
+//   同名比較は normalizePersonName で行う。addPlayer の同名拒否は trim 後の生文字列一致なので、
+//   全角空白→半角空白・連続空白圧縮まで行う本関数の方が厳しい（安全側に非対称・挙動は Issue #761 設計どおり。
+//   L2-SWEEP-01 ⑤ (#784 レビュー Nice-1) で「addPlayer と同じ規則」という不正確な記述のみ修正・コード無改変）。
+function validateBulkEntryRows(parsedRows,defaultClsId,memberValue,stateObj){
+  var s=stateObj||{};
+  var classList=[];
+  if(Array.isArray(s.classes)){
+    for(var ci=0;ci<s.classes.length;ci++){
+      var c=s.classes[ci];
+      if(c&&isSafeClassId(c.id))classList.push({id:c.id,name:c.name||(c.id+'クラス')});
+    }
+  }
+  var registered={};
+  for(var li=0;li<classList.length;li++){
+    var arr=s.players&&s.players[classList[li].id];
+    if(!Array.isArray(arr))continue;
+    for(var pi=0;pi<arr.length;pi++){
+      var rn=normalizePersonName((arr[pi]&&arr[pi].name)||'');
+      if(rn)registered[rn]=true;
+    }
+  }
+  var seen={};
+  var out=[];
+  var mem=(memberValue==='other')?'other':'member';
+  for(var i=0;i<parsedRows.length;i++){
+    var row=parsedRows[i]||{};
+    var name=normalizePersonName(row.name||'');
+    var error=null;
+    var clsId=null;
+    if(!name)error='empty-name';
+    if(!error){
+      clsId=resolveBulkEntryClassId(row.clsRaw?row.clsRaw:defaultClsId,classList);
+      if(!clsId)error='unknown-class';
+    }
+    if(!error&&registered[name])error='dup-registered';
+    if(!error&&seen[name])error='dup-paste';
+    if(!error)seen[name]=true;
+    out.push({lineNo:row.lineNo,name:name,yomi:normalizeYomi(row.yomi||''),clsId:clsId,clsRaw:row.clsRaw||'',member:mem,error:error});
+  }
+  return out;
+}
+
+// 一括追加の純関数（Issue #761 設計の中核）。validateBulkEntryRows の戻り値と stateObj だけを受け取り、
+// error のない行を stateObj.players[clsId] へ追加する。DOM・localStorage・マスタ（会員名簿）へは一切
+// 触れない（保存・再描画・通知は呼び出し元 confirmBulkEntry の責務＝finalizeAddPastParticipants と同じ分担）。
+// 生成 player は addPlayer の手入力（サジェスト非選択）と完全同一形状で member_id を持たない＝未連携。
+// 通常大会では「📋 参加者を名簿に反映」で従来どおり名簿へ新規追加される（受け入れ基準5）。
+function bulkAddPlayers(rows,stateObj){
+  var s=stateObj||state;
+  var result={added:0,skipped:0,skippedByReason:{},players:[]};
+  for(var i=0;i<rows.length;i++){
+    var row=rows[i];
+    if(!row)continue;
+    if(row.error){
+      result.skipped++;
+      result.skippedByReason[row.error]=(result.skippedByReason[row.error]||0)+1;
+      continue;
+    }
+    if(!row.name||!row.clsId||!s.players||!Array.isArray(s.players[row.clsId])){
+      result.skipped++;
+      result.skippedByReason['unknown-class']=(result.skippedByReason['unknown-class']||0)+1;
+      continue;
+    }
+    // id は finalizeAddPastParticipants と同じ衝突回避（同一 ms 内の連番 suffix）
+    var pid='p'+Date.now()+Math.floor(Math.random()*1000)+'_'+i;
+    var newPlayer={id:pid,name:row.name,cls:row.clsId,member:(row.member==='other')?'other':'member',grade:'ippan'};
+    newPlayer.city='';
+    newPlayer.yomi=normalizeYomi(row.yomi||'');
+    // A-5.1 §11.8: 同一クラス内で max(entry_no)+1 を採番（push 順に連番・欠番維持）
+    newPlayer.entry_no=nextEntryNoForClass(row.clsId,s);
+    s.players[row.clsId].push(newPlayer);
+    result.added++;
+    result.players.push(newPlayer);
+  }
+  return result;
+}
+
+// 確定トーストの文言を組み立てる純関数（#757 formatMasterSyncResultToast と同型＝実際に起きたことを数字で報告）。
+// スキップ理由: 1種類のみなら「スキップ 2行: 同名」、複数種は「スキップ 3行: 同名 2・クラス名不明 1」。
+// dup-registered / dup-paste はどちらも利用者から見れば「同名」なので1語に集約する。
+function formatBulkEntryResultToast(result){
+  if(!result)return '📥 登録しました';
+  var added=result.added||0,skipped=result.skipped||0;
+  var head=(added>0)?('📥 '+added+'人を登録しました'):'📥 登録できる行がありませんでした';
+  if(skipped<=0)return head;
+  var LABELS={'dup-registered':'同名','dup-paste':'同名','empty-name':'空の氏名','unknown-class':'クラス名不明'};
+  var byLabel={};
+  var order=[];
+  var reasons=result.skippedByReason||{};
+  for(var k in reasons){
+    if(!Object.prototype.hasOwnProperty.call(reasons,k))continue;
+    var label=LABELS[k]||k;
+    if(!Object.prototype.hasOwnProperty.call(byLabel,label)){byLabel[label]=0;order.push(label);}
+    byLabel[label]+=reasons[k];
+  }
+  var parts=[];
+  for(var oi=0;oi<order.length;oi++){
+    parts.push(order.length===1?order[oi]:(order[oi]+' '+byLabel[order[oi]]));
+  }
+  return head+'（スキップ '+skipped+'行: '+parts.join('・')+'）';
+}
+
+// エラー理由のプレビュー表示文言（表示専用）。
+function bulkEntryErrorLabel(error){
+  if(error==='empty-name')return '氏名が空です';
+  if(error==='dup-paste')return '貼り付け内で同名が重複しています';
+  if(error==='dup-registered')return '同じ名前の参加者がすでに登録されています';
+  if(error==='unknown-class')return 'クラスが見つかりません（「クラスを管理する」で先に追加してください）';
+  return '登録できません';
+}
+
+// 開始前限定の導線同期（renderRegList から毎描画呼ばれる＝ROUNDS-CONFIG-001 と同型）。
+// state.started（全クラス OR の互換フィールド）で disabled＋注記を切り替える。
+function renderBulkEntryButton(){
+  var btn=document.getElementById('bulkEntryBtn');
+  var note=document.getElementById('bulk-entry-note');
+  var started=!!(state&&state.started);
+  if(btn)btn.disabled=started;
+  if(note)note.style.display=started?'block':'none';
+}
+
+// 既定クラス select を state.classes 駆動で再生成（populateClassSelect と同ソース・選択値は維持・idempotent）。
+function populateBulkEntryClassSelect(){
+  var sel=document.getElementById('bulk-entry-class');
+  if(!sel)return;
+  var clsList=getRegistrationClassList();
+  var prev=sel.value;
+  sel.innerHTML='';
+  var hasPrev=false;
+  for(var i=0;i<clsList.length;i++){
+    var opt=document.createElement('option');
+    opt.value=clsList[i].id;
+    opt.textContent=clsList[i].name||(clsList[i].id+'クラス');
+    sel.appendChild(opt);
+    if(clsList[i].id===prev)hasPrev=true;
+  }
+  if(hasPrev)sel.value=prev;
+  else if(clsList.length>0)sel.value=clsList[0].id;
+}
+
+// モーダルの現在値から検証済み行を作る単一窓口（プレビューと確定が必ず同じ判定を通る）。
+function collectBulkEntryRows(){
+  var textEl=document.getElementById('bulk-entry-text');
+  var clsSel=document.getElementById('bulk-entry-class');
+  var memSel=document.getElementById('bulk-entry-member');
+  var parsed=parseBulkEntryText(textEl?textEl.value:'');
+  return validateBulkEntryRows(parsed,clsSel?clsSel.value:'',memSel?memSel.value:'member',state);
+}
+
+// プレビュー表＋サマリ＋確定ボタンの描画。DOM API（createElement/textContent）のみで組み立て、
+// innerHTML への自由文流入を作らない（貼り付け値＝任意文字列を扱うため）。
+function updateBulkEntryPreview(){
+  var host=document.getElementById('bulk-entry-preview');
+  var summary=document.getElementById('bulk-entry-summary');
+  var confirmBtn=document.getElementById('bulkEntryConfirmBtn');
+  if(!host)return;
+  var rows=collectBulkEntryRows();
+  host.innerHTML='';
+  var okCount=0,ngCount=0;
+  if(rows.length>0){
+    var table=document.createElement('table');
+    table.style.cssText='width:100%;border-collapse:collapse;font-size:12px;background:#fff';
+    var headRow=document.createElement('tr');
+    var heads=['行','氏名','ふりがな','クラス','状態'];
+    for(var hi=0;hi<heads.length;hi++){
+      var th=document.createElement('th');
+      th.textContent=heads[hi];
+      th.style.cssText='border:1px solid #d3dbe5;padding:4px 6px;background:#f4f6f9;color:#1F3864;text-align:left;white-space:nowrap';
+      headRow.appendChild(th);
+    }
+    table.appendChild(headRow);
+    var clsNames={};
+    var clsList=getRegistrationClassList();
+    for(var ci=0;ci<clsList.length;ci++)clsNames[clsList[ci].id]=clsList[ci].name||(clsList[ci].id+'クラス');
+    for(var i=0;i<rows.length;i++){
+      var row=rows[i];
+      var tr=document.createElement('tr');
+      var cells=[
+        String(row.lineNo),
+        row.name||(row.error==='empty-name'?'（空）':''),
+        row.yomi||'',
+        row.clsId?(clsNames[row.clsId]||row.clsId):row.clsRaw,
+        row.error?('⚠ '+bulkEntryErrorLabel(row.error)):'✅ 登録できます'
+      ];
+      for(var cj=0;cj<cells.length;cj++){
+        var td=document.createElement('td');
+        td.textContent=cells[cj];
+        td.style.cssText='border:1px solid #d3dbe5;padding:4px 6px'+((cj===4&&row.error)?';color:#A32D2D':'');
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+      if(row.error)ngCount++;else okCount++;
+    }
+    host.appendChild(table);
+  }
+  if(summary)summary.textContent=(rows.length===0)?'':('登録できる '+okCount+'人・エラー '+ngCount+'行');
+  if(confirmBtn){
+    confirmBtn.disabled=(okCount===0);
+    confirmBtn.textContent=(okCount>0)?('📥 '+okCount+'人を登録する'):'登録を確定する';
+  }
+}
+
+// 全画面ビューの open/close（openPpFullscreen / closePpFullscreen と同型・DOM は静的）。
+function isBulkEntryFullscreenOpen(){
+  var el=document.getElementById('bulk-entry-fullscreen');
+  return !!(el&&el.style.display!=='none');
+}
+function openBulkEntryFullscreen(){
+  // 開始前限定（renderBulkEntryButton の disabled と二重防御）。開始後の途中受付は従来の単発追加（#272 ガード）で。
+  if(state&&state.started){
+    if(typeof notifyRegTapErr==='function')notifyRegTapErr('大会開始後はまとめて登録できません（追加は手入力で1人ずつ）');
+    return;
+  }
+  var el=document.getElementById('bulk-entry-fullscreen');
+  if(!el)return;
+  populateBulkEntryClassSelect();
+  el.style.display='block';
+  if(el.setAttribute)el.setAttribute('aria-hidden','false');
+  try{document.body.style.overflow='hidden';}catch(e){}
+  updateBulkEntryPreview();
+  el.scrollTop=0;
+}
+function closeBulkEntryFullscreen(){
+  var el=document.getElementById('bulk-entry-fullscreen');
+  if(!el)return;
+  el.style.display='none';
+  if(el.setAttribute)el.setAttribute('aria-hidden','true');
+  try{document.body.style.overflow='';}catch(e){}
+}
+
+// 確定＝検証をやり直してから一括追加（プレビュー表示後に受付状況が変わっても古い判定のまま登録しない）。
+// 保存・再描画・SAVE-003b 保存確認は finalizeAddPastParticipants と同じ分担。マスタには触れない。
+function confirmBulkEntry(){
+  if(state&&state.started){
+    if(typeof notifyRegTapErr==='function')notifyRegTapErr('大会開始後はまとめて登録できません（追加は手入力で1人ずつ）');
+    closeBulkEntryFullscreen();
+    return;
+  }
+  var rows=collectBulkEntryRows();
+  var result=bulkAddPlayers(rows,state);
+  if(result.added===0){
+    updateBulkEntryPreview();
+    if(typeof notifyRegTapErr==='function')notifyRegTapErr('登録できる行がありません（プレビューのエラー理由を確認してください）');
+    return;
+  }
+  renderRegList();save();
+  // A-5.1-SAVE-003b: バッチ追加の保存確認（finalizeAddPastParticipants と同型・warn は件数集約して1回のみ）。
+  // rollback しない・運営は継続する。alert も使わない。
+  var unverified=0;
+  for(var vi=0;vi<result.players.length;vi++){
+    var t=result.players[vi];
+    if(!verifyPlayerPersistedById(t.id,t.cls,t.name))unverified++;
+  }
+  if(unverified>0){
+    notifySaveWarning({
+      message:result.added+'人を登録しましたが、'+unverified+'人分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      consoleTag:'SAVE-003b: bulkAddPlayers の保存が確認できませんでした ('+unverified+'/'+result.players.length+' 件未確認)',
+      callsiteId:'SAVE-003b-bulkAddPlayers',
+      kind:'save-verify',
+      aggregateKey:'save-verify:bulk',
+      severity:'warn'
+    });
+  }
+  var textEl=document.getElementById('bulk-entry-text');
+  if(textEl)textEl.value='';
+  updateBulkEntryPreview();
+  closeBulkEntryFullscreen();
+  // MASTER-SYNC-CLARITY-001 (#757) の結果報告型: 純関数で文言を組み立て showToast（textContent）で通知。
+  showToast(formatBulkEntryResultToast(result));
+}
+
+// BULK-ENTRY-001 (#761): 導線の結線（bindRegistrationEvents から1回・build/bind 分離）。
+function bindBulkEntryEvents(){
+  var openBtn=document.getElementById('bulkEntryBtn');
+  if(openBtn)openBtn.addEventListener('click',openBulkEntryFullscreen);
+  var closeBtn=document.getElementById('bulkEntryCloseBtn');
+  if(closeBtn)closeBtn.addEventListener('click',closeBulkEntryFullscreen);
+  var confirmBtn=document.getElementById('bulkEntryConfirmBtn');
+  if(confirmBtn)confirmBtn.addEventListener('click',confirmBulkEntry);
+  var textEl=document.getElementById('bulk-entry-text');
+  if(textEl)textEl.addEventListener('input',updateBulkEntryPreview);
+  var clsSel=document.getElementById('bulk-entry-class');
+  if(clsSel)clsSel.addEventListener('change',updateBulkEntryPreview);
+  var memSel=document.getElementById('bulk-entry-member');
+  if(memSel)memSel.addEventListener('change',updateBulkEntryPreview);
 }
 
 // ============================================================
@@ -6618,6 +6998,8 @@ function renderRegList(){
   // GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類セレクタ＋ヘッダ🎪バッジ＋📋ボタン見た目を毎描画同期
   //   （init/全リセット/バックアップ復元は renderRegList を必ず通る＝モード表示の消し忘れ/残留を作らない）。
   renderTournamentKindControl();
+  // BULK-ENTRY-001 (#761): まとめて登録の導線（開始前限定）を毎描画同期（disabled＋注記）。
+  renderBulkEntryButton();
   var clsList=getRegistrationClassList();
   var allCount=0;
   for(var ci=0;ci<clsList.length;ci++){
@@ -6642,7 +7024,8 @@ function renderRegList(){
       if(players.length>0){
         var headRow=document.createElement('div');
         headRow.className='player-row-head';
-        var headLabels=['No.','氏名','会員区分','種別','参加費','操作'];
+        // L2-SWEEP-01 ① (UX評価 P2-③): 「種別」→「会費区分」（select の aria-label / 凡例と用語を一致・文言のみ）。
+        var headLabels=['No.','氏名','会員区分','会費区分','参加費','操作'];
         for(var hi=0;hi<headLabels.length;hi++){
           var hSpan=document.createElement('span');
           hSpan.textContent=headLabels[hi];
@@ -6767,6 +7150,10 @@ function makePlayerRow(p,cls,i){
 
   var mSel=document.createElement('select');
   mSel.className='sel-sm';
+  // L2-SWEEP-01 ① (UX評価 P2-③): 視覚ラベルの無い区分 select×2 に aria-label / title を付与（表示注釈のみ・
+  //   DOM の子要素数/順序は不変＝WORLD-STD-ALIGN-002 の構造セレクタ非接触）。狭幅の視覚面は受付タブの凡例1行が担う。
+  mSel.setAttribute('aria-label','会員区分');
+  mSel.title='会員区分（支部員/支部員以外）';
   var o1=document.createElement('option');o1.value='member';o1.textContent='支部員';
   var o2=document.createElement('option');o2.value='other';o2.textContent='支部員以外';
   if((p.member||'member')==='other')o2.selected=true; else o1.selected=true;
@@ -6778,6 +7165,8 @@ function makePlayerRow(p,cls,i){
 
   var gSel=document.createElement('select');
   gSel.className='sel-sm';
+  gSel.setAttribute('aria-label','会費区分');
+  gSel.title='会費区分（一般/中学生以下/女性）＝参加費に反映';
   var g1=document.createElement('option');g1.value='ippan';g1.textContent='一般';
   var g2=document.createElement('option');g2.value='chu';g2.textContent='中学生以下';
   // FEE-JOSEI-001 (#325): 会費区分に「女性」(josei) を追加（chu と同額）。josei 選択時は g3 を選択表示。
@@ -6844,6 +7233,11 @@ function openPlayerEditSheet(playerId,cls){
   html+='<div style="font-size:12px;color:#666;margin-bottom:12px">'+escapeHtml(clsName)+' '+escapeHtml(entryNoOf(cls,p.id))+'・'+escapeHtml(fee===0?'無料':fee.toLocaleString()+'円')+'</div>';
   html+='<button type="button" id="pes-name" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">✏️ 名前を編集</button>';
   html+='<button type="button" id="pes-yomi" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">ふりがなを編集</button>';
+  // PLAYER-SWAP-002 (#763・案B): 差し替えを独立ボタン化。editPlayer の同名 early-return により
+  //   「表示名が差し替え先と同じ参加者」は名前編集経由では3択に到達できないため、
+  //   名前入力プロンプトを経由せず openPlayerSwapPicker を直接開く（検索初期値は空＝回避入力を不要に）。
+  //   名前編集→3択ダイアログ経由の既存導線は温存（bindMasterSyncModalEvents 側は無改変）。
+  html+='<button type="button" id="pes-swap" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">🔁 別の人に差し替える</button>';
   // クラス変更（member_id 連携者のみ・全クラス対応=#768・handlePastParticipantClassAdd 経由＝confirm/master 更新は既存フロー）
   var selectable=(typeof ppDenseSelectableClasses==='function')?ppDenseSelectableClasses():[];
   var curSelectable=false;
@@ -6872,6 +7266,17 @@ function openPlayerEditSheet(playerId,cls){
   if(nmBtn)nmBtn.addEventListener('click',function(){ closeSheet(); editPlayer(playerId,cls); });
   var yoBtn=document.getElementById('pes-yomi');
   if(yoBtn)yoBtn.addEventListener('click',function(){ closeSheet(); editPlayerYomi(playerId,cls); });
+  // PLAYER-SWAP-002 (#763): 名前入力を経由しない直接導線。ガード（参加済み拒否・同名拒否・
+  //   danger 確認・送信済み警告）はピッカー以降の既存経路がそのまま効く。
+  //   L2-SWEEP-02 ② (#788 レビュー Nice-1): シート開時に捕捉した p をそのまま使わず、pes-name と同型に
+  //   クリック時へ playerId+cls で再解決（挙動同値・stale 参照への堅牢性のみ。不在なら何もしない）。
+  var swBtn=document.getElementById('pes-swap');
+  if(swBtn)swBtn.addEventListener('click',function(){
+    closeSheet();
+    var cur=null,curPs=(state&&state.players&&state.players[cls])||[];
+    for(var pi2=0;pi2<curPs.length;pi2++){ if(curPs[pi2]&&curPs[pi2].id===playerId){cur=curPs[pi2];break;} }
+    if(cur)openPlayerSwapPicker(cur,'');
+  });
   var chBtns=modal.querySelectorAll('.pes-change');
   for(var bi=0;bi<chBtns.length;bi++){
     chBtns[bi].addEventListener('click',(function(c,mid){return function(){ closeSheet(); handlePastParticipantClassAdd(mid,c); };})(chBtns[bi].getAttribute('data-cls'),p.member_id));
@@ -8103,7 +8508,7 @@ function applyParticipantSwapFromMaster(p,memberId,master,state){
 }
 
 // 純粋関数: 名簿にいない人への差し替え＝未連携化。
-//   member_id を解除して既存の未連携ルート（☁送信時「名簿を更新して送信」で新規会員化）に乗せる。
+//   member_id を解除して既存の未連携ルート（☁送信時「名簿に反映して送信」で新規会員化）に乗せる。
 //   旧会員の人に固有なスナップショット（yomi / city）は残すとキメラになるためクリア。
 //   会費区分（member/grade）は差し替え先が不明のため黙って変えない（金額に直結・受付一覧の編集で直せる）。
 //   [PR #759 レビュー BLOCK-1] 同名参加者ガード（FromMaster 側と同基準・全クラス横断）:
@@ -8143,6 +8548,14 @@ function playerSwapSentWarning(){
       return '\n\n⚠ この大会はすでに☁送信済みです。差し替え後に再送信しても、クラウド側の元の方の行は自動では消えません（管理者画面での削除が必要です）。';
     }
   }catch(e){}
+  return '';
+}
+
+// PLAYER-SWAP-002 (#763・同乗②＝PR #759 レビュー NIT-3): 棄権中（withdrawn）の参加者を差し替えるとき、
+//   差し替えは席の人だけを入れ替え withdrawn には触れない（＝棄権状態は引き継がれる）ことを confirm に明記する。
+//   復帰は従来どおり「⋯ 編集」の復帰ボタンから。
+function playerSwapWithdrawnNote(p){
+  if(p&&p.withdrawn)return '\n\n⚠ この参加者はいま棄権中です。差し替え後も棄権中のまま引き継がれます（対局に戻すときは「⋯ 編集」から復帰してください）。';
   return '';
 }
 
@@ -8198,7 +8611,9 @@ function renderPlayerSwapCandidates(p,query){
   if(!q.replace(/^\s+|\s+$/g,'')){
     html='<div style="font-size:12px;color:#888;padding:8px 0">氏名またはふりがなで検索してください。</div>';
   } else if(list.length===0){
-    html='<div style="font-size:12px;color:#888;padding:8px 0">該当する会員がいません（参加済みの会員は表示されません）。下の「名簿にない新規の方として差し替え」を使ってください。</div>';
+    // PLAYER-SWAP-002 (#763・同乗①): 名簿に居るはずの人を探している文脈で「名簿にない新規の方として…」を
+    //   先に出すと誤誘導（未連携化→既存会員の二重登録）になるため、「検索語を短く」を先に案内する。
+    html='<div style="font-size:12px;color:#888;padding:8px 0">該当する会員がいません（参加済みの会員は表示されません）。まず検索語を短くしてみてください（姓だけ・ふりがなの一部など）。名簿にいない新規の方のときだけ、下の「名簿にない新規の方として差し替え」を使ってください。</div>';
   } else {
     for(var i=0;i<list.length;i++){
       var m=list[i];
@@ -8228,7 +8643,7 @@ function handlePlayerSwapPick(p,memberId){
   var oldName=p.name||'';
   var newName=String(member.name||'');
   var games=countPlayerDecidedGames(p.id,p.cls,state);
-  appConfirm('「'+oldName+'」を名簿の「'+newName+'」さんに差し替えます。\n\nこの参加者のこれまでの対局結果（'+games+'局）もすべて「'+newName+'」さんの成績になります。\n（「'+oldName+'」さんの名簿（氏名・ふりがな）は変更されません）'+playerSwapSentWarning(),function(ok){
+  appConfirm('「'+oldName+'」を名簿の「'+newName+'」さんに差し替えます。\n\nこの参加者のこれまでの対局結果（'+games+'局）もすべて「'+newName+'」さんの成績になります。\n（「'+oldName+'」さんの名簿（氏名・ふりがな）は変更されません）'+playerSwapWithdrawnNote(p)+playerSwapSentWarning(),function(ok){
     if(!ok)return;
     var freshMaster=null;
     try{freshMaster=loadBranchMaster();}catch(e){freshMaster=null;}
@@ -8253,8 +8668,8 @@ function handlePlayerSwapUnlinked(p,newName){
   //   （☁送信・名簿更新は遮断済み）ため末尾の案内文を出し分ける（normal は従来文言と完全同一）。
   var _swapUnlinkedTail=(typeof isGuestTournament==='function'&&isGuestTournament(typeof state!=='undefined'?state:null))
     ?'🎪 ゲスト大会のため、この方が名簿に登録されることはありません。'
-    :'☁送信時に「名簿を更新して送信」を選ぶと名簿に載ります（同じ名前の会員が名簿に1名だけいる場合は、新規ではなくその方に紐付きます）。';
-  appConfirm('「'+oldName+'」を名簿にない新規の方「'+nm+'」として差し替えます（名簿とは未連携になります）。\n\nこれまでの対局結果（'+games+'局）もすべて「'+nm+'」さんの成績になります。ふりがなは空になります（あとから編集できます）。\n'+_swapUnlinkedTail+playerSwapSentWarning(),function(ok){
+    :'☁送信時に「名簿に反映して送信」を選ぶと名簿に載ります（同じ名前の会員が名簿に1名だけいる場合は、新規ではなくその方に紐付きます）。';
+  appConfirm('「'+oldName+'」を名簿にない新規の方「'+nm+'」として差し替えます（名簿とは未連携になります）。\n\nこれまでの対局結果（'+games+'局）もすべて「'+nm+'」さんの成績になります。ふりがなは空になります（あとから編集できます）。\n'+_swapUnlinkedTail+playerSwapWithdrawnNote(p)+playerSwapSentWarning(),function(ok){
     if(!ok)return;
     var r=applyParticipantSwapToUnlinked(p,nm,state);
     if(!r||!r.success){showMsg(playerSwapErrorMessage(r&&r.error),'warn');return;}
@@ -10327,9 +10742,14 @@ var HELP_TEXTS={
       '会費区分：一般／中学生以下／女性 から選びます。中学生以下と女性は同額（支部員＝無料・支部員以外＝500円）、一般は支部員500円・支部員以外1,000円です。',
       'クラスを管理する：A・B以外のクラス（Cなど）を追加・改名できます。A・Bは削除できません（参加者がいる／開始済みのクラスも削除できません）。',
       '名簿にない新規の方：「＋ 名簿にない新規の方（手入力）」を開いて氏名を入れて登録します（漢字・ふりがな・50音で名簿を検索して見つからないときも同様です）。',
-      '登録した後でも、氏名・ふりがな・会費区分は編集で直せます。間違えても直せます。席を譲るなど別の人に変わったときは、名前の編集から「別の人に差し替える（名簿から選ぶ）」で、これまでの結果ごと正しい人に付け替えられます。',
+      // PLAYER-SWAP-002 (#763): 独立ボタン「🔁 別の人に差し替える」を正規導線として案内（名前入力不要）。
+      //   名前編集→3択経由も温存のため併記。
+      '登録した後でも、氏名・ふりがな・会費区分は編集で直せます。間違えても直せます。席を譲るなど別の人に変わったときは、参加者の「⋯ 編集」の「🔁 別の人に差し替える」で名簿から選ぶと、これまでの結果ごと正しい人に付け替えられます（名前の編集から「別の人に差し替える（名簿から選ぶ）」でも同じです）。',
       // GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類（ゲスト大会）の案内を追加（7行目・test_help_003 R4 追随）。
-      'ゲスト大会：名簿にない参加者が大半の別大会は、「⚙ 大会の設定」の「大会の種類」で「🎪 ゲスト大会」を選んでください。参加者・結果が名簿（会員マスタ）に記録されなくなります（名簿からの受付・検索はそのまま使えます・開始後は変更不可）。'
+      'ゲスト大会：名簿にない参加者が大半の別大会は、「⚙ 大会の設定」の「大会の種類」で「🎪 ゲスト大会」を選んでください。参加者・結果が名簿（会員マスタ）に記録されなくなります（名簿からの受付・検索はそのまま使えます・開始後は変更不可）。',
+      // BULK-ENTRY-001 (#761): 事前リスト貼り付けのまとめて登録の案内を追加（8行目・test_help_003 R4 追随）。
+      //   「いつ使う／何が起きる／間違えても／ゲスト大会では」の型（#757/#760 で確立）で書く。
+      'まとめて登録：事前に参加者リスト（Excel など）を集めてある大会は、大会開始前に「📥 まとめて登録（エクセルから貼り付け）」へ貼り付け→プレビュー→確定で、まとめて受付できます。エラー行（同名・空の氏名・クラス名不明）は自動で除外され、理由がプレビューに表示されます（確定後も1人ずつの編集・削除で直せます）。登録した方は名簿（会員名簿）には載りません（通常の大会では「📋 参加者を名簿に反映」で名簿に新規追加・🎪 ゲスト大会でもそのまま使えます）。'
     ]
   },
   // HELP-UX-004 (#341): 順位タブ（最終結果）の順位決定ルールの迷子防止ヘルプ。#309/#323 機構流用・topic 追加のみ。
@@ -10396,7 +10816,7 @@ var HELP_TEXTS={
       '「☁ クラウドへ送信」：確定した結果をクラウドに保存します。クラウド管理ページ（app/）でのログインとネット接続が必要です。',
       '同じ大会を何度送信しても二重にはなりません。',
       '送信に失敗しても当日のデータは端末に残っています。運営はそのまま続けて、あとで再送信できます。',
-      '「大会履歴」タブの「☁ クラウドの過去大会」→「読み込む」で、共有された過去大会の結果を見られます。',
+      '「大会履歴」タブの「☁ クラウドの過去大会」→「読み込む」で、共有された過去大会の結果を見られます。送信済みの大会は、回戦ごとの ○● が分かる星取表つきで表示されます（星取表がない古い大会は順位表のみ。もう一度「☁ クラウドへ送信」すると星取表が付きます）。',
       'クラウドはバックアップの代わりではありません。端末の控えは ☰メニューの「バックアップ」で保存してください。',
       '【A級・B級を2台で分担する場合】受付タブの「▷ 2台で分担して入力するとき」を開き、１台目で「運営共通キーを発行」→表示された4桁を２台目に伝え、２台目で入力して「このキーに合わせる」を押します。両方の送信が同じ１つの大会にまとまります（各端末は自分の級だけを送るのがコツ）。１台で運営するなら操作は不要です。',
       '【あとから2台目を足すとき】１台目がキーを発行せずに送信済みの場合は、２台目で「今日の大会に合流」を押してください（キー入力は不要・同じ日のうちに）。',
@@ -10990,10 +11410,30 @@ function syncTournamentToCloud(client, master, opts){
           entryRows.push(row);
         }
         counts.entries=entryRows.length;
-        if(!entryRows.length)return {ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid};
+        // CLOUD-HISTORY-SCOREBOARD-001 (#765): entries 成立後に星取表スナップショットを同梱 upsert（冪等・fail-soft）。
+        //   内容は buildPublicLiveSnapshot(state,{display_mode:'full'})＝ライブ配信と同じホワイトリスト部分集合
+        //   （回戦別 results 入り）。tournament_snapshots(tournament_id PK) へ onConflict 冪等 upsert。
+        //   スナップショットが作れない/送れない場合も送信結果は ok のまま snapshot_ok:false を返すだけ
+        //   ＝星取表が付かないだけで entries 送信・現行トーストは成立する（受入基準4）。
+        //   snapshotSource はテスト注入用（既定＝global state。buildCloudSyncPayload と同じ typeof ガード）。
+        function _withSnapshot(result){
+          var snap=null;
+          try{
+            var src=(opts.snapshotSource!==undefined)?opts.snapshotSource:((typeof state!=='undefined')?state:null);
+            if(src&&typeof buildPublicLiveSnapshot==='function')snap=buildPublicLiveSnapshot(src,{display_mode:'full'});
+          }catch(eS){ snap=null; }
+          if(!snap){ result.snapshot_ok=false; return Promise.resolve(result); }
+          var row={tournament_id:result.tournament_id,club_id:clubId,snapshot:snap,updated_at:new Date().toISOString()};
+          return client.from('tournament_snapshots').upsert(row,{onConflict:'tournament_id'}).then(function(r5){
+            result.snapshot_ok=!(r5&&r5.error);
+            if(r5&&r5.error&&typeof console!=='undefined'&&console.warn)console.warn('[cloud] 星取表スナップショット送信に失敗（結果送信は成立・再送信で付きます）:',(r5.error&&r5.error.message)||'');
+            return result;
+          },function(eU){ result.snapshot_ok=false; if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 星取表スナップショット送信例外（結果送信は成立・再送信で付きます）:',(eU&&eU.message)||eU); return result; });
+        }
+        if(!entryRows.length)return _withSnapshot({ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid});
         return client.from('entries').upsert(entryRows,{onConflict:'tournament_id,player_id'}).then(function(r4){
           if(r4&&r4.error)return fail('entries',r4);
-          return {ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid};
+          return _withSnapshot({ok:true,warn:(counts.unresolved>0),counts:counts,tournament_id:tid});
         });
       });
     });
@@ -11867,16 +12307,18 @@ function _unlinkedTopLabel(list){
   return (arr[0]&&arr[0].name)||'';
 }
 // 送信前ガードの確認（3択を既存 appConfirm 2 段で構成＝新規モーダル部品を増やさない）:
-//   ①名簿を更新して送信 → onUpdateAndSend ／ ②このまま送信 → onSendAsIs ／ ③中止 → onCancel。
+//   ①名簿に反映して送信 → onUpdateAndSend ／ ②このまま送信 → onSendAsIs ／ ③中止 → onCancel。
+//   L2-SWEEP-01 ④ (#782 レビュー Nice-2): #757 改名前は旧称系の文言（本ダイアログにのみ残存）だったため
+//   新語彙「名簿に反映」へ（文言のみ・選択肢の数/順序/既定/分岐は完全不変）。
 function _confirmUnlinkedBeforeSend(unlinked, onUpdateAndSend, onSendAsIs, onCancel){
   var n=(unlinked&&unlinked.length)||0;
   var label=_unlinkedTopLabel(unlinked);
-  var m1='⚠ 名簿に未連携の参加者が '+n+' 名います（'+label+'）。\nこのまま送信すると、この方々はクラウドの共有結果に載りません（当日アプリの表示は変わりません）。\n\n名簿を更新してから送信しますか？（初参加の方を名簿に登録してから全員まとめて送ります）';
+  var m1='⚠ 名簿に未連携の参加者が '+n+' 名います（'+label+'）。\nこのまま送信すると、この方々はクラウドの共有結果に載りません（当日アプリの表示は変わりません）。\n\n名簿に反映してから送信しますか？（初参加の方を名簿に登録してから全員まとめて送ります）';
   appConfirm(m1,function(ok1){
     if(ok1){ onUpdateAndSend(); return; }
-    var m2='名簿を更新せずに送信します。\n未連携の '+n+' 名（'+label+'）は、クラウドの共有結果に載りません。\n\nこのまま送信しますか？';
+    var m2='名簿に反映せずに送信します。\n未連携の '+n+' 名（'+label+'）は、クラウドの共有結果に載りません。\n\nこのまま送信しますか？';
     appConfirm(m2,function(ok2){ if(ok2)onSendAsIs(); else onCancel(); },{okText:'このまま送信',cancelText:'中止'});
-  },{okText:'名簿を更新して送信',cancelText:'更新しない'});
+  },{okText:'名簿に反映して送信',cancelText:'反映しない'});
 }
 // 送信後（skipped>0）の⚠注記（C）: 未連携者が共有結果に未反映であること・最上位者・直し方を明示。
 function _unlinkedSkippedNote(count){
@@ -11930,7 +12372,7 @@ function sendTournamentToCloud(setStatus){
       } else { _guardThenSend(); }
     }
     // CLOUD-SEND-UNLINKED-GUARD-001: 送信直前ガード。未連携者がいれば確認（無ければ従来どおり即送信）。
-    //   ①名簿を更新して送信＝既存 syncBranchMasterOnSave（初参加者に member_id 付与）→送信 ②このまま送信 ③中止。
+    //   ①名簿に反映して送信＝既存 syncBranchMasterOnSave（初参加者に member_id 付与）→送信 ②このまま送信 ③中止。
     //   走査失敗時は空扱いで従来どおり送信（fail-open＝ガードで送信を止めない）。
     function _guardThenSend(){
       var _u=[]; try{ _u=collectUnlinkedParticipantsForSend(); }catch(eU){ _u=[]; }
@@ -12262,7 +12704,7 @@ function syncBranchMasterOnSave(onDone){
   function _done(){ if(typeof onDone==='function')onDone(_counts); }
   // GUEST-TOURNAMENT-MODE-001 (#760・fail-safe の要): ゲスト大会は名簿（支部マスタ）へ一切書き込まない。
   //   本関数は大会→名簿同期の choke point（呼び出し2経路＝📋saveBtn の saveData／☁送信の未連携ガード
-  //   「①名簿を更新して送信」CLOUD-SEND-UNLINKED-GUARD-001）であり、関数冒頭の no-op（_done() のみ）で
+  //   「①名簿に反映して送信」CLOUD-SEND-UNLINKED-GUARD-001）であり、関数冒頭の no-op（_done() のみ）で
   //   両経路を一括遮断する。新規追加(createMemberFromParticipant)・同名1件自動紐付け(attachMemberIdToPlayer)・
   //   参加履歴/last_class/yomi 付与のすべてがここで止まる。UI 側の説明は saveData / renderGuestModeUI が担当。
   if(typeof isGuestTournament==='function'&&isGuestTournament(typeof state!=='undefined'?state:null)){_done();return;}
@@ -12369,11 +12811,13 @@ function syncBranchMasterOnSave(onDone){
 //   3型:
 //     ① 反映あり  📋 名簿に反映しました: 新規追加 N人・参加記録 M人（ふりがな補完があれば末尾に追記）
 //     ② 差分ゼロ  📋 名簿は反映済みです（変更なし）  ＝ 何度押しても安全（冪等）が数字で見える
-//     ③ 内訳不明  📋 名簿に反映しました              ＝ counts=null（破損スキップ/保存失敗/例外）の中立文言
+//     ③ 内訳不明  📋 名簿への反映を確認できませんでした（保存状態をご確認ください）
+//                  ＝ counts=null（破損スキップ/保存失敗/例外）の中立文言。L2-SWEEP-01 ③ (#782 レビュー Nice-1):
+//                  保存失敗時にも「反映しました」と読める断定を避け非断定へ（分岐条件・counts の作り方は無改変）。
 //   skipped（同名候補が複数で保留）は載せない: updateBranchMasterFromTournament が氏名つきの
 //   警告（showMsg 'warn'）を別途出しており、同じ事実の二重通知になるため。
 function formatMasterSyncResultToast(counts){
-  if(!counts)return '📋 名簿に反映しました';
+  if(!counts)return '📋 名簿への反映を確認できませんでした（保存状態をご確認ください）';
   var added=counts.added||0,marked=counts.marked||0,yomi=counts.yomiFilled||0;
   if(added===0&&marked===0&&yomi===0)return '📋 名簿は反映済みです（変更なし）';
   var parts=[];
@@ -13726,6 +14170,8 @@ function bindRegistrationEvents(){
   //   bindClassBulkEditHandlers() で同経路 bind する。重複 bind は data-bulkedit-bound で抑止。
   bindClassBulkEditHandlers();
   document.getElementById('addBtn').addEventListener('click',addPlayer);
+  // BULK-ENTRY-001 (#761): まとめて登録（エクセルから貼り付け）の全画面ビュー導線。
+  bindBulkEntryEvents();
   // HELP-UX-003 (#338): 登録受付タブ見出し脇「？ ヘルプ」（静的 HTML・id=helpBtnReg）→ openHelpModal('reg')。
   var helpBtnReg=document.getElementById('helpBtnReg');
   if(helpBtnReg)helpBtnReg.addEventListener('click',function(){openHelpModal('reg');});
@@ -15855,6 +16301,18 @@ function fetchCloudEntriesForTournament(client, tid, clubId){
     });
   });
 }
+// CLOUD-HISTORY-SCOREBOARD-001 (#765): 送信時同梱スナップショット（tournament_snapshots）の下り読み取り。
+//   snapshot が無い旧大会・取得エラーは snapshot:null で返す（呼び出し側が現行順位表のみ表示へフォールバック
+//   ＝後方互換・表示劣化なし・fail-soft）。RLS は同クラブの幹事以上のみ read（氏名入りのため・Must-1）＝
+//   閲覧ロール(viewer)では 0 行が返り、エラーにならず星取表なし＝現行順位表のみ表示に落ちる。
+function fetchCloudSnapshotForTournament(client, tid){
+  if(!client||!client.from)return Promise.resolve({ok:false,snapshot:null});
+  return client.from('tournament_snapshots').select('snapshot').eq('tournament_id',tid).then(function(res){
+    if(res&&res.error){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 星取表スナップショット取得エラー（順位表のみ表示）:',cloudErrDetail(res.error)); return {ok:false,snapshot:null}; }
+    var rows=(res&&res.data)||[]; var row=rows[0]||null;
+    return {ok:true,snapshot:(row&&row.snapshot&&typeof row.snapshot==='object')?row.snapshot:null};
+  },function(){ return {ok:false,snapshot:null}; });
+}
 // CLOUD-TOURNEY-NAMING-001 (#608): クラウド過去大会一覧/詳細の表記統一（表示側正規化・純関数3本）。
 //   元データ tournaments.name は書き換えず、表示時のみ「YYYY年M月度＋正規化した大会名」に整える。
 //   すべて副作用なし・fail-soft（想定外入力でも例外を投げない）。設計 docs/specs/20260707_cloud_tourney_naming_001_design.md。
@@ -16005,23 +16463,52 @@ function buildCloudMergedReportHtml(entries, isSP){
   html+=buildCloudResultBlocksHtml(entries, isSP);
   return html;
 }
+// CLOUD-HISTORY-SCOREBOARD-001 (#765): snapshot（buildPublicLiveSnapshot full 形）→ ローカル履歴詳細と同経路の
+//   星取表 HTML（閲覧専用・純関数）。normalizeState → buildScoreboardClassTableHtml(cid, vs)（sourceState 渡し
+//   ＝withSourceState が global state を退避→finally で必ず復元）。参加者のいるクラスのみ描画し、
+//   1件も組めなければ ''（呼び出し側は現行順位表のみ表示＝snapshot 無し旧大会と同じ後方互換）。
+//   schema_version 差はローカル履歴と同じ normalize-on-read（normalizeState）で吸収する。
+function buildCloudSnapshotScoreboardHtml(snap){
+  if(!snap||typeof snap!=='object'||!snap.state||typeof snap.state!=='object')return '';
+  var vs=null;
+  try{ vs=normalizeState(snap.state); }catch(eN){ vs=null; }
+  if(!vs||!Array.isArray(vs.classes))return '';
+  var body='';
+  try{
+    for(var i=0;i<vs.classes.length;i++){
+      var cid=vs.classes[i]&&vs.classes[i].id; if(!cid)continue;
+      var ps=(vs.players&&Array.isArray(vs.players[cid]))?vs.players[cid]:[];
+      if(!ps.length)continue;
+      body+=buildScoreboardClassTableHtml(cid,vs);
+    }
+  }catch(eB){ body=''; }
+  if(!body)return '';
+  return '<div style="background:#eef2f7;padding:8px;border-radius:8px;margin-bottom:10px">'+body+'</div>';
+}
 // タップした大会の結果を「履歴一覧を差し替えて先頭に大きく表示」する（renderHistoryDetail と同じ全画面パターン）。
+//   CLOUD-HISTORY-SCOREBOARD-001 (#765): snapshot があれば星取表（上段）＋現行の順位表（下段・#607 会員属性行
+//   を含む・無改変）の2段構成。無い旧大会は現行の順位表のみ＝従来と同一表示（後方互換）。
 function renderCloudTournamentDetail(client,clubId,tid,label,date){
   var host=document.getElementById('history-content'); if(!host)return;
   host.innerHTML='<div style="padding:24px;text-align:center;color:#888">読み込み中…</div>';
   if(typeof window!=='undefined'&&window.scrollTo)window.scrollTo(0,0);
   fetchCloudEntriesForTournament(client,tid,clubId).then(function(r){
+    // CLOUD-HISTORY-SCOREBOARD-001 (#765): snapshot も取得（fail-soft・エラー/無しは星取表なし＝従来表示）。
+    return fetchCloudSnapshotForTournament(client,tid).then(function(sr){
     var h=document.getElementById('history-content'); if(!h)return;
     var html='';
     html+='<div style="margin-bottom:10px"><button type="button" class="btn-sm" id="cloud-history-back-btn" style="background:#fff;color:#444;font-size:13px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← クラウドの大会一覧へ戻る</button></div>';
     html+='<div style="background:#e8f0f8;border:1px solid #9DB7D5;color:#1F3864;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">☁ クラウドの過去大会（閲覧専用・みんなで共有）</div>';
     var _head=(typeof buildCloudTournamentDisplayTitle==='function')?buildCloudTournamentDisplayTitle(label,date):(label||'');
     html+='<div style="margin-bottom:10px"><div style="font-size:16px;font-weight:700;color:#1F3864">'+escapeHtml(_head||'(大会名未設定)')+'</div>'+(date?'<div style="font-size:12px;color:#666;margin-top:2px">開催日 '+escapeHtml(date)+'</div>':'')+'</div>';
-    html+= r.ok ? buildCloudResultBlocksHtml(r.entries) : '<div class="alert alert-err" style="font-size:13px">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
+    // #765: 2段構成＝星取表（snapshot ある送信済み大会のみ・上段）＋現行の順位表（下段・無改変＝#607 属性行を保持）。
+    var _sb=''; try{ _sb=(r.ok&&sr&&sr.snapshot)?buildCloudSnapshotScoreboardHtml(sr.snapshot):''; }catch(eSb){ _sb=''; }
+    html+= r.ok ? (_sb+buildCloudResultBlocksHtml(r.entries)) : '<div class="alert alert-err" style="font-size:13px">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
     h.innerHTML=html;
     if(typeof window!=='undefined'&&window.scrollTo)window.scrollTo(0,0);
     var back=document.getElementById('cloud-history-back-btn');
     if(back)back.addEventListener('click',function(){ renderHistoryList(); });
+    }); // end fetchCloudSnapshotForTournament.then（#765）
   });
 }
 function bindCloudHistoryRows(client, clubId){
