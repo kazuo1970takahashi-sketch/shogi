@@ -3,7 +3,7 @@
 # Bash 3.2+ / network不使用。CHANGELOGの同一FS renameだけをcommit pointとする。
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 CHANGELOG="$REPO_ROOT/docs/CHANGELOG.md"
 FRAG_DIR="$REPO_ROOT/docs/changelog.d"
 POSITION=end
@@ -29,7 +29,9 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$POSITION" in end|top) : ;; *) echo "--position は end / top のみ" >&2; exit 2 ;; esac
-CHANGELOG_DIR="$(cd "$(dirname "$CHANGELOG")" && pwd)" || exit 1
+# 論理pwdだとsymlink dirのretargetでlock保持先と書込先がずれる。物理パスへ解決してから
+# LOCK / TX / target を派生させる。
+CHANGELOG_DIR="$(cd -P "$(dirname "$CHANGELOG")" && pwd -P)" || exit 1
 CHANGELOG_ABS="$CHANGELOG_DIR/$(basename "$CHANGELOG")"
 [ ! -L "$CHANGELOG_ABS" ] || { echo "symlink CHANGELOGは参照先を安全に公開できないため拒否: $CHANGELOG_ABS" >&2; exit 2; }
 LOCK="$CHANGELOG_DIR/.changelog_merge.lock"
@@ -187,7 +189,9 @@ recover_transactions() {
              [ "$CHANGELOG_ABS" -ef "$tx/changelog.before.link" ] && cmp -s "$CHANGELOG_ABS" "$tx/changelog.before"; then
           restore_precommit "$tx" || { echo "公開前transactionを復元不能: $tx" >&2; return 3; }
         elif [ ! -e "$CHANGELOG_ABS" ] && [ -f "$tx/changelog.displaced" ]; then
-          ln "$tx/changelog.displaced" "$CHANGELOG_ABS" 2>/dev/null || return 3
+          # -P必須。BSD lnはsymlink sourceを既定で追跡するため、-P無しだとmacOSだけ
+          # 参照先へのhard linkになり、復元後のsymlink検査をすり抜ける。
+          ln -P "$tx/changelog.displaced" "$CHANGELOG_ABS" 2>/dev/null || return 3
           restore_precommit "$tx" || { echo "公開前transactionを復元不能: $tx" >&2; return 3; }
         elif [ -f "$tx/changelog.displaced" ] && cmp -s "$CHANGELOG_ABS" "$tx/changelog.displaced"; then
           restore_precommit "$tx" || { echo "公開前transactionを復元不能: $tx" >&2; return 3; }
@@ -243,10 +247,15 @@ else
   recover_transactions || exit $?
 fi
 
-[ -f "$CHANGELOG" ] || { echo "CHANGELOG がない: $CHANGELOG" >&2; exit 2; }
-[ -r "$CHANGELOG" ] || { echo "CHANGELOG を読めない: $CHANGELOG" >&2; exit 1; }
+# recoveryはdisplaced版をCHANGELOGへ復元しうる。復元されたのがsymlinkなら起動時と同じ拒否へ
+# 落とす。ここで止めないと「symlink CHANGELOGでは何も始めない」意図を破って新transactionが開く。
+[ ! -L "$CHANGELOG_ABS" ] || { echo "symlink CHANGELOGは参照先を安全に公開できないため拒否: $CHANGELOG_ABS" >&2; exit 2; }
+
+[ -f "$CHANGELOG_ABS" ] || { echo "CHANGELOG がない: $CHANGELOG_ABS" >&2; exit 2; }
+[ -r "$CHANGELOG_ABS" ] || { echo "CHANGELOG を読めない: $CHANGELOG_ABS" >&2; exit 1; }
 [ -d "$FRAG_DIR" ] || { echo "断片ディレクトリがない: $FRAG_DIR → 何もしない"; exit 0; }
-FRAG_DIR="$(cd "$FRAG_DIR" && pwd)" || exit 1
+# 論理pwdだとglob・same-FS probe・mvが毎回symlinkを経由し、途中のretargetで対象が入れ替わる。
+FRAG_DIR="$(cd -P "$FRAG_DIR" && pwd -P)" || exit 1
 
 FRAGS=$(printf '%s\n' "$FRAG_DIR"/*.md 2>/dev/null |
   while IFS= read -r f; do
@@ -318,6 +327,13 @@ while IFS= read -r f; do
     restore_precommit "$TX" || exit 3
     exit 2
   fi
+  # cpの前に元inodeへanchorを張る。cmpはバイト比較なので、同一内容の別inodeへの
+  # atomic replace（cp+mv）を通してしまう。anchorはそのinode自体を掴んで永続保持する。
+  if ! ln "$TX/quarantine/$n.frag" "$TX/quarantine/$n.anchor"; then
+    echo "元断片inodeのanchor作成に失敗: $f" >&2
+    restore_precommit "$TX" || exit 3
+    exit 1
+  fi
   if [ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_EMPTY_AT:-}" = before_snapshot ] && [ "$n" = 1 ]; then
     : > "$TX/quarantine/$n.frag"
   fi
@@ -327,6 +343,9 @@ while IFS= read -r f; do
   }
   if [ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_REPLACE_AT:-}" = after_snapshot ] && [ "$n" = 1 ]; then
     printf '%s\n' '## REPLACED-COMPLETE' > "$TX/quarantine/$n.frag"
+  fi
+  if [ "$TEST_MODE" = yes ] && [ "${CHANGELOG_MERGE_TEST_REPLACE_AT:-}" = after_snapshot_same_content ] && [ "$n" = 1 ]; then
+    cp -p "$TX/quarantine/$n.frag" "$TX/.replace.tmp" && mv -f "$TX/.replace.tmp" "$TX/quarantine/$n.frag"
   fi
   [ -f "$TX/snapshot/$n.frag" ] || { restore_precommit "$TX" || exit 3; exit 1; }
   grep -q '[^[:space:]]' "$TX/snapshot/$n.frag" 2>/dev/null
@@ -338,6 +357,11 @@ while IFS= read -r f; do
   fi
   if ! cmp -s "$TX/snapshot/$n.frag" "$TX/quarantine/$n.frag"; then
     echo "snapshot作成中の断片変更を検出。双方を保持: $f" >&2
+    restore_precommit "$TX" || exit 3
+    exit 3
+  fi
+  if [ ! "$TX/quarantine/$n.frag" -ef "$TX/quarantine/$n.anchor" ]; then
+    echo "snapshot作成中に元断片が別inodeへ差し替えられた。双方を保持: $f" >&2
     restore_precommit "$TX" || exit 3
     exit 3
   fi
@@ -397,7 +421,7 @@ if [ -L "$TX/changelog.displaced" ]; then
   exit 3
 fi
 if [ ! "$TX/changelog.displaced" -ef "$TX/changelog.before.link" ] || ! cmp -s "$TX/changelog.displaced" "$TX/changelog.before"; then
-  ln "$TX/changelog.displaced" "$CHANGELOG_ABS" 2>/dev/null || :
+  ln -P "$TX/changelog.displaced" "$CHANGELOG_ABS" 2>/dev/null || :
   echo "CHANGELOGの並行編集を検出。競合版とtransactionを保持: $TX" >&2
   exit 3
 fi

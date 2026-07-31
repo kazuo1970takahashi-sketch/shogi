@@ -30,5 +30,7 @@ ai-requests/local/
 node_modules/
 test-results/
 playwright-report/
-docs/.changelog_merge.lock/
-docs/.changelog_merge.txn.*/
+# changelog_merge の永続 transaction と lock。--changelog で docs 外を指定しても stage しない
+# よう、先頭スラッシュ無し（任意の深さで照合）にしてある。
+.changelog_merge.lock/
+.changelog_merge.txn.*/

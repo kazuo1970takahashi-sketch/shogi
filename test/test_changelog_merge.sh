@@ -44,6 +44,7 @@ check '[ "$order" = "## A ## B " ]' "ファイル名順"
 check '[ "$(state)" = committed ]' "transactionはcommitted"
 check '[ ! -e "$SBX/docs/changelog.d/20260730_a.md" ]' "live断片はquarantineへ移動"
 check '[ -f "$(tx_latest)/quarantine/1.frag" ]' "元inodeを成功後も永続保持"
+check '[ -f "$(tx_latest)/quarantine/1.anchor" ] && [ "$(tx_latest)/quarantine/1.frag" -ef "$(tx_latest)/quarantine/1.anchor" ]' "元断片inodeをanchorでも成功後に永続保持"
 before="$(cat "$SBX/docs/CHANGELOG.md")"
 run; rc=$?
 check '[ "$rc" = 0 ] && [ "$before" = "$(cat "$SBX/docs/CHANGELOG.md")" ]' "retryはno-op"
@@ -226,6 +227,20 @@ tx="$(tx_latest)"
 check '[ "$rc" = 3 ] && [ -L "$SBX/docs/CHANGELOG.md" ] && [ -L "$tx/changelog.displaced" ]' "公開直前のCHANGELOG symlink差替えを退避後に検出・物理link保持"
 check '! grep -q CHANGELOG-SYMLINK-SWAP "$SBX/docs/CHANGELOG.md" && grep -q CHANGELOG-SYMLINK-SWAP "$tx/published.image"' "symlink差替え時に参照先を更新せず公開予定版を保持"
 
+echo "【recovery後のsymlink CHANGELOG】"
+setup; frag 20260730_recov_symlink.md RECOV-SYMLINK
+RUN_ENV='CHANGELOG_MERGE_TEST_CHANGELOG_SYMLINK_AT=before_displace CHANGELOG_MERGE_TEST_CRASH_AT=after_displace'
+run; rc=$?; RUN_ENV=
+tx1="$(tx_latest)"
+check '[ "$rc" = 100 ] && [ "$(cat "$tx1/state")" = publishing ] && [ ! -e "$SBX/docs/CHANGELOG.md" ] && [ -L "$tx1/changelog.displaced" ]' "symlink差替え＋退避後crashでCHANGELOG不在のpublishingを保持"
+run; rc=$?
+txcount="$(ls -d "$SBX/docs"/.changelog_merge.txn.* 2>/dev/null | wc -l | tr -d ' ')"
+check '[ "$rc" = 2 ]' "recoveryが復元したsymlink CHANGELOGを起動時と同じ拒否で停止"
+check '[ "$txcount" = 1 ]' "recovery後にsymlinkのまま新transactionを開始しない"
+check '[ -L "$SBX/docs/CHANGELOG.md" ] && [ -f "$SBX/docs/changelog.d/20260730_recov_symlink.md" ] && [ ! -L "$SBX/docs/changelog.d/20260730_recov_symlink.md" ]' "live断片をchangelog.dへ戻したうえで停止"
+check '[ "$(cat "$tx1/state")" = aborted ]' "復元済みtransactionはabortedで確定"
+rm -f "$SBX/docs/CHANGELOG.md"
+
 echo "【symlink fragment】"
 setup; frag 20260730_empty_swap.md EMPTY-SWAP
 RUN_ENV='CHANGELOG_MERGE_TEST_EMPTY_AT=before_quarantine'; run; rc=$?; RUN_ENV=
@@ -244,6 +259,14 @@ RUN_ENV='CHANGELOG_MERGE_TEST_REPLACE_AT=after_snapshot'; run; rc=$?; RUN_ENV=
 tx="$(tx_latest)"
 check '[ "$rc" = 3 ] && grep -q SNAPSHOT-RACE "$tx/snapshot/1.frag" && grep -q REPLACED-COMPLETE "$tx/quarantine/1.frag"' "snapshot完成後のquarantine不一致を検出して双方保持"
 check '! grep -q SNAPSHOT-RACE "$SBX/docs/CHANGELOG.md"' "不一致snapshotを公開しない"
+
+setup; frag 20260730_snapshot_inode.md SNAPSHOT-INODE
+RUN_ENV='CHANGELOG_MERGE_TEST_REPLACE_AT=after_snapshot_same_content'; run; rc=$?; RUN_ENV=
+tx="$(tx_latest)"
+check '[ "$rc" = 3 ] && grep -q "別inode" "$SBX/out"' "同一内容・別inodeへのatomic replaceをcmpでなくanchorで検出"
+check '[ -f "$tx/quarantine/1.anchor" ] && ! [ "$tx/quarantine/1.frag" -ef "$tx/quarantine/1.anchor" ]' "差替え後も元断片inodeをanchorとして保持"
+check 'grep -q SNAPSHOT-INODE "$tx/snapshot/1.frag" && grep -q SNAPSHOT-INODE "$tx/quarantine/1.anchor"' "inode差替え検出時もsnapshotとanchor双方を保持"
+check '! grep -q "^## SNAPSHOT-INODE$" "$SBX/docs/CHANGELOG.md"' "inode差替え後のsnapshotを公開しない"
 
 setup; frag 20260730_inherited_hook.md INHERITED-HOOK
 env CHANGELOG_MERGE_TEST_EMPTY_AT=before_quarantine bash "$MERGE" --changelog "$SBX/docs/CHANGELOG.md" --fragments "$SBX/docs/changelog.d" > "$SBX/out" 2>&1; rc=$?
@@ -297,7 +320,48 @@ printf '%s\n' '# CONCURRENT-NEWER' > "$SBX/docs/CHANGELOG.md"
 run; rc=$?
 check '[ "$rc" = 0 ] && grep -q CONCURRENT-NEWER "$SBX/docs/CHANGELOG.md"' "commit後にrollback経路なし"
 
-check 'grep -qF "docs/.changelog_merge.txn.*/" "$DIR/../.gitignore" && grep -qF "docs/.changelog_merge.lock/" "$DIR/../.gitignore"' "永続transactionとlockはgitignore"
+echo "【symlink directoryを物理パスへ解決】"
+setup
+mkdir -p "$SBX/real_frags"
+rm -rf "$SBX/docs/changelog.d"
+ln -s ../real_frags "$SBX/docs/changelog.d"
+printf '\n## FRAGDIR-PHYS\n\n- body\n' > "$SBX/real_frags/20260730_fragdir.md"
+run; rc=$?
+tx="$(tx_latest)"
+phys_frags="$(cd -P "$SBX/real_frags" && pwd -P)"
+check '[ "$rc" = 0 ] && [ "$(cat "$tx/paths/1.path")" = "$phys_frags/20260730_fragdir.md" ]' "symlink fragment dirを物理パスで記録（以後symlinkを経由しない）"
+check 'grep -q "^## FRAGDIR-PHYS$" "$SBX/docs/CHANGELOG.md" && [ ! -e "$SBX/real_frags/20260730_fragdir.md" ]' "symlink fragment dir経由でも通常どおりmerge"
+
+setup
+mkdir -p "$SBX/real_docs/changelog.d"
+printf '%s\n' '# CHANGELOG test' '' '---' '' '## OLD' '' '- old' > "$SBX/real_docs/CHANGELOG.md"
+printf '\n## DOCSDIR-PHYS\n\n- body\n' > "$SBX/real_docs/changelog.d/20260730_docsdir.md"
+rm -rf "$SBX/docs"; ln -s real_docs "$SBX/docs"
+run; rc=$?
+phys_docs="$(cd -P "$SBX/real_docs" && pwd -P)"
+tx="$(ls -dt "$phys_docs"/.changelog_merge.txn.* 2>/dev/null | head -1)"
+check '[ "$rc" = 0 ] && [ -n "$tx" ]' "symlink CHANGELOG dirでもtransactionを物理ディレクトリに作成"
+check '[ "$(cat "$tx/target")" = "$phys_docs/CHANGELOG.md" ]' "targetを物理パスで記録（lockと同一ディレクトリへ解決）"
+check '[ "$(cat "$tx/paths/1.path")" = "$phys_docs/changelog.d/20260730_docsdir.md" ]' "断片pathも同じ物理ディレクトリ配下へ解決"
+check 'grep -q "^## DOCSDIR-PHYS$" "$phys_docs/CHANGELOG.md"' "物理側CHANGELOGへmerge"
+rm -f "$SBX/docs"
+
+echo "【任意配置のCHANGELOGでもtransactionをgitignore】"
+setup
+gi="$SBX/gitrepo"; rm -rf "$gi"; mkdir -p "$gi/other/changelog.d"
+git -C "$gi" init -q >/dev/null 2>&1
+cp "$DIR/../.gitignore" "$gi/.gitignore"
+printf '%s\n' '# CHANGELOG test' '' '---' '' '## OLD' > "$gi/other/CHANGELOG.md"
+printf '\n## GITIGNORE-ANY\n\n- body\n' > "$gi/other/changelog.d/20260730_gi.md"
+env bash "$MERGE" --changelog "$gi/other/CHANGELOG.md" --fragments "$gi/other/changelog.d" > "$SBX/out" 2>&1; rc=$?
+gitx="$(ls -d "$gi/other"/.changelog_merge.txn.* 2>/dev/null | head -1)"
+check '[ "$rc" = 0 ] && [ -n "$gitx" ]' "docs外CHANGELOGでもmergeしてtransactionを残す"
+check 'git -C "$gi" check-ignore -q "$gitx"' "docs外transactionをgitignore"
+mkdir "$gi/other/.changelog_merge.lock"
+check 'git -C "$gi" check-ignore -q "$gi/other/.changelog_merge.lock"' "docs外lockをgitignore"
+check '[ -z "$(git -C "$gi" status --porcelain | grep changelog_merge)" ]' "docs外transaction/lockはgit statusに現れない"
+
+check 'grep -qF ".changelog_merge.txn.*/" "$DIR/../.gitignore" && grep -qF ".changelog_merge.lock/" "$DIR/../.gitignore" && ! grep -qE "^docs/\.changelog_merge" "$DIR/../.gitignore"' "永続transactionとlockはパス非固定でgitignore"
 check '[ "$REAL_SIZE" = "$(wc -c < "$REAL_CHANGELOG" | tr -d " ")" ]' "repo原本CHANGELOG不変"
 echo "=========================================="
 echo "  結果: PASS=$PASS, FAIL=$FAIL"
