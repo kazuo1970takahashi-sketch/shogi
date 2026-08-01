@@ -19,6 +19,18 @@
     "4 関数（startTournament / collectStartCandidates / showStartValidationErrors /",
     "resolveNoCandidateMessage）。#798 の「35 関数」は過小で、正しくは 39 関数。",
     "",
+    "PHASE1-REACH-001c（2026-08-01・PR #799 の差し戻し対応）でさらに 5 つ塞いだ。",
+    "  高1 HTML 側の穴: <script> 外の全バイトを参照として数えていたため、id/class/",
+    "      data-* に関数名と同じトークンが出るだけでルートになっていた。",
+    "  高2 起動経路: 押せない要素（隠しファイル入力）への結線を扱えていなかった。",
+    "  高3 文字列内の on*=: (4) の対処が行き過ぎで、insertAdjacentHTML の結線を",
+    "      参照から落としていた（＝生きた関数を死んだと言う偽陽性）。",
+    "  高4/高5 死んだ領域の終端: 位置ベースから文（statement）単位へ。",
+    "実測の変化は runtime 9 → 10（loadData）／bindings 4 → 5（#loadFile）のみ。",
+    "静的到達不能 30 は不変＝高1 は「今は誤判定が起きていないが、HTML 属性を 1 つ",
+    "足せば起きる」形の穴だった（cowork 実測: data-x 1 つで 30 → 26）。",
+    "合計 40 関数（静的 30 ＋ 実行時 10）。",
+    "",
     "**このリストの関数を消す・直すのは Issue #798 側の別判断。この検査では触らない。**"
   ],
 
@@ -27,19 +39,49 @@
     "source": "ai-requests/2026-08-01_claude-code_cleanup-deadcode-001_RESULT.md",
     "recorded_at": "2026-08-01",
     "revised_at": "2026-08-01",
-    "revised_by": "PHASE1-REACH-001b",
-    "revision_note": "初版の走査は (a) 文字列リテラル内の識別子を呼出辺に数え (b) 連結セレクタを拾わなかった。両方を塞いだうえで取り直した実測値。#798 に記録された 静的 26 / 合計 35 は過小。",
+    "revised_by": "PHASE1-REACH-001c",
+    "revision_note": "走査の穴を塞ぐたびに取り直した実測値。001b で (a) 文字列リテラル内の識別子 (b) 連結セレクタ、001c で (c) HTML マークアップ (d) 起動経路 (e) 死んだ領域の終端 を修正した。#798 に記録された 静的 26 / 合計 35 は過小。",
     "target_commit": "5bbf60c0ffab79190f485e0d15f188c993b64c80",
     "static_unreachable": 30,
-    "runtime_unreachable": 9,
-    "dead_bindings": 4,
+    "runtime_unreachable": 10,
+    "dead_bindings": 5,
     "top_level_functions": 580,
-    "superseded": {
-      "static_unreachable": 26,
-      "runtime_unreachable": 9,
-      "dead_bindings": 4,
-      "top_level_functions": 580
-    }
+    "superseded": [
+      {
+        "by": "PHASE1-REACH-001b",
+        "static_unreachable": 30,
+        "runtime_unreachable": 9,
+        "dead_bindings": 4,
+        "top_level_functions": 580
+      },
+      {
+        "by": "#798（初回調査）",
+        "static_unreachable": 26,
+        "runtime_unreachable": 9,
+        "dead_bindings": 4,
+        "top_level_functions": 580
+      }
+    ]
+  },
+
+  "_limits_about": [
+    "A5（allowlist の肥大検査）の上限。baseline は「そのとき測った事実」の記録なので、",
+    "運用上の上限とは分けて持つ（PHASE1-REACH-001c・#799 レビュー指摘⑤）。",
+    "",
+    "以前は上限が baseline の実測値そのもの（40/40）で余裕ゼロだった。意図的な温存が",
+    "1 件増えると R1 と A5 が同時に赤になり、allowlist に理由つきで足すだけでは緑に",
+    "できず、同じファイルの baseline（＝過去の実測の記録）を書き換える以外に手が無い",
+    "＝ CI が詰まる形になっていた。",
+    "",
+    "allowlist_max はその余裕。ここを上げるときは reason を書き換えること（＝上限の",
+    "引き上げ自体がレビュー対象になる）。「増えたら理由を問う」の運用は R4（理由必須）",
+    "と R5（掃除漏れ検出）が担っており、A5 は暴走の歯止めに徹する。"
+  ],
+
+  "limits": {
+    "allowlist_max": 48,
+    "headroom": 8,
+    "reason": "PHASE1-REACH-001c 時点の実測 40 件（静的 30 ＋ 実行時 10）＋ 運用余裕 8 件。意図的な温存が増えても allowlist への追記だけで緑にできる幅を確保する。"
   },
 
   "static": [
@@ -244,6 +286,11 @@
       "name": "bindMasterEditModalEvents",
       "category": "temporarily-preserved",
       "reason": "Issue #798 で判断保留。L4549-4550 の旧 F7 編集モーダル系。test/COVERAGE_MAP.md に記載あり。"
+    },
+    {
+      "name": "loadData",
+      "category": "temporarily-preserved",
+      "reason": "PHASE1-REACH-001c で新規検出（起動経路なし）。L14123 で #loadFile の change に結線されるが、その input は L438 で display:none・<label for> も無く、唯一の起動経路 L12996 の .click() は到達不能な openLoadModal の中にしかない。L437 に「loadFile input は温存（loadData の受け皿・import_routing 資産）。openLoadModal/loadData/loadFromPaste は温存。」と明記あり。"
     }
   ],
 
@@ -267,6 +314,11 @@
       "selector": ".master-restore-btn",
       "category": "temporarily-preserved",
       "reason": "Issue #798 で判断保留。L5814 の querySelectorAll 以外に生成箇所ゼロ。L4547 の「削除・復元は行選択→選択ツールバー」へ移行済みで、呼び先 applyMasterMemberRestore は選択ツールバー経由で生きている。"
+    },
+    {
+      "selector": "#loadFile",
+      "category": "temporarily-preserved",
+      "reason": "PHASE1-REACH-001c で新規検出（kind=inert-trigger＝要素は実在するが起動経路が無い）。L438 の <input type=\"file\" style=\"display:none\"> は利用者が押せず、<label for=\"loadFile\"> も無い。唯一の起動経路 L12996 の .click() は到達不能な openLoadModal の中。L437 の温存マーカーが loadFile / openLoadModal / loadData を名指しで温存と書いている（import_routing 資産）。"
     }
   ]
 }
