@@ -157,8 +157,10 @@ const expSrc=RAW.slice(RAW.indexOf('function exportTournamentBackup'),RAW.indexO
 assert(expSrc.indexOf("markSaveStatus('backup')")>=0&&expSrc.indexOf("markSaveStatus('backup')")<expSrc.indexOf('return true;')+30, 'K3 バックアップ成功時に backup 記録（温存）');
 // SEND-DATE-CONFIRM-002 (#622)/SEND-DATE-GUARD-001 (#600): 冒頭の日付確認ガードで関数が伸びたため窓を 5200 に拡大（チェック内容は不変）。
 // GUEST-TOURNAMENT-MODE-001 (#760): 冒頭のゲスト大会ガードでさらに伸びたため窓を 6400 に拡大（チェック内容は不変）。
-const cloudSrc=RAW.slice(RAW.indexOf('function sendTournamentToCloud'),RAW.indexOf('function sendTournamentToCloud')+6400);
-assert(/res&&res\.ok[\s\S]{0,900}markSaveStatus\('cloud'\)/.test(cloudSrc), 'K4 送信 res.ok 時に cloud 記録（温存）');
+// CLOUD-TID-GUARD-001 (#800 案#2): 送信先の大会日ガード（date-mismatch の確認→再実行）と precheck:'skipped' の
+//   ⚠注記でさらに伸びたため窓を 6400→9000・間隔を 900→1400 に拡大（チェック内容は不変）。
+const cloudSrc=RAW.slice(RAW.indexOf('function sendTournamentToCloud'),RAW.indexOf('function sendTournamentToCloud')+9000);
+assert(/res&&res\.ok[\s\S]{0,1400}markSaveStatus\('cloud'\)/.test(cloudSrc), 'K4 送信 res.ok 時に cloud 記録（温存）');
 
 // B バックアップ modal 冒頭の「最終バックアップ」表示（backup 時刻の移設先）
 const eb = loadEnv();
