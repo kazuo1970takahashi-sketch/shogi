@@ -454,9 +454,11 @@ const WP = {
   rt: [uniq('__probeRtFnA'), uniq('__probeRtFnB'), uniq('__probeRtFnC')],
   id: uniq('__probeAbsentBindingId'),
   cls: uniq('__probeAbsentBindingClass'),
+  qsId: uniq('__probeAbsentQsId'),      // querySelector('#…') 分岐（001g・高2）
+  qsaId: uniq('__probeAbsentQsaId'),    // querySelectorAll('#…') 分岐（001g・高2）
   wire: uniq('__probeDeadWire'),
 };
-// 死んだ結線（id / class）と、その死んだ領域の中からしか呼ばれない関数 3 本。
+// 死んだ結線（id / class / '#id' セレクタ 2 形）と、その死んだ領域からしか呼ばれない関数 3 本。
 const WARN_PROBE_SRC = insertTopLevelJs(RAW, A, [
   `function ${WP.rt[0]}(){ return 1; }`,
   `function ${WP.rt[1]}(){ return 2; }`,
@@ -466,31 +468,82 @@ const WARN_PROBE_SRC = insertTopLevelJs(RAW, A, [
   `  el.addEventListener('click', function(){ ${WP.rt[0]}(); ${WP.rt[1]}(); ${WP.rt[2]}(); });`,
   `  var list=document.querySelectorAll('.${WP.cls}');`,
   '  list.forEach(function(x){ x.classList.add(\'on\'); });',
+  `  var one=document.querySelector('#${WP.qsId}');`,
+  '  if(one){ one.classList.add(\'on\'); }',
+  `  var many=document.querySelectorAll('#${WP.qsaId}');`,
+  '  many.forEach(function(y){ y.classList.add(\'on\'); });',
   '}',
   `${WP.wire}();`,
 ].join('\n'));
 
+// 実ファイル由来の検出の「顔ぶれ」— allowlist の runtime / bindings セクションが記録である。
+//   001f の枯れ検査は**合成 probe だけ**だったので、`n !== 'loadData'` のような
+//   **実在名のピンポイント除外**は probe 無傷ですり抜け、唯一の痕跡が
+//   R5 warn「loadData を allowlist から外すこと」＝ 検出装置の腐敗が
+//   「掃除しろ」という指示に偽装される（差し戻し 6 回目の高3・実測で全緑）。
+//   → 記録済みの検出が**対象がファイルに残ったまま消えた**ら FAIL にする。
+//     対象ごと消えた（関数削除・結線コードの削除）場合は検出装置では作れない状態なので
+//     参考表示にとどめ、allowlist と baseline の更新（R5 warn）に委ねる。
+function baselineVanished(a, src, allow) {
+  const runtimeNow = new Set(a.unreachableRuntimeOnly.map((x) => x.name));
+  const staticNow = new Set(a.unreachableStatic.map((x) => x.name));
+  const bindNow = new Set(a.deadBindings.map((d) => d.selector));
+  const out = { vanished: [], removed: [] };
+  for (const e of allow.runtime || []) {
+    if (runtimeNow.has(e.name) || staticNow.has(e.name)) continue;
+    (a._internal.byName.has(e.name) ? out.vanished : out.removed).push('runtime:' + e.name);
+  }
+  for (const e of allow.bindings || []) {
+    if (bindNow.has(e.selector)) continue;
+    const key = e.selector.replace(/^[#.]/, '').replace(/\*$/, '');
+    (src.indexOf(key) >= 0 ? out.vanished : out.removed).push('bindings:' + e.selector);
+  }
+  return out;
+}
+
 // analyze の実装を差し替えられる形で書く＝**壊した lib を当てて落ちることを実測できる**。
 function warnInstrumentReport(analyzeFn) {
   const a = analyzeFn(WARN_PROBE_SRC);
+  const real = analyzeFn(RAW);
   return {
     runtime: WP.rt.filter((n) => a.unreachableRuntimeOnly.some((x) => x.name === n)).length,
     idBinding: a.deadBindings.some((d) => d.selector === '#' + WP.id),
     classBinding: a.deadBindings.some((d) => d.kind === 'class' && d.selector === '.' + WP.cls),
+    qsIdBinding: a.deadBindings.some((d) => d.selector === '#' + WP.qsId),
+    qsaIdBinding: a.deadBindings.some((d) => d.selector === '#' + WP.qsaId),
+    baseline: baselineVanished(real, RAW, ALLOW),
   };
 }
-const instrumentAlive = (r) => r.runtime === WP.rt.length && r.idBinding && r.classBinding;
+const instrumentAlive = (r) => r.runtime === WP.rt.length && r.idBinding && r.classBinding
+  && r.qsIdBinding && r.qsaIdBinding && r.baseline.vanished.length === 0;
 const WI = warnInstrumentReport(analyze);
 ok(WI.runtime === WP.rt.length,
   `WI-1 死んだ領域からしか呼ばれない ${WP.rt.length} 本を実行時到達不能として全部報告する（実測 ${WI.runtime}）`);
-ok(WI.idBinding, `WI-2 生成されない id への結線（#${WP.id}）を報告する`);
-ok(WI.classBinding, `WI-3 生成されない class への結線（.${WP.cls}）を報告する`);
-console.log(`  枯れ検査 probe: runtime=${WI.runtime}/${WP.rt.length} id=${WI.idBinding} class=${WI.classBinding}`);
+ok(WI.idBinding, `WI-2 生成されない id への結線（getElementById('${WP.id}')）を報告する`);
+ok(WI.classBinding, `WI-3 生成されない class への結線（querySelectorAll('.${WP.cls}')）を報告する`);
+ok(WI.qsIdBinding, `WI-4 querySelector('#${WP.qsId}') 形の死んだ結線を報告する`);
+ok(WI.qsaIdBinding, `WI-5 querySelectorAll('#${WP.qsaId}') 形の死んだ結線を報告する`);
+ok(WI.baseline.vanished.length === 0,
+  `WI-6 allowlist に記録済みの検出が、対象を残したまま消えていない（消えた: ${WI.baseline.vanished.join(', ') || 'なし'}）`
+  + '。検出装置が壊れたか、結線が生きたかのどちらか。後者なら allowlist と baseline を更新すること');
+if (WI.baseline.removed.length) {
+  console.log(`  ・対象ごと消えた記録（allowlist / baseline の更新待ち・R5 warn 参照）: ${WI.baseline.removed.join(', ')}`);
+}
+console.log(`  枯れ検査 probe: runtime=${WI.runtime}/${WP.rt.length} id=${WI.idBinding} class=${WI.classBinding}`
+  + ` qs#=${WI.qsIdBinding} qsa#=${WI.qsaIdBinding} baseline 消失=${WI.baseline.vanished.length}`);
+// allowlist の記録と baseline の件数が食い違っていない（片方だけこっそり減らせない）
+ok((ALLOW.runtime || []).length === (ALLOW.baseline || {}).runtime_unreachable,
+  `WI-7 allowlist（runtime）の件数と baseline.runtime_unreachable が一致（${(ALLOW.runtime || []).length} / ${(ALLOW.baseline || {}).runtime_unreachable}）`);
+ok((ALLOW.bindings || []).length === (ALLOW.baseline || {}).dead_bindings,
+  `WI-8 allowlist（bindings）の件数と baseline.dead_bindings が一致（${(ALLOW.bindings || []).length} / ${(ALLOW.baseline || {}).dead_bindings}）`);
 
 // 検出装置を実際に壊した lib を作り、この枯れ検査が**落ちること**を実測する。
 {
   const LIB_SRC = fs.readFileSync(path.join(__dirname, 'lib', 'reachability.js'), 'utf8');
-  const mutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reach001f-lib-'));
+  const mutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reach001g-lib-'));
+  // ピンポイント除外の標的は allowlist の記録から動的に選ぶ（実在名をハードコードしない）。
+  const pinpoint = (ALLOW.runtime || []).map((e) => e.name)
+    .find((n) => A.unreachableRuntimeOnly.some((x) => x.name === n));
   const LIB_MUTATIONS = [
     {
       tag: 'R2-truncate',
@@ -503,7 +556,21 @@ console.log(`  枯れ検査 probe: runtime=${WI.runtime}/${WP.rt.length} id=${WI
       label: 'class セレクタの死んだ結線検出を丸ごと削除する',
       apply: (s) => s.replace("  scanByCss('querySelectorAll');\n", ''),
     },
-  ];
+    {
+      tag: 'id-selector-branch-delete',
+      label: "scanByCss の '#id' 分岐 2 行を削除する",
+      apply: (s) => s
+        .replace('    scan(new RegExp(n + "\\\\(\\\\s*\'#([A-Za-z0-9_-]+)\'\\\\s*\\\\)", \'g\'), \'id\', "\'#");\n', '')
+        .replace('    scan(new RegExp(n + \'\\\\(\\\\s*"#([A-Za-z0-9_-]+)"\\\\s*\\\\)\', \'g\'), \'id\', \'"#\');\n', ''),
+    },
+    pinpoint ? {
+      tag: 'pinpoint-exclude',
+      label: `実在名 ${pinpoint} を実行時到達不能から 1 節で除外する`,
+      apply: (s) => s.replace('const unreachableRuntimeOnly = allNames\n',
+        `const unreachableRuntimeOnly = allNames.filter((n) => n !== ${JSON.stringify(pinpoint)})\n`),
+    } : null,
+  ].filter(Boolean);
+  if (!pinpoint) skip('WI-M[pinpoint-exclude] allowlist（runtime）に現存する記録が無い');
   for (const mu of LIB_MUTATIONS) {
     const mutated = mu.apply(LIB_SRC);
     ok(mutated !== LIB_SRC, `WI-M[${mu.tag}]-1 lib を実際に変異させた（${mu.label}）`);
@@ -513,7 +580,9 @@ console.log(`  枯れ検査 probe: runtime=${WI.runtime}/${WP.rt.length} id=${WI
     // eslint-disable-next-line global-require, import/no-dynamic-require
     const r = warnInstrumentReport(require(p).analyze);
     ok(!instrumentAlive(r),
-      `WI-M[${mu.tag}]-2 その変異は枯れ検査に捕まる（実測 runtime=${r.runtime}/${WP.rt.length} id=${r.idBinding} class=${r.classBinding}）`);
+      `WI-M[${mu.tag}]-2 その変異は枯れ検査に捕まる（実測 runtime=${r.runtime}/${WP.rt.length}`
+      + ` id=${r.idBinding} class=${r.classBinding} qs#=${r.qsIdBinding} qsa#=${r.qsaIdBinding}`
+      + ` baseline 消失=[${r.baseline.vanished.join(', ') || 'なし'}]）`);
   }
   fs.rmSync(mutDir, { recursive: true, force: true });
 }
@@ -710,15 +779,32 @@ for (const t of FACE_TABLE) {
 // --- イベント名リストの漏れは「生きた関数を殺す」向きに倒れる（001f・中1）------
 //   001e のリストには実在イベントが 6 件漏れていて、`onmousewheel` で結線した
 //   生きた関数が R1 error になった＝虚偽の allowlist 登録以外に緑化手段が無かった。
+//   001g: 同一仕様の**兄弟**（`onscrollsnapchange` に対する `onscrollsnapchanging` 等）を
+//   機械的に総なめして足した。1 件足して対を落とす、が 001f の残り方だった。
 for (const ev of ['onmousewheel', 'onpointerrawupdate', 'onfullscreenchange',
-  'onfullscreenerror', 'oncommand', 'onscrollsnapchange']) {
+  'onfullscreenerror', 'oncommand', 'onscrollsnapchange',
+  'onscrollsnapchanging', 'onpagereveal', 'onpageswap',
+  'ongamepadconnected', 'ongamepaddisconnected', 'oncontentvisibilityautostatechange',
+  'onpointerlockchange', 'onpointerlockerror', 'ondeviceorientation',
+  'ondeviceorientationabsolute', 'ondevicemotion', 'onorientationchange',
+  'onwaitingforkey', 'onbeforexrselect', 'onwebkitfullscreenchange',
+  'onwebkitfullscreenerror', 'onbeforeinstallprompt', 'onappinstalled']) {
   ok(ON_EVENT_ATTRS.has(ev), `EVENT[${ev}]-0 実イベント名としてリストに載っている`);
-  const NAME = uniq('__probeEvent' + ev);
+  // 小さな合成文書で走査そのものを確かめる（全 24 形を実ファイルで回すと遅いため）。
+  const doc = `<html><body><div ${ev}="__probeEvFn()">x</div>`
+    + '<script>function __probeEvFn(){ return 1; }<\/script></body></html>';
+  const m = analyze(doc);
+  ok(m.unreachableStatic.length === 0 && m.unknownOnAttrs.length === 0,
+    `EVENT[${ev}]-1 ${ev}= で結線した生きた関数を到達不能と言わない（未知 on* 扱いにもしない）`);
+}
+// 1 形（cowork が実際に殺せた onmousewheel）は実ファイルで end-to-end も見る。
+{
+  const NAME = uniq('__probeEventWheel');
   const m = analyze(insertHtml(insertTopLevelJs(RAW, A, `function ${NAME}(){ return 1; }`),
-    `<div ${ev}="${NAME}()">x</div>`));
+    `<div onmousewheel="${NAME}()">x</div>`));
   ok(!m.unreachableStatic.some((x) => x.name === NAME),
-    `EVENT[${ev}]-1 ${ev}= で結線した生きた関数を到達不能と言わない`);
-  checkDelta(V, evaluate(m, ALLOW), {}, `EVENT[${ev}]-2`);
+    'EVENT-E2E-1 実ファイルでも onmousewheel= の生きた関数を到達不能と言わない');
+  checkDelta(V, evaluate(m, ALLOW), {}, 'EVENT-E2E-2');
 }
 
 // --- 実在の on* を複数行にしてもルートを失わない（3 版目はここで落ちた）---------
@@ -829,6 +915,51 @@ for (const ev of ['onmousewheel', 'onpointerrawupdate', 'onfullscreenchange',
     'ESCAPE-1 \\xNN / \\uXXXX で書かれた on*= 結線も復号して拾う（001d は落としていた）');
 }
 
+// --- 派生パス: 連結オペランドの**中**にある HTML 文字列も走査する（001g・高4）------
+//   001f は「打ち切りを廃止したので参照は落とさない」と書いたが、オペランドの中では偽だった。
+//   `'<div>' + esc('<b onclick="live()">x</b>') + '</div>'` の内側の文字列は一度も走査されず、
+//   **同じ文字列が連結の外なら拾われるのに中だと生きた関数が R1 error で殺される**
+//   （R7 は 400 字超しか報告しないので無警告・緑化手段は虚偽の allowlist 登録のみ）。
+for (const f of [
+  {
+    tag: 'a',
+    label: '式オペランドの関数呼出の引数',
+    esc: true,
+    wire: (n, esc) => `document.body.innerHTML='<div>'+${esc}('<b onclick="${n}()">x</b>')+'</div>';`,
+  },
+  {
+    tag: 'b',
+    label: 'テンプレートの ${ } の中',
+    esc: true,
+    wire: (n, esc) => 'document.body.innerHTML=`<div>${' + esc + '(\'<b onclick="' + n + '()">x</b>\')}</div>`;',
+  },
+  {
+    tag: 'c',
+    label: '三項演算子の分岐',
+    esc: false,
+    wire: (n) => `document.body.innerHTML='<div>'+(window.__probeNestedFlag?'<b onclick="${n}()">y</b>':'')+'</div>';`,
+  },
+  {
+    tag: 'd',
+    label: '連結の外（対照・001f でも拾えていた形）',
+    esc: false,
+    wire: (n) => `document.body.innerHTML='<div>'+'<b onclick="${n}()">x</b>'+'</div>';`,
+  },
+]) {
+  const NAME = uniq('__probeNested' + f.tag);
+  const ESC = NAME + 'Esc';
+  const src = insertTopLevelJs(RAW, A,
+    (f.esc ? `function ${ESC}(s){ return s; }\n` : '')
+    + `function ${NAME}(){ return 1; }\n`
+    + `function ${NAME}Wire(){ ${f.wire(NAME, ESC)} }\n${NAME}Wire();`);
+  const m = analyze(src);
+  ok(!m.unreachableStatic.some((x) => x.name === NAME),
+    `NESTED-${f.tag}-1 ${f.label}にある on*= 結線でも生きた関数を殺さない`);
+  checkDelta(V, evaluate(m, ALLOW), {
+    warnings: { must: [], allowed: ['R6:' + NAME, 'R6:' + NAME + 'Wire', 'R6:' + ESC] },
+  }, `NESTED-${f.tag}-2`);
+}
+
 // =============================================================================
 // 6. 変異検証 — 「壊れたら本当に落ちるか」
 // =============================================================================
@@ -868,48 +999,52 @@ if (soleRoot) {
   }, 'M1-3');
 }
 
-// --- M2: 実在のインライン on*= で結線された関数のルートを**全部**取り除く -------
-//   001e はここで「先頭の on*= が呼ぶ関数は他にルートを持たない」を暗黙に pin していた。
-//   同じ関数を呼ぶボタンをもう 1 個足すだけで M2-2/M2-3 が落ち、allowlist でも回避できない
-//   （＝正当な編集で赤くなる・差し戻し 5 回目の高1a）。**唯一ルートを前提にせず、
-//   対象関数のルートを全部潰してから照合する**。
-const m2Case = (() => {
+// --- M2: インライン on*= だけで結線された関数のルートを取り除く（合成 fixture）---
+//   001f は「対象ファイルに、インライン on*= 以外のルートを持たない関数が実在する」ことを
+//   一段弱い形で pin し続けていた。実ファイルのインライン on* は 2 本しかないので、
+//   **その 2 本をまとめて呼ぶ関数を addEventListener で結線する**自然な 1 編集で候補が尽き、
+//   M2-0 が恒久 FAIL になった（実測 PASS=513 FAIL=1・allowlist 回避不能・差し戻し 6 回目の高1）。
+//   → 面 × 変異の全表と同じく、**合成 fixture へ on*= 結線を注入して潰す**。
+//     これで実ファイルの結線の顔ぶれがどう変わっても成り立つ。
+{
+  const NAME = uniq('__m2InlineOnlyFn');
+  const base = insertHtml(insertTopLevelJs(FX, FXA, `function ${NAME}(){ return 1; }`),
+    `<button type="button" id="__m2ProbeButton" onclick="${NAME}()">m2</button>`);
+  const baseA = analyze(base);
+  const baseV = evaluate(baseA, FX_ALLOW);
+  const roots = baseA._internal.roots.get(NAME) || [];
+  ok(!baseA.unreachableStatic.some((x) => x.name === NAME),
+    `M2-0 注入した ${NAME} はインライン on*= から到達可能（fixture の基準状態）`);
+  ok(roots.some((r) => r.face === 'ATTR_VAL_ON'),
+    `M2-1 そのルートはインライン on*= である（実測 ${roots.map((r) => r.face).join(', ') || 'なし'}）`);
+  let mut = base;
+  for (const p of roots.map((r) => r.pos).sort((x, y) => y - x)) {
+    mut = mut.slice(0, p) + '__reachRemovedCall' + mut.slice(p + NAME.length);
+  }
+  const m2 = analyze(mut);
+  ok(m2.unreachableStatic.some((x) => x.name === NAME),
+    `M2-2 ルートを全部潰すと ${NAME} が到達不能として検出される`);
+  checkDelta(baseV, evaluate(m2, FX_ALLOW), {
+    errors: { must: ['R1:' + NAME], allowed: ['R1:' + NAME] },
+  }, 'M2-3');
+}
+// 実ファイル側は「実例があれば見る」だけにする（存在そのものを pin しない）。
+const inlineVictim = (() => {
   for (const span of onAttrSpans(A)) {
     const called = RAW.slice(span.start, span.end).match(/[A-Za-z_$][A-Za-z0-9_$]*/g) || [];
-    const victim = called.find((n) => A._internal.byName.has(n));
-    if (!victim) continue;
-    // ルート位置は解析結果から引く（テキスト検索ではない）。後ろから置換して位置ずれを避ける。
-    const roots = (A._internal.roots.get(victim) || []).map((r) => r.pos).sort((x, y) => y - x);
-    if (!roots.length) continue;
-    let src = RAW;
-    for (const p of roots) {
-      src = src.slice(0, p) + '__reachRemovedCall' + src.slice(p + victim.length);
-    }
-    const m = analyze(src);
-    if (m.unreachableStatic.some((x) => x.name === victim)) {
-      return { victim, m, roots: roots.length, onFaces: (A._internal.roots.get(victim) || []).map((r) => r.face) };
-    }
+    const v = called.find((n) => A._internal.byName.has(n));
+    if (v) return v;
   }
   return null;
 })();
-ok(!!m2Case, 'M2-0 インライン on*= で結線された関数と、そのルート全部を構造から引けた');
-if (m2Case) {
-  ok(m2Case.onFaces.indexOf('ATTR_VAL_ON') >= 0,
-    `M2-1 ${m2Case.victim} のルートにインライン on*= が含まれる（ルート ${m2Case.roots} 箇所: ${m2Case.onFaces.join(', ')}）`);
-  ok(m2Case.m.unreachableStatic.some((x) => x.name === m2Case.victim),
-    `M2-2 ルートを全部潰すと ${m2Case.victim} が到達不能として検出される`);
-  checkDelta(V, evaluate(m2Case.m, ALLOW), {
-    errors: { must: ['R1:' + m2Case.victim], allowed: closureOf(A, m2Case.victim).map((n) => 'R1:' + n) },
-    warnings: { must: [], allowed: WARN_UNIVERSE },
-    warningsRemoved: { must: [], allowed: WARN_REMOVABLE },
-  }, 'M2-3');
+pinIf(inlineVictim, 'M2-4/M2-5 実在のインライン on*= が現存しない', (victim) => {
   // 「同じ関数を呼ぶボタンをもう 1 個足す」だけでは何も起きない（正当な編集）。
   const m2b = analyze(insertHtml(RAW,
-    `<button type="button" onclick="${m2Case.victim}()">__opDupHandlerButton</button>`));
-  ok(!m2b.unreachableStatic.some((x) => x.name === m2Case.victim),
-    `M2-4 同じ関数を呼ぶボタンを 1 個増やしても ${m2Case.victim} は到達可能のまま`);
+    `<button type="button" onclick="${victim}()">__opDupHandlerButton</button>`));
+  ok(!m2b.unreachableStatic.some((x) => x.name === victim),
+    `M2-4 同じ関数を呼ぶボタンを 1 個増やしても ${victim} は到達可能のまま`);
   checkDelta(V, evaluate(m2b, ALLOW), {}, 'M2-5 ボタンを 1 個増やしても違反は増えない');
-}
+});
 
 // --- M3: 生きている結線先の id を描画しなくする（検査2＝warn の変異）-----------
 const cand = (() => {
@@ -1382,10 +1517,10 @@ OPS.push({
   expectWarn: '#' + FP5_ID,
 });
 // --- 001f で追加した 3 操作（差し戻し 5 回目の高1a / 高1b / 高2）--------------
-if (m2Case) {
+if (inlineVictim) {
   OPS.push({
-    label: `⑥同じ関数（${m2Case.victim}）を呼ぶボタンをもう 1 個追加`,
-    src: insertHtml(RAW, `<button type="button" onclick="${m2Case.victim}()">__opDupButton</button>`),
+    label: `⑥同じ関数（${inlineVictim}）を呼ぶボタンをもう 1 個追加`,
+    src: insertHtml(RAW, `<button type="button" onclick="${inlineVictim}()">__opDupButton</button>`),
   });
 }
 {
@@ -1397,6 +1532,27 @@ if (m2Case) {
     src: insertTopLevelJsBefore(RAW, A,
       `function ${NAME}(){ document.body.insertAdjacentHTML('beforeend','<div class="notice">x</div>'); }\n${NAME}();`),
   });
+}
+// --- 001g で追加（差し戻し 6 回目の高1・受け入れ基準1）------------------------
+//   「インライン on* の関数をまとめて呼ぶ関数を addEventListener で結線する」＝
+//   実ファイルのインライン on* から「他にルートを持たない関数」を消し去る編集。
+//   001f はこの 1 編集で M2-0 が恒久 FAIL になった。
+{
+  const called = [...new Set(onAttrSpans(A).flatMap((s) => (RAW.slice(s.start, s.end)
+    .match(/[A-Za-z_$][A-Za-z0-9_$]*/g) || []).filter((n) => A._internal.byName.has(n))))];
+  if (called.length) {
+    const FN = uniq('__opCallAllInline');
+    const BTN = uniq('__opCallAllInlineBtn');
+    OPS.push({
+      label: `⑨インライン on* の ${called.length} 本をまとめて呼ぶ関数を addEventListener で結線`,
+      src: insertHtml(insertTopLevelJs(RAW, A,
+        `function ${FN}(){ ${called.map((n) => n + '();').join(' ')} }\n`
+        + `document.addEventListener('DOMContentLoaded', function(){\n`
+        + `  var b=document.getElementById('${BTN}');\n`
+        + `  if(b){ b.addEventListener('click', ${FN}); }\n});`),
+      `<button type="button" id="${BTN}">まとめて実行</button>`),
+    });
+  }
 }
 {
   // allowlist が上限 +1 になった実ファイル。A5 は warn なので exit=0 のままであること。

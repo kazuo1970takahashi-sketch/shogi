@@ -264,6 +264,19 @@ const ON_EVENT_ATTRS = new Set([
   'onfullscreenchange', 'onfullscreenerror',   // Fullscreen API
   'oncommand',             // Invoker Commands API（command / commandfor）
   'onscrollsnapchange',    // CSS Scroll Snap Events
+  // 001g で追加。**001f が足した各仕様の「兄弟」を機械的に総なめして閉じた**
+  // （1 件足して対になる 1 件を落とす、が 001f の残り方だった）。
+  'onscrollsnapchanging',                          // CSS Scroll Snap Events（change の対）
+  'onpagereveal', 'onpageswap',                    // HTML / Navigation API（Window）
+  'ongamepadconnected', 'ongamepaddisconnected',   // Gamepad API（Window）
+  'oncontentvisibilityautostatechange',            // CSS Containment
+  'onpointerlockchange', 'onpointerlockerror',     // Pointer Lock（Document）
+  'ondeviceorientation', 'ondeviceorientationabsolute', 'ondevicemotion', // DeviceOrientation（Window）
+  'onorientationchange',                           // 画面向き（Window・歴史的）
+  'onwaitingforkey',                               // Encrypted Media Extensions
+  'onbeforexrselect',                              // WebXR
+  'onwebkitfullscreenchange', 'onwebkitfullscreenerror', // WebKit 接頭辞つき Fullscreen（実装あり）
+  'onbeforeinstallprompt', 'onappinstalled',       // Web App Install（Window・実装あり）
 ]);
 // 「on* に見える」形。リストとの差が unknownOnAttrs になる。
 const ON_ATTR_SHAPE_RE = /^on[a-z]+$/i;
@@ -747,9 +760,18 @@ function skipTemplateHole(src, face, p) {
 //       var b = 'deadFn()">go</button>'
 //   これで deadFn が ATTR_VAL_ON に昇格し、死んだ関数が生き返っていた。
 //   連結は `'…' + x + '…'` の形しか無いので、`+` を必須にすれば構造的に閉じる。
+//   PHASE1-REACH-001g の修正: **どのランにも入らなかった文字列面を第 2 掃引で拾う**。
+//   001f までは「ランに参加した文字列」しか復号しなかったため、
+//       '<div>' + esc('<b onclick="live()">x</b>') + '</div>'
+//   のように**式オペランドの中（関数呼出の引数）にある HTML 文字列**が一度も走査されず、
+//   同じ文字列が連結の外にあれば拾われるのに中にあると参照が消える、という非対称があった
+//   （生きた関数が R1 error で殺され、虚偽の allowlist 登録以外に緑化手段が無い＝最悪の向き）。
+//   テンプレートの `${ ... }` の中の文字列も同じ理由で落ちていた。
 function collectConcatRuns(src, face, longOperands) {
   const runs = [];
   const N = src.length;
+  // ランの部品として消費した文字列面の位置。第 2 掃引の対象から外すために持つ。
+  const consumed = new Uint8Array(N);
   let i = 0;
   while (i < N) {
     if (!CONCAT_FACES.has(face[i])) { i++; continue; }
@@ -797,6 +819,7 @@ function collectConcatRuns(src, face, longOperands) {
       break;
     }
     if (parts.length) {
+      for (const part of parts) if (part) consumed.fill(1, part.a, part.b);
       // '<' を含みえないランは復号しない（高速化）。エスケープ表記も見る。
       let hasLt = false;
       for (const part of parts) {
@@ -807,21 +830,41 @@ function collectConcatRuns(src, face, longOperands) {
         const map = [];
         for (const part of parts) {
           if (!part) { chars.push(CONCAT_PLACEHOLDER); map.push(-1); continue; }
-          const { a, b } = part;
-          const q = src[a];
-          const stripStart = (q === '"' || q === "'" || q === '`')
-            && (a === 0 || face[a - 1] !== FACE.JS_TMPL_DELIM);
-          const lastCh = src[b - 1];
-          const stripEnd = (lastCh === '"' || lastCh === "'" || lastCh === '`')
-            && (b - 1 > a || !stripStart);
-          decodeSpanInto(src, a, b, stripStart, stripEnd, chars, map);
+          decodePartInto(src, face, part.a, part.b, chars, map);
         }
         if (chars.length) runs.push({ start: runStart, end: p, text: chars.join(''), map });
       }
     }
     i = Math.max(p, i + 1);
   }
+
+  // --- 第 2 掃引（001g・高4）------------------------------------------------
+  // どのランの部品にもならなかった文字列面（＝式オペランドの中・`${ }` の中）を、
+  // それ単独のランとして拾う。「連結の外なら拾うが中だと落とす」非対称を消す。
+  let q = 0;
+  while (q < N) {
+    if (!CONCAT_FACES.has(face[q]) || consumed[q]) { q++; continue; }
+    const e = spanEnd(face, q);
+    if (LT_SHAPE_RE.test(src.slice(q, e))) {
+      const chars = [];
+      const map = [];
+      decodePartInto(src, face, q, e, chars, map);
+      if (chars.length) runs.push({ start: q, end: e, text: chars.join(''), map });
+    }
+    q = e;
+  }
   return runs;
+}
+
+// 文字列面のスパン [a, b) を「引用符を外して」復号バッファへ足す。
+function decodePartInto(src, face, a, b, chars, map) {
+  const q = src[a];
+  const stripStart = (q === '"' || q === "'" || q === '`')
+    && (a === 0 || face[a - 1] !== FACE.JS_TMPL_DELIM);
+  const lastCh = src[b - 1];
+  const stripEnd = (lastCh === '"' || lastCh === "'" || lastCh === '`')
+    && (b - 1 > a || !stripStart);
+  decodeSpanInto(src, a, b, stripStart, stripEnd, chars, map);
 }
 
 // 復号ランへ HTML ミニレクサを再帰適用し、ATTR_VAL_ON を元の位置へ重ねる。
