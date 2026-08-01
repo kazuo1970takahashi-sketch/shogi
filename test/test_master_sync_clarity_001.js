@@ -217,7 +217,10 @@ const META = { tournament_id: 't-0001', tournament_date: '2026-07-27' };
 }
 {
   // ☁送信の未連携ガード経路（CLOUD-SEND-UNLINKED-GUARD-001）は onDone の引数を見ない＝表示は現行のまま
-  assert(RAW.indexOf('syncBranchMasterOnSave(function(){ _send(); })') >= 0,
+  // CLOUD-TID-GUARD-001b ⑥ 追随: 後続の呼び先が _send() → _write(<反映後の master>) に変わっただけ。
+  //   見ている性質「onDone の引数（counts）を受け取らないコールバックであること」は不変なので、
+  //   引数リストが空（function(){）であることを引き続き固定する。
+  assert(RAW.indexOf('syncBranchMasterOnSave(function(){ _write(') >= 0,
     'D9 ☁送信の未連携ガードは引数なしの onDone のまま（counts 追加の影響を受けない）');
 }
 

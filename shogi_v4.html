@@ -6673,7 +6673,11 @@ function showAppModal(opts){
   function onKey(e){
     var k=e.keyCode||e.which;
     if(k===27){ if(e.preventDefault)e.preventDefault(); if(type==='alert')finish(true); else onCancel(); }
-    else if(k===13){ if(opts.danger&&type==='confirm')return; if(e.preventDefault)e.preventDefault(); onOk(); }
+    // CLOUD-TID-GUARD-001b (⑨ Codex P1): danger confirm の Enter は「何も起きない」で固定する。
+    //   旧実装は preventDefault() を呼ばずに return していたため、初期フォーカス（キャンセル）のままなら安全に
+    //   見えるが、Tab で OK（破壊操作）側へフォーカスを移して Enter を押すと**フォーカス中ボタンのブラウザ既定動作が
+    //   click を発火**して確定してしまった。既定動作ごと抑止する（中止は Esc /「キャンセル」、実行は OK のクリックのみ）。
+    else if(k===13){ if(e.preventDefault)e.preventDefault(); if(opts.danger&&type==='confirm')return; onOk(); }
   }
   try{document.addEventListener('keydown',onKey,true);}catch(e){}
   _appModalPending={ ok:onOk, cancel:onCancel, setValueAndOk:function(val){ if(input)input.value=val; onOk(); } };
@@ -11377,17 +11381,24 @@ function mergeCloudMembersIntoMaster(master, cloudMembers, opts){
   return res;
 }
 
-// CLOUD-TID-GUARD-001 (#800 案#2): 送信先のクラウド大会レコードの date と「いま送ろうとしている実施日」の
-//   食い違いを判定する純関数（DOM もネットワークも触らない）。
-//   #800 の事故は「大会日を 7/12→8/1 に変えても state.tournament_id が t_2026_07_12 のまま残り、
-//   upsert(onConflict:'club_id,app_tournament_id') が 7 月の大会レコードを書き換えた」もの。既存の
-//   SEND-DATE-CONFIRM-002 (#622) はローカルの日付しか見ないため（実施日 8/1 は事実として正しく、
-//   作者は正しく「はい」を押していた）構造的に捕まえられない。ここが「送信先を見る」唯一のガード。
-//   remoteDate: クラウド tournaments.date（該当 app_tournament_id のレコード。無ければ ''/null）
+// ============================================================
+// CLOUD-TID-GUARD-001b (#800 案#2・PR #801 差し戻し再設計): 「送信先の大会が、いま送ろうとしている大会と
+//   別物ではないか」を書き込み前に確かめる層。
+//   #800 の事故: 大会日を 2026-07-12 → 2026-08-01 に直しても state.tournament_id が t_2026_07_12 のまま残り、
+//     upsert(onConflict:'club_id,app_tournament_id') が7月の大会レコードを書き換えた。
+//   初版（PR #801）は「クラウドの date と今回の実施日が違えば止める」だった。事故は止まるが、
+//     **実施日を訂正して再送信する**（同じ大会・同じ顔ぶれ）という最も頻度の高い正常操作で誤発火した。
+//     この2つは日付だけでは区別できない:
+//       ・別の大会（事故）  … 送信先に居る人と今回の参加者の重なりが ほぼゼロ
+//       ・同じ大会の訂正    … 完全一致
+//   → 判定材料は日付ではなく**送信先に既にある顔ぶれ**（entries）。日付の食い違いは「顔ぶれを照会するかどうか」
+//     の入口条件としてだけ使う。
+//   読み取り専用（entries を delete しない＝削除経路は #765 の RLS 判断が済んでから）。
+// 純関数: クラウド tournaments.date と今回の実施日の食い違い（'' = 食い違わない ／ remoteDate = 食い違う）。
+//   remoteDate: 該当 app_tournament_id のレコードの date（無ければ ''/null）
 //   localDate : 今回送信する payload.tournament.date（＝報告書の実施日）
-//   戻り: 衝突なし='' ／ 衝突あり=remoteDate（呼び出し側が確認文言に使う）
-//     - remote 無し＝クラウドに該当レコードが無い（＝新規大会）→ 衝突なし
-//     - local 空/無効 → 衝突なし（#622 の担当領域。ここで二重に止めない）
+//     - remote 無し＝クラウドに該当レコードが無い（＝新規大会）→ 食い違いなし
+//     - local 空/無効 → 食い違いなし（#622 の担当領域。ここで二重に止めない。呼び出し側が別途 skipped-invalid-date）
 function cloudTidDateConflict(remoteDate, localDate){
   var r=(typeof remoteDate==='string')?remoteDate:'';
   var l=(typeof localDate==='string')?localDate:'';
@@ -11395,13 +11406,74 @@ function cloudTidDateConflict(remoteDate, localDate){
   if(typeof isValidYmd==='function'&&!isValidYmd(l))return '';
   return (r===l)?'':r;
 }
-// CLOUD-TID-GUARD-001 (#800 案#2): 送信先レコードの date 照会。既存 fetchCloudTournamentIdByAppId と同型
-//   （select に date を足しただけ＝新しいクエリの書き方を増やさない）。
+// 純関数: 今回の送信 payload に含まれるクラスの集合。null＝クラスで絞らない（payload に entries が無い＝
+//   全員未連携などの縮退時。絞る材料が無いので絞らない＝安全側）。
+//   クラスで絞るのは2台分担運用のため。A級端末の送信で、相手が入れたB級の記録を「今回に含まれない人」に数えない。
+function cloudTidSendClasses(payload){
+  var out=[]; var es=(payload&&Array.isArray(payload.entries))?payload.entries:[];
+  for(var i=0;i<es.length;i++){ var c=es[i]&&es[i]['class']; if(typeof c==='string'&&c&&out.indexOf(c)<0)out.push(c); }
+  return out.length?out:null;
+}
+// 純関数: 今回の送信 payload の member_id 集合（{member_id:true}）。
+function cloudTidSendMemberIds(payload){
+  var map={}; var es=(payload&&Array.isArray(payload.entries))?payload.entries:[];
+  for(var i=0;i<es.length;i++){ var m=es[i]&&es[i].member_id; if(typeof m==='string'&&m)map[m]=true; }
+  return map;
+}
+// 純関数: 送信先に既にある記録のうち「今回の参加者に含まれない人」を数える（＝鳴らす／鳴らさないの判定）。
+//   roster: [{player_id, class, member_id, name}]（呼び出し側が players/members を経由して解決済み）
+//   sendClasses: 送信クラスの配列（null＝絞らない） ／ sendMemberIds: {member_id:true}
+//   戻り: {total: 対象クラスの既存記録数, missing: そのうち今回に含まれない人数, names: その氏名（表示用・順不同）}
+//   member_id を解決できない行は「含まれない人」に数える（判別できない＝安全側。players 照会が成立していれば起きない）。
+function cloudTidRosterMissing(roster, sendClasses, sendMemberIds){
+  var res={total:0,missing:0,names:[]};
+  var list=Array.isArray(roster)?roster:[];
+  var ids=sendMemberIds||{};
+  for(var i=0;i<list.length;i++){
+    var r=list[i]; if(!r)continue;
+    if(sendClasses&&sendClasses.indexOf(r['class'])<0)continue;
+    res.total++;
+    var mid=(typeof r.member_id==='string')?r.member_id:'';
+    if(mid&&ids[mid]===true)continue;
+    res.missing++;
+    res.names.push((typeof r.name==='string'&&r.name)?r.name:'（氏名不明）');
+  }
+  return res;
+}
+// 純関数: 確認文言に載せる氏名の例（先頭2名＋「ほかN名」。0名なら ''）。全員を並べるとダイアログが読めなくなる。
+function cloudTidNamesExample(names){
+  var a=Array.isArray(names)?names:[];
+  if(!a.length)return '';
+  var head=a.slice(0,2).join('・');
+  var rest=a.length-(a.length<2?a.length:2);
+  return rest>0?(head+' ほか'+rest+'名'):head;
+}
+// CLOUD-TID-GUARD-001b (⑧ Codex P1): 事前照会の明示デッドライン（ms）。
+//   根拠: 会場回線（4G / 公衆Wi-Fi）での supabase REST の単純 select は実測で概ね 1 秒未満、遅くても 2〜3 秒。
+//   一方、回線が**半切断**（成功も失敗も返らない）になると Promise は解決も棄却もせず、fail-open が働かないまま
+//   「クラウドへ送信中…」で固まる（本ガードが従来存在しなかった必須の往復を足したことで新設された経路）。
+//   短すぎると正常な回線でも照会を捨てて fail-open が常態化し、ガードが実質死ぬ。運営者が「無反応」と感じ始める
+//   体感は概ね5秒。→ 5〜8 秒の中央付近 6 秒。日付照会と顔ぶれ照会に**別々に**掛けると最悪 12 秒になるため、
+//   precheck 全体（tournaments→entries→players→members）に **1 本**のデッドラインを掛ける。
+var CLOUD_TID_PRECHECK_TIMEOUT_MS=6000;
+// 期限つきで包む。期限超過は棄却ではなく fallback（precheck:'skipped'）で解決＝従来どおりの送信へ進む。
+//   setTimeout が無い環境では素通し（fail-soft）。
+function _withCloudPrecheckDeadline(p, fallback){
+  if(typeof setTimeout!=='function')return p;
+  return new Promise(function(resolve){
+    var done=false, t=null;
+    function _fin(v){ if(done)return; done=true; if(t!==null&&typeof clearTimeout==='function'){ try{clearTimeout(t);}catch(eC){} } resolve(v); }
+    try{ t=setTimeout(function(){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 送信先の大会の事前照会が時間内に返りませんでした（送信は継続）'); _fin(fallback); },CLOUD_TID_PRECHECK_TIMEOUT_MS); }catch(eT){ t=null; }
+    p.then(_fin,function(e){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 送信先の大会の事前照会で例外（送信は継続）:',(e&&e.message)||e); _fin(fallback); });
+  });
+}
+// 送信先レコード（id と date）の照会。既存 fetchCloudTournamentIdByAppId と同型（select に date を足しただけ
+//   ＝新しいクエリの書き方を増やさない）。
 //   fail-open（判断: cowork）: 照会できない（読み取り非対応 client・error・例外）ときは {ok:false} を返し、
 //   呼び出し側は従来どおり送信する。会場のネット瞬断で当日の送信自体が止まる方が実害が大きい（全体の fail-soft 原則）。
-//   ただし黙って素通りさせず、結果に precheck:'skipped' を残して成功トーストへ注記する。
+//   ただし黙って素通りさせず、結果に precheck:'skipped' を残して画面へ注記する。
 function fetchCloudTournamentDateByAppId(client, appTid, clubId){
-  function _skip(){ return {ok:false,date:''}; }
+  function _skip(){ return {ok:false,date:'',id:''}; }
   function _warn(msg,d){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 送信先の大会日'+msg+'（送信は継続）:',d); }
   try{
     if(!client||!client.from)return Promise.resolve(_skip());
@@ -11410,9 +11482,79 @@ function fetchCloudTournamentDateByAppId(client, appTid, clubId){
     return q.select('id,date').eq('club_id',clubId).eq('app_tournament_id',appTid).then(function(res){
       if(res&&res.error){ _warn('照会に失敗',(res.error&&res.error.message)||''); return _skip(); }
       var rows=(res&&res.data)||[]; var row=rows[0]||null;
-      return {ok:true,date:(row&&typeof row.date==='string')?row.date:''};
+      return {ok:true,date:(row&&typeof row.date==='string')?row.date:'',id:(row&&row.id)||''};
     },function(e){ _warn('照会で例外',(e&&e.message)||e); return _skip(); });
   }catch(e2){ _warn('照会で例外',(e2&&e2.message)||e2); return Promise.resolve(_skip()); }
+}
+// 送信先の大会に既にある「顔ぶれ」の照会（読み取りのみ）。
+//   entries(player_id,class) → players(id,member_id) → members(member_id,name) の3照会。
+//   氏名は members にしか無い（schema: players は氏名を持たない）ため players を経由して引く必要がある。
+//   どれか1つでも失敗したら fail-open（{ok:false}）＝呼び出し側は precheck:'skipped' で従来どおり送信する。
+function fetchCloudTournamentRoster(client, tournamentUuid, clubId){
+  function _skip(){ return {ok:false,roster:[]}; }
+  function _warn(msg,d){ if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 送信先の大会の参加者'+msg+'（送信は継続）:',d); }
+  function _fail(e){ _warn('照会で例外',(e&&e.message)||e); return _skip(); }
+  try{
+    if(!client||!client.from||!tournamentUuid)return Promise.resolve(_skip());
+    var qe=client.from('entries');
+    if(!qe||typeof qe.select!=='function')return Promise.resolve(_skip());
+    return qe.select('player_id,class').eq('club_id',clubId).eq('tournament_id',tournamentUuid).then(function(re){
+      if(re&&re.error){ _warn('照会に失敗',(re.error&&re.error.message)||''); return _skip(); }
+      var erows=(re&&re.data)||[];
+      if(!erows.length)return {ok:true,roster:[]};
+      return client.from('players').select('id,member_id').eq('club_id',clubId).then(function(rp){
+        if(rp&&rp.error){ _warn('照会に失敗',(rp.error&&rp.error.message)||''); return _skip(); }
+        var midByPid={}, prows=(rp&&rp.data)||[];
+        for(var i=0;i<prows.length;i++){ if(prows[i]&&prows[i].id)midByPid[prows[i].id]=prows[i].member_id; }
+        return client.from('members').select('member_id,name').eq('club_id',clubId).then(function(rm){
+          if(rm&&rm.error){ _warn('照会に失敗',(rm.error&&rm.error.message)||''); return _skip(); }
+          var nameByMid={}, mrows=(rm&&rm.data)||[];
+          for(var j=0;j<mrows.length;j++){ if(mrows[j]&&mrows[j].member_id)nameByMid[mrows[j].member_id]=mrows[j].name; }
+          var roster=[];
+          for(var k=0;k<erows.length;k++){
+            var mid=midByPid[erows[k]&&erows[k].player_id]||'';
+            roster.push({player_id:(erows[k]&&erows[k].player_id)||'','class':(erows[k]&&erows[k]['class'])||'',
+              member_id:mid,name:(nameByMid[mid]||'')});
+          }
+          return {ok:true,roster:roster};
+        },_fail);
+      },_fail);
+    },_fail);
+  }catch(e2){ return Promise.resolve(_fail(e2)); }
+}
+// 送信前の事前照会（本体）。戻りは必ず {status:...}（throw しない・棄却しない）:
+//   'ok'                   … 照会が成立し、送信先は今回と同じ大会と判断できる（＝そのまま書いてよい）
+//   'conflict'             … 送信先に「今回の参加者に含まれない人」が居る（info に確認文言の材料）
+//   'skipped'              … 照会できなかった／期限超過（fail-open。書くが画面に⚠注記を出す）
+//   'skipped-invalid-date' … 実施日が暦上あり得ない等で照合材料にならない（⑦。偽の「照合済み」を残さない）
+function cloudTidPrecheck(client, payload, clubId){
+  function _res(s){ return {status:s}; }
+  var tinfo=(payload&&payload.tournament)||null;
+  var appTid=(tinfo&&tinfo.app_tournament_id)||'';
+  var local=(tinfo&&typeof tinfo.date==='string')?tinfo.date:'';
+  if(!appTid)return Promise.resolve(_res('skipped'));
+  // ⑦ 暦上存在しない日付（2026-02-30 等）は #622 の担当領域として本 PR では直さない（Issue #811）が、
+  //   「照合済み・衝突なし」に倒すと偽の安心を結果に残すため precheck:'skipped-invalid-date' にする。
+  if(!local||(typeof isValidYmd==='function'&&!isValidYmd(local)))return Promise.resolve(_res('skipped-invalid-date'));
+  var chain=fetchCloudTournamentDateByAppId(client,appTid,clubId).then(function(pre){
+    if(!pre||!pre.ok)return _res('skipped');
+    if(!pre.id)return _res('ok');                                   // クラウドに該当レコードが無い＝新規大会
+    if(!cloudTidDateConflict(pre.date,local))return _res('ok');     // 日付が一致＝同じ大会への再送信（従来どおり）
+    // 日付が食い違う → ここで初めて顔ぶれを引く（クエリを増やすのは本当に疑わしいときだけ）
+    return fetchCloudTournamentRoster(client,pre.id,clubId).then(function(rr){
+      if(!rr||!rr.ok)return _res('skipped');
+      var sendClasses=cloudTidSendClasses(payload);
+      var miss=cloudTidRosterMissing(rr.roster,sendClasses,cloudTidSendMemberIds(payload));
+      // 消える人が0名＝同じ大会の訂正（実施日を直しての再送信）→ 鳴らさない（日付が違っても通す）
+      if(!miss.missing)return _res('ok');
+      var out=_res('conflict');
+      out.info={ app_tournament_id:appTid, remote_date:pre.date, local_date:local,
+        existing_count:miss.total, missing_count:miss.missing, missing_names:miss.names,
+        sending_count:((payload&&payload.entries)||[]).length, class_filtered:!!sendClasses };
+      return out;
+    });
+  });
+  return _withCloudPrecheckDeadline(chain,_res('skipped'));
 }
 
 // CLOUD SYNC (B-2b-core / #343): buildCloudSyncPayload の出力を supabase へ upsert するオーケストレーション。
@@ -11480,19 +11622,22 @@ function syncTournamentToCloud(client, master, opts){
       });
     });
   }
-  // CLOUD-TID-GUARD-001 (#800 案#2): 不可逆な書き込みの直前に1回だけ止める。
+  // CLOUD-TID-GUARD-001b (#800 案#2): 不可逆な書き込みの直前に1回だけ止める。
   //   置き場所は members upsert より前＝衝突時は1バイトも書かない（members upsert が冪等であることは理由にならない）。
-  //   逃げ道は opts.allowDateMismatch===true のみ（既定 false＝安全側）。作者が確認ダイアログで明示承諾したときだけ、
-  //   呼び出し側（sendTournamentToCloud）が true を付けて再実行する。
+  //   逃げ道は opts.allowDateMismatch===true のみ（既定 false＝**opts に何も渡さなければガードが効く**）。
+  //   ⑥ の順序変更で、通常経路（sendTournamentToCloud）は未連携ガードより前に自分で cloudTidPrecheck を済ませ、
+  //   その結果を opts.precheckKind に載せて allowDateMismatch:true で入ってくる（二重照会をしない）。
   //   衝突時は既存の契約どおり throw せず {ok:false, step:'date-mismatch', …} を返す。
   function _markPrecheck(kind){ return function(r){ if(r&&kind)r.precheck=kind; return r; }; }
-  if(opts.allowDateMismatch===true)return _writeAll().then(_markPrecheck('bypassed'));
-  return fetchCloudTournamentDateByAppId(client,payload.tournament.app_tournament_id,clubId).then(function(pre){
-    if(!pre||!pre.ok)return _writeAll().then(_markPrecheck('skipped'));   // fail-open（当日運営を止めない）
-    var _remote=cloudTidDateConflict(pre.date,payload.tournament.date);
-    if(_remote)return {ok:false,step:'date-mismatch',remote_date:_remote,local_date:payload.tournament.date,
-      app_tournament_id:payload.tournament.app_tournament_id,counts:counts};
-    return _writeAll().then(_markPrecheck('ok'));
+  if(opts.allowDateMismatch===true)return _writeAll().then(_markPrecheck(opts.precheckKind||'bypassed'));
+  return cloudTidPrecheck(client,payload,clubId).then(function(pre){
+    var kind=(pre&&pre.status)||'skipped';
+    if(kind!=='conflict')return _writeAll().then(_markPrecheck(kind));   // ok / skipped / skipped-invalid-date は fail-open
+    var info=pre.info||{};
+    return {ok:false,step:'date-mismatch',counts:counts,
+      app_tournament_id:info.app_tournament_id,remote_date:info.remote_date,local_date:info.local_date,
+      existing_count:info.existing_count,missing_count:info.missing_count,missing_names:info.missing_names,
+      sending_count:info.sending_count,class_filtered:info.class_filtered};
   });
 }
 
@@ -12383,37 +12528,55 @@ function _unlinkedSkippedNote(count){
   // 区切りは全角スペース（L3 レビュー指摘3・CSS は拘束ルール3で不変のまま）。
   return '　⚠ 未連携 '+count+' 名'+(label?('（'+label+'）'):'')+'は共有結果に未反映です。「📋 参加者を名簿に反映」→ 再送信で反映できます。';
 }
-// CLOUD-TID-GUARD-001 (#800 案#2): 送信先の大会日が食い違うときの確認（既存 appConfirm の2択＝新規モーダル部品を増やさない・
-//   _confirmUnlinkedBeforeSend と同じ作り。native confirm() は使わない）。
-//   #800 の事故は「何が起きるか分からないまま OK を押した」ことで成立しているため、先に「何が上書きされるか」を書く。
-//   danger:true＝OK に破壊色・フォーカスはキャンセル側・Enter では確定しない（showAppModal 実測）＝既定は中止。
-//   やり直し手順は推測ではなくコードで確認した実在の導線のみ:
-//     ・受付タブ「▷ 2台で分担して入力するとき」→「今日の大会に合流」= joinOpsKeylessTournament。
-//       state.tournament_id を t_<報告書の実施日> に付け替える（opsKeylessTournamentId）＝参加者・結果はそのまま残る。
-//     ・☰メニュー →「大会データを全リセット」= resetAll。state を作り直して tournament_id ごと消える＝
-//       次に ensureTournamentId が実施日から採番し直す（ただし今の大会データも消える）。
+// CLOUD-TID-GUARD-001b (③④): 送信先に「今回の参加者ではない人」の記録があるときの確認（既存 appConfirm の2択
+//   ＝新規モーダル部品を増やさない・_confirmUnlinkedBeforeSend と同じ作り。native confirm() は使わない）。
+//   ③ 文言から断定を消す: 初版は「参加者が混ざります／大会は一覧から消えます」と書いたが、entries は
+//     onConflict:'tournament_id,player_id' の upsert で**既存行を消さない**＝送信先の人の記録は残ったまま今回の
+//     参加者が足され、tournaments は同じ1レコードが日付だけ書き換わる（一覧から消えるわけではない）。
+//     観測した事実（人数・氏名・日付の変化）だけを書く。
+//   ④ 復帰導線: 初版が案内した「今日の大会に合流」(joinOpsKeylessTournament) は
+//     state.tournament_id===t_<実施日> のとき**早期 return で何もしない**（成功文言だけ返って同じ警告に戻る＝無限ループ）。
+//     そもそも「合流」は2台を1つの大会に**まとめる**操作で、「別の大会として記録したい」目的と逆向き。
+//     → 「運営共通キーを発行」(issueOpsSharedKey) に差し替える。t_<報告書の実施日>_<4桁> を新規採番し、
+//        参加者・結果は無改変（実測: t_2026_07_12 → t_2026_08_01_9116）。
+//        ただし現在の大会IDの末尾に既に4桁キーが付いていると issueOpsSharedKey は発行済みキーを表示するだけの
+//        no-op になる（tournamentIdToOpsKey が非空で早期 return）。その場合は同じ欄の「このキーに合わせる」に
+//        別の4桁を入れると t_<報告書の実施日>_<入れた4桁> に変わる（applyOpsSharedKey）。両方を案内する。
+//   danger:true＝OK に破壊色・フォーカスはキャンセル側。Enter は既定動作ごと抑止（⑨で showAppModal を修正）＝既定は中止。
 function _confirmDateMismatchBeforeSend(info, onOverwrite, onCancel){
   var tid=(info&&info.app_tournament_id)||'';
   var rd=(info&&info.remote_date)||'';
   var ld=(info&&info.local_date)||'';
-  var m='⚠ 送信先の大会が、いまの実施日と食い違っています。\n\n'
-    +'クラウドにある大会ID「'+tid+'」の記録日は '+rd+' です。\n'
-    +'いま送ろうとしている実施日は '+ld+' です。\n\n'
-    +'このまま送信すると、クラウドの '+rd+' の大会が '+ld+' に書き換わり、'+rd+' の参加者と今回の参加者が'
-    +'同じ大会に混ざります（重複した順位が並び、両方に出た方の前回成績が今回の値で上書きされます）。'
-    +rd+' の大会は一覧から消えます。\n\n'
-    +'別の大会として記録したいときは「中止」を押し、次のどちらかで大会IDを取り直してから再送信してください。\n'
-    +'・受付タブ「▷ 2台で分担して入力するとき」→「今日の大会に合流」\n'
-    +'　（大会IDが '+ld+' の大会に振り直されます。いまの参加者・結果はそのまま残ります）\n'
-    +'・☰メニュー →「大会データを全リセット」\n'
-    +'　（大会IDも取り直されますが、いまの大会データは消えます。先に「バックアップ」を取ってください）';
+  var total=(info&&info.existing_count)||0;
+  var miss=(info&&info.missing_count)||0;
+  var sending=(info&&info.sending_count)||0;
+  var ex=cloudTidNamesExample(info&&info.missing_names);
+  var clsNote=(info&&info.class_filtered)?'（今回送るクラス分）':'';
+  var m='⚠ 送信先の大会に、今回の参加者ではない方の記録があります。\n\n'
+    +'送信先の大会「'+tid+'」には、既に '+total+' 名の記録があります'+clsNote+'。\n'
+    +'そのうち '+miss+' 名は今回の参加者に含まれていません'+(ex?('（例: '+ex+'）'):'')+'。\n\n'
+    +'このまま送信すると、その方々の記録は残ったまま今回の '+sending+' 名が追加され、'
+    +'大会の記録日は '+rd+' → '+ld+' に変わります。\n\n'
+    +'今日の大会を別の大会として記録したいときは「中止」を押し、参加者登録タブの'
+    +'「▷ 2台で分担して入力するとき」を開いて「運営共通キーを発行」を押してください。'
+    +'新しい大会IDが採番され、いまの参加者・結果はそのまま残ります。そのうえで、もう一度送信してください。\n'
+    +'※ 大会IDの末尾に既に4桁のキーが付いているときは、「運営共通キーを発行」は発行済みの数字を表示するだけで'
+    +'大会IDは変わりません。その場合は同じ欄の「このキーに合わせる」に別の4桁の数字を入れて押してください。';
   appConfirm(m,function(_ok){ if(_ok)onOverwrite(); else onCancel(); },{okText:'それでも上書きする',cancelText:'中止',danger:true});
 }
-// CLOUD-TID-GUARD-001 (#800 案#2): 照会できずガードを省略して送信したとき（precheck:'skipped'）の注記。
-//   黙って素通りさせないための1行。表示先 applyCloudStatus（.cloud-status は pre-wrap なし＝'\n' は改行にならない）
-//   のため区切りは全角スペース（_unlinkedSkippedNote と同方式）。
-function _tidPrecheckSkippedNote(){
-  return '　⚠ 送信先の大会日の確認は省略しました（通信の都合）。クラウド管理ページで大会日をご確認ください。';
+// CLOUD-TID-GUARD-001b (②): 事前照会ができずガードを省略して送信したとき（precheck:'skipped' /
+//   'skipped-invalid-date'）の注記。黙って素通りさせないための1行。表示先 applyCloudStatus
+//   （.cloud-status は pre-wrap なし＝'\n' は改行にならない）のため区切りは全角スペース（_unlinkedSkippedNote と同方式）。
+function _tidPrecheckSkippedNote(kind){
+  var why=(kind==='skipped-invalid-date')?'（実施日の書式を確認できないため）':'（通信の都合）';
+  return '　⚠ 送信先の大会の確認は省略しました'+why+'。クラウド管理ページで大会日と参加者をご確認ください。';
+}
+// CLOUD-TID-GUARD-001b (② R1): fail-open で送信し、途中で失敗したときの注記。
+//   失敗表示だけだと運営者は「失敗＝1バイトも書かれていない」と読んで再送信するが、実際には members や
+//   tournaments まで書き終えてから entries で失敗している場合があり、**送信先の大会レコードが既に
+//   書き換わっている**ことがある。res.ok が false のときも precheck を見てこれを出す。
+function _tidPrecheckFailedNote(){
+  return '　⚠ 送信先の大会の確認は省略していました。クラウドの大会記録が既に書き換わっている可能性があります。クラウド管理ページで大会日と参加者をご確認ください。';
 }
 function sendTournamentToCloud(setStatus){
   setStatus=setStatus||function(){};
@@ -12455,20 +12618,27 @@ function sendTournamentToCloud(setStatus){
         var _dmsg='実施日 '+_recDate+' として記録します。違う場合は報告書の日付欄を修正してください。よろしいですか？';
         appConfirm(_dmsg,function(_okd){
           if(!_okd){ setStatus('送信を中止しました（報告書の日付欄で実施日を確認・修正してから再送信してください）'); resolve({ok:false,step:'cancelled-date'}); return; }
-          _guardThenSend();
+          _send();
         });
-      } else { _guardThenSend(); }
+      } else { _send(); }
     }
     // CLOUD-SEND-UNLINKED-GUARD-001: 送信直前ガード。未連携者がいれば確認（無ければ従来どおり即送信）。
     //   ①名簿に反映して送信＝既存 syncBranchMasterOnSave（初参加者に member_id 付与）→送信 ②このまま送信 ③中止。
-    //   走査失敗時は空扱いで従来どおり送信（fail-open＝ガードで送信を止めない）。
-    function _guardThenSend(){
-      var _u=[]; try{ _u=collectUnlinkedParticipantsForSend(); }catch(eU){ _u=[]; }
-      if(!_u.length){ _send(); return; }
-      _confirmUnlinkedBeforeSend(_u,
-        function(){ if(typeof syncBranchMasterOnSave==='function'){ syncBranchMasterOnSave(function(){ _send(); }); } else { _send(); } },
-        function(){ _send(); },
-        function(){ setStatus('送信を中止しました（「📋 参加者を名簿に反映」→ 再送信で未連携者も反映できます）'); resolve({ok:false,step:'cancelled-unlinked'}); });
+    //   走査失敗時は空扱いで従来どおり送信（fail-open＝ガードで送信を止めない）。選択肢・文言・既定は不変。
+    // CLOUD-TID-GUARD-001b (⑥ R10): 呼ばれる位置だけが変わった（_dateGate 直後 → 事前照会の後）。
+    //   選択肢①「名簿に反映して送信」は syncBranchMasterOnSave でローカル支部マスタを**古い tournament_id で**
+    //   書き換える。ガードがその後ろに居ると、「1バイトも書かずに止めました」と言った時点で既に
+    //   8月しか出ていない参加者の履歴に7月の大会IDが永久に混入している（元に戻らない）。順序を入れ替えた。
+    function _guardThenWrite(client,clubId,master,precheckKind){
+      return new Promise(function(_rz){
+        function _write(m){ _rz(syncTournamentToCloud(client,m,{clubId:clubId,allowDateMismatch:true,precheckKind:precheckKind}).then(_afterSync)); }
+        var _u=[]; try{ _u=collectUnlinkedParticipantsForSend(); }catch(eU){ _u=[]; }
+        if(!_u.length){ _write(master); return; }
+        _confirmUnlinkedBeforeSend(_u,
+          function(){ if(typeof syncBranchMasterOnSave==='function'){ syncBranchMasterOnSave(function(){ _write((typeof loadBranchMaster==='function')?loadBranchMaster():master); }); } else { _write(master); } },
+          function(){ _write(master); },
+          function(){ setStatus('送信を中止しました（「📋 参加者を名簿に反映」→ 再送信で未連携者も反映できます）'); _rz({ok:false,step:'cancelled-unlinked'}); });
+      });
     }
     function _send(){
       setStatus('クラウドへ送信中…');
@@ -12486,49 +12656,60 @@ function sendTournamentToCloud(setStatus){
             if(!clubId){ setStatus('送信先クラブを一意に特定できません（有効な幹事クラブが無い／複数所属の可能性・管理ページを確認してください）'); return {ok:false,step:'club'}; }
             var master=(typeof loadBranchMaster==='function')?loadBranchMaster():{members:[]};
             try{ if(typeof ensureTournamentId==='function')ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report)); }catch(e){}
-            // CLOUD-TID-GUARD-001 (#800 案#2): 送信先の大会日が食い違えば syncTournamentToCloud は
-            //   1バイトも書かずに step:'date-mismatch' を返す。ここで初めて作者に「何が上書きされるか」を示し、
-            //   明示承諾（それでも上書きする）のときだけ allowDateMismatch:true を付けて再実行する。
-            //   既存の3ガード（#622 日付 / #567 多クラス / 未連携）より後段＝それらの挙動・選択肢・順序は不変。
-            return syncTournamentToCloud(client,master,{clubId:clubId}).then(function(res){
-              if(res&&res.step==='date-mismatch'){
-                return new Promise(function(_rz){
-                  _confirmDateMismatchBeforeSend(res,
-                    function(){ _rz(syncTournamentToCloud(client,master,{clubId:clubId,allowDateMismatch:true}).then(_afterSync)); },
-                    function(){
-                      setStatus('送信を中止しました（受付タブ「▷ 2台で分担して入力するとき」→「今日の大会に合流」で大会IDを '
-                        +(res.local_date||'')+' の大会に振り直してから再送信してください）');
-                      _rz({ok:false,step:'cancelled-date-mismatch'});
-                    });
-                });
-              }
-              return _afterSync(res);
+            // CLOUD-TID-GUARD-001b (#800 案#2・⑥): 事前照会は**未連携ガードより前**（＝ローカル支部マスタを
+            //   書き換える前）に済ませる。送信先に「今回の参加者ではない人」が居れば、ここで何が起きるかを示し、
+            //   明示承諾（それでも上書きする）のときだけ先へ進む。中止ならクラウドにもローカル名簿にも1バイトも書かない。
+            //   既存の3ガード（#622 日付 / #567 多クラス / 未連携）の挙動・選択肢・文言は不変（順序のみ変更）。
+            var _payload0=null;
+            try{ _payload0=buildCloudSyncPayload(master,{clubId:clubId}); }catch(eP){ _payload0=null; }
+            var _pre0=_payload0?cloudTidPrecheck(client,_payload0,clubId):Promise.resolve({status:'skipped'});
+            return _pre0.then(function(pre){
+              var kind=(pre&&pre.status)||'skipped';
+              if(kind!=='conflict')return _guardThenWrite(client,clubId,master,kind);
+              return new Promise(function(_rz){
+                _confirmDateMismatchBeforeSend(pre.info,
+                  function(){ _rz(_guardThenWrite(client,clubId,master,'bypassed')); },
+                  function(){
+                    setStatus('送信を中止しました（参加者登録タブの「▷ 2台で分担して入力するとき」→「運営共通キーを発行」で'
+                      +'新しい大会IDを取ってから再送信してください）');
+                    _rz({ok:false,step:'cancelled-date-mismatch'});
+                  });
+              });
             });
-            function _afterSync(res){
-              if(res&&res.ok){
-                // A-2 (SYSTEM-REVIEW #377 follow): 未解決 entry を黙って成功扱いにしない。
-                //   unresolved>0 は ⚠ 警告（U-1 で橙）＝集計欠落に気づける。skipped(マスタ未連携)は当初「対象外の中立注記」
-                //   だったが、未連携の入賞者（1位含む）が共有結果から黙って欠落する実害を受け
-                //   CLOUD-SEND-UNLINKED-GUARD-001 で ⚠ 注記（_unlinkedSkippedNote）へ格上げした（#377 判断の意図的更新）。
-                var c=res.counts||{};
-                var base='送信しました（名簿 '+(c.members||0)+' 名・結果 '+(c.entries||0)+' 件）';
-                // CLOUD-SEND-UNLINKED-GUARD-001 (C): 未連携者は共有結果に未反映＝中立注記ではなく⚠で最上位者と直し方を明示。
-                if(c.skipped)base+=_unlinkedSkippedNote(c.skipped);
-                if(res.warn){ base='⚠ 一部の結果を送信できませんでした：未解決 '+(c.unresolved||0)+' 名。'+base+' 支部マスタへ紐付けてから再送してください（冪等・運営は続行できます）'; }
-                // CLOUD-TID-GUARD-001 (#800 案#2): 照会失敗でガードを省略した送信は黙って素通りさせない（末尾に⚠注記）。
-                if(res.precheck==='skipped')base+=_tidPrecheckSkippedNote();
-                setStatus(base);
-                // SAVE-STATUS-BAR-001: クラウド送信成功（res.ok・warn 含む＝送信自体は実行済み）の時刻を記録（fail-soft）。
-                markSaveStatus('cloud');
-                // OPS-SHARED-KEY Phase C (#585): この端末が送信した大会IDを記録（キー張り替え時の明示確認 opsRekeyNeedsConfirm に使う・fail-soft）。
-                try{ if(typeof state!=='undefined'&&state&&state.tournament_id){ state.cloud_sent_tid=state.tournament_id; if(typeof saveData==='function')saveData(); } }catch(eS){}
-              }
-              else { setStatus('送信に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再送できます）'); }
-              return res;
-            }
           });
         });
       }).catch(function(e){ setStatus('送信エラー：'+((e&&e.message)||e)+'（運営は続行できます）'); return {ok:false,step:'exception'}; }));
+    }
+    // CLOUD-TID-GUARD-001b (② R1): 事前照会を省略した（precheck が 'skipped' 系の）送信かどうか。
+    //   成功・失敗のどちらの経路でも同じ判定を使う（初版は res.ok の内側にしか無く、失敗時に注記が消えていた）。
+    function _precheckSkipped(res){ return !!res&&(res.precheck==='skipped'||res.precheck==='skipped-invalid-date'); }
+    function _afterSync(res){
+      if(res&&res.ok){
+        // A-2 (SYSTEM-REVIEW #377 follow): 未解決 entry を黙って成功扱いにしない。
+        //   unresolved>0 は ⚠ 警告（U-1 で橙）＝集計欠落に気づける。skipped(マスタ未連携)は当初「対象外の中立注記」
+        //   だったが、未連携の入賞者（1位含む）が共有結果から黙って欠落する実害を受け
+        //   CLOUD-SEND-UNLINKED-GUARD-001 で ⚠ 注記（_unlinkedSkippedNote）へ格上げした（#377 判断の意図的更新）。
+        var c=res.counts||{};
+        var base='送信しました（名簿 '+(c.members||0)+' 名・結果 '+(c.entries||0)+' 件）';
+        // CLOUD-SEND-UNLINKED-GUARD-001 (C): 未連携者は共有結果に未反映＝中立注記ではなく⚠で最上位者と直し方を明示。
+        if(c.skipped)base+=_unlinkedSkippedNote(c.skipped);
+        if(res.warn){ base='⚠ 一部の結果を送信できませんでした：未解決 '+(c.unresolved||0)+' 名。'+base+' 支部マスタへ紐付けてから再送してください（冪等・運営は続行できます）'; }
+        // CLOUD-TID-GUARD-001b: 照会できずガードを省略した送信は黙って素通りさせない（末尾に⚠注記）。
+        if(_precheckSkipped(res))base+=_tidPrecheckSkippedNote(res.precheck);
+        setStatus(base);
+        // SAVE-STATUS-BAR-001: クラウド送信成功（res.ok・warn 含む＝送信自体は実行済み）の時刻を記録（fail-soft）。
+        markSaveStatus('cloud');
+        // OPS-SHARED-KEY Phase C (#585): この端末が送信した大会IDを記録（キー張り替え時の明示確認 opsRekeyNeedsConfirm に使う・fail-soft）。
+        try{ if(typeof state!=='undefined'&&state&&state.tournament_id){ state.cloud_sent_tid=state.tournament_id; if(typeof saveData==='function')saveData(); } }catch(eS){}
+      }
+      else {
+        // CLOUD-TID-GUARD-001b (② R1): 失敗表示だけだと「失敗＝無傷」と読まれて再送信される。fail-open で送っていた
+        //   場合は送信先の大会レコードが既に書き換わっていることがあるため、res.ok の**外側でも** precheck を見る。
+        var em='送信に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再送できます）';
+        if(_precheckSkipped(res))em+=_tidPrecheckFailedNote();
+        setStatus(em);
+      }
+      return res;
     }
   });
 }
@@ -14790,10 +14971,20 @@ function bindReportEvents(){
   var helpBtnCloud=document.getElementById('helpBtnCloud');
   if(helpBtnCloud)helpBtnCloud.addEventListener('click',function(){openHelpModal('cloud');});
   // B-2b-wire (#343): 「☁ クラウドへ送信」（静的・id=cloudSendBtn）→ sendTournamentToCloud（任意・失敗耐性）。
+  // CLOUD-TID-GUARD-001b (⑤ R8): 送信中は送信ボタンを無効化する。本 PR が事前照会のネットワーク往復を足したことで
+  //   「モーダルが1枚も出ていない時間帯」が延び、そこを連打するとモーダルが重なって、成功した送信が後から
+  //   「中止しました」表示に化ける（＝表示と実際が食い違う）。開始で disabled・完了/中止で戻す。
+  //   showAppModal の孤児化（後から開いたモーダルが先のモーダルの DOM を消し、先の onResult が二度と呼ばれない）
+  //   そのものは既存の欠陥なので本 PR では触らない（Issue #810）。
   var cloudSendBtn=document.getElementById('cloudSendBtn');
   if(cloudSendBtn)cloudSendBtn.addEventListener('click',function(){
     var st=document.getElementById('cloudSendStatus');
-    sendTournamentToCloud(function(msg){ applyCloudStatus(st,msg); });
+    if(cloudSendBtn.disabled)return;
+    function _release(){ try{ cloudSendBtn.disabled=false; }catch(eR){} }
+    try{ cloudSendBtn.disabled=true; }catch(eD){}
+    var _p=null;
+    try{ _p=sendTournamentToCloud(function(msg){ applyCloudStatus(st,msg); }); }catch(eS){ _release(); throw eS; }
+    if(_p&&typeof _p.then==='function')_p.then(_release,_release); else _release();
   });
   // CLASS-SPLIT-CLOUD-MERGE-001 Phase 3 (#572): 「☁ 両級まとめて表示（統合レポート）」（静的・id=cloudMergedReportBtn）
   //   → loadCloudMergedReportUI（現在の大会IDで両級 entries を取得し #cloudMergedReport へ読取専用描画・fail-soft）。

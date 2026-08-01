@@ -5,9 +5,14 @@
 //       L2-SWEEP-01 ④ #782 レビュー Nice-2: 旧「名簿を更新して送信」から新語彙へ・文言のみ・分岐不変）。
 //   (C) 送信後注記＝skipped>0 を ⚠(warn/橙) に格上げし最上位者＋直し方を明示（#377 の中立注記を格上げ）。
 //   本テストは (R/C) 純関数・(W) ソース配線に加え、(B) __setAppModalTestResolver によるガード3経路の
-//   挙動テスト（L3 レビュー指摘1対応）を固定する。B 系は loadCloudDeps を config 不在で止め、
-//   res.step==='config' 到達＝「_send まで進んだ」ことの証明に使う（実クラウドへは出ない・mock のみ）。
-//   架空データのみ。
+//   挙動テスト（L3 レビュー指摘1対応）を固定する。
+//   CLOUD-TID-GUARD-001b ⑥（R10）の順序変更に伴う追随（理由は各アサート横に記載）:
+//     未連携ガードは「事前照会のあと」＝クラウド接続が確立してからに移した（選択肢①「名簿に反映して送信」が
+//     ローカル支部マスタを古い tournament_id で書き換える前に、送信先の食い違いを止めるため）。
+//     旧 B 系は「config 不在で止めて res.step==='config' 到達＝ガード通過の証拠」という組み方だったが、
+//     新順序ではそもそもガードに到達しない。B 系は mock client（supabase 相当）を注入してガードまで到達させ、
+//     到達の証拠を res.ok===true に置き換える（ガードの選択肢・文言・分岐は不変＝アサートの意図は同じ）。
+//   実クラウドへは出ない・mock のみ。架空データのみ。
 const fs=require('fs');
 const target=process.argv[2]||'shogi_v4.html';
 function extractScripts(p){const html=fs.readFileSync(p,'utf8');const s=[];const re=/<script[^>]*>([\s\S]*?)<\/script>/g;let m;while((m=re.exec(html))!==null)s.push(m[1]);return s.join('\n');}
@@ -19,7 +24,7 @@ function loadEnv(){
   var ls={_:{},getItem:function(k){return(k in this._)?this._[k]:null;},setItem:function(k,v){this._[k]=String(v);},removeItem:function(k){delete this._[k];}};
   const js=extractScripts(target);
   const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout',
-    `${js};return { collectUnlinkedParticipantsForSend:collectUnlinkedParticipantsForSend, _unlinkedTopLabel:_unlinkedTopLabel, _unlinkedSkippedNote:_unlinkedSkippedNote, classifyCloudStatusKind:classifyCloudStatusKind, sendTournamentToCloud:sendTournamentToCloud, __setAppModalTestResolver:__setAppModalTestResolver, loadBranchMaster:loadBranchMaster, _setState:function(s){ state=s; } };`);
+    `${js};return { collectUnlinkedParticipantsForSend:collectUnlinkedParticipantsForSend, _unlinkedTopLabel:_unlinkedTopLabel, _unlinkedSkippedNote:_unlinkedSkippedNote, classifyCloudStatusKind:classifyCloudStatusKind, sendTournamentToCloud:sendTournamentToCloud, __setAppModalTestResolver:__setAppModalTestResolver, loadBranchMaster:loadBranchMaster, _setState:function(s){ state=s; }, _win:window };`);
   return fn(doc,win,ls,{randomUUID:function(){return '0';}},function(){},function(){return true;},function(){return '';},function(){},function(){},{createObjectURL:function(){return 'blob:mock';},revokeObjectURL:function(){}},{log:function(){},warn:function(){},error:function(){}},Promise,function(){return 0;});
 }
 let pass=0,fail=0; function ok(c,m){if(c)pass++;else{fail++;console.log('  FAIL: '+m);}}
@@ -61,11 +66,37 @@ var _wd=setTimeout(function(){
   console.log('CLOUD-SEND-UNLINKED-GUARD-001: PASS='+pass+' FAIL='+(fail+1));
   process.exit(1);
 },15000);
+// CLOUD-TID-GUARD-001b ⑥ 追随: mock supabase client（test_cloud_tid_date_guard_001.js と同型）。
+//   select は「該当 app_tournament_id のレコード無し」（＝新規大会）を返す＝事前照会は precheck:'ok' で素通り。
+//   これで未連携ガードまで到達し、承諾すれば書き込みまで通る（実クラウドへは出ない）。
+function makeClient(){
+  var calls=[];
+  var upsertData={ players:[{id:'p1',member_id:'m_a2'},{id:'p2',member_id:'m_a1'}], tournaments:[{id:'t-uuid'}] };
+  function upsertBuilder(table,rows,opts){ var b={};
+    b.select=function(){ return this; };
+    b.then=function(res,rej){ calls.push({op:'upsert',table:table,rows:rows});
+      return Promise.resolve({data:(upsertData[table]!==undefined?upsertData[table]:null),error:null}).then(res,rej); };
+    return b; }
+  function selectBuilder(table){ var b={};
+    b.eq=function(){ return this; };
+    b.then=function(res,rej){ calls.push({op:'select',table:table});
+      return Promise.resolve({data:[],error:null}).then(res,rej); };
+    return b; }
+  return { _calls:calls,
+    auth:{ getSession:function(){ return Promise.resolve({data:{session:{user:'u'}}}); } },
+    rpc:function(){ return Promise.resolve({data:[{status:'active',club_id:'club-1'}]}); },
+    from:function(table){ return { upsert:function(rows,opts){ return upsertBuilder(table,rows,opts); },
+      select:function(cols){ return selectBuilder(table,cols); } }; } };
+}
 function runSend(answers){
   // answers: {date:bool, guard1:bool, guard2:bool}。prompts: 表示された confirm メッセージの記録。
   // L3 再レビュー指摘2 対応: 既知パターン以外の confirm は unexpected に記録し、各経路で 0 件をアサートする
   //   （無条件 return true の広い許容をやめ、想定外モーダルの出現を検知可能にする。応答は true で先へ進め、ハングはさせない）。
   var env=loadEnv();
+  // CLOUD-TID-GUARD-001b ⑥ 追随: ガードはクラウド接続の後段に移ったので、mock で接続を成立させる。
+  var _cli=makeClient();
+  env._win.SHOGI_CLOUD_CONFIG={url:'https://example.invalid',publishableKey:'pk_fake'};
+  env._win.supabase={createClient:function(){ return _cli; }};
   var prompts=[],unexpected=[];
   env.__setAppModalTestResolver(function(type,message){
     var m=String(message==null?'':message); prompts.push(m);
@@ -90,7 +121,9 @@ function stage2Shown(prompts){ var c=0; for(var i=0;i<prompts.length;i++){ if(pr
     results:{ A:[[{p1:'a1',p2:'a2',winner:'a1'}]] }, report:{ date:'2026-06-14', title:'六月例会' } });
   var r1=await t1.send();
   ok(guardShown(t1.prompts)===0,'B1-1 全員連携済み→ガード confirm は表示されない');
-  ok(r1&&r1.ok===false&&r1.step==='config','B1-2 従来どおり _send へ到達（step:config）');
+  // CLOUD-TID-GUARD-001b ⑥ 追随: 旧 step:'config'（config 不在で止めた位置）→ mock 接続を張ったので送信まで通る。
+  //   見ている性質は同じ「ガードで止まらず送信処理へ到達したこと」。
+  ok(r1&&r1.ok===true,'B1-2 従来どおり送信処理へ到達（ok:true）');
   ok(t1.unexpected.length===0,'B1-3 想定外の confirm は表示されない');
 
   // B2: 未連携あり・1段目=反映しない・2段目=中止 → cancelled-unlinked（送信未到達）
@@ -106,7 +139,7 @@ function stage2Shown(prompts){ var c=0; for(var i=0;i<prompts.length;i++){ if(pr
   var t3=runSend({date:true,guard1:false,guard2:true});
   t3.env._setState(mkState());
   var r3=await t3.send();
-  ok(r3&&r3.step==='config','B3-1 このまま送信→ _send へ到達（step:config）');
+  ok(r3&&r3.ok===true,'B3-1 このまま送信→送信処理へ到達（ok:true・旧 step:config と同じ性質）');
   ok(t3.unexpected.length===0,'B3-2 想定外の confirm は表示されない');
 
   // B4: 未連携あり・1段目=名簿に反映して送信 → syncBranchMasterOnSave が member_id を付与してから _send 到達
@@ -119,7 +152,7 @@ function stage2Shown(prompts){ var c=0; for(var i=0;i<prompts.length;i++){ if(pr
   var hasKo=false; for(var mi=0;mi<members.length;mi++){ if(members[mi]&&members[mi].name==='甲')hasKo=true; }
   ok(before.length===1&&after.length===0,'B4-1 反映して送信→未連携が解消される（member_id 付与）');
   ok(hasKo,'B4-2 初参加者が支部マスタへ新規登録される');
-  ok(r4&&r4.step==='config','B4-3 名簿反映後に _send へ到達（step:config）');
+  ok(r4&&r4.ok===true,'B4-3 名簿反映後に送信処理へ到達（ok:true・旧 step:config と同じ性質）');
   ok(stage2Shown(t4.prompts)===0,'B4-4 1段目 OK なら2段目は表示されない');
   ok(t4.unexpected.length===0,'B4-5 想定外の confirm は表示されない（名簿反映経路含む）');
 
@@ -131,9 +164,13 @@ function stage2Shown(prompts){ var c=0; for(var i=0;i<prompts.length;i++){ if(pr
 console.log('=== W: ソース配線（RAW）===');
 ok(RAW.indexOf('function collectUnlinkedParticipantsForSend(')>=0,'W1 未連携検知の純関数が存在');
 ok(RAW.indexOf('function _confirmUnlinkedBeforeSend(')>=0,'W2 送信前ガードの確認関数が存在');
-ok(RAW.indexOf('function _guardThenSend(')>=0,'W3 _guardThenSend が存在');
-ok(RAW.indexOf('} else { _guardThenSend(); }')>=0&&RAW.indexOf('_guardThenSend();\n        });')>=0,'W4 送信は _dateGate→_guardThenSend 経由（_send 直呼びを置換）');
-ok(RAW.indexOf("syncBranchMasterOnSave(function(){ _send(); })")>=0,'W5 「名簿に反映して送信」は既存 syncBranchMasterOnSave→送信');
+// CLOUD-TID-GUARD-001b ⑥ 追随: 関数名と呼び出し位置が変わった（_guardThenSend → _guardThenWrite。
+//   _dateGate 直後 → 事前照会のあと）。見ている性質は「未連携ガードを経由してから書き込みへ進む」で不変。
+ok(RAW.indexOf('function _guardThenWrite(')>=0,'W3 未連携ガードの入口関数（_guardThenWrite）が存在');
+ok(RAW.indexOf("if(kind!=='conflict')return _guardThenWrite(client,clubId,master,kind);")>=0
+   &&RAW.indexOf("_rz(_guardThenWrite(client,clubId,master,'bypassed'));")>=0,
+  'W4 書き込みは事前照会→_guardThenWrite 経由（衝突なし／明示承諾の両経路とも）');
+ok(RAW.indexOf("syncBranchMasterOnSave(function(){ _write(")>=0,'W5 「名簿に反映して送信」は既存 syncBranchMasterOnSave→送信');
 ok(RAW.indexOf("okText:'名簿に反映して送信'")>=0&&RAW.indexOf("okText:'このまま送信'")>=0,'W6 3択（反映して送信／このまま送信）の文言を appConfirm 2 段で構成');
 ok(RAW.indexOf("step:'cancelled-unlinked'")>=0,'W7 中止は step:cancelled-unlinked（fail-soft・運営続行）');
 ok(RAW.indexOf('if(c.skipped)base+=_unlinkedSkippedNote(c.skipped)')>=0,'W8 送信後 skipped は _unlinkedSkippedNote で⚠格上げ');
