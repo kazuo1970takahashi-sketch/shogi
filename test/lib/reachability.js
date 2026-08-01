@@ -103,6 +103,30 @@
 //   KL-3 on* 属性値の中の HTML エンティティ（&#40; 等）は復号しない。
 //   KL-4 派生パス（罠(7)）の再帰は 1 段まで。JS 文字列の中の <script> の中の
 //        文字列に書かれた on*= は拾わない。
+//   KL-5 派生パスの連結ランは、`+` の後ろの式オペランドを CONCAT_SKIP_LIMIT 文字までしか
+//        読み飛ばさない。超えたら打ち切り、その事実を concatTruncations で報告する。
+//   KL-6 検査2 の inert-trigger 判定は隠しファイル入力（<input type="file" style=display:none>）
+//        に限る意図的な最小規則。
+//
+// -----------------------------------------------------------------------------
+// PHASE1-REACH-001e（差し戻し 4 回目への対応・走査側）
+// -----------------------------------------------------------------------------
+//   (a) on* 判定を**実イベント名の有限リスト**にした。001d の `/^on[a-z]+$/i` では
+//       `onbogus="deadFn()"` でも死んだ関数がルート化した（実測）。リストに無い on* 形の
+//       属性は unknownOnAttrs として報告する（リスト漏れを黙って落とさないため）。
+//   (b) 正規表現 vs 除算: **制御構文の `)` 直後**は正規表現を許可し、`++` / `--` の直後は
+//       許可しない。001d は `if(x) /['"]/.test(s)` を除算と読み、`'` から文字列が始まった
+//       ことになって**後続の生きたコードが文字列面に飲まれていた**（実測）。
+//   (c) 連結ランは **`+` を読んだ直後にだけ**式オペランドを許す。001d はセミコロン無しで
+//       並んだ独立 2 文を 1 本のランに繋ぎ（ASI 越境）、死んだ関数を生き返らせていた（実測）。
+//   (d) 復号で `\xNN` / `\uXXXX` / `\u{...}` に対応。あわせて、復号後のトークンは元位置つきで
+//       収集する（`"fn()` のように**元テキストでは 16 進数字と識別子が地続き**になり、
+//       生テキストの識別子走査では候補にすら上がらないため）。
+//   (e) `<label for>` 探索と inert-trigger のセレクタ別名を面／別名表で門番した。
+//       001d は全文正規表現だったため、コメントに 1 行書くだけで検出が消えた（実測）。
+//   (f) 「JS 文字列の中の on*= だけで生きている関数」を derivedOnlyReachable として報告する。
+//       その HTML が実際に挿入されるかは静的には判定できない（一度も挿入されない死んだ
+//       テンプレートかもしれない）。**隠さずに見せる**。
 // =============================================================================
 
 // -----------------------------------------------------------------------------
@@ -173,7 +197,39 @@ const IDSTART = /[A-Za-z_$]/;
 const IDCHAR = /[A-Za-z0-9_$]/;
 const WS = /\s/;
 const ATTR_NAME_CH = /[a-zA-Z0-9:_-]/;
-const ON_ATTR_NAME_RE = /^on[a-z]+$/i;
+
+// インラインイベントハンドラ属性の**有限リスト**（HTML 仕様の event handler content
+// attributes ＋ pointer/touch/animation/transition ＋ window/body 系）。
+// PHASE1-REACH-001e: 001d は `/^on[a-z]+$/i` で判定していたため `onbogus="deadFn()"` の
+// ような**存在しないイベント名**でも死んだ関数がルート化した（実測で再現）。
+// 逆に、ここに無い実イベント名は「生きた関数を死んだと言う」方向に倒れるので、
+// on* に見えてリストに無い属性は unknownOnAttrs として報告し、黙って落とさない。
+const ON_EVENT_ATTRS = new Set([
+  'onabort', 'onauxclick', 'onbeforeinput', 'onbeforematch', 'onbeforetoggle', 'onblur',
+  'oncancel', 'oncanplay', 'oncanplaythrough', 'onchange', 'onclick', 'onclose',
+  'oncontextlost', 'oncontextmenu', 'oncontextrestored', 'oncopy', 'oncuechange', 'oncut',
+  'ondblclick', 'ondrag', 'ondragend', 'ondragenter', 'ondragexit', 'ondragleave',
+  'ondragover', 'ondragstart', 'ondrop', 'ondurationchange', 'onemptied', 'onencrypted',
+  'onended', 'onerror', 'onfocus', 'onformdata', 'oninput', 'oninvalid', 'onkeydown',
+  'onkeypress', 'onkeyup', 'onload', 'onloadeddata', 'onloadedmetadata', 'onloadstart',
+  'onmousedown', 'onmouseenter', 'onmouseleave', 'onmousemove', 'onmouseout', 'onmouseover',
+  'onmouseup', 'onpaste', 'onpause', 'onplay', 'onplaying', 'onprogress', 'onratechange',
+  'onreset', 'onresize', 'onscroll', 'onscrollend', 'onsearch', 'onsecuritypolicyviolation',
+  'onseeked', 'onseeking', 'onselect', 'onselectionchange', 'onselectstart', 'onslotchange',
+  'onstalled', 'onsubmit', 'onsuspend', 'ontimeupdate', 'ontoggle', 'onvolumechange',
+  'onwaiting', 'onwheel',
+  'onpointerdown', 'onpointerup', 'onpointermove', 'onpointerover', 'onpointerout',
+  'onpointerenter', 'onpointerleave', 'onpointercancel', 'ongotpointercapture',
+  'onlostpointercapture',
+  'ontouchstart', 'ontouchend', 'ontouchmove', 'ontouchcancel',
+  'onanimationstart', 'onanimationend', 'onanimationiteration', 'onanimationcancel',
+  'ontransitionstart', 'ontransitionrun', 'ontransitionend', 'ontransitioncancel',
+  'onafterprint', 'onbeforeprint', 'onbeforeunload', 'onhashchange', 'onlanguagechange',
+  'onmessage', 'onmessageerror', 'onoffline', 'ononline', 'onpagehide', 'onpageshow',
+  'onpopstate', 'onrejectionhandled', 'onstorage', 'onunhandledrejection', 'onunload',
+]);
+// 「on* に見える」形。リストとの差が unknownOnAttrs になる。
+const ON_ATTR_SHAPE_RE = /^on[a-z]+$/i;
 
 // 正規表現リテラル判定で「直前が値ではない」ことを示すキーワード。
 const KW_BEFORE_REGEX = new Set([
@@ -182,11 +238,22 @@ const KW_BEFORE_REGEX = new Set([
 ]);
 const PUNCT_BEFORE_REGEX = '([{,;:=!&|?+-*%~^<>';
 
+// `)` の直後に正規表現リテラルが来られるのは、その `(` が制御構文のものだったときだけ。
+//   if (x) /re/.test(s)   ← 正規表現
+//   f(x)   /2/ g          ← 除算
+// PHASE1-REACH-001e: 001d は `)` 直後を一律「除算」としていたため、`if(x) /['"]/.test(s)`
+// で `'` から文字列が始まったことになり、**後続の生きたコードが文字列面に飲まれて**
+// 参照が消える（実測: 直後の `var live` が JS_STR_SQ になった）。
+const KW_CONTROL_PAREN = new Set(['if', 'for', 'while', 'switch', 'catch', 'with']);
+
 // 文の終端判定で「ブロックの後ろに続く＝まだ同じ文」を示すキーワード。
 const KW_CONTINUES_STATEMENT = new Set(['else', 'catch', 'finally', 'while']);
 
-// 派生パス: 連結ランの中で式（文字列でないオペランド）を跨いで探す上限文字数。
-// これを超えたら連結ではないと判断して打ち切る（暴走防止）。
+// 派生パス: `+` の後ろの**式オペランド 1 個**を読み飛ばせる上限。
+//   意味を厳密に定義する（PHASE1-REACH-001e・001d は文書と実測がずれていた）:
+//   オペランド開始位置を p としたとき、**次の文字列面が p + CONCAT_SKIP_LIMIT 未満から
+//   始まるなら拾い、それ以上なら打ち切る**。境界は test の CONCAT-BOUNDARY で両側を実測する。
+//   打ち切りは concatTruncations として報告する（黙って参照を落とさない）。
 const CONCAT_SKIP_LIMIT = 400;
 // 派生パスで式を表す 1 文字のプレースホルダ（元ソースの位置を持たない）。
 const CONCAT_PLACEHOLDER = '\u0001';
@@ -208,6 +275,7 @@ function classifyFaces(src, out) {
     face,
     N,
     scriptBlocks: (out && out.scriptBlocks) || [],
+    unknownOnAttrs: (out && out.unknownOnAttrs) || [],
     set(a, b, f) { for (let k = a; k < b; k++) this.face[k] = f; },
   };
   let i = 0;
@@ -250,7 +318,10 @@ function classifyFaces(src, out) {
     i++;
   }
 
-  if (out) out.scriptBlocks = ctx.scriptBlocks;
+  if (out) {
+    out.scriptBlocks = ctx.scriptBlocks;
+    out.unknownOnAttrs = ctx.unknownOnAttrs;
+  }
   return face;
 }
 
@@ -289,8 +360,11 @@ function lexTag(ctx, start) {
     i = j + 1;
     while (i < N && WS.test(src[i])) { face[i] = FACE.HTML_TAG; i++; }
 
-    // ★ on* 判定は「属性名トークン全体」の完全一致。data-onclick は on* ではない。
-    const vf = ON_ATTR_NAME_RE.test(aname) ? FACE.ATTR_VAL_ON : FACE.ATTR_VAL;
+    // ★ on* 判定は「属性名トークン全体」が**実イベント名の有限リスト**に載っていること。
+    //   data-onclick は完全一致しない／onbogus はリストに無い＝どちらも ATTR_VAL。
+    const isOn = ON_EVENT_ATTRS.has(aname);
+    if (!isOn && ON_ATTR_SHAPE_RE.test(aname)) ctx.unknownOnAttrs.push({ pos: as, name: aname });
+    const vf = isOn ? FACE.ATTR_VAL_ON : FACE.ATTR_VAL;
     let valueStart = i;
     let valueEnd = i;
     if (src[i] === '"' || src[i] === "'") {
@@ -353,6 +427,7 @@ function lexJs(ctx, start, end) {
   let last = null;        // 直前の有意トークン（正規表現 / 除算の判別用）
   const stack = [];       // 'tmpl' / 'code' の往復をネスト対応で持つ
   const braceDepths = [];
+  const parenStack = [];  // 各 '(' が制御構文のものか（`if (x) /re/` の判別用）
   let depth = 0;
 
   while (i < end) {
@@ -393,7 +468,9 @@ function lexJs(ctx, start, end) {
     }
     if (ch === '/') {
       // KL-1: last === '}' は許可しない＝文頭の正規表現リテラルは除算扱いになる。
+      // 'ctrl)' は制御構文の閉じ括弧＝直後の / は正規表現。'++' / '--' の直後は必ず除算。
       const regexOk = last === null
+        || last === 'ctrl)'
         || (last.length === 1 && PUNCT_BEFORE_REGEX.indexOf(last) >= 0)
         || KW_BEFORE_REGEX.has(last)
         || last === '=>';
@@ -469,6 +546,27 @@ function lexJs(ctx, start, end) {
       i = j;
       continue;
     }
+    // '(' は「制御構文の括弧か」を覚えておく。')' でそれを last へ反映する。
+    if (ch === '(') {
+      face[i] = FACE.JS_CODE;
+      parenStack.push(last !== null && KW_CONTROL_PAREN.has(last));
+      last = '(';
+      i++;
+      continue;
+    }
+    if (ch === ')') {
+      face[i] = FACE.JS_CODE;
+      last = parenStack.pop() ? 'ctrl)' : ')';
+      i++;
+      continue;
+    }
+    // '++' / '--' は 1 トークンとして読む（直後の / は必ず除算）。
+    if ((ch === '+' || ch === '-') && src[i + 1] === ch) {
+      ctx.set(i, i + 2, FACE.JS_CODE);
+      last = ch + ch;
+      i += 2;
+      continue;
+    }
     face[i] = FACE.JS_CODE;
     if (!WS.test(ch)) last = ch;
     i++;
@@ -514,19 +612,42 @@ function skipTrivia(src, face, p) {
 
 // 文字列面のスパン [a, b) を復号して chars / map に足す。
 // map[k] = 復号後 k 文字目に対応する元ソースの位置（プレースホルダは -1）。
+// PHASE1-REACH-001e: `\xNN` / `\uXXXX` / `\u{...}` も復号する（001d は素通しだったため
+// `\x3cbutton onclick=...` の形で書かれた結線を拾えなかった）。
+const HEX2 = /^[0-9a-fA-F]{2}$/;
+const HEX4 = /^[0-9a-fA-F]{4}$/;
+
+// 「復号すると '<' になりうる」形。連結ランの復号を省略してよいかの足切りに使う。
+const LT_SHAPE_RE = /<|\\x3c|\\u003c|\\u\{0*3c\}/i;
+
 function decodeSpanInto(src, a, b, stripStart, stripEnd, chars, map) {
   const s = stripStart ? a + 1 : a;
   const e = stripEnd ? b - 1 : b;
+  const push = (text, at) => { for (const ch of text) { chars.push(ch); map.push(at); } };
   for (let k = s; k < e; k++) {
-    if (src[k] === '\\' && k + 1 < e) {
-      const c = src[k + 1];
-      chars.push(Object.prototype.hasOwnProperty.call(JS_ESCAPES, c) ? JS_ESCAPES[c] : c);
-      map.push(k + 1);
-      k++;
+    if (src[k] !== '\\' || k + 1 >= e) { chars.push(src[k]); map.push(k); continue; }
+    const c = src[k + 1];
+    if (c === 'x' && k + 3 < e && HEX2.test(src.slice(k + 2, k + 4))) {
+      push(String.fromCharCode(parseInt(src.slice(k + 2, k + 4), 16)), k + 3);
+      k += 3;
       continue;
     }
-    chars.push(src[k]);
-    map.push(k);
+    if (c === 'u' && src[k + 2] === '{') {
+      const close = src.indexOf('}', k + 3);
+      if (close > 0 && close < e && /^[0-9a-fA-F]{1,6}$/.test(src.slice(k + 3, close))) {
+        push(String.fromCodePoint(parseInt(src.slice(k + 3, close), 16)), close);
+        k = close;
+        continue;
+      }
+    }
+    if (c === 'u' && k + 5 < e && HEX4.test(src.slice(k + 2, k + 6))) {
+      push(String.fromCharCode(parseInt(src.slice(k + 2, k + 6), 16)), k + 5);
+      k += 5;
+      continue;
+    }
+    chars.push(Object.prototype.hasOwnProperty.call(JS_ESCAPES, c) ? JS_ESCAPES[c] : c);
+    map.push(k + 1);
+    k++;
   }
 }
 
@@ -538,8 +659,11 @@ function spanEnd(face, p) {
   return e;
 }
 
-// 連結の途中に現れた式を読み飛ばし、次の文字列面の開始位置を返す。
-// 連結ではない（; , や閉じ括弧に当たった / 遠すぎる）なら -1。
+// `+` の後ろの式オペランドを読み飛ばし、次の文字列面の開始位置を返す。
+//   戻り値 >= 0: そこから連結が続く
+//   戻り値 -1  : 連結ではない（; , や閉じ括弧＝式の終わりに当たった）
+//   戻り値 -2  : 上限（CONCAT_SKIP_LIMIT）で打ち切った（＝拾えたかもしれない結線を落とした）
+// 打ち切りは呼び出し側が concatTruncations に記録する。黙って参照を落とさない。
 function skipConcatOperand(src, face, from) {
   let depth = 0;
   const limit = Math.min(src.length, from + CONCAT_SKIP_LIMIT);
@@ -556,7 +680,7 @@ function skipConcatOperand(src, face, from) {
     }
     if (depth === 0 && (ch === ';' || ch === ',')) return -1;
   }
-  return -1;
+  return limit < src.length ? -2 : -1;
 }
 
 // テンプレートの ${ ... } を 1 つ飛ばす。開始は '${' の位置。
@@ -577,59 +701,93 @@ function skipTemplateHole(src, face, p) {
 }
 
 // JS 文字列の連結ランを列挙する。
-function collectConcatRuns(src, face) {
+//   ラン ＝ `+` で連なった文字列リテラル（間の式はプレースホルダ 1 文字）とテンプレート。
+//   PHASE1-REACH-001e の修正: **`+` を読んだ直後にだけ式オペランドを許す**。
+//   001d は「文字列の次が `+` でない」場合にも式として読み飛ばしていたため、
+//   セミコロン無しで並んだ**独立した 2 文**を 1 本のランに繋いでいた（ASI 越境・実測で再現）:
+//       var a = '<button onclick="'
+//       var b = 'deadFn()">go</button>'
+//   これで deadFn が ATTR_VAL_ON に昇格し、死んだ関数が生き返っていた。
+//   連結は `'…' + x + '…'` の形しか無いので、`+` を必須にすれば構造的に閉じる。
+function collectConcatRuns(src, face, truncations) {
   const runs = [];
   const N = src.length;
   let i = 0;
   while (i < N) {
     if (!CONCAT_FACES.has(face[i])) { i++; continue; }
-    const chars = [];
-    const map = [];
+    // まず「どの範囲を復号するか」だけを決める（'<' を含まないランは復号しない＝高速化）。
+    const parts = [];
     const runStart = i;
     let p = i;
+    let expectOperand = false;   // 直前に '+' を読んだか
     for (;;) {
-      const f = face[p];
+      const t = skipTrivia(src, face, p);
+      if (t < 0) { p = N; break; }
+      const f = face[t];
       if (CONCAT_FACES.has(f)) {
-        const e = spanEnd(face, p);
-        const q = src[p];
-        const stripStart = (q === '"' || q === "'" || q === '`')
-          && (p === 0 || face[p - 1] !== FACE.JS_TMPL_DELIM);
-        const lastCh = src[e - 1];
-        const stripEnd = (lastCh === '"' || lastCh === "'" || lastCh === '`')
-          && (e - 1 > p || !stripStart);
-        decodeSpanInto(src, p, e, stripStart, stripEnd, chars, map);
+        const e = spanEnd(face, t);
+        parts.push({ a: t, b: e });
         p = e;
-      } else if (f === FACE.JS_TMPL_DELIM && src[p] === '$') {
-        chars.push(CONCAT_PLACEHOLDER);
-        map.push(-1);
-        p = skipTemplateHole(src, face, p);
-      } else if (f === FACE.JS_CODE) {
-        const t = skipTrivia(src, face, p);
-        if (t < 0) break;
-        if (face[t] === FACE.JS_CODE && src[t] === '+') { p = t + 1; continue; }
-        if (CONCAT_FACES.has(face[t])) { p = t; continue; }
-        const nx = skipConcatOperand(src, face, t);
-        if (nx < 0) break;
-        chars.push(CONCAT_PLACEHOLDER);
-        map.push(-1);
-        p = nx;
-      } else {
-        const t = skipTrivia(src, face, p);
-        if (t < 0 || t === p) break;
-        p = t;
+        expectOperand = false;
+        continue;
       }
-      if (p >= N) break;
+      if (f === FACE.JS_TMPL_DELIM && src[t] === '$') {
+        parts.push(null);                       // ${ ... } はプレースホルダ
+        p = skipTemplateHole(src, face, t);
+        expectOperand = false;
+        continue;
+      }
+      if (f === FACE.JS_CODE && src[t] === '+') {
+        if (expectOperand) { p = t; break; }    // '+ +' は連結ではない
+        p = t + 1;
+        expectOperand = true;
+        continue;
+      }
+      if (f === FACE.JS_CODE && expectOperand) {
+        const nx = skipConcatOperand(src, face, t);
+        if (nx === -2) { truncations.push({ pos: t, runStart }); p = t; break; }
+        if (nx < 0) { p = t; break; }
+        parts.push(null);                       // 式オペランドはプレースホルダ
+        p = nx;
+        expectOperand = false;
+        continue;
+      }
+      p = t;
+      break;
     }
-    if (chars.length) runs.push({ start: runStart, end: p, text: chars.join(''), map });
+    if (parts.length) {
+      // '<' を含みえないランは復号しない（高速化）。エスケープ表記も見る。
+      let hasLt = false;
+      for (const part of parts) {
+        if (part && LT_SHAPE_RE.test(src.slice(part.a, part.b))) { hasLt = true; break; }
+      }
+      if (hasLt) {
+        const chars = [];
+        const map = [];
+        for (const part of parts) {
+          if (!part) { chars.push(CONCAT_PLACEHOLDER); map.push(-1); continue; }
+          const { a, b } = part;
+          const q = src[a];
+          const stripStart = (q === '"' || q === "'" || q === '`')
+            && (a === 0 || face[a - 1] !== FACE.JS_TMPL_DELIM);
+          const lastCh = src[b - 1];
+          const stripEnd = (lastCh === '"' || lastCh === "'" || lastCh === '`')
+            && (b - 1 > a || !stripStart);
+          decodeSpanInto(src, a, b, stripStart, stripEnd, chars, map);
+        }
+        if (chars.length) runs.push({ start: runStart, end: p, text: chars.join(''), map });
+      }
+    }
     i = Math.max(p, i + 1);
   }
   return runs;
 }
 
 // 復号ランへ HTML ミニレクサを再帰適用し、ATTR_VAL_ON を元の位置へ重ねる。
-function markHtmlInJsStrings(src, face) {
+// 昇格した位置は derived（Set）に記録する＝「その参照は派生パス由来」だと後から言える。
+function markHtmlInJsStrings(src, face, derived, truncations, tokens) {
   const marked = [];
-  for (const run of collectConcatRuns(src, face)) {
+  for (const run of collectConcatRuns(src, face, truncations)) {
     if (run.text.indexOf('<') < 0) continue;          // HTML の組み立てではない
     const inner = classifyFaces(run.text);
     let k = 0;
@@ -644,12 +802,22 @@ function markHtmlInJsStrings(src, face) {
         if (at < 0) { prev = -1; continue; }            // 式のプレースホルダ（元位置なし）
         // エスケープ（`\'` の `\`）で 1 文字空くだけの隙間は埋める。
         // 別のリテラルへ跨いだ隙間（＝間に JS_CODE がある）は埋めない。
-        if (prev >= 0 && at - prev === 2) face[at - 1] = FACE.ATTR_VAL_ON;
+        if (prev >= 0 && at - prev === 2) { face[at - 1] = FACE.ATTR_VAL_ON; derived.add(at - 1); }
         face[at] = FACE.ATTR_VAL_ON;
+        derived.add(at);
         prev = at;
         hit++;
       }
       if (hit) marked.push({ runStart: run.start, start: run.map[k], length: e - k });
+      // 復号後のトークンを元位置つきで拾っておく。エスケープで書かれた属性値
+      //   '\x3cbutton onclick="fn()"\x3e'
+      // は、**元ソースでは `2fn` のように識別子が 16 進数字と地続き**になるため、
+      // 生テキストの識別子走査では候補にすら上がらない（＝生きた関数を殺す方向）。
+      const seg = run.text.slice(k, e);
+      for (const t of seg.matchAll(/[A-Za-z_$][A-Za-z0-9_$]*/g)) {
+        const at = run.map[k + t.index];
+        if (at >= 0) tokens.push({ name: t[0], pos: at });
+      }
       k = e;
     }
   }
@@ -976,7 +1144,10 @@ function detectDeadBindings(src, face, aliases, tokenIndex) {
 }
 
 // 起動経路が無い結線【罠(8)】。対象は隠しファイル入力に限る意図的な最小規則。
-function detectInertTriggers(src, face, ownerOf, isReachable) {
+//   001e: セレクタ・ヘルパの別名（$id 等）もここで見る。detectDeadBindings だけが
+//   別名を知っていて、こちらが知らないと「ヘルパへ抽出しただけで検出が消える」
+//   非対称が残る（実測: 抽出後のファイルで #loadFile / loadData の検出が消えた）。
+function detectInertTriggers(src, face, ownerOf, isReachable, aliases) {
   const out = [];
   for (const m of src.matchAll(/<input\b[^>]*>/g)) {
     if (face[m.index] !== FACE.HTML_TAG) continue;   // 面が門番（コメント内・文字列内の見た目は採らない）
@@ -987,10 +1158,19 @@ function detectInertTriggers(src, face, ownerOf, isReachable) {
     if (!idm) continue;
     const id = idm[1];
     const esc = escapeRe(id);
-    if (new RegExp('<label[^>]*\\bfor\\s*=\\s*["\']' + esc + '["\']').test(src)) continue;
+    // <label for="ID"> も面で門番する（001e・自己申告2 の解消）。
+    // 001d は全文正規表現だったため、コメントに 1 行書くだけで #loadFile / loadData の
+    // 検出が消えることを実測で確認している。
+    const labelRe = new RegExp('<label[^>]*\\bfor\\s*=\\s*["\']' + esc + '["\']', 'g');
+    let hasLabel = false;
+    for (const lm of src.matchAll(labelRe)) {
+      if (face[lm.index] === FACE.HTML_TAG) { hasLabel = true; break; }
+    }
+    if (hasLabel) continue;
 
     const sites = [];
-    const selRe = new RegExp('(?:' + SELECTOR_METHODS.join('|') + ")\\(\\s*['\"]#?" + esc + "['\"]\\s*\\)", 'g');
+    const methods = SELECTOR_METHODS.concat((aliases || []).map((x) => escapeRe(x.name)));
+    const selRe = new RegExp('(?:' + methods.join('|') + ")\\(\\s*['\"]#?" + esc + "['\"]\\s*\\)", 'g');
     for (const s of src.matchAll(selRe)) {
       if (face[s.index] !== FACE.JS_CODE) continue;
       const stmt = src.slice(s.index, statementEnd(src, face, s.index));
@@ -1044,12 +1224,17 @@ function buildDeadRegions(src, face, deadBindings, spans) {
 // =============================================================================
 function analyze(src) {
   // --- (i) 面レクサ: 分類はここ 1 回だけ ------------------------------------
-  const lexOut = { scriptBlocks: [] };
+  const lexOut = { scriptBlocks: [], unknownOnAttrs: [] };
   const baseFace = classifyFaces(src, lexOut);
   const face = Uint8Array.from(baseFace);
 
   // --- (ii) 派生パス: JS 文字列で組み立てた HTML の on*= を ATTR_VAL_ON へ ---
-  const derivedHandlers = markHtmlInJsStrings(src, face);
+  const derivedPositions = new Set();
+  const concatTruncations = [];
+  const derivedTokens = [];
+  const derivedHandlers = markHtmlInJsStrings(
+    src, face, derivedPositions, concatTruncations, derivedTokens,
+  );
 
   // --- (iii) トップレベル関数の抽出: JS_CODE 面のみを読む -------------------
   const out = extractFunctions(src, face);
@@ -1076,6 +1261,12 @@ function analyze(src) {
     if (p > 0 && isIdChar(src[p - 1])) continue;
     if (!occ.has(w)) occ.set(w, []);
     occ.get(w).push(p);
+  }
+  // 派生パスが復号して見つけたトークン（エスケープで生テキストの語境界が壊れている分）。
+  for (const t of derivedTokens) {
+    if (!byName.has(t.name)) continue;
+    const list = occ.get(t.name);
+    if (list) { if (list.indexOf(t.pos) < 0) list.push(t.pos); } else occ.set(t.name, [t.pos]);
   }
 
   // 位置 → その位置を含むトップレベル関数名
@@ -1119,11 +1310,12 @@ function analyze(src) {
       if (bucket === 'string') { bump(stringRefs, name); continue; }     // 罠(4)
       if (bucket === 'markup') { bump(markupRefs, name); continue; }     // 罠(6)
       const o = ownerOf(p);
+      const viaDerived = derivedPositions.has(p);
       if (!refSites.has(name)) refSites.set(name, []);
-      refSites.get(name).push({ pos: p, owner: o, face: FACE_NAME[face[p]] });
+      refSites.get(name).push({ pos: p, owner: o, face: FACE_NAME[face[p]], viaDerived });
       if (o === null) {
         if (!roots.has(name)) roots.set(name, []);
-        roots.get(name).push({ pos: p, face: FACE_NAME[face[p]] });
+        roots.get(name).push({ pos: p, face: FACE_NAME[face[p]], viaDerived });
       } else {
         addEdge(graph, o, name);
       }
@@ -1146,10 +1338,27 @@ function analyze(src) {
   const allNames = [...byName.keys()];
   const reachStatic = reachFrom(roots.keys(), graph);
 
+  // 派生パス（JS 文字列の中の on*=）が無ければ到達不能になる関数。
+  //   その HTML が実際に DOM へ挿入されるかは静的には判定できない（一度も挿入されない
+  //   死んだテンプレートかもしれない）。**隠さずに見せる**のが 001e の方針。
+  const graphNoDerived = new Map();
+  const rootsNoDerived = new Set();
+  for (const [name, sites] of refSites) {
+    for (const s of sites) {
+      if (s.viaDerived) continue;
+      if (s.owner === null) rootsNoDerived.add(name);
+      else addEdge(graphNoDerived, s.owner, name);
+    }
+  }
+  const reachNoDerived = reachFrom(rootsNoDerived, graphNoDerived);
+  const derivedOnlyReachable = allNames
+    .filter((n) => reachStatic.has(n) && !reachNoDerived.has(n))
+    .sort();
+
   // --- 検査2（レポートのみ）: 死んだ結線 → 死んだ領域 → 実行時到達可能性 ----
   const aliases = detectSelectorAliases(src, out.topFunctions);
   const notProduced = detectDeadBindings(src, face, aliases, buildTokenIndex(src));
-  const inert = detectInertTriggers(src, face, ownerOf, (n) => reachStatic.has(n));
+  const inert = detectInertTriggers(src, face, ownerOf, (n) => reachStatic.has(n), aliases);
   const deadBindings = notProduced.concat(inert);
   const deadRegions = buildDeadRegions(src, face, deadBindings, spans);
   const inDeadRegion = (p) => deadRegions.some((r) => p >= r.start && p < r.end);
@@ -1215,18 +1424,23 @@ function analyze(src) {
     inlineHandlerCount: countInlineHandlerSpans(baseFace) + derivedHandlers.length,
     htmlHandlerCount: countInlineHandlerSpans(baseFace),
     derivedHandlerCount: derivedHandlers.length,
+    // 001e で追加した「隠さずに見せる」ための報告（いずれもレポート層＝warn 行き）
+    derivedOnlyReachable,
+    concatTruncations: concatTruncations.map((t) => ({ line: lineOf(t.pos) })),
+    unknownOnAttrs: lexOut.unknownOnAttrs.map((u) => ({ name: u.name, line: lineOf(u.pos) })),
     faceStats: faceStats(baseFace),
     selectorAliases: aliases.map((a) => a.name).sort(),
     rootNames: [...roots.keys()].sort(),
     unreachableStatic,
     unreachableRuntimeOnly,
     deadBindings: deadBindings.map((d) => ({
-      selector: d.selector, kind: d.kind, reason: d.reason, line: lineOf(d.pos),
+      selector: d.selector, kind: d.kind, reason: d.reason, line: lineOf(d.pos), pos: d.pos,
     })),
     // 検算・デバッグ用
     _internal: {
       face, baseFace, byName, graph, roots, refSites, deadRegions, lineOf, ownerOf,
-      commentRefs, stringRefs, markupRefs, describe, derivedHandlers,
+      commentRefs, stringRefs, markupRefs, describe, derivedHandlers, derivedPositions,
+      topFunctions: out.topFunctions,
     },
   };
 }
@@ -1242,6 +1456,8 @@ module.exports = {
   isProseFace,
   isStringFace,
   MIN_SELECTOR_PREFIX,
+  CONCAT_SKIP_LIMIT,
+  ON_EVENT_ATTRS,
   statementEnd,
   detectSelectorAliases,
 };

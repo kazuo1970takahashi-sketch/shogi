@@ -10,7 +10,12 @@
     "    非ブロッキングの warn。偽陽性が原理的に消せないため（`||` フォールバック 1 行で",
     "    生きた結線が死んだ扱いになる／セレクタヘルパを関数式へ抽出すると検出自体が消えて",
     "    R5 が解消不能になる）。走査と出力は残してあり、増減はテスト出力に出る。",
-    "  - 全エントリに reason が必須（空・短すぎるものは検査が拒否する＝ここは全セクション error）。",
+    "  - 全エントリの記述に**形式照合**がかかる（全セクション error）。PHASE1-REACH-001e:",
+    "    文字数だけの検査は \"x\" を 20 個並べれば通り、任意の死にコードを恒久緑化できた。",
+    "      (a) category が既知の区分キーワード",
+    "          （temporarily-preserved / test-only-hook / leftover-helper / functional-loss-pending）",
+    "      (b) reason が 20 文字以上",
+    "      (c) reason に**根拠参照**（#Issue番号 / L行番号 / YYYY-MM-DD）のいずれかを含む",
     "    追加が『意識的な行為』になることが、このリストの目的。",
     "",
     "初期値は Issue #798（ai-requests/2026-08-01_claude-code_cleanup-deadcode-001_RESULT.md）の",
@@ -37,7 +42,11 @@
     "PHASE1-REACH-001d（2026-08-01・差し戻し 3 回目への対応）で走査を**単一の面レクサ**へ",
     "全面移行し、検査2 を非ブロッキングへ降格した（作者承認済み）。実測値は 001c と完全に",
     "一致（静的 30 / 実行時 10 / 結線 5 / 関数 580）＝移行オラクルで退行ゼロを機械検証済み。",
-    "この allowlist の内容も 1 件も変わっていない。",
+    "再現手順: node test/tools/reach_migration_oracle.js 9176cc5 shogi_v4.html",
+    "",
+    "PHASE1-REACH-001e（2026-08-01・差し戻し 4 回目への対応）でハーネスと走査の細部を直した。",
+    "実測値はここでも変わらない（静的 30 / 実行時 10 / 結線 5 / 関数 580）。allowlist は",
+    "hasResetUndoSnapshot の reason に根拠参照（#798）を足した 1 箇所だけの変更。",
     "",
     "**このリストの関数を消す・直すのは Issue #798 側の別判断。この検査では触らない。**"
   ],
@@ -47,7 +56,7 @@
     "source": "ai-requests/2026-08-01_claude-code_cleanup-deadcode-001_RESULT.md",
     "recorded_at": "2026-08-01",
     "revised_at": "2026-08-01",
-    "revised_by": "PHASE1-REACH-001d",
+    "revised_by": "PHASE1-REACH-001e",
     "revision_note": "走査の穴を塞ぐたびに取り直した実測値。001b で (a) 文字列リテラル内の識別子 (b) 連結セレクタ、001c で (c) HTML マークアップ (d) 起動経路 (e) 死んだ領域の終端 を修正した。#798 に記録された 静的 26 / 合計 35 は過小。001d で単一の面レクサへ全面移行して取り直したが、実測値は 001c と同一。",
     "migration_oracle": "001d の面レクサ vs 001c の lexBlock: JS 面の文字分類 791,664 文字で不一致 0 ／「参照として数えるか」の判定は全 859,767 文字で不一致 0 ／解析結果（scriptBlocks・関数数・root・静的/実行時到達不能・死んだ結線・死んだ領域・全 580 関数の参照内訳）も全一致。面の完全性は未分類 0・総延長 = ファイル長 859,767。",
     "target_commit": "5bbf60c0ffab79190f485e0d15f188c993b64c80",
@@ -223,7 +232,7 @@
     {
       "name": "hasResetUndoSnapshot",
       "category": "leftover-helper",
-      "reason": "用途不明・要判断。undoLastReset は生きているが、「↩ 元に戻す」ボタンはリセット成功直後に showResetUndoBanner が無条件で出す設計のためこの述語は使われない。test_reset_undo.js が単体で参照している。"
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。用途不明・要判断。undoLastReset は生きているが、「↩ 元に戻す」ボタンはリセット成功直後に showResetUndoBanner が無条件で出す設計のためこの述語は使われない。test_reset_undo.js が単体で参照している。"
     },
 
     {
