@@ -157,9 +157,13 @@ const expSrc=RAW.slice(RAW.indexOf('function exportTournamentBackup'),RAW.indexO
 assert(expSrc.indexOf("markSaveStatus('backup')")>=0&&expSrc.indexOf("markSaveStatus('backup')")<expSrc.indexOf('return true;')+30, 'K3 バックアップ成功時に backup 記録（温存）');
 // SEND-DATE-CONFIRM-002 (#622)/SEND-DATE-GUARD-001 (#600): 冒頭の日付確認ガードで関数が伸びたため窓を 5200 に拡大（チェック内容は不変）。
 // GUEST-TOURNAMENT-MODE-001 (#760): 冒頭のゲスト大会ガードでさらに伸びたため窓を 6400 に拡大（チェック内容は不変）。
-// CLOUD-TID-GUARD-001 (#800 案#2): 送信先の大会日ガード（date-mismatch の確認→再実行）と precheck:'skipped' の
-//   ⚠注記でさらに伸びたため窓を 6400→9000・間隔を 900→1400 に拡大（チェック内容は不変）。
-const cloudSrc=RAW.slice(RAW.indexOf('function sendTournamentToCloud'),RAW.indexOf('function sendTournamentToCloud')+9000);
+// CLOUD-TID-GUARD-001 (#800 案#2): 送信先の照合（接続の一本化・date-mismatch の確認・precheck 注記）で
+//   さらに伸びたため窓を 6400→10000・間隔を 900→1400 に拡大（チェック内容は不変）。
+//   10000 は sendTournamentToCloud の実長（約 9,970 文字＝次のトップレベル関数まで）に合わせた値。
+//   markSaveStatus('cloud') はファイル全体で1箇所しか無いため、窓を広げても別関数を誤って拾うことはない。
+//   ⚠ これは3回目の窓拡大（#622→5200・#760→6400・今回→10000）で、送信経路に何か足すたびに必ず再発する。
+//   ソース長という付随的な形状のピンなので、Phase 1 スライス2（テスト読込方式の共通化）で振る舞いテストへ置き換える。
+const cloudSrc=RAW.slice(RAW.indexOf('function sendTournamentToCloud'),RAW.indexOf('function sendTournamentToCloud')+10000);
 assert(/res&&res\.ok[\s\S]{0,1400}markSaveStatus\('cloud'\)/.test(cloudSrc), 'K4 送信 res.ok 時に cloud 記録（温存）');
 
 // B バックアップ modal 冒頭の「最終バックアップ」表示（backup 時刻の移設先）
