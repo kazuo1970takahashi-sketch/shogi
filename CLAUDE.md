@@ -14,6 +14,16 @@
 
 **要点**: 各工程の完了は **GitHub に定型ヘッダ付きコメント＋末尾に凍結マーカー1ブロックを書き戻すまでが1工程**（自分のチャットで終わりは未完了）。`stage:` ラベルの付け替えは reconciler（scheduled actor）が唯一の書き手。レビューは作者と別セッション・別素性（**L4 の code-review は Codex 必須／L3 は別セッションの Claude Code レビューア**で可＝Codex 週次枠を温存）。
 
+## 作業指示の受け取り口（cowork → Claude Code）
+
+**cowork（司令塔PMO）からの作業指示は `ai-requests/` に置かれる。** 作者からは「第N便やって」等の短い口頭指示だけが来る。
+
+- **処理順の正本 = [`ai-requests/QUEUE.md`](ai-requests/QUEUE.md)。** 「第N便」はこの中の見出しを指す。着手前に必ず読む
+- 各便はブリーフ 1 ファイル（`ai-requests/YYYY-MM-DD_claude-code_<slug>.md`）を指しており、**変更範囲・禁止事項・受け入れ基準・停止点**がそこに書いてある
+- 完了したら **RESULT を `..._RESULT.md` として同じ場所に書き戻す**（ブリーフに指定がある）
+- QUEUE.md に「並行実行してよい」と書かれた便どうしは変更ファイルが重ならないことを cowork が確認済み。**別ワークツリー・別ブランチで進めてよい**
+- 停止点は原則 **Draft PR を作って停止**。Ready 化・merge・production 反映は人間の専権
+
 ## 編集時の拘束ルール（9 項目・違反は実装前に停止）
 
 `shogi_v4.html` は本番運用中の単一 HTML。以下を厳守する（**リファクタと挙動変更を混ぜない**）。Codex は同じ 9 項目で差分をレビューする（[`AGENTS.md`](AGENTS.md)・違反は P0/P1）:
