@@ -12,24 +12,13 @@
 //   データは完全架空のみ・読み取り専用。
 const fs = require('fs');
 const path = require('path');
+// PHASE1-ISOLATE-001: 自前の extractFn（brace バランス）と new Function 隔離を共通ヘルパへ寄せた。
+const { loadIsolated, extractFn, readHtml } = require('./lib/app_isolated');
 const target = process.argv[2] || 'shogi_v4.html';
 const root = path.dirname(path.resolve(target));
-const RAW = fs.readFileSync(target, 'utf8');
+const RAW = readHtml(target);
 let pass = 0, fail = 0;
 function assert(c, m) { if (c) { pass++; } else { fail++; console.log('  FAIL: ' + m); } }
-
-// ---- 関数抽出（brace バランス・test_master_sync_clarity_001 と同型）
-function extractFn(name) {
-  const idx = RAW.indexOf('function ' + name + '(');
-  if (idx < 0) return null;
-  let depth = 0, i = RAW.indexOf('{', idx);
-  const start = idx;
-  for (; i < RAW.length; i++) {
-    if (RAW[i] === '{') depth++;
-    else if (RAW[i] === '}') { depth--; if (depth === 0) return RAW.slice(start, i + 1); }
-  }
-  return null;
-}
 
 const BTN_LABEL = '📥 まとめて登録（エクセルから貼り付け）';
 
@@ -50,14 +39,14 @@ assert(RAW.indexOf('id="bulk-entry-fullscreen"') >= 0 && RAW.indexOf('id="bulkEn
 ['bulk-entry-text', 'bulk-entry-class', 'bulk-entry-member', 'bulk-entry-preview', 'bulk-entry-summary', 'bulkEntryConfirmBtn']
   .forEach(id => assert(RAW.indexOf('id="' + id + '"') >= 0, 'A4 モーダル要素 #' + id + ' がある'));
 {
-  const bind = extractFn('bindBulkEntryEvents') || '';
+  const bind = extractFn(RAW, 'bindBulkEntryEvents') || '';
   assert(bind.indexOf("addEventListener('click',openBulkEntryFullscreen)") >= 0, 'A5 開くボタンの結線（bulkEntryBtn→openBulkEntryFullscreen）');
   assert(bind.indexOf("addEventListener('click',closeBulkEntryFullscreen)") >= 0, 'A6 閉じるボタンの結線');
   assert(bind.indexOf("addEventListener('click',confirmBulkEntry)") >= 0, 'A7 確定ボタンの結線');
   assert(bind.indexOf("addEventListener('input',updateBulkEntryPreview)") >= 0, 'A8 貼り付け欄の input でプレビュー更新（別押しのプレビューボタン不要）');
-  const reg = extractFn('bindRegistrationEvents') || '';
+  const reg = extractFn(RAW, 'bindRegistrationEvents') || '';
   assert(reg.indexOf('bindBulkEntryEvents();') >= 0, 'A9 bindRegistrationEvents から1回だけ結線（build/bind 分離）');
-  const rr = extractFn('renderRegList') || '';
+  const rr = extractFn(RAW, 'renderRegList') || '';
   assert(rr.indexOf('renderBulkEntryButton();') >= 0, 'A10 renderRegList が導線の disabled/注記を毎描画同期');
 }
 {
@@ -75,12 +64,13 @@ assert(RAW.indexOf('id="bulk-entry-fullscreen"') >= 0 && RAW.indexOf('id="bulkEn
 const PURE_NAMES = ['isValidEntryNo', 'reconcileEntryNos', 'nextEntryNoForClass', 'normalizePersonName', 'normalizeYomi',
   'isSafeClassId', 'parseBulkEntryText', 'resolveBulkEntryClassId', 'validateBulkEntryRows', 'bulkAddPlayers',
   'formatBulkEntryResultToast'];
-const pureSrcs = PURE_NAMES.map(extractFn);
+const pureSrcs = PURE_NAMES.map(n => extractFn(RAW, n));
 assert(pureSrcs.every(s => !!s), 'B0 検証に必要な純関数一式を抽出できる（' + PURE_NAMES.filter((n, i) => !pureSrcs[i]).join('・') + ' が欠落）');
-const env = new Function(pureSrcs.join('\n') + `
-  return {parse:parseBulkEntryText,resolve:resolveBulkEntryClassId,validate:validateBulkEntryRows,
-          add:bulkAddPlayers,toast:formatBulkEntryResultToast,nextNo:nextEntryNoForClass};
-`)();
+// 隔離環境（prelude 空＝state も他のアプリ関数も見えない）。依存の獲得は ReferenceError で落ちる。
+const pureIso = loadIsolated(PURE_NAMES);
+const env = {parse:pureIso.fn('parseBulkEntryText'), resolve:pureIso.fn('resolveBulkEntryClassId'),
+             validate:pureIso.fn('validateBulkEntryRows'), add:pureIso.fn('bulkAddPlayers'),
+             toast:pureIso.fn('formatBulkEntryResultToast'), nextNo:pureIso.fn('nextEntryNoForClass')};
 {
   const rows = env.parse('架空太郎\tかくうたろう\tA\n架空次郎,かくうじろう,B\n\n架空三郎\n');
   assert(rows.length === 3, 'B1 タブ区切り/カンマ区切り混在＋空行スキップで3行');
@@ -160,7 +150,7 @@ function fxState() {
   assert(p.member === 'other' && p.grade === 'ippan' && p.city === '', 'E7 区分の既定＝一般（member:other・grade:ippan・city 空）');
   assert(p.yomi === 'かくうせんしゅ', 'E8 ふりがなは normalizeYomi 済みで player.yomi へ（星取表の検索・ソート互換）');
   // 受入基準4: 会費が一般（支部員以外）として集計される＝getFee(member,grade)
-  const getFee = new Function(extractFn('getFee') + '; return getFee;')();
+  const getFee = loadIsolated(['getFee']).fn('getFee');
   assert(getFee(p.member, p.grade) === 1000, 'E9 区分の既定＝一般の会費は 1000円（支部員以外の一般）＝報告書の会費合計に反映');
   const getFeeMember = getFee('member', 'ippan');
   assert(getFeeMember === 500, 'E10 区分の既定＝支部員なら 500円（既存 getFee 無改変の確認）');
@@ -181,18 +171,21 @@ function fxState() {
     'localStorage', 'findMasterSuggestions', 'attachMemberIdToPlayer', 'findMemberCandidates'];
   ['parseBulkEntryText', 'resolveBulkEntryClassId', 'validateBulkEntryRows', 'bulkAddPlayers', 'formatBulkEntryResultToast',
     'confirmBulkEntry', 'updateBulkEntryPreview', 'openBulkEntryFullscreen', 'collectBulkEntryRows'].forEach(fn => {
-      const src = extractFn(fn) || '';
+      const src = extractFn(RAW, fn) || '';
       const hit = MASTER_APIS.filter(a => src.indexOf(a) >= 0);
       assert(src && hit.length === 0, 'F1 ' + fn + ' がマスタ/サジェスト/localStorage に触れない（検出: ' + hit.join('・') + '）');
     });
   // 実行検証: マスタ読み出しが呼ばれたら throw する環境でも一括登録が完走する
-  const harness = new Function(pureSrcs.join('\n') + `
-    function loadBranchMaster(){ throw new Error('master-must-not-be-read'); }
-    function saveBranchMaster(){ throw new Error('master-must-not-be-written'); }
-    var st = {classes:[{id:'A',name:'Aクラス'}],players:{A:[]}};
-    var rows = validateBulkEntryRows(parseBulkEntryText('架空太郎\\tかくうたろう\\tA'), 'A', 'member', st);
-    return bulkAddPlayers(rows, st);
-  `);
+  //   PHASE1-ISOLATE-001: 評価文字列に埋め込んでいたシナリオを通常コードへ出した（供与する名前は同じ2つ）。
+  function harness() {
+    const iso = loadIsolated(PURE_NAMES, { prelude: {
+      loadBranchMaster() { throw new Error('master-must-not-be-read'); },
+      saveBranchMaster() { throw new Error('master-must-not-be-written'); },
+    } });
+    const st = { classes: [{ id: 'A', name: 'Aクラス' }], players: { A: [] } };
+    const rows = iso.fn('validateBulkEntryRows')(iso.fn('parseBulkEntryText')('架空太郎\tかくうたろう\tA'), 'A', 'member', st);
+    return iso.fn('bulkAddPlayers')(rows, st);
+  }
   let ok = null;
   try { ok = harness(); } catch (e) { ok = null; }
   assert(!!ok && ok.added === 1, 'F2 マスタ読み書きが禁止された環境でも一括登録が完走（byte 不変の実行証明）');
@@ -205,20 +198,26 @@ function fxState() {
   const names = ['isValidYmd', 'todayYmd', 'findMemberCandidates', 'attachMemberIdToPlayer', 'addTournamentIdOnce',
     'recalcMemberAttendance', 'generateMemberId', 'createMemberFromParticipant', 'listClassIdsForMasterSync',
     'attachMasterSyncCounts', 'readMasterSyncCounts', 'updateBranchMasterFromTournament'];
-  const srcs = names.map(extractFn);
+  const srcs = names.map(n => extractFn(RAW, n));
   assert(srcs.every(s => !!s), 'G0 マスタ同期の純関数一式を抽出できる');
-  const menv = new Function(pureSrcs.join('\n') + `
-    var _phaseA2State={cryptoNotificationShown:false};
-    function showMsg(){}
-    var crypto={randomUUID:function(){ return 'uuid-'+(crypto._n=(crypto._n||0)+1); }};
-    ${srcs.join('\n')}
-    var st = {classes:[{id:'A',name:'Aクラス'}],players:{A:[]}};
-    var rows = validateBulkEntryRows(parseBulkEntryText('架空太郎\\tかくうたろう\\tA\\n架空次郎\\t\\tA'), 'A', 'other', st);
-    bulkAddPlayers(rows, st);
-    var master = {members:[]};
-    var ret = updateBranchMasterFromTournament(st, master, {tournament_id:'t-0001', tournament_date:'2026-07-27'});
-    return {counts: readMasterSyncCounts(ret), members: master.members.length};
-  `)();
+  // PHASE1-ISOLATE-001: 評価文字列に埋め込んでいたシナリオを通常コードへ出した（供与する名前は同じ3つ）。
+  const cryptoStub = { _n: 0 };
+  cryptoStub.randomUUID = function () { return 'uuid-' + (cryptoStub._n = (cryptoStub._n || 0) + 1); };
+  const miso = loadIsolated(PURE_NAMES.concat(names), { prelude: {
+    _phaseA2State: { cryptoNotificationShown: false },
+    showMsg() {},
+    crypto: cryptoStub,
+  } });
+  const menv = (function () {
+    const st = { classes: [{ id: 'A', name: 'Aクラス' }], players: { A: [] } };
+    const rows = miso.fn('validateBulkEntryRows')(
+      miso.fn('parseBulkEntryText')('架空太郎\tかくうたろう\tA\n架空次郎\t\tA'), 'A', 'other', st);
+    miso.fn('bulkAddPlayers')(rows, st);
+    const master = { members: [] };
+    const ret = miso.fn('updateBranchMasterFromTournament')(st, master,
+      { tournament_id: 't-0001', tournament_date: '2026-07-27' });
+    return { counts: miso.fn('readMasterSyncCounts')(ret), members: master.members.length };
+  })();
   assert(!!menv.counts && menv.counts.added === 2 && menv.members === 2,
     'G1 一括登録した2名が「📋 参加者を名簿に反映」で名簿へ新規追加される（通常大会の従来動作）');
 }
@@ -236,10 +235,10 @@ function fxState() {
     'H3 複数理由は内訳つき（dup-registered/dup-paste は利用者語彙の「同名」に集約）');
   assert(f({ added: 1, skipped: 1, skippedByReason: { 'empty-name': 1 } }) === '📥 1人を登録しました（スキップ 1行: 空の氏名）',
     'H4 空氏名の理由表記');
-  const confirmSrc = extractFn('confirmBulkEntry') || '';
+  const confirmSrc = extractFn(RAW, 'confirmBulkEntry') || '';
   assert(confirmSrc.indexOf('showToast(formatBulkEntryResultToast(result))') >= 0,
     'H5 確定は純関数でメッセージ組み立て→showToast（#757 と同型・textContent）');
-  const toastSrc = extractFn('showToast') || '';
+  const toastSrc = extractFn(RAW, 'showToast') || '';
   assert(toastSrc.indexOf('el.textContent=') >= 0, 'H6 showToast は textContent（XSS 安全・無改変）');
 }
 
@@ -247,15 +246,15 @@ function fxState() {
 // I. 開始前限定（受入基準6）
 // ============================================================
 {
-  const rb = extractFn('renderBulkEntryButton') || '';
+  const rb = extractFn(RAW, 'renderBulkEntryButton') || '';
   assert(rb.indexOf('state&&state.started') >= 0 && rb.indexOf('btn.disabled=started') >= 0,
     'I1 renderBulkEntryButton が state.started でボタンを無効化');
   assert(rb.indexOf("note.style.display=started?'block':'none'") >= 0, 'I2 開始後は注記を表示');
   assert(RAW.indexOf('id="bulk-entry-note"') >= 0 && RAW.indexOf('大会開始後はまとめて登録できません') >= 0,
     'I3 注記が理由（開始後は不可・手入力で1人ずつ）を説明');
-  const op = extractFn('openBulkEntryFullscreen') || '';
+  const op = extractFn(RAW, 'openBulkEntryFullscreen') || '';
   assert(op.indexOf('state&&state.started') >= 0, 'I4 open 側にも started ガード（disabled と二重防御）');
-  const cf = extractFn('confirmBulkEntry') || '';
+  const cf = extractFn(RAW, 'confirmBulkEntry') || '';
   assert(cf.indexOf('state&&state.started') >= 0, 'I5 確定側にも started ガード（モーダル表示中の開始に備える）');
 }
 
@@ -263,16 +262,16 @@ function fxState() {
 // J. プレビュー（受入基準3の前段・XSS 安全）
 // ============================================================
 {
-  const up = extractFn('updateBulkEntryPreview') || '';
+  const up = extractFn(RAW, 'updateBulkEntryPreview') || '';
   assert(up.indexOf('textContent') >= 0 && up.indexOf('createElement') >= 0,
     'J1 プレビュー表は DOM API（createElement/textContent）で描画＝貼り付け値の innerHTML 流入なし');
   assert(up.indexOf('✅ 登録できます') >= 0 && up.indexOf('bulkEntryErrorLabel') >= 0, 'J2 状態列は ✅/⚠＋理由');
   assert(up.indexOf('登録できる ') >= 0 && up.indexOf('エラー ') >= 0, 'J3 サマリ「登録できる N人・エラー M行」');
-  const el = extractFn('bulkEntryErrorLabel') || '';
+  const el = extractFn(RAW, 'bulkEntryErrorLabel') || '';
   ['氏名が空です', '同名', 'クラスが見つかりません'].forEach(s =>
     assert(el.indexOf(s) >= 0, 'J4 エラー理由文言（' + s + '）'));
-  const cf = extractFn('confirmBulkEntry') || '';
-  assert(cf.indexOf('collectBulkEntryRows()') >= 0 && (extractFn('updateBulkEntryPreview') || '').indexOf('collectBulkEntryRows()') >= 0,
+  const cf = extractFn(RAW, 'confirmBulkEntry') || '';
+  assert(cf.indexOf('collectBulkEntryRows()') >= 0 && (extractFn(RAW, 'updateBulkEntryPreview') || '').indexOf('collectBulkEntryRows()') >= 0,
     'J5 プレビューと確定は同じ検証窓口（collectBulkEntryRows）を通る');
   assert(cf.indexOf('renderRegList();save();') >= 0, 'J6 確定後は再描画→保存（finalizeAddPastParticipants と同分担）');
   assert(cf.indexOf('verifyPlayerPersistedById') >= 0 && cf.indexOf('SAVE-003b') >= 0,
@@ -283,8 +282,8 @@ function fxState() {
 // K. 既存経路の無改変（ブリーフ §4）
 // ============================================================
 {
-  const ap = extractFn('addPlayer') || '';
-  const fz = extractFn('finalizeAddPastParticipants') || '';
+  const ap = extractFn(RAW, 'addPlayer') || '';
+  const fz = extractFn(RAW, 'finalizeAddPastParticipants') || '';
   assert(ap.indexOf('bulkAddPlayers') < 0 && ap.indexOf('bulk-entry') < 0, 'K1 単発受付 addPlayer は無改変（bulk へ非依存）');
   assert(fz.indexOf('bulkAddPlayers') < 0, 'K2 名簿からの一括受付 finalizeAddPastParticipants は無改変');
   assert(RAW.indexOf("document.getElementById('addBtn').addEventListener('click',addPlayer)") >= 0,

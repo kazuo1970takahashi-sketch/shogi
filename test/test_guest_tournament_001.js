@@ -10,24 +10,11 @@
 //        ライブ配信・名簿からの受付・サジェスト・名簿タブ「☁ クラウドから取得」は従来どおり。
 //     4. ヘッダのバッジで常時視認でき、開始後はモードを切り替えられない。
 //   データは完全架空のみ・読み取り専用。
-const fs = require('fs');
-const targetPath = process.argv[2] || 'shogi_v4.html';
-const RAW = fs.readFileSync(targetPath, 'utf8');
+// PHASE1-ISOLATE-001: 自前の extractFn（brace バランス）と new Function 隔離を共通ヘルパへ寄せた。
+const { loadIsolated, extractFn, readHtml } = require('./lib/app_isolated');
+const RAW = readHtml();
 let pass = 0, fail = 0;
 function assert(c, m) { if (c) { pass++; } else { fail++; console.log('  FAIL: ' + m); } }
-
-// ---- 関数抽出（brace バランス・test_player_swap_001 と同型）
-function extractFn(name){
-  const idx = RAW.indexOf('function ' + name + '(');
-  if (idx < 0) return null;
-  let depth = 0, i = RAW.indexOf('{', idx);
-  const start = idx;
-  for (; i < RAW.length; i++) {
-    if (RAW[i] === '{') depth++;
-    else if (RAW[i] === '}') { depth--; if (depth === 0) return RAW.slice(start, i + 1); }
-  }
-  return null;
-}
 
 // ---- S. 静的ピン（state スキーマ・UI 導線・遮断7経路）
 assert(RAW.indexOf("tournament_kind:(s.tournament_kind==='guest')?'guest':'normal'") >= 0,
@@ -41,7 +28,7 @@ assert(RAW.indexOf('ゲスト大会では、参加者が名簿に登録されず
   'S6 種類セレクタ注記（Issue #760 たたき台文言）');
 // 経路1: choke point（syncBranchMasterOnSave 冒頭 no-op）＝📋saveData／☁未連携ガードの2経路を一括遮断
 {
-  const sync = extractFn('syncBranchMasterOnSave') || '';
+  const sync = extractFn(RAW, 'syncBranchMasterOnSave') || '';
   const guardPos = sync.indexOf('isGuestTournament');
   const loadPos = sync.indexOf('loadBranchMaster');
   assert(guardPos >= 0 && loadPos > 0 && guardPos < loadPos,
@@ -51,14 +38,14 @@ assert(RAW.indexOf('ゲスト大会では、参加者が名簿に登録されず
 }
 // 経路2: 📋ボタン＝押下時説明（disabled にせず理由を toast）
 {
-  const sd = extractFn('saveData') || '';
+  const sd = extractFn(RAW, 'saveData') || '';
   assert(sd.indexOf('isGuestTournament') >= 0 && sd.indexOf('🎪 ゲスト大会のため名簿には反映しません') >= 0,
     'S9 saveData は guest 中に理由説明つきで中止（📋 参加者を名簿に反映）');
   assert(sd.indexOf('showToast') >= 0, 'S9b 説明は toast（どのタブでも視認・#757 のトースト化と整合）');
 }
 // 経路3: addPlayer サジェスト由来の空 yomi 即時補完保存のスキップ
 {
-  const ap = extractFn('addPlayer') || '';
+  const ap = extractFn(RAW, 'addPlayer') || '';
   assert(/yomiForMaster && !normalizeYomi\(suggestSelected\.yomi\|\|''\) && !\(typeof isGuestTournament==='function'&&isGuestTournament\(state\)\)/.test(ap),
     'S10 addPlayer の yomi バックフィル（マスタ即時保存）は guest 中スキップ');
 }
@@ -69,14 +56,14 @@ assert(RAW.indexOf("changePlayerClass(memberId,cls,master,state,_guestClsChg?{sk
   'S12 呼び出し元が guest 中に skipMasterUpdate を指定');
 // 経路5: 一括 yomi 補完ダイアログのスキップ
 {
-  const asp = extractFn('addSelectedPastParticipants') || '';
+  const asp = extractFn(RAW, 'addSelectedPastParticipants') || '';
   const g = asp.indexOf('isGuestTournament');
   const d = asp.indexOf('openYomiInputDialog');
   assert(g >= 0 && d > 0 && g < d, 'S13 一括 yomi 補完ダイアログは guest 中に出さず直接受付');
 }
 // 経路6: 名前編集「会員マスタも更新する」の非表示
 {
-  const bm = extractFn('buildMasterSyncModalHtml') || '';
+  const bm = extractFn(RAW, 'buildMasterSyncModalHtml') || '';
   assert(bm.indexOf('guestMode') >= 0 && bm.indexOf("if(!guestMode)html+='<button type=\"button\" id=\"ms-master-too\"") >= 0,
     'S14 guest 中は「会員マスタも更新する」ボタンを出さない（この大会のみ修正＋別の人に差し替えのみ）');
   assert(bm.indexOf('🎪 ゲスト大会のため名簿（会員マスタ）は更新しません') >= 0,
@@ -84,7 +71,7 @@ assert(RAW.indexOf("changePlayerClass(memberId,cls,master,state,_guestClsChg?{sk
 }
 // 経路7: ☁送信の冒頭ガード
 {
-  const send = extractFn('sendTournamentToCloud') || '';
+  const send = extractFn(RAW, 'sendTournamentToCloud') || '';
   const g = send.indexOf('isGuestTournament');
   const t = send.indexOf('sendTargetClasses');
   assert(g >= 0 && t > 0 && g < t, 'S16 sendTournamentToCloud は冒頭（クラス確認より前）で guest を遮断');
@@ -93,14 +80,14 @@ assert(RAW.indexOf("changePlayerClass(memberId,cls,master,state,_guestClsChg?{sk
 }
 // 開始後ロック＋登録後 confirm＋バッジ/📋ボタン見た目同期
 {
-  const oc = extractFn('onChangeTournamentKind') || '';
+  const oc = extractFn(RAW, 'onChangeTournamentKind') || '';
   assert(oc.indexOf('state.started') >= 0 && oc.indexOf('開始後は大会の種類を変更できません') >= 0,
     'S18 開始後は種類変更を拒否（renderRoundsControl 方式のロック＋保険）');
   assert(oc.indexOf('appConfirm') >= 0 && oc.indexOf('すでに参加者が') >= 0,
     'S19 参加者登録後の切替は confirm');
-  const rk = extractFn('renderTournamentKindControl') || '';
+  const rk = extractFn(RAW, 'renderTournamentKindControl') || '';
   assert(rk.indexOf('sel.disabled=started') >= 0, 'S20 セレクタは開始後 disabled（毎描画同期）');
-  const rg = extractFn('renderGuestModeUI') || '';
+  const rg = extractFn(RAW, 'renderGuestModeUI') || '';
   assert(rg.indexOf('guest-mode-badge') >= 0 && rg.indexOf('saveBtn') >= 0,
     'S21 バッジと📋ボタンの見た目を renderGuestModeUI が同期');
   assert(RAW.indexOf('renderTournamentKindControl();\n  var clsList=getRegistrationClassList();') >= 0 ||
@@ -109,16 +96,16 @@ assert(RAW.indexOf("changePlayerClass(memberId,cls,master,state,_guestClsChg?{sk
 }
 // 全リセットで既定（通常）に戻る＝resetAll の state 再構築に tournament_kind が無い（undefined→述語 false）
 {
-  const ra = extractFn('resetAll') || '';
+  const ra = extractFn(RAW, 'resetAll') || '';
   assert(ra.indexOf('tournament_kind') < 0, 'S23 resetAll は tournament_kind を持たない state を再構築＝既定（通常の大会）に戻る');
 }
 
 // ---- 動作テスト（抽出＋実行・完全架空データ）
 // U. isGuestTournament（単一述語）
 {
-  const src = extractFn('isGuestTournament');
+  const src = extractFn(RAW, 'isGuestTournament');
   assert(!!src, 'U0 isGuestTournament が抽出できる');
-  const f = new Function(src + '; return isGuestTournament;')();
+  const f = loadIsolated(['isGuestTournament']).fn('isGuestTournament');
   assert(f({tournament_kind:'guest'}) === true, 'U1 guest → true');
   assert(f({tournament_kind:'normal'}) === false, 'U2 normal → false');
   assert(f({}) === false, 'U3 未設定（旧データ）→ false');
@@ -128,9 +115,10 @@ assert(RAW.indexOf("changePlayerClass(memberId,cls,master,state,_guestClsChg?{sk
 
 // C. changePlayerClass: skipMasterUpdate の有無で master.last_class の扱いだけが変わる（player 側は同一）
 {
-  const src = ['isValidEntryNo','reconcileEntryNos','nextEntryNoForClass','isSafeClassId','listClassIdsForMasterSync','changePlayerClass'].map(extractFn);  // CLASS-VARIABLE-002 (#768): changePlayerClass の新依存2関数を供給
+  const NAMES = ['isValidEntryNo','reconcileEntryNos','nextEntryNoForClass','isSafeClassId','listClassIdsForMasterSync','changePlayerClass'];  // CLASS-VARIABLE-002 (#768): changePlayerClass の新依存2関数を供給
+  const src = NAMES.map(n => extractFn(RAW, n));
   assert(src.every(s => !!s), 'C0 changePlayerClass と依存関数が抽出できる');
-  const env = new Function('var state=null;' + src.join('\n') + '; return {changePlayerClass:changePlayerClass};')();
+  const env = loadIsolated(NAMES, { prelude: { state: null } }).api();
   function fxState(){
     return { players: { A: [ {id:'p1',name:'架空太郎',cls:'A',member:'member',grade:'ippan',member_id:'m-1',entry_no:1} ], B: [] } };
   }
@@ -154,43 +142,46 @@ assert(RAW.indexOf("changePlayerClass(memberId,cls,master,state,_guestClsChg?{sk
 
 // G. syncBranchMasterOnSave: guest 中はマスタに一切触れず onDone だけ呼ぶ（choke point 実行検証）
 {
-  const src = extractFn('syncBranchMasterOnSave');
+  const src = extractFn(RAW, 'syncBranchMasterOnSave');
   assert(!!src, 'G0 syncBranchMasterOnSave が抽出できる');
-  const harness = new Function('guestState', `
-    var state = guestState;
-    var calls = { load: 0, done: 0 };
-    function isGuestTournament(st){ return !!(st && st.tournament_kind === 'guest'); }
-    function loadBranchMaster(){ calls.load++; throw new Error('must-not-load-master'); }
-    ${src}
-    syncBranchMasterOnSave(function(){ calls.done++; });
+  // PHASE1-ISOLATE-001: 評価文字列に埋め込んでいたシナリオを通常コードへ出した。
+  //   console は vm の最小コンテキストでは遮断されるので prelude で明示供与する
+  //   （outer catch が console.warn を呼ぶ既存経路＝旧環境では Node の globalThis が透過していた分）。
+  function harness(guestState){
+    const calls = { load: 0, done: 0 };
+    const iso = loadIsolated(['syncBranchMasterOnSave'], { prelude: {
+      state: guestState,
+      isGuestTournament(st){ return !!(st && st.tournament_kind === 'guest'); },
+      loadBranchMaster(){ calls.load++; throw new Error('must-not-load-master'); },
+      console: { warn(){}, log(){}, error(){} },
+    } });
+    iso.fn('syncBranchMasterOnSave')(function(){ calls.done++; });
     return calls;
-  `);
+  }
   const g = harness({tournament_kind:'guest'});
   assert(g.load === 0, 'G1 guest: loadBranchMaster が呼ばれない（マスタ読み書きゼロ）');
   assert(g.done === 1, 'G2 guest: onDone は1回だけ呼ばれる（呼び出し元の完了通知契約を維持）');
   // 通常: guard を素通りして loadBranchMaster に到達する（＝遮断が normal に波及しない）。
   //   stub が throw → 既存 outer catch が console.warn + _done する既存経路（挙動不変の確認）。
-  const origWarn = console.warn; console.warn = function(){};
   const n = harness({tournament_kind:'normal'});
-  console.warn = origWarn;
   assert(n.load === 1, 'G3 normal: 従来どおり loadBranchMaster へ到達（ガードが normal を止めない）');
   assert(n.done === 1, 'G4 normal: 例外経路でも onDone は1回（既存 fail-soft 契約不変）');
 }
 
 // D. saveData: guest 中は sync を呼ばず説明 toast のみ／normal は従来どおり sync を呼ぶ
 {
-  const src = extractFn('saveData');
-  const harness = new Function('st', `
-    var state = st;
-    var calls = { sync: 0, toasts: [] };
-    function isGuestTournament(s){ return !!(s && s.tournament_kind === 'guest'); }
-    function syncBranchMasterOnSave(cb){ calls.sync++; if (typeof cb === 'function') cb(); }
-    function showToast(m){ calls.toasts.push(m); }
-    ${extractFn('formatMasterSyncResultToast')}
-    ${src}
-    saveData();
+  // PHASE1-ISOLATE-001: 評価文字列に埋め込んでいたシナリオを通常コードへ出した（供与する名前は同じ4つ）。
+  function harness(st){
+    const calls = { sync: 0, toasts: [] };
+    const iso = loadIsolated(['formatMasterSyncResultToast', 'saveData'], { prelude: {
+      state: st,
+      isGuestTournament(s){ return !!(s && s.tournament_kind === 'guest'); },
+      syncBranchMasterOnSave(cb){ calls.sync++; if (typeof cb === 'function') cb(); },
+      showToast(m){ calls.toasts.push(m); },
+    } });
+    iso.fn('saveData')();
     return calls;
-  `);
+  }
   const g = harness({tournament_kind:'guest'});
   assert(g.sync === 0 && g.toasts.length === 1 && g.toasts[0].indexOf('ゲスト大会のため名簿には反映しません') >= 0,
     'D1 guest: 同期せず理由説明の toast のみ');
@@ -203,14 +194,15 @@ assert(RAW.indexOf("changePlayerClass(memberId,cls,master,state,_guestClsChg?{sk
 
 // W. sendTournamentToCloud: guest 中は説明つき fail-soft で即 resolve（Promise 契約維持）
 {
-  const src = extractFn('sendTournamentToCloud');
-  const harness = new Function('st', `
-    var state = st;
-    var statuses = [];
-    function isGuestTournament(s){ return !!(s && s.tournament_kind === 'guest'); }
-    ${src}
-    return { p: sendTournamentToCloud(function(m){ statuses.push(m); }), statuses: statuses };
-  `);
+  // PHASE1-ISOLATE-001: 評価文字列に埋め込んでいたシナリオを通常コードへ出した（供与する名前は同じ2つ）。
+  function harness(st){
+    const statuses = [];
+    const iso = loadIsolated(['sendTournamentToCloud'], { prelude: {
+      state: st,
+      isGuestTournament(s){ return !!(s && s.tournament_kind === 'guest'); },
+    } });
+    return { p: iso.fn('sendTournamentToCloud')(function(m){ statuses.push(m); }), statuses: statuses };
+  }
   const r = harness({tournament_kind:'guest'});
   return r.p.then(function(res){
     assert(res && res.ok === false && res.step === 'guest-mode', 'W1 guest: {ok:false,step:guest-mode} で即中止（fail-soft）');

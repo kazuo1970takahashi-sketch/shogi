@@ -9,27 +9,23 @@
 //     PIN.  ppDenseSelectableClasses=getRegistrationClassList 素通し・旧「※A/B 以外は手入力」注記撤去・
 //           finalizeAddPastParticipants 第4引数 cls 化・verifyMasterFieldPersisted の受理集合一般化。
 //   データは完全架空のみ。
-var fs = require('fs');
-var targetPath = process.argv[2] || 'shogi_v4.html';
-var RAW = fs.readFileSync(targetPath, 'utf8');
+// PHASE1-ISOLATE-001: 自前の extractFn + new Function 隔離を共通ヘルパ loadIsolated へ寄せた。
+//   buildEnv の既定 prelude（var state=null;）は「名前→値」形で同等に表現する（供与内容は増やさない）。
+var H = require('./lib/app_isolated');
+var RAW = H.readHtml();
 var pass = 0, fail = 0;
 function assert(c, m) { if (c) { pass++; } else { fail++; console.log('  FAIL: ' + m); } }
 
-function extractFn(src, name){
-  var idx = src.indexOf('function ' + name + '(');
-  if(idx < 0) return null;
-  var i = src.indexOf('{', idx);
-  var depth = 0;
-  for(; i < src.length; i++){
-    if(src[i] === '{') depth++;
-    else if(src[i] === '}'){ depth--; if(depth === 0) return src.slice(idx, i + 1); }
-  }
-  return null;
-}
 function buildEnv(names, prelude){
-  var srcs = names.map(function(n){ var s = extractFn(RAW, n); if(!s) throw new Error('extract fail: ' + n); return s; });
-  var body = (prelude || 'var state=null;') + srcs.join('\n') + '\nreturn {' + names.map(function(n){ return n + ':' + n; }).join(',') + '};';
-  return new Function('Date', 'Math', body)(Date, Math);
+  return H.loadIsolated(names, { prelude: prelude || { state: null } }).api();
+}
+// PHASE1-ISOLATE-001: 旧環境（new Function）は Node の globalThis が透過していたため
+//   generateMemberId の `typeof crypto==='undefined'` ガードが Node の crypto を掴んでいた。
+//   vm の最小コンテキストでは遮断されるので、依存を prelude に**明示**して線引きを記録する。
+function cryptoStub(){
+  var c = { _n: 0 };
+  c.randomUUID = function(){ c._n++; return '00000000-0000-0000-0000-' + ('00000000000' + c._n).slice(-12); };
+  return c;
 }
 
 var DEPS_ADD = ['isSafeClassId','isValidEntryNo','reconcileEntryNos','nextEntryNoForClass','normalizePersonName','normalizeYomi','normalizeCity','normalizeMasterFeeFields','addPlayerFromMaster'];
@@ -108,14 +104,16 @@ function fxMaster(){
 // ---- LCLS. last_class 不変条件の一般化 ----
 {
   // createMemberFromParticipant
-  var eM = buildEnv(['isSafeClassId','generateMemberId','normalizePersonName','normalizeYomi','createMemberFromParticipant']);
+  var eM = buildEnv(['isSafeClassId','generateMemberId','normalizePersonName','normalizeYomi','createMemberFromParticipant'],
+    { state: null, crypto: cryptoStub() });
   var m1 = eM.createMemberFromParticipant({name:'架空四郎',yomi:'かくうしろう',cls:'C',member:'member',grade:'ippan'},{members:[]},'2026-07-13');
   assert(m1.last_class === 'C', 'LCLS-1 createMemberFromParticipant: cls=C を last_class に記録');
   var m2 = eM.createMemberFromParticipant({name:'架空五郎',cls:'C C',member:'member',grade:'ippan'},{members:[]},'2026-07-13');
   assert(m2.last_class === null, 'LCLS-2 不正 classId は従来どおり null');
 
   // normalizeBranchMaster（load 正規化で C を消さない）
-  var eN = buildEnv(['isSafeClassId','isValidYmd','todayYmd','normalizeCity','normalizeBranchMaster'],'var state=null;var BRANCH_MASTER_SCHEMA_VERSION=1;');
+  var eN = buildEnv(['isSafeClassId','isValidYmd','todayYmd','normalizeCity','normalizeBranchMaster'],
+    { state: null, BRANCH_MASTER_SCHEMA_VERSION: 1 });
   var raw = {schema_version:1,updated_at:'x',members:[
     {id:'m1',name:'架空六郎',last_class:'C',last_attended:'2026-06-01',first_attended:'2026-06-01'},
     {id:'m2',name:'架空七郎',last_class:'あ',last_attended:'2026-06-01',first_attended:'2026-06-01'}

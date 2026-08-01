@@ -13,27 +13,14 @@
 //        名簿にいない新規の方に限る誘導へ（誤誘導＝未連携化による既存会員二重登録の防止）。
 //     ② withdrawn（棄権中）の差し替えで棄権状態が引き継がれる旨を confirm 文言に明記（PR #759 NIT-3）。
 //   データは完全架空のみ・読み取り専用（静的ピン＋純関数抽出）。
-const fs = require('fs');
-const targetPath = process.argv[2] || 'shogi_v4.html';
-const RAW = fs.readFileSync(targetPath, 'utf8');
+// PHASE1-ISOLATE-001: 自前の extractFn（brace 追跡・player_swap_001 と同方式）を共通ヘルパへ寄せた。
+const { loadIsolated, extractFn, readHtml } = require('./lib/app_isolated');
+const RAW = readHtml();
 let pass = 0, fail = 0;
 function assert(c, m) { if (c) { pass++; } else { fail++; console.log('  FAIL: ' + m); } }
 
-// ---- 関数抽出（brace 追跡・player_swap_001 と同方式）
-function extractFn(name){
-  const idx = RAW.indexOf('function ' + name + '(');
-  if (idx < 0) return null;
-  let depth = 0, i = RAW.indexOf('{', idx);
-  const start = idx;
-  for (; i < RAW.length; i++) {
-    if (RAW[i] === '{') depth++;
-    else if (RAW[i] === '}') { depth--; if (depth === 0) return RAW.slice(start, i + 1); }
-  }
-  return null;
-}
-
 // ---- A. 受入基準1: 独立ボタン（名前入力を経由しない到達）
-const sheetSrc = extractFn('openPlayerEditSheet');
+const sheetSrc = extractFn(RAW, 'openPlayerEditSheet');
 assert(!!sheetSrc, 'A0 openPlayerEditSheet を抽出できる');
 assert(!!sheetSrc && sheetSrc.indexOf('id="pes-swap"') >= 0, 'A1 編集シートに独立ボタン（pes-swap）がある');
 assert(!!sheetSrc && sheetSrc.indexOf('🔁 別の人に差し替える') >= 0, 'A2 ラベルは「🔁 別の人に差し替える」');
@@ -53,7 +40,7 @@ if (sheetSrc) {
 // ---- B. 受入基準2: 既存導線（名前編集→3択）温存
 assert(RAW.indexOf('id="ms-swap-person"') >= 0, 'B1 3択目ボタン（ms-swap-person）は温存');
 assert(RAW.indexOf('openPlayerSwapPicker(p,newName)') >= 0, 'B2 3択経由は入力名を検索初期値に流用（従来どおり）');
-const editSrc = extractFn('editPlayer');
+const editSrc = extractFn(RAW, 'editPlayer');
 assert(!!editSrc && editSrc.indexOf('normalizePersonName(p.name)===normalizePersonName(newName)') >= 0,
   'B3 editPlayer の同名 early-return（MASTER-001）は無改変＝案A（常時3択）ではなく案B');
 assert(!!editSrc && editSrc.indexOf('openMemberMasterSyncDialog(p,newName)') >= 0, 'B4 名前変更時の3択ダイアログ呼び出しは従来どおり');
@@ -62,18 +49,18 @@ assert(!!editSrc && editSrc.indexOf('openMemberMasterSyncDialog(p,newName)') >= 
 //   新導線はピッカーを開くだけ。参加済み拒否/同名拒否は候補抽出＋適用関数、danger/送信済み警告は
 //   handlePlayerSwapPick / handlePlayerSwapUnlinked にあり、これらは 001 から無改変であることを固定する。
 assert(RAW.indexOf('findMasterSuggestions(q,master,getCurrentlyRegisteredMemberIds())') >= 0, 'C1 候補は既登録 member_id 除外（参加済みは選べない）');
-const applySrc = extractFn('applyParticipantSwapFromMaster');
+const applySrc = extractFn(RAW, 'applyParticipantSwapFromMaster');
 assert(!!applySrc && applySrc.indexOf('already_registered') >= 0, 'C2 適用側 already_registered ガード健在');
 assert(!!applySrc && applySrc.indexOf('duplicate_name') >= 0, 'C3 適用側 duplicate_name ガード健在');
-const pickSrc = extractFn('handlePlayerSwapPick');
-const unlinkedSrc = extractFn('handlePlayerSwapUnlinked');
+const pickSrc = extractFn(RAW, 'handlePlayerSwapPick');
+const unlinkedSrc = extractFn(RAW, 'handlePlayerSwapUnlinked');
 assert(!!pickSrc && pickSrc.indexOf('{danger:true}') >= 0, 'C4 名簿差し替え confirm は danger 属性');
 assert(!!unlinkedSrc && unlinkedSrc.indexOf('{danger:true}') >= 0, 'C5 未連携差し替え confirm も danger 属性');
 assert(!!pickSrc && pickSrc.indexOf('playerSwapSentWarning()') >= 0, 'C6 名簿差し替え confirm に☁送信済み警告');
 assert(!!unlinkedSrc && unlinkedSrc.indexOf('playerSwapSentWarning()') >= 0, 'C7 未連携差し替え confirm にも☁送信済み警告');
 
 // ---- D. 同乗①: 候補ゼロ時メッセージ（誤誘導の是正）
-const candSrc = extractFn('renderPlayerSwapCandidates');
+const candSrc = extractFn(RAW, 'renderPlayerSwapCandidates');
 assert(!!candSrc, 'D0 renderPlayerSwapCandidates を抽出できる');
 if (candSrc) {
   assert(candSrc.indexOf('検索語を短くしてみてください') >= 0, 'D1 候補ゼロ時に「検索語を短く」を案内');
@@ -88,7 +75,7 @@ if (candSrc) {
 }
 
 // ---- E. 同乗②: withdrawn 引き継ぎの confirm 明記（PR #759 NIT-3）
-const noteSrc = extractFn('playerSwapWithdrawnNote');
+const noteSrc = extractFn(RAW, 'playerSwapWithdrawnNote');
 assert(!!noteSrc, 'E0 playerSwapWithdrawnNote がある');
 assert(!!noteSrc && noteSrc.indexOf('p.withdrawn') >= 0 && noteSrc.indexOf("return ''") >= 0,
   'E1 withdrawn のときだけ注記を返す（非棄権は空文字）');
@@ -97,14 +84,15 @@ assert(!!pickSrc && pickSrc.indexOf('playerSwapWithdrawnNote(p)') >= 0, 'E3 名�
 assert(!!unlinkedSrc && unlinkedSrc.indexOf('playerSwapWithdrawnNote(p)') >= 0, 'E4 未連携差し替え confirm にも注記を合成');
 // 実挙動: withdrawn を触らない（swap 適用関数が withdrawn へ代入・delete しない）
 assert(!!applySrc && applySrc.indexOf('withdrawn') < 0, 'E5 applyParticipantSwapFromMaster は withdrawn に触れない（＝引き継ぎ）');
-const applyUnlinkedSrc = extractFn('applyParticipantSwapToUnlinked');
+const applyUnlinkedSrc = extractFn(RAW, 'applyParticipantSwapToUnlinked');
 assert(!!applyUnlinkedSrc && applyUnlinkedSrc.indexOf('withdrawn') < 0, 'E6 applyParticipantSwapToUnlinked も withdrawn に触れない');
 
 // ---- F. 純関数の実挙動（架空データ）: 注記の出し分け
 {
-  // playerSwapWithdrawnNote は他関数に依存しないため eval で単体実行する
+  // playerSwapWithdrawnNote は他関数に依存しないため隔離環境で単体実行する。
+  //   PHASE1-ISOLATE-001: 切り出しや評価が壊れたときの縮退（クラッシュではなく fn=null → ラベル付き FAIL）を保存する。
   let fn = null;
-  try { fn = new Function('return (' + noteSrc + ')')(); } catch (e) { fn = null; }
+  try { fn = loadIsolated(['playerSwapWithdrawnNote']).fn('playerSwapWithdrawnNote'); } catch (e) { fn = null; }
   assert(!!fn, 'F0 playerSwapWithdrawnNote を単体実行できる');
   if (fn) {
     assert(fn({ withdrawn: true }).indexOf('棄権中') >= 0, 'F1 棄権中の参加者では注記が付く');
