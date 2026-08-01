@@ -103,8 +103,9 @@
 //   KL-3 on* 属性値の中の HTML エンティティ（&#40; 等）は復号しない。
 //   KL-4 派生パス（罠(7)）の再帰は 1 段まで。JS 文字列の中の <script> の中の
 //        文字列に書かれた on*= は拾わない。
-//   KL-5 派生パスの連結ランは、`+` の後ろの式オペランドを CONCAT_SKIP_LIMIT 文字までしか
-//        読み飛ばさない。超えたら打ち切り、その事実を concatTruncations で報告する。
+//   KL-5 派生パスの連結ランは、`+` の後ろの式オペランドを**構造**（`;` / `,` / 深さ 0 の
+//        閉じ括弧）でしか区切らない。長さでは打ち切らない（001f）。長いオペランドは
+//        concatLongOperands（R7 warn）で報告するだけで、参照は落とさない。
 //   KL-6 検査2 の inert-trigger 判定は隠しファイル入力（<input type="file" style=display:none>）
 //        に限る意図的な最小規則。
 //
@@ -127,6 +128,27 @@
 //   (f) 「JS 文字列の中の on*= だけで生きている関数」を derivedOnlyReachable として報告する。
 //       その HTML が実際に挿入されるかは静的には判定できない（一度も挿入されない死んだ
 //       テンプレートかもしれない）。**隠さずに見せる**。
+//
+// -----------------------------------------------------------------------------
+// PHASE1-REACH-001f（差し戻し 5 回目への対応・走査側）
+// -----------------------------------------------------------------------------
+//   (g) 派生パスの unknownOnAttrs を捨てていた（`classifyFaces(run.text)` を out 無しで
+//       呼んでいた）ので、**JS 文字列の中の未知 on*= は R8 に一切出なかった**。
+//       復号ランの out を受け取り、元位置へ写して報告する。
+//   (h) イベント名の有限リストに実在イベントが 6 件漏れていた（onmousewheel /
+//       onpointerrawupdate / onfullscreenchange / onfullscreenerror / oncommand /
+//       onscrollsnapchange）。漏れは「生きた関数を R1 error で殺す」方向に倒れ、
+//       虚偽の allowlist 登録以外に緑化手段が無い＝最も危険な向きの誤り。
+//       出典と更新方針はリスト直上のコメントに明記した。
+//   (i) 連結ランの**打ち切りを廃止**した。001e は `+` の後ろの式オペランドを
+//       CONCAT_SKIP_LIMIT 文字で打ち切り、そこで連結を止めていたため、長い式を挟んだ
+//       だけで**生きた関数が R1 error 化**した（001e の境界テストは fixture 側で
+//       allowlist に事前登録していたので、この向きを証明できていなかった）。
+//       いまは構造（`;` / `,` / 閉じ括弧）だけで止め、長さは
+//       CONCAT_OPERAND_REPORT_LIMIT を超えたときに **報告するだけ**にする。
+//       ＝ 打ち切りに起因して参照を落とすことは無い。
+//   (j) その報告（R7）の識別子を行番号から**所有関数名＋序数**へ変えた。行番号だと
+//       無関係な編集で行がずれるたびに差分照合が毒される。
 // =============================================================================
 
 // -----------------------------------------------------------------------------
@@ -204,6 +226,15 @@ const ATTR_NAME_CH = /[a-zA-Z0-9:_-]/;
 // ような**存在しないイベント名**でも死んだ関数がルート化した（実測で再現）。
 // 逆に、ここに無い実イベント名は「生きた関数を死んだと言う」方向に倒れるので、
 // on* に見えてリストに無い属性は unknownOnAttrs として報告し、黙って落とさない。
+//
+// **出典と更新方針**（PHASE1-REACH-001f）:
+//   出典 = HTML Living Standard の event handler content attributes（GlobalEventHandlers /
+//   WindowEventHandlers）＋ Pointer Events / Touch Events / CSS Animations・Transitions /
+//   Fullscreen API の各仕様、および歴史的に実装がある非標準名（onmousewheel 等）。
+//   更新方針 = **足す方向にしか運用しない**。R8 warn（未知の on*）が出たら、実イベント名なら
+//   ここへ追加して 1 行の出典コメントを添える。消す判断は「そのイベント名が実在しない」
+//   ことを示せたときだけ。リストが短い方に倒れると生きた関数が R1 で殺され、虚偽の
+//   allowlist 登録以外に緑化手段が無くなる（001f・中1 で実測された向き）。
 const ON_EVENT_ATTRS = new Set([
   'onabort', 'onauxclick', 'onbeforeinput', 'onbeforematch', 'onbeforetoggle', 'onblur',
   'oncancel', 'oncanplay', 'oncanplaythrough', 'onchange', 'onclick', 'onclose',
@@ -227,6 +258,12 @@ const ON_EVENT_ATTRS = new Set([
   'onafterprint', 'onbeforeprint', 'onbeforeunload', 'onhashchange', 'onlanguagechange',
   'onmessage', 'onmessageerror', 'onoffline', 'ononline', 'onpagehide', 'onpageshow',
   'onpopstate', 'onrejectionhandled', 'onstorage', 'onunhandledrejection', 'onunload',
+  // 001f で追加した 6 件（漏れていた実在イベント名。cowork パネルの指摘・中1）
+  'onmousewheel',          // 非標準だが主要ブラウザに実装がある（wheel の旧名）
+  'onpointerrawupdate',    // Pointer Events Level 3
+  'onfullscreenchange', 'onfullscreenerror',   // Fullscreen API
+  'oncommand',             // Invoker Commands API（command / commandfor）
+  'onscrollsnapchange',    // CSS Scroll Snap Events
 ]);
 // 「on* に見える」形。リストとの差が unknownOnAttrs になる。
 const ON_ATTR_SHAPE_RE = /^on[a-z]+$/i;
@@ -249,12 +286,13 @@ const KW_CONTROL_PAREN = new Set(['if', 'for', 'while', 'switch', 'catch', 'with
 // 文の終端判定で「ブロックの後ろに続く＝まだ同じ文」を示すキーワード。
 const KW_CONTINUES_STATEMENT = new Set(['else', 'catch', 'finally', 'while']);
 
-// 派生パス: `+` の後ろの**式オペランド 1 個**を読み飛ばせる上限。
-//   意味を厳密に定義する（PHASE1-REACH-001e・001d は文書と実測がずれていた）:
-//   オペランド開始位置を p としたとき、**次の文字列面が p + CONCAT_SKIP_LIMIT 未満から
-//   始まるなら拾い、それ以上なら打ち切る**。境界は test の CONCAT-BOUNDARY で両側を実測する。
-//   打ち切りは concatTruncations として報告する（黙って参照を落とさない）。
-const CONCAT_SKIP_LIMIT = 400;
+// 派生パス: `+` の後ろの**式オペランド 1 個**の長さが、これを超えたら報告する閾値。
+//   PHASE1-REACH-001f: 001e はこれを**打ち切り**の閾値にしていた（超えたら連結を止める）。
+//   その結果、長い式を 1 つ挟んだだけで結線が見えなくなり、**生きた関数が R1 error 化**した。
+//   いまは打ち切らない ＝ オペランドの終わりは構造（`;` / `,` / 深さ 0 の閉じ括弧）だけで決め、
+//   長さは「見ておいた方がよい」という **報告（R7 warn）** にしか使わない。
+//   ＝ 閾値をどう動かしても参照を落とす方向には効かない。
+const CONCAT_OPERAND_REPORT_LIMIT = 400;
 // 派生パスで式を表す 1 文字のプレースホルダ（元ソースの位置を持たない）。
 const CONCAT_PLACEHOLDER = '\u0001';
 
@@ -661,13 +699,13 @@ function spanEnd(face, p) {
 
 // `+` の後ろの式オペランドを読み飛ばし、次の文字列面の開始位置を返す。
 //   戻り値 >= 0: そこから連結が続く
-//   戻り値 -1  : 連結ではない（; , や閉じ括弧＝式の終わりに当たった）
-//   戻り値 -2  : 上限（CONCAT_SKIP_LIMIT）で打ち切った（＝拾えたかもしれない結線を落とした）
-// 打ち切りは呼び出し側が concatTruncations に記録する。黙って参照を落とさない。
+//   戻り値 -1  : 連結ではない（; , や深さ 0 の閉じ括弧＝式の終わりに当たった）
+// PHASE1-REACH-001f: 長さによる打ち切りは廃止した。止まるのは**構造**だけ
+//   （`;` / `,` / 深さ 0 の閉じ括弧 / ファイル終端）。長いオペランドは呼び出し側が
+//   concatLongOperands に記録して R7 warn で見せるだけで、連結は続行する。
 function skipConcatOperand(src, face, from) {
   let depth = 0;
-  const limit = Math.min(src.length, from + CONCAT_SKIP_LIMIT);
-  for (let q = from; q < limit; q++) {
+  for (let q = from; q < src.length; q++) {
     const f = face[q];
     if (CONCAT_FACES.has(f)) { if (depth === 0) return q; continue; }
     if (f !== FACE.JS_CODE) continue;
@@ -680,7 +718,7 @@ function skipConcatOperand(src, face, from) {
     }
     if (depth === 0 && (ch === ';' || ch === ',')) return -1;
   }
-  return limit < src.length ? -2 : -1;
+  return -1;
 }
 
 // テンプレートの ${ ... } を 1 つ飛ばす。開始は '${' の位置。
@@ -709,7 +747,7 @@ function skipTemplateHole(src, face, p) {
 //       var b = 'deadFn()">go</button>'
 //   これで deadFn が ATTR_VAL_ON に昇格し、死んだ関数が生き返っていた。
 //   連結は `'…' + x + '…'` の形しか無いので、`+` を必須にすれば構造的に閉じる。
-function collectConcatRuns(src, face, truncations) {
+function collectConcatRuns(src, face, longOperands) {
   const runs = [];
   const N = src.length;
   let i = 0;
@@ -745,8 +783,11 @@ function collectConcatRuns(src, face, truncations) {
       }
       if (f === FACE.JS_CODE && expectOperand) {
         const nx = skipConcatOperand(src, face, t);
-        if (nx === -2) { truncations.push({ pos: t, runStart }); p = t; break; }
         if (nx < 0) { p = t; break; }
+        // 長いオペランドは「見ておいた方がよい」印だけ残す。連結は続行する（001f）。
+        if (nx - t > CONCAT_OPERAND_REPORT_LIMIT) {
+          longOperands.push({ pos: t, runStart, length: nx - t });
+        }
         parts.push(null);                       // 式オペランドはプレースホルダ
         p = nx;
         expectOperand = false;
@@ -785,11 +826,19 @@ function collectConcatRuns(src, face, truncations) {
 
 // 復号ランへ HTML ミニレクサを再帰適用し、ATTR_VAL_ON を元の位置へ重ねる。
 // 昇格した位置は derived（Set）に記録する＝「その参照は派生パス由来」だと後から言える。
-function markHtmlInJsStrings(src, face, derived, truncations, tokens) {
+function markHtmlInJsStrings(src, face, derived, longOperands, tokens, unknownOnAttrs) {
   const marked = [];
-  for (const run of collectConcatRuns(src, face, truncations)) {
+  for (const run of collectConcatRuns(src, face, longOperands)) {
     if (run.text.indexOf('<') < 0) continue;          // HTML の組み立てではない
-    const inner = classifyFaces(run.text);
+    // 001f: 再帰適用の out を捨てていたため、**JS 文字列の中の未知 on*= が R8 に
+    // 一切出なかった**（`markHtmlInJsStrings` が `classifyFaces(run.text)` を out 無しで
+    // 呼んでいた 1 行のバグ）。復号位置を元位置へ写して報告する。
+    const innerOut = { scriptBlocks: [], unknownOnAttrs: [] };
+    const inner = classifyFaces(run.text, innerOut);
+    for (const u of innerOut.unknownOnAttrs) {
+      const at = run.map[u.pos];
+      unknownOnAttrs.push({ pos: at >= 0 ? at : run.start, name: u.name, viaDerived: true });
+    }
     let k = 0;
     while (k < inner.length) {
       if (inner[k] !== FACE.ATTR_VAL_ON) { k++; continue; }
@@ -1230,10 +1279,10 @@ function analyze(src) {
 
   // --- (ii) 派生パス: JS 文字列で組み立てた HTML の on*= を ATTR_VAL_ON へ ---
   const derivedPositions = new Set();
-  const concatTruncations = [];
+  const concatLongOperands = [];
   const derivedTokens = [];
   const derivedHandlers = markHtmlInJsStrings(
-    src, face, derivedPositions, concatTruncations, derivedTokens,
+    src, face, derivedPositions, concatLongOperands, derivedTokens, lexOut.unknownOnAttrs,
   );
 
   // --- (iii) トップレベル関数の抽出: JS_CODE 面のみを読む -------------------
@@ -1391,6 +1440,20 @@ function analyze(src) {
     return lo + 1;
   };
 
+  // 長い連結オペランドの報告（R7）。識別子は「所有関数名＋その中での序数」で作る。
+  //   001e は行番号を識別子にしていたため、無関係な 1 行の増減で sig が変わり、
+  //   差分照合の allowed 集合から外れて 8 アサーションが毒された（001f・中2）。
+  const longOperandReports = (() => {
+    const sorted = concatLongOperands.slice().sort((x, y) => x.pos - y.pos);
+    const ord = new Map();
+    return sorted.map((t) => {
+      const owner = ownerOf(t.pos) || '(top-level)';
+      const n = (ord.get(owner) || 0) + 1;
+      ord.set(owner, n);
+      return { owner, ord: n, id: owner + '#' + n, line: lineOf(t.pos), length: t.length };
+    });
+  })();
+
   const describe = (name) => {
     const f = byName.get(name)[0];
     return {
@@ -1426,8 +1489,15 @@ function analyze(src) {
     derivedHandlerCount: derivedHandlers.length,
     // 001e で追加した「隠さずに見せる」ための報告（いずれもレポート層＝warn 行き）
     derivedOnlyReachable,
-    concatTruncations: concatTruncations.map((t) => ({ line: lineOf(t.pos) })),
-    unknownOnAttrs: lexOut.unknownOnAttrs.map((u) => ({ name: u.name, line: lineOf(u.pos) })),
+    // R7 の識別子は**所有関数名＋その中での序数**（行番号にすると無関係な編集で行が
+    // ずれるたびに差分照合が毒される・001f 中2）。
+    concatLongOperands: longOperandReports,
+    unknownOnAttrs: lexOut.unknownOnAttrs
+      .slice()
+      .sort((x, y) => x.pos - y.pos)
+      .map((u) => ({
+        name: u.name, line: lineOf(u.pos), viaDerived: !!u.viaDerived, owner: ownerOf(u.pos),
+      })),
     faceStats: faceStats(baseFace),
     selectorAliases: aliases.map((a) => a.name).sort(),
     rootNames: [...roots.keys()].sort(),
@@ -1456,7 +1526,7 @@ module.exports = {
   isProseFace,
   isStringFace,
   MIN_SELECTOR_PREFIX,
-  CONCAT_SKIP_LIMIT,
+  CONCAT_OPERAND_REPORT_LIMIT,
   ON_EVENT_ATTRS,
   statementEnd,
   detectSelectorAliases,

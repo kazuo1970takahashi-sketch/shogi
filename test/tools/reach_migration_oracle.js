@@ -18,12 +18,41 @@
 //   対象ファイルにその形が実在すれば差分が出るのが正しい（出た差分は理由つきで読むこと）。
 //
 //   このファイルは test_*.js に一致しないので run_tests.sh の自動発見には載らない。
+//   代わりに **test_reachability_001.js の ORACLE-1〜4 が在庫突合する**（001f・中3）。
+//
+//   対応 rev の範囲（PHASE1-REACH-001f）:
+//     このオラクルは旧版が `CHAR_CLASS` と `_internal.cls`（文字クラス配列）を公開して
+//     いることに依存する。＝ **面レクサ導入前の 001/001b/001c 系（既定 9176cc5）だけ**が
+//     対象。001d 以降（2e8f30e / d4e6d98 …）を渡すと旧版にその export が無く、
+//     001e までは `TypeError: Cannot read properties of undefined` で墜落していた。
+//     いまは assertRevCompatible が理由を書いて exit 2 で止まる。
 'use strict';
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+
+// rev 適合性ガード。対応していれば true、していなければ理由つきで throw する。
+// （test_reachability_001.js からも require されるので、副作用は持たせない）
+function assertRevCompatible(oldMod, rev) {
+  const missing = [];
+  if (!oldMod || typeof oldMod.analyze !== 'function') missing.push('analyze()');
+  if (!oldMod || !oldMod.CHAR_CLASS) missing.push('CHAR_CLASS');
+  if (missing.length) {
+    throw new Error(
+      `非対応の rev です: ${rev}\n`
+      + `  旧版 test/lib/reachability.js に ${missing.join(' / ')} がありません。\n`
+      + '  このオラクルは面レクサ導入**前**の版（PHASE1-REACH-001 / 001b / 001c＝既定 9176cc5）と\n'
+      + '  現行を突き合わせるためのものです。001d 以降の rev を旧版として渡すことはできません。\n'
+      + '  使い方: node test/tools/reach_migration_oracle.js 9176cc5 shogi_v4.html',
+    );
+  }
+  return true;
+}
+
+module.exports = { assertRevCompatible };
+if (require.main !== module) return;
 
 const rev = process.argv[2] || '9176cc5';
 const target = process.argv[3] || 'shogi_v4.html';
@@ -36,6 +65,13 @@ fs.writeFileSync(oldPath, execFileSync('git', ['-C', repo, 'show', `${rev}:test/
 }), 'utf8');
 
 const OLD = require(oldPath);
+try {
+  assertRevCompatible(OLD, rev);
+} catch (e) {
+  console.error(e.message);
+  fs.rmSync(dir, { recursive: true, force: true });
+  process.exit(2);
+}
 const NEW = require(path.join(repo, 'test/lib/reachability.js'));
 const src = fs.readFileSync(path.resolve(repo, target), 'utf8');
 

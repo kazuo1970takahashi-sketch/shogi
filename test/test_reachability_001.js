@@ -24,8 +24,9 @@ const path = require('path');
 const { execFile } = require('child_process');
 const {
   analyze, classifyFaces, faceStats, FACE, FACE_NAME, isRefFace,
-  MIN_SELECTOR_PREFIX, CONCAT_SKIP_LIMIT, ON_EVENT_ATTRS,
+  MIN_SELECTOR_PREFIX, CONCAT_OPERAND_REPORT_LIMIT, ON_EVENT_ATTRS,
 } = require('./lib/reachability.js');
+const { assertRevCompatible } = require('./tools/reach_migration_oracle.js');
 
 const target = process.argv[2] || 'shogi_v4.html';
 const RAW = fs.readFileSync(target, 'utf8');
@@ -37,8 +38,13 @@ const CHILD = process.env.REACH_CHILD === '1';
 
 let pass = 0;
 let fail = 0;
+let skipped = 0;
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.log('  FAIL: ' + msg); } };
-const skip = (msg) => console.log(`  － skip: ${msg}`);
+const skip = (msg) => { skipped++; console.log(`  － skip: ${msg}`); };
+// pinIf（対象ファイルに実例があるときだけ照合する検査）が黙って全部 skip になると、
+// 「緑だが何も見ていない」状態になる。skip 数に上限を課す（001f・高3）。
+// 実例が減って上限に触れたら、**skip した検査を合成 fixture へ移す**のが直し方。
+const PIN_SKIP_MAX = 2;
 
 // allowlist の理由に求めるもの
 const MIN_REASON = 20;
@@ -140,15 +146,20 @@ function evaluate(a, allow) {
     add('warn', 'R6', name,
       `${name}() は JS 文字列の中の on*= だけで到達可能。その HTML が実際に挿入されるかは静的には判定できない`);
   }
-  // R7【warn】派生パスが上限で打ち切った箇所。拾えたはずの結線を落としているかもしれない。
-  for (const t of a.concatTruncations || []) {
-    add('warn', 'R7', 'L' + t.line,
-      `L${t.line} 文字列連結が ${CONCAT_SKIP_LIMIT} 文字の上限で打ち切られた。ここに on*= 結線があると見落とす`);
+  // R7【warn】連結ランに挟まっていた長い式オペランド。**参照は落としていない**（001f で
+  //   打ち切りを廃止した）。「この辺りは目で見ておいた方がよい」という印。
+  //   subject は行番号ではなく「所有関数名 #序数」＝無関係な編集で行がずれても変わらない。
+  for (const t of a.concatLongOperands || []) {
+    add('warn', 'R7', t.id,
+      `L${t.line} ${t.owner} の文字列連結に ${t.length} 文字の式オペランドがある（報告閾値 ${CONCAT_OPERAND_REPORT_LIMIT}・連結は打ち切っていない）`);
   }
   // R8【warn】on* に見えるがイベント名リストに無い属性。リスト漏れなら見落としになる。
+  //   001f: JS 文字列の中（派生パス）で見つかったものもここに出る（001e は捨てていた）。
   for (const u of a.unknownOnAttrs || []) {
     add('warn', 'R8', u.name,
-      `L${u.line} ${u.name}= は on* の形だが既知のイベント名ではない（実イベントならリストに足すこと）`);
+      `L${u.line} ${u.name}= は on* の形だが既知のイベント名ではない`
+      + `${u.viaDerived ? '（JS 文字列の中／派生パス' + (u.owner ? ' ' + u.owner : '') + '）' : ''}`
+      + '（実イベントならリストに足すこと）');
   }
 
   // A5【warn】allowlist の肥大。上限超過は「即 FAIL」をやめ、差分と R4 で運用する。
@@ -230,6 +241,12 @@ function insertTopLevelJs(src, a, code) {
   const at = a._internal.topFunctions.reduce((mx, f) => Math.max(mx, f.bodyEnd), -1) + 1;
   return src.slice(0, at) + '\n' + code + '\n' + src.slice(at);
 }
+// スクリプト直下の、**既存の全トップレベル関数より前**へ差し込む（位置は解析結果から引く）。
+function insertTopLevelJsBefore(src, a, code) {
+  const first = a._internal.topFunctions.reduce((mn, f) => Math.min(mn, f.namePos), Infinity);
+  const at = src.lastIndexOf('function', first);
+  return at < 0 ? null : src.slice(0, at) + code + '\n' + src.slice(at);
+}
 // HTML の末尾（本物の </body> の直前）へ差し込む。
 function insertHtml(src, frag) {
   const k = src.lastIndexOf('</body>');
@@ -266,6 +283,24 @@ function selectorSites(src, a) {
     out.push({ pos: m.index, end: m.index + m[0].length, id: m[1] });
   }
   return out;
+}
+// name の出現のうち「派生パスで ATTR_VAL_ON へ昇格した」位置を面から引く。
+// 生テキスト（'beforeend' 等）を anchor にしないための共通ヘルパ（001f・高1b）。
+function derivedOnPos(m, src, name) {
+  const face = m._internal.face;
+  const re = new RegExp('(?<![A-Za-z0-9_$])' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9_$])', 'g');
+  for (const mm of src.matchAll(re)) {
+    if (face[mm.index] === FACE.ATTR_VAL_ON && m._internal.derivedPositions.has(mm.index)) return mm.index;
+  }
+  return -1;
+}
+// 失敗時に「どの面に載っていたか」を出す（FAIL メッセージを実測つきにするため）。
+function derivedOnPosDetail(m, src, name) {
+  const face = m._internal.face;
+  const seen = new Set();
+  const re = new RegExp('(?<![A-Za-z0-9_$])' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9_$])', 'g');
+  for (const mm of src.matchAll(re)) seen.add(FACE_NAME[face[mm.index]]);
+  return [...seen].join('/') || '(出現なし)';
 }
 // トップレベル関数のスパン（`function` キーワードから本体末尾まで）。
 function functionSpan(src, a, name) {
@@ -355,7 +390,7 @@ pinIf(A.deadBindings.find((d) => d.reason === 'no-live-activation'),
 console.log(`  検査1 静的到達不能: ${A.unreachableStatic.length}`);
 console.log(`  検査2 実行時のみ到達不能: ${A.unreachableRuntimeOnly.length}（レポート）`);
 console.log(`  検査2 死んだ結線: ${A.deadBindings.length} (${A.deadBindings.map((d) => d.selector).join(', ') || 'なし'})（レポート）`);
-console.log(`  派生パスのみで到達可能: ${A.derivedOnlyReachable.length} / 連結打ち切り: ${A.concatTruncations.length} / 未知 on*: ${A.unknownOnAttrs.length}`);
+console.log(`  派生パスのみで到達可能: ${A.derivedOnlyReachable.length} / 長い連結オペランド: ${A.concatLongOperands.length} / 未知 on*: ${A.unknownOnAttrs.length}`);
 
 // =============================================================================
 // 3. 本番判定（errors だけが CI を落とす）
@@ -404,6 +439,84 @@ ok(typeof LIMITS.allowlist_max === 'number' && LIMITS.allowlist_max > 0,
 ok((LIMITS.reason || '').trim().length >= MIN_REASON,
   'A5-1 目安上限には理由が書かれている（引き上げがレビュー対象になる）');
 ok(!V.errors.some((v) => v.rule === 'A5'), 'A5-2 上限超過は warn であり CI をブロックしない');
+
+// =============================================================================
+// 4b. 警告層の検出装置が生きているか（枯れ検査・受け入れ基準3）
+//   001e は warn 層に must が無く、`length > 0` しか見ていなかったため、
+//   **R2 の一覧を slice(0,1) で 9/10 件捨てても・class 結線の検出を丸ごと削除しても
+//   全緑**だった（差し戻し 5 回目の高3）。かといって実測値を絶対 pin で固定すると、
+//   #798 の死にコード掃除で正当に減ったときに赤くなる（4 版目の再発）。
+//   → **合成の probe を注入して「検出できること」自体を毎回確かめる**。
+//     対象ファイルの実数がいくつであっても成り立ち、検出装置を壊すと必ず落ちる。
+// =============================================================================
+console.log('=== 警告層の検出装置（枯れ検査） ===');
+const WP = {
+  rt: [uniq('__probeRtFnA'), uniq('__probeRtFnB'), uniq('__probeRtFnC')],
+  id: uniq('__probeAbsentBindingId'),
+  cls: uniq('__probeAbsentBindingClass'),
+  wire: uniq('__probeDeadWire'),
+};
+// 死んだ結線（id / class）と、その死んだ領域の中からしか呼ばれない関数 3 本。
+const WARN_PROBE_SRC = insertTopLevelJs(RAW, A, [
+  `function ${WP.rt[0]}(){ return 1; }`,
+  `function ${WP.rt[1]}(){ return 2; }`,
+  `function ${WP.rt[2]}(){ return 3; }`,
+  `function ${WP.wire}(){`,
+  `  var el=document.getElementById('${WP.id}');`,
+  `  el.addEventListener('click', function(){ ${WP.rt[0]}(); ${WP.rt[1]}(); ${WP.rt[2]}(); });`,
+  `  var list=document.querySelectorAll('.${WP.cls}');`,
+  '  list.forEach(function(x){ x.classList.add(\'on\'); });',
+  '}',
+  `${WP.wire}();`,
+].join('\n'));
+
+// analyze の実装を差し替えられる形で書く＝**壊した lib を当てて落ちることを実測できる**。
+function warnInstrumentReport(analyzeFn) {
+  const a = analyzeFn(WARN_PROBE_SRC);
+  return {
+    runtime: WP.rt.filter((n) => a.unreachableRuntimeOnly.some((x) => x.name === n)).length,
+    idBinding: a.deadBindings.some((d) => d.selector === '#' + WP.id),
+    classBinding: a.deadBindings.some((d) => d.kind === 'class' && d.selector === '.' + WP.cls),
+  };
+}
+const instrumentAlive = (r) => r.runtime === WP.rt.length && r.idBinding && r.classBinding;
+const WI = warnInstrumentReport(analyze);
+ok(WI.runtime === WP.rt.length,
+  `WI-1 死んだ領域からしか呼ばれない ${WP.rt.length} 本を実行時到達不能として全部報告する（実測 ${WI.runtime}）`);
+ok(WI.idBinding, `WI-2 生成されない id への結線（#${WP.id}）を報告する`);
+ok(WI.classBinding, `WI-3 生成されない class への結線（.${WP.cls}）を報告する`);
+console.log(`  枯れ検査 probe: runtime=${WI.runtime}/${WP.rt.length} id=${WI.idBinding} class=${WI.classBinding}`);
+
+// 検出装置を実際に壊した lib を作り、この枯れ検査が**落ちること**を実測する。
+{
+  const LIB_SRC = fs.readFileSync(path.join(__dirname, 'lib', 'reachability.js'), 'utf8');
+  const mutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reach001f-lib-'));
+  const LIB_MUTATIONS = [
+    {
+      tag: 'R2-truncate',
+      label: 'R2（実行時到達不能）の一覧を 1 件に切り詰める',
+      apply: (s) => s.replace('.filter((n) => reachStatic.has(n) && !reachRuntime.has(n))',
+        '.filter((n) => reachStatic.has(n) && !reachRuntime.has(n)).slice(0, 1)'),
+    },
+    {
+      tag: 'class-binding-delete',
+      label: 'class セレクタの死んだ結線検出を丸ごと削除する',
+      apply: (s) => s.replace("  scanByCss('querySelectorAll');\n", ''),
+    },
+  ];
+  for (const mu of LIB_MUTATIONS) {
+    const mutated = mu.apply(LIB_SRC);
+    ok(mutated !== LIB_SRC, `WI-M[${mu.tag}]-1 lib を実際に変異させた（${mu.label}）`);
+    if (mutated === LIB_SRC) continue;
+    const p = path.join(mutDir, `reachability_${mu.tag}.js`);
+    fs.writeFileSync(p, mutated, 'utf8');
+    // eslint-disable-next-line global-require, import/no-dynamic-require
+    const r = warnInstrumentReport(require(p).analyze);
+    ok(!instrumentAlive(r),
+      `WI-M[${mu.tag}]-2 その変異は枯れ検査に捕まる（実測 runtime=${r.runtime}/${WP.rt.length} id=${r.idBinding} class=${r.classBinding}）`);
+  }
+  fs.rmSync(mutDir, { recursive: true, force: true });
+}
 
 // =============================================================================
 // 5. 面 × 変異の全表（受け入れ基準2）
@@ -578,6 +691,36 @@ for (const t of FACE_TABLE) {
     { warnings: { must: ['R8:onbogus'], allowed: ['R8:onbogus'] } }, 'T[ATTR_VAL]-12');
 }
 
+// --- 派生パスの中の未知 on* も R8 に出る（001f・中1）---------------------------
+//   001e は `markHtmlInJsStrings` が `classifyFaces(run.text)` を out 無しで呼んでいて、
+//   **JS 文字列の中の未知 on*= は R8 に一切出なかった**（1 行のバグ）。
+{
+  const WIRE = uniq('__probeDerivedUnknownWire');
+  const src = insertTopLevelJs(FX, FXA,
+    `function ${WIRE}(){ document.body.insertAdjacentHTML('beforeend','<button onbogusderived="${DEAD}()">x</button>'); }\n${WIRE}();`);
+  const m = analyze(src);
+  ok(m.unknownOnAttrs.some((u) => u.name === 'onbogusderived' && u.viaDerived),
+    `R8-DERIVED-1 JS 文字列の中の未知 on*= が報告される（実測 ${JSON.stringify(m.unknownOnAttrs.map((u) => u.name))}）`);
+  ok(m.unreachableStatic.some((x) => x.name === DEAD),
+    'R8-DERIVED-2 未知 on* なので死んだ関数はルート化しない');
+  checkDelta(FXV, evaluate(m, FX_ALLOW),
+    { warnings: { must: ['R8:onbogusderived'], allowed: ['R8:onbogusderived'] } }, 'R8-DERIVED-3');
+}
+
+// --- イベント名リストの漏れは「生きた関数を殺す」向きに倒れる（001f・中1）------
+//   001e のリストには実在イベントが 6 件漏れていて、`onmousewheel` で結線した
+//   生きた関数が R1 error になった＝虚偽の allowlist 登録以外に緑化手段が無かった。
+for (const ev of ['onmousewheel', 'onpointerrawupdate', 'onfullscreenchange',
+  'onfullscreenerror', 'oncommand', 'onscrollsnapchange']) {
+  ok(ON_EVENT_ATTRS.has(ev), `EVENT[${ev}]-0 実イベント名としてリストに載っている`);
+  const NAME = uniq('__probeEvent' + ev);
+  const m = analyze(insertHtml(insertTopLevelJs(RAW, A, `function ${NAME}(){ return 1; }`),
+    `<div ${ev}="${NAME}()">x</div>`));
+  ok(!m.unreachableStatic.some((x) => x.name === NAME),
+    `EVENT[${ev}]-1 ${ev}= で結線した生きた関数を到達不能と言わない`);
+  checkDelta(V, evaluate(m, ALLOW), {}, `EVENT[${ev}]-2`);
+}
+
 // --- 実在の on* を複数行にしてもルートを失わない（3 版目はここで落ちた）---------
 {
   const span = ON_SPANS[0];
@@ -598,9 +741,12 @@ for (const t of FACE_TABLE) {
     + `function ${NAME}Wire(){ document.body.insertAdjacentHTML('beforeend','<button onclick="${NAME}()">go</button>'); }\n`
     + `${NAME}Wire();`);
   const m = analyze(src);
-  const pos = src.indexOf(NAME, src.indexOf('beforeend'));
-  ok(FACE_NAME[m._internal.face[pos]] === 'ATTR_VAL_ON',
-    `T[JS_STR_SQ]-7 JS 文字列の中の on*= は派生パスで ATTR_VAL_ON へ昇格する（実測 ${FACE_NAME[m._internal.face[pos]]}）`);
+  // 001e はここを `src.indexOf('beforeend')` の生テキストで anchor していた。
+  // 標準 API `insertAdjacentHTML('beforeend', …)` を使う無害な関数を 1 個足すだけで
+  // 別の位置を指して FAIL した（差し戻し 5 回目の高1b）。**面から引く**。
+  const pos = derivedOnPos(m, src, NAME);
+  ok(pos >= 0,
+    `T[JS_STR_SQ]-7 JS 文字列の中の on*= は派生パスで ATTR_VAL_ON へ昇格する（実測 ${derivedOnPosDetail(m, src, NAME)}）`);
   ok(!m.unreachableStatic.some((x) => x.name === NAME), 'T[JS_STR_SQ]-8 そこで結線した関数を到達不能と言わない');
   ok(m.derivedHandlerCount === FXA.derivedHandlerCount + 1,
     `T[JS_STR_SQ]-9 派生パスで拾った on*= が 1 件増える: ${FXA.derivedHandlerCount} → ${m.derivedHandlerCount}`);
@@ -634,27 +780,42 @@ for (const t of FACE_TABLE) {
   checkDelta(FXV, evaluate(m, FX_ALLOW), {}, 'T[JS_STR_SQ]-14');
 }
 
-// --- 派生パス: 連結上限の境界（文書と実測を一致させる）--------------------------
+// --- 派生パス: 長い式オペランドでも連結を打ち切らない（001f・中2）---------------
+//   001e は上限で連結を打ち切っていたので、長い式を 1 つ挟むだけで**生きた関数が
+//   R1 error 化**した。001e の境界テストは fixture の合成関数を allowlist に事前登録
+//   していたため、この向き（実ファイルで error が増えるか）を証明できていなかった。
+//   → **実ファイル（RAW / ALLOW）に対して**、閾値の内側・外側の両方を測る。
 {
-  // オペランドは `String('xxx…')` ＝ gap + 10 文字。上限の内側 / 外側を両方測る。
-  const wire = (gap) => insertTopLevelJs(FX, FXA,
-    `function ${DEAD}Wire(){ document.body.insertAdjacentHTML('beforeend','<button onclick="'+String('${'x'.repeat(gap)}')+'${DEAD}()">go</button>'); }\n`
-    + `${DEAD}Wire();`);
-  const inGap = CONCAT_SKIP_LIMIT - 10 - 4;
-  const overGap = CONCAT_SKIP_LIMIT - 10 + 4;
-  const mIn = analyze(wire(inGap));
-  const mOver = analyze(wire(overGap));
-  ok(!mIn.unreachableStatic.some((x) => x.name === DEAD),
-    `CONCAT-BOUNDARY-1 オペランド ${inGap + 10} 文字（上限 ${CONCAT_SKIP_LIMIT} の内側）なら結線を拾う`);
-  ok(mOver.unreachableStatic.some((x) => x.name === DEAD),
-    `CONCAT-BOUNDARY-2 オペランド ${overGap + 10} 文字（上限の外側）では拾わない`);
-  ok(mOver.concatTruncations.length > FXA.concatTruncations.length,
-    `CONCAT-BOUNDARY-3 打ち切りは黙って起きず concatTruncations に記録される: ${FXA.concatTruncations.length} → ${mOver.concatTruncations.length}`);
-  const vOver = evaluate(mOver, FX_ALLOW);
-  ok(vOver.warnings.some((x) => x.rule === 'R7'), 'CONCAT-BOUNDARY-4 打ち切りは warn（R7）として見える');
-  checkDelta(FXV, vOver, {
-    warnings: { must: [], allowed: vOver.warnings.filter((x) => x.rule === 'R7').map(sig) },
-  }, 'CONCAT-BOUNDARY-5 打ち切りで error は増えない（生きた関数を R1 にしない）');
+  const NAME = uniq('__probeLongOperand');
+  // オペランドは `String('xxx…')` ＝ gap + 十数文字。
+  const wire = (gap) => insertTopLevelJs(RAW, A,
+    `function ${NAME}(){ return 1; }\n`
+    + `function ${NAME}Wire(){ document.body.insertAdjacentHTML('beforeend','<button onclick="'+String('${'x'.repeat(gap)}')+'${NAME}()">go</button>'); }\n`
+    + `${NAME}Wire();`);
+  const under = analyze(wire(CONCAT_OPERAND_REPORT_LIMIT - 60));
+  const over = analyze(wire(CONCAT_OPERAND_REPORT_LIMIT + 60));
+  const R6_ALLOWED = ['R6:' + NAME, 'R6:' + NAME + 'Wire'];
+  ok(!under.unreachableStatic.some((x) => x.name === NAME),
+    `CONCAT-1 報告閾値 ${CONCAT_OPERAND_REPORT_LIMIT} の内側なら結線を拾う`);
+  ok(under.concatLongOperands.length === A.concatLongOperands.length,
+    `CONCAT-2 内側では報告も出ない: ${A.concatLongOperands.length} → ${under.concatLongOperands.length}`);
+  ok(!over.unreachableStatic.some((x) => x.name === NAME),
+    'CONCAT-3 閾値を超えても結線を拾う（001e は打ち切って生きた関数を R1 error にしていた）');
+  ok(over.concatLongOperands.length === A.concatLongOperands.length + 1,
+    `CONCAT-4 長さは黙らず報告される: ${A.concatLongOperands.length} → ${over.concatLongOperands.length}`);
+  const overV = evaluate(over, ALLOW);
+  ok(overV.warnings.some((x) => x.rule === 'R7'), 'CONCAT-5 報告は R7 warn として見える');
+  checkDelta(V, overV, {
+    warnings: { must: [], allowed: overV.warnings.filter((x) => x.rule === 'R7').map(sig).concat(R6_ALLOWED) },
+  }, 'CONCAT-6 実ファイルでも error は 1 件も増えない（fixture の allowlist に頼らない）');
+
+  // R7 の識別子が行番号ではないこと＝無関係な行の増減で sig が変わらない（001f・中2）。
+  const shifted = analyze('\n\n\n\n\n' + wire(CONCAT_OPERAND_REPORT_LIMIT + 60));
+  const idsOf = (x) => x.concatLongOperands.map((t) => t.id).join(',');
+  ok(idsOf(shifted) === idsOf(over) && idsOf(over).indexOf(NAME + 'Wire#1') >= 0,
+    `CONCAT-7 R7 の識別子は行がずれても変わらない（所有関数名＋序数）: ${idsOf(over)} / 5 行ずらした後 ${idsOf(shifted)}`);
+  ok(shifted.concatLongOperands[0].line !== over.concatLongOperands[0].line,
+    'CONCAT-8 その間、行番号は実際にずれている（＝行番号を sig にしていたら毒されていた）');
 }
 
 // --- 派生パス: \xNN / \uXXXX で書かれた結線も復号して拾う（001e・中）------------
@@ -707,24 +868,47 @@ if (soleRoot) {
   }, 'M1-3');
 }
 
-// --- M2: 実在のインライン onclick を取り除く ---------------------------------
-{
-  const span = onAttrSpans(A)[0];
-  ok(!!span, 'M2-0 実在のインライン on*= 属性値を面から引けた');
-  if (span) {
+// --- M2: 実在のインライン on*= で結線された関数のルートを**全部**取り除く -------
+//   001e はここで「先頭の on*= が呼ぶ関数は他にルートを持たない」を暗黙に pin していた。
+//   同じ関数を呼ぶボタンをもう 1 個足すだけで M2-2/M2-3 が落ち、allowlist でも回避できない
+//   （＝正当な編集で赤くなる・差し戻し 5 回目の高1a）。**唯一ルートを前提にせず、
+//   対象関数のルートを全部潰してから照合する**。
+const m2Case = (() => {
+  for (const span of onAttrSpans(A)) {
     const called = RAW.slice(span.start, span.end).match(/[A-Za-z_$][A-Za-z0-9_$]*/g) || [];
     const victim = called.find((n) => A._internal.byName.has(n));
-    ok(!!victim, `M2-1 その属性値が呼んでいるトップレベル関数を特定できた: ${victim}`);
-    if (victim) {
-      const m2 = analyze(RAW.slice(0, span.start) + RAW.slice(span.end));
-      ok(m2.unreachableStatic.some((x) => x.name === victim), `M2-2 ${victim} が到達不能として検出される`);
-      checkDelta(V, evaluate(m2, ALLOW), {
-        errors: { must: ['R1:' + victim], allowed: closureOf(A, victim).map((n) => 'R1:' + n) },
-        warnings: { must: [], allowed: WARN_UNIVERSE },
-        warningsRemoved: { must: [], allowed: WARN_REMOVABLE },
-      }, 'M2-3');
+    if (!victim) continue;
+    // ルート位置は解析結果から引く（テキスト検索ではない）。後ろから置換して位置ずれを避ける。
+    const roots = (A._internal.roots.get(victim) || []).map((r) => r.pos).sort((x, y) => y - x);
+    if (!roots.length) continue;
+    let src = RAW;
+    for (const p of roots) {
+      src = src.slice(0, p) + '__reachRemovedCall' + src.slice(p + victim.length);
+    }
+    const m = analyze(src);
+    if (m.unreachableStatic.some((x) => x.name === victim)) {
+      return { victim, m, roots: roots.length, onFaces: (A._internal.roots.get(victim) || []).map((r) => r.face) };
     }
   }
+  return null;
+})();
+ok(!!m2Case, 'M2-0 インライン on*= で結線された関数と、そのルート全部を構造から引けた');
+if (m2Case) {
+  ok(m2Case.onFaces.indexOf('ATTR_VAL_ON') >= 0,
+    `M2-1 ${m2Case.victim} のルートにインライン on*= が含まれる（ルート ${m2Case.roots} 箇所: ${m2Case.onFaces.join(', ')}）`);
+  ok(m2Case.m.unreachableStatic.some((x) => x.name === m2Case.victim),
+    `M2-2 ルートを全部潰すと ${m2Case.victim} が到達不能として検出される`);
+  checkDelta(V, evaluate(m2Case.m, ALLOW), {
+    errors: { must: ['R1:' + m2Case.victim], allowed: closureOf(A, m2Case.victim).map((n) => 'R1:' + n) },
+    warnings: { must: [], allowed: WARN_UNIVERSE },
+    warningsRemoved: { must: [], allowed: WARN_REMOVABLE },
+  }, 'M2-3');
+  // 「同じ関数を呼ぶボタンをもう 1 個足す」だけでは何も起きない（正当な編集）。
+  const m2b = analyze(insertHtml(RAW,
+    `<button type="button" onclick="${m2Case.victim}()">__opDupHandlerButton</button>`));
+  ok(!m2b.unreachableStatic.some((x) => x.name === m2Case.victim),
+    `M2-4 同じ関数を呼ぶボタンを 1 個増やしても ${m2Case.victim} は到達可能のまま`);
+  checkDelta(V, evaluate(m2b, ALLOW), {}, 'M2-5 ボタンを 1 個増やしても違反は増えない');
 }
 
 // --- M3: 生きている結線先の id を描画しなくする（検査2＝warn の変異）-----------
@@ -753,12 +937,17 @@ if (cand) {
 }
 
 // --- M4: allowlist から 1 件外す ---------------------------------------------
+//   001f: allowlist を 1 件減らすと A5（上限超過）warn が消えることがある。
+//   基準側にすでに A5 warn が出ている状態（＝ headroom を使い切った実ファイル）でも
+//   この変異が stray FAIL にならないよう、A5 の増減を allowed に入れる。
 {
   const m4Allow = clone(ALLOW);
   const dropped = m4Allow.static.shift();
   ok(!!dropped, 'M4-0 allowlist（static）から 1 件外した');
   checkDelta(V, evaluate(A, m4Allow), {
     errors: { must: ['R1:' + dropped.name], allowed: ['R1:' + dropped.name] },
+    warnings: { must: [], allowed: ['A5:allowlist'] },
+    warningsRemoved: { must: [], allowed: ['A5:allowlist'] },
   }, 'M4-1');
 }
 
@@ -870,12 +1059,26 @@ pinIf(A.deadBindings.find((d) => d.reason === 'no-live-activation'),
   });
 
 // --- A5 の経路そのものを検算する（上限超過 → warn で、error にはならない）------
+//   001f: 001e は「基準側に A5 warn が無い」ことを前提にしていたため、実ファイルが
+//   上限 +1 になった瞬間に **A5-3 自身が落ちる**自己矛盾だった（差し戻し 5 回目の高2）。
+//   基準側の状態を見てから期待を作る。
 {
+  const a5Base = V.warnings.some((x) => x.rule === 'A5');
   const a5 = clone(ALLOW);
   a5.limits = Object.assign({}, a5.limits, { allowlist_max: 1 });
-  checkDelta(V, evaluate(A, a5), {
-    warnings: { must: ['A5:allowlist'], allowed: ['A5:allowlist'] },
-  }, 'A5-3 上限超過は warn 1 件だけ（error は増えない）');
+  const a5v = evaluate(A, a5);
+  checkDelta(V, a5v, {
+    warnings: { must: a5Base ? [] : ['A5:allowlist'], allowed: ['A5:allowlist'] },
+  }, 'A5-3 上限超過は warn だけ（error は増えない）');
+  ok(a5v.warnings.some((x) => x.rule === 'A5'), 'A5-3b 上限超過が warn として出ている');
+  ok(!a5v.errors.some((x) => x.rule === 'A5'), 'A5-3c 上限超過は error にならない');
+  // 上限 +1 ちょうど（headroom を使い切った状態）でも、CI をブロックしない。
+  const a5x = clone(ALLOW);
+  a5x.limits = Object.assign({}, a5x.limits, { allowlist_max: allowCount(ALLOW) - 1 });
+  const a5xv = evaluate(A, a5x);
+  ok(a5xv.errors.length === 0,
+    `A5-4 上限 +1（${allowCount(ALLOW)} 件 / 上限 ${allowCount(ALLOW) - 1}）でも error は 0（実測 ${show(a5xv.errors)}）`);
+  ok(a5xv.warnings.some((x) => x.rule === 'A5'), 'A5-5 その状態は A5 warn として見える');
 }
 
 // =============================================================================
@@ -1089,6 +1292,22 @@ pinIf(A.deadBindings.find((d) => d.reason === 'no-live-activation'),
 // =============================================================================
 ok(RAW === before, 'M9 変異検証は全てメモリ上のコピーに対して行われ、読み込んだ原文は不変');
 ok(fs.readFileSync(target, 'utf8') === before, `M9b ${target} はディスク上でも 1 バイトも変わっていない`);
+ok(skipped <= PIN_SKIP_MAX,
+  `M9c pinIf の skip が上限内（${skipped} / ${PIN_SKIP_MAX}）＝「実例が無いので見ていない」検査が積み上がっていない`);
+
+// --- 移行オラクル（test/tools/）が腐っていないこと（001f・中3）------------------
+//   test/tools/ は run_tests.sh の自動発見に載らないので、ここから在庫突合する。
+{
+  const oraclePath = path.join(__dirname, 'tools', 'reach_migration_oracle.js');
+  ok(fs.existsSync(oraclePath), 'ORACLE-1 移行オラクルが成果物として存在する（test/tools/reach_migration_oracle.js）');
+  ok(typeof assertRevCompatible === 'function', 'ORACLE-2 rev 適合性ガードが関数として公開されている');
+  let guarded = null;
+  try { assertRevCompatible({ analyze: () => ({}) }, 'dummyrev'); } catch (e) { guarded = e.message; }
+  ok(guarded !== null && /rev/.test(guarded),
+    `ORACLE-3 CHAR_CLASS を持たない非対応 rev はガードされる（実測: ${guarded || 'ガードされなかった'}）`);
+  ok(assertRevCompatible({ analyze: () => ({}), CHAR_CLASS: { C: 67, S: 83, X: 88, H: 72 } }, 'x') === true,
+    'ORACLE-4 対応 rev（CHAR_CLASS を持つ）は通る');
+}
 
 function finish() {
   console.log(`PHASE1-REACH-001: PASS=${pass} FAIL=${fail} WARN2=${V.warnings.length}`);
@@ -1162,6 +1381,34 @@ OPS.push({
   src: fp5Src,
   expectWarn: '#' + FP5_ID,
 });
+// --- 001f で追加した 3 操作（差し戻し 5 回目の高1a / 高1b / 高2）--------------
+if (m2Case) {
+  OPS.push({
+    label: `⑥同じ関数（${m2Case.victim}）を呼ぶボタンをもう 1 個追加`,
+    src: insertHtml(RAW, `<button type="button" onclick="${m2Case.victim}()">__opDupButton</button>`),
+  });
+}
+{
+  // ファイルの**先頭側**（既存の全関数より前）へ入れる＝生テキスト anchor が
+  // 「最初の出現」を掴んでいたら必ず壊れる位置（001e はここで T[JS_STR_SQ]-7 が落ちた）。
+  const NAME = uniq('__opBeforeendRender');
+  OPS.push({
+    label: "⑦insertAdjacentHTML('beforeend', …) を使う関数を 1 個追加",
+    src: insertTopLevelJsBefore(RAW, A,
+      `function ${NAME}(){ document.body.insertAdjacentHTML('beforeend','<div class="notice">x</div>'); }\n${NAME}();`),
+  });
+}
+{
+  // allowlist が上限 +1 になった実ファイル。A5 は warn なので exit=0 のままであること。
+  const allow2 = clone(ALLOW);
+  allow2.limits = Object.assign({}, allow2.limits, { allowlist_max: allowCount(ALLOW) - 1 });
+  OPS.push({
+    label: `⑧allowlist が上限 +1（${allowCount(ALLOW)} 件 / 上限 ${allowCount(ALLOW) - 1}）`,
+    src: RAW,
+    allow: allow2,
+    expectWarn: 'allowlist が上限',
+  });
+}
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'reach001e-'));
 const jobs = OPS.map((op, i) => {
