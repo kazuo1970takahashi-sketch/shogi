@@ -6,25 +6,20 @@
 //         buildScoreboardClassTableHtml）で星取表化。無効/欠損は ''（現行順位表へフォールバック・受入基準2）。
 //   ゲスト: #760 の☁送信 冒頭ガードが効いている＝ゲスト大会は snapshot 経路に乗らないことをピン（依頼 §設計論点）。
 //   実データ不使用（架空 fixture のみ）・読み取り専用。
-const fs=require('fs');
-function extractScripts(p){const html=fs.readFileSync(p,'utf8');const s=[];const re=/<script[^>]*>([\s\S]*?)<\/script>/g;let m;while((m=re.exec(html))!==null)s.push(m[1]);return s.join('\n');}
-function makeContext(){
-  function n(t){return{nodeType:1,tagName:String(t||'div'),id:'',className:'',value:'',innerHTML:'',style:{},_a:{},childNodes:[],appendChild:function(c){this.childNodes.push(c);return c;},setAttribute:function(){},getAttribute:function(){return null;},addEventListener:function(){},querySelector:function(){return null;},querySelectorAll:function(){return[];}};}
-  var el={};var doc={getElementById:function(i){if(!el[i]){var x=n('div');x.id=i;el[i]=x;}return el[i];},createElement:function(t){return n(t);},createTextNode:function(t){return{nodeType:3,textContent:String(t==null?'':t)};},body:n('body'),addEventListener:function(){},querySelector:function(){return null;},querySelectorAll:function(){return[];}};
-  var win={innerWidth:1024,addEventListener:function(){},scrollTo:function(){},open:function(){return{focus:function(){},print:function(){},close:function(){}};}};
-  var ls={_:{},getItem:function(k){return(k in this._)?this._[k]:null;},setItem:function(k,v){this._[k]=String(v);},removeItem:function(k){delete this._[k];}};
-  return{document:doc,window:win,localStorage:ls};
-}
+// PHASE1-ISOLATE-001: 全束評価（extractScripts + new Function）を共通ヘルパ loadApp へ寄せた
+//   （このファイルは extractFn を全部ソース検査に使っており隔離実行ゼロ＝スライス2 と同じレシピ）。
+//   関数の切り出しはスライス3の共通実装（app_isolated.extractFn）を使う。
+const H=require('./lib/app_harness');
+const {extractFn}=require('./lib/app_isolated');
 const target=process.argv[2]||'shogi_v4.html';
-const RAW=fs.readFileSync(target,'utf8');
+const RAW=H.readHtml(target);
 function loadEnv(){
-  const ctx=makeContext();const js=extractScripts(target);const cryptoMock={randomUUID(){return '00000000-0000-0000-0000-000000000000';}};
-  const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout',
-    `${js};return { syncTournamentToCloud:syncTournamentToCloud, sendTournamentToCloud:sendTournamentToCloud,
-      buildPublicLiveSnapshot:buildPublicLiveSnapshot, buildCloudSnapshotScoreboardHtml:buildCloudSnapshotScoreboardHtml,
-      fetchCloudSnapshotForTournament:fetchCloudSnapshotForTournament,
-      _setState:function(s){ state=s; }, _getState:function(){ return state; } };`);
-  return fn(ctx.document,ctx.window,ctx.localStorage,cryptoMock,function(){},function(){return true;},function(){return '';},function(){},function(){},{createObjectURL:function(){return 'blob:mock';},revokeObjectURL:function(){}},{log:function(){},warn:function(){},error:function(){}},Promise,function(){return 0;});
+  // crypto は評価前 override（ブラウザ API）。既定の randomUUID は '0' なので旧テストの固定 UUID に合わせる。
+  const app=H.loadApp(target,{overrides:{crypto:{randomUUID(){return '00000000-0000-0000-0000-000000000000';},getRandomValues(a){return a;}}}});
+  return { syncTournamentToCloud:app.ctx.syncTournamentToCloud, sendTournamentToCloud:app.ctx.sendTournamentToCloud,
+    buildPublicLiveSnapshot:app.ctx.buildPublicLiveSnapshot, buildCloudSnapshotScoreboardHtml:app.ctx.buildCloudSnapshotScoreboardHtml,
+    fetchCloudSnapshotForTournament:app.ctx.fetchCloudSnapshotForTournament,
+    _setState:function(s){ app.ctx.state=s; }, _getState:function(){ return app.ctx.state; } };
 }
 // mock supabase client（test_stageb_sync と同型＋select().eq() 読み取りチェーンを追加）
 function makeClient(cfg){
@@ -121,18 +116,11 @@ const master={ members:[{id:'m_a1',name:'架空甲',yomi:'かくうこう'},{id:
     'D11 viewer（RLS で 0 行）は snapshot:null＋星取表は空文字＝現行順位表のみ表示にフォールバック（機能は壊れない）');
 
   // ---- S. 静的ピン（2段構成・フォールバック無改変）----
-  function extractFn(name){
-    const idx=RAW.indexOf('function '+name+'(');
-    if(idx<0)return null;
-    let depth=0,i=RAW.indexOf('{',idx);
-    for(;i<RAW.length;i++){ if(RAW[i]==='{')depth++; else if(RAW[i]==='}'){depth--; if(depth===0)return RAW.slice(idx,i+1);} }
-    return null;
-  }
-  var det=extractFn('renderCloudTournamentDetail')||'';
+  var det=extractFn(RAW,'renderCloudTournamentDetail')||'';
   ok(det.indexOf('fetchCloudSnapshotForTournament')>=0,'S1 詳細描画が snapshot も取得する');
   ok(det.indexOf('buildCloudSnapshotScoreboardHtml')>=0&&det.indexOf('buildCloudResultBlocksHtml')>=0,
     'S2 2段構成＝星取表（上段）＋現行順位表（下段・buildCloudResultBlocksHtml 無改変呼び出し維持）');
-  var blocks=extractFn('buildCloudResultBlocksHtml')||'';
+  var blocks=extractFn(RAW,'buildCloudResultBlocksHtml')||'';
   ok(blocks.indexOf('tournament_snapshots')<0&&blocks.indexOf('snapshot')<0,'S3 現行順位表ビルダーは無改変（snapshot 非依存のまま）');
 
   // ---- G. ゲスト大会は snapshot 経路に乗らない（#760 冒頭ガードのピン・依頼 §設計論点）----
@@ -142,7 +130,7 @@ const master={ members:[{id:'m_a1',name:'架空甲',yomi:'かくうこう'},{id:
   var gr=await env.sendTournamentToCloud(function(m){statuses.push(m);});
   ok(gr&&gr.ok===false&&gr.step==='guest-mode','G1 ゲスト大会は☁送信 冒頭で遮断（{ok:false,step:guest-mode}）＝snapshot 経路に到達しない');
   ok(statuses.join('|').indexOf('ゲスト大会の結果はクラウドに送信できません')>=0,'G2 遮断は理由の説明つき');
-  var send=extractFn('sendTournamentToCloud')||'';
+  var send=extractFn(RAW,'sendTournamentToCloud')||'';
   ok(send.indexOf("step:'guest-mode'")>=0&&send.indexOf('guest-mode')<send.indexOf('syncTournamentToCloud'),
     'G3 ガードは syncTournamentToCloud（snapshot 同梱送信）より前段');
 

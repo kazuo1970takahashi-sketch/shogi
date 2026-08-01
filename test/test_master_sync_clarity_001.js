@@ -12,24 +12,13 @@
 //   データは完全架空のみ・読み取り専用。
 const fs = require('fs');
 const path = require('path');
+// PHASE1-ISOLATE-001: 自前の extractFn（brace バランス）と new Function 隔離を共通ヘルパへ寄せた。
+const { loadIsolated, extractFn, readHtml } = require('./lib/app_isolated');
 const target = process.argv[2] || 'shogi_v4.html';
 const root = path.dirname(path.resolve(target));
-const RAW = fs.readFileSync(target, 'utf8');
+const RAW = readHtml(target);
 let pass = 0, fail = 0;
 function assert(c, m) { if (c) { pass++; } else { fail++; console.log('  FAIL: ' + m); } }
-
-// ---- 関数抽出（brace バランス・test_guest_tournament_001 と同型）
-function extractFn(name) {
-  const idx = RAW.indexOf('function ' + name + '(');
-  if (idx < 0) return null;
-  let depth = 0, i = RAW.indexOf('{', idx);
-  const start = idx;
-  for (; i < RAW.length; i++) {
-    if (RAW[i] === '{') depth++;
-    else if (RAW[i] === '}') { depth--; if (depth === 0) return RAW.slice(start, i + 1); }
-  }
-  return null;
-}
 
 const NEW_NAME = '📋 参加者を名簿に反映';
 
@@ -64,16 +53,18 @@ function makeMasterEnv() {
     'findMemberCandidates', 'attachMemberIdToPlayer', 'addTournamentIdOnce', 'recalcMemberAttendance',
     'generateMemberId', 'createMemberFromParticipant', 'listClassIdsForMasterSync', 'attachMasterSyncCounts',
     'readMasterSyncCounts', 'updateBranchMasterFromTournament'];
-  const srcs = names.map(extractFn);
+  const srcs = names.map(n => extractFn(RAW, n));
   assert(srcs.every(s => !!s), 'B0 counts 検証に必要な純関数一式を抽出できる');
-  return new Function(`
-    var _phaseA2State={cryptoNotificationShown:false};
-    var showMsgCalls=[];
-    function showMsg(m,k){ showMsgCalls.push({m:m,k:k}); }
-    var crypto={randomUUID:function(){ return 'uuid-'+(crypto._n=(crypto._n||0)+1); }};
-    ${srcs.join('\n')}
-    return {update:updateBranchMasterFromTournament,read:readMasterSyncCounts,msgs:showMsgCalls};
-  `)();
+  // PHASE1-ISOLATE-001: 評価文字列に埋め込んでいた stub 定義を prelude へ出した（供与する名前は同じ3つ）。
+  const showMsgCalls = [];
+  const cryptoStub = { _n: 0 };
+  cryptoStub.randomUUID = function () { return 'uuid-' + (cryptoStub._n = (cryptoStub._n || 0) + 1); };
+  const iso = loadIsolated(names, { prelude: {
+    _phaseA2State: { cryptoNotificationShown: false },
+    showMsg(m, k) { showMsgCalls.push({ m: m, k: k }); },
+    crypto: cryptoStub,
+  } });
+  return { update: iso.fn('updateBranchMasterFromTournament'), read: iso.fn('readMasterSyncCounts'), msgs: showMsgCalls };
 }
 function fxState() {
   // 完全架空データ（A クラス3名・B クラス1名）
@@ -141,9 +132,9 @@ const META = { tournament_id: 't-0001', tournament_date: '2026-07-27' };
 // C. トースト文言（純関数・3型）
 // ============================================================
 {
-  const src = extractFn('formatMasterSyncResultToast');
+  const src = extractFn(RAW, 'formatMasterSyncResultToast');
   assert(!!src, 'C0 formatMasterSyncResultToast を抽出できる');
-  const f = new Function(src + '; return formatMasterSyncResultToast;')();
+  const f = loadIsolated(['formatMasterSyncResultToast']).fn('formatMasterSyncResultToast');
   assert(f({ added: 2, marked: 14, yomiFilled: 0, skipped: 0 }) === '📋 名簿に反映しました: 新規追加 2人・参加記録 14人',
     'C1 ①反映あり: 新規追加/参加記録を数字で報告');
   assert(f({ added: 0, marked: 0, yomiFilled: 0, skipped: 0 }) === '📋 名簿は反映済みです（変更なし）',
@@ -163,7 +154,7 @@ const META = { tournament_id: 't-0001', tournament_date: '2026-07-27' };
 // D. 配線: syncBranchMasterOnSave(onDone(counts)) と saveData
 // ============================================================
 {
-  const sync = extractFn('syncBranchMasterOnSave') || '';
+  const sync = extractFn(RAW, 'syncBranchMasterOnSave') || '';
   assert(/function _done\(\)\{ if\(typeof onDone==='function'\)onDone\(_counts\); \}/.test(sync),
     'D1 完了通知は onDone(counts)（引数追加のみ＝呼び出し回数・経路は不変）');
   assert(sync.indexOf('_counts=readMasterSyncCounts(updateBranchMasterFromTournament(') >= 0,
@@ -172,7 +163,7 @@ const META = { tournament_id: 't-0001', tournament_date: '2026-07-27' };
     'D3 マスタ保存に失敗したら数字を報告しない（名簿に残っていない数字を出さない）');
   assert(/isGuestTournament\([^)]*\)\)\{_done\(\);return;\}/.test(sync),
     'D4 ゲスト大会の冒頭 no-op ガードは不変（GUEST-TOURNAMENT-MODE-001 二重防御）');
-  const sd = extractFn('saveData') || '';
+  const sd = extractFn(RAW, 'saveData') || '';
   assert(sd.indexOf('syncBranchMasterOnSave(function(counts){') >= 0 && sd.indexOf('showToast(formatMasterSyncResultToast(counts))') >= 0,
     'D5 saveData は onDone で counts を受けて結果報告 toast（成功に alert を使わない＝N2 不変）');
   assert(sd.indexOf('🎪 ゲスト大会のため名簿には反映しません') >= 0 && sd.indexOf('isGuestTournament') >= 0,
@@ -180,27 +171,31 @@ const META = { tournament_id: 't-0001', tournament_date: '2026-07-27' };
 }
 {
   // 実行検証: 通常経路で counts が toast まで届く（マスタ保存成功時）
-  const src = ['formatMasterSyncResultToast', 'syncBranchMasterOnSave', 'saveData'].map(extractFn);
-  const harness = new Function('fixtures', `
-    var state = fixtures.state;
-    var _pendingNewYomi = {};
-    var toasts = [], saved = [];
-    function isGuestTournament(){ return false; }
-    function loadBranchMaster(){ return fixtures.master; }
-    function saveBranchMaster(m){ saved.push(m); return fixtures.saveOk; }
-    function getTournamentDateFromReport(){ return '2026-07-27'; }
-    function ensureTournamentId(){ state.tournament_id = 't-0001'; }
-    function updateBranchMasterFromTournament(){ return fixtures.updateReturn; }
-    function readMasterSyncCounts(r){ return (r && r._counts) || null; }
-    function markSaveStatus(){}
-    function save(){}
-    function normalizeYomi(v){ return typeof v === 'string' ? v : ''; }
-    function appConfirm(){ throw new Error('confirm-must-not-be-called'); }
-    function showToast(m){ toasts.push(m); }
-    ${src.join('\n')}
-    saveData();
+  // PHASE1-ISOLATE-001: 評価文字列に埋め込んでいた stub 定義とシナリオを通常コードへ出した
+  //   （切り出すのは3本のまま・供与する名前は同じ 12 個）。
+  const ISO_NAMES = ['formatMasterSyncResultToast', 'syncBranchMasterOnSave', 'saveData'];
+  function harness(fixtures){
+    const state = fixtures.state;
+    const toasts = [], saved = [];
+    const iso = loadIsolated(ISO_NAMES, { prelude: {
+      state: state,
+      _pendingNewYomi: {},
+      isGuestTournament(){ return false; },
+      loadBranchMaster(){ return fixtures.master; },
+      saveBranchMaster(m){ saved.push(m); return fixtures.saveOk; },
+      getTournamentDateFromReport(){ return '2026-07-27'; },
+      ensureTournamentId(){ state.tournament_id = 't-0001'; },
+      updateBranchMasterFromTournament(){ return fixtures.updateReturn; },
+      readMasterSyncCounts(r){ return (r && r._counts) || null; },
+      markSaveStatus(){},
+      save(){},
+      normalizeYomi(v){ return typeof v === 'string' ? v : ''; },
+      appConfirm(){ throw new Error('confirm-must-not-be-called'); },
+      showToast(m){ toasts.push(m); },
+    } });
+    iso.fn('saveData')();
     return { toasts: toasts, saved: saved.length };
-  `);
+  }
   const master = { members: [] };
   const okRun = harness({
     state: { players: {} }, master: master, saveOk: true,

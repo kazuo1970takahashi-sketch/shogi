@@ -133,6 +133,12 @@ function runTest(testPath, targetHtml) {
     if (m) failed.push(m[1].trim());
   }
   const crashed = /Error|Cannot read|is not a function|ReferenceError|TypeError/.test(out) && r.status !== 0 && failed.length === 0;
+  // 異常終了はラベルが1つも出ないので、集合比較が「空 vs 空」になって解像度を失う。
+  // 例外の種類と名前を疑似ラベルにして、新旧で同じ理由で落ちていることまで突き合わせる。
+  if (crashed) {
+    const m = out.match(/\b(ReferenceError|TypeError|SyntaxError|RangeError|Error):\s*([^\n]*)/);
+    failed.push('CRASH:' + (m ? m[1] + ':' + m[2].trim().replace(/[\s　]+/g, '_').slice(0, 60) : 'unknown'));
+  }
   return { status: r.status, failed, crashed, out };
 }
 
@@ -140,6 +146,26 @@ function runTest(testPath, targetHtml) {
 // 期待値埋め込み型（'… → 期待「x」実際「y」'）は実際値が入るので先頭トークンで正規化する。
 function keys(failed) { return failed.map((s) => s.split(/[\s　]/)[0]).sort(); }
 function sameSet(a, b) { const ka = keys(a), kb = keys(b); return ka.length === kb.length && ka.every((x, i) => x === kb[i]); }
+function subsetOf(a, b) { const kb = keys(b); return keys(a).every((x) => kb.indexOf(x) >= 0); }
+
+// ---------------------------------------------------------------- runner 自身の壊れ検出
+// 比較器が「常に一致」を返す形に壊れると、変異表は全部 ✓ になり空洞化が見えなくなる。
+// 表を1行も出す前に、比較器そのものを既知の入出力で検算して落とす。
+(function selfCheck() {
+  const bad = [];
+  if (keys(['U1 ほげ　ふが']).join(',') !== 'U1') bad.push('keys がラベル先頭トークンを取り出せない');
+  if (sameSet(['A1 x'], ['A1 y']) !== true) bad.push('同じ先頭トークンの集合を一致と判定しない');
+  if (sameSet(['A1 x'], ['B2 y']) !== false) bad.push('異なる集合を一致と判定した（比較器が常に一致を返す形に壊れている）');
+  if (sameSet(['A1 x'], []) !== false) bad.push('空集合と非空集合を一致と判定した');
+  if (sameSet([], ['A1 x']) !== false) bad.push('非空集合と空集合を一致と判定した');
+  if (sameSet(['A1 x', 'A1 y'], ['A1 x']) !== false) bad.push('件数の違いを見ていない');
+  if (subsetOf(['A1 x'], ['A1 y', 'B2 z']) !== true) bad.push('subsetOf が真部分集合を認めない');
+  if (subsetOf(['C3 x'], ['A1 y']) !== false) bad.push('subsetOf が常に真を返す');
+  if (bad.length) {
+    console.error('mutation_runner の比較器が壊れている:\n  - ' + bad.join('\n  - '));
+    process.exit(2);
+  }
+})();
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'phase1-loader-mut-'));
 const oldDir = path.join(tmp, 'old');
@@ -199,6 +225,272 @@ for (const mut of CLASS_B) {
   console.log('| ' + [mut.id, mut.label, expected.length === 1 ? expected[0] : expected.length + '本（セルフテスト＋移行8本）',
     actual.length === 0 ? '（なし＝空洞化）' : (actual.length === 9 ? '9本すべて' : actual.join(', ')),
     okAll ? '✓ 落ちる' : '✗ 空洞化'].join(' | ') + ' |');
+}
+
+// ================================================================================
+// スライス3（PHASE1-ISOLATE-001）: 隔離モード loadIsolated への移行
+// ================================================================================
+//   旧実装＝BASE_REV_ISO（スライス2 merge 後の開発本流）の extractFn + new Function。
+//   隔離は検出装置なので、判定は「一致」だけでなく**方向**を見る:
+//     dir:'same'        新旧のラベル集合が一致すべき（ズレは不合格）
+//     dir:'improve'     新側でのみ検出される想定（vm 遮断による検出力向上・不合格にしない）
+//     dir:'known-limit' 新旧とも未検出（現行の限界として pin する）
+const BASE_REV_ISO = opt('--base-iso', 'd325d389d2892aff902c63d9711c639ea2365409');
+const MIGRATED_ISO = [
+  'test_class_variable_002.js',
+  'test_player_swap_001.js',
+  'test_player_swap_002.js',
+  'test_bulk_entry_001.js',
+  'test_guest_tournament_001.js',
+  'test_master_sync_clarity_001.js',
+  'test_cloud_history_scoreboard_765.js',
+];
+const SELF_TEST_ISO = 'test_app_isolated_001.js';
+
+const CLASS_A_ISO = [
+  // ---- test_class_variable_002（1本目・ゲート）
+  { id: 'CV1', test: 'test_class_variable_002.js', group: 'ADD（受理条件・実行/RAW）',
+    find: "if(!isSafeClassId(cls)||!Array.isArray(state.players[cls]))return {success:false,error:'invalid_class'};",
+    repl: "if(!isSafeClassId(cls)||!Array.isArray(state.players[cls]))return {success:false,error:'bad_class'};",
+    note: 'addPlayerFromMaster の未知クラス error 名を変える' },
+  { id: 'CV2', test: 'test_class_variable_002.js', group: 'CHG（last_class 記録・実行）',
+    find: '        master.members[mi].last_class=newCls;', repl: '        master.members[mi].last_class=oldCls;',
+    note: 'クラス移動時に master へ書く値を旧クラスにする' },
+  { id: 'CV3', test: 'test_class_variable_002.js', group: 'LCLS（☁復元マージ・実行）',
+    find: 'var dLastClass=isSafeClassId(st.last_class)?st.last_class:null;', repl: 'var dLastClass=null;',
+    note: '☁復元マージが last_class を常に落とす（W6 の退行）' },
+  { id: 'CV4', test: 'test_class_variable_002.js', group: 'PIN（ソース構造 RAW）',
+    find: 'function ppDenseSelectableClasses(){', repl: 'function ppDenseSelectableClasses(cls){',
+    note: '素通し関数のシグネチャを変える' },
+
+  // ---- test_player_swap_001
+  { id: 'PS1a', test: 'test_player_swap_001.js', group: 'C（対局数カウント・実行）',
+    find: '      if(q&&(q.p1===playerId||q.p2===playerId)&&q.winner)n++;', repl: '      if(false)n++;',
+    note: '進行中回戦の勝敗を数えなくする' },
+  { id: 'PS1b', test: 'test_player_swap_001.js', group: 'P（名簿差し替え・実行）',
+    find: "already_registered", repl: 'already_reg', all: true, note: '参加済み拒否の error 名を変える' },
+  { id: 'PS1c', test: 'test_player_swap_001.js', group: 'U（未連携差し替え・実行）',
+    find: "  if(!nm)return {success:false,error:'invalid_name'};", repl: "  if(!nm)return {success:false,error:'blank_name'};",
+    note: '空名拒否の error 名を変える' },
+  { id: 'PS1d', test: 'test_player_swap_001.js', group: 'S（UI 導線 RAW）',
+    find: 'id="ms-swap-person"', repl: 'id="ms-swap-person2"', all: true, note: '3択目ボタンの id を改名' },
+
+  // ---- test_player_swap_002
+  { id: 'PS2a', test: 'test_player_swap_002.js', group: 'A（独立ボタン・関数抽出）',
+    find: 'id="pes-swap"', repl: 'id="pes-swap2"', all: true, note: '編集シートの独立ボタン id を改名' },
+  { id: 'PS2b', test: 'test_player_swap_002.js', group: 'E/F（棄権注記・実行）',
+    find: '差し替え後も棄権中のまま引き継がれます', repl: '差し替え後も棄権のまま引きつがれます',
+    note: '棄権引き継ぎ注記の文言を変える' },
+  { id: 'PS2c', test: 'test_player_swap_002.js', group: 'D（候補ゼロ文言・関数抽出）',
+    find: '検索語を短くしてみてください', repl: '검색어を短くしてみてください', note: '候補ゼロ時の案内文言を変える' },
+
+  // ---- test_bulk_entry_001
+  { id: 'BE1', test: 'test_bulk_entry_001.js', group: 'B（貼り付け解析・実行）',
+    find: "    var cells=(line.indexOf('\\t')>=0)?line.split('\\t'):line.split(',');",
+    repl: "    var cells=line.split('\\t');", note: 'CSV（カンマ区切り）を解釈しなくする' },
+  { id: 'BE2', test: 'test_bulk_entry_001.js', group: 'E（一括登録・実行）',
+    find: "  var LABELS={'dup-registered':'同名','dup-paste':'同名','empty-name':'空の氏名','unknown-class':'クラス名不明'};",
+    repl: "  var LABELS={'dup-registered':'重複','dup-paste':'重複','empty-name':'空の氏名','unknown-class':'クラス名不明'};",
+    note: 'トースト内訳の利用者語彙を変える' },
+  { id: 'BE3', test: 'test_bulk_entry_001.js', group: 'D（行検証・実行）',
+    find: "      clsRaw:(cells[2]||'').replace(/^[\\s　]+|[\\s　]+$/g,'')",
+    repl: "      clsRaw:''", note: 'クラス列を常に空にする（既定クラス補完に潰れる）' },
+  { id: 'BE4', test: 'test_bulk_entry_001.js', group: 'G（📋名簿反映・シナリオ埋込）',
+    find: '  if(typeof crypto===\'undefined\'||!crypto.randomUUID){',
+    repl: '  if(false){', note: 'generateMemberId の crypto 不在ガードを殺す' },
+  { id: 'BE5', test: 'test_bulk_entry_001.js', group: 'I/A（開始後ガード・関数抽出）',
+    find: 'id="bulk-entry-note"', repl: 'id="bulk-entry-notes"', all: true, note: '開始後注記の id を改名' },
+
+  // ---- test_guest_tournament_001
+  { id: 'GT1', test: 'test_guest_tournament_001.js', group: 'U（単一述語・実行）',
+    find: "  return !!(st&&st.tournament_kind==='guest');", repl: "  return !!(st&&st.tournament_kind);",
+    note: 'guest 厳密一致をやめる（不正値でも true）' },
+  { id: 'GT2', test: 'test_guest_tournament_001.js', group: 'G（choke point・シナリオ埋込）',
+    find: '🎪 ゲスト大会のため名簿には反映しません', repl: '🎪 ゲスト大会のため名簿には反映しません。', all: true,
+    note: '📋 中止時の説明文言を変える' },
+  { id: 'GT3', test: 'test_guest_tournament_001.js', group: 'W（☁送信ガード・シナリオ埋込）',
+    find: "step:'guest-mode'", repl: "step:'guest'", all: true, note: '☁送信ガードの step 値を変える' },
+  { id: 'GT4', test: 'test_guest_tournament_001.js', group: 'C（skipMasterUpdate・実行）',
+    find: '  if(!(opts&&opts.skipMasterUpdate===true)){', repl: '  if(true){',
+    note: 'skipMasterUpdate を無視して常に master を書く（#760 契約の破壊）' },
+
+  // ---- test_master_sync_clarity_001
+  { id: 'MS1', test: 'test_master_sync_clarity_001.js', group: 'C（トースト3型・実行）',
+    find: "  if(added===0&&marked===0&&yomi===0)return '📋 名簿は反映済みです（変更なし）';",
+    repl: "  if(added===0&&marked===0)return '📋 名簿は反映済みです（変更なし）';",
+    note: 'ふりがな補完だけのとき「変更なし」と言ってしまう' },
+  { id: 'MS2', test: 'test_master_sync_clarity_001.js', group: 'B（counts 非列挙・実行）',
+    find: "    Object.defineProperty(master,'_syncCounts',{value:counts,enumerable:false,writable:true,configurable:true});",
+    repl: "    master._syncCounts=counts;", note: 'counts を列挙可能にする（保存形に漏れる）' },
+  { id: 'MS3', test: 'test_master_sync_clarity_001.js', group: 'D（配線・シナリオ埋込）',
+    find: '  if(masterSaved===false)_counts=null;', repl: '  if(false)_counts=null;',
+    note: 'マスタ保存失敗時に数字を出してしまう' },
+
+  // ---- test_cloud_history_scoreboard_765（スライス2方式＝loadApp 全束）
+  { id: 'CH1', test: 'test_cloud_history_scoreboard_765.js', group: 'U（上り・snapshot 同梱）',
+    find: "onConflict:'tournament_id'", repl: "onConflict:'id'", all: true,
+    note: 'snapshot upsert の冪等キーを変える' },
+  { id: 'CH2', test: 'test_cloud_history_scoreboard_765.js', group: 'D（下り・星取表描画）',
+    find: 'sb-table', repl: 'sb-tbl', all: true, note: '星取表のクラス名を変える' },
+
+  // ---- 便全体で必須の4本（ブリーフ §変異検証 クラスA ①〜④）
+  { id: 'REQ1', test: 'test_bulk_entry_001.js', group: '①依存の獲得（saveData 注入）', dir: 'same',
+    find: 'function bulkAddPlayers(rows,stateObj){', repl: 'function bulkAddPlayers(rows,stateObj){\n  saveData();',
+    note: '★bulkAddPlayers が saveData を呼ぶようになる（隔離＝検出装置の本丸）' },
+  { id: 'REQ2', test: 'test_player_swap_001.js', group: '②依存の獲得（bare state 参照）', dir: 'same',
+    find: 'function normalizeCity(value){', repl: 'function normalizeCity(value){\n  var _acq=state&&state.players;',
+    note: '★純ヘルパが global state を掴む（state 非供与の隔離対象）' },
+  { id: 'REQ3', test: 'test_bulk_entry_001.js', group: '③typeof ガード形の依存', dir: 'known-limit',
+    find: 'function formatBulkEntryResultToast(result){',
+    repl: "function formatBulkEntryResultToast(result){\n  if(typeof saveData==='function')saveData();",
+    note: 'このコードベースの家風イディオム。typeof ガードなので隔離でも throw しない＝新旧とも未検出（既知の限界）' },
+  { id: 'REQ4', test: 'test_player_swap_001.js', group: '④Node グローバル依存', dir: 'improve',
+    find: 'function normalizeYomi(yomi){', repl: 'function normalizeYomi(yomi){\n  crypto.randomUUID();',
+    note: '純ヘルパが Node/ブラウザの crypto を掴む。旧 new Function は Node の globalThis 透過で素通り・vm は遮断' },
+];
+
+// クラスB（検出装置＝loadIsolated そのものへの攻撃）。
+//   combo を持つものは「harness 変異 × アプリ変異」の組合せ実行で、
+//   出荷形では検出される故障が、変異版では**素通りする（空洞化する）**ことまで示す。
+const CLASS_B_ISO = [
+  { id: 'B-iso1', label: '既定コンテキストに state を置く',
+    find: '  const sandbox = {};\n  vm.createContext(sandbox);',
+    repl: '  const sandbox = { state: null };\n  vm.createContext(sandbox);',
+    expectFailIn: [SELF_TEST_ISO], combo: { appMut: 'REQ2', test: 'test_player_swap_001.js' } },
+  // ※ B-iso1 の find は makeMinimalContext の中身（1 箇所）を指す。
+  { id: 'B-iso2', label: 'prelude と切り出し対象の衝突検査を外す',
+    find: '  if (collided.length) {', repl: '  if (false && collided.length) {',
+    expectFailIn: [SELF_TEST_ISO] },
+  { id: 'B-iso3', label: '不足依存を全束（loadApp）から自動補完して再試行する',
+    find: '          // ★ここで「補って再試行」しない。全束から引く（B-iso3）のも undefined を置く（B-iso5）のも、\n'
+      + '          //   隔離＝検出装置を空洞化させる。missing は記録するだけで、例外はそのまま呼び出し側へ返す。',
+    repl: '          const _m = missingNameOf(e);\n'
+      + '          if (_m) { const _full = require(\'./app_harness\').loadApp(tgt);\n'
+      + '            if (typeof _full.ctx[_m] !== \'undefined\') { sandbox[_m] = _full.ctx[_m]; return isolatedCall.apply(this, args); } }',
+    expectFailIn: [SELF_TEST_ISO], combo: { appMut: 'REQ1', test: 'test_bulk_entry_001.js' } },
+  { id: 'B-iso4a', label: '切り出し器: 末尾の } を落とす（途中切り）',
+    find: '    else if (source[i] === \'}\') { depth--; if (depth === 0) return source.slice(idx, i + 1); }',
+    repl: '    else if (source[i] === \'}\') { depth--; if (depth === 0) return source.slice(idx, i); }',
+    expectFailIn: [SELF_TEST_ISO] },
+  { id: 'B-iso4b', label: '切り出し器: 別関数を掴む（名前の前方一致化）',
+    find: "  const idx = source.indexOf('function ' + name + '(');",
+    repl: "  const idx = source.indexOf('function ' + name.slice(0, 3));",
+    expectFailIn: [SELF_TEST_ISO] },
+  // makeMinimalContext を丸ごと「スコープ Proxy＋globalThis fallthrough」版へ差し替える。
+  //   ＝与えていない名前は throw せず undefined を返し、missing に記録するだけの実装。
+  { id: 'B-iso5', label: 'bare 参照を undefined へ握り潰す（スコープ Proxy＋globalThis fallthrough）',
+    find: '  const sandbox = {};\n'
+      + '  vm.createContext(sandbox);\n'
+      + '  if (blocked.length) {\n'
+      + '    sandbox.__isoBlocked = blocked;\n'
+      + '    vm.runInContext(\n'
+      + '      \'for (var __i = 0; __i < __isoBlocked.length; __i++) { try { delete globalThis[__isoBlocked[__i]]; } catch (e) {} }\'\n'
+      + '      + \' delete globalThis.__isoBlocked;\', sandbox, { filename: \'app_isolated#block\' });\n'
+      + '  }\n'
+      + '  return sandbox;',
+    repl: '  const __bag = {};\n'
+      + '  const __seen = [];\n'
+      + '  const sandbox = new Proxy(__bag, {\n'
+      + '    has() { return true; },\n'
+      + '    get(t, k) {\n'
+      + '      if (k in t) return t[k];\n'
+      + '      if (typeof k === \'string\' && k in globalThis) return globalThis[k];\n'
+      + '      if (typeof k === \'string\' && __seen.indexOf(k) < 0) __seen.push(k);\n'
+      + '      return undefined;\n'
+      + '    },\n'
+      + '    set(t, k, v) { t[k] = v; return true; },\n'
+      + '    deleteProperty(t, k) { delete t[k]; return true; },\n'
+      + '  });\n'
+      + '  vm.createContext(sandbox);\n'
+      + '  return sandbox;',
+    expectFailIn: [SELF_TEST_ISO], combo: { appMut: 'REQ2', test: 'test_player_swap_001.js' } },
+];
+
+// mutant HTML は「index.html / docs が隣にあるディレクトリ」へ置く。
+// test_bulk_entry_001 / test_master_sync_clarity_001 は path.dirname(target) を基準に
+// 4 面ドキュメントを読むため、tmp に裸で置くと L*/E* が新旧そろって落ちて比較の解像度が下がる。
+function makeAppDir(id, html) {
+  const dir = fs.mkdtempSync(path.join(tmp, 'app_' + id.replace(/[^\w-]/g, '_') + '_'));
+  const p = path.join(dir, 'shogi_v4.html');
+  fs.writeFileSync(p, html, 'utf8');
+  for (const rel of ['index.html', 'docs']) {
+    try { fs.symlinkSync(path.join(ROOT, rel), path.join(dir, rel)); } catch (e) { /* best-effort */ }
+  }
+  return p;
+}
+
+const oldDirIso = path.join(tmp, 'old_iso');
+fs.mkdirSync(oldDirIso, { recursive: true });
+for (const t of MIGRATED_ISO) {
+  const src = cp.execSync('git show ' + BASE_REV_ISO + ':test/' + t, { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 });
+  fs.writeFileSync(path.join(oldDirIso, t), src);
+}
+
+const appMutants = Object.create(null);
+
+console.log('');
+console.log('# 変異表（スライス3 クラスA: アサーション対象の故障）');
+console.log('');
+console.log('| 変異 | 対象テスト | アサーション群 | 変異内容 | 旧で落ちたアサーション | 新で落ちたアサーション | 方向 | 判定 |');
+console.log('|---|---|---|---|---|---|---|---|');
+for (const mut of CLASS_A_ISO) {
+  if (ONLY && mut.id.indexOf(ONLY) !== 0) continue;
+  const { out, hits } = applyOnce(APP_SRC, mut);
+  const mutantPath = makeAppDir(mut.id, out);
+  appMutants[mut.id] = mutantPath;
+  const oldR = runTest(path.join(oldDirIso, mut.test), mutantPath);
+  const newR = runTest(path.join(TEST_DIR, mut.test), mutantPath);
+  const dir = mut.dir || 'same';
+  let verdict;
+  if (dir === 'same') verdict = sameSet(oldR.failed, newR.failed);
+  else if (dir === 'improve') verdict = subsetOf(oldR.failed, newR.failed) && newR.failed.length > oldR.failed.length;
+  else verdict = oldR.failed.length === 0 && newR.failed.length === 0;
+  if (!verdict) mismatches++;
+  const fmt = (r) => (r.failed.length ? keys(r.failed).join(' / ') : '（なし）');
+  console.log('| ' + [mut.id, mut.test, mut.group, mut.note + (mut.all ? '（' + hits + '箇所）' : ''),
+    fmt(oldR), fmt(newR), dir, verdict ? '✓' : '✗'].join(' | ') + ' |');
+}
+
+console.log('');
+console.log('# 変異表（スライス3 クラスB: 検出装置＝loadIsolated への攻撃）');
+console.log('');
+console.log('| 変異 | 攻撃内容 | セルフテスト | 組合せ（harness 変異 × アプリ変異） | 判定 |');
+console.log('|---|---|---|---|---|');
+const ISO_SRC = fs.readFileSync(path.join(TEST_DIR, 'lib', 'app_isolated.js'), 'utf8');
+for (const mut of CLASS_B_ISO) {
+  if (ONLY && mut.id.indexOf(ONLY) !== 0) continue;
+  const { out } = applyOnce(ISO_SRC, mut);
+  const sandboxDir = path.join(tmp, 'sandbox_' + mut.id);
+  fs.mkdirSync(path.join(sandboxDir, 'lib'), { recursive: true });
+  for (const f of fs.readdirSync(path.join(TEST_DIR, 'lib'))) {
+    const s = path.join(TEST_DIR, 'lib', f);
+    if (fs.statSync(s).isFile()) fs.copyFileSync(s, path.join(sandboxDir, 'lib', f));
+  }
+  fs.writeFileSync(path.join(sandboxDir, 'lib', 'app_isolated.js'), out, 'utf8');
+  for (const t of MIGRATED_ISO.concat([SELF_TEST_ISO])) {
+    fs.copyFileSync(path.join(TEST_DIR, t), path.join(sandboxDir, t));
+  }
+  // ① セルフテストが落ちること
+  const selfR = runTest(path.join(sandboxDir, SELF_TEST_ISO), APP);
+  const selfOk = selfR.status !== 0;
+  // ② 組合せ: 出荷形では検出される故障が、変異版では素通りする（＝空洞化の実証）
+  let comboText = '—';
+  let comboOk = true;
+  if (mut.combo) {
+    const appMut = CLASS_A_ISO.filter((m) => m.id === mut.combo.appMut)[0];
+    let mutantPath = appMutants[appMut.id];
+    if (!mutantPath) { mutantPath = makeAppDir(appMut.id, applyOnce(APP_SRC, appMut).out); appMutants[appMut.id] = mutantPath; }
+    const shipped = runTest(path.join(TEST_DIR, mut.combo.test), mutantPath);
+    const hollow = runTest(path.join(sandboxDir, mut.combo.test), mutantPath);
+    const detected = shipped.status !== 0;
+    const slipped = hollow.status === 0;
+    comboOk = detected && slipped;
+    comboText = appMut.id + ': 出荷形=' + (detected ? '検出' : '**素通り**')
+      + ' / 変異版=' + (slipped ? '**素通り（空洞化）**' : '検出');
+  }
+  if (!(selfOk && comboOk)) mismatches++;
+  console.log('| ' + [mut.id, mut.label, selfOk ? '✓ 落ちる' : '✗ 緑のまま', comboText,
+    (selfOk && comboOk) ? '✓' : '✗'].join(' | ') + ' |');
 }
 
 console.log('');

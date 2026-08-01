@@ -9,9 +9,9 @@
 //     3. 差し替え先が大会参加済みなら拒否（already_registered）。同名別 player も拒否（duplicate_name）。
 //     4. 名簿にいない人へは未連携化（member_id 解除・yomi/city クリア＝キメラ残滓を残さない）。
 //   データは完全架空のみ。
-const fs = require('fs');
-const targetPath = process.argv[2] || 'shogi_v4.html';
-const RAW = fs.readFileSync(targetPath, 'utf8');
+// PHASE1-ISOLATE-001: 自前の extractFn + new Function 隔離を共通ヘルパへ寄せた（prelude は空＝state 非供与のまま）。
+const { loadIsolated, extractFn, readHtml } = require('./lib/app_isolated');
+const RAW = readHtml();
 let pass = 0, fail = 0;
 function assert(c, m) { if (c) { pass++; } else { fail++; console.log('  FAIL: ' + m); } }
 
@@ -28,47 +28,32 @@ assert(RAW.indexOf("_lines.push('名簿の「'+_ydiffs[_li].name+'」さんの�
 assert(RAW.indexOf('function applyParticipantSwapFromMaster(p,memberId,master,state){') >= 0, 'S10 差し替え本体は純粋関数（p/memberId/master/state を引数で受ける）');
 
 // ---- 関数抽出（純粋関数のみ・DOM 不要）
-function extractFn(name){
-  const idx = RAW.indexOf('function ' + name + '(');
-  if (idx < 0) return null;
-  let depth = 0, i = RAW.indexOf('{', idx);
-  const start = idx;
-  for (; i < RAW.length; i++) {
-    if (RAW[i] === '{') depth++;
-    else if (RAW[i] === '}') { depth--; if (depth === 0) return RAW.slice(start, i + 1); }
-  }
-  return null;
-}
-const SRC = ['normalizePersonName', 'normalizeYomi', 'normalizeCity', 'normalizeMasterFeeFields',
-  'countPlayerDecidedGames', 'applyParticipantSwapFromMaster', 'applyParticipantSwapToUnlinked']
-  .map(extractFn);
+const ISO_NAMES = ['normalizePersonName', 'normalizeYomi', 'normalizeCity', 'normalizeMasterFeeFields',
+  'countPlayerDecidedGames', 'applyParticipantSwapFromMaster', 'applyParticipantSwapToUnlinked'];
+const SRC = ISO_NAMES.map(n => extractFn(RAW, n));
 assert(SRC.every(s => !!s), 'X1 対象関数がすべて抽出できる');
 
 // ---- S 続き（関数抽出ベースの強いピン・PR #759 レビュー反映）
 {
-  const pick = extractFn('handlePlayerSwapPick') || '';
-  const unlinked = extractFn('handlePlayerSwapUnlinked') || '';
+  const pick = extractFn(RAW, 'handlePlayerSwapPick') || '';
+  const unlinked = extractFn(RAW, 'handlePlayerSwapUnlinked') || '';
   assert(pick.indexOf('{danger:true}') >= 0 && unlinked.indexOf('{danger:true}') >= 0,
     'S7 差し替え確認（名簿/未連携の両方）は danger 確認（Enter 誤爆防止・関数抽出内で検査）');
   // [SHOULD-1] 送信済み大会での差し替えは旧会員の行がクラウドに残る旨を両 confirm に条件付き警告
-  const warn = extractFn('playerSwapSentWarning') || '';
+  const warn = extractFn(RAW, 'playerSwapSentWarning') || '';
   assert(warn.indexOf('state.cloud_sent_tid===state.tournament_id') >= 0, 'S11a 送信済み判定は cloud_sent_tid===tournament_id');
   assert(warn.indexOf('自動では消えません') >= 0, 'S11b 警告文＝旧会員の行は自動では消えない');
   assert(pick.indexOf('playerSwapSentWarning()') >= 0 && unlinked.indexOf('playerSwapSentWarning()') >= 0,
     'S11c 両方の差し替え confirm に送信済み警告が乗る');
   // [SHOULD-2/3] Esc ハンドラ: appConfirm 表示中と IME 合成中は閉じない
-  const picker = extractFn('openPlayerSwapPicker') || '';
+  const picker = extractFn(RAW, 'openPlayerSwapPicker') || '';
   assert(picker.indexOf("document.getElementById('app-modal')") >= 0, 'S12a appConfirm 表示中の Esc でピッカーを閉じない');
   assert(picker.indexOf('e.isComposing||e.keyCode===229') >= 0, 'S12b IME 合成中の Esc（変換キャンセル）でピッカーを閉じない');
   // [SHOULD-4] 未連携の案内は同名会員1件時の自動紐付けを明示（「新規会員として登録できます」と断言しない）
   assert(unlinked.indexOf('その方に紐付きます') >= 0, 'S13 未連携差し替えの案内に同名1件自動紐付けの注記');
 }
-const env = new Function(SRC.join('\n') + `;
-  return {
-    countPlayerDecidedGames: countPlayerDecidedGames,
-    applyParticipantSwapFromMaster: applyParticipantSwapFromMaster,
-    applyParticipantSwapToUnlinked: applyParticipantSwapToUnlinked
-  };`)();
+// 隔離環境（prelude 空＝state も他のアプリ関数も見えない）。ここで state 依存を獲得すると ReferenceError。
+const env = loadIsolated(ISO_NAMES).api();
 
 // ---- フィクスチャ（完全架空）
 function fxMaster(){
