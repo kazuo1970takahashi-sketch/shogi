@@ -1,24 +1,11 @@
 #!/usr/bin/env node
 // BACKUP-NUDGE (当日第2弾⑫): 節目（大会開始/クラス完了/全終了）で非ブロッキングにバックアップを促す。
 //   節目ごと1回・あとで可・端末事故の全損防止。reset 安全網(⑩)と別系統。
-const fs=require('fs');
-const target=process.argv[2]||'shogi_v4.html';
-const RAW=fs.readFileSync(target,'utf8');
-function scripts(){const re=/<script[^>]*>([\s\S]*?)<\/script>/g;let m,o='';while((m=re.exec(RAW))!==null)o+=m[1]+'\n';return o;}
-function node(){return {nodeType:1,id:'',className:'',value:'',innerHTML:'',style:{display:''},onclick:null,childNodes:[],_attrs:{},
-  appendChild(c){this.childNodes.push(c);return c;},setAttribute(k,v){this._attrs[k]=String(v);},getAttribute(k){return (k in this._attrs)?this._attrs[k]:null;},
-  addEventListener(){},removeEventListener(){},querySelector(){return null;},querySelectorAll(){return[];},focus(){},remove(){}};}
-function makeEnv(){
-  const els={};
-  const doc={getElementById(id){if(!els[id]){const x=node();x.id=id;els[id]=x;}return els[id];},
-    createElement(){return node();},createTextNode(t){return{nodeType:3,textContent:String(t==null?'':t)};},
-    addEventListener(){},body:node(),head:node(),querySelector(){return null;},querySelectorAll(){return[];}};
-  const win={innerWidth:1024,addEventListener(){},scrollTo(){},matchMedia(){return{matches:false,addEventListener(){}};}};
-  const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','console','Promise','setTimeout','navigator',
-    scripts()+';return {promptMilestoneBackup:promptMilestoneBackup,hideBackupNudge:hideBackupNudge};');
-  const env=fn(doc,win,{getItem:()=>null,setItem(){},removeItem(){}},{randomUUID:()=>'0'},()=>{},()=>true,()=>'',{log(){},warn(){},error(){}},Promise,cb=>0,{onLine:true});
-  return {env,els};
-}
+// 読込は共通ヘルパへ集約 [PHASE1-LOADER-001]（同じ全束を1コンテキストで評価する・意味論不変）
+const {loadApp,readHtml}=require('./lib/app_harness');
+const RAW=readHtml();
+// 節ごとに環境を作り直す（stub と記録が節をまたいで漏れないようにする）
+function makeEnv(){const app=loadApp();return {env:app.ctx,els:app.els};}
 let pass=0,fail=0;const ok=(c,m)=>{c?pass++:(fail++,console.log('  FAIL: '+m));};
 
 console.log('=== マークアップ（RAW） ===');
