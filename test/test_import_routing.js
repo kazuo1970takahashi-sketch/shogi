@@ -4,22 +4,10 @@
 //   ファイル名の判別性（大会=shogi_taikai_ / マスタ=shogi_meibo_ / バックアップ=shogi_backup_）／
 //   loadData・loadFromPaste のルーティング（backup→importTournamentBackupFromText・master→誘導）静的検証。
 //   既存 applyLoadedJson の生 state 動作は非回帰（別テスト test_data_persistence_phase1 で担保）。
-const fs=require('fs');
-const RAW=fs.readFileSync(process.argv[2]||'shogi_v4.html','utf8');
-function extractScripts(h){const s=[];const re=/<script[^>]*>([\s\S]*?)<\/script>/g;let m;while((m=re.exec(h))!==null)s.push(m[1]);return s.join('\n');}
-function makeContext(){
-  function n(t){return{nodeType:1,tagName:String(t||'div'),id:'',className:'',value:'',innerHTML:'',textContent:'',style:{},appendChild:function(c){return c;},setAttribute:function(){},getAttribute:function(){return null;},addEventListener:function(){},querySelector:function(){return null;},querySelectorAll:function(){return[];}};}
-  var el={};var doc={getElementById:function(i){if(!el[i]){var x=n('div');x.id=i;el[i]=x;}return el[i];},createElement:function(t){return n(t);},createTextNode:function(t){return{nodeType:3,textContent:String(t==null?'':t)};},body:n('body'),addEventListener:function(){},querySelector:function(){return null;},querySelectorAll:function(){return[];}};
-  var win={innerWidth:1024,addEventListener:function(){},open:function(){return{focus:function(){},print:function(){},close:function(){}};}};
-  var ls={_:{},getItem:function(k){return(k in this._)?this._[k]:null;},setItem:function(k,v){this._[k]=String(v);},removeItem:function(k){delete this._[k];}};
-  return{document:doc,window:win,localStorage:ls};
-}
-function loadEnv(){
-  const ctx=makeContext();const js=extractScripts(RAW);const cryptoMock={randomUUID(){return '00000000-0000-0000-0000-000000000000';}};
-  const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout',
-    `${js};return { classifyImportJson:classifyImportJson, buildMasterExportFilename:buildMasterExportFilename, BACKUP_KIND:BACKUP_KIND };`);
-  return fn(ctx.document,ctx.window,ctx.localStorage,cryptoMock,function(){},function(){return true;},function(){return '';},function(){},function(){},{createObjectURL:function(){return 'blob:mock';},revokeObjectURL:function(){}},{log:function(){},warn:function(){},error:function(){}},Promise,function(){return 0;});
-}
+// 読込は共通ヘルパへ集約 [PHASE1-LOADER-001]（同じ全束を1コンテキストで評価する・意味論不変）
+const {loadApp,readHtml}=require('./lib/app_harness');
+const RAW=readHtml();
+function loadEnv(){return loadApp().ctx;}
 let pass=0,fail=0;function ok(c,m){if(c)pass++;else{fail++;console.log('  FAIL: '+m);}}
 const env=loadEnv();
 

@@ -2,25 +2,15 @@
 // DAYOF-UNENTERED-COUNTER (当日第2弾⑥): 対局管理で未入力（勝者未選択）卓数を表示し、
 //   未入力がある間は「確定して次へ」(submitBtn_) を無効化する。setWinner→renderTournament で
 //   毎回再描画されるためライブ更新。submitRound の既存ガードは温存（二重防御）。
-const fs=require('fs');
-const RAW=fs.readFileSync(process.argv[2]||'shogi_v4.html','utf8');
-function extractScripts(h){const s=[];const re=/<script[^>]*>([\s\S]*?)<\/script>/g;let m;while((m=re.exec(h))!==null)s.push(m[1]);return s.join('\n');}
-function makeNode(t){return {nodeType:1,tagName:String(t||'div'),id:'',className:'',value:'',innerHTML:'',disabled:false,style:{},_attrs:{},childNodes:[],_listeners:{},appendChild(c){this.childNodes.push(c);return c;},setAttribute(k,v){this._attrs[k]=String(v);},getAttribute(k){return (k in this._attrs)?this._attrs[k]:null;},addEventListener(){},removeEventListener(){},querySelector(){return null;},querySelectorAll(){return[];}};}
-function loadEnv(){
-  const elements={};
-  const doc={getElementById(id){if(!elements[id]){const n=makeNode();n.id=id;elements[id]=n;}return elements[id];},createElement(t){return makeNode(t);},createTextNode(t){return{nodeType:3,textContent:String(t==null?'':t)};},body:makeNode('body'),addEventListener(){},removeEventListener(){},querySelector(){return null;},querySelectorAll(){return[];}};
-  const win={innerWidth:1024,addEventListener(){},removeEventListener(){},open(){return{focus(){},print(){},close(){},addEventListener(){}};}};
-  const ls={_:{},getItem(k){return (k in this._)?this._[k]:null;},setItem(k,v){this._[k]=String(v);},removeItem(k){delete this._[k];}};
-  const js=extractScripts(RAW);
-  const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout',
-    js+';return {normalizeState:normalizeState,buildCurrentPairingsHtml:buildCurrentPairingsHtml,_setState:function(s){state=s;}};');
-  return fn(doc,win,ls,{randomUUID(){return '0';}},function(){},function(){return true;},function(){return '';},function(){},function(){return null;},{createObjectURL(){return 'b';},revokeObjectURL(){}},{log(){},error(){},warn(){}},Promise,function(){return 0;});
-}
+// 読込は共通ヘルパへ集約 [PHASE1-LOADER-001]（同じ全束を1コンテキストで評価する・意味論不変）
+const {loadApp,readHtml}=require('./lib/app_harness');
+const RAW=readHtml();
+function loadEnv(){return loadApp().ctx;}
 function players(cls,ids){return ids.map(function(id,i){return {id:id,name:'架空'+id,cls:cls,member:'member',grade:'ippan',entry_no:i+1,yomi:''};});}
 function pairs(list){return list.map(function(pr){return {p1:pr[0],p2:pr[1],winner:(pr[2]||null),lastModifiedBy:'auto'};});}
 function setup(env,pairsA){
   var s=env.normalizeState({players:{A:players('A',['a1','a2','a3','a4']),B:[]},rounds:4,pairings:{A:pairs(pairsA),B:[]},results:{A:[],B:[]},started:true,classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:false}],report:{}});
-  env._setState(s);
+  env.state=s;
 }
 let pass=0,fail=0;const ok=(c,m)=>{c?pass++:(fail++,console.log('  FAIL: '+m));};
 

@@ -1,22 +1,16 @@
 #!/usr/bin/env node
 // STORAGE-WARN-001 (⑬): 起動時に localStorage 書込不可を検知して常時警告バナーを出す。
 //   probeStorageWritable（pure・throw/読戻し不一致で false）と checkStorageAndWarn（バナー表示切替）を検証。
-const fs = require('fs');
-const target = process.argv[2] || 'shogi_v4.html';
-const RAW = fs.readFileSync(target, 'utf8');
-function scripts(){ const re=/<script[^>]*>([\s\S]*?)<\/script>/g; let m,o=''; while((m=re.exec(RAW))!==null)o+=m[1]+'\n'; return o; }
-function node(){ return {nodeType:1,id:'',className:'',value:'',innerHTML:'',textContent:'',disabled:false,style:{},childNodes:[],
-  appendChild(c){this.childNodes.push(c);return c;},setAttribute(){},getAttribute(){return null;},
-  addEventListener(){},removeEventListener(){},querySelector(){return null;},querySelectorAll(){return[];},focus(){},remove(){},insertBefore(){},removeChild(){}}; }
+// 読込は共通ヘルパへ集約 [PHASE1-LOADER-001]（同じ全束を1コンテキストで評価する・意味論不変）
+//   localStorage は「評価前 override」で差し替える（ブラウザ API 側なので二相の前段）。
+//   節（＝ls の種類）ごとに loadApp し直す＝環境の使い回しをしない。
+const {loadApp}=require('./lib/app_harness');
 function makeEnv(ls){
-  const els={};
-  const doc={getElementById(id){if(!els[id]){const x=node();x.id=id;els[id]=x;}return els[id];},
-    createElement(){return node();},createTextNode(t){return{nodeType:3,textContent:String(t==null?'':t)};},
-    addEventListener(){},body:node(),head:node(),querySelector(){return null;},querySelectorAll(){return[];}};
-  const win={innerWidth:1024,addEventListener(){},scrollTo(){},matchMedia(){return{matches:false,addEventListener(){}};}};
-  const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','console','Promise','setTimeout','navigator',
-    scripts()+';return {probeStorageWritable:(typeof probeStorageWritable!=="undefined"?probeStorageWritable:undefined),checkStorageAndWarn:(typeof checkStorageAndWarn!=="undefined"?checkStorageAndWarn:undefined),_doc:document};');
-  return fn(doc,win,ls,{randomUUID:()=>'x'},()=>{},()=>true,()=>'',{log(){},warn(){},error(){}},Promise,cb=>0,{onLine:true});
+  const app=loadApp({overrides:{localStorage:ls}});
+  // 旧テストが返していた _doc（評価コンテキストの document）を同名で見えるようにする。
+  const env=Object.create(app.ctx);
+  env._doc=app.document;
+  return env;
 }
 let pass=0,fail=0; const ok=(c,m)=>{ c?pass++:(fail++,console.log('  FAIL: '+m)); };
 
