@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // PHASE1-REACH-001: 到達可能性チェックの常設化（検査1=静的到達可能性 / 検査2=bind 先の実在）
 //   走査ロジックは test/lib/reachability.js、既知例外は test/reachability_allowlist.json。
-//   Issue #798 の調査（35 関数が到達不能）を常設の検査に落としたもの。
-//   このファイル自身が「壊れたら落ちること」を変異検証（M1-M4）で実証する。
+//   Issue #798 の調査（当初 35 関数・PHASE1-REACH-001b の走査修正後 39 関数が到達不能）を
+//   常設の検査に落としたもの。
+//   このファイル自身が「壊れたら落ちること」を変異検証（M1-M8）で実証する。
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const { analyze } = require('./lib/reachability.js');
+const { analyze, CHAR_CLASS } = require('./lib/reachability.js');
 
 const target = process.argv[2] || 'shogi_v4.html';
 const RAW = fs.readFileSync(target, 'utf8');
@@ -134,6 +135,13 @@ ok(!!finalize, 'S7 finalizeAddPastParticipants が到達不能として検出さ
 ok(!!finalize && finalize.commentRefs > 0, `S8 その関数はコメントで言及されている（数えていたら緑になってしまう）: cmt=${finalize ? finalize.commentRefs : 0}`);
 ok(!!finalize && finalize.liveRefs > 0, `S9 かつコード参照も存在する＝「定義以外の出現0回」方式では拾えない（#798 の罠3）: refs=${finalize ? finalize.liveRefs : 0}`);
 
+// 罠(4) の回帰ガード（PHASE1-REACH-001b）: 文字列内の言及だけの関数を「生きている」と
+// 誤判定しない。初版はここで startTournament を取り逃していた（Codex P1）。
+const startT = A.unreachableStatic.find((x) => x.name === 'startTournament');
+ok(!!startT, 'S10 startTournament が到達不能として検出される（文字列内の言及を数えない＝罠4）');
+ok(!!startT && startT.stringRefs > 0 && startT.liveRefs === 0,
+  `S11 その関数はログ文字列でのみ言及されている（数えていたら緑になってしまう）: str=${startT ? startT.stringRefs : 0} refs=${startT ? startT.liveRefs : 0}`);
+
 console.log(`  走査: ${elapsed}ms / トップレベル ${A.topLevelFunctionCount} 関数 / ルート ${A.rootNames.length}`);
 console.log(`  検査1 静的到達不能: ${A.unreachableStatic.length}`);
 console.log(`  検査2 実行時のみ到達不能: ${A.unreachableRuntimeOnly.length}`);
@@ -242,6 +250,93 @@ m5Allow.static[0].reason = '';
 const m5v = evaluate(A, m5Allow);
 ok(m5v.some((v) => v.rule === 'R4' && v.subject === m5Allow.static[0].name),
   'M5-1 理由を空にすると FAIL する（理由の無いエントリを許さない）');
+
+// --- M6: 死んだ関数の名前を文字列リテラルの中に置く（PHASE1-REACH-001b の穴） -
+//   Codex P1 / cowork 再現の再発防止。生きている bind を外したうえで、その名前を
+//   ログ文字列の中に書く。初版の走査は 'S'（文字列）を呼出辺に数えていたため、
+//   これで「到達可能」に見えてしまい検査が緑のままだった（＝startTournament の見逃し）。
+const M6_STR = "  var __m6CallsiteId='REACH-M6-bindTabEvents-'+String(1);\n";
+const m6Src = RAW.replace('  bindTabEvents();\n', M6_STR);
+ok(m6Src !== RAW, 'M6-0 変異が適用された（bind を外し、名前は文字列リテラルの中だけに残した）');
+const m6 = analyze(m6Src);
+const m6v = evaluate(m6, ALLOW);
+const m6info = m6.unreachableStatic.find((x) => x.name === 'bindTabEvents');
+ok(m6.rootNames.indexOf('bindTabEvents') < 0, 'M6-1 文字列内の言及は root にならない');
+ok(!!m6info, 'M6-2 bindTabEvents が到達不能として検出される（文字列を呼出辺に数えない）');
+ok(!!m6info && m6info.stringRefs > 0,
+  `M6-3 その名前は確かに文字列の中に存在する（数えていたら M6-2 が緑になってしまう）: str=${m6info ? m6info.stringRefs : 0}`);
+ok(m6v.some((v) => v.rule === 'R1' && v.subject === 'bindTabEvents'), 'M6-4 allowlist に無い違反として報告される');
+ok(m6v.length > 0, `M6-5 検査が FAIL する（違反 ${m6v.length} 件）`);
+
+// --- M7: 連結 ID の生成側を別名に変える（PHASE1-REACH-001b の穴その2） --------
+//   `getElementById('prefix_'+x)` は初版の正規表現（単一リテラル引数のみ）に掛からず、
+//   生成側 id を改名する変異が素通りしていた（Codex 実測）。
+function pickConcatIdForMutation(src, cls) {
+  const prefixes = new Set();
+  for (const m of src.matchAll(/getElementById\(\s*'([^']*)'\s*\+/g)) {
+    if (m[1].length >= 3) prefixes.add(m[1]);
+  }
+  for (const p of [...prefixes].sort()) {
+    const gen = 'id="' + p;
+    if (src.split(gen).length - 1 !== 1) continue;   // 生成側が HTML 中に 1 箇所だけ
+    const re = new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    let produced = 0;
+    for (const m of src.matchAll(re)) {
+      const q = m.index;
+      if (cls[q] === CHAR_CLASS.X) continue;                                   // コメント / CSS
+      if (/getElementById\(\s*['"]$/.test(src.slice(Math.max(0, q - 24), q))) continue; // セレクタ引数
+      produced++;
+    }
+    if (produced === 1) return { prefix: p, gen };   // 生成は 1 箇所だけ＝改名すれば 0 になる
+  }
+  return null;
+}
+const concat = pickConcatIdForMutation(RAW, A._internal.cls);
+ok(!!concat, 'M7-0 変異対象の連結 ID（生成側が 1 箇所だけのもの）を選べた');
+if (concat) {
+  // 接頭辞そのものが残らないよう、末尾 1 文字の手前へ差し込む
+  //   'helpBtnFirstRound_' → 'helpBtnFirstRoundPhase1ReachMutated_'
+  const renamed = concat.prefix.slice(0, -1) + 'Phase1ReachMutated' + concat.prefix.slice(-1);
+  ok(renamed.indexOf(concat.prefix) < 0, 'M7-1a 別名は元の接頭辞を含まない（改名になっている）');
+  const m7Src = RAW.replace(concat.gen, 'id="' + renamed);
+  ok(m7Src !== RAW, `M7-1 変異が適用された（生成側 id="${concat.prefix}…" → id="${renamed}…"）`);
+  const m7 = analyze(m7Src);
+  const m7v = evaluate(m7, ALLOW);
+  const sel = '#' + concat.prefix + '*';
+  ok(m7.deadBindings.some((d) => d.selector === sel), `M7-2 ${sel} が死んだ結線として検出される`);
+  ok(m7v.some((v) => v.rule === 'R3' && v.subject === sel), 'M7-3 allowlist に無い違反として報告される');
+  ok(m7v.length > 0, `M7-4 検査が FAIL する（違反 ${m7v.length} 件）`);
+  ok(A.deadBindings.every((d) => d.selector !== sel), `M7-5 変異前は ${sel} が死んでいない＝この変異だけが原因`);
+}
+
+// --- M8: 死んだ関数の名前をコメントの中に置く（#798 の罠1 の再発防止） -------
+const m8Src = RAW.replace('  bindTabEvents();\n', '  // bindTabEvents(); ← 変異検証で外した\n');
+ok(m8Src !== RAW, 'M8-0 変異が適用された（bind を外し、名前はコメントの中だけに残した）');
+const m8 = analyze(m8Src);
+const m8v = evaluate(m8, ALLOW);
+const m8info = m8.unreachableStatic.find((x) => x.name === 'bindTabEvents');
+ok(!!m8info, 'M8-1 bindTabEvents が到達不能として検出される（コメントを呼出辺に数えない＝#798 の罠1）');
+ok(!!m8info && m8info.commentRefs > 0,
+  `M8-2 その名前は確かにコメントの中に存在する: cmt=${m8info ? m8info.commentRefs : 0}`);
+ok(m8v.some((v) => v.rule === 'R1' && v.subject === 'bindTabEvents'), 'M8-3 allowlist に無い違反として報告される');
+
+// --- M-FP: 偽陽性が無いこと（生きた関数を 1 本足しても緑のまま） --------------
+//   ①の修正で参照の数え方を絞ったので、「正しく結線された関数を死んだと言わない」
+//   ことを明示的に確かめる。onclick 結線つきのトップレベル関数を 1 本足す。
+const FP_NAME = '__reachProbeAliveFn';
+const FP_ANCHOR_HTML = '<button type="button" class="btn-primary" onclick="printPairings()">';
+const FP_ANCHOR_JS = '\nfunction startTournament(){';
+const fpSrc = RAW
+  .replace(FP_ANCHOR_HTML, `<button type="button" onclick="${FP_NAME}()">probe</button>` + FP_ANCHOR_HTML)
+  .replace(FP_ANCHOR_JS, `\nfunction ${FP_NAME}(){ return 1; }` + FP_ANCHOR_JS);
+ok(fpSrc !== RAW && fpSrc.indexOf(FP_NAME) > 0, 'FP-0 変異が適用された（onclick 結線つきの生きた関数を 1 本追加）');
+const fp = analyze(fpSrc);
+const fpv = evaluate(fp, ALLOW);
+ok(fp.topLevelFunctionCount === A.topLevelFunctionCount + 1,
+  `FP-1 追加した関数がトップレベル関数として検出される: ${A.topLevelFunctionCount} → ${fp.topLevelFunctionCount}`);
+ok(fp.rootNames.indexOf(FP_NAME) >= 0, 'FP-2 インライン onclick からルートとして拾われる');
+ok(!fp.unreachableStatic.some((x) => x.name === FP_NAME), 'FP-3 到達不能とは判定されない');
+ok(fpv.length === 0, `FP-4 検査は PASS のまま（違反 ${fpv.length} 件・偽陽性なし）`);
 
 // --- 変異が本体を汚していないこと ---------------------------------------------
 ok(RAW === before, 'M9 変異検証は全てメモリ上のコピーに対して行われ、読み込んだ原文は不変');

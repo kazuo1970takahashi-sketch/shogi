@@ -36,16 +36,44 @@
 //       呼び出し元自身が死んでいる）を拾えない。
 //       → 呼び出しグラフ＋ルートからの到達可能性で判定する。
 //
-// 参照検出は意図的に**過剰に拾う側**へ倒してある（文字列リテラル・テンプレート
-// リテラル・HTML 属性の中の識別子も参照として数える）。死にコードを見落とす方向
-// には倒れない＝偽陽性より偽陰性を嫌う設計。
+// PHASE1-REACH-001b で塞いだ穴（Codex P1 ×2 / cowork 再現）:
+//
+//   (4) 文字列リテラル内の識別子を参照に数えない。
+//       初版は罠(1) と同じ形の穴を文字列側に残していた。L9199-9200 の
+//         consoleTag:'SAVE-003: startTournament の保存が確認できませんでした ...'
+//         callsiteId:'SAVE-003-startTournament-'+classId
+//       という**ログ用の文字列**が呼出辺として数えられ、到達不能な
+//       startTournament() が「生きている」と誤判定されていた（同クラスタの
+//       collectStartCandidates / showStartValidationErrors /
+//       resolveNoCandidateMessage も芋づるで隠れていた）。
+//       → 文字クラス 'S'（文字列 / テンプレート文字列部 / 正規表現リテラル）も
+//         参照から除外する。数え漏らしを避けるため件数は stringRefs に残す。
+//       動的ディスパッチ（window['name']() / self[...] / globalThis[...] /
+//       文字列 setTimeout / eval）は現行 shogi_v4.html に 1 件も無いことを
+//       cowork が確認済み。将来必要になったら allowlist で扱う。
+//
+//   (5) 連結セレクタ getElementById('prefix_'+x) を取りこぼさない。
+//       初版は単一リテラル引数の呼出ししか拾わず、実在する
+//         :10698 document.getElementById('helpBtnFirstRound_'+cls)
+//         :10893 id="helpBtnFirstRound_'+escapeHtml(cls)+'"
+//       のペアが検査対象外だった（生成側 id を改名する変異が素通りする）。
+//       → 接頭辞リテラル + '+' の形を 'id-prefix' として拾い、接頭辞での
+//         照合で生成側の実在を確認する。完全な式解析はしない。
+//
+// 参照検出は「コード上の識別子として現れるもの」（文字クラス C ＝ JS コード本体、
+// H ＝ HTML マークアップの onclick="NAME()" 等）に限る。散文（X）と文字列（S）は
+// 参照ではない。
 // =============================================================================
 
 // 文字クラス。ファイルの全バイトにいずれか 1 つが付く。
 const H = 72; // 'H' <script> の外（HTML マークアップ・onclick="NAME()" 等）→ 参照として数える
 const C = 67; // 'C' JS コード本体                                        → 参照として数える
-const S = 83; // 'S' 文字列 / テンプレート文字列部 / 正規表現リテラル      → 参照として数える
-const X = 88; // 'X' JS コメント・HTML コメント・<style>                   → 数えない
+const S = 83; // 'S' 文字列 / テンプレート文字列部 / 正規表現リテラル      → 数えない（罠(4)）
+const X = 88; // 'X' JS コメント・HTML コメント・<style>                   → 数えない（罠(1)）
+
+// 連結セレクタの接頭辞として扱う最小長。'wb_' / 'rep-' 等が下限。
+// これより短い接頭辞は照合の意味が薄く、誤検出の元になるので採らない。
+const MIN_SELECTOR_PREFIX = 3;
 
 const IDSTART = /[A-Za-z_$]/;
 const IDCHAR = /[A-Za-z0-9_$]/;
@@ -324,6 +352,7 @@ function analyze(src) {
   const rootsLive = new Map();
   const refSites = new Map();   // name -> [{pos, owner, cls, dead}]
   const commentRefs = new Map();
+  const stringRefs = new Map();
 
   const addEdge = (g, from, to) => {
     if (!g.has(from)) g.set(from, new Set());
@@ -336,6 +365,10 @@ function analyze(src) {
       const k = cls[p];
       if (k === X) { // コメント内の言及は参照ではない（罠(1)）
         commentRefs.set(name, (commentRefs.get(name) || 0) + 1);
+        continue;
+      }
+      if (k === S) { // 文字列 / テンプレート / 正規表現リテラル内も参照ではない（罠(4)）
+        stringRefs.set(name, (stringRefs.get(name) || 0) + 1);
         continue;
       }
       const o = ownerOf(p);
@@ -387,6 +420,7 @@ function analyze(src) {
       endLine: lineOf(f.bodyEnd),
       liveRefs: (refSites.get(name) || []).length,
       commentRefs: commentRefs.get(name) || 0,
+      stringRefs: stringRefs.get(name) || 0,
       callers: [...new Set((refSites.get(name) || []).map((r) => r.owner).filter(Boolean))].sort(),
     };
   };
@@ -420,49 +454,69 @@ function analyze(src) {
 // 検査2-a: どこでも生成されていない id / class を検出する
 //   判定は「セレクタ引数以外の位置に、コメント外で 1 度でも出現するか」。
 //   出現しなければ、その要素は DOM に存在しえない＝そこに結線したハンドラは発火しない。
+//
+//   連結セレクタ getElementById('prefix_'+x) は 'id-prefix' として扱い、**接頭辞**で
+//   照合する（罠(5)）。`getElementById('helpBtnFirstRound_'+cls)` に対して生成側の
+//   `id="helpBtnFirstRound_'+escapeHtml(cls)+'"` を突き合わせる、という最低ライン。
+//   式の完全な評価はしない＝接頭辞が 1 度も生成されないときだけ「死んだ結線」と言う。
 // -----------------------------------------------------------------------------
+function selectorLabel(f) {
+  if (f.kind === 'class') return '.' + f.key;
+  if (f.kind === 'id-prefix') return '#' + f.key + '*';
+  return '#' + f.key;
+}
+
 function detectDeadBindings(src, cls) {
   const found = [];
   const seen = new Set();
 
-  const scan = (re, kind) => {
+  const scan = (re, kind, quote) => {
     for (const m of src.matchAll(re)) {
       const key = m[1];
-      const argStart = m.index + m[0].indexOf(key);
       if (cls[m.index] === X) continue; // コメント内のサンプルコードは対象外
+      if (kind === 'id-prefix' && key.length < MIN_SELECTOR_PREFIX) continue;
+      // 引用符ごと探す＝'getElementById' 自身の部分文字列に当たらない
+      const rel = m[0].indexOf(quote + key);
+      if (rel < 0) continue;
+      const argStart = m.index + rel + 1;
       found.push({ kind, key, pos: m.index, argStart, argEnd: argStart + key.length });
     }
   };
   // getElementById('id') / getElementById("id")
-  scan(/getElementById\(\s*'([^']+)'\s*\)/g, 'id');
-  scan(/getElementById\(\s*"([^"]+)"\s*\)/g, 'id');
+  scan(/getElementById\(\s*'([^']+)'\s*\)/g, 'id', "'");
+  scan(/getElementById\(\s*"([^"]+)"\s*\)/g, 'id', '"');
   // querySelector('.cls') / querySelectorAll('.cls')（単純クラスセレクタのみ）
-  scan(/querySelectorAll?\(\s*'\.([A-Za-z0-9_-]+)'\s*\)/g, 'class');
-  scan(/querySelectorAll?\(\s*"\.([A-Za-z0-9_-]+)"\s*\)/g, 'class');
+  scan(/querySelectorAll?\(\s*'\.([A-Za-z0-9_-]+)'\s*\)/g, 'class', "'.");
+  scan(/querySelectorAll?\(\s*"\.([A-Za-z0-9_-]+)"\s*\)/g, 'class', '".');
+  // getElementById('prefix_'+x) — 連結セレクタ（罠(5)）
+  scan(/getElementById\(\s*'([^']*)'\s*\+/g, 'id-prefix', "'");
+  scan(/getElementById\(\s*"([^"]*)"\s*\+/g, 'id-prefix', '"');
 
-  // キーごとに「セレクタ引数の位置」を集める
-  const argRanges = new Map();
-  for (const f of found) {
-    if (!argRanges.has(f.key)) argRanges.set(f.key, []);
-    argRanges.get(f.key).push([f.argStart, f.argEnd]);
-  }
+  // 「セレクタ引数そのもの」の位置は生成ではない。接頭辞照合は他キーのセレクタ引数
+  // （例: 接頭辞 'pane-' が getElementById('pane-A') の引数に現れる）にも当たるので、
+  // キー別ではなく全セレクタ引数を除外範囲にする。
+  const allRanges = found.map((f) => [f.argStart, f.argEnd]).sort((a, b) => a[0] - b[0]);
+  const inSelectorArg = (p) => allRanges.some(([a, b]) => p >= a && p < b);
 
   for (const f of found) {
-    if (seen.has(f.kind + ':' + f.key)) continue;
-    const ranges = argRanges.get(f.key);
-    // id / class は '-' を含むので単語境界に '-' も入れる
-    const re = new RegExp('(?<![A-Za-z0-9_$-])' + escapeRe(f.key) + '(?![A-Za-z0-9_$-])', 'g');
+    const kk = f.kind + ':' + f.key;
+    if (seen.has(kk)) continue;
+    // 完全一致（id / class）は語境界つき。id / class は '-' を含むので境界に '-' も入れる。
+    // 接頭辞は語の途中で切れる（'helpBtnFirstRound_' の直後に動的な値が続く）ため
+    // 後ろの境界を課さない＝生の部分文字列で照合する。
+    const re = (f.kind === 'id-prefix')
+      ? new RegExp(escapeRe(f.key), 'g')
+      : new RegExp('(?<![A-Za-z0-9_$-])' + escapeRe(f.key) + '(?![A-Za-z0-9_$-])', 'g');
     let produced = 0;
     for (const m of src.matchAll(re)) {
       const p = m.index;
       if (cls[p] === X) continue;                                  // コメント / CSS は生成ではない
-      if (ranges.some(([a, b]) => p >= a && p < b)) continue;      // セレクタ引数そのもの
+      if (inSelectorArg(p)) continue;                              // セレクタ引数そのもの
       produced++;
     }
     if (produced === 0) {
-      seen.add(f.kind + ':' + f.key);
-      found.filter((g) => g.kind === f.kind && g.key === f.key).forEach(() => {});
-      f.selector = (f.kind === 'id' ? '#' : '.') + f.key;
+      seen.add(kk);
+      f.selector = selectorLabel(f);
       f.dead = true;
     }
   }
@@ -502,4 +556,7 @@ function buildDeadRegions(src, deadBindings, spans) {
 
 function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-module.exports = { analyze, findScriptBlocks };
+// 文字クラスの値。変異検証（test_reachability_001.js の M7）が cls を読むために公開する。
+const CHAR_CLASS = { H, C, S, X };
+
+module.exports = { analyze, findScriptBlocks, CHAR_CLASS, MIN_SELECTOR_PREFIX };

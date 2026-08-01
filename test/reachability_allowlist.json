@@ -14,6 +14,11 @@
     "分類そのまま: 温存マーカー明記 23 / テスト専用フック 4 / 取り残しヘルパ 2 /",
     "機能欠落クラスタ 6 / 実行時到達不能 9（= 静的 26 + 実行時 9 = 35 関数）。",
     "",
+    "PHASE1-REACH-001b（2026-08-01）で走査の穴を 2 つ塞いだ結果、静的到達不能が",
+    "26 → 30 に増えた。増分は START-UX-CONSOLIDATE-001 の legacy 一括開始クラスタ",
+    "4 関数（startTournament / collectStartCandidates / showStartValidationErrors /",
+    "resolveNoCandidateMessage）。#798 の「35 関数」は過小で、正しくは 39 関数。",
+    "",
     "**このリストの関数を消す・直すのは Issue #798 側の別判断。この検査では触らない。**"
   ],
 
@@ -21,11 +26,20 @@
     "issue": "#798",
     "source": "ai-requests/2026-08-01_claude-code_cleanup-deadcode-001_RESULT.md",
     "recorded_at": "2026-08-01",
+    "revised_at": "2026-08-01",
+    "revised_by": "PHASE1-REACH-001b",
+    "revision_note": "初版の走査は (a) 文字列リテラル内の識別子を呼出辺に数え (b) 連結セレクタを拾わなかった。両方を塞いだうえで取り直した実測値。#798 に記録された 静的 26 / 合計 35 は過小。",
     "target_commit": "5bbf60c0ffab79190f485e0d15f188c993b64c80",
-    "static_unreachable": 26,
+    "static_unreachable": 30,
     "runtime_unreachable": 9,
     "dead_bindings": 4,
-    "top_level_functions": 580
+    "top_level_functions": 580,
+    "superseded": {
+      "static_unreachable": 26,
+      "runtime_unreachable": 9,
+      "dead_bindings": 4,
+      "top_level_functions": 580
+    }
   },
 
   "static": [
@@ -98,6 +112,27 @@
       "name": "openLoadModal",
       "category": "temporarily-preserved",
       "reason": "温存マーカーあり: L437「loadFile input は温存（loadData の受け皿・import_routing 資産）。openLoadModal/loadData/loadFromPaste は温存。」test_restore_consolidation.js が参照している。"
+    },
+
+    {
+      "name": "startTournament",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。PHASE1-REACH-001b で新規検出（初版は L9199-9200 の 'SAVE-003-startTournament-' というログ文字列を呼出辺に数えて生きていると誤判定していた）。温存マーカーあり: L9225「START-UX-CONSOLIDATE-001 以降、本関数は UI から呼ばれない legacy / deprecated helper … 互換のため温存する」。#startBtn は goToTournamentFromReg へ置換済み。test_start_ux_consolidate_001.js / test_frp_impl_002.js が「bind されていないこと」を含めて参照している。"
+    },
+    {
+      "name": "collectStartCandidates",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。PHASE1-REACH-001b で新規検出。ROUND-CLASS-START-004 の一括 validate（pure）で、呼び出し元は legacy な startTournament のみ＝そのまま到達不能。test_start_001.js が単体で呼び出し、run_tests.sh B3 が呼出の存在を pin している。"
+    },
+    {
+      "name": "showStartValidationErrors",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。PHASE1-REACH-001b で新規検出。ROUND-CLASS-START-004 の bulk validation errors 集約表示 helper。呼び出し元は legacy な startTournament のみ。"
+    },
+    {
+      "name": "resolveNoCandidateMessage",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。PHASE1-REACH-001b で新規検出。ROUND-CLASS-START-004 の skip 内訳→文言 pure helper。呼び出し元は collectStartCandidates のみで、そこから先は legacy な startTournament へ繋がる。"
     },
 
     {
