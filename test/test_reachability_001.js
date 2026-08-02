@@ -60,6 +60,30 @@
 //        旧版は 6 ガード中 2 経路しか見ておらず、④ が消えているのに
 //        「在庫が尽きて省いた操作: なし」と表示していた。
 //
+//   ── 001j で塞いだ穴（差し戻し9回目・2026-08-02）──────────────────────────
+//   001i で「指摘された穴は全部塞がった」が、**同じ拘束が新しい場所へ移動していた**。
+//   4 件とも「検査1 の結果は 1 ミリも動かない」のに落ちる形で、被害は最大級だった。
+//   高1 **`insertHtml()` の `</body>` 探索を面で門番する**。生テキストの `lastIndexOf`
+//        だったので、「実ファイルに `<style>` が在ること」への依存が
+//        「**実ファイルの `</body>` が生テキスト最終出現であること**」へ移動しただけだった。
+//        現ファイルは JS 文字列内に `'</body></html>'` を 3 箇所持っていて、それが偶然
+//        すべて本物より前にあるから成立していた。`</body>` の**後ろ**に `<script>` を
+//        1 本置くだけで fixture の注入が丸ごと JS 文字列に落ちる（実測 PASS=277 FAIL=35）。
+//        `insertHtml` は面の表 16 面のうち 7 面 ＋ 各 probe が通る**単一障害点**。
+//        `externalizeStyleBlocks` の `</head>` も同じ扱いにした。
+//   高2 **`onAttrFullSpans()` に引用符省略値の枝を足した**。lib（`lexTag` 427-431）は
+//        引用符省略値も ATTR_VAL_ON にするので、片方しか見ないと在庫ゼロ化が黙って
+//        未完了になる（実測 `ZERO-2` / `ZERO-4` が落ちて PASS=317 FAIL=2）。
+//   中1 **`externalizeStyleBlocks` の閉じタグ判定を lib と同じ `</style(?=[\s/>])` へ**。
+//        `</style >` は lib が閉じタグとして正しく認識するのに剥がせず `CSS-EXT-1` が
+//        落ちた（実測 PASS=318 FAIL=1）＝ ⑰（001i 高2 の常設化そのもの）が壊れる。
+//   中2 **allowlist に `static` キーが無いと未捕捉 TypeError**（`esc.static.push` の 1 箇所
+//        だけ `|| []` を持っていなかった）。掃除完了後に空配列ごと削るのは自然な後始末で、
+//        その瞬間 PASS/FAIL の集計すら出なかった。
+//   → 常設化: **⑱**（`</body>` の後ろに script ＋ 引用符省略 on* ＋ `</style >` の 3 形を
+//     同時に）と **⑲**（allowlist の 3 キーを削除）＋ `SHAPE-1`〜`SHAPE-5`。
+//     ⑰ が 001i 高2 の常設化だったのと同じ理由で、受け入れ基準は外部実測ではなく常設に置く。
+//
 //   ── 常設から降ろした事実の明示（無言の降格にしない・中2 / 低）──────────────
 //   - **枯れ検査 `WI-1`〜`WI-6` / `WI-M*` は常設に無い**（battery 側にのみ在る）。
 //     したがって lib の `scanByCss('querySelector')` の 1 行を削っても**このファイルは
@@ -266,7 +290,7 @@ function insertTopLevelJs(src, a, code) {
   const tops = a._internal.topFunctions;
   // トップレベル関数が 1 つも無いファイルではアンカーが取れない。旧版はバイト 0
   // （＝ <html> の前）に注入していて、面の表が丸ごと崩れた。新しい <script> を足す側へ倒す。
-  if (!tops.length) return insertHtml(src, '<script>\n' + code + '\n<\/script>\n');
+  if (!tops.length) return insertHtml(src, '<script>\n' + code + '\n<\/script>\n', a._internal.baseFace);
   const at = tops.reduce((mx, f) => Math.max(mx, f.bodyEnd), -1) + 1;
   return src.slice(0, at) + '\n' + code + '\n' + src.slice(at);
 }
@@ -278,9 +302,25 @@ function insertTopLevelJsBefore(src, a, code) {
   const at = src.lastIndexOf('function', first);
   return at < 0 ? null : src.slice(0, at) + code + '\n' + src.slice(at);
 }
-// HTML の末尾（本物の </body> の直前）へ差し込む。
-function insertHtml(src, frag) {
-  const k = src.lastIndexOf('</body>');
+// 面で門番した「本物の閉じタグ」の位置（001j 高1）。
+//   生テキストの lastIndexOf だと **JS 文字列の中の `</body>`** を掴む。現ファイルは
+//   JS 文字列内に `'</body></html>'` を 3 箇所持っていて、それが偶然すべて本物より
+//   前にあるから成立しているだけ。`</body>` の**後ろ**に `<script>` を 1 本置く（定石）と
+//   fixture の注入が丸ごと JS 文字列の中に落ちる（実測 PASS=277 FAIL=35）。
+//   終端規則は lib の rawtext 閉じタグと同じ（`</tag` の直後が空白 / `/` / `>`）。
+//   face を渡せる場合は渡す（同じ src に何度も差し込むときの再分類を避ける）。
+function lastTagPos(src, tag, face) {
+  const f = face || classifyFaces(src);
+  const needle = '</' + tag;
+  for (let k = src.length; ;) {
+    k = src.lastIndexOf(needle, k - 1);
+    if (k < 0) return -1;
+    if (f[k] === FACE.HTML_TAG && /[\s/>]/.test(src[k + needle.length] || '>')) return k;
+  }
+}
+// HTML の末尾（本物の </body> の直前）へ差し込む。無ければ EOF へ追記する。
+function insertHtml(src, frag, face) {
+  const k = lastTagPos(src, 'body', face);
   return k < 0 ? src + frag : src.slice(0, k) + frag + src.slice(k);
 }
 // `<style>` ブロックごと注入する（001i 高2）。
@@ -288,11 +328,15 @@ function insertHtml(src, frag) {
 //   **実ファイルに <style> が在ること**にアンカーしていた。CSS を外部スタイルシートへ
 //   切り出す（検査1 の結果は 1 ミリも動かない正当なリファクタ）だけで STYLE_CSS の
 //   probe が 15 本落ちる。他 15 面の probe と同じく自給自足にする。
-function insertStyleBlock(src, css) {
-  return insertHtml(src, '<style>\n' + css + '\n</style>\n');
+function insertStyleBlock(src, css, face) {
+  return insertHtml(src, '<style>\n' + css + '\n</style>\n', face);
 }
 // CSS を外部スタイルシートへ切り出す（`<style>` ブロックを全部剥がす）。位置は面から引く。
 //   受け入れ基準「CSS 外部化ファイルで exit=0」を常設で測るための操作（⑰）。
+//   閉じタグの判定は **lib と同じ規則**（`</style(?=[\s/>])` から次の `>` まで）。
+//   001i は `'</style>'` の完全一致だったので、lib が閉じタグとして正しく認識する
+//   `</style >` を剥がせず CSS-EXT-1 が落ちた（001j 中1・実測 PASS=318 FAIL=1）。
+const STYLE_CLOSE_RE = /<\/style(?=[\s/>])[^>]*>/iy;
 function externalizeStyleBlocks(src) {
   const face = classifyFaces(src);
   const runs = [];
@@ -305,19 +349,28 @@ function externalizeStyleBlocks(src) {
   }
   let out = src;
   let removed = 0;
+  // 後ろから剥がすので、まだ触っていない前方の位置（open / e）と face の添字は有効なまま。
   for (let k = runs.length - 1; k >= 0; k--) {
     const [i, e] = runs[k];
     const open = out.lastIndexOf('<style', i);
-    if (open < 0 || out.slice(e, e + '</style>'.length).toLowerCase() !== '</style>') continue;
-    out = out.slice(0, open) + out.slice(e + '</style>'.length);
+    if (open < 0 || face[open] !== FACE.HTML_TAG) continue;
+    STYLE_CLOSE_RE.lastIndex = e;
+    const m = STYLE_CLOSE_RE.exec(out);
+    if (!m) continue;
+    out = out.slice(0, open) + out.slice(e + m[0].length);
     removed++;
   }
-  const h = out.indexOf('</head>');
+  // `</head>` も面で門番する（生テキスト検索だと JS 文字列の中を掴む・001j 高1）。
+  const h = lastTagPos(out, 'head');
   const link = '<link rel="stylesheet" href="app.css">\n';
   return { src: h >= 0 ? out.slice(0, h) + link + out.slice(h) : link + out, removed };
 }
-// 面から「HTML 直書きのインライン on*= 属性」を、**属性名から閉じ引用符まで**まるごと引く。
+// 面から「HTML 直書きのインライン on*= 属性」を、**属性名から値の終端まで**まるごと引く。
 //   在庫ゼロ耐性②（インライン on* の全件 addEventListener 化）がこれを使う。
+//   引用符つきと**引用符省略**の両方を拾う（001j 高2）。lib（`lexTag` の 427-431）は
+//   引用符省略値も ATTR_VAL_ON にするので、片方しか見ないと HTML5 として妥当な
+//   `onclick=fn()` を取りこぼし、在庫ゼロ化（⑪⑬）が黙って未完了になる
+//   ＝ ZERO-2 / ZERO-4 が落ちる（実測 PASS=317 FAIL=2）。
 function onAttrFullSpans(src, a) {
   const face = a._internal.baseFace;
   const out = [];
@@ -329,24 +382,28 @@ function onAttrFullSpans(src, a) {
     while (e < face.length && face[e] === FACE.ATTR_VAL_ON) e++;
     const value = src.slice(i, e);
     let p = i - 1;
+    let attrEnd = e;
     const quote = src[p];
     if ((quote === '"' || quote === "'") && src[e] === quote) {
+      p--;               // 開き引用符を飛ばす
+      attrEnd = e + 1;   // 閉じ引用符まで含める
+    }
+    // ここから先は引用符の有無に関わらず共通（値の直前は空白 ＋ `=`）。
+    while (p >= 0 && isSpace(src[p])) p--;
+    if (src[p] === '=') {
       p--;
       while (p >= 0 && isSpace(src[p])) p--;
-      if (src[p] === '=') {
-        p--;
-        while (p >= 0 && isSpace(src[p])) p--;
-        const nameEnd = p + 1;
-        while (p >= 0 && isName(src[p])) p--;
-        const nameStart = p + 1;
-        if (nameStart < nameEnd) {
-          out.push({
-            attrStart: nameStart,
-            attrEnd: e + 1,
-            attrName: src.slice(nameStart, nameEnd),
-            value,
-          });
-        }
+      const nameEnd = p + 1;
+      while (p >= 0 && isName(src[p])) p--;
+      const nameStart = p + 1;
+      if (nameStart < nameEnd) {
+        out.push({
+          attrStart: nameStart,
+          attrEnd,
+          attrName: src.slice(nameStart, nameEnd),
+          value,
+          quoted: attrEnd > e,
+        });
       }
     }
     i = e;
@@ -393,6 +450,16 @@ const refCount = (a, kind, name) => {
 };
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const allowCount = (allow) => (allow.static || []).length + (allow.runtime || []).length;
+// allowlist（static）へ 1 行追記して退避する（KL-*-esc が使う唯一の経路）。
+//   allowlist に `static` キーが**無い**状態（#798 の掃除完了後に空配列ごと削るのは
+//   自然な後始末）でも落ちないこと。001i はここだけ `|| []` を持たず、その瞬間
+//   未捕捉 TypeError で PASS/FAIL の集計すら出なかった（001j 中2）。
+//   `SHAPE-6` がこの関数を**キー欠落の allowlist で実際に通す**（ガードを外すと落ちる）。
+function withStaticEscape(allow, name, reason) {
+  const esc = clone(allow);
+  (esc.static = esc.static || []).push({ name, category: 'functional-loss-pending', reason });
+  return esc;
+}
 const staticNames = (a) => a.unreachableStatic.map((x) => x.name).join(',');
 
 // 差分照合は「変異で新しく現れた違反」を見るので、注入する名前が**その src に既に
@@ -502,6 +569,9 @@ function gate(src, allow, emit, log) {
     reason: '面 × 変異の全表が使う合成の死んだ関数（fixture・#799 PHASE1-REACH-001h / 2026-08-02）。対象ファイルの実在の死にコードに表が依存しないようにするためのもの。',
   }]);
   const fxv = evaluate(fxa, fxAllow);
+  // fixture の面を 1 回だけ取って以降の差し込みで使い回す。`insertHtml` の `</body>` を
+  // 面で門番するようにしたので（001j 高1）、渡さないと差し込みのたびに再分類が走る。
+  const fxFace = fxa._internal.baseFace;
 
   emit(fxa.unreachableStatic.some((x) => x.name === dead),
     `T-0a fixture の死んだ関数 ${dead} が注入され、到達不能として検出される`);
@@ -550,41 +620,41 @@ function gate(src, allow, emit, log) {
     {
       face: 'HTML_TEXT', expect: '不変', bucket: 'markupRefs',
       label: '地の文に死んだ関数名を置く', marker: '__faceProbeText',
-      apply: (s) => insertHtml(s, `<span>__faceProbeText ${dead} を廃止予定</span>`),
+      apply: (s) => insertHtml(s, `<span>__faceProbeText ${dead} を廃止予定</span>`, fxFace),
     },
     {
       face: 'HTML_COMMENT', expect: '不変', bucket: 'commentRefs',
       label: 'HTML コメントに onclick="deadFn()" を書く', marker: '__faceProbeComment',
-      apply: (s) => insertHtml(s, `<!-- __faceProbeComment <button onclick="${dead}()">旧導線</button> -->`),
+      apply: (s) => insertHtml(s, `<!-- __faceProbeComment <button onclick="${dead}()">旧導線</button> -->`, fxFace),
     },
     {
       face: 'HTML_TAG', expect: '不変', bucket: 'markupRefs',
       // タグ名は英字始まりでないと HTML のタグにならないので `x-` を前置する。
       label: 'タグ名そのものに死んだ関数名を含める', marker: '__faceProbeTag',
-      apply: (s) => insertHtml(s, `<span id="__faceProbeTag"></span><x-${dead}></x-${dead}>`),
+      apply: (s) => insertHtml(s, `<span id="__faceProbeTag"></span><x-${dead}></x-${dead}>`, fxFace),
     },
     {
       // ★ 3 版目が破られた面。属性名の前方一致で on* と誤認していた。
       face: 'ATTR_NAME', expect: '不変', bucket: 'markupRefs',
       label: '属性名に関数名を置く ＋ data-onclick="deadFn()"（3 版目の破れ方）',
       marker: '__faceProbeAttrName',
-      apply: (s) => insertHtml(s, `<span id="__faceProbeAttrName" data-${dead}-legacy="1" data-onclick="${dead}()">x</span>`),
+      apply: (s) => insertHtml(s, `<span id="__faceProbeAttrName" data-${dead}-legacy="1" data-onclick="${dead}()">x</span>`, fxFace),
     },
     {
       // ★ 2 版目が破られた面。
       face: 'ATTR_VAL', expect: '不変', bucket: 'markupRefs',
       label: 'class="deadFn-pill"（2 版目の破れ方）', marker: '__faceProbeAttrVal',
-      apply: (s) => insertHtml(s, `<span id="__faceProbeAttrVal" class="${dead}-pill">x</span>`),
+      apply: (s) => insertHtml(s, `<span id="__faceProbeAttrVal" class="${dead}-pill">x</span>`, fxFace),
     },
     {
       face: 'STYLE_CSS', expect: '不変', bucket: 'commentRefs',
       label: 'CSS に .deadFn{} を足す（<style> ごと注入＝自給自足）', marker: '__faceProbeCss',
-      apply: (s) => insertStyleBlock(s, `.__faceProbeCss{display:none}\n.${dead}{color:red}`),
+      apply: (s) => insertStyleBlock(s, `.__faceProbeCss{display:none}\n.${dead}{color:red}`, fxFace),
     },
     {
       face: 'RAWTEXT', expect: '不変', bucket: 'markupRefs',
       label: 'textarea の中身に関数名を置く', marker: '__faceProbeRawtext',
-      apply: (s) => insertHtml(s, `<textarea id="__faceProbeRawtext">${dead}()</textarea>`),
+      apply: (s) => insertHtml(s, `<textarea id="__faceProbeRawtext">${dead}()</textarea>`, fxFace),
     },
     {
       face: 'JS_STR_SQ', expect: '不変', bucket: 'stringRefs',
@@ -619,7 +689,7 @@ function gate(src, allow, emit, log) {
     {
       face: 'ATTR_VAL_ON', expect: '到達化', spec: REVIVE,
       label: 'インライン onclick に死んだ関数を結線する', marker: '__faceProbeOn',
-      apply: (s) => insertHtml(s, `<button id="__faceProbeOn" onclick="${dead}()">x</button>`),
+      apply: (s) => insertHtml(s, `<button id="__faceProbeOn" onclick="${dead}()">x</button>`, fxFace),
     },
     {
       face: 'JS_CODE', expect: '到達化', spec: REVIVE,
@@ -667,7 +737,7 @@ function gate(src, allow, emit, log) {
 
   // --- C1 ATTR_NAME の値まで pin（data-onclick の値が ATTR_VAL_ON になったら 3 版目に戻る）---
   {
-    const s2 = insertHtml(fx, `<span id="__probeAttrName2" data-onclick="${dead}()">x</span>`);
+    const s2 = insertHtml(fx, `<span id="__probeAttrName2" data-onclick="${dead}()">x</span>`, fxFace);
     const m = analyze(s2);
     const namePos = s2.indexOf('data-onclick', s2.indexOf('__probeAttrName2'));
     const valPos = s2.indexOf(dead, namePos);
@@ -681,7 +751,7 @@ function gate(src, allow, emit, log) {
 
   // --- C1 on* に見えるがイベント名ではない属性は root 化しない -------------------
   {
-    const s2 = insertHtml(fx, `<span id="__probeBogusOn" onbogus="${dead}()">x</span>`);
+    const s2 = insertHtml(fx, `<span id="__probeBogusOn" onbogus="${dead}()">x</span>`, fxFace);
     const m = analyze(s2);
     const p = s2.indexOf(dead, s2.indexOf('__probeBogusOn'));
     emit(FACE_NAME[m._internal.face[p]] === 'ATTR_VAL',
@@ -711,7 +781,7 @@ function gate(src, allow, emit, log) {
   //   `ON_SPANS[0]` が undefined になって未捕捉の TypeError で落ちる（#816 H-1）。
   //   → **fixture に自分で結線を注入し、それを折り曲げる**。
   {
-    const s2 = insertHtml(fx, `<button id="__probeMultiline" onclick="${dead}()">x</button>`);
+    const s2 = insertHtml(fx, `<button id="__probeMultiline" onclick="${dead}()">x</button>`, fxFace);
     const m0 = analyze(s2);
     const spans = onAttrFullSpans(s2, m0).filter((sp) => sp.value.indexOf(dead) >= 0);
     emit(spans.length === 1, `T[ATTR_VAL_ON]-13a 注入した on*= 属性を面から 1 件引けた（実測 ${spans.length}）`);
@@ -868,12 +938,8 @@ ok(ON_EVENT_ATTRS.has('onclick') && ON_EVENT_ATTRS.has('onpointerdown') && !ON_E
 
   // どちらも allowlist（static）への 1 行追記で退避できる＝ CI が詰まない。
   for (const [tag, m, n] of [['KL-9', m9, n9], ['KL-10', m10, n10]]) {
-    const esc = clone(ALLOW);
-    esc.static.push({
-      name: n,
-      category: 'functional-loss-pending',
-      reason: `${tag} の退避可能性を実測するためのエントリ（#799 / #816 / 2026-08-02）。静的走査の限界で参照を拾えない形なので allowlist で退避する。`,
-    });
+    const esc = withStaticEscape(ALLOW, n,
+      `${tag} の退避可能性を実測するためのエントリ（#799 / #816 / 2026-08-02）。静的走査の限界で参照を拾えない形なので allowlist で退避する。`);
     ok(evaluate(m, esc).errors.length === 0,
       `${tag}-esc allowlist（static）への 1 行追記だけで緑にできる（実測 ${show(evaluate(m, esc).errors)}）`);
   }
@@ -984,10 +1050,11 @@ const omit = (key, why) => { OMITTED.push({ key, why }); };
 const addOp = (op) => { OPS.push(op); };
 // 宣言済みの全操作。
 const OP_KEYS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩',
-  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰'];
+  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲'];
 // そのうち**在庫（実ファイルの死にコード / インライン on* / トップレベル関数 / allowlist）に
 // 一切依存しない**もの＝常に実行されなければならない操作。
-const OP_KEYS_ALWAYS = ['①', '②', '⑤', '⑧', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰'];
+const OP_KEYS_ALWAYS = ['①', '②', '⑤', '⑧', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰',
+  '⑱', '⑲'];
 
 {
   const name = uniqIn(RAW, '__opNewButtonHandler');
@@ -1075,7 +1142,7 @@ function pickRemovableDeadFn() {
     omit('④', 'allowlist（static）に載っていて単独削除できる死にコードが現存しない');
   } else {
     const allow2 = clone(ALLOW);
-    allow2.static = allow2.static.filter((e) => e.name !== d.name);
+    allow2.static = (allow2.static || []).filter((e) => e.name !== d.name);
     allow2.baseline = Object.assign({}, allow2.baseline,
       { static_unreachable: (allow2.baseline || {}).static_unreachable - 1 });
     addOp({
@@ -1323,6 +1390,106 @@ const CSS_EXT = externalizeStyleBlocks(RAW);
   });
 }
 
+// --- ⑱ 生テキスト anchor 攻撃 3 形【001j 高1 / 高2 / 中1】--------------------
+//   どれも「検査1 の結果は 1 ミリも動かない」のに 001i を落とした形。
+//   (a) `</body>` の**後ろ**に <script> を置き、中に '</body></html>' を含む文字列を
+//       1 本足す（この製品が既に 3 本持っている形・定石の配置）→ 001i は fixture の
+//       注入が丸ごと JS 文字列の中に落ちて PASS=277 FAIL=35
+//   (b) 引用符省略のインライン on*（HTML5 として妥当・lib は ATTR_VAL_ON にする）
+//       → 001i は migrateInlineHandlers が取りこぼし ZERO-2 / ZERO-4 が落ちた
+//   (c) `</style >`（lib は閉じタグとして正しく認識する）→ 001i は剥がせず CSS-EXT-1
+// `</body>` の後ろへ <script> を足す（本物の閉じタグは面から引く）。
+function appendTailScript(src, face) {
+  const k = lastTagPos(src, 'body', face);
+  if (k < 0) return src;
+  const at = k + '</body>'.length;
+  return src.slice(0, at) + '\n<script>\n'
+    + "var __opExportTail = '<footer>fin</footer></body></html>';\n"
+    + '<\/script>\n' + src.slice(at);
+}
+// 引用符を省略したインライン on* を 1 個足す（呼ばれる関数はトップレベルに置く）。
+function addUnquotedInlineHandler(src, a) {
+  const name = uniqIn(src, '__opUnquotedHandler');
+  return insertHtml(insertTopLevelJs(src, a, `function ${name}(){ return 1; }`),
+    `<button type="button" onclick=${name}()>unq</button>\n`);
+}
+// 最初の `</style>` を `</style >` に緩める（lib の終端規則では同じ閉じタグ）。
+function loosenStyleCloseTag(src) {
+  const face = classifyFaces(src);
+  for (let i = 0; i < face.length; i++) {
+    if (face[i] !== FACE.STYLE_CSS) continue;
+    let e = i;
+    while (e < face.length && face[e] === FACE.STYLE_CSS) e++;
+    STYLE_CLOSE_RE.lastIndex = e;
+    const m = STYLE_CLOSE_RE.exec(src);
+    if (m) return src.slice(0, e) + '</style >' + src.slice(e + m[0].length);
+    i = e;
+  }
+  return src;
+}
+const SHAPE_SRC = (() => {
+  let s = appendTailScript(RAW, A._internal.baseFace);
+  s = addUnquotedInlineHandler(s, analyze(s));
+  return loosenStyleCloseTag(s);
+})();
+{
+  const f = classifyFaces(SHAPE_SRC);
+  const sa = analyze(SHAPE_SRC);
+  const rawLast = SHAPE_SRC.lastIndexOf('</body>');
+  const real = lastTagPos(SHAPE_SRC, 'body', f);
+  ok(real >= 0 && real !== rawLast,
+    `SHAPE-1 本物の </body>（面=HTML_TAG）と生テキスト最終出現がズレた状態を作れた（本物 ${real} / 生テキスト ${rawLast}）`);
+  ok(FACE_NAME[f[rawLast]] === 'JS_STR_SQ',
+    `SHAPE-1b 生テキスト最終出現は JS 文字列の中（実測 ${FACE_NAME[f[rawLast]]}・生テキスト anchor はここで必ず壊れる）`);
+  const spans = onAttrFullSpans(SHAPE_SRC, sa);
+  ok(spans.some((sp) => !sp.quoted),
+    `SHAPE-2 引用符省略のインライン on* を面から引ける（引用符なし ${spans.filter((sp) => !sp.quoted).length} / 全 ${spans.length} 件）`);
+  const migA = analyze(migrateInlineHandlers(SHAPE_SRC, sa).src);
+  ok(migA.htmlHandlerCount === 0,
+    `SHAPE-2b 引用符省略を含めて全件 addEventListener へ移行できる（残り ${migA.htmlHandlerCount} 件）`);
+  const ext = externalizeStyleBlocks(SHAPE_SRC);
+  ok((faceStats(classifyFaces(ext.src)).histogram.STYLE_CSS || 0) === 0,
+    `SHAPE-3 </style > 表記でも <style> を ${ext.removed} ブロック剥がせる`);
+  ok(sa.unreachableStatic.length === A.unreachableStatic.length,
+    `SHAPE-4 3 形を足しても検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${sa.unreachableStatic.length}）`);
+}
+addOp({
+  key: '⑱',
+  label: '⑱生テキスト anchor 攻撃 3 形（</body> の後ろに script ＋ 引用符省略 on* ＋ </style >）',
+  src: SHAPE_SRC,
+});
+
+// --- ⑲ allowlist から static / runtime / bindings キーを削除【001j 中2】-------
+//   #798 の掃除完了後に空配列ごと削るのは自然な後始末。001i はそこで未捕捉
+//   TypeError になり、PASS/FAIL の集計すら出なかった。
+const NOKEY_ALLOW = (() => {
+  const a2 = clone(ZERO_ALLOW);
+  delete a2.static;
+  delete a2.runtime;
+  delete a2.bindings;
+  return a2;
+})();
+ok(allowCount(NOKEY_ALLOW) === 0 && evaluate(ZERO_DEAD.a, NOKEY_ALLOW).errors.length === 0,
+  'SHAPE-5 allowlist に static / runtime / bindings キーが無くても判定が例外にならない');
+// ⑲ は gate() を通るが、KL-*-esc の退避は gate() の**外**でディスクの ALLOW を使うので
+// ⑲ では当たらない。退避経路そのものをキー欠落の allowlist で通しておく（001j 中2）。
+ok((() => {
+  try {
+    const esc = withStaticEscape(NOKEY_ALLOW, '__probeEscapeOnKeylessAllow',
+      'キー欠落の allowlist でも「1 行追記で退避」できることを実測するためのエントリ（#799 PHASE1-REACH-001j / 2026-08-02）。');
+    return (esc.static || []).length === 1 && allowCount(esc) === 1
+      && (NOKEY_ALLOW.static === undefined);
+  } catch (e) {
+    return false;
+  }
+})(), 'SHAPE-6 allowlist に static キーが無くても KL-*-esc と同じ経路で 1 行追記の退避ができる（元の allowlist は汚さない）');
+addOp({
+  key: '⑲',
+  label: '⑲allowlist から static / runtime / bindings キーを削除（空配列ごと消した後始末）',
+  src: ZERO_DEAD.src,
+  allow: NOKEY_ALLOW,
+});
+
 // --- 台帳の照合（001i 中1）---------------------------------------------------
 {
   const keys = OPS.map((o) => o.key);
@@ -1358,8 +1525,8 @@ for (const op of OPS) {
 }
 console.log(`  操作 ${OPS.length}/${OP_KEYS.length} 種を実測`
   + `（在庫が尽きて省いた操作: ${OMITTED.map((o) => `${o.key}（${o.why}）`).join(' / ') || 'なし'}）`
-  + '。在庫ゼロ耐性は ⑩⑪⑬⑭ が、allowlist 0 件 / 1 件耐性は ⑩⑭⑮⑯ が常に担うので、'
-  + 'ここでは在庫の存在を assert しない');
+  + '。在庫ゼロ耐性は ⑩⑪⑬⑭ が、allowlist 0 件 / 1 件 / キー欠落耐性は ⑩⑭⑮⑯⑲ が、'
+  + '生テキスト anchor 耐性は ⑰⑱ が常に担うので、ここでは在庫の存在を assert しない');
 
 console.log(`PHASE1-REACH-001: PASS=${pass} FAIL=${fail} WARN2=${V.warnings.length}`);
 process.exit(fail === 0 ? 0 : 1);
