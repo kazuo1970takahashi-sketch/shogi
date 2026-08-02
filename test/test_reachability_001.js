@@ -165,6 +165,33 @@
 //     添字なしの別操作（軸は「文書の閉じタグの形」ではなく「属性の在庫」）。
 //   ＝ **常設側に「既知の恒久 FAIL 経路」は 0 行になった。**
 //
+//   ── 001n で塞いだ穴（差し戻し13回目・2026-08-03）★ 名指しをやめた ─────────────
+//   001m の受け入れ基準5（＝「既知の恒久 FAIL 経路」を全数表に書く）に従って
+//   全 probe を機械で洗ったところ、**同型がもう 1 箇所**あった:
+//   **`面 × 変異の表` の `t.marker` が固定文字列**（`__faceProbeText`〜`__faceProbeHole`）。
+//   `T[面]-2` は `at = s2.indexOf(t.marker)` → `s2.indexOf(needle, at)` で位置を引くので、
+//   実ファイル側に marker 名が注入位置より前に在ると `at` が実ファイル側を掴み、
+//   needle が fixture ではなく死んだ関数の宣言（JS_CODE）に当たる。**「移行の申し送りを
+//   HTML コメントに 1 行書く」だけで CI が恒久赤**（実測 `PASS=307 FAIL=20` exit 1）。
+//   → marker 16 個 ＋ 残りの固定 probe 名（`__probeAttrName2` / `__probeBogusOn` /
+//     `__probeMultiline` / `__probeDeadTemplate` / `__probeAsiWire` / `__probeSelfCss` /
+//     `__opExtraFn` / `__opDupButton` / `__opMega*` / `__mig` / `data-reachmig` /
+//     `data-onclick` …）を全部 `uniqIn` / `uniqOnAttrIn` に通した。
+//
+//   ★ **そして「名指しのリストで潰す」こと自体をやめた。** 001k は形状を、001m は属性名を
+//   名指しで潰し、そのたびにリスト外の同型が残った。ここで機械に置き換える:
+//     - **レジストリ**（`PROBE_BASES` / `PROBE_NAMES`）… `uniqIn` / `uniqOnAttrIn` を
+//       通った base と一意化後の名前を実行時に記録する
+//     - **㉑**（probe 名が実ファイルに先在する世界）… **レジストリの全 base** を対象の
+//       先頭側（`<body>` 直後＝注入 anchor より前＝最悪位置）へ、**13 面に順に配置**して
+//       先置きし、ゲートが緑であることを毎回確認する。操作 19 → **20**
+//     - **`REGISTRY-1`**（受け入れ基準8）… 対象へ注入した断片（`INJECTED`）に現れる
+//       probe らしきトークンが、**全部レジストリを通った名前から作られている**こと。
+//       ＝「レジストリに載っていない固定文字列の probe が 0 個」を機械で示す
+//   **2 つで対になっている**（片方だけでは閉じない・変異検算で実証済み）:
+//     `REGISTRY-1` が「登録されていない固定名」を捕まえ、`㉑` が「登録されているが
+//     危ない名前」を捕まえる。**新しい probe を足せば、その瞬間から自動で網に入る。**
+//
 //   ── 常設から降ろした事実の明示（無言の降格にしない・中2 / 低）──────────────
 //   - **枯れ検査 `WI-1`〜`WI-6` / `WI-M*` は常設に無い**（battery 側にのみ在る）。
 //     したがって lib の `scanByCss('querySelector')` の 1 行を削っても**このファイルは
@@ -182,9 +209,11 @@
 //     なるため、意図的に外している。baseline の意味論そのものは #816 H-6 で整理する。
 //   - `insertTopLevelJs` はトップレベル関数が 0 個のファイルでは新しい `<script>` を
 //     足す側にフォールバックする（旧版はバイト 0 に注入して面の表が全崩れした）。
-//   - fixture の probe 属性名は 001m で `uniqOnAttrIn` により**その src から一意化**した。
-//     旧版は固定の `onbogus` / `onbogusderived` で、製品側に同名の属性が入ると
-//     `T[ATTR_VAL]-12` / `R8-DERIVED-3` が恒久 FAIL になった（⑳ が毎回この世界を通す）。
+//   - fixture の probe 名は **001m で属性名 / 001n で marker とその他すべて**を
+//     `uniqIn` / `uniqOnAttrIn` に通した。旧版は固定文字列で、製品側に同名のものが
+//     入ると `T[ATTR_VAL]-12` / `R8-DERIVED-3` / `T[面]-2` が恒久 FAIL になった。
+//     いまは ⑳（未知 on* の在庫）と ㉑（probe 名の先在）が毎回この世界を通し、
+//     `REGISTRY-1` が「レジストリを通っていない固定名が 0 個」を機械で示す。
 //     **常設側に「実ファイルに何かが在る / 無い」ことへの既知の恒久 FAIL 経路は残っていない。**
 'use strict';
 
@@ -202,6 +231,29 @@ const ALLOW = JSON.parse(fs.readFileSync(ALLOW_PATH, 'utf8'));
 let pass = 0;
 let fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.log('  FAIL: ' + msg); } };
+
+// =============================================================================
+// probe 名のレジストリ（001n ★）
+//   001m まで「実ファイルに先在すると恒久赤になる固定文字列」を名指しのリストで
+//   1 件ずつ潰していた（`onbogus` → face テーブルの marker 16 個）。**名指しを
+//   やめる**。一意化を通った base をここに記録し、㉑ が**レジストリの全 base を
+//   実ファイル側に先置きした世界**を毎回作る。新しい probe を足せば自動で網に入る。
+//
+//   - `PROBE_BASES` … 一意化の**素**（＝実ファイル側に先置きして衝突させる文字列）
+//   - `PROBE_NAMES` … 一意化の**結果**（＝実際に注入する名前）。受け入れ基準8 の照合に使う
+//   - `INJECTED`    … 対象へ注入した断片の全文。ここに現れる probe らしきトークンが
+//                     `PROBE_NAMES` に無ければ「レジストリを通っていない固定文字列」
+//   - `HOSTILE`     … probe ではなく**わざと固定**で置く敵役（⑳ の未知 on* / ㉑ の先置き名）
+const PROBE_BASES = new Set();
+const PROBE_NAMES = new Set();
+const INJECTED = [];
+const HOSTILE = new Set();
+function registerProbe(base, name) {
+  PROBE_BASES.add(base);
+  PROBE_NAMES.add(name);
+  return name;
+}
+const recordInjection = (frag) => { if (typeof frag === 'string' && frag) INJECTED.push(frag); };
 
 // allowlist の理由に求めるもの
 const MIN_REASON = 20;
@@ -370,6 +422,7 @@ function checkDelta(emit, baseV, mutV, spec, label) {
 
 // スクリプト直下（＝どの関数にも属さない位置）へコードを差し込む。
 function insertTopLevelJs(src, a, code) {
+  recordInjection(code);
   const tops = a._internal.topFunctions;
   // トップレベル関数が 1 つも無いファイルではアンカーが取れない。旧版はバイト 0
   // （＝ <html> の前）に注入していて、面の表が丸ごと崩れた。新しい <script> を足す側へ倒す。
@@ -379,6 +432,7 @@ function insertTopLevelJs(src, a, code) {
 }
 // スクリプト直下の、**既存の全トップレベル関数より前**へ差し込む（位置は解析結果から引く）。
 function insertTopLevelJsBefore(src, a, code) {
+  recordInjection(code);
   const tops = a._internal.topFunctions;
   if (!tops.length) return null;
   const first = tops.reduce((mn, f) => Math.min(mn, f.namePos), Infinity);
@@ -419,7 +473,9 @@ function tagEndPos(src, k) {
   return gt < 0 ? src.length : gt + 1;
 }
 // HTML の末尾（本物の </body> の直前）へ差し込む。無ければ EOF へ追記する。
+//   001n: 対象へ入る断片は**全部 `INJECTED` に記録**する（受け入れ基準8 の照合元）。
 function insertHtml(src, frag, face) {
+  recordInjection(frag);
   const k = lastTagPos(src, 'body', face);
   return k < 0 ? src + frag : src.slice(0, k) + frag + src.slice(k);
 }
@@ -565,8 +621,8 @@ const staticNames = (a) => a.unreachableStatic.map((x) => x.name).join(',');
 // 差分照合は「変異で新しく現れた違反」を見るので、注入する名前が**その src に既に
 // 存在していない**ことが前提になる。衝突したら連番を足して必ず未使用の名前にする。
 function uniqIn(src, base) {
-  if (src.indexOf(base) < 0) return base;
-  for (let i = 2; ; i++) if (src.indexOf(base + i) < 0) return base + i;
+  if (src.indexOf(base) < 0) return registerProbe(base, base);
+  for (let i = 2; ; i++) if (src.indexOf(base + i) < 0) return registerProbe(base, base + i);
 }
 // 同じことを**属性名**でやる（001m / Codex P1）。
 //   probe の属性名を固定文字列にしていたので、製品側に `onbogus` / `onbogusderived` が
@@ -577,10 +633,10 @@ function uniqIn(src, base) {
 //   なので `onbogus2` は「on* に見える」形にならず、R8 に出ないまま別の理由で落ちる。
 //   英字を足して伸ばす。候補は必ず伸び続けるので、src 長を超えた時点で必ず未使用になる。
 function uniqOnAttrIn(src, base) {
-  if (src.indexOf(base) < 0) return base;
+  if (src.indexOf(base) < 0) return registerProbe(base, base);
   for (let i = 1; ; i++) {
     const cand = base + 'x'.repeat(i);
-    if (src.indexOf(cand) < 0) return cand;
+    if (src.indexOf(cand) < 0) return registerProbe(base, cand);
   }
 }
 
@@ -708,9 +764,10 @@ function gate(src, allow, emit, log) {
   //   ＝ 実ファイルの `<style>` が外部化されても表は壊れない。
   {
     const bare = '<html><head></head><body><p>x</p></body></html>';
-    const withStyle = insertStyleBlock(bare, '.__probeSelfCss{color:red}');
+    const cls = uniqIn(bare, '__probeSelfCss');
+    const withStyle = insertStyleBlock(bare, `.${cls}{color:red}`);
     const bf = classifyFaces(withStyle);
-    const got = FACE_NAME[bf[withStyle.indexOf('.__probeSelfCss')]];
+    const got = FACE_NAME[bf[withStyle.indexOf('.' + cls)]];
     emit(bare.indexOf('<style') < 0, 'T-0c0 基準にした最小文書には <style> が 1 つも無い');
     emit(got === 'STYLE_CSS',
       `T-0c <style> ごと注入して STYLE_CSS 面を自給自足で作れる（実測 ${got}・実ファイルの <style> に依存しない）`);
@@ -742,90 +799,100 @@ function gate(src, allow, emit, log) {
   // 死んだ関数が到達可能に戻る変異の期待: R5（掃除漏れ）が 1 件増えるだけ。
   const REVIVE = { errors: { must: ['R5:' + dead], allowed: ['R5:' + dead] } };
 
+  // 001n ★: marker も **その src から一意化する**。旧版は固定文字列だったので、
+  //   実ファイル側に marker 名が注入位置より前に在ると `at = s2.indexOf(t.marker)` が
+  //   実ファイル側を掴み、そこから探した needle が fixture ではなく死んだ関数の宣言
+  //   （JS_CODE）に当たって `T[面]-2` が恒久 FAIL になった。
+  //   「移行の申し送りを HTML コメントに 1 行書く」だけで CI が赤くなる形（実測 307/20）。
+  //   `apply` は `this.marker` を読むのでアロー関数ではなく**メソッド短縮形**で書く。
+  //   一意化した名前に接尾辞を足すのは安全: `uniqIn` の衝突判定は**部分文字列**なので、
+  //   対象が `<name>X` を持つなら `<name>` も持つ＝そこで既に連番へ逃げている。
+  const fp = (base) => uniqIn(fx, base);
+  const dataOnAttr = uniqIn(fx, 'data-onclick');
   const faceTable = [
     {
       face: 'HTML_TEXT', expect: '不変', bucket: 'markupRefs',
-      label: '地の文に死んだ関数名を置く', marker: '__faceProbeText',
-      apply: (s) => insertHtml(s, `<span>__faceProbeText ${dead} を廃止予定</span>`, fxFace),
+      label: '地の文に死んだ関数名を置く', marker: fp('__faceProbeText'),
+      apply(s) { return insertHtml(s, `<span>${this.marker} ${dead} を廃止予定</span>`, fxFace); },
     },
     {
       face: 'HTML_COMMENT', expect: '不変', bucket: 'commentRefs',
-      label: 'HTML コメントに onclick="deadFn()" を書く', marker: '__faceProbeComment',
-      apply: (s) => insertHtml(s, `<!-- __faceProbeComment <button onclick="${dead}()">旧導線</button> -->`, fxFace),
+      label: 'HTML コメントに onclick="deadFn()" を書く', marker: fp('__faceProbeComment'),
+      apply(s) { return insertHtml(s, `<!-- ${this.marker} <button onclick="${dead}()">旧導線</button> -->`, fxFace); },
     },
     {
       face: 'HTML_TAG', expect: '不変', bucket: 'markupRefs',
       // タグ名は英字始まりでないと HTML のタグにならないので `x-` を前置する。
-      label: 'タグ名そのものに死んだ関数名を含める', marker: '__faceProbeTag',
-      apply: (s) => insertHtml(s, `<span id="__faceProbeTag"></span><x-${dead}></x-${dead}>`, fxFace),
+      label: 'タグ名そのものに死んだ関数名を含める', marker: fp('__faceProbeTag'),
+      apply(s) { return insertHtml(s, `<span id="${this.marker}"></span><x-${dead}></x-${dead}>`, fxFace); },
     },
     {
       // ★ 3 版目が破られた面。属性名の前方一致で on* と誤認していた。
       face: 'ATTR_NAME', expect: '不変', bucket: 'markupRefs',
       label: '属性名に関数名を置く ＋ data-onclick="deadFn()"（3 版目の破れ方）',
-      marker: '__faceProbeAttrName',
-      apply: (s) => insertHtml(s, `<span id="__faceProbeAttrName" data-${dead}-legacy="1" data-onclick="${dead}()">x</span>`, fxFace),
+      marker: fp('__faceProbeAttrName'), dataOn: dataOnAttr,
+      apply(s) { return insertHtml(s, `<span id="${this.marker}" data-${dead}-legacy="1" ${this.dataOn}="${dead}()">x</span>`, fxFace); },
     },
     {
       // ★ 2 版目が破られた面。
       face: 'ATTR_VAL', expect: '不変', bucket: 'markupRefs',
-      label: 'class="deadFn-pill"（2 版目の破れ方）', marker: '__faceProbeAttrVal',
-      apply: (s) => insertHtml(s, `<span id="__faceProbeAttrVal" class="${dead}-pill">x</span>`, fxFace),
+      label: 'class="deadFn-pill"（2 版目の破れ方）', marker: fp('__faceProbeAttrVal'),
+      apply(s) { return insertHtml(s, `<span id="${this.marker}" class="${dead}-pill">x</span>`, fxFace); },
     },
     {
       face: 'STYLE_CSS', expect: '不変', bucket: 'commentRefs',
-      label: 'CSS に .deadFn{} を足す（<style> ごと注入＝自給自足）', marker: '__faceProbeCss',
-      apply: (s) => insertStyleBlock(s, `.__faceProbeCss{display:none}\n.${dead}{color:red}`, fxFace),
+      label: 'CSS に .deadFn{} を足す（<style> ごと注入＝自給自足）', marker: fp('__faceProbeCss'),
+      apply(s) { return insertStyleBlock(s, `.${this.marker}{display:none}\n.${dead}{color:red}`, fxFace); },
     },
     {
       face: 'RAWTEXT', expect: '不変', bucket: 'markupRefs',
-      label: 'textarea の中身に関数名を置く', marker: '__faceProbeRawtext',
-      apply: (s) => insertHtml(s, `<textarea id="__faceProbeRawtext">${dead}()</textarea>`, fxFace),
+      label: 'textarea の中身に関数名を置く', marker: fp('__faceProbeRawtext'),
+      apply(s) { return insertHtml(s, `<textarea id="${this.marker}">${dead}()</textarea>`, fxFace); },
     },
     {
       face: 'JS_STR_SQ', expect: '不変', bucket: 'stringRefs',
-      label: '単引用符のログ文字列に関数名を置く（1 版目の破れ方）', marker: '__faceProbeSq',
-      apply: (s) => insertTopLevelJs(s, fxa, `var __faceProbeSq='LOG: ${dead} は保存されませんでした';`),
+      label: '単引用符のログ文字列に関数名を置く（1 版目の破れ方）', marker: fp('__faceProbeSq'),
+      apply(s) { return insertTopLevelJs(s, fxa, `var ${this.marker}='LOG: ${dead} は保存されませんでした';`); },
     },
     {
       face: 'JS_STR_DQ', expect: '不変', bucket: 'stringRefs',
-      label: '二重引用符の文字列に関数名を置く', marker: '__faceProbeDq',
-      apply: (s) => insertTopLevelJs(s, fxa, `var __faceProbeDq="LOG: ${dead} は保存されませんでした";`),
+      label: '二重引用符の文字列に関数名を置く', marker: fp('__faceProbeDq'),
+      apply(s) { return insertTopLevelJs(s, fxa, `var ${this.marker}="LOG: ${dead} は保存されませんでした";`); },
     },
     {
       face: 'JS_TMPL_STR', expect: '不変', bucket: 'stringRefs',
-      label: 'テンプレート文字列の中に関数名を置く', marker: '__faceProbeTmpl',
-      apply: (s) => insertTopLevelJs(s, fxa, 'var __faceProbeTmpl=`LOG: ' + dead + ' ${String(1)}`;'),
+      label: 'テンプレート文字列の中に関数名を置く', marker: fp('__faceProbeTmpl'),
+      apply(s) { return insertTopLevelJs(s, fxa, `var ${this.marker}=\`LOG: ${dead} \${String(1)}\`;`); },
     },
     {
       face: 'JS_LINE_COMMENT', expect: '不変', bucket: 'commentRefs',
-      label: '行コメントで関数名に言及する', marker: '__faceProbeLine',
-      apply: (s) => insertTopLevelJs(s, fxa, `var __faceProbeLine=1; // ${dead}() は撤去済み`),
+      label: '行コメントで関数名に言及する', marker: fp('__faceProbeLine'),
+      apply(s) { return insertTopLevelJs(s, fxa, `var ${this.marker}=1; // ${dead}() は撤去済み`); },
     },
     {
       face: 'JS_BLOCK_COMMENT', expect: '不変', bucket: 'commentRefs',
-      label: 'ブロックコメントで関数名に言及する', marker: '__faceProbeBlock',
-      apply: (s) => insertTopLevelJs(s, fxa, `var __faceProbeBlock=1; /* ${dead}() は撤去済み */`),
+      label: 'ブロックコメントで関数名に言及する', marker: fp('__faceProbeBlock'),
+      apply(s) { return insertTopLevelJs(s, fxa, `var ${this.marker}=1; /* ${dead}() は撤去済み */`); },
     },
     {
       face: 'JS_REGEX', expect: '不変', bucket: 'stringRefs',
-      label: '正規表現リテラルに /deadFn/ を書く', marker: '__faceProbeRegex',
-      apply: (s) => insertTopLevelJs(s, fxa, `var __faceProbeRegex=/${dead}/.test('x');`),
+      label: '正規表現リテラルに /deadFn/ を書く', marker: fp('__faceProbeRegex'),
+      apply(s) { return insertTopLevelJs(s, fxa, `var ${this.marker}=/${dead}/.test('x');`); },
     },
     {
       face: 'ATTR_VAL_ON', expect: '到達化', spec: REVIVE,
-      label: 'インライン onclick に死んだ関数を結線する', marker: '__faceProbeOn',
-      apply: (s) => insertHtml(s, `<button id="__faceProbeOn" onclick="${dead}()">x</button>`, fxFace),
+      label: 'インライン onclick に死んだ関数を結線する', marker: fp('__faceProbeOn'),
+      apply(s) { return insertHtml(s, `<button id="${this.marker}" onclick="${dead}()">x</button>`, fxFace); },
     },
     {
       face: 'JS_CODE', expect: '到達化', spec: REVIVE,
-      label: 'トップレベルの呼出を 1 行足す', marker: '__faceProbeCode',
-      apply: (s) => insertTopLevelJs(s, fxa, `if(window.__faceProbeCode){${dead}();}`),
+      label: 'トップレベルの呼出を 1 行足す', marker: fp('__faceProbeCode'),
+      apply(s) { return insertTopLevelJs(s, fxa, `if(window.${this.marker}){${dead}();}`); },
     },
     {
       face: 'JS_TMPL_DELIM', expect: '到達化', spec: REVIVE,
-      label: 'テンプレートの ${} の中で呼ぶ', marker: '__faceProbeHole', probe: '${',
-      apply: (s) => insertTopLevelJs(s, fxa, 'var __faceProbeHole=`${window.__faceProbeHoleX?' + dead + '():1}`;'),
+      label: 'テンプレートの ${} の中で呼ぶ', marker: fp('__faceProbeHole'), probe: '${',
+      apply(s) { return insertTopLevelJs(s, fxa, `var ${this.marker}=\`\${window.${this.marker}X?${dead}():1}\`;`); },
     },
   ];
 
@@ -863,12 +930,13 @@ function gate(src, allow, emit, log) {
 
   // --- C1 ATTR_NAME の値まで pin（data-onclick の値が ATTR_VAL_ON になったら 3 版目に戻る）---
   {
-    const s2 = insertHtml(fx, `<span id="__probeAttrName2" data-onclick="${dead}()">x</span>`, fxFace);
+    const id = uniqIn(fx, '__probeAttrName2');
+    const s2 = insertHtml(fx, `<span id="${id}" ${dataOnAttr}="${dead}()">x</span>`, fxFace);
     const m = analyze(s2);
-    const namePos = s2.indexOf('data-onclick', s2.indexOf('__probeAttrName2'));
+    const namePos = s2.indexOf(dataOnAttr, s2.indexOf(id));
     const valPos = s2.indexOf(dead, namePos);
     emit(FACE_NAME[m._internal.face[namePos]] === 'ATTR_NAME',
-      `T[ATTR_NAME]-7 data-onclick は属性名の面（実測 ${FACE_NAME[m._internal.face[namePos]]}）`);
+      `T[ATTR_NAME]-7 ${dataOnAttr} は属性名の面（実測 ${FACE_NAME[m._internal.face[namePos]]}）`);
     emit(FACE_NAME[m._internal.face[valPos]] === 'ATTR_VAL',
       `T[ATTR_NAME]-8 その値は ATTR_VAL であって ATTR_VAL_ON ではない（実測 ${FACE_NAME[m._internal.face[valPos]]}）`);
     emit(m.inlineHandlerCount === fxa.inlineHandlerCount,
@@ -881,9 +949,10 @@ function gate(src, allow, emit, log) {
   //   「増分」に現れなくなる＝ `T[ATTR_VAL]-12` が恒久 FAIL になった。
   {
     const bogus = uniqOnAttrIn(fx, 'onbogus');
-    const s2 = insertHtml(fx, `<span id="__probeBogusOn" ${bogus}="${dead}()">x</span>`, fxFace);
+    const id = uniqIn(fx, '__probeBogusOn');
+    const s2 = insertHtml(fx, `<span id="${id}" ${bogus}="${dead}()">x</span>`, fxFace);
     const m = analyze(s2);
-    const p = s2.indexOf(dead, s2.indexOf('__probeBogusOn'));
+    const p = s2.indexOf(dead, s2.indexOf(id));
     emit(FACE_NAME[m._internal.face[p]] === 'ATTR_VAL',
       `T[ATTR_VAL]-10 ${bogus}= の値は ATTR_VAL（実測 ${FACE_NAME[m._internal.face[p]]}・001d は on* 扱いで root 化した）`);
     emit(m.unreachableStatic.some((x) => x.name === dead), 'T[ATTR_VAL]-11 死んだ関数は到達不能のまま');
@@ -912,7 +981,7 @@ function gate(src, allow, emit, log) {
   //   `ON_SPANS[0]` が undefined になって未捕捉の TypeError で落ちる（#816 H-1）。
   //   → **fixture に自分で結線を注入し、それを折り曲げる**。
   {
-    const s2 = insertHtml(fx, `<button id="__probeMultiline" onclick="${dead}()">x</button>`, fxFace);
+    const s2 = insertHtml(fx, `<button id="${uniqIn(fx, '__probeMultiline')}" onclick="${dead}()">x</button>`, fxFace);
     const m0 = analyze(s2);
     const spans = onAttrFullSpans(s2, m0).filter((sp) => sp.value.indexOf(dead) >= 0);
     emit(spans.length === 1, `T[ATTR_VAL_ON]-13a 注入した on*= 属性を面から 1 件引けた（実測 ${spans.length}）`);
@@ -950,7 +1019,8 @@ function gate(src, allow, emit, log) {
 
   // --- C1 派生パス: 一度も挿入されない「死んだテンプレート」は隠さず見せる --------
   {
-    const s2 = insertTopLevelJs(fx, fxa, `var __probeDeadTemplate='<button onclick="${dead}()">go</button>';`);
+    const s2 = insertTopLevelJs(fx, fxa,
+      `var ${uniqIn(fx, '__probeDeadTemplate')}='<button onclick="${dead}()">go</button>';`);
     const m = analyze(s2);
     emit(m.derivedOnlyReachable.indexOf(dead) >= 0,
       `T[JS_STR_SQ]-10 死んだテンプレート内の on*= で到達可能になった関数が derivedOnlyReachable に出る（実測 [${m.derivedOnlyReachable.join(', ')}]）`);
@@ -962,14 +1032,15 @@ function gate(src, allow, emit, log) {
 
   // --- C1 派生パス: ASI 越境（セミコロン無しの独立2文）で連結しない --------------
   {
+    const wire = uniqIn(fx, '__probeAsiWire');
     const s2 = insertTopLevelJs(fx, fxa,
-      'function __probeAsiWire(){\n'
+      `function ${wire}(){\n`
       + "  var a = '<button onclick=\"'\n"
       + `  var bb = '${dead}()">go</button>'\n`
       + '  document.body.innerHTML = a + bb\n'
-      + '}\n__probeAsiWire();');
+      + `}\n${wire}();`);
     const m = analyze(s2);
-    const pos = s2.indexOf(dead, s2.indexOf('__probeAsiWire'));
+    const pos = s2.indexOf(dead, s2.indexOf(wire));
     emit(FACE_NAME[m._internal.face[pos]] === 'JS_STR_SQ',
       `T[JS_STR_SQ]-12 独立した 2 文をまたいで連結しない（実測 ${FACE_NAME[m._internal.face[pos]]}・001d は ATTR_VAL_ON へ昇格していた）`);
     emit(m.unreachableStatic.some((x) => x.name === dead), 'T[JS_STR_SQ]-13 死んだ関数は到達不能のまま');
@@ -1155,15 +1226,18 @@ function migrateInlineHandlers(src, a) {
   const spans = onAttrFullSpans(src, a);
   if (!spans.length) return { src, moved: 0 };
   let out = src;
+  // 001n: 生成する変数名 / 目印属性も `uniqIn` を通す（レジストリに載せる）。
+  const migVar = uniqIn(src, '__mig');
+  const migAttr = uniqIn(src, 'data-reachmig');
   const wires = [];
   spans.forEach((sp, k) => {
-    wires.push(`  var __mig${k}=document.querySelector('[data-reachmig="${k}"]');\n`
-      + `  if(__mig${k}){ __mig${k}.addEventListener('${sp.attrName.replace(/^on/i, '')}', function(event){ ${sp.value} }); }`);
+    wires.push(`  var ${migVar}${k}=document.querySelector('[${migAttr}="${k}"]');\n`
+      + `  if(${migVar}${k}){ ${migVar}${k}.addEventListener('${sp.attrName.replace(/^on/i, '')}', function(event){ ${sp.value} }); }`);
   });
   // 位置がずれないよう後ろから置換する。
   for (let k = spans.length - 1; k >= 0; k--) {
     const sp = spans[k];
-    out = out.slice(0, sp.attrStart) + `data-reachmig="${k}"` + out.slice(sp.attrEnd);
+    out = out.slice(0, sp.attrStart) + `${migAttr}="${k}"` + out.slice(sp.attrEnd);
   }
   out = insertHtml(out, '<script>\ndocument.addEventListener(\'DOMContentLoaded\', function(){\n'
     + wires.join('\n') + '\n});\n<\/script>\n');
@@ -1185,10 +1259,11 @@ const addOp = (op) => { OPS.push(op); };
 //   ⑱ が欠番なのは 001l で #816 へ移したから（⑳a〜⑳d も同じ）。⑳ は 001m で足した
 //   別operation（未知 on* 属性の在庫）で、退避した ⑳a〜⑳d とは無関係。
 const OP_KEYS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩',
-  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲', '⑳'];
+  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲', '⑳', '㉑'];
 // そのうち**在庫（実ファイルの死にコード / インライン on* / トップレベル関数 / allowlist）
 // に一切依存しない**もの＝常に実行されなければならない操作。
-const OP_KEYS_ALWAYS = ['①', '②', '⑤', '⑧', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲', '⑳'];
+const OP_KEYS_ALWAYS = ['①', '②', '⑤', '⑧', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰',
+  '⑲', '⑳', '㉑'];
 
 {
   const name = uniqIn(RAW, '__opNewButtonHandler');
@@ -1202,7 +1277,10 @@ const OP_KEYS_ALWAYS = ['①', '②', '⑤', '⑧', '⑩', '⑪', '⑫', '⑬', 
 addOp({
   key: '②',
   label: '②新規 script ブロックを追加',
-  src: insertHtml(RAW, '<script>\nfunction __opExtraFn(){ return 1; }\n__opExtraFn();\n<\/script>\n'),
+  src: (() => {
+    const fn = uniqIn(RAW, '__opExtraFn');
+    return insertHtml(RAW, `<script>\nfunction ${fn}(){ return 1; }\n${fn}();\n<\/script>\n`);
+  })(),
 });
 
 // ③ セレクタ・ヘルパへの抽出 ＋ `||` フォールバック（FP-4 / FP-7 が安全と証明した形）。
@@ -1291,7 +1369,10 @@ function pickRemovableDeadFn() {
 // ⑤ 検査2 だけが違反する状態（存在しない id への防御的ルックアップ）。
 const FP5_ID = uniqIn(RAW, '__reachFeatureFlagPanel');
 const fp5Src = insertTopLevelJs(RAW, A,
-  `var __ff=document.getElementById('${FP5_ID}');\nif(__ff){__ff.style.display='none';}`);
+  (() => {
+    const v = uniqIn(RAW, '__ffProbeVar');
+    return `var ${v}=document.getElementById('${FP5_ID}');\nif(${v}){${v}.style.display='none';}`;
+  })());
 addOp({
   key: '⑤',
   label: '⑤検査2 だけが違反する状態（exit code に効かないことの実測）',
@@ -1314,7 +1395,8 @@ if (!inlineVictim) {
   addOp({
     key: '⑥',
     label: `⑥同じ関数（${inlineVictim}）を呼ぶボタンをもう 1 個追加`,
-    src: insertHtml(RAW, `<button type="button" onclick="${inlineVictim}()">__opDupButton</button>`),
+    src: insertHtml(RAW,
+      `<button type="button" onclick="${inlineVictim}()">${uniqIn(RAW, '__opDupButton')}</button>`),
   });
 }
 
@@ -1439,13 +1521,16 @@ ok(onAttrFullSpans(ZERO_ON.src, ZERO_ON_A).length === 0,
   const name = uniqIn(mega, '__opMegaHandler');
   mega = insertHtml(insertTopLevelJs(mega, analyze(mega), `function ${name}(){ return 1; }`),
     `<button type="button" onclick="${name}()">mega</button>`);
-  mega = insertHtml(mega, '<script>\nfunction __opMegaExtra(){ return 1; }\n__opMegaExtra();\n<\/script>\n');
+  const extra = uniqIn(mega, '__opMegaExtra');
+  mega = insertHtml(mega, `<script>\nfunction ${extra}(){ return 1; }\n${extra}();\n<\/script>\n`);
   const megaA = analyze(mega);
   const megaId = uniqIn(mega, '__opMegaAbsentPanel');
+  const megaVar = uniqIn(mega, '__opMegaFfVar');
   mega = insertTopLevelJs(mega, megaA,
-    `var __megaFf=document.getElementById('${megaId}');\nif(__megaFf){__megaFf.style.display='none';}`);
+    `var ${megaVar}=document.getElementById('${megaId}');\nif(${megaVar}){${megaVar}.style.display='none';}`);
+  const render = uniqIn(mega, '__opMegaRender');
   const megaBefore = insertTopLevelJsBefore(mega, analyze(mega),
-    `function __opMegaRender(){ document.body.insertAdjacentHTML('beforeend','<div class="notice">x</div>'); }\n__opMegaRender();`);
+    `function ${render}(){ document.body.insertAdjacentHTML('beforeend','<div class="notice">x</div>'); }\n${render}();`);
   addOp({
     key: '⑫',
     label: '⑫複合メガ編集（①②⑤⑦ を一度に）',
@@ -1568,9 +1653,13 @@ addOp({
 //   通す**ためにこの操作を常設化する（RP-009「3 回目で機械に置換」と同じ理由）。
 //   ⑱ / ⑳a〜⑳d の記号は 001l で #816 へ移した形状バッテリのもの。ここの ⑳ は
 //   添字なしの別操作で、意味は「文書の閉じタグの形」ではなく「属性の在庫」。
+//   001n: 属性名 `onbogus` / `onbogusderived` は**わざと固定**（probe ではなく敵役なので
+//   `HOSTILE` に登録する）。id は probe なので `uniqIn` を通す。
+HOSTILE.add('onbogus');
+HOSTILE.add('onbogusderived');
 const UNKNOWN_ON_SRC = insertHtml(RAW,
-  '<div id="__opUnknownOnAttr" onbogus="return false">x</div>\n'
-  + '<div id="__opUnknownOnAttrDerived" onbogusderived="return false">y</div>\n');
+  `<div id="${uniqIn(RAW, '__opUnknownOnAttrHost')}" onbogus="return false">x</div>\n`
+  + `<div id="${uniqIn(RAW, '__opUnknownOnAttrDerivedHost')}" onbogusderived="return false">y</div>\n`);
 addOp({
   key: '⑳',
   label: '⑳実ファイルに未知の on* 属性（onbogus / onbogusderived）が在る世界',
@@ -1586,6 +1675,103 @@ addOp({
     `UNKNOWN-ON-1 実ファイル側に未知の on* を 2 種類とも作れた（実測 [${names.join(', ')}]）`);
   ok(ua.unreachableStatic.length === A.unreachableStatic.length,
     `UNKNOWN-ON-2 未知 on* を足しても検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${ua.unreachableStatic.length}）`);
+}
+
+// --- ㉑ probe 名が実ファイルに先在する世界【001n ★ / RP-009】------------------
+//   001m まで「実ファイルに先在すると恒久赤になる固定文字列」を**名指しのリスト**で
+//   1 件ずつ潰していた（`onbogus` → face テーブルの marker 16 個）。**名指しをやめる。**
+//   `uniqIn` / `uniqOnAttrIn` を通った base はレジストリに載るので、ここでは
+//   **レジストリの全 base を実ファイル側に先置きした世界**を作ってゲートを当てる。
+//   新しい probe を足せば、その瞬間から自動でこのバッテリに入る（人が思い出さなくてよい）。
+//
+//   注入位置は**面ごとに回す**。実害が出た形（HTML コメントに 1 行）は必ず含める。
+//   参照として数える 3 面（ATTR_VAL_ON / JS_CODE / JS_TMPL_DELIM）だけは除く
+//   ＝ そこへ置くと本当の参照になり「検査1 の結果が動かない編集」でなくなるため。
+//   先置きは <body> の**直後**（＝ファイルの先頭側）。注入 anchor（`</body>` の直前 /
+//   最後のトップレベル関数の直後）より前なので、`indexOf` 系の取り違えに対して最悪位置。
+const REGISTRY_FACES = ['HTML_COMMENT', 'HTML_TEXT', 'HTML_TAG', 'ATTR_NAME', 'ATTR_VAL',
+  'RAWTEXT', 'STYLE_CSS', 'JS_STR_SQ', 'JS_STR_DQ', 'JS_TMPL_STR', 'JS_LINE_COMMENT',
+  'JS_BLOCK_COMMENT', 'JS_REGEX'];
+const REGISTRY_FACES_SKIPPED = ['ATTR_VAL_ON', 'JS_CODE', 'JS_TMPL_DELIM'];
+// ここでレジストリを凍結する（以降 OPS ループの gate が回っても base は増えないはず。
+// 増えていないことは最後に `REGISTRY-3` で照合する）。
+const PRESEED_BASES = [...PROBE_BASES].sort();
+// ㉑ 自身の anchor。**これはレジストリに載せない**（`uniqIn` を通さない）。
+//   載せると「先置きする base」と「その位置を引く anchor」が同じ文字列になり、
+//   自分の anchor を掴んで必ず取り違える（実測: 期待 JS_STR_SQ / 実測 JS_CODE）。
+//   代わりに、対象にも**どの base にも**含まれないところまで自分で伸ばす。
+let REG_SENTINEL = '__probeRegistryAnchor';
+while (RAW.indexOf(REG_SENTINEL) >= 0
+  || PRESEED_BASES.some((b) => REG_SENTINEL.indexOf(b) >= 0 || b.indexOf(REG_SENTINEL) >= 0)) {
+  REG_SENTINEL += 'z';
+}
+const PRESEED = PRESEED_BASES.map((base, i) => ({
+  base, face: REGISTRY_FACES[i % REGISTRY_FACES.length], sent: REG_SENTINEL + i,
+}));
+const REGISTRY_WORLD = (() => {
+  const html = [];
+  const js = [];
+  for (const p of PRESEED) {
+    const { base: n, sent: s } = p;
+    switch (p.face) {
+      case 'HTML_COMMENT': html.push(`<!-- ${s} ${n} -->`); break;
+      case 'HTML_TEXT': html.push(`<span>${s} ${n}</span>`); break;
+      case 'HTML_TAG': html.push(`<span id="${s}"></span><x-${n}></x-${n}>`); break;
+      case 'ATTR_NAME': html.push(`<span id="${s}" data-${n}-legacy="1">x</span>`); break;
+      case 'ATTR_VAL': html.push(`<span id="${s}" class="${n}-pill">x</span>`); break;
+      case 'RAWTEXT': html.push(`<textarea id="${s}">${n}</textarea>`); break;
+      case 'STYLE_CSS': html.push(`<style>\n.${s}{color:blue}\n.${n}{color:red}\n</style>`); break;
+      case 'JS_STR_SQ': js.push(`var ${s}='${n}';`); break;
+      case 'JS_STR_DQ': js.push(`var ${s}="${n}";`); break;
+      case 'JS_TMPL_STR': js.push(`var ${s}=\`${n}\`;`); break;
+      case 'JS_LINE_COMMENT': js.push(`var ${s}=1; // ${n}`); break;
+      case 'JS_BLOCK_COMMENT': js.push(`var ${s}=1; /* ${n} */`); break;
+      case 'JS_REGEX': js.push(`var ${s}=/${n}/.test('x');`); break;
+      default: break;
+    }
+  }
+  const frag = html.join('\n') + '\n<script>\n' + js.join('\n') + '\n<\/script>\n';
+  // <body> の直後（面で門番）。ここは **probe の注入ではなく敵役の先置き**なので
+  // `INJECTED`（受け入れ基準8 の照合元）には**記録しない**。
+  const f = classifyFaces(RAW);
+  const re = /<body(?=[\s/>])/ig;
+  for (let m = re.exec(RAW); m; m = re.exec(RAW)) {
+    if (f[m.index] !== FACE.HTML_TAG) continue;
+    const gt = RAW.indexOf('>', m.index);
+    if (gt < 0) break;
+    return RAW.slice(0, gt + 1) + '\n' + frag + RAW.slice(gt + 1);
+  }
+  return RAW + frag;   // <body> が無いファイルでも成立させる（EOF 追記）
+})();
+addOp({
+  key: '㉑',
+  label: `㉑probe 名 ${PRESEED.length} 件が実ファイルに先在する世界（${REGISTRY_FACES.length} 面へ順に配置）`,
+  src: REGISTRY_WORLD,
+});
+{
+  // その世界を**実際に作れたこと**（＝ 各 base が意図した面に載ったこと）と、
+  // それが「検査1 の結果は 1 ミリも動かない正当な編集」であることを測る。
+  const rf = classifyFaces(REGISTRY_WORLD);
+  const bad = [];
+  for (const p of PRESEED) {
+    const at = REGISTRY_WORLD.indexOf(p.sent);
+    const pos = at >= 0 ? REGISTRY_WORLD.indexOf(p.base, at) : -1;
+    const got = pos >= 0 ? FACE_NAME[rf[pos]] : '(見つからない)';
+    if (got !== p.face) bad.push(`${p.base}: 期待 ${p.face} / 実測 ${got}`);
+  }
+  ok(bad.length === 0,
+    `REGISTRY-FACE 先置きした ${PRESEED.length} 件が全部その面に載っている（ずれ: ${bad.slice(0, 4).join(' / ') || 'なし'}）`);
+  // 除いた 3 面の理由: ATTR_VAL_ON / JS_CODE は**参照として数える面**（置くと本当の参照になり
+  //   「検査1 の結果が動かない編集」でなくなる）。JS_TMPL_DELIM は `${` `}` の区切り記号そのもので、
+  //   名前を載せる余地が無い（中身は JS_CODE 面になる）。
+  ok(REGISTRY_FACES.length + REGISTRY_FACES_SKIPPED.length === Object.keys(FACE).length
+    && isRefFace(FACE.ATTR_VAL_ON) && isRefFace(FACE.JS_CODE) && !isRefFace(FACE.JS_TMPL_DELIM),
+  `REGISTRY-FACE-2 面の割り振りが全 ${Object.keys(FACE).length} 面を説明している`
+    + `（先置き ${REGISTRY_FACES.length} 面／除外 ${REGISTRY_FACES_SKIPPED.length} 面 ＝ 参照として数える`
+    + ' ATTR_VAL_ON・JS_CODE ＋ 区切り記号そのものの JS_TMPL_DELIM）');
+  const ra = analyze(REGISTRY_WORLD);
+  ok(ra.unreachableStatic.length === A.unreachableStatic.length,
+    `REGISTRY-2 probe 名を先置きしても検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${ra.unreachableStatic.length}）`);
 }
 
 // --- 台帳の照合（001i 中1）---------------------------------------------------
@@ -1624,9 +1810,58 @@ for (const op of OPS) {
 console.log(`  操作 ${OPS.length}/${OP_KEYS.length} 種を実測`
   + `（在庫が尽きて省いた操作: ${OMITTED.map((o) => `${o.key}（${o.why}）`).join(' / ') || 'なし'}）`
   + '。在庫ゼロ耐性は ⑩⑪⑬⑭ が、allowlist 0 件 / 1 件 / キー欠落耐性は ⑩⑭⑮⑯⑲ が、'
-  + '生テキスト anchor 耐性は ⑰ が、未知 on* 属性の在庫耐性は ⑳ が常に担うので、'
-  + 'ここでは在庫の存在を assert しない'
+  + '生テキスト anchor 耐性は ⑰ が、未知 on* 属性の在庫耐性は ⑳ が、'
+  + 'probe 名の先在耐性は ㉑ が常に担うので、ここでは在庫の存在を assert しない'
   + '（ハーネス自衛の形状バッテリ ⑱ / ⑳a〜⑳d は 001l で Issue #816 へ移した）');
+
+// =============================================================================
+// 8. レジストリの網の完全性【001n ★ 受け入れ基準8】
+//    「レジストリに載っていない固定文字列の probe が 0 個」を機械で示す。
+//    対象へ注入した断片（`INJECTED`）に現れる probe らしきトークンを全部拾い、
+//    それが `uniqIn` / `uniqOnAttrIn` を通った名前（`PROBE_NAMES`）から作られている
+//    ことを要求する。ここが空なら、㉑ の網に**漏れが無い**と言える。
+//
+//    ここは OPS ループの**後**に置く（ループ中の gate() も注入するため）。
+// =============================================================================
+console.log('=== probe 名レジストリの網（受け入れ基準8）===');
+{
+  // 注入断片から拾うトークン:
+  //   (a) `__` で始まる識別子      … probe の関数名 / 変数名 / id / class / タグ名
+  //   (b) `data-…=` の属性名        … 目印として置く属性
+  //   (c) `on…=` のうち実イベント名でないもの … 未知 on* の probe
+  const TOKEN_RE = /__[A-Za-z0-9_$]+/g;
+  const DATA_RE = /\bdata-[A-Za-z0-9_-]+(?=\s*=)/g;
+  const ON_RE = /\b(on[a-z]+)(?=\s*=)/gi;
+  const found = new Map();          // token -> 最初に見つけた断片の抜粋
+  for (const frag of INJECTED) {
+    for (const re of [TOKEN_RE, DATA_RE, ON_RE]) {
+      re.lastIndex = 0;
+      for (let m = re.exec(frag); m; m = re.exec(frag)) {
+        const tok = m[0];
+        if (re === ON_RE && ON_EVENT_ATTRS.has(tok.toLowerCase())) continue;  // 実イベント名は probe ではない
+        if (!found.has(tok)) found.set(tok, frag.slice(Math.max(0, m.index - 20), m.index + 40));
+      }
+    }
+  }
+  // 判定: 登録済みの名前が部分文字列として含まれていれば OK。
+  //   接尾辞つき（`<name>X` / `<name>0`）が安全なのは `uniqIn` の衝突判定が
+  //   **部分文字列**だから（対象が `<name>X` を持つなら `<name>` も持つ＝連番へ逃げている）。
+  const names = [...PROBE_NAMES];
+  const covered = (tok) => names.some((n) => tok.indexOf(n) >= 0) || HOSTILE.has(tok);
+  const stray = [...found.keys()].filter((t) => !covered(t)).sort();
+  console.log(`  レジストリ: base ${PROBE_BASES.size} 件 / 一意化後の名前 ${PROBE_NAMES.size} 件`
+    + ` / 敵役として固定した名前 ${HOSTILE.size} 件（${[...HOSTILE].join(', ')}）`);
+  console.log(`  注入断片 ${INJECTED.length} 本 / そこに現れた probe らしきトークン ${found.size} 種`);
+  ok(stray.length === 0,
+    `REGISTRY-1 レジストリを通っていない固定文字列の probe が 0 個`
+    + `（実測 ${stray.length} 件: ${stray.slice(0, 6).map((t) => `${t}「${(found.get(t) || '').replace(/\s+/g, ' ')}」`).join(' / ')}）`);
+  const grew = [...PROBE_BASES].filter((b) => PRESEED_BASES.indexOf(b) < 0).sort();
+  ok(grew.length === 0,
+    `REGISTRY-3 ㉑ の網が全 base を覆っている＝㉑ を作った後にレジストリが増えていない`
+    + `（増分 ${grew.length} 件: ${grew.slice(0, 6).join(', ') || 'なし'}）`);
+  ok(found.size > 0 && PROBE_NAMES.size > 0,
+    `REGISTRY-4 照合そのものが空振りしていない（トークン ${found.size} 種 × 登録名 ${PROBE_NAMES.size} 件）`);
+}
 
 console.log(`PHASE1-REACH-001: PASS=${pass} FAIL=${fail} WARN2=${V.warnings.length}`);
 process.exit(fail === 0 ? 0 : 1);
