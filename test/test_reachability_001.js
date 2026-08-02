@@ -146,6 +146,25 @@
 //       ことを明示しておく（#816 で退避分と一緒に検出力を回復させる）。
 //   ＝ 11 巡壊れ続けた「文書の閉じタグの形状」への依存は、常設側から**依存元ごと**消えた。
 //
+//   ── 001m で塞いだ穴（Codex P1・差し戻し12回目・2026-08-03）───────────────────
+//   001l の `ok()` 全数表に**自分で「既知の恒久 FAIL 経路」として書いていた 1 行**が、
+//   そのまま実害だった（`T[ATTR_VAL]-12` / `R8-DERIVED-3` は製品側に `onbogus` /
+//   `onbogusderived` が入ると恒久 FAIL・#816 送りと書いていた）。置き場所も誤りで、
+//   この 2 本は `gate()` の中＝ **001l で #799 に残すと決めた製品側**にある。
+//   実測: `shogi_v4.html` に `<div onbogus="return false">x</div>` を 1 個足すと
+//   **全 18 操作のゲートが同じ assert で落ちる**（`PASS=303 FAIL=19 WARN2=1` exit 1）。
+//   未知の on* は本来レポート専用（R8 warn）なのに、それがブロッカーに変わる形＝
+//   「正当な編集で恒久赤・allowlist で回避できない」＝ 11 巡と同じ実害クラス。
+//   原因は **probe の属性名だけが固定文字列だった**こと（関数名は 001e 以降ずっと
+//   `uniqIn` で一意化していたのに、属性名には同じ道具を当てていなかった）。
+//   → `uniqOnAttrIn()` で **その src から一意化**する。`uniqIn` の連番は使えない
+//     （lib の `ON_ATTR_SHAPE_RE` = `/^on[a-z]+$/i` は英字のみ＝ `onbogus2` は
+//     「on* に見える」形にならず R8 に出ない）ので、英字を足して伸ばす。
+//   → **⑳**（実ファイルに未知の on* 属性が在る世界）を常設化。操作 18 → **19**。
+//     ⑱ / ⑳a〜⑳d の記号は 001l で #816 へ移した形状バッテリのもので、ここの ⑳ は
+//     添字なしの別操作（軸は「文書の閉じタグの形」ではなく「属性の在庫」）。
+//   ＝ **常設側に「既知の恒久 FAIL 経路」は 0 行になった。**
+//
 //   ── 常設から降ろした事実の明示（無言の降格にしない・中2 / 低）──────────────
 //   - **枯れ検査 `WI-1`〜`WI-6` / `WI-M*` は常設に無い**（battery 側にのみ在る）。
 //     したがって lib の `scanByCss('querySelector')` の 1 行を削っても**このファイルは
@@ -163,8 +182,10 @@
 //     なるため、意図的に外している。baseline の意味論そのものは #816 H-6 で整理する。
 //   - `insertTopLevelJs` はトップレベル関数が 0 個のファイルでは新しい `<script>` を
 //     足す側にフォールバックする（旧版はバイト 0 に注入して面の表が全崩れした）。
-//   - fixture の probe 属性名 `onbogus` / `onbogusderived` と同名の属性が製品側に
-//     入ると `T[ATTR_VAL]-12` / `R8-DERIVED-3` が恒久 FAIL になる（現対象は非該当・#816）。
+//   - fixture の probe 属性名は 001m で `uniqOnAttrIn` により**その src から一意化**した。
+//     旧版は固定の `onbogus` / `onbogusderived` で、製品側に同名の属性が入ると
+//     `T[ATTR_VAL]-12` / `R8-DERIVED-3` が恒久 FAIL になった（⑳ が毎回この世界を通す）。
+//     **常設側に「実ファイルに何かが在る / 無い」ことへの既知の恒久 FAIL 経路は残っていない。**
 'use strict';
 
 const fs = require('fs');
@@ -547,6 +568,21 @@ function uniqIn(src, base) {
   if (src.indexOf(base) < 0) return base;
   for (let i = 2; ; i++) if (src.indexOf(base + i) < 0) return base + i;
 }
+// 同じことを**属性名**でやる（001m / Codex P1）。
+//   probe の属性名を固定文字列にしていたので、製品側に `onbogus` / `onbogusderived` が
+//   1 個入るだけで `T[ATTR_VAL]-12` / `R8-DERIVED-3` が恒久 FAIL になった
+//   （その属性が基準側の warn に既に出ているので「増分」に現れない・実測 PASS=303 FAIL=19）。
+//   ＝「正当な編集で恒久赤・allowlist では回避できない」＝この PR を 11 巡させたのと同じクラス。
+//   **`uniqIn` の連番は使えない**: lib の `ON_ATTR_SHAPE_RE`（`/^on[a-z]+$/i`）は**英字のみ**
+//   なので `onbogus2` は「on* に見える」形にならず、R8 に出ないまま別の理由で落ちる。
+//   英字を足して伸ばす。候補は必ず伸び続けるので、src 長を超えた時点で必ず未使用になる。
+function uniqOnAttrIn(src, base) {
+  if (src.indexOf(base) < 0) return base;
+  for (let i = 1; ; i++) {
+    const cand = base + 'x'.repeat(i);
+    if (src.indexOf(cand) < 0) return cand;
+  }
+}
 
 // =============================================================================
 // ゲート本体
@@ -840,29 +876,34 @@ function gate(src, allow, emit, log) {
   }
 
   // --- C1 on* に見えるがイベント名ではない属性は root 化しない -------------------
+  //   属性名は **その src から一意化する**（001m）。固定の `onbogus` だと、製品側に
+  //   同名の属性が 1 個入った瞬間に基準側の warn にも同じ `R8:onbogus` が出て、
+  //   「増分」に現れなくなる＝ `T[ATTR_VAL]-12` が恒久 FAIL になった。
   {
-    const s2 = insertHtml(fx, `<span id="__probeBogusOn" onbogus="${dead}()">x</span>`, fxFace);
+    const bogus = uniqOnAttrIn(fx, 'onbogus');
+    const s2 = insertHtml(fx, `<span id="__probeBogusOn" ${bogus}="${dead}()">x</span>`, fxFace);
     const m = analyze(s2);
     const p = s2.indexOf(dead, s2.indexOf('__probeBogusOn'));
     emit(FACE_NAME[m._internal.face[p]] === 'ATTR_VAL',
-      `T[ATTR_VAL]-10 onbogus= の値は ATTR_VAL（実測 ${FACE_NAME[m._internal.face[p]]}・001d は on* 扱いで root 化した）`);
+      `T[ATTR_VAL]-10 ${bogus}= の値は ATTR_VAL（実測 ${FACE_NAME[m._internal.face[p]]}・001d は on* 扱いで root 化した）`);
     emit(m.unreachableStatic.some((x) => x.name === dead), 'T[ATTR_VAL]-11 死んだ関数は到達不能のまま');
     checkDelta(emit, fxv, evaluate(m, fxAllow),
-      { warnings: { must: ['R8:onbogus'], allowed: ['R8:onbogus'] } }, 'T[ATTR_VAL]-12');
+      { warnings: { must: ['R8:' + bogus], allowed: ['R8:' + bogus] } }, 'T[ATTR_VAL]-12');
   }
 
   // --- C1 派生パスの中の未知 on* も R8 に出る ----------------------------------
   {
     const wire = uniqIn(fx, '__probeDerivedUnknownWire');
+    const bogus = uniqOnAttrIn(fx, 'onbogusderived');
     const s2 = insertTopLevelJs(fx, fxa,
-      `function ${wire}(){ document.body.insertAdjacentHTML('beforeend','<button onbogusderived="${dead}()">x</button>'); }\n${wire}();`);
+      `function ${wire}(){ document.body.insertAdjacentHTML('beforeend','<button ${bogus}="${dead}()">x</button>'); }\n${wire}();`);
     const m = analyze(s2);
-    emit(m.unknownOnAttrs.some((u) => u.name === 'onbogusderived' && u.viaDerived),
+    emit(m.unknownOnAttrs.some((u) => u.name === bogus && u.viaDerived),
       `R8-DERIVED-1 JS 文字列の中の未知 on*= が報告される（実測 ${JSON.stringify(m.unknownOnAttrs.map((u) => u.name))}）`);
     emit(m.unreachableStatic.some((x) => x.name === dead),
       'R8-DERIVED-2 未知 on* なので死んだ関数はルート化しない');
     checkDelta(emit, fxv, evaluate(m, fxAllow),
-      { warnings: { must: ['R8:onbogusderived'], allowed: ['R8:onbogusderived'] } }, 'R8-DERIVED-3');
+      { warnings: { must: ['R8:' + bogus], allowed: ['R8:' + bogus] } }, 'R8-DERIVED-3');
   }
 
   // --- C1 インライン on*= を複数行にしてもルートを失わない（3 版目の破れ方）------
@@ -1141,11 +1182,13 @@ const addOp = (op) => { OPS.push(op); };
 // 宣言済みの全操作。
 //   001l で ⑱ / ⑳a〜⑳d（ハーネス自衛の形状バッテリ）を落とした＝ Issue #816 へ。
 //   ここに残るのは「実際の編集に対するゲートの耐性」（製品側）だけ。
+//   ⑱ が欠番なのは 001l で #816 へ移したから（⑳a〜⑳d も同じ）。⑳ は 001m で足した
+//   別operation（未知 on* 属性の在庫）で、退避した ⑳a〜⑳d とは無関係。
 const OP_KEYS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩',
-  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲'];
+  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲', '⑳'];
 // そのうち**在庫（実ファイルの死にコード / インライン on* / トップレベル関数 / allowlist）
 // に一切依存しない**もの＝常に実行されなければならない操作。
-const OP_KEYS_ALWAYS = ['①', '②', '⑤', '⑧', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲'];
+const OP_KEYS_ALWAYS = ['①', '②', '⑤', '⑧', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲', '⑳'];
 
 {
   const name = uniqIn(RAW, '__opNewButtonHandler');
@@ -1516,6 +1559,35 @@ addOp({
   allow: NOKEY_ALLOW,
 });
 
+// --- ⑳ 実ファイルに未知の on* 属性が在る世界【001m / Codex P1】-----------------
+//   `T[ATTR_VAL]-10/-11/-12` と `R8-DERIVED-1/-2/-3` の probe 属性名が固定文字列
+//   （`onbogus` / `onbogusderived`）だったので、製品側に同名の属性を 1 個足すだけで
+//   **全 18 操作のゲートが同じ assert で落ちた**（実測 PASS=303 FAIL=19 exit 1）。
+//   未知の on* は本来レポート専用（R8 warn）なのに、それがブロッカーに変わる形。
+//   属性名の一意化（`uniqOnAttrIn`）で構造的に消えるが、**「消えたこと」を毎回機械が
+//   通す**ためにこの操作を常設化する（RP-009「3 回目で機械に置換」と同じ理由）。
+//   ⑱ / ⑳a〜⑳d の記号は 001l で #816 へ移した形状バッテリのもの。ここの ⑳ は
+//   添字なしの別操作で、意味は「文書の閉じタグの形」ではなく「属性の在庫」。
+const UNKNOWN_ON_SRC = insertHtml(RAW,
+  '<div id="__opUnknownOnAttr" onbogus="return false">x</div>\n'
+  + '<div id="__opUnknownOnAttrDerived" onbogusderived="return false">y</div>\n');
+addOp({
+  key: '⑳',
+  label: '⑳実ファイルに未知の on* 属性（onbogus / onbogusderived）が在る世界',
+  src: UNKNOWN_ON_SRC,
+  expectWarn: 'R8:onbogus',
+});
+{
+  // その世界を**実際に作れたこと**（＝ ⑳ が空振りしていないこと）と、
+  // それが「検査1 の結果は 1 ミリも動かない正当な編集」であることを測る。
+  const ua = analyze(UNKNOWN_ON_SRC);
+  const names = ua.unknownOnAttrs.map((x) => x.name);
+  ok(names.indexOf('onbogus') >= 0 && names.indexOf('onbogusderived') >= 0,
+    `UNKNOWN-ON-1 実ファイル側に未知の on* を 2 種類とも作れた（実測 [${names.join(', ')}]）`);
+  ok(ua.unreachableStatic.length === A.unreachableStatic.length,
+    `UNKNOWN-ON-2 未知 on* を足しても検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${ua.unreachableStatic.length}）`);
+}
+
 // --- 台帳の照合（001i 中1）---------------------------------------------------
 {
   const keys = OPS.map((o) => o.key);
@@ -1552,7 +1624,8 @@ for (const op of OPS) {
 console.log(`  操作 ${OPS.length}/${OP_KEYS.length} 種を実測`
   + `（在庫が尽きて省いた操作: ${OMITTED.map((o) => `${o.key}（${o.why}）`).join(' / ') || 'なし'}）`
   + '。在庫ゼロ耐性は ⑩⑪⑬⑭ が、allowlist 0 件 / 1 件 / キー欠落耐性は ⑩⑭⑮⑯⑲ が、'
-  + '生テキスト anchor 耐性は ⑰ が常に担うので、ここでは在庫の存在を assert しない'
+  + '生テキスト anchor 耐性は ⑰ が、未知 on* 属性の在庫耐性は ⑳ が常に担うので、'
+  + 'ここでは在庫の存在を assert しない'
   + '（ハーネス自衛の形状バッテリ ⑱ / ⑳a〜⑳d は 001l で Issue #816 へ移した）');
 
 console.log(`PHASE1-REACH-001: PASS=${pass} FAIL=${fail} WARN2=${V.warnings.length}`);
