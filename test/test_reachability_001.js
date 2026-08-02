@@ -84,6 +84,38 @@
 //     同時に）と **⑲**（allowlist の 3 キーを削除）＋ `SHAPE-1`〜`SHAPE-5`。
 //     ⑰ が 001i 高2 の常設化だったのと同じ理由で、受け入れ基準は外部実測ではなく常設に置く。
 //
+//   ── 001k で塞いだ穴（差し戻し10回目・2026-08-02）──────────────────────────
+//   001j が新設した `SHAPE-1` / `SHAPE-1b` **そのもの**へ拘束違反が移動していた（5 回目）。
+//   `insertHtml` の生テキスト anchor を直したのは正しく、その依存が**新設の常設 assert**
+//   へ移っただけだった。どれも「HTML として等価・検査1 の結果は 1 ミリも動かない」編集で
+//   恒久赤になり、`ok()` 直打ちなので **allowlist では回避できない**（＝過去 4 回と同じ実害）。
+//   高1 **`SHAPE-1` が「実ファイルに小文字の `</body>` が在る」ことへの無条件 assert**。
+//        `lastTagPos` は文字クラスだけ lib に揃えて `lastIndexOf` を残していたので
+//        **大文字小文字を区別**しており、lib（`ig`）が閉じタグと認める `</BODY>` を
+//        見つけられず `-1` を返した（実測 PASS=328 FAIL=1 exit 1）。`</body></html>` の
+//        削除（HTML5 では終了タグの省略が妥当）でも同じ。⑱ は `OP_KEYS_ALWAYS`
+//        （在庫に一切依存しない）に登録されていたので、**この表示が偽だった**。
+//        → 走査を lib と同じ正規表現（`ig`）へ。土台を `SHAPE_BASE`
+//          （`ensureDocumentClose` で閉じタグを**自給自足**した src）にして登録を事実に合わせた。
+//   高2 **`SHAPE-1b` が「実ファイルの `</body>` より後ろに生テキストの `</body>` が
+//        無い」という実例前提の pin**。`SHAPE_SRC` 全体への `lastIndexOf` だったので、
+//        それが自前注入の単引用符文字列に当たるのは偶然に過ぎない。`</body>` の直後に
+//        **二重引用符**の文字列を持つ `<script>`（⑱ 自身が「定石の配置」と呼ぶ形）や、
+//        `</body></html>` を含む HTML コメントを置くだけで恒久赤（実測 328/1 exit 1）。
+//        → 全体 `lastIndexOf` を廃し、**自分が注入したマーカーから**引く（`tailBodyPos`）。
+//   中1 **⑲ のキー欠落耐性が 5 キー中 3 キーで止まっていた**。全項目 0 になった
+//        `baseline` を削るのも空配列を削るのと同程度に自然だが、`WI-7` / `WI-8` が
+//        `undefined` と数値を比較していて全 OP のゲートで 2 本ずつ落ちた（`0 / undefined`）。
+//        → baseline のキー欠落は **0 件として読む**。⑲ は 4 キー削除へ。
+//   低1 `lastTagPos()` が先頭一致（`k===0`）で**無限ループ**した
+//        （`lastIndexOf(needle, -1)` が同じ 0 を返し続ける・実測ハング）。正規表現化で解消。
+//   → 常設化: **⑳ 形状バッテリ**（⑳a 大文字 / ⑳b 終了タグ省略 / ⑳c 二重引用符の tail
+//     script / ⑳d 末尾コメント）＝ **上で恒久赤を作れた 4 形そのもの**。台帳のルール
+//     「2 回目で手順見直し・3 回目で機械に置換」（RP-009）に従い、人が毎回探すのをやめる。
+//     ⑳ は gate() が緑かだけでなく、**`shapeSelfChecks()` で SHAPE-1〜4 を 4 形すべてに
+//     当て直す**（gate() だけ見ていると、この節の assert 自身が実例前提へ戻っても
+//     気づけない＝ 001j がまさにそれだった）。操作 19 → **23**。
+//
 //   ── 常設から降ろした事実の明示（無言の降格にしない・中2 / 低）──────────────
 //   - **枯れ検査 `WI-1`〜`WI-6` / `WI-M*` は常設に無い**（battery 側にのみ在る）。
 //     したがって lib の `scanByCss('querySelector')` の 1 行を削っても**このファイルは
@@ -309,14 +341,27 @@ function insertTopLevelJsBefore(src, a, code) {
 //   fixture の注入が丸ごと JS 文字列の中に落ちる（実測 PASS=277 FAIL=35）。
 //   終端規則は lib の rawtext 閉じタグと同じ（`</tag` の直後が空白 / `/` / `>`）。
 //   face を渡せる場合は渡す（同じ src に何度も差し込むときの再分類を避ける）。
+//
+//   001k 高1 / 低1: **走査そのものを lib と同じ正規表現に揃えた**。001j は文字クラスだけ
+//   lib に合わせて `lastIndexOf` の後方走査を残していたので、
+//     (a) **大文字小文字を区別**していた。lib（`reachability.js:446`）は `ig` フラグなので
+//         `</BODY>` を閉じタグと認めるが、こちらは見つけられず `-1` を返す
+//         ＝ HTML として完全に等価な編集で「本物の閉じタグが無い」ことになる。
+//     (b) `k === 0` で見つかると次周の `lastIndexOf(needle, -1)` が再び 0 を返し、
+//         門番に落ちる形（例 `'</bodyz><p>x</p>'`）で**無限ループ**した。
+//   正規表現の前方走査は最後の一致を採るだけで、どちらも構造的に起こらない。
 function lastTagPos(src, tag, face) {
   const f = face || classifyFaces(src);
-  const needle = '</' + tag;
-  for (let k = src.length; ;) {
-    k = src.lastIndexOf(needle, k - 1);
-    if (k < 0) return -1;
-    if (f[k] === FACE.HTML_TAG && /[\s/>]/.test(src[k + needle.length] || '>')) return k;
-  }
+  const re = new RegExp('</' + tag + '(?=[\\s/>])', 'ig');
+  let best = -1;
+  for (let m = re.exec(src); m; m = re.exec(src)) if (f[m.index] === FACE.HTML_TAG) best = m.index;
+  return best;
+}
+// 閉じタグの**終わり**（`>` の次）。lib（450-453）と同じく次の `>` まで。
+//   `</body >` のような表記でも `</body>` の 7 文字を決め打ちしないため。
+function tagEndPos(src, k) {
+  const gt = src.indexOf('>', k);
+  return gt < 0 ? src.length : gt + 1;
 }
 // HTML の末尾（本物の </body> の直前）へ差し込む。無ければ EOF へ追記する。
 function insertHtml(src, frag, face) {
@@ -539,9 +584,20 @@ function gate(src, allow, emit, log) {
   for (const [sec, k] of allEntries) { const kk = sec + ':' + k; if (dupKey.has(kk)) dup++; dupKey.add(kk); }
   emit(dup === 0, `A4 allowlist に重複エントリが無い: ${dup} 件`);
 
-  const bl = allow.baseline || {};
+  // 001k 中1: baseline のキー欠落は **0 件として読む**。#798 の掃除が全件終われば
+  //   `baseline` は全項目 0 になり、空配列（⑲）と同じ理屈で丸ごと削るのは自然な後始末。
+  //   001j は `undefined` と数値を比較していたので、そこで WI-7 / WI-8 が全 OP のゲートで
+  //   2 本ずつ落ちた（実測 `0 / undefined`）。allowlist を書き戻せば回復するので【中】。
+  const blRaw = allow.baseline || {};
+  const bl = {
+    static_unreachable: blRaw.static_unreachable || 0,
+    runtime_unreachable: blRaw.runtime_unreachable || 0,
+    dead_bindings: blRaw.dead_bindings || 0,
+    top_level_functions: blRaw.top_level_functions || 0,
+  };
   const limits = allow.limits || {};
-  log(`  baseline: static=${bl.static_unreachable} runtime=${bl.runtime_unreachable} bindings=${bl.dead_bindings} 関数総数=${bl.top_level_functions}`);
+  log(`  baseline: static=${bl.static_unreachable} runtime=${bl.runtime_unreachable} bindings=${bl.dead_bindings} 関数総数=${bl.top_level_functions}`
+    + (allow.baseline ? '' : '（baseline キーなし＝全項目 0 として読む）'));
   log(`  現在    : static=${a.unreachableStatic.length} runtime=${a.unreachableRuntimeOnly.length} bindings=${a.deadBindings.length} 関数総数=${a.topLevelFunctionCount}`);
   log(`  baseline との差: static=${a.unreachableStatic.length - bl.static_unreachable} runtime=${a.unreachableRuntimeOnly.length - bl.runtime_unreachable} bindings=${a.deadBindings.length - bl.dead_bindings}`);
   log(`  allowlist: ${allowCount(allow)} 件 / 目安 ${limits.allowlist_max}（超過は warn のみ）`);
@@ -1050,11 +1106,13 @@ const omit = (key, why) => { OMITTED.push({ key, why }); };
 const addOp = (op) => { OPS.push(op); };
 // 宣言済みの全操作。
 const OP_KEYS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩',
-  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲'];
-// そのうち**在庫（実ファイルの死にコード / インライン on* / トップレベル関数 / allowlist）に
-// 一切依存しない**もの＝常に実行されなければならない操作。
+  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳a', '⑳b', '⑳c', '⑳d'];
+// そのうち**在庫（実ファイルの死にコード / インライン on* / トップレベル関数 / allowlist /
+// 文書の閉じタグ）に一切依存しない**もの＝常に実行されなければならない操作。
+//   ⑱ と ⑳a〜⑳d は `SHAPE_BASE`（閉じタグを自給自足した src）に当てるので、
+//   実ファイルが `</body>` を持っていなくても必ず実行される（001k 高1 / 高2）。
 const OP_KEYS_ALWAYS = ['①', '②', '⑤', '⑧', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰',
-  '⑱', '⑲'];
+  '⑱', '⑲', '⑳a', '⑳b', '⑳c', '⑳d'];
 
 {
   const name = uniqIn(RAW, '__opNewButtonHandler');
@@ -1144,7 +1202,7 @@ function pickRemovableDeadFn() {
     const allow2 = clone(ALLOW);
     allow2.static = (allow2.static || []).filter((e) => e.name !== d.name);
     allow2.baseline = Object.assign({}, allow2.baseline,
-      { static_unreachable: (allow2.baseline || {}).static_unreachable - 1 });
+      { static_unreachable: ((allow2.baseline || {}).static_unreachable || 0) - 1 });
     addOp({
       key: '④',
       label: `④死にコード ${d.name} を削除し allowlist も掃除`,
@@ -1398,15 +1456,37 @@ const CSS_EXT = externalizeStyleBlocks(RAW);
 //   (b) 引用符省略のインライン on*（HTML5 として妥当・lib は ATTR_VAL_ON にする）
 //       → 001i は migrateInlineHandlers が取りこぼし ZERO-2 / ZERO-4 が落ちた
 //   (c) `</style >`（lib は閉じタグとして正しく認識する）→ 001i は剥がせず CSS-EXT-1
-// `</body>` の後ろへ <script> を足す（本物の閉じタグは面から引く）。
-function appendTailScript(src, face) {
-  const k = lastTagPos(src, 'body', face);
-  if (k < 0) return src;
-  const at = k + '</body>'.length;
-  return src.slice(0, at) + '\n<script>\n'
-    + "var __opExportTail = '<footer>fin</footer></body></html>';\n"
-    + '<\/script>\n' + src.slice(at);
+//
+//   001k 高2: この節の土台を `SHAPE_BASE`（文書の閉じタグを**自給自足**した src）にした。
+//   001j は `RAW` に直接当てていたので、`</body>` が実ファイルに在ることに依存していた
+//   （終了タグの省略は HTML5 で妥当なので、持たない実ファイルは普通に在りうる）。
+// 文書の閉じタグを自給自足する。実ファイルが持っていれば何もしない。
+function ensureDocumentClose(src) {
+  let s = src;
+  if (lastTagPos(s, 'body') < 0) s += '\n</body>\n';
+  if (lastTagPos(s, 'html') < 0) s += '\n</html>\n';
+  return s;
 }
+// `</body>` の後ろへ <script> を足す（本物の閉じタグは面から引く）。
+//   返り値に**注入したマーカー名**を載せる。`SHAPE-1` / `SHAPE-1b` は
+//   src 全体の `lastIndexOf` ではなく**このマーカーから**自分が注入した `</body>` を
+//   引く（001k 高2）。全体 lastIndexOf は「実ファイルが本物の `</body>` より後ろに
+//   生テキストの `</body>` を 1 つも持たない」ことへの依存＝実例前提の pin だった。
+function appendTailScript(src, face, quote) {
+  const q = quote || "'";
+  const k = lastTagPos(src, 'body', face);
+  if (k < 0) return null;
+  const at = tagEndPos(src, k);
+  const mark = uniqIn(src, '__opExportTail');
+  return {
+    src: src.slice(0, at) + '\n<script>\n'
+      + `var ${mark} = ${q}<footer>fin</footer></body></html>${q};\n`
+      + '<\/script>\n' + src.slice(at),
+    mark,
+  };
+}
+// 注入したマーカーの文字列リテラルの中にある `</body>` の位置。
+const tailBodyPos = (src, mark) => src.indexOf('</body>', src.indexOf(`var ${mark} = `));
 // 引用符を省略したインライン on* を 1 個足す（呼ばれる関数はトップレベルに置く）。
 function addUnquotedInlineHandler(src, a) {
   const name = uniqIn(src, '__opUnquotedHandler');
@@ -1427,50 +1507,73 @@ function loosenStyleCloseTag(src) {
   }
   return src;
 }
-const SHAPE_SRC = (() => {
-  let s = appendTailScript(RAW, A._internal.baseFace);
-  s = addUnquotedInlineHandler(s, analyze(s));
-  return loosenStyleCloseTag(s);
-})();
-{
-  const f = classifyFaces(SHAPE_SRC);
-  const sa = analyze(SHAPE_SRC);
-  const rawLast = SHAPE_SRC.lastIndexOf('</body>');
-  const real = lastTagPos(SHAPE_SRC, 'body', f);
-  ok(real >= 0 && real !== rawLast,
-    `SHAPE-1 本物の </body>（面=HTML_TAG）と生テキスト最終出現がズレた状態を作れた（本物 ${real} / 生テキスト ${rawLast}）`);
-  ok(FACE_NAME[f[rawLast]] === 'JS_STR_SQ',
-    `SHAPE-1b 生テキスト最終出現は JS 文字列の中（実測 ${FACE_NAME[f[rawLast]]}・生テキスト anchor はここで必ず壊れる）`);
-  const spans = onAttrFullSpans(SHAPE_SRC, sa);
-  ok(spans.some((sp) => !sp.quoted),
-    `SHAPE-2 引用符省略のインライン on* を面から引ける（引用符なし ${spans.filter((sp) => !sp.quoted).length} / 全 ${spans.length} 件）`);
-  const migA = analyze(migrateInlineHandlers(SHAPE_SRC, sa).src);
-  ok(migA.htmlHandlerCount === 0,
-    `SHAPE-2b 引用符省略を含めて全件 addEventListener へ移行できる（残り ${migA.htmlHandlerCount} 件）`);
-  const ext = externalizeStyleBlocks(SHAPE_SRC);
-  ok((faceStats(classifyFaces(ext.src)).histogram.STYLE_CSS || 0) === 0,
-    `SHAPE-3 </style > 表記でも <style> を ${ext.removed} ブロック剥がせる`);
-  ok(sa.unreachableStatic.length === A.unreachableStatic.length,
-    `SHAPE-4 3 形を足しても検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${sa.unreachableStatic.length}）`);
+// 形状バッテリ（⑱ / ⑳）の土台。実ファイルが閉じタグを持たなくてもここで揃う。
+const SHAPE_BASE = ensureDocumentClose(RAW);
+
+// 与えられた src の上に ⑱ の 3 形を重ねて作り直し、**注入・切り出しヘルパの自給自足**を
+// 測る（SHAPE-1〜4）。⑳ の各形からも呼ぶので、`tag` で assert 名を区別する。
+//   ここが ⑳ の肝: ⑳ を「gate() が緑か」だけで測ると、**この節の assert 自身**が
+//   実例前提へ戻っても気づけない（001j がまさにそれで、`insertHtml` から新設 assert へ
+//   依存が移動した）。4 形すべてで SHAPE-1〜4 も測り直す。
+function shapeSelfChecks(base, tag, expectStatic, emit) {
+  const doc = ensureDocumentClose(base);
+  const tail = appendTailScript(doc, null);
+  // 自給自足の枝（`ensureDocumentClose`）が効いていないと `null` が返る。ここで
+  // 素通しすると **未捕捉 TypeError で PASS/FAIL の集計行すら出ない**（001j 中2 と
+  // まったく同じ壊れ方）。数えられる FAIL にしてから戻る。
+  if (!tail) {
+    emit(false, `SHAPE-1${tag} 文書に本物の </body> が無くても自給自足して tail script を注入できる（実測: 注入できず）`);
+    return doc;
+  }
+  let src = tail.src;
+  src = addUnquotedInlineHandler(src, analyze(src));
+  src = loosenStyleCloseTag(src);
+
+  const f = classifyFaces(src);
+  const sa = analyze(src);
+  // 自分が注入した `</body>`（＝ JS 文字列の中）と本物の位置関係だけを見る。
+  // 実ファイルに何が在るか（`</body>` が生テキスト最終出現かどうか）とは無関係。
+  const mine = tailBodyPos(src, tail.mark);
+  const real = lastTagPos(src, 'body', f);
+  emit(real >= 0 && mine > real,
+    `SHAPE-1${tag} 本物の </body>（面=HTML_TAG）より**後ろ**に生テキストの </body> を作れた（本物 ${real} / 注入 ${mine}）`);
+  emit(FACE_NAME[f[mine]] === 'JS_STR_SQ',
+    `SHAPE-1b${tag} 注入した </body> は JS 文字列の中（実測 ${FACE_NAME[f[mine]]}・生テキストの後方検索はここで必ず本物を見失う）`);
+  const spans = onAttrFullSpans(src, sa);
+  emit(spans.some((sp) => !sp.quoted),
+    `SHAPE-2${tag} 引用符省略のインライン on* を面から引ける（引用符なし ${spans.filter((sp) => !sp.quoted).length} / 全 ${spans.length} 件）`);
+  const migA = analyze(migrateInlineHandlers(src, sa).src);
+  emit(migA.htmlHandlerCount === 0,
+    `SHAPE-2b${tag} 引用符省略を含めて全件 addEventListener へ移行できる（残り ${migA.htmlHandlerCount} 件）`);
+  const ext = externalizeStyleBlocks(src);
+  emit((faceStats(classifyFaces(ext.src)).histogram.STYLE_CSS || 0) === 0,
+    `SHAPE-3${tag} </style > 表記でも <style> を ${ext.removed} ブロック剥がせる`);
+  emit(sa.unreachableStatic.length === expectStatic,
+    `SHAPE-4${tag} 3 形を足しても検査1 の結果は動かない（static ${expectStatic} → ${sa.unreachableStatic.length}）`);
+  return src;
 }
 addOp({
   key: '⑱',
   label: '⑱生テキスト anchor 攻撃 3 形（</body> の後ろに script ＋ 引用符省略 on* ＋ </style >）',
-  src: SHAPE_SRC,
+  src: shapeSelfChecks(SHAPE_BASE, '', A.unreachableStatic.length, ok),
 });
 
-// --- ⑲ allowlist から static / runtime / bindings キーを削除【001j 中2】-------
+// --- ⑲ allowlist から static / runtime / bindings / baseline キーを削除【001j 中2 / 001k 中1】---
 //   #798 の掃除完了後に空配列ごと削るのは自然な後始末。001i はそこで未捕捉
 //   TypeError になり、PASS/FAIL の集計すら出なかった。
+//   001k: **`baseline` も同じ理屈で削れる**（掃除が全件終われば全項目 0）。001j は
+//   3 キーしか削っていなかったので、`WI-7` / `WI-8` の `undefined` 比較が野放しだった
+//   （全 OP のゲートで 2 本ずつ落ちる）。キー欠落耐性は 4 キーで測る。
 const NOKEY_ALLOW = (() => {
   const a2 = clone(ZERO_ALLOW);
   delete a2.static;
   delete a2.runtime;
   delete a2.bindings;
+  delete a2.baseline;
   return a2;
 })();
 ok(allowCount(NOKEY_ALLOW) === 0 && evaluate(ZERO_DEAD.a, NOKEY_ALLOW).errors.length === 0,
-  'SHAPE-5 allowlist に static / runtime / bindings キーが無くても判定が例外にならない');
+  'SHAPE-5 allowlist に static / runtime / bindings / baseline キーが無くても判定が例外にならない');
 // ⑲ は gate() を通るが、KL-*-esc の退避は gate() の**外**でディスクの ALLOW を使うので
 // ⑲ では当たらない。退避経路そのものをキー欠落の allowlist で通しておく（001j 中2）。
 ok((() => {
@@ -1485,10 +1588,110 @@ ok((() => {
 })(), 'SHAPE-6 allowlist に static キーが無くても KL-*-esc と同じ経路で 1 行追記の退避ができる（元の allowlist は汚さない）');
 addOp({
   key: '⑲',
-  label: '⑲allowlist から static / runtime / bindings キーを削除（空配列ごと消した後始末）',
+  label: '⑲allowlist から static / runtime / bindings / baseline キーを削除（空配列ごと消した後始末）',
   src: ZERO_DEAD.src,
   allow: NOKEY_ALLOW,
 });
+
+// --- ⑳ 形状バッテリ【001k ★ / RP-009「3 回目で機械に置換」】------------------
+//   同じ拘束（実在の 1 例に依存しない）が 5 回破られ、5 回とも「指摘どおり直したが
+//   依存が別の場所へ移った」形だった。**人が毎回探すのをやめ、機械が毎回確認する**。
+//   下の 4 形はどれも「HTML として正当・検査1 の結果は 1 ミリも動かない」変換で、
+//   かつ **001j 版で実際に恒久赤を作れた形そのもの**（作者パネルの再現手順）:
+//     a `</body>` / `</head>` を大文字へ  … HTML として等価（lib は `ig` で認識する）
+//     b `</body></html>` を削除            … HTML5 では終了タグの省略が妥当
+//     c `</body>` の直後に**二重引用符**の文字列を持つ <script>  … ⑱ 自身が定石と呼ぶ配置
+//     d `</body>` の直後に `</body></html>` を含む HTML コメント  … 生成物の末尾注記
+//   土台は `SHAPE_BASE`（閉じタグを自給自足した src）なので、実ファイルが閉じタグを
+//   持っていなくても 4 形すべてが必ず実行される＝ `OP_KEYS_ALWAYS` の表示が事実と合う。
+// (a) 本物の閉じタグ（面で門番）を大文字にする。
+function upperCloseTags(src, tags) {
+  let s = src;
+  let changed = 0;
+  for (const tag of tags) {
+    const k = lastTagPos(s, tag);
+    if (k < 0) continue;
+    const e = tagEndPos(s, k);
+    s = s.slice(0, k) + s.slice(k, e).toUpperCase() + s.slice(e);
+    changed++;
+  }
+  return { src: s, changed };
+}
+// (b) 本物の `</html>` → `</body>` の順に落とす（後ろから消すので位置は毎回引き直す）。
+function dropCloseTags(src, tags) {
+  let s = src;
+  let removed = 0;
+  for (const tag of tags) {
+    const k = lastTagPos(s, tag);
+    if (k < 0) continue;
+    s = s.slice(0, k) + s.slice(tagEndPos(s, k));
+    removed++;
+  }
+  return { src: s, removed };
+}
+// (d) `</body>` の直後に `</body></html>` を含む HTML コメントを置く。
+function appendTailComment(src, face) {
+  const k = lastTagPos(src, 'body', face);
+  if (k < 0) return null;
+  const at = tagEndPos(src, k);
+  const body = '<!-- build note: この後ろに </body></html> を重ねて出力しない -->';
+  return { src: `${src.slice(0, at)}\n${body}\n${src.slice(at)}`, at: at + 1 };
+}
+{
+  const staticOf = (s) => analyze(s).unreachableStatic.length;
+  const base = staticOf(SHAPE_BASE);
+  // 各形について 3 つ測る:
+  //   SHAPE-N   その形を**実際に作れた**こと（変換が空振りしていない）
+  //   SHAPE-Nb  検査1 の結果が 1 ミリも動かないこと（＝正当な変換であること）
+  //   SHAPE-1〜4[⑳x] ＋ OP[⑳x]  その形の上でも注入・切り出しヘルパとゲートが生きること
+
+  // ⑳a 大文字の閉じタグ
+  const up = upperCloseTags(SHAPE_BASE, ['body', 'head']);
+  const upK = lastTagPos(up.src, 'body');
+  const upTag = upK < 0 ? 'なし' : up.src.slice(upK, tagEndPos(up.src, upK));
+  ok(up.changed === 2 && upK >= 0 && upTag === '</BODY>',
+    `SHAPE-7 </body> / </head> を大文字にしても本物の閉じタグを面から引ける（大文字化 ${up.changed} 個 / 実測 ${JSON.stringify(upTag)}）`);
+  ok(staticOf(up.src) === base,
+    `SHAPE-7b 大文字化で検査1 の結果は動かない（static ${base} → ${staticOf(up.src)}）`);
+  shapeSelfChecks(up.src, '[⑳a]', base, ok);
+  addOp({ key: '⑳a', label: '⑳a</body> と </head> を大文字にする（HTML として等価）', src: up.src });
+
+  // ⑳b 閉じタグの省略
+  const dropped = dropCloseTags(SHAPE_BASE, ['html', 'body']);
+  ok(dropped.removed === 2 && lastTagPos(dropped.src, 'body') < 0 && lastTagPos(dropped.src, 'html') < 0,
+    `SHAPE-8 </body></html> を落とした状態を作れた（除去 ${dropped.removed} 個 / 残 body ${lastTagPos(dropped.src, 'body')}）`);
+  ok(staticOf(dropped.src) === base,
+    `SHAPE-8b 終了タグの省略で検査1 の結果は動かない（static ${base} → ${staticOf(dropped.src)}）`);
+  // ここだけは `ensureDocumentClose` の自給自足の枝が実際に走る（実ファイルでは走らない）。
+  shapeSelfChecks(dropped.src, '[⑳b]', base, ok);
+  addOp({ key: '⑳b', label: '⑳b</body></html> を削除する（HTML5 では終了タグの省略が妥当）', src: dropped.src });
+
+  // ⑳c 二重引用符の tail script（⑱ は単引用符。引用符の種類という偶然に頼らない）
+  //   ⑳c / ⑳d は `SHAPE_BASE`（自給自足済み）に当てるので `null` は返らないが、
+  //   返ったときに未捕捉例外で集計行ごと消えないよう、数えられる FAIL にしておく。
+  const dq = appendTailScript(SHAPE_BASE, null, '"') || { src: SHAPE_BASE, mark: null };
+  ok(dq.mark !== null, 'SHAPE-9x SHAPE_BASE には本物の </body> が在る（⑳c の tail script を注入できた）');
+  const dqFace = classifyFaces(dq.src);
+  const dqMine = tailBodyPos(dq.src, dq.mark);
+  ok(dqMine > lastTagPos(dq.src, 'body', dqFace) && FACE_NAME[dqFace[dqMine]] === 'JS_STR_DQ',
+    `SHAPE-9 二重引用符でも注入した </body> は JS 文字列の中で本物より後ろ（実測 ${FACE_NAME[dqFace[dqMine]]}）`);
+  ok(staticOf(dq.src) === base,
+    `SHAPE-9b 二重引用符の tail script で検査1 の結果は動かない（static ${base} → ${staticOf(dq.src)}）`);
+  shapeSelfChecks(dq.src, '[⑳c]', base, ok);
+  addOp({ key: '⑳c', label: '⑳c</body> の直後に二重引用符の文字列を持つ <script> を置く', src: dq.src });
+
+  // ⑳d 末尾の HTML コメント
+  const cm = appendTailComment(SHAPE_BASE, null) || { src: SHAPE_BASE, at: 0 };
+  ok(cm.at > 0, 'SHAPE-10x SHAPE_BASE には本物の </body> が在る（⑳d の末尾コメントを注入できた）');
+  const cmFace = classifyFaces(cm.src);
+  const cmMine = cm.src.indexOf('</body>', cm.at);
+  ok(cmMine > lastTagPos(cm.src, 'body', cmFace) && FACE_NAME[cmFace[cmMine]] === 'HTML_COMMENT',
+    `SHAPE-10 コメント内の </body> は本物より後ろで面が HTML_COMMENT（実測 ${FACE_NAME[cmFace[cmMine]]}）`);
+  ok(staticOf(cm.src) === base,
+    `SHAPE-10b 末尾コメントで検査1 の結果は動かない（static ${base} → ${staticOf(cm.src)}）`);
+  shapeSelfChecks(cm.src, '[⑳d]', base, ok);
+  addOp({ key: '⑳d', label: '⑳d</body> の直後に </body></html> を含む HTML コメントを置く', src: cm.src });
+}
 
 // --- 台帳の照合（001i 中1）---------------------------------------------------
 {
@@ -1526,6 +1729,7 @@ for (const op of OPS) {
 console.log(`  操作 ${OPS.length}/${OP_KEYS.length} 種を実測`
   + `（在庫が尽きて省いた操作: ${OMITTED.map((o) => `${o.key}（${o.why}）`).join(' / ') || 'なし'}）`
   + '。在庫ゼロ耐性は ⑩⑪⑬⑭ が、allowlist 0 件 / 1 件 / キー欠落耐性は ⑩⑭⑮⑯⑲ が、'
+  + '文書の閉じタグの形状耐性（大文字 / 省略 / 二重引用符 / 末尾コメント）は ⑳a〜⑳d が、'
   + '生テキスト anchor 耐性は ⑰⑱ が常に担うので、ここでは在庫の存在を assert しない');
 
 console.log(`PHASE1-REACH-001: PASS=${pass} FAIL=${fail} WARN2=${V.warnings.length}`);
