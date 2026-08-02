@@ -37,6 +37,48 @@
 //   丸ごと再実行して測っていた（2 コア環境でフル 2m34s〜5m34s）。001h は
 //   **ゲート判定を 1 本の関数 gate() に括り出し、変異済みの解析結果に同じ gate() を
 //   当てて判定する**（受け入れ基準2）。子プロセス方式は battery 側に温存してある。
+//
+//   ── 001i で塞いだ穴（差し戻し8回目・2026-08-02）──────────────────────────
+//   001h に残っていたのは「実在庫アンカー 2 箇所」と「新規に書いた部分の穴 1 箇所」。
+//   高1 **⑧ の allowlist 上限を実ファイルの allowlist 件数から引かない**。旧版は
+//        `allowCount(ALLOW) - 1` だったので、allowlist が 0 件 / 1 件になると上限が
+//        -1 / 0 になり `A5-0`（上限 > 0）が落ちた。＝ **#798 の掃除を守るためのゲートが、
+//        掃除の完了を禁止するゲートになっていた**（掃除の最終局面で必ず通る状態）。
+//        → 合成の死んだ関数 2 本とその allowlist エントリ 2 件で境界を作る（`a5BoundaryOp`）。
+//        ディスク上の allowlist が 0 件 / 1 件の状態そのものも ⑭⑮⑯ で常設化した。
+//   高2 **STYLE_CSS の probe を `<style>` ごと注入する**（`insertStyleBlock`）。旧版は
+//        「最後の STYLE_CSS 面」を探して差し込んでいたので、CSS を外部スタイルシートへ
+//        切り出すだけで（検査1 の結果は 1 ミリも動かないのに）15 本落ちた。
+//        「CSS 外部化ファイルでも緑」は ⑰ で常設化。
+//   高3 **R1 の正極性（`R1-POS-*`）を常設へ戻した**。001h の error 系 assert は
+//        `errors.length === 0`（R0）と R5 の逆極性だけで、`add('error', 'R1', …)` →
+//        `add('warn', 'R1', …)` の **1 語変異**が素通りしていた（新規の死にコードを
+//        注入しても PASS=292 FAIL=0 exit 0 を実測）。この便の門番そのものだった。
+//        降ろす切り分け基準が「ハーネス自衛か否か」だったため、C1 fixture で書ける
+//        R1 の正極性検査まで一緒に battery へ出ていた＝分類の取りこぼし。
+//   中1 OPS の条件付きガードを**全部 `omit()` に接続**し、キー集合を `OP-KEYS-*` で pin。
+//        旧版は 6 ガード中 2 経路しか見ておらず、④ が消えているのに
+//        「在庫が尽きて省いた操作: なし」と表示していた。
+//
+//   ── 常設から降ろした事実の明示（無言の降格にしない・中2 / 低）──────────────
+//   - **枯れ検査 `WI-1`〜`WI-6` / `WI-M*` は常設に無い**（battery 側にのみ在る）。
+//     したがって lib の `scanByCss('querySelector')` の 1 行を削っても**このファイルは
+//     緑のまま**になる（battery では `WI-4` が捕まえる）。warn 層なので exit code には
+//     効かないが、「降ろしたのは足場だけ」ではない＝ **lib（製品側の走査）の腐敗検査を
+//     常設 CI に戻すかは Issue #816（H-2 / H-4）が決める**。
+//     なお `WI-7` / `WI-8` は名前が WI でも枯れ検査ではなく、allowlist の件数と
+//     baseline の二重記帳の照合。**`WI-8` は検査2 由来の bindings を実質ブロッキングに
+//     引き上げる非対称**（R5 warn の指示どおり allowlist から外すと WI-8 が赤くなる）。
+//     これも #816 で整理する。
+//   - **`baseline.static_unreachable` は assert していない**（C4 census の表示だけ）。
+//     runtime / bindings は `WI-7` / `WI-8` で件数照合しているのに static だけ非対称。
+//     static は R1（error）と R5（error）の**双方向照合**で既にラチェットされており、
+//     件数の二重記帳を足すと「死にコード 1 本削除」ごとに baseline 更新を強制することに
+//     なるため、意図的に外している。baseline の意味論そのものは #816 H-6 で整理する。
+//   - `insertTopLevelJs` はトップレベル関数が 0 個のファイルでは新しい `<script>` を
+//     足す側にフォールバックする（旧版はバイト 0 に注入して面の表が全崩れした）。
+//   - fixture の probe 属性名 `onbogus` / `onbogusderived` と同名の属性が製品側に
+//     入ると `T[ATTR_VAL]-12` / `R8-DERIVED-3` が恒久 FAIL になる（現対象は非該当・#816）。
 'use strict';
 
 const fs = require('fs');
@@ -221,12 +263,18 @@ function checkDelta(emit, baseV, mutV, spec, label) {
 
 // スクリプト直下（＝どの関数にも属さない位置）へコードを差し込む。
 function insertTopLevelJs(src, a, code) {
-  const at = a._internal.topFunctions.reduce((mx, f) => Math.max(mx, f.bodyEnd), -1) + 1;
+  const tops = a._internal.topFunctions;
+  // トップレベル関数が 1 つも無いファイルではアンカーが取れない。旧版はバイト 0
+  // （＝ <html> の前）に注入していて、面の表が丸ごと崩れた。新しい <script> を足す側へ倒す。
+  if (!tops.length) return insertHtml(src, '<script>\n' + code + '\n<\/script>\n');
+  const at = tops.reduce((mx, f) => Math.max(mx, f.bodyEnd), -1) + 1;
   return src.slice(0, at) + '\n' + code + '\n' + src.slice(at);
 }
 // スクリプト直下の、**既存の全トップレベル関数より前**へ差し込む（位置は解析結果から引く）。
 function insertTopLevelJsBefore(src, a, code) {
-  const first = a._internal.topFunctions.reduce((mn, f) => Math.min(mn, f.namePos), Infinity);
+  const tops = a._internal.topFunctions;
+  if (!tops.length) return null;
+  const first = tops.reduce((mn, f) => Math.min(mn, f.namePos), Infinity);
   const at = src.lastIndexOf('function', first);
   return at < 0 ? null : src.slice(0, at) + code + '\n' + src.slice(at);
 }
@@ -235,14 +283,38 @@ function insertHtml(src, frag) {
   const k = src.lastIndexOf('</body>');
   return k < 0 ? src + frag : src.slice(0, k) + frag + src.slice(k);
 }
-// 最後の <style> の中身の末尾へ CSS を差し込む（位置は面から引く）。
-function insertCss(src, a, css) {
-  const face = a._internal.baseFace;
-  let end = -1;
-  for (let i = face.length - 1; i >= 0; i--) {
-    if (face[i] === FACE.STYLE_CSS) { end = i + 1; break; }
+// `<style>` ブロックごと注入する（001i 高2）。
+//   001h までは「最後の STYLE_CSS 面」を探して中身の末尾へ差し込んでいたので、
+//   **実ファイルに <style> が在ること**にアンカーしていた。CSS を外部スタイルシートへ
+//   切り出す（検査1 の結果は 1 ミリも動かない正当なリファクタ）だけで STYLE_CSS の
+//   probe が 15 本落ちる。他 15 面の probe と同じく自給自足にする。
+function insertStyleBlock(src, css) {
+  return insertHtml(src, '<style>\n' + css + '\n</style>\n');
+}
+// CSS を外部スタイルシートへ切り出す（`<style>` ブロックを全部剥がす）。位置は面から引く。
+//   受け入れ基準「CSS 外部化ファイルで exit=0」を常設で測るための操作（⑰）。
+function externalizeStyleBlocks(src) {
+  const face = classifyFaces(src);
+  const runs = [];
+  for (let i = 0; i < face.length; i++) {
+    if (face[i] !== FACE.STYLE_CSS) continue;
+    let e = i;
+    while (e < face.length && face[e] === FACE.STYLE_CSS) e++;
+    runs.push([i, e]);
+    i = e;
   }
-  return end < 0 ? null : src.slice(0, end) + '\n' + css + '\n' + src.slice(end);
+  let out = src;
+  let removed = 0;
+  for (let k = runs.length - 1; k >= 0; k--) {
+    const [i, e] = runs[k];
+    const open = out.lastIndexOf('<style', i);
+    if (open < 0 || out.slice(e, e + '</style>'.length).toLowerCase() !== '</style>') continue;
+    out = out.slice(0, open) + out.slice(e + '</style>'.length);
+    removed++;
+  }
+  const h = out.indexOf('</head>');
+  const link = '<link rel="stylesheet" href="app.css">\n';
+  return { src: h >= 0 ? out.slice(0, h) + link + out.slice(h) : link + out, removed };
 }
 // 面から「HTML 直書きのインライン on*= 属性」を、**属性名から閉じ引用符まで**まるごと引く。
 //   在庫ゼロ耐性②（インライン on* の全件 addEventListener 化）がこれを使う。
@@ -434,7 +506,42 @@ function gate(src, allow, emit, log) {
   emit(fxa.unreachableStatic.some((x) => x.name === dead),
     `T-0a fixture の死んだ関数 ${dead} が注入され、到達不能として検出される`);
   emit(fxv.errors.length === 0, `T-0b fixture の基準状態はエラー 0（実測 ${fxv.errors.length}: ${show(fxv.errors)}）`);
-  emit(insertCss(fx, fxa, '.__probe{}') !== null, 'T-0c <style> の位置を面から引けた');
+
+  // T-0c【001i 高2】STYLE_CSS の probe が自給自足であること。
+  //   `<style>` を 1 つも持たない最小文書に注入しても STYLE_CSS 面が作れる
+  //   ＝ 実ファイルの `<style>` が外部化されても表は壊れない。
+  {
+    const bare = '<html><head></head><body><p>x</p></body></html>';
+    const withStyle = insertStyleBlock(bare, '.__probeSelfCss{color:red}');
+    const bf = classifyFaces(withStyle);
+    const got = FACE_NAME[bf[withStyle.indexOf('.__probeSelfCss')]];
+    emit(bare.indexOf('<style') < 0, 'T-0c0 基準にした最小文書には <style> が 1 つも無い');
+    emit(got === 'STYLE_CSS',
+      `T-0c <style> ごと注入して STYLE_CSS 面を自給自足で作れる（実測 ${got}・実ファイルの <style> に依存しない）`);
+  }
+
+  // --- C1【001i 高3】R1 の正極性: allowlist に無い死にコードは **error** として増える ---
+  //   001h の error 系 assert は R0（`errors.length === 0`）と R5 の逆極性だけだった。
+  //   その結果 `add('error', 'R1', …)` → `add('warn', 'R1', …)` の **1 語変異**で、
+  //   新規の死にコードを注入しても全緑・exit 0 になる（実測）。#798 の死にコード検出を
+  //   CI に残すというこの PR の目的の門番そのものなので、常設側に戻す。
+  {
+    const un = uniqIn(fx, '__reachFixtureUnlistedDead');
+    const s2 = insertTopLevelJs(fx, fxa, `function ${un}(){ return 1; }`);
+    const m = analyze(s2);
+    const mv = evaluate(m, fxAllow);
+    emit(m.unreachableStatic.some((x) => x.name === un),
+      `R1-POS-1 allowlist に載せない死にコード ${un} が到達不能として検出される`);
+    emit(mv.errors.some((x) => x.rule === 'R1' && x.subject === un && x.severity === 'error'),
+      `R1-POS-2 それが errors に R1:${un} として現れる（severity=error）`
+      + `（実測 errors=${show(mv.errors)} / warnings=${show(mv.warnings)}）`);
+    emit(!mv.warnings.some((x) => x.rule === 'R1'),
+      `R1-POS-3 R1 は warnings 側には 1 件も出ない（実測 ${show(mv.warnings.filter((x) => x.rule === 'R1'))}）`);
+    // 基準（fixture の状態）との差分でも「error が 1 件だけ増えた」ことを要求する。
+    checkDelta(emit, fxv, mv, { errors: { must: ['R1:' + un], allowed: ['R1:' + un] } }, 'R1-POS-4');
+    emit(mv.errors.length > 0,
+      'R1-POS-5 この状態では R0（errors.length === 0）が成立しない＝ CI が実際に落ちる');
+  }
 
   // 死んだ関数が到達可能に戻る変異の期待: R5（掃除漏れ）が 1 件増えるだけ。
   const REVIVE = { errors: { must: ['R5:' + dead], allowed: ['R5:' + dead] } };
@@ -471,8 +578,8 @@ function gate(src, allow, emit, log) {
     },
     {
       face: 'STYLE_CSS', expect: '不変', bucket: 'commentRefs',
-      label: 'CSS に .deadFn{} を足す', marker: '__faceProbeCss',
-      apply: (s) => insertCss(s, fxa, `.__faceProbeCss{display:none}\n.${dead}{color:red}`),
+      label: 'CSS に .deadFn{} を足す（<style> ごと注入＝自給自足）', marker: '__faceProbeCss',
+      apply: (s) => insertStyleBlock(s, `.__faceProbeCss{display:none}\n.${dead}{color:red}`),
     },
     {
       face: 'RAWTEXT', expect: '不変', bucket: 'markupRefs',
@@ -866,16 +973,33 @@ function migrateInlineHandlers(src, a) {
   return { src: out, moved: spans.length };
 }
 
+// --- 操作の台帳（001i 中1）--------------------------------------------------
+//   条件付きで作られる操作は**必ず** omit() に理由を残す。001h は 6 つの条件付き
+//   ガードのうち 2 経路しか `omitted` に接続していなかったため、④ が在庫切れで
+//   消えているのに「在庫が尽きて省いた操作: なし」と表示していた（実測 12 種）。
+//   さらに **キー集合を pin** して「宣言した操作が実行も省略もされていない」を禁じる。
 const OPS = [];
+const OMITTED = [];
+const omit = (key, why) => { OMITTED.push({ key, why }); };
+const addOp = (op) => { OPS.push(op); };
+// 宣言済みの全操作。
+const OP_KEYS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩',
+  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰'];
+// そのうち**在庫（実ファイルの死にコード / インライン on* / トップレベル関数 / allowlist）に
+// 一切依存しない**もの＝常に実行されなければならない操作。
+const OP_KEYS_ALWAYS = ['①', '②', '⑤', '⑧', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰'];
+
 {
   const name = uniqIn(RAW, '__opNewButtonHandler');
-  OPS.push({
+  addOp({
+    key: '①',
     label: '①新規ボタンをインライン onclick で 1 個追加',
     src: insertHtml(insertTopLevelJs(RAW, A, `function ${name}(){ return 1; }`),
       `<button type="button" onclick="${name}()">new</button>`),
   });
 }
-OPS.push({
+addOp({
+  key: '②',
   label: '②新規 script ブロックを追加',
   src: insertHtml(RAW, '<script>\nfunction __opExtraFn(){ return 1; }\n__opExtraFn();\n<\/script>\n'),
 });
@@ -909,14 +1033,21 @@ const heavyFn = (() => {
   }
   return best;
 })();
-if (heavyFn) {
+if (!heavyFn) {
+  omit('③', '死んだ結線を含み、かつ id セレクタを呼ぶ関数が現存しない');
+} else {
   const fp4 = extractHelper(RAW, A, heavyFn.n, '$id', 'function $id(id){return document.getElementById(id);}\n');
-  if (fp4) {
+  if (!fp4) {
+    omit('③', `${heavyFn.n} の本体に document.getElementById( の呼出が無い`);
+  } else {
     const a2 = analyze(fp4.src);
     const dead2 = new Set(a2.deadBindings.map((d) => d.selector));
     const site2 = selectorSites(fp4.src, a2).find((s) => !dead2.has('#' + s.id));
-    if (site2) {
-      OPS.push({
+    if (!site2) {
+      omit('③', '抽出後に「生きている id」を引く呼出位置が 1 つも無い');
+    } else {
+      addOp({
+        key: '③',
         label: '③セレクタ・ヘルパ抽出 ＋ `||` フォールバックのリファクタを実際に施す',
         src: fp4.src.slice(0, site2.end)
           + `||document.querySelector('#${site2.id}')` + fp4.src.slice(site2.end),
@@ -940,12 +1071,19 @@ function pickRemovableDeadFn() {
 }
 {
   const d = pickRemovableDeadFn();
-  if (d) {
+  if (!d) {
+    omit('④', 'allowlist（static）に載っていて単独削除できる死にコードが現存しない');
+  } else {
     const allow2 = clone(ALLOW);
     allow2.static = allow2.static.filter((e) => e.name !== d.name);
     allow2.baseline = Object.assign({}, allow2.baseline,
       { static_unreachable: (allow2.baseline || {}).static_unreachable - 1 });
-    OPS.push({ label: `④死にコード ${d.name} を削除し allowlist も掃除`, src: d.src, allow: allow2 });
+    addOp({
+      key: '④',
+      label: `④死にコード ${d.name} を削除し allowlist も掃除`,
+      src: d.src,
+      allow: allow2,
+    });
   }
 }
 
@@ -953,7 +1091,8 @@ function pickRemovableDeadFn() {
 const FP5_ID = uniqIn(RAW, '__reachFeatureFlagPanel');
 const fp5Src = insertTopLevelJs(RAW, A,
   `var __ff=document.getElementById('${FP5_ID}');\nif(__ff){__ff.style.display='none';}`);
-OPS.push({
+addOp({
+  key: '⑤',
   label: '⑤検査2 だけが違反する状態（exit code に効かないことの実測）',
   src: fp5Src,
   expectWarn: 'R3:#' + FP5_ID,
@@ -968,8 +1107,11 @@ const inlineVictim = (() => {
   }
   return null;
 })();
-if (inlineVictim) {
-  OPS.push({
+if (!inlineVictim) {
+  omit('⑥', 'HTML 直書きのインライン on* から呼ばれるトップレベル関数が現存しない');
+} else {
+  addOp({
+    key: '⑥',
     label: `⑥同じ関数（${inlineVictim}）を呼ぶボタンをもう 1 個追加`,
     src: insertHtml(RAW, `<button type="button" onclick="${inlineVictim}()">__opDupButton</button>`),
   });
@@ -980,31 +1122,63 @@ if (inlineVictim) {
 const OP7_NAME = uniqIn(RAW, '__opBeforeendRender');
 const op7Src = insertTopLevelJsBefore(RAW, A,
   `function ${OP7_NAME}(){ document.body.insertAdjacentHTML('beforeend','<div class="notice">x</div>'); }\n${OP7_NAME}();`);
-if (op7Src) {
-  OPS.push({ label: "⑦insertAdjacentHTML('beforeend', …) を使う関数を先頭側に 1 個追加", src: op7Src });
-}
-
-// ⑧ allowlist が上限 +1（境界）。A5 は warn なので緑のままであること。
-{
-  const allow2 = clone(ALLOW);
-  allow2.limits = Object.assign({}, allow2.limits, { allowlist_max: allowCount(ALLOW) - 1 });
-  OPS.push({
-    label: `⑧allowlist が上限 +1（${allowCount(ALLOW)} 件 / 上限 ${allowCount(ALLOW) - 1}）`,
-    src: RAW,
-    allow: allow2,
-    expectWarn: 'A5:allowlist',
+if (!op7Src) {
+  omit('⑦', 'トップレベル関数が 0 個で「既存の全関数より前」の位置が取れない');
+} else {
+  addOp({
+    key: '⑦',
+    label: "⑦insertAdjacentHTML('beforeend', …) を使う関数を先頭側に 1 個追加",
+    src: op7Src,
   });
 }
+
+// ⑧⑮⑯ が共通で使う境界の作り方【001i 高1】-----------------------------------
+//   allowlist が上限 +1（境界）で、A5 が warn に留まり CI をブロックしないこと。
+//   001h は上限を `allowCount(ALLOW) - 1` すなわち**実ファイルの allowlist 件数**から
+//   引いていたので、allowlist が 1 件なら上限 0、0 件なら上限 -1 になり、
+//   `A5-0`（上限 > 0）が落ちて **ゲート自身が赤くなった**。
+//   ＝ #798 の掃除を守るためのゲートが、掃除の完了（allowlist 0 件）を禁止していた。
+//   → **合成の死んだ関数 2 本とその allowlist エントリ 2 件だけで境界を作る**。
+//     基準の allowlist が 0 件でも件数は必ず 2 になるので上限は必ず 1 以上になる。
+function a5BoundaryOp(key, label, baseSrc, baseAllow, baseA) {
+  const a0 = baseA || analyze(baseSrc);
+  const d1 = uniqIn(baseSrc, '__opA5DeadA');
+  const d2 = uniqIn(baseSrc, '__opA5DeadB');
+  const src = insertTopLevelJs(baseSrc, a0,
+    `function ${d1}(){ return 1; }\nfunction ${d2}(){ return 2; }`);
+  const allow = clone(baseAllow);
+  const reason = (n) => 'A5 の境界（上限 +1）を実ファイルの allowlist 件数に依存せず作るための'
+    + `合成エントリ（#799 PHASE1-REACH-001i / 2026-08-02）。${n} は fixture が注入した死んだ関数。`;
+  allow.static = (allow.static || []).concat([
+    { name: d1, category: 'temporarily-preserved', reason: reason(d1) },
+    { name: d2, category: 'temporarily-preserved', reason: reason(d2) },
+  ]);
+  allow.baseline = Object.assign({}, allow.baseline,
+    { static_unreachable: ((allow.baseline || {}).static_unreachable || 0) + 2 });
+  allow.limits = Object.assign({}, allow.limits, { allowlist_max: allowCount(allow) - 1 });
+  return {
+    key,
+    label: `${key}${label}（合成後 ${allowCount(allow)} 件 / 上限 ${allowCount(allow) - 1}`
+      + `・基準の allowlist ${allowCount(baseAllow)} 件）`,
+    src,
+    allow,
+    expectWarn: 'A5:allowlist',
+  };
+}
+addOp(a5BoundaryOp('⑧', 'allowlist が上限 +1（境界）', RAW, ALLOW, A));
 
 // ⑨ インライン on* の関数をまとめて呼ぶ関数を addEventListener で結線する
 //    （001f はこの 1 編集で M2-0 が恒久 FAIL になった）。
 {
   const called = [...new Set(onAttrFullSpans(RAW, A).flatMap((sp) => (sp.value
     .match(/[A-Za-z_$][A-Za-z0-9_$]*/g) || []).filter((n) => A._internal.byName.has(n))))];
-  if (called.length) {
+  if (!called.length) {
+    omit('⑨', 'HTML 直書きのインライン on* から呼ばれるトップレベル関数が現存しない');
+  } else {
     const fn = uniqIn(RAW, '__opCallAllInline');
     const btn = uniqIn(RAW, '__opCallAllInlineBtn');
-    OPS.push({
+    addOp({
+      key: '⑨',
       label: `⑨インライン on* の ${called.length} 本をまとめて呼ぶ関数を addEventListener で結線`,
       src: insertHtml(insertTopLevelJs(RAW, A,
         `function ${fn}(){ ${called.map((n) => n + '();').join(' ')} }\n`
@@ -1018,7 +1192,8 @@ if (op7Src) {
 
 // --- ⑩ 在庫ゼロ①: #798 の死にコードを全件削除し allowlist も全掃除 ------------
 const ZERO_DEAD = stripAllDeadFunctions(RAW);
-{
+// ディスク上の allowlist が **0 件**の状態（＝ #798 の掃除が完了した姿）。
+const ZERO_ALLOW = (() => {
   const allow2 = clone(ALLOW);
   allow2.static = [];
   allow2.runtime = [];
@@ -1033,19 +1208,22 @@ const ZERO_DEAD = stripAllDeadFunctions(RAW);
     dead_bindings: 0,
     top_level_functions: ZERO_DEAD.a.topLevelFunctionCount,
   });
-  OPS.push({
-    label: `⑩在庫ゼロ①: 到達不能な ${ZERO_DEAD.removed} 関数を全件削除し allowlist も全掃除`,
-    src: ZERO_DEAD.src,
-    allow: allow2,
-  });
-}
+  return allow2;
+})();
+addOp({
+  key: '⑩',
+  label: `⑩在庫ゼロ①: 到達不能な ${ZERO_DEAD.removed} 関数を全件削除し allowlist も全掃除`,
+  src: ZERO_DEAD.src,
+  allow: ZERO_ALLOW,
+});
 ok(ZERO_DEAD.a.unreachableStatic.length === 0 && ZERO_DEAD.a.unreachableRuntimeOnly.length === 0,
   `ZERO-1 死にコードを全件削除した状態を作れた（${ZERO_DEAD.removed} 関数 / ${ZERO_DEAD.rounds} 周・残り static=${ZERO_DEAD.a.unreachableStatic.length} runtime=${ZERO_DEAD.a.unreachableRuntimeOnly.length}）`);
 
 // --- ⑪ 在庫ゼロ②: インライン on* を全件 addEventListener へ移行 ---------------
 const ZERO_ON = migrateInlineHandlers(RAW, A);
 const ZERO_ON_A = analyze(ZERO_ON.src);
-OPS.push({
+addOp({
+  key: '⑪',
   label: `⑪在庫ゼロ②: インライン on* ${ZERO_ON.moved} 件を全件 addEventListener へ移行`,
   src: ZERO_ON.src,
 });
@@ -1067,7 +1245,8 @@ ok(onAttrFullSpans(ZERO_ON.src, ZERO_ON_A).length === 0,
     `var __megaFf=document.getElementById('${megaId}');\nif(__megaFf){__megaFf.style.display='none';}`);
   const megaBefore = insertTopLevelJsBefore(mega, analyze(mega),
     `function __opMegaRender(){ document.body.insertAdjacentHTML('beforeend','<div class="notice">x</div>'); }\n__opMegaRender();`);
-  OPS.push({
+  addOp({
+    key: '⑫',
     label: '⑫複合メガ編集（①②⑤⑦ を一度に）',
     src: megaBefore || mega,
     expectWarn: 'R3:#' + megaId,
@@ -1078,23 +1257,88 @@ ok(onAttrFullSpans(ZERO_ON.src, ZERO_ON_A).length === 0,
 {
   const both = migrateInlineHandlers(ZERO_DEAD.src, ZERO_DEAD.a);
   const bothA = analyze(both.src);
-  const allow2 = clone(ALLOW);
-  allow2.static = [];
-  allow2.runtime = [];
-  allow2.bindings = [];
-  allow2.baseline = Object.assign({}, allow2.baseline, {
-    static_unreachable: 0,
-    runtime_unreachable: 0,
-    dead_bindings: 0,
-    top_level_functions: bothA.topLevelFunctionCount,
-  });
-  OPS.push({
+  const allow2 = clone(ZERO_ALLOW);
+  allow2.baseline = Object.assign({}, allow2.baseline,
+    { top_level_functions: bothA.topLevelFunctionCount });
+  addOp({
+    key: '⑬',
     label: '⑬在庫ゼロ①＋②を同時に（死にコード 0 ＋ インライン on* 0）',
     src: both.src,
     allow: allow2,
   });
   ok(bothA.unreachableStatic.length === 0 && bothA.htmlHandlerCount === 0,
     `ZERO-4 両方の在庫が同時にゼロの状態を作れた（static=${bothA.unreachableStatic.length} on*=${bothA.htmlHandlerCount}）`);
+}
+
+// --- ⑭ ディスク上の allowlist が **1 件**の状態（掃除の最終局面）【001i 高1】-----
+//   ⑩ は 0 件、⑭ は 1 件。どちらも「#798 の掃除が終わりかけている姿」で、
+//   001h はこの帯で `A5-0` が落ちていた（allowlist 0 件→上限 -1 / 1 件→上限 0）。
+const ONE = (() => {
+  const name = uniqIn(ZERO_DEAD.src, '__opLastRemainingDeadFn');
+  const src = insertTopLevelJs(ZERO_DEAD.src, ZERO_DEAD.a, `function ${name}(){ return 1; }`);
+  const a = analyze(src);
+  const allow = clone(ZERO_ALLOW);
+  allow.static = [{
+    name,
+    category: 'temporarily-preserved',
+    reason: '掃除の最終局面（allowlist 残り 1 件）を再現するための合成エントリ'
+      + '（#799 PHASE1-REACH-001i / 2026-08-02）。',
+  }];
+  allow.baseline = Object.assign({}, allow.baseline,
+    { static_unreachable: 1, top_level_functions: a.topLevelFunctionCount });
+  return { name, src, a, allow };
+})();
+addOp({
+  key: '⑭',
+  label: `⑭ディスク上の allowlist が 1 件だけの状態（掃除の最終局面・残り ${ONE.name}）`,
+  src: ONE.src,
+  allow: ONE.allow,
+});
+ok(ONE.a.unreachableStatic.length === 1 && allowCount(ONE.allow) === 1,
+  `ZERO-5 allowlist 1 件・死にコード 1 本の状態を作れた（static=${ONE.a.unreachableStatic.length} allowlist=${allowCount(ONE.allow)} 件）`);
+ok(allowCount(ZERO_ALLOW) === 0,
+  `ZERO-6 allowlist 0 件の状態を作れた（実測 ${allowCount(ZERO_ALLOW)} 件）`);
+
+// --- ⑮⑯ その 0 件 / 1 件の状態の上で、⑧ と同じ境界を作る ---------------------
+//   ここが 001h で赤くなっていた本体。上限が実在庫から引かれていないことの実測。
+addOp(a5BoundaryOp('⑮', 'allowlist 0 件のファイルで上限 +1', ZERO_DEAD.src, ZERO_ALLOW, ZERO_DEAD.a));
+addOp(a5BoundaryOp('⑯', 'allowlist 1 件のファイルで上限 +1', ONE.src, ONE.allow, ONE.a));
+
+// --- ⑰ CSS を外部スタイルシートへ切り出す【001i 高2】-------------------------
+//   検査1 の結果は 1 ミリも動かない正当なリファクタ。001h はこれだけで 15 本落ちた。
+const CSS_EXT = externalizeStyleBlocks(RAW);
+{
+  const hist = faceStats(classifyFaces(CSS_EXT.src)).histogram;
+  ok((hist.STYLE_CSS || 0) === 0,
+    `CSS-EXT-1 <style> を ${CSS_EXT.removed} ブロック剥がして STYLE_CSS 面が 0 の状態を作れた（実測 ${hist.STYLE_CSS}）`);
+  const extA = analyze(CSS_EXT.src);
+  ok(extA.unreachableStatic.length === A.unreachableStatic.length
+    && extA.topLevelFunctionCount === A.topLevelFunctionCount,
+  `CSS-EXT-2 CSS 外部化で検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${extA.unreachableStatic.length}`
+    + ` / 関数 ${A.topLevelFunctionCount} → ${extA.topLevelFunctionCount}）`);
+  addOp({
+    key: '⑰',
+    label: `⑰CSS を外部スタイルシートへ切り出す（<style> ${CSS_EXT.removed} ブロックを除去）`,
+    src: CSS_EXT.src,
+  });
+}
+
+// --- 台帳の照合（001i 中1）---------------------------------------------------
+{
+  const keys = OPS.map((o) => o.key);
+  const omittedKeys = OMITTED.map((o) => o.key);
+  ok(keys.length === new Set(keys).size, `OP-KEYS-1 実行する操作キーに重複が無い（${keys.join('')}）`);
+  ok(keys.every((k) => OP_KEYS.indexOf(k) >= 0) && omittedKeys.every((k) => OP_KEYS.indexOf(k) >= 0),
+    `OP-KEYS-2 宣言外のキーが無い（実行 ${keys.join('')} / 省略 ${omittedKeys.join('') || 'なし'}）`);
+  const covered = [...new Set(keys.concat(omittedKeys))]
+    .sort((x, y) => OP_KEYS.indexOf(x) - OP_KEYS.indexOf(y)).join('');
+  ok(covered === OP_KEYS.join(''),
+    `OP-KEYS-3 宣言した ${OP_KEYS.length} 操作が「実行」か「理由つき省略」のどちらかに必ず分類される（実測 ${covered}）`);
+  const missing = OP_KEYS_ALWAYS.filter((k) => keys.indexOf(k) < 0);
+  ok(missing.length === 0,
+    `OP-KEYS-4 在庫に依存しない ${OP_KEYS_ALWAYS.length} 操作は常に実行される（欠け: ${missing.join('') || 'なし'}）`);
+  ok(OMITTED.every((o) => (o.why || '').length >= 10),
+    'OP-KEYS-5 省略した操作には必ず理由が付いている');
 }
 
 for (const op of OPS) {
@@ -1112,13 +1356,10 @@ for (const op of OPS) {
   }
   console.log(`  ${problems.length === 0 ? '✓' : '✗'} ${op.label}: ERR=${v.errors.length} WARN2=${v.warnings.length}`);
 }
-{
-  const omitted = [];
-  if (!heavyFn) omitted.push('③（死んだ結線を含む関数が現存しない）');
-  if (!inlineVictim) omitted.push('⑥⑨（実在のインライン on* が現存しない）');
-  console.log(`  操作 ${OPS.length} 種を実測（在庫が尽きて省いた操作: ${omitted.join(' / ') || 'なし'}）`
-    + '。在庫ゼロ耐性は ⑩⑪⑬ が常に担うので、ここでは在庫の存在を assert しない');
-}
+console.log(`  操作 ${OPS.length}/${OP_KEYS.length} 種を実測`
+  + `（在庫が尽きて省いた操作: ${OMITTED.map((o) => `${o.key}（${o.why}）`).join(' / ') || 'なし'}）`
+  + '。在庫ゼロ耐性は ⑩⑪⑬⑭ が、allowlist 0 件 / 1 件耐性は ⑩⑭⑮⑯ が常に担うので、'
+  + 'ここでは在庫の存在を assert しない');
 
 console.log(`PHASE1-REACH-001: PASS=${pass} FAIL=${fail} WARN2=${V.warnings.length}`);
 process.exit(fail === 0 ? 0 : 1);
