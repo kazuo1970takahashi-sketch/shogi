@@ -269,6 +269,35 @@
 //     `joinAdjacentStringLiterals` で畳んでから走査する。字句走査で完全防御は原理的に
 //     不可能なので、**残りは `LITERAL_LIMITS`（`LITERAL-4`）に理由つきで台帳化**する。
 //
+//   ── 001r で塞いだ穴（差し戻し17回目・2026-08-03）★ 3 件 ─────────────────────
+//   高（13 例目）**`externalizeStyleBlocks` の開始タグ探索が小文字の綴りしか見なかった**。
+//     lib は `lexTag` でタグ名を小文字化するので `<STYLE>` の中身は正しく STYLE_CSS 面に
+//     なるのに、剥がす側が開始タグを見つけられず `CSS-EXT-1` が恒久赤（実測 390/1 exit 1）。
+//     さらに逆走査なので、大文字ブロックを既存 `<style>` の後ろに置くと**前方の本物を掴んで
+//     間の実 CSS ごと切除**する（同 390/1）。`</BODY>` を正当編集と認めた 10 例目と同じクラス。
+//     → `openTagPositions`（`ig`・面ゲート）で開始タグを列挙し、**`tagEndPos` がちょうど
+//       その CSS run の先頭になるもの**だけを相方にする。**㉗** を常設化（大文字 <STYLE>）。
+//   ★ **そしてこの箇所は 001q の `ANCHOR` 台帳で `FACE`（safe）に分類されていた**。
+//     `ANCHOR-2`（危険 0 件）は緑のまま実害が safe 行の中で生きていた
+//     ＝ **台帳は「分類した」ことしか保証せず「分類が正しい」ことは保証しない**。
+//   高（14 例目）**㉕ が `<body>` 開始タグを属性ごと落としていた**。`<body onload="fn()">` の
+//     ように開始タグ上に実結線があると、その関数だけ到達不能になり `R1` error（実測 389/2）。
+//     HTML5 は**属性を持つ body の開始タグ省略を許さない**ので「省略は妥当」の根拠自体が偽で、
+//     実は「実ファイルの `<body>` が属性を持たない」ことへの依存だった。allowlist では
+//     デッドロック（基準世界では到達可能なので載せると `R5` が赤くなる）。
+//     → 属性を**退避**して無属性 body にしてから省略する。**㉖** を常設化（開始タグ上の実結線）。
+//   中 `ANCHOR` 台帳の 3 穴（変数名で騙せる／ブラケット記法を取りこぼす／敵役が固定リスト）。
+//     → 分類を**由来（8c）で照合**（`ANCHOR-7`）／ブラケット記法を抽出器へ／敵役を**生成
+//       マトリクス**（受け手 × メソッド × 綴り × 記法）へ。台帳の各行に **`unsafeIf`
+//       （安全でなくなる条件）** を書かせる（`ANCHOR-4`）。
+//   ★ **8e 変換側の全数表**（001r の本体）。12〜14 例目はすべて **assert 側ではなく
+//     「実ファイルを加工して世界を作る側」**で起きたのに、8d は assert の呼び出ししか
+//     数えていなかった。**このファイルが定義する関数を全部数えて全部分類する**。
+//     人の申告に頼らない裏取りを 3 本置く: `XFORM-4`（加工系の本体にタグの綴りのリテラルが無い）/
+//     `XFORM-5`（面ゲートの道具を呼ぶ関数は必ず台帳に載る＝未登録の加工関数が黙って
+//     「加工しない」に落ちない）/ `XFORM-6`（**タグの綴りを含む正規表現は `i` か
+//     両ケースを明示した文字クラスを持つ**＝13 例目の根本原因を字句で禁じる）。
+//
 //   ── 常設から降ろした事実の明示（無言の降格にしない・中2 / 低）──────────────
 //   - **枯れ検査 `WI-1`〜`WI-6` / `WI-M*` は常設に無い**（battery 側にのみ在る）。
 //     したがって lib の `scanByCss('querySelector')` の 1 行を削っても**このファイルは
@@ -590,6 +619,12 @@ function tagEndPos(src, k, face) {
   }
   return src.length;
 }
+// タグ名は**名前として**持ち、`'<body'` のような綴りのリテラルは書かない【001r / 13 例目】。
+//   綴りを書くと (a) 大文字小文字を落とす (b) 検索の needle に流用される、の両方が起きる。
+//   `openTagPositions` に渡した名前と、その開始タグ名の長さだけを使う。
+const TAG_BODY = 'body';
+const TAG_STYLE = 'style';
+const afterTagName = (pos, tag) => pos + 1 + tag.length;
 // **開始**タグの位置を全部（`lastTagPos` の対）。001q / cowork 高（12 例目）。
 //   001p までは ㉑ と ㉓ がそれぞれ `ig` ループを手書きし、㉓ の検算だけ
 //   `RAW.search(/<body/)`（生テキスト・面ゲート無し・最初の一致）を使っていた。
@@ -633,13 +668,26 @@ function externalizeStyleBlocks(src) {
     runs.push([i, e]);
     i = e;
   }
+  // 開始タグの位置は**面ゲート済みの一覧**から引き、しかも「その run の直前で終わる開始タグ」
+  //   に**厳密に対応づける**【001r / cowork 高 = 13 例目】。
+  //   001q までは `out.lastIndexOf('<style', i)` だった。破れ方は 2 つ:
+  //     (a) **小文字の綴りしか探さない**。lib は `lexTag` でタグ名を小文字化するので
+  //         `<STYLE>` の中身は正しく STYLE_CSS 面になるのに、剥がす側が開始タグを
+  //         見つけられず `continue` → ブロックが残り `CSS-EXT-1` が恒久赤
+  //         （実測 390/1 exit 1）。`</BODY>` を正当編集と認めた 10 例目と同じクラス。
+  //     (b) **最も近い開始タグとは限らない**。大文字ブロックを既存 `<style>` の後ろに置くと
+  //         逆走査が**前方の本物**を掴み、間にある実 CSS ごと切除する（実測 390/1 exit 1）。
+  //   → `openTagPositions`（`ig` 前方走査・面ゲート）で開始タグを列挙し、
+  //     **`tagEndPos` がちょうどその run の先頭になる**ものだけを相方にする。
+  const openOf = new Map();
+  for (const p of openTagPositions(src, TAG_STYLE, face)) openOf.set(tagEndPos(src, p, face), p);
   let out = src;
   let removed = 0;
   // 後ろから剥がすので、まだ触っていない前方の位置（open / e）と face の添字は有効なまま。
   for (let k = runs.length - 1; k >= 0; k--) {
     const [i, e] = runs[k];
-    const open = out.lastIndexOf('<style', i);
-    if (open < 0 || face[open] !== FACE.HTML_TAG) continue;
+    const open = openOf.has(i) ? openOf.get(i) : -1;
+    if (open < 0) continue;
     STYLE_CLOSE_RE.lastIndex = e;
     const m = STYLE_CLOSE_RE.exec(out);
     if (!m) continue;
@@ -1420,11 +1468,11 @@ const addOp = (op) => { OPS.push(op); };
 //   ⑱ が欠番なのは 001l で #816 へ移したから（⑳a〜⑳d も同じ）。⑳ は 001m で足した
 //   別operation（未知 on* 属性の在庫）で、退避した ⑳a〜⑳d とは無関係。
 const OP_KEYS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩',
-  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲', '⑳', '㉑', '㉒', '㉓', '㉔', '㉕'];
+  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲', '⑳', '㉑', '㉒', '㉓', '㉔', '㉕', '㉖', '㉗'];
 // そのうち**在庫（実ファイルの死にコード / インライン on* / トップレベル関数 / allowlist）
 // に一切依存しない**もの＝常に実行されなければならない操作。
 const OP_KEYS_ALWAYS = ['①', '②', '⑤', '⑧', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰',
-  '⑲', '⑳', '㉑', '㉒', '㉓', '㉔', '㉕'];
+  '⑲', '⑳', '㉑', '㉒', '㉓', '㉔', '㉕', '㉖', '㉗'];
 
 {
   const name = uniqIn(RAW, '__opNewButtonHandler');
@@ -1753,21 +1801,32 @@ addOp(a5BoundaryOp('⑯', 'allowlist 1 件のファイルで上限 +1', ONE.src,
 
 // --- ⑰ CSS を外部スタイルシートへ切り出す【001i 高2】-------------------------
 //   検査1 の結果は 1 ミリも動かない正当なリファクタ。001h はこれだけで 15 本落ちた。
+//   001r / 13 例目: **㉗（大文字綴りの <STYLE> が在る世界）の上でも当て直す**。
+//   op を足すだけでは足りない（`CSS-EXT-*` は `gate()` の外の `ok()` なので、
+//   ㉗ を操作として回してもここは検査されない＝001k `shapeSelfChecks()` と同じ理由）。
+//   実際 `externalizeStyleBlocks` を小文字綴りの逆走査へ戻す変異は、この loop が無いと
+//   常設側では `CSS-EXT-1` として鳴らなかった（実装中に変異検算で気づいた）。
+const UPPER_STYLE = buildUpperStyleWorld(RAW);
 const CSS_EXT = externalizeStyleBlocks(RAW);
-{
-  const hist = faceStats(classifyFaces(CSS_EXT.src)).histogram;
+for (const w of [{ name: '実ファイルそのまま', src: RAW, op: true },
+  { name: '㉗ 大文字綴りの <STYLE> が在る', src: UPPER_STYLE, op: false }]) {
+  const ext = externalizeStyleBlocks(w.src);
+  const hist = faceStats(classifyFaces(ext.src)).histogram;
+  const baseA = analyze(w.src);
   ok((hist.STYLE_CSS || 0) === 0,
-    `CSS-EXT-1 <style> を ${CSS_EXT.removed} ブロック剥がして STYLE_CSS 面が 0 の状態を作れた（実測 ${hist.STYLE_CSS}）`);
-  const extA = analyze(CSS_EXT.src);
-  ok(extA.unreachableStatic.length === A.unreachableStatic.length
-    && extA.topLevelFunctionCount === A.topLevelFunctionCount,
-  `CSS-EXT-2 CSS 外部化で検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${extA.unreachableStatic.length}`
-    + ` / 関数 ${A.topLevelFunctionCount} → ${extA.topLevelFunctionCount}）`);
-  addOp({
-    key: '⑰',
-    label: `⑰CSS を外部スタイルシートへ切り出す（<style> ${CSS_EXT.removed} ブロックを除去）`,
-    src: CSS_EXT.src,
-  });
+    `CSS-EXT-1[${w.name}] <style> を ${ext.removed} ブロック剥がして STYLE_CSS 面が 0 の状態を作れた（実測 ${hist.STYLE_CSS}）`);
+  const extA = analyze(ext.src);
+  ok(extA.unreachableStatic.length === baseA.unreachableStatic.length
+    && extA.topLevelFunctionCount === baseA.topLevelFunctionCount,
+  `CSS-EXT-2[${w.name}] CSS 外部化で検査1 の結果は動かない（static ${baseA.unreachableStatic.length} → ${extA.unreachableStatic.length}`
+    + ` / 関数 ${baseA.topLevelFunctionCount} → ${extA.topLevelFunctionCount}）`);
+  if (w.op) {
+    addOp({
+      key: '⑰',
+      label: `⑰CSS を外部スタイルシートへ切り出す（<style> ${ext.removed} ブロックを除去）`,
+      src: ext.src,
+    });
+  }
 }
 
 // --- ⑲ allowlist から static / runtime / bindings / baseline キーを削除【001j 中2 / 001k 中1】---
@@ -1895,9 +1954,9 @@ function buildQuotedGtWorld(src, face) {
   const frag = ` ${attr}=">" ${probeVariant(attr, '-b')}="/>"`;
   const valAt = (at) => at + frag.indexOf('=">"') + 2;   // 属性値の中の `>` の位置（自分の断片の中）
   const f = face || classifyFaces(src);
-  const open = openTagPositions(src, 'body', f)[0];
+  const open = openTagPositions(src, TAG_BODY, f)[0];
   if (open !== undefined) {
-    const at = open + '<body'.length;
+    const at = afterTagName(open, TAG_BODY);
     recordInjection(frag);
     return { src: src.slice(0, at) + frag + src.slice(at), tagStart: open, valGt: valAt(at), host: '実ファイルの <body>' };
   }
@@ -1913,40 +1972,129 @@ function buildQuotedGtWorld(src, face) {
 function buildFakeBodyCommentWorld(src, face) {
   const attr = uniqIn(src, 'data-reachprintnote');
   const note = uniqIn(src, '__probeFakeBodyNote');
-  const frag = `<!-- ${note}: 印刷帳票は <body ${attr}=">"> を動的生成する（#798 申し送り） -->\n`;
+  // 偽タグの位置は**組み立ての内訳から出す**（出来上がった断片を検索し直さない）。
+  const head = `<!-- ${note}: 印刷帳票は `;
+  const fake = `<${TAG_BODY} ${attr}=">">`;
+  const frag = `${head}${fake} を動的生成する（#798 申し送り） -->\n`;
   const f = face || classifyFaces(src);
   const h = lastTagPos(src, 'head', f);
   const at = h >= 0 ? h : 0;   // `</head>` が無い世界ではファイル先頭（どの <body> よりも前）
   recordInjection(frag);
-  return { src: src.slice(0, at) + frag + src.slice(at), fakeAt: at + frag.indexOf('<body') };
+  return { src: src.slice(0, at) + frag + src.slice(at), fakeAt: at + head.length };
 }
-// ㉕ `<body>` 開始タグが無い世界（HTML5 では開始タグの省略が妥当）。
+// ㉕ `<body>` 開始タグが無い世界。
+//   **根拠の書き直し【001r / cowork 高 = 14 例目】**: HTML5 が開始タグの省略を許すのは
+//   **`body` 要素が属性を 1 つも持たないとき**だけで、「省略はいつでも妥当」は誤りだった。
+//   001q はタグを**属性ごと**落としていたので、`<body onload="fn()">` のように開始タグ上に
+//   実結線があるファイルでは、その関数だけが到達不能になり `R1` error（実測 389/2 exit 1）。
+//   ES5・インライン on* 中心のこのコードベースで `<body onload=…>` は自然な正当編集で、
+//   しかも allowlist ではデッドロックする（基準世界では到達可能なので載せると `R5` が赤くなる）
+//   ＝ 11 巡と同じ実害クラス。**実ファイルの `<body>` が属性を持たない**ことへの依存だった。
+//   → 属性は捨てずに**退避**する。`body` を無属性にしてから開始タグを省略するので
+//     HTML5 としても妥当なまま、解析結果（インライン on* の件数・到達可能性）が動かない。
 function buildNoBodyOpenWorld(src, face) {
   const f = face || classifyFaces(src);
-  const open = openTagPositions(src, 'body', f)[0];
-  if (open === undefined) return { src, dropped: 0 };   // 既に無い＝目的の世界そのもの
-  return { src: src.slice(0, open) + src.slice(tagEndPos(src, open, f)), dropped: 1 };
+  const open = openTagPositions(src, TAG_BODY, f)[0];
+  if (open === undefined) return { src, dropped: 0, moved: '' };   // 既に無い＝目的の世界そのもの
+  const end = tagEndPos(src, open, f);
+  // 属性の綴りはタグの**中身**（自分が位置を面から取った範囲）だけを見る。実ファイルの
+  // 生テキストを検索していない＝13 例目のクラスに入らない。
+  const inner = src.slice(afterTagName(open, TAG_BODY), end - 1).replace(/\/$/, '').trim();
+  const keep = inner ? `<div ${inner}></div>\n` : '';
+  return { src: src.slice(0, open) + keep + src.slice(end), dropped: 1, moved: inner };
+}
+// ㉖ `<body>` 開始タグの上に実結線（インライン on*）が在る世界【001r / 14 例目の常設化】。
+function buildBodyHandlerWorld(src, a) {
+  const fn = uniqIn(src, '__opBodyOnloadHook');
+  // 自給 host の名前は**枝の外で**作る。枝の中で `uniqIn` すると、その枝を通らない世界では
+  //   base がレジストリに載らず、ソースに書いた綴りが `LITERAL-1` の stray になる
+  //   （実装中に自分の機械に捕まった。001n の ㉑ anchor 自己衝突と同じ形）。
+  const host = uniqIn(src, '__opBodyOnloadHost');
+  const withFn = insertTopLevelJs(src, a, `function ${fn}(){ return 1; }`);
+  const f = classifyFaces(withFn);
+  const open = openTagPositions(withFn, TAG_BODY, f)[0];
+  const frag = ` onload="${fn}()"`;
+  recordInjection(frag);
+  if (open === undefined) {
+    // `<body>` が無い世界でも成立させる（自給の host に載せる）。
+    const whole = `\n<div id="${host}"${frag}></div>\n`;
+    recordInjection(whole);
+    return { src: withFn + whole, fn, host: '自給の <div>' };
+  }
+  const at = afterTagName(open, TAG_BODY);
+  return { src: withFn.slice(0, at) + frag + withFn.slice(at), fn, host: '実ファイルの <body>' };
+}
+
+// ㉗ 実ファイルに**大文字綴りの `<STYLE>` ブロック**が在る世界【001r / 13 例目の常設化】。
+//   タグ名は大文字小文字を区別しないので、これは HTML として完全に等価な正当編集。
+//   置く位置は既存の `<style>` の**後ろ**（＝逆走査が前方の本物を掴む最悪位置）。
+function buildUpperStyleWorld(src, face) {
+  // 名前は他の probe と同じ `__` 始まりにする（`LITERAL-2` のソース走査が拾える綴りにするため。
+  //   CSS のクラス名としても妥当）。
+  const cls = uniqIn(src, '__probeUpperStyleCls');
+  const frag = `<STYLE media="print">\n.${cls}{display:none}\n</STYLE>\n`;
+  const f = face || classifyFaces(src);
+  const opens = openTagPositions(src, TAG_STYLE, f);
+  recordInjection(frag);
+  if (!opens.length) return insertHtml(src, frag, f);   // `<style>` が 1 つも無い世界でも成立させる
+  const last = opens[opens.length - 1];
+  return src.slice(0, last) + frag + src.slice(last);   // 直前に置く＝この後ろに本物が続く
 }
 
 const FAKE_BODY = buildFakeBodyCommentWorld(RAW);
-const NO_BODY = buildNoBodyOpenWorld(RAW);
+const BODY_HANDLER = buildBodyHandlerWorld(RAW, A);
+addOp({ key: '㉔', label: '㉔<head> の HTML コメントに偽の <body …=">"> が在る世界', src: FAKE_BODY.src });
+addOp({ key: '㉖', label: '㉖<body> 開始タグの上にインライン on* の実結線が在る世界', src: BODY_HANDLER.src });
+addOp({ key: '㉗', label: '㉗大文字綴りの <STYLE> ブロックが（本物の <style> より前に）在る世界', src: UPPER_STYLE });
 {
   const ff = classifyFaces(FAKE_BODY.src);
   ok(FACE_NAME[ff[FAKE_BODY.fakeAt]] === 'HTML_COMMENT',
     `FAKE-BODY-1 偽の <body …=">"> は HTML_COMMENT 面に載っている＝面ゲートは騙されない（実測 ${FACE_NAME[ff[FAKE_BODY.fakeAt]]}）`);
   ok(openTagPositions(FAKE_BODY.src, 'body', ff).length === openTagPositions(RAW, 'body').length,
     'FAKE-BODY-2 面ゲートを通した <body> 開始タグの本数は増えていない');
-  ok(openTagPositions(NO_BODY.src, 'body').length === 0,
-    `NO-BODY-1 <body> 開始タグが面の上に 1 つも無い世界を作れた（除去 ${NO_BODY.dropped} 件）`);
+  // ㉖ の世界を**実際に作れたこと**＝ 開始タグ上の on* が結線として数えられている。
+  const bh = analyze(BODY_HANDLER.src);
+  ok(bh.inlineHandlerCount === A.inlineHandlerCount + 1,
+    `BODY-ON-1 開始タグ上の on* が結線として 1 件増えている（${A.inlineHandlerCount} → ${bh.inlineHandlerCount}・host=${BODY_HANDLER.host}）`);
+  ok(bh.unreachableStatic.length === A.unreachableStatic.length,
+    `BODY-ON-2 その結線があるので注入した関数は到達可能（static ${A.unreachableStatic.length} → ${bh.unreachableStatic.length}）`);
+  // ㉗ の世界を**実際に作れたこと**＝ 大文字ブロックの中身が STYLE_CSS 面に載る。
+  const us = faceStats(classifyFaces(UPPER_STYLE)).histogram;
+  ok(us.STYLE_CSS > faceStats(classifyFaces(RAW)).histogram.STYLE_CSS,
+    `UPPER-STYLE-1 大文字 <STYLE> の中身も STYLE_CSS 面に載る（${faceStats(classifyFaces(RAW)).histogram.STYLE_CSS} → ${us.STYLE_CSS}）`);
+  ok(analyze(UPPER_STYLE).unreachableStatic.length === A.unreachableStatic.length,
+    'UPPER-STYLE-2 大文字 <STYLE> を足しても検査1 の結果は動かない');
 }
-addOp({ key: '㉔', label: '㉔<head> の HTML コメントに偽の <body …=">"> が在る世界', src: FAKE_BODY.src });
-addOp({ key: '㉕', label: '㉕<body> 開始タグが無い世界（HTML5 で省略は妥当）', src: NO_BODY.src });
 
-// ㉓ の世界と検算を、上の 3 世界すべての上で当て直す。
+// ㉕ は「`<body>` 開始タグが無い世界」。**開始タグに属性が在るファイルでも成立させる**ので、
+//   実ファイルそのままと ㉖（開始タグに実結線が在る世界）の**両方の上で**作って測る。
+const NO_BODY_WORLDS = [
+  { name: '実ファイルそのまま', src: RAW, op: true },
+  { name: '㉖ 開始タグに実結線が在る', src: BODY_HANDLER.src, op: false },
+];
+const NO_BODY = buildNoBodyOpenWorld(RAW);
+for (const w of NO_BODY_WORLDS) {
+  const nb = buildNoBodyOpenWorld(w.src);
+  const base = analyze(w.src);
+  ok(openTagPositions(nb.src, 'body').length === 0,
+    `NO-BODY-1[${w.name}] <body> 開始タグが面の上に 1 つも無い世界を作れた（除去 ${nb.dropped} 件）`);
+  const na = analyze(nb.src);
+  ok(na.unreachableStatic.length === base.unreachableStatic.length
+    && na.inlineHandlerCount === base.inlineHandlerCount,
+  `NO-BODY-2[${w.name}] 属性を退避したので解析結果が動かない`
+    + `（static ${base.unreachableStatic.length} → ${na.unreachableStatic.length}`
+    + ` / on* ${base.inlineHandlerCount} → ${na.inlineHandlerCount}・退避 "${nb.moved || 'なし'}"）`);
+  if (w.op) {
+    addOp({ key: '㉕', label: '㉕<body> 開始タグが無い世界（属性は退避＝無属性 body の省略で HTML5 妥当）', src: nb.src });
+  }
+}
+
+// ㉓ の世界と検算を、下の 4 世界すべての上で当て直す。
 const QGT_WORLDS = [
   { name: '実ファイルそのまま', src: RAW, op: true },
   { name: '㉔ 偽の <body> がコメントに在る', src: FAKE_BODY.src, op: false },
   { name: '㉕ <body> 開始タグが無い', src: NO_BODY.src, op: false },
+  { name: '㉖ 開始タグに実結線が在る', src: BODY_HANDLER.src, op: false },
 ];
 for (const w of QGT_WORLDS) {
   const q = buildQuotedGtWorld(w.src);
@@ -2024,7 +2172,7 @@ const REGISTRY_WORLD = (() => {
   //   生テキストの `indexOf('>')` は 属性値に `>` を含む開始タグで、値の中の `>` を掴む。
   //   001q: 開始タグの探索は `openTagPositions` へ集約（㉓ と同じ道具・手書きループを残さない）。
   const f = classifyFaces(RAW);
-  const open = openTagPositions(RAW, 'body', f)[0];
+  const open = openTagPositions(RAW, TAG_BODY, f)[0];
   if (open !== undefined) {
     const gt = tagEndPos(RAW, open, f);
     return RAW.slice(0, gt) + '\n' + frag + RAW.slice(gt);
@@ -2098,7 +2246,7 @@ for (const op of OPS) {
 console.log(`  操作 ${OPS.length}/${OP_KEYS.length} 種を実測`
   + `（在庫が尽きて省いた操作: ${OMITTED.map((o) => `${o.key}（${o.why}）`).join(' / ') || 'なし'}）`
   + '。在庫ゼロ耐性は ⑩⑪⑬⑭ が、allowlist 0 件 / 1 件 / キー欠落耐性は ⑩⑭⑮⑯⑲ が、'
-  + '生テキスト anchor 耐性は ⑰ が、未知 on* 属性の在庫耐性は ⑳（小文字）と ㉒（大文字表記）が、'
+  + '生テキスト anchor 耐性は ⑰ が、大文字綴りのタグ耐性は ㉗ が、開始タグ上の実結線耐性は ㉖ が、未知 on* 属性の在庫耐性は ⑳（小文字）と ㉒（大文字表記）が、'
   + '開始タグの属性値に > が在る耐性は ㉓ が、'
   + 'probe 名の先在耐性は ㉑ が常に担うので、ここでは在庫の存在を assert しない'
   + '（ハーネス自衛の形状バッテリ ⑱ / ⑳a〜⑳d は 001l で Issue #816 へ移した）');
@@ -2382,35 +2530,130 @@ console.log('=== 照合の検出力（受け入れ基準2〜4: a〜i）===');
   ok(straySpellsIn("const s = 'var ' + 'live=1;';").length === 0,
     'REGISTRY-MUT-j-pos 対照: probe と無関係なリテラル連結は落ちない（畳んだせいの誤検出が無い）');
 }
+// =============================================================================
+// 8c. **由来の解析（式がどこから来たか）**【001r ★ cowork 中 = `ANCHOR` 台帳の 3 穴 (a)】
+//    001q の台帳は**変数名の正規表現**で分類していたので、`const s = RAW;` と書いて `s` を
+//    使うだけで「合成文字列（`SYNTH`・safe）」に化けた（cowork 実測: 55 件 / 未分類 0 /
+//    `ANCHOR-2` 緑 / exit 0）。**名前ではなく由来で決める**しかない。
+//
+//    やり方は「**その位置から見た最も近い束縛**を辿る」。グローバルな汚染集合にすると
+//    スコープを跨いで同名の仮引数まで巻き込み（実測: `bare` / `code` / `frag` が汚染された）、
+//    **合成物を「対象由来」と言い張る**逆向きの誤りが出る。近い束縛だけを見れば
+//    `const s = RAW;` は捕まえられて、別スコープの同名には引きずられない。
+//      - `const|let|var X = 右辺` … 右辺が対象由来の名前に触れていれば X も対象由来
+//      - 仮引数           … その関数が**対象を加工する関数**（8e の台帳で `XF_FACE`/`XF_SELF`）なら対象由来
+//      - `RAW`            … 種
+// =============================================================================
+// 対象を加工する関数（8e の台帳と同じ顔ぶれ。ここでは仮引数の由来を決めるために先に持つ）。
+const XFORM_TARGET_FNS = new Set(['insertHtml', 'insertStyleBlock', 'externalizeStyleBlocks',
+  'buildFakeBodyCommentWorld', 'buildNoBodyOpenWorld', 'buildQuotedGtWorld', 'buildBodyHandlerWorld',
+  'buildUpperStyleWorld', 'lastTagPos', 'tagEndPos', 'openTagPositions', 'onAttrFullSpans',
+  'insertTopLevelJs', 'insertTopLevelJsBefore', 'functionSpan', 'uniqIn', 'uniqOnAttrIn',
+  'a5BoundaryOp', 'stripAllDeadFunctions', 'gate', 'gateProblems', 'derivedOnPosDetail']);
+// **対象の一部を返さない**関数（位置・分類結果・新しい一意名・複製を返す）。
+//   ここを通した値は「対象由来」ではない。入れないと `uniqIn(src, base)` の返り値まで
+//   対象由来になり、合成断片が軒並み汚染される（実装中に自分の照合が真っ赤になって気づいた）。
+const NON_PROPAGATING = ['uniqIn', 'uniqOnAttrIn', 'probeVariant', 'registerProbe', 'analyze',
+  'classifyFaces', 'faceStats', 'evaluate', 'openTagPositions', 'tagEndPos', 'lastTagPos',
+  'afterTagName', 'onAttrFullSpans', 'clone', 'JSON', 'Number', 'String', 'Set', 'Map', 'Array'];
+const IDENT_RE = /[A-Za-z_$][A-Za-z0-9_$]*/g;
+// 右辺から「識別子として意味のあるもの」だけを取り出す。
+//   文字列・テンプレート・正規表現・コメント・プロパティ名は落とす（`'<html>…'` の中の
+//   `html` を識別子として拾うと、同名の宣言に釣られて何でも汚染される）。
+function rhsIdents(rhs) {
+  let t = rhs
+    .replace(/\\./g, ' ')
+    .replace(/'[^']*'|"[^"]*"|`[^`]*`/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ')
+    .replace(/\.[A-Za-z_$][A-Za-z0-9_$]*/g, ' ');
+  for (const fn of NON_PROPAGATING) {
+    t = t.replace(new RegExp('\\b' + fn + '\\s*\\([^()]*\\)', 'g'), ' ');
+  }
+  return (t.match(IDENT_RE) || []);
+}
+// 位置 `pos` から後ろ向きに、識別子 `name` の最も近い束縛を探して「対象ファイル由来か」を返す。
+function originIsTarget(name, pos, depth, text) {
+  if (name === 'RAW') return true;
+  if (!name || (depth || 0) > 6) return false;
+  const head = (text || SELF_SOURCE).slice(0, pos);
+  const esc = name.replace(/[$]/g, '\\$&');
+  // (1) 宣言
+  const decl = new RegExp('(?:const|let|var)\\s+' + esc + '\\s*=\\s*', 'g');
+  let lastDecl = null;
+  for (let m = decl.exec(head); m; m = decl.exec(head)) {
+    // 右辺は**括弧が釣り合うまで**読む。1 行だけ見ると IIFE（`= (() => { … })();`）の
+    // 中身が空になり、そこで対象を組み立てていても「由来なし」になる（実測で気づいた）。
+    let d = 0;
+    let e = m.index + m[0].length;
+    for (; e < head.length; e++) {
+      const c = head[e];
+      if (c === '(' || c === '[' || c === '{') d++;
+      else if (c === ')' || c === ']' || c === '}') d--;
+      else if ((c === ';' || c === '\n') && d <= 0) break;
+    }
+    lastDecl = [m[0], head.slice(m.index + m[0].length, e), null];
+    lastDecl.index = m.index;
+  }
+  // (2) 仮引数（`function f(a, b)` / `const f = (a, b) =>`）
+  const par = new RegExp('(?:function\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*\\(|(?:const|let)\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*=\\s*\\((?=[^)]*\\)\\s*=>))([^)]*\\b' + esc + '\\b[^)]*)\\)', 'g');
+  let lastPar = null;
+  for (let m = par.exec(head); m; m = par.exec(head)) {
+    if (m[3].split(',').some((s) => s.trim() === name)) lastPar = m;
+  }
+  const dPos = lastDecl ? lastDecl.index : -1;
+  const pPos = lastPar ? lastPar.index : -1;
+  if (dPos < 0 && pPos < 0) return false;
+  if (dPos > pPos) {
+    return rhsIdents(lastDecl[1])
+      .some((x) => x !== name && originIsTarget(x, dPos, (depth || 0) + 1, text));
+  }
+  return XFORM_TARGET_FNS.has(lastPar[1] || lastPar[2]);
+}
+{
+  // 空振り検出: 種しか見ない実装でも下の照合は緑になるので、両向きに代表例を置く。
+  const at = SELF_SOURCE.length;
+  const musts = ['RAW'].filter((n) => !originIsTarget(n, at));
+  console.log(`  由来解析: 対象を加工する関数 ${XFORM_TARGET_FNS.size} 個を仮引数の由来の根拠にする`);
+  ok(musts.length === 0, `TAINT-1 種（RAW）が「対象由来」と判定される（欠け: ${musts.join(', ') || 'なし'}）`);
+  ok(originIsTarget('ALLOW', at) === false && originIsTarget('OP_KEYS', at) === false,
+    'TAINT-2 対照: allowlist / 台帳キーのような対象由来でない値は「由来なし」のまま');
+}
 
 // =============================================================================
-// 8c. **生テキスト anchor の全数表**【001q ★ cowork 高（12 例目）/ 受け入れ基準5】
-//    この PR を 16 巡させたクラスは毎回同じ形だった——
-//    「**常設側の assert / ビルダが、実ファイルの生テキスト上の位置に依存している**」。
-//    001j 高1（`lastIndexOf('</body>')`）→ 001k（`lastTagPos` の後方走査）→ 001p 高B
-//    （`indexOf('>')`）→ 001q（`search(/<body/)`）と、直した箇所の**隣**へ移動し続けた。
-//    箇所を 1 つずつ潰すのはもうやめて、**クラスが空であることを機械で示す**（001n の作法）。
+// 8d. **生テキスト anchor の全数表**【001q ★ 12 例目 / 001r で 3 穴を塞ぐ】
+//    この PR を 17 巡させたクラスは毎回同じ形だった——
+//    「**実ファイルの生テキスト上の綴り・位置に依存している**」。
+//    001j 高1（`lastIndexOf` で閉じタグを探す）→ 001k（後方走査で case を落とす）→ 001p 高B
+//    （生テキストでタグ終端を決める）→ 001q 12 例目（面ゲート無しの最初の一致）→ 001r 13 例目
+//    （**小文字の綴りしか探さない**）と、直した箇所の**隣**へ移動し続けた。
 //
-//    外延 = このファイルが `search` / `indexOf` / `lastIndexOf` を呼んでいる**全箇所**。
-//    ＋ 同じことができる `includes` / `startsWith` / `endsWith` も数える
-//    （数えないと「メソッドを変えるだけで台帳から消える」逃げ道が残る）。
-//    それぞれを台帳で分類し、
-//      (1) 未分類が 0 件      … 新しい呼び出しを足したら必ず分類させる
-//      (2) `RAW_POS` が 0 件  … 危険カテゴリが空
-//      (3) 台帳の各行が最低 1 箇所に当たる … 腐った（当たらない）行を残さない
-//      (4) 敵役の合成サイトが `RAW_POS` に落ちる … 分類器が「何でも安全」に壊れていない
-//    を測る。**(4) は 8b と同じ関数を呼ぶ**（自前のコピーを持つと壊しても緑になる・001p の教訓）。
+//    外延 = このファイルが `search` / `indexOf` / `lastIndexOf`
+//    （＋ 同じことができる `includes` / `startsWith` / `endsWith`）を呼んでいる**全箇所**。
+//    **ブラケット記法（`x['index' + 'Of'] 形式`）も数える**（001r / cowork 中 (b)。
+//    ドット記法だけを見ていたので site が増えないまま素通りした）。
+//
+//    001q からの 3 つの直し:
+//      (a) 分類を**変数名ではなく由来（8c）で照合**する。台帳の各行は「受け手が対象由来か」を
+//          宣言し、由来解析と食い違ったら `ANCHOR-7` が落ちる。
+//      (b) ブラケット記法を抽出器に入れる。
+//      (c) 敵役を**固定リストから生成マトリクス**へ（受け手 × メソッド × 綴り × 記法）。
+//    ＋ 台帳の safe 行に「なぜ安全か」だけでなく **「安全でなくなる条件」（`unsafeIf`）** を書かせる。
+//      13 例目の `FACE` 行は「面を確かめている」が真でも「**小文字綴りしか探していない**」が
+//      抜けていた——safe の根拠は、崩れる条件まで書かないと点検できない。
+//    ＋ `ANCHOR-6`: **台帳が safe と言っていても**、対象由来の受け手に**タグの綴り**を needle に
+//      していたら落ちる（13 例目はこの形でしか書けない）。台帳の台詞と独立に効く機械。
 // =============================================================================
-console.log('=== 生テキスト anchor の全数表（受け入れ基準5）===');
+console.log('=== 生テキスト anchor の全数表（受け入れ基準5/6）===');
 const ANCHOR_METHODS = ['search', 'indexOf', 'lastIndexOf', 'includes', 'startsWith', 'endsWith'];
-// 呼び出し箇所を機械で抽出する。受け手（レシーバ）は後ろ向きに、括弧の釣り合いを見て取る。
+// タグの綴り（`<tag` / `</tag>`）だけで出来ているリテラルか。13 例目の needle がまさにこれ。
+const TAG_SPELL_RE = /(['"])<\s*\/?[A-Za-z][A-Za-z0-9-]*\s*\/?>?\1/;
 function anchorCallSites(text) {
   const lineStarts = [0];
-  for (const re = /\n/g, m0 = {}; ;) {   // eslint-disable-line no-constant-condition
+  for (const re = /\n/g; ;) {
     const m = re.exec(text);
     if (!m) break;
     lineStarts.push(m.index + 1);
-    void m0;
   }
   const lineOf = (pos) => {
     let lo = 0;
@@ -2421,13 +2664,16 @@ function anchorCallSites(text) {
     }
     return { no: lo + 1, start: lineStarts[lo] };
   };
-  const re = new RegExp('\\.\\s*(' + ANCHOR_METHODS.join('|') + ')\\s*\\(', 'g');
+  const names = ANCHOR_METHODS.join('|');
+  // ドット記法とブラケット記法の両方（001r / cowork 中 (b)）。
+  const re = new RegExp('(?:\\.\\s*(' + names + ')|\\[\\s*[\'"](' + names + ')[\'"]\\s*\\])\\s*\\(', 'g');
   const out = [];
   for (let m = re.exec(text); m; m = re.exec(text)) {
+    const method = m[1] || m[2];
+    const bracket = !m[1];
     const { no, start } = lineOf(m.index);
     let end = m.index;
     while (end < text.length && text[end] !== '\n') end++;
-    // レシーバを後ろ向きに取る（`x`, `a.b`, `f(...)`, `x[...]` を跨ぐ）。
     let i = m.index;
     let depth = 0;
     while (i > start) {
@@ -2438,76 +2684,135 @@ function anchorCallSites(text) {
       if (/[A-Za-z0-9_$.]/.test(c)) { i--; continue; }
       break;
     }
+    const recv = text.slice(i, m.index);
     const argAt = m.index + m[0].length;
+    const arg = text.slice(argAt, Math.min(argAt + 34, end));
     out.push({
       line: no,
-      site: text.slice(i, m.index) + '.' + m[1] + '(' + text.slice(argAt, Math.min(argAt + 34, end)),
-      // 行の「その位置より前」に `//` が在れば説明文（この本文は `//` 行コメントしか使わない）。
+      pos: m.index,
+      bracket,
+      // 受け手の**根っこの識別子**（`m.rootNames` なら `m`）。由来はこれで引く。
+      root: (recv.match(/^[A-Za-z_$][A-Za-z0-9_$]*/) || [''])[0],
+      site: recv + '.' + method + '(' + arg,
+      tagNeedle: TAG_SPELL_RE.test(arg),
       prose: /\/\//.test(text.slice(start, m.index)),
     });
   }
   return out;
 }
-// カテゴリ（`safe: false` は「在ってはいけない」）。
+// カテゴリ（`safe: false` は「在ってはいけない」／`derived` は「受け手が対象ファイル由来か」）。
 const ANCHOR_CATS = new Map([
-  ['PROSE', { safe: true, why: 'コメント（説明文）。実行されない' }],
-  ['ARRAY', { safe: true, why: '配列の要素検索。文字列上の位置ではない' }],
-  ['SYNTH', { safe: true, why: '合成文字列に対する検索。実ファイル由来ではない' }],
-  ['SELF', { safe: true, why: '自分で組み立てた断片 / 自分のソースに対する検索。対象ファイルの中身に依存しない' }],
-  ['MEMBER', { safe: true, why: '「在るか」だけを見る（位置を使わない）。外れても安全側（一意化がさらに逃げる）へ倒れる' }],
-  ['SENTINEL', { safe: true, why: '自給の一意 anchor（uniqIn が対象への非存在を保証）から位置を引く＝自給フォールバック相当' }],
-  ['FACE', { safe: true, why: '面ゲートを通した位置だけを採る' }],
-  ['ADJACENT', { safe: true, why: '解析結果の位置から**隣接トークンだけ**を後方に取る（間に別の一致が入りえない）' }],
-  ['RAW_POS', { safe: false, why: '実ファイルの生テキスト上の位置に依存する。**0 件でなければならない**' }],
+  ['PROSE', { safe: true, derived: null, why: 'コメント（説明文）。実行されない' }],
+  ['ARRAY', { safe: true, derived: null, why: '配列の要素検索。文字列上の位置ではない' }],
+  ['SYNTH', { safe: true, derived: false, why: '合成文字列に対する検索。**対象ファイル由来であってはならない**' }],
+  ['SELF', { safe: true, derived: false, why: '自分で組み立てた断片 / 自分のソースに対する検索' }],
+  ['MEMBER', { safe: true, derived: null, why: '「在るか」だけを見る（位置を使わない）。外れても安全側へ倒れる' }],
+  ['SENTINEL', { safe: true, derived: true, why: '自給の一意 anchor（uniqIn が対象への非存在を保証）から位置を引く' }],
+  ['FACE', { safe: true, derived: true, why: '面ゲートを通した位置だけを採る' }],
+  ['ADJACENT', { safe: true, derived: true, why: '解析結果の位置から**隣接トークンだけ**を後方に取る' }],
+  ['RAW_POS', { safe: false, derived: true, why: '実ファイルの生テキスト上の位置に依存する。**0 件でなければならない**' }],
 ]);
-// 台帳。**上から順に最初に当たった行が勝つ**。安全カテゴリは「なぜ安全か」まで書く。
+// 台帳。**上から順に最初に当たった行が勝つ**。
+//   `why` = なぜ安全か / `unsafeIf` = **安全でなくなる条件**（001r / cowork 指摘5）。
 const ANCHOR_LEDGER = [
-  { re: /^(got|allowed|names|keys|seen|OP_KEYS|PRESEED_BASES)\.indexOf\(/, cat: 'ARRAY',
-    why: '差分・台帳キー・トークン列の要素検索' },
-  { re: /^m\.(rootNames|derivedOnlyReachable)\.indexOf\(/, cat: 'ARRAY', why: '解析結果の配列の要素検索' },
-  { re: /^v\.warnings\.map\(sig\)\.indexOf\(/, cat: 'ARRAY', why: 'warn の署名列の要素検索' },
-  { re: /^straySpellsIn\(/, cat: 'ARRAY', why: '8b の検算。stray 配列の要素検索' },
-  { re: /^(withStyle|bare|s)\.indexOf\(/, cat: 'SYNTH',
-    why: 'T-0c の最小文書 / faceOf・KL-3 の合成文書。対象ファイルを一切読まない' },
-  { re: /^frag\.indexOf\(/, cat: 'SELF', why: '直前に自分で組み立てた断片の中の位置（対象の長さを足すだけ）' },
-  { re: /^src\.indexOf\(base\b/, cat: 'MEMBER', why: 'uniqIn の衝突判定。位置は使わず「在るか」だけ' },
-  { re: /^lowerOf\(src\)\.indexOf\(/, cat: 'MEMBER', why: 'uniqOnAttrIn の衝突判定（ASCII case-insensitive）。同上' },
-  { re: /^sp\.value\.indexOf\(dead\)/, cat: 'MEMBER', why: '面から引いた属性値の中に死んだ関数名が在るか。位置は使わない' },
-  { re: /^RAW\.indexOf\(REG_SENTINEL\)/, cat: 'MEMBER', why: '㉑ の anchor を対象と衝突しなくなるまで伸ばす判定。同上' },
-  { re: /^(REG_SENTINEL|b)\.indexOf\(/, cat: 'MEMBER', why: 'anchor と base の相互包含判定。対象ファイルを読まない' },
+  { re: /^(got|allowed|names|keys|seen|OP_KEYS|PRESEED_BASES|musts)\.indexOf\(/, cat: 'ARRAY',
+    why: '差分・台帳キー・トークン列の要素検索',
+    unsafeIf: '同名の変数が文字列に変わったとき（配列と文字列は由来解析では区別しないので、名前を再利用したら分類し直す）' },
+  { re: /^m\.(rootNames|derivedOnlyReachable)\.indexOf\(/, cat: 'ARRAY',
+    why: '解析結果の配列の要素検索',
+    unsafeIf: 'lib がこれらを配列でなく連結文字列で返すようになったとき' },
+  { re: /^v\.warnings\.map\(sig\)\.indexOf\(/, cat: 'ARRAY',
+    why: 'warn の署名列の要素検索',
+    unsafeIf: '`sig` が配列でなく連結文字列を返すようになったとき' },
+  { re: /^straySpellsIn\(/, cat: 'ARRAY',
+    why: '8b の検算。stray 配列の要素検索',
+    unsafeIf: '`straySpellsIn` が文字列を返すようになったとき' },
+  { re: /^(withStyle|bare)\.indexOf\(/, cat: 'SYNTH',
+    why: 'T-0c の最小文書（自分で書いた 1 行の HTML）。対象ファイルを一切読まない',
+    unsafeIf: 'これらが対象ファイル由来の値を受けるようになったとき（`ANCHOR-7` が由来解析で毎回照合する）' },
+  { re: /^s\.indexOf\(/, cat: 'SYNTH',
+    why: 'faceOf / KL-3 の合成文書（`<script>` や `<button>` を自分で組み立てたもの）',
+    unsafeIf: '同上。`const s = RAW;` のような別名を作った瞬間 `ANCHOR-7` が落ちる（cowork が実測した穴そのもの）' },
+  { re: /^(frag|head|tag|whole|lead)\.indexOf\(/, cat: 'SELF',
+    why: '直前に自分で組み立てた断片の中の位置（対象の長さを足すだけ）',
+    unsafeIf: '断片の組み立てに対象ファイルの一部を混ぜたとき' },
+  { re: /^text\.(indexOf|lastIndexOf)\('/, cat: 'SELF',
+    why: '8e の関数定義スキャナ。読んでいるのは**このテストのソース**であって対象ファイルではない',
+    unsafeIf: '対象ファイルの中身をこのスキャナに渡すようになったとき' },
+  { re: /^PREV_OK\.indexOf\(/, cat: 'MEMBER',
+    why: '正規表現リテラルの直前に来てよい文字かの判定。自分で書いた定数の中を見るだけ',
+    unsafeIf: '対象ファイル由来の文字列を候補集合にしたとき' },
+  { re: /^r\.flags\.indexOf\(/, cat: 'SELF',
+    why: '8e が切り出した正規表現リテラルの**フラグ文字列**に `i` が在るか。対象ファイルではない',
+    unsafeIf: '対象ファイル由来の文字列をフラグとして渡すようになったとき' },
+  { re: /^src\.indexOf\(base\b/, cat: 'MEMBER',
+    why: 'uniqIn の衝突判定。位置は使わず「在るか」だけ',
+    unsafeIf: '返り値の位置を使うようになったとき（現在は `< 0` の判定のみ）' },
+  { re: /^lowerOf\(src\)\.indexOf\(/, cat: 'MEMBER',
+    why: 'uniqOnAttrIn の衝突判定（ASCII case-insensitive）。同上',
+    unsafeIf: '`lowerOf` を外して case-sensitive に戻したとき（`UPPER-ON-2` が落ちる）' },
+  { re: /^sp\.value\.indexOf\(dead\)/, cat: 'MEMBER',
+    why: '面から引いた属性値の中に死んだ関数名が在るか。位置は使わない',
+    unsafeIf: '返り値の位置で属性値を切り出すようになったとき' },
+  { re: /^RAW\.indexOf\(REG_SENTINEL\)/, cat: 'MEMBER',
+    why: '㉑ の anchor を対象と衝突しなくなるまで伸ばす判定。同上',
+    unsafeIf: '伸ばす代わりに見つけた位置を使うようになったとき' },
+  { re: /^(REG_SENTINEL|b)\.indexOf\(/, cat: 'MEMBER',
+    why: 'anchor と base の相互包含判定。対象ファイルを読まない',
+    unsafeIf: '対象ファイル由来の文字列を相手にしたとき' },
   { re: /^s2\.indexOf\((t\.marker|needle|dataOnAttr|id|dead|wire)\b/, cat: 'SENTINEL',
-    why: '面 × 変異の表。anchor は uniqIn 済みの marker / id / wire なので対象に先在しない' },
+    why: '面 × 変異の表。anchor は uniqIn 済みの marker / id / wire なので対象に先在しない',
+    unsafeIf: 'anchor を `uniqIn` を通さない固定文字列に戻したとき（`REGISTRY-1` / `LITERAL-1` が落ちる）' },
   { re: /^REGISTRY_WORLD\.indexOf\(p\.(sent|base)\b/, cat: 'SENTINEL',
-    why: '㉑ の先置き検算。anchor は REG_SENTINEL+i（対象にもどの base にも含まれないところまで伸ばす）' },
-  { re: /^out\.lastIndexOf\('<style'/, cat: 'FACE',
-    why: 'externalizeStyleBlocks。直後に face[open] === HTML_TAG を確かめて、違えば読み飛ばす' },
+    why: '㉑ の先置き検算。anchor は REG_SENTINEL+i（対象にもどの base にも含まれないところまで伸ばす）',
+    unsafeIf: 'anchor を伸ばすループを外し、base と綴りが衝突しうるようになったとき' },
   { re: /^src\.lastIndexOf\('function'/, cat: 'ADJACENT',
-    why: '解析結果の namePos から直前の function キーワードへ。間に別の function は構文上入りえない' },
+    why: '解析結果の namePos から直前の function キーワードへ。**タグの綴りではなく JS の予約語**',
+    unsafeIf: '`function` の綴りがコメント（`function /* … */ name(){}`）で割り込まれたとき。'
+      + '現対象の 580 関数にその形は無く、壊れても**注入位置がずれるだけで検出力は落ちない**（頻度低・未実測）' },
 ];
-// ★ 分類器本体。**8c の全数表と、下の敵役検算（受け入れ基準5 の空振り検出）が同じ関数を呼ぶ。**
+// ★ 分類器本体。**全数表と、下の敵役検算（空振り検出）が同じ関数を呼ぶ。**
 function classifyAnchor(s) {
   for (const e of ANCHOR_LEDGER) if (e.re.test(s.site)) return e;
   return null;
 }
 const anchorCatOf = (s) => (s.prose ? { cat: 'PROSE', why: 'コメント' } : classifyAnchor(s));
-{
-  const sites = anchorCallSites(SELF_SOURCE);
+// ★ 監査本体。**本番（このファイル）と、下の空振り検出（合成ソース）が同じ関数を通る。**
+//   ここを素通しに壊すと合成ソースの検算も緑にならない（001p で学んだ「検算は本番と同じ
+//   関数を呼ぶ」を、001r の新しい機械にも当てる）。
+function auditAnchors(text) {
+  const sites = anchorCallSites(text);
   const used = new Set();
   const tally = new Map([...ANCHOR_CATS.keys()].map((k) => [k, []]));
   const unclassified = [];
+  const mismatched = [];
+  const tagNeedles = [];
   for (const s of sites) {
     const hit = anchorCatOf(s);
     if (!hit) { unclassified.push(`L${s.line} ${s.site.slice(0, 48)}`); continue; }
     if (hit.re) used.add(hit);
     tally.get(hit.cat).push(s);
+    if (s.prose) continue;
+    const derived = originIsTarget(s.root, s.pos, 0, text);
+    // (a) 由来照合: 台詞と実際の由来が食い違ったら FAIL（変数名では騙せない）。
+    const want = ANCHOR_CATS.get(hit.cat).derived;
+    if (want !== null && want !== derived) {
+      mismatched.push(`L${s.line} ${hit.cat}（由来 期待 ${want} / 実測 ${derived}）${s.site.slice(0, 36)}`);
+    }
+    // (e) 13 例目の signature: **対象由来の受け手にタグの綴りを needle にしている**。
+    if (derived && s.tagNeedle) tagNeedles.push(`L${s.line} ${s.site.slice(0, 48)}`);
   }
+  return { sites, used, tally, unclassified, mismatched, tagNeedles };
+}
+{
+  const { sites, used, tally, unclassified, mismatched, tagNeedles } = auditAnchors(SELF_SOURCE);
   for (const [cat, list] of tally) {
     if (!list.length) continue;
     console.log(`  ${cat.padEnd(9)} ${String(list.length).padStart(2)} 件  ${ANCHOR_CATS.get(cat).why}`);
     console.log(`      ${list.map((s) => 'L' + s.line).join(' ')}`);
   }
-  console.log(`  合計 ${sites.length} 件 / 台帳 ${ANCHOR_LEDGER.length} 行（当たった ${used.size} 行）`
-    + ` / 未分類 ${unclassified.length} 件`);
+  console.log(`  合計 ${sites.length} 件（うちブラケット記法 ${sites.filter((s) => s.bracket).length} 件）`
+    + ` / 台帳 ${ANCHOR_LEDGER.length} 行（当たった ${used.size} 行） / 未分類 ${unclassified.length} 件`);
   ok(sites.length > 0 && [...tally.values()].some((l) => l.length > 0),
     `ANCHOR-0 走査が空振りしていない（呼び出し ${sites.length} 箇所を抽出）`);
   ok(unclassified.length === 0,
@@ -2522,27 +2827,292 @@ const anchorCatOf = (s) => (s.prose ? { cat: 'PROSE', why: 'コメント' } : cl
   ok(rotten.length === 0,
     `ANCHOR-3 台帳 ${ANCHOR_LEDGER.length} 行が全部 実在の箇所に当たっている`
     + `（当たらない行 ${rotten.length}: ${rotten.map((e) => e.cat).join(', ') || 'なし'}）`);
-  ok(ANCHOR_LEDGER.every((e) => e.why.length >= 10 && ANCHOR_CATS.has(e.cat)),
-    `ANCHOR-4 台帳の各行に「なぜ安全か」が書かれ、カテゴリが宣言済みの ${ANCHOR_CATS.size} 種のどれか`);
+  ok(ANCHOR_LEDGER.every((e) => e.why.length >= 10 && ANCHOR_CATS.has(e.cat))
+    && ANCHOR_LEDGER.every((e) => (e.unsafeIf || '').length >= 15),
+  `ANCHOR-4 台帳の各行に「なぜ安全か」**と「安全でなくなる条件」**が書かれ、`
+    + `カテゴリが宣言済みの ${ANCHOR_CATS.size} 種のどれか`);
+  // ★ (a) 変数名で騙す穴。台帳の台詞と由来解析が食い違ったら落ちる。
+  ok(mismatched.length === 0,
+    `ANCHOR-7 台帳の「対象ファイル由来か」が由来解析（8c）と一致している`
+    + `（食い違い ${mismatched.length} 件: ${mismatched.slice(0, 3).join(' / ') || 'なし'}）`);
+  // ★ (e) 13 例目の機械化。**台帳が safe と言っていても**落ちる。
+  ok(tagNeedles.length === 0,
+    `ANCHOR-6 対象ファイル由来の受け手に**タグの綴り**を needle にしている箇所が 0 件`
+    + `（実測 ${tagNeedles.length} 件: ${tagNeedles.slice(0, 3).join(' / ') || 'なし'}）`);
 
-  // ★ 空振り検出（受け入れ基準5）: **12 例目そのもの**を合成サイトとして分類器に当てる。
-  //   台帳に「何でも安全」の行が入ると、ここが落ちる。
-  const M = ANCHOR_METHODS;
-  const hostile = [
-    { site: `RAW.${M[0]}(/<body/)`, why: '12 例目: 生テキストの最初の <body>（面ゲート無し）' },
-    { site: `QUOTED_GT_SRC.${M[1]}('=">"', at)`, why: '12 例目: 生テキストで属性値の位置を引く' },
-    { site: `src.${M[2]}('</body>')`, why: '001j 高1: 生テキストで閉じタグの位置を引く' },
-    { site: `RAW.${M[1]}('>', k)`, why: '001p 高B: 生テキストでタグ終端を引く' },
-  ];
-  const leaked = hostile.filter((h) => classifyAnchor({ site: h.site, prose: false }));
+  // ★ 空振り検出（受け入れ基準6）: 敵役を**生成マトリクス**で作る（001r / cowork 中 (c)）。
+  //   固定リストだと、リストに無い形（ブラケット記法・別の綴り・大文字）がそのまま素通りする。
+  //   ソースに `.<メソッド>(` の綴りを残さないよう、**全部 `ANCHOR_METHODS` から組み立てる**。
+  const HOSTILE_RECV = ['RAW', 'src', 'out', 's2', 'fx'];
+  const closeBody = '\'</' + TAG_BODY + '>\'';
+  const openStyle = '\'<' + TAG_STYLE + '\'';
+  const HOSTILE_NEEDLE = [closeBody, closeBody.toUpperCase(), openStyle, openStyle.toUpperCase(),
+    '\'>\'', '/<' + TAG_BODY + '/'];
+  const hostile = [];
+  for (const r of HOSTILE_RECV) {
+    for (const meth of ANCHOR_METHODS) {
+      for (const n of HOSTILE_NEEDLE) {
+        hostile.push({ site: `${r}.${meth}(${n}, at)` });                  // ドット記法
+        hostile.push({ site: `${r}['${meth}'](${n}, at)` });               // ブラケット記法
+      }
+    }
+  }
+  const leaked = hostile.filter((h) => classifyAnchor(h));
   ok(leaked.length === 0,
-    `ANCHOR-5 敵役 ${hostile.length} 形が台帳のどの安全行にも当たらない＝RAW_POS へ落ちる`
-    + `（漏れ ${leaked.length} 件: ${leaked.map((h) => h.site).join(' / ') || 'なし'}）`);
+    `ANCHOR-5 敵役 ${hostile.length} 形（受け手 ${HOSTILE_RECV.length} × メソッド ${ANCHOR_METHODS.length}`
+    + ` × 綴り ${HOSTILE_NEEDLE.length} × 記法 2）が台帳のどの安全行にも当たらない`
+    + `（漏れ ${leaked.length} 件: ${leaked.slice(0, 3).map((h) => h.site).join(' / ') || 'なし'}）`);
+  // ★ 空振り検出（001r）: **cowork が実測した穴そのもの**を合成ソースにして、
+  //   本番と同じ `auditAnchors` に通す。ここを緑にするには
+  //   「由来解析」「由来照合」「タグ綴りの検出」「ブラケット記法の抽出」の 4 つが全部生きていないといけない。
+  const M1 = ANCHOR_METHODS[1];
+  const aliasSrc = 'const s = RAW;\n' + 's.' + M1 + '(' + closeBody + ');\n';
+  const aliasAudit = auditAnchors(aliasSrc);
+  ok(aliasAudit.mismatched.length === 1 && aliasAudit.tagNeedles.length === 1,
+    `ANCHOR-5-name 空振り検出: 合成ソース \`const s = RAW;\` ＋ 安全行の名前で書いた検索を`
+    + `本番と同じ監査に通すと、由来の食い違い ${aliasAudit.mismatched.length} 件 ＋ `
+    + `タグ綴り needle ${aliasAudit.tagNeedles.length} 件として捕まる`
+    + '（001q はここを素通しにして exit 0 だった）');
+  const cleanSrc = 'const s = \'<p>x</p>\';\n' + 's.' + M1 + '(' + closeBody + ');\n';
+  const cleanAudit = auditAnchors(cleanSrc);
+  ok(cleanAudit.mismatched.length === 0 && cleanAudit.tagNeedles.length === 0,
+    '対照 ANCHOR-5-name-pos: 同じ綴りでも合成物由来なら落ちない（締めすぎの逆向き）');
+  // ブラケット記法の抽出が生きていること（現在このファイルに実例が 0 件なので、合成で測る）。
+  const brSrc = 'const t = RAW;\n' + 't[\'' + M1 + '\'](' + closeBody + ');\n';
+  const brAudit = auditAnchors(brSrc);
+  ok(brAudit.sites.length === 1 && brAudit.sites[0].bracket === true,
+    `ANCHOR-5-bracket 空振り検出: ブラケット記法の呼び出しを 1 件として抽出できる`
+    + `（実測 ${brAudit.sites.length} 件・bracket=${brAudit.sites[0] ? brAudit.sites[0].bracket : 'なし'}）`);
+  ok(TAG_SPELL_RE.test(closeBody) && TAG_SPELL_RE.test(openStyle.toUpperCase())
+    && !TAG_SPELL_RE.test("'function'"),
+  'ANCHOR-6-mut 空振り検出: タグ綴りの判定が大文字も拾い、JS の予約語は拾わない');
   // 対照（締めすぎの逆向き）: 実在の安全サイトは安全カテゴリへ落ちる。
-  const benign = { site: `out.${M[2]}('<style', i)`, prose: false };
+  const benign = { site: 'src.' + ANCHOR_METHODS[2] + "('function', first)" };
   const bc = classifyAnchor(benign);
   ok(!!bc && ANCHOR_CATS.get(bc.cat).safe,
-    `ANCHOR-5-pos 対照: 面ゲート付きの実在サイトは安全カテゴリ（実測 ${bc ? bc.cat : '未分類'}）`);
+    `ANCHOR-5-pos 対照: 解析結果アンカーの実在サイトは安全カテゴリ（実測 ${bc ? bc.cat : '未分類'}）`);
+}
+
+// =============================================================================
+// 8e. **変換側の全数表**【001r ★ cowork「最重要」/ 受け入れ基準5】
+//    12 例目〜14 例目はすべて **assert 側ではなく「実ファイルを加工して世界を作る側」**で起きた。
+//    8d は assert の**呼び出し**を数えたが、**変換側は外延に入っていなかった**。
+//
+//    外延 = このファイルが定義する**関数の全部**（`function f(…)` と `const f = (…) =>`）。
+//    「加工する関数だけ」を人が選ぶと選び漏れが起きるので、**全部を数えて全部分類する**。
+//    未登録の関数は `XF_NONE`（加工しない）に落ちるが、**それが正しいことは人の申告では
+//    なく機械で裏を取る**（`XFORM-5`）——面ゲートの道具を呼ぶ関数は必ず台帳に載る。
+// =============================================================================
+console.log('=== 変換側の全数表（受け入れ基準5）===');
+// 正規表現リテラルを**文字クラスを尊重して**切り出す【001r / 13 例目の根本原因を字句で禁じる】。
+//   素朴な `/…[^/]*…/` では `[\s/>]` の中の `/` で打ち切られ、`STYLE_CLOSE_RE` のフラグを
+//   空だと誤読した（実装中に自分の検査が偽陽性を出して気づいた）。
+const TAG_IN_REGEX_RE = /<\s*\\?\/?[A-Za-z][A-Za-z0-9-]*/;
+function regexLiterals(text) {
+  const out = [];
+  const PREV_OK = '=(,:[!&|?{};+*%^~';
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '/') continue;
+    let j = i - 1;
+    while (j >= 0 && (text[j] === ' ' || text[j] === '\t')) j--;
+    if (j >= 0 && PREV_OK.indexOf(text[j]) < 0 && text[j] !== '\n') continue;
+    let k = i + 1;
+    let cls = false;
+    let body = '';
+    for (; k < text.length; k++) {
+      const c = text[k];
+      if (c === '\n') { body = ''; break; }
+      if (c === '\\') { body += c + (text[k + 1] || ''); k++; continue; }
+      if (c === '[') cls = true;
+      else if (c === ']') cls = false;
+      else if (c === '/' && !cls) break;
+      body += c;
+    }
+    if (!body || k >= text.length || text[k] !== '/') continue;
+    let f = k + 1;
+    while (f < text.length && /[a-z]/.test(text[f])) f++;
+    out.push({ body, flags: text.slice(k + 1, f) });
+    i = f - 1;
+  }
+  return out;
+}
+// 行コメントを外した本体（説明文の中の綴りを拾わないため）。
+const stripLineComments = (s) => s.replace(/^[ \t]*\/\/[^\n]*$/gm, '').replace(/[ \t]+\/\/[^\n]*$/gm, '');
+function functionDefs(text) {
+  const out = [];
+  const re = /^([ \t]*)(?:function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(|(?:const|let)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s*)?(?:function\s*\([^)]*\)|\([^)]*\)\s*=>|[A-Za-z_$][A-Za-z0-9_$]*\s*=>))/gm;
+  let lineNo = 1;
+  let scanned = 0;
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    const name = m[2] || m[3];
+    if (!name) continue;
+    const start = m.index;
+    while (scanned < start) { if (text[scanned] === '\n') lineNo++; scanned++; }
+    let end = text.indexOf('\n' + m[1] + '}', start);
+    if (m[3] || end < 0) {
+      const nl = text.indexOf('\n', start);
+      const tail = /\n[ \t]{0,2}(?:const |let |function |ok\(|\/\/|\{|\}|$)/g;
+      tail.lastIndex = nl + 1;
+      const t = tail.exec(text);
+      end = Math.max(nl, t ? t.index : nl);
+    } else {
+      end += 2 + m[1].length;
+    }
+    out.push({ name, line: lineNo, body: stripLineComments(text.slice(start, end)) });
+  }
+  return out;
+}
+const XFORM_CATS = new Map([
+  ['XF_FACE', { safe: true, why: '対象を加工し、位置は面分類から取る' }],
+  ['XF_SELF', { safe: true, why: '対象を加工するが、位置は自給 anchor / 解析結果 / 自分の断片から' }],
+  ['XF_SYNTH', { safe: true, why: '合成物だけを加工する（対象を読まない）' }],
+  ['XF_JUDGE', { safe: true, why: '対象を読むが加工しない（判定・集計・走査・表示）' }],
+  ['XF_NONE', { safe: true, why: '対象に触れない（ヘルパ・整形・分類）' }],
+  ['XF_RAWSPELL', { safe: false, why: '対象を生テキストの綴り・形に依存して加工する。**0 件でなければならない**' }],
+]);
+const XFORM_LEDGER = [
+  { names: ['insertHtml', 'insertStyleBlock', 'externalizeStyleBlocks', 'buildFakeBodyCommentWorld',
+    'buildNoBodyOpenWorld', 'buildQuotedGtWorld', 'buildBodyHandlerWorld', 'buildUpperStyleWorld',
+    'lastTagPos', 'tagEndPos', 'openTagPositions', 'afterTagName', 'onAttrFullSpans',
+    'migrateInlineHandlers'],
+  cat: 'XF_FACE',
+  why: '差し込み位置・切除範囲を `classifyFaces` の結果（面配列 / `openTagPositions` / `tagEndPos` /'
+      + ' `lastTagPos`）からだけ取る。タグ名は**名前として**渡し、綴りを needle にしない',
+  unsafeIf: 'タグの綴りのリテラルを検索に使ったとき（`XFORM-4` と `ANCHOR-6` が独立に落ちる）／'
+      + '面ゲートを外したとき（㉔ / ㉗ が落ちる）／`i` フラグを落としたとき（`XFORM-6`）' },
+  { names: ['insertTopLevelJs', 'insertTopLevelJsBefore', 'functionSpan', 'withStaticEscape',
+    'uniqIn', 'uniqOnAttrIn', 'registerProbe', 'probeVariant', 'recordInjection', 'a5BoundaryOp',
+    'valAt'],
+  cat: 'XF_SELF',
+  why: '位置は解析結果（`topFunctions` / `namePos`）か自給の一意名から取る。'
+      + '一意名は `uniqIn` が対象への非存在を保証する',
+  unsafeIf: '一意化を通さない固定文字列を anchor にしたとき（`REGISTRY-1` / `LITERAL-1` が落ちる）' },
+  { names: ['faceOf', 'stripAllDeadFunctions', 'extractHelper'],
+    cat: 'XF_SYNTH',
+    why: '合成文書 / 合成断片だけを組み立てる。対象ファイルの綴りを検索しない',
+    unsafeIf: '対象ファイル由来の値を引数に取るようになったとき（8c の由来解析で見える）' },
+  { names: ['gate', 'gateProblems', 'derivedOnPosDetail', 'anchorCallSites', 'functionDefs',
+    'probeTokensIn', 'inlineVictim', 'regexLiterals'],
+    cat: 'XF_JUDGE',
+    why: '対象（またはこのファイルのソース）を**読む**が、加工した結果を返さない。'
+      + '位置を使う箇所は 8d の全数表に個別に載っている',
+    unsafeIf: '対象を加工して返すようになったとき（そのとき `XF_FACE` / `XF_SELF` へ移す）' },
+];
+{
+  const defs = functionDefs(SELF_SOURCE);
+  const byName = new Map();
+  for (const e of XFORM_LEDGER) for (const n of e.names) byName.set(n, e);
+  const tally = new Map([...XFORM_CATS.keys()].map((k) => [k, []]));
+  const used = new Set();
+  const declared = new Set([...byName.keys()]);
+  const seen = new Set();
+  for (const d of defs) {
+    seen.add(d.name);
+    const e = byName.get(d.name);
+    if (e) used.add(e);
+    tally.get(e ? e.cat : 'XF_NONE').push(d);
+  }
+  const ghosts = [...declared].filter((n) => !seen.has(n));
+  // ★ 裏取り 1（13 例目の signature）: 台帳が safe と言う加工系の本体に**タグの綴りのリテラル**が無いこと。
+  const spellHits = [];
+  for (const cat of ['XF_FACE', 'XF_SELF']) {
+    for (const d of tally.get(cat)) {
+      const m = TAG_SPELL_RE.exec(d.body);
+      if (m) spellHits.push(`L${d.line} ${d.name} → ${m[0]}`);
+    }
+  }
+  // ★ 裏取り 2（未登録の加工関数が `XF_NONE` に紛れる穴）: **面ゲートの道具を呼ぶ関数は
+  //   必ず台帳に載っている**こと。人の申告ではなく呼び出しの事実で決める。
+  const FACE_TOOLS = /\b(classifyFaces|openTagPositions|tagEndPos|lastTagPos|onAttrFullSpans)\s*\(/;
+  const unlisted = tally.get('XF_NONE').filter((d) => FACE_TOOLS.test(d.body))
+    .map((d) => `L${d.line} ${d.name}`);
+  // ★ 裏取り 3（13 例目の根本原因）: **タグの綴りを含む正規表現リテラルは `i` フラグを持つ**こと。
+  //   lib はタグ名を小文字化して扱うので、`i` の無い綴りは必ず取りこぼす。
+  //   `i` の代わりに **両ケースを明示した文字クラス**（`[A-Za-z]` 等）でもよい。
+  //   要求しているのは「大文字綴りを取りこぼさないこと」であって `i` そのものではない。
+  const CASE_COVERING = /A-Za-z|a-zA-Z|A-Z.*a-z|a-z.*A-Z/;
+  // ★ 本番と空振り検出が**同じ述語**を通る（自前のコピーを持つと壊しても緑になる・001p の教訓）。
+  const regexDropsCase = (r) => TAG_IN_REGEX_RE.test(r.body)
+    && r.flags.indexOf('i') < 0 && !CASE_COVERING.test(r.body);
+  const noI = regexLiterals(stripLineComments(SELF_SOURCE)).filter(regexDropsCase)
+    .map((r) => '/' + r.body.slice(0, 32) + '/' + r.flags);
+  for (const [cat, list] of tally) {
+    if (!list.length) continue;
+    console.log(`  ${cat.padEnd(9)} ${String(list.length).padStart(3)} 件  ${XFORM_CATS.get(cat).why}`);
+    if (cat !== 'XF_NONE') console.log(`      ${list.map((d) => d.name).join(' ')}`);
+  }
+  console.log(`  合計 ${defs.length} 関数 / 台帳 ${XFORM_LEDGER.length} 行 ${declared.size} 名`
+    + ` / タグ綴りリテラル ${spellHits.length} 件 / 未登録の面ゲート利用 ${unlisted.length} 件`
+    + ` / i フラグ無しのタグ正規表現 ${noI.length} 件`);
+  ok(defs.length > 0 && tally.get('XF_FACE').length > 0,
+    `XFORM-0 走査が空振りしていない（関数定義 ${defs.length} 個・うち面ゲート系 ${tally.get('XF_FACE').length} 個）`);
+  ok(ghosts.length === 0,
+    `XFORM-1 台帳に書いた ${declared.size} 名が全部 実在の関数定義に当たっている`
+    + `（当たらない名前 ${ghosts.length}: ${ghosts.slice(0, 4).join(', ') || 'なし'}）`);
+  const dangerX = [...XFORM_CATS].filter(([, v]) => !v.safe).map(([k]) => k);
+  ok(dangerX.every((k) => tally.get(k).length === 0),
+    `XFORM-2 危険カテゴリ（${dangerX.join('/')}）が 0 件`);
+  ok(XFORM_LEDGER.every((e) => e.why.length >= 20 && (e.unsafeIf || '').length >= 15 && XFORM_CATS.has(e.cat)),
+    'XFORM-3 台帳の各行に「なぜ安全か」と「安全でなくなる条件」が書かれている');
+  ok(spellHits.length === 0,
+    `XFORM-4 加工系 ${tally.get('XF_FACE').length + tally.get('XF_SELF').length} 関数の本体に`
+    + `**タグの綴りのリテラル**が 0 件（実測 ${spellHits.length} 件: ${spellHits.slice(0, 3).join(' / ') || 'なし'}）`);
+  ok(unlisted.length === 0,
+    `XFORM-5 面ゲートの道具を呼ぶ関数が全部 台帳に載っている`
+    + `（未登録 ${unlisted.length} 件: ${unlisted.slice(0, 4).join(' / ') || 'なし'}）`
+    + '＝ 新しい加工関数を足しても黙って「加工しない」に落ちない');
+  ok(noI.length === 0,
+    `XFORM-6 タグの綴りを含む正規表現リテラルが全部 \`i\` フラグを持つ`
+    + `（欠け ${noI.length} 件: ${noI.slice(0, 3).join(' / ') || 'なし'}）`
+    + '＝ 13 例目（小文字綴りしか探さない）の根本原因を字句で禁じる');
+  // 空振り検出: 13 例目の本体・正規表現を合成して当てると落ちること（同じ規則を使う）。
+  const hostileBody = 'const open = out.lastIndex' + "Of('<" + TAG_STYLE + "', i);";
+  ok(TAG_SPELL_RE.test(hostileBody),
+    'XFORM-4-mut 空振り検出: 13 例目の本体（タグ綴りを needle にする形）は同じ規則で検出できる');
+  const benignBody = "return openTagPositions(src, TAG_STYLE, face)[0];";
+  ok(!TAG_SPELL_RE.test(benignBody),
+    'XFORM-4-pos 対照: タグ名を**名前として**渡す形は検出しない（締めすぎの逆向き）');
+  // ★ `XFORM-6` の空振り検出。`i` も両ケース文字クラスも無いタグ正規表現を合成して、
+  //   **本番と同じ述語**に当てる（001r で cowork の変異 r7 がここを素通ししたので足した）。
+  const dropCase = { body: '<\\/' + TAG_STYLE + '(?=[\\s/>])', flags: '' };
+  const keepFlag = { body: dropCase.body, flags: 'iy' };
+  const keepClass = { body: '<[A-Za-z]+', flags: 'g' };
+  const notATag = { body: '^[0-9]+$', flags: '' };
+  ok(regexDropsCase(dropCase) && !regexDropsCase(keepFlag) && !regexDropsCase(keepClass)
+    && !regexDropsCase(notATag),
+  'XFORM-6-mut 空振り検出: `i` も両ケース文字クラスも無いタグ正規表現だけを拾う'
+    + `（i あり ${!regexDropsCase(keepFlag)} / 文字クラス ${!regexDropsCase(keepClass)}`
+    + ` / タグでない ${!regexDropsCase(notATag)}）`);
+}
+
+// =============================================================================
+// 8f. **台帳が保証しない範囲**【001r ★ 受け入れ基準9】
+//    13 例目は `ANCHOR` 台帳で `FACE`（safe）に分類されたまま生きていた。
+//    ＝ **台帳は「分類したこと」しか保証せず、「その分類が正しいこと」は保証しない。**
+//    ここを黙っていると、次に読む人は「危険 0 件」を「危険が無い」と読む。明記する。
+// =============================================================================
+const LEDGER_LIMITS = new Map([
+  ['台帳の safe 判定そのもの', '`ANCHOR-2` / `XFORM-2` が言えるのは「危険カテゴリに**分類された**ものが'
+    + '0 件」だけで、**safe 行の分類が正しいかは保証しない**。13 例目は `FACE`（面を確かめている）が'
+    + '真でも「小文字綴りしか探していない」が抜けていたために生きていた。'
+    + 'そこで台帳の台詞と**独立に効く機械**を併置している —— `ANCHOR-6`（対象由来の受け手に'
+    + 'タグの綴りを needle にしない）/ `ANCHOR-7`（由来解析との照合）/ `XFORM-4`（加工系の本体に'
+    + 'タグの綴りのリテラルが無い）/ `XFORM-5`（面ゲートの道具を呼ぶ関数は必ず台帳に載る）/'
+    + ' `XFORM-6`（タグの正規表現は case を落とさない）。**それでも「safe 行の言い分が正しい」の'
+    + '全部を機械が代わりに確かめているわけではない**'],
+  ['由来解析の粗さ', '8c は最も近い束縛だけを見る近似で、スコープも制御フローも見ない。'
+    + '同名の別スコープや、条件分岐で入れ替わる値は取り違えうる。'
+    + '**倒れる向きは「対象由来と言い過ぎる」側**（＝ `SYNTH` を名乗れなくなる）なので、'
+    + '安全と言い張る方向には倒れないが、**正確ではない**'],
+  ['外延そのもの', '`ANCHOR` は 6 メソッドの呼び出し、`XFORM` はこのファイルの関数定義が外延。'
+    + '**外延の外**（`RegExp.prototype.exec` を直に使う / `split` で位置を出す / 対象を加工する'
+    + 'コードを関数の外に直接書く）は数えていない。数え漏らしは「未分類で落ちる」形にはならない'],
+]);
+{
+  for (const [k, why] of LEDGER_LIMITS) console.log(`  保証しない（台帳）: ${k} … ${why.slice(0, 50)}…`);
+  ok(LEDGER_LIMITS.size >= 3 && [...LEDGER_LIMITS.values()].every((w) => w.length >= 40),
+    `LEDGER-1 台帳が保証しない範囲 ${LEDGER_LIMITS.size} 件が理由つきで書かれている`
+    + '（「危険カテゴリ 0 件」を「危険が無い」と読ませない）');
 }
 
 console.log(`PHASE1-REACH-001: PASS=${pass} FAIL=${fail} WARN2=${V.warnings.length}`);
