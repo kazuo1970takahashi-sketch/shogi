@@ -22,7 +22,7 @@
 //   T-0d/ON_SPANS[0] → M4/M5 の static[0]・S19 の「実例が在る ⇒ …」の推論）。
 //   個別に塞ぐのをやめ、**残す assert を次の 4 種だけに機械的に限定する**:
 //
-//     C1  合成 fixture（`__reachFixture*` 注入）に対する判定
+//     C1  合成 fixture（合成 fixture の注入）に対する判定
 //     C2  「そのファイルを解析した結果」と allowlist / baseline の双方向照合（R0/R1/R4/R5/A5）
 //     C3  構造不変条件（面の完全性＝未分類 0・総延長＝ファイル長）
 //     C4  情報表示（census）— assert しない
@@ -175,7 +175,7 @@
 //   HTML コメントに 1 行書く」だけで CI が恒久赤**（実測 `PASS=307 FAIL=20` exit 1）。
 //   → marker 16 個 ＋ 残りの固定 probe 名（`__probeAttrName2` / `__probeBogusOn` /
 //     `__probeMultiline` / `__probeDeadTemplate` / `__probeAsiWire` / `__probeSelfCss` /
-//     `__opExtraFn` / `__opDupButton` / `__opMega*` / `__mig` / `data-reachmig` /
+//     `__opExtraFn` / `__opDupButton` / op 系の base 一式 / `__mig` / `data-reachmig` /
 //     `data-onclick` …）を全部 `uniqIn` / `uniqOnAttrIn` に通した。
 //
 //   ★ **そして「名指しのリストで潰す」こと自体をやめた。** 001k は形状を、001m は属性名を
@@ -198,7 +198,7 @@
 //   根拠として「接尾辞つきが安全なのは `uniqIn` の衝突判定が部分文字列だから」と書いたが、
 //   それは**`uniqIn` が生成した名前**についてしか言えない。照合側を生成規則に縛らなかったので
 //   **登録済みの短い名前を接頭辞に持つ任意の未登録トークンが素通り**していた。
-//   `__mig` が登録済みなので、`recordInjection('var __migUnexpectedProbe=1;')` を 1 行足す
+//   `__mig` が登録済みなので、`recordInjection('var <登録名>UnexpectedProbe=1;')` を 1 行足す
 //   だけで（**対象ファイルは無変更**）`REGISTRY-1` は鳴らず 334/0 exit 0 のまま（Codex P1 / 実測再現）。
 //   未登録なので `PROBE_BASES` にも入らず ㉑ の先置きにも含まれない＝**`REGISTRY-1` と ㉑ の
 //   対が、この経路では両方とも空振り**する。001n の変異検算 M1/M2/M3 は登録名と無関係な
@@ -206,7 +206,7 @@
 //   → **述語を「登録名を含む」から「登録名から規則的に導出できる」へ**（`probeCovered`）。
 //     完全一致のみ: `PROBE_NAMES` / `PROBE_DERIVED`（`probeVariant()` で宣言した接辞つき派生名）/
 //     「登録 base ＋ その base の生成規則が作りうる接尾辞」/ `HOSTILE`。
-//   → トークナイザも直した。`/__[A-Za-z0-9_$]+/`（`__` 始まり）では `Unexpected__mig` から
+//   → トークナイザも直した。`/__[A-Za-z0-9_$]+/`（`__` 始まり）では `Unexpected<登録名>` から
 //     `__mig` しか切り出せず、**登録名を接尾辞に持つ形は原理的に見えなかった**。識別子を丸ごと取る。
 //     その副作用で `"${name}` から `u0022${name}` を拾ってしまうので、
 //     エスケープ表記はトークン化の前に区切りへ潰す（`unescapeForTokens`）。
@@ -219,6 +219,32 @@
 //     d / e が無いと「全部 stray と言う」実装でも a〜c は緑になる（締めすぎ＝逆向きの恒久赤）。
 //     使う base は**レジストリから引く**（名指ししない）。しかも d / e は
 //     「生成規則の節**だけ**で通る base」を選ぶ（規則で作った綴りがたまたま登録名だと空振りするため）。
+//
+//   ── 001p で塞いだ穴（差し戻し15回目・2026-08-03）★ 5 件 ─────────────────────
+//   高A **`uniqOnAttrIn` の衝突判定が case-sensitive** だった。HTML の属性名は大文字小文字を
+//     区別せず lib も小文字化して扱うので、対象に `ONBOGUS` が 1 個入るだけで一意化が空振りし、
+//     `T[ATTR_VAL]-12` が恒久赤（全操作が同じ assert で落ちる）＝ 12 巡と同じ実害クラスの 8 例目。
+//     → 属性名の探索を ASCII case-insensitive（`hasCI`）へ。**㉒** を常設化（大文字表記 3 形）。
+//   高B ㉑ の先置き位置 `RAW.indexOf('>', …)` が**引用符を解釈しない**ので、開始タグの属性値に
+//     `>` があると値の中をタグ終端と誤認し `REGISTRY-FACE` が恒久赤＝「生テキストでタグ境界を
+//     決める」クラスの 9 例目。しかも**新設した ㉑ の中**にあった。
+//     → `tagEndPos(src, k, face)` を**面から取る**形に直して開始タグでも使う（閉じタグの
+//       `lastTagPos` と同じ道具）。**㉓** を常設化（属性値に `>` と `/>` が在る世界）。
+//   C-1 **001o が入れた「生成規則が作りうる接尾辞」の節そのものが穴**だった。`uniqIn` /
+//     `uniqOnAttrIn` は返した名前を必ず登録するので節は不要で、入れたせいで
+//     「理屈の上で生成されうる名前」が全部通り、**一度も生成されていない `<登録base>999`** が
+//     素通りした。→ 節ごと削除。8b の正例は**関数に実際に作らせた名前**を使う（綴りを組み立てない）。
+//   C-2 `unescapeForTokens` がエスケープを**空白へ潰して**いたので、`_` で綴った識別子は
+//     `__` を失ってトークンが 1 つも出ずに素通りした。→ **実際の文字へ復号**する。
+//   C-3 `PROBE_DERIVED.has(tok)` は集合への所属しか見ないので、**別の操作が既存の派生名を
+//     固定文字列で書き写す**と通る（`probeVariant()` を経由しないので `DERIVE-1` も鳴らない）。
+//     集合では区別できない——**書いた場所**を見るしかない。
+//     → **8a `LITERAL-1`: このファイルのソース自身を走査**し、probe らしき綴りは
+//       「レジストリの base / `HOSTILE` / `SOURCE_NOTE` に理由つきで書いた例外」だけに限る。
+//       生成名・派生名がソースに現れたら FAIL。説明したいときはプレースホルダで書く。
+//   ※ Codex 4 件目（lib が ES5 の非 ASCII 識別子を走査していない）は**見逃し**方向の別クラスで、
+//     `test/lib/reachability.js` を触ると移行オラクルの基準ごと動くので **001p には入れない**
+//     （作者が別 Issue を立てて #798 から参照する）。現対象の 580 関数は全部 ASCII 名で実害 0 件。
 //
 //   ── 常設から降ろした事実の明示（無言の降格にしない・中2 / 低）──────────────
 //   - **枯れ検査 `WI-1`〜`WI-6` / `WI-M*` は常設に無い**（battery 側にのみ在る）。
@@ -279,21 +305,20 @@ const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.log('  
 //   - `PROBE_DERIVED` … 登録名に `probeVariant()` で接辞を足した派生名（完全一致）。
 //                       接辞は固定だが**名前の側が一意化されている**ので、対象が将来その派生名を
 //                       持てば名前が連番へ逃げ、派生名も一緒に動く＝固定文字列ではない。
-//   - `PROBE_RULES` … base ごとの生成規則。`uniqIn` は 10 進数字列、`uniqOnAttrIn` は `x` の反復。
-//                     「登録 base ＋ その規則が作りうる接尾辞」の完全一致も許す（＝ d / e の誤検出防止）
 //   - `HOSTILE`     … 明示の例外（完全一致）
+//   - `PROBE_RULES` … base ごとの生成規則（`num` = `uniqIn` / `alpha` = `uniqOnAttrIn`）。
+//     **照合には使わない**（001p / Codex C-1）。8b で「その base をどちらの関数に渡せば
+//     連番の正例が作れるか」を引くためだけに持つ。
+//     001o は「登録 base ＋ その規則が作りうる接尾辞」も許していたが、**この節そのものが穴**
+//     だった: `uniqIn` / `uniqOnAttrIn` は**実際に返した名前を必ず `PROBE_NAMES` へ登録する**
+//     ので規則の節は不要で、入れたせいで「理屈の上で生成されうる名前」が全部通り、
+//     **一度も生成されていない `<登録base>999` が素通り**した。節ごと削除した。
 const PROBE_BASES = new Set();
 const PROBE_NAMES = new Set();
 const PROBE_DERIVED = new Set();
 const PROBE_RULES = new Map();   // base -> Set<'num' | 'alpha'>
 const INJECTED = [];
 const HOSTILE = new Set();
-// 生成規則が base の後ろに足しうる接尾辞（空＝衝突しなかった場合）。
-//   `uniqIn` は i を 2 から回すので `1` / `0` / 先頭 0 は作らない。そこまで写す。
-const RULE_SUFFIX = {
-  num: /^([2-9]|[1-9][0-9]+)?$/,
-  alpha: /^x*$/,
-};
 function registerProbe(base, name, rule) {
   PROBE_BASES.add(base);
   PROBE_NAMES.add(name);
@@ -521,15 +546,20 @@ function lastTagPos(src, tag, face) {
   for (let m = re.exec(src); m; m = re.exec(src)) if (f[m.index] === FACE.HTML_TAG) best = m.index;
   return best;
 }
-// 閉じタグの**終わり**（`>` の次）。lib（450-453）と同じく次の `>` まで。
-//   `</body >` のような表記でも `</body>` の 7 文字を決め打ちしないため。
-//   001l: 呼び出し元（`appendTailScript` / `upperCloseTags` / `dropCloseTags` /
-//   `appendTailComment`）は全部 #816 へ退避したので、**このファイルからの参照は 0**。
-//   作者指示で `lastTagPos` の対として残置。参照が無い＝壊しても常設は緑（#816 が戻す）。
-// eslint-disable-next-line no-unused-vars
-function tagEndPos(src, k) {
-  const gt = src.indexOf('>', k);
-  return gt < 0 ? src.length : gt + 1;
+// タグの**終わり**（`>` の次）。
+//   001p / Codex 高B: 生テキストの `indexOf('>', k)` は**引用符を解釈しない**ので、
+//   開始タグの属性値に `>` を書いた形（HTML として妥当）で属性値の中の `>` をタグ終端と誤認する。
+//   ㉑ の先置き位置がタグの内側に落ち、`REGISTRY-FACE` が恒久赤になった（実測 348/1 exit 1）。
+//   ＝「生テキスト検索でタグの境界を決める」クラスの 9 例目。**面分類から取る**:
+//   タグを閉じる `>` は `HTML_TAG` 面、属性値の中の `>` は `ATTR_VAL` 面なので、
+//   `k` 以降で**最初に現れる HTML_TAG 面の `>`** がそのタグの終端。
+//   開始タグ（㉑）でも閉じタグ（`lastTagPos` の対）でも同じ規則で使える。
+function tagEndPos(src, k, face) {
+  const f = face || classifyFaces(src);
+  for (let i = k; i < src.length; i++) {
+    if (src[i] === '>' && f[i] === FACE.HTML_TAG) return i + 1;
+  }
+  return src.length;
 }
 // HTML の末尾（本物の </body> の直前）へ差し込む。無ければ EOF へ追記する。
 //   001n: 対象へ入る断片は**全部 `INJECTED` に記録**する（受け入れ基準8 の照合元）。
@@ -691,11 +721,23 @@ function uniqIn(src, base) {
 //   **`uniqIn` の連番は使えない**: lib の `ON_ATTR_SHAPE_RE`（`/^on[a-z]+$/i`）は**英字のみ**
 //   なので `onbogus2` は「on* に見える」形にならず、R8 に出ないまま別の理由で落ちる。
 //   英字を足して伸ばす。候補は必ず伸び続けるので、src 長を超えた時点で必ず未使用になる。
+//   001p / Codex 高A: **衝突判定そのものが case-sensitive だった**。HTML の属性名は
+//   大文字小文字を区別せず lib も小文字化して扱うので、対象に `ONBOGUS` が 1 個入ると
+//   `src.indexOf('onbogus')` は見つけられず一意化が空振りし、`T[ATTR_VAL]-12` が
+//   「warn 増分に R8:onbogus が無い」で恒久赤（＝全操作のゲートが同じ assert で落ちる）。
+//   ＝ 12 巡と同じ実害クラスの 8 例目。**属性名の探索は ASCII case-insensitive** にする。
+//   （関数名 / 変数名 / id は JS も CSS セレクタも case-sensitive なので `uniqIn` は現状のまま。）
+const lowerCache = { src: null, lower: null };
+function lowerOf(src) {
+  if (lowerCache.src !== src) { lowerCache.src = src; lowerCache.lower = src.toLowerCase(); }
+  return lowerCache.lower;
+}
+const hasCI = (src, needle) => lowerOf(src).indexOf(needle.toLowerCase()) >= 0;
 function uniqOnAttrIn(src, base) {
-  if (src.indexOf(base) < 0) return registerProbe(base, base, 'alpha');
+  if (!hasCI(src, base)) return registerProbe(base, base, 'alpha');
   for (let i = 1; ; i++) {
     const cand = base + 'x'.repeat(i);
-    if (src.indexOf(cand) < 0) return registerProbe(base, cand, 'alpha');
+    if (!hasCI(src, cand)) return registerProbe(base, cand, 'alpha');
   }
 }
 
@@ -1139,7 +1181,10 @@ const faceOf = (code, needle) => {
   const s = '<script>' + code + '</script>';
   return FACE_NAME[classifyFaces(s)[s.indexOf(needle)]];
 };
-ok(faceOf('function __kl1(){ if(1){} /re/.test("x"); }', '/re/') === 'JS_CODE',
+// 001p: ここは自給自足の合成文書（対象へ注入しない）だが、**固定の probe 名をソースに
+//   書かない**規則（8a `LITERAL-1`）に合わせて関数名は `uniqIn` に作らせる。
+const KL_FN = uniqIn(RAW, '__klFaceProbe');
+ok(faceOf(`function ${KL_FN}(){ if(1){} /re/.test("x"); }`, '/re/') === 'JS_CODE',
   'KL-1 `}` 直後の文頭正規表現は除算扱い（正規表現としては読まない）');
 ok(faceOf('var a=1; <!-- x\nvar b=2;', '<!--') === 'JS_CODE',
   'KL-2 <script> 内の <!-- は JS コードとして読み続ける（escaped script data 未対応）');
@@ -1148,13 +1193,13 @@ ok(faceOf('var a=1; <!-- x\nvar b=2;', '<!--') === 'JS_CODE',
   ok(FACE_NAME[classifyFaces(s)[s.indexOf('&#40;')]] === 'ATTR_VAL_ON',
     'KL-3 on* 属性値の中の HTML エンティティは復号しない（実体参照で書かれた呼出は読めない）');
 }
-ok(faceOf("function __p(){ if(x) /['\"]/.test(s); var live=1; }", "/['") === 'JS_REGEX',
+ok(faceOf(`function ${KL_FN}(){ if(x) /['"]/.test(s); var live=1; }`, "/['") === 'JS_REGEX',
   'KL-5 制御構文の `)` 直後は正規表現として読む（001d は除算扱いだった）');
-ok(faceOf("function __p(){ if(x) /['\"]/.test(s); var live=1; }", 'var live') === 'JS_CODE',
+ok(faceOf(`function ${KL_FN}(){ if(x) /['"]/.test(s); var live=1; }`, 'var live') === 'JS_CODE',
   'KL-5b その結果、後続の生きたコードが文字列面に飲まれない');
-ok(faceOf('function __p(){ var z=f(a) /2/ g; }', '/2/') === 'JS_CODE',
+ok(faceOf(`function ${KL_FN}(){ var z=f(a) /2/ g; }`, '/2/') === 'JS_CODE',
   'KL-6 関数呼出の `)` 直後は除算のまま');
-ok(faceOf('function __p(){ var i=0; i++ /2/ g; }', '/2/') === 'JS_CODE',
+ok(faceOf(`function ${KL_FN}(){ var i=0; i++ /2/ g; }`, '/2/') === 'JS_CODE',
   'KL-7 `++` 直後は除算（001d は正規表現として読んでいた）');
 ok(ON_EVENT_ATTRS.has('onclick') && ON_EVENT_ATTRS.has('onpointerdown') && !ON_EVENT_ATTRS.has('onbogus'),
   `KL-8 on* は実イベント名の有限リスト（${ON_EVENT_ATTRS.size} 件）。未知の on* は R8 で報告する`);
@@ -1229,8 +1274,11 @@ for (const ev of ['onmousewheel', 'onpointerrawupdate', 'onfullscreenchange',
   'onwebkitfullscreenerror', 'onbeforeinstallprompt', 'onappinstalled']) {
   ok(ON_EVENT_ATTRS.has(ev), `EVENT[${ev}]-0 実イベント名としてリストに載っている`);
   // 小さな合成文書で走査そのものを確かめる（全 24 形を実ファイルで回すと遅いため）。
-  const doc = `<html><body><div ${ev}="__probeEvFn()">x</div>`
-    + '<script>function __probeEvFn(){ return 1; }<\/script></body></html>';
+  //   001p: 文書ごと合成なので実ファイルとは衝突しないが、**固定の probe 名をソースに
+  //   書かない**規則（8a `LITERAL-1`）に合わせて名前は `uniqIn` に作らせる。
+  const evFn = uniqIn(RAW, '__probeEvFn');
+  const doc = `<html><body><div ${ev}="${evFn}()">x</div>`
+    + `<script>function ${evFn}(){ return 1; }<\/script></body></html>`;
   const m = analyze(doc);
   ok(m.unreachableStatic.length === 0 && m.unknownOnAttrs.length === 0,
     `EVENT[${ev}]-1 ${ev}= で結線した生きた関数を到達不能と言わない（未知 on* 扱いにもしない）`);
@@ -1300,7 +1348,7 @@ function migrateInlineHandlers(src, a) {
   const migAttr = uniqIn(src, 'data-reachmig');
   const wires = [];
   spans.forEach((sp, k) => {
-    // 001o: 連番つきの変数名も**派生名として宣言する**（`__mig0` / `__mig1` は `uniqIn` が
+    // 001o: 連番つきの変数名も**派生名として宣言する**（`<登録名>0` / `<登録名>1` は `uniqIn` が
     //   作りうる接尾辞（2 以上の 10 進数）ではないので、規則では導出できない）。
     const v = probeVariant(migVar, String(k));
     wires.push(`  var ${v}=document.querySelector('[${migAttr}="${k}"]');\n`
@@ -1331,11 +1379,11 @@ const addOp = (op) => { OPS.push(op); };
 //   ⑱ が欠番なのは 001l で #816 へ移したから（⑳a〜⑳d も同じ）。⑳ は 001m で足した
 //   別operation（未知 on* 属性の在庫）で、退避した ⑳a〜⑳d とは無関係。
 const OP_KEYS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩',
-  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲', '⑳', '㉑'];
+  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲', '⑳', '㉑', '㉒', '㉓'];
 // そのうち**在庫（実ファイルの死にコード / インライン on* / トップレベル関数 / allowlist）
 // に一切依存しない**もの＝常に実行されなければならない操作。
 const OP_KEYS_ALWAYS = ['①', '②', '⑤', '⑧', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰',
-  '⑲', '⑳', '㉑'];
+  '⑲', '⑳', '㉑', '㉒', '㉓'];
 
 {
   const name = uniqIn(RAW, '__opNewButtonHandler');
@@ -1701,7 +1749,7 @@ ok(allowCount(NOKEY_ALLOW) === 0 && evaluate(ZERO_DEAD.a, NOKEY_ALLOW).errors.le
 // ⑲ では当たらない。退避経路そのものをキー欠落の allowlist で通しておく（001j 中2）。
 ok((() => {
   try {
-    const esc = withStaticEscape(NOKEY_ALLOW, '__probeEscapeOnKeylessAllow',
+    const esc = withStaticEscape(NOKEY_ALLOW, uniqIn(RAW, '__probeEscapeOnKeylessAllow'),
       'キー欠落の allowlist でも「1 行追記で退避」できることを実測するためのエントリ（#799 PHASE1-REACH-001j / 2026-08-02）。');
     return (esc.static || []).length === 1 && allowCount(esc) === 1
       && (NOKEY_ALLOW.static === undefined);
@@ -1747,6 +1795,72 @@ addOp({
     `UNKNOWN-ON-1 実ファイル側に未知の on* を 2 種類とも作れた（実測 [${names.join(', ')}]）`);
   ok(ua.unreachableStatic.length === A.unreachableStatic.length,
     `UNKNOWN-ON-2 未知 on* を足しても検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${ua.unreachableStatic.length}）`);
+}
+
+// --- ㉒ 未知 on* 属性が**大文字表記**で在る世界【001p / Codex 高A】-----------------
+//   HTML の属性名は大文字小文字を区別せず lib も小文字化して扱うのに、probe 側の
+//   一意化（`uniqOnAttrIn`）の衝突判定だけが case-sensitive だった。対象に `ONBOGUS` が
+//   1 個入ると `src.indexOf('onbogus')` が空振りして probe 名が固定のまま残り、
+//   `T[ATTR_VAL]-12` が「warn 増分に R8:onbogus が無い」で恒久赤（＝全操作が落ちる）。
+//   ⑳ は小文字だけの世界なので、この形は通していなかった。**大文字小文字の 3 形**を常設化する。
+//   属性名はわざと固定なので `HOSTILE` に登録する（綴りごと＝照合は完全一致なので）。
+for (const spell of ['ONBOGUS', 'OnBogus', 'oNbOgUs']) HOSTILE.add(spell);
+const UPPER_ON_SRC = insertHtml(RAW,
+  `<div id="${uniqIn(RAW, '__opUpperOnAttrHostA')}" ONBOGUS="return false">x</div>\n`
+  + `<div id="${uniqIn(RAW, '__opUpperOnAttrHostB')}" OnBogus="return false">y</div>\n`
+  + `<div id="${uniqIn(RAW, '__opUpperOnAttrHostC')}" oNbOgUs="return false">z</div>\n`);
+addOp({
+  key: '㉒',
+  label: '㉒実ファイルに未知の on* 属性が大文字表記で在る世界（ONBOGUS / OnBogus / oNbOgUs）',
+  src: UPPER_ON_SRC,
+  expectWarn: 'R8:onbogus',
+});
+{
+  const ua = analyze(UPPER_ON_SRC);
+  const names = ua.unknownOnAttrs.map((x) => x.name);
+  ok(names.indexOf('onbogus') >= 0,
+    `UPPER-ON-1 大文字表記でも lib は未知 on* として小文字で報告する（実測 [${[...new Set(names)].join(', ')}]）`);
+  ok(uniqOnAttrIn(UPPER_ON_SRC, 'onbogus') !== 'onbogus',
+    `UPPER-ON-2 大文字表記の在庫を見て probe 属性名が実際に逃げる（実測 "${uniqOnAttrIn(UPPER_ON_SRC, 'onbogus')}"）`);
+  ok(ua.unreachableStatic.length === A.unreachableStatic.length,
+    `UPPER-ON-3 大文字の未知 on* を足しても検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${ua.unreachableStatic.length}）`);
+}
+
+// --- ㉓ 開始タグの属性値に `>` が在る世界【001p / Codex 高B】----------------------
+//   ㉑ の先置き位置を求める処理が生テキストの `indexOf('>')` だったので、属性値の中の
+//   `>` をタグ終端と誤認し、先置きがタグの**内側**に落ちて `REGISTRY-FACE` が恒久赤になった。
+//   終端を面から取る（`tagEndPos`）ように直したうえで、その世界を常設化する。
+//   `/>` を含む形（`data-…="/>"`）も入れる（自己終端タグと紛らわしい綴り）。
+const QUOTED_GT_SRC = (() => {
+  const attr = uniqIn(RAW, 'data-reachquote');
+  const f = classifyFaces(RAW);
+  const re = /<body(?=[\s/>])/ig;
+  for (let m = re.exec(RAW); m; m = re.exec(RAW)) {
+    if (f[m.index] !== FACE.HTML_TAG) continue;
+    const at = m.index + '<body'.length;
+    const frag = ` ${attr}=">" ${probeVariant(attr, '-b')}="/>"`;
+    recordInjection(frag);
+    return RAW.slice(0, at) + frag + RAW.slice(at);
+  }
+  return RAW;
+})();
+addOp({
+  key: '㉓',
+  label: '㉓開始タグ（<body>）の属性値に > と /> が在る世界',
+  src: QUOTED_GT_SRC,
+});
+{
+  // その世界を**実際に作れたこと**＝ `>` が属性値の面に載っていること。
+  const qf = classifyFaces(QUOTED_GT_SRC);
+  const at = QUOTED_GT_SRC.search(/<body(?=[\s/>])/i);
+  const q = QUOTED_GT_SRC.indexOf('=">"', at);
+  ok(q >= 0 && FACE_NAME[qf[q + 2]] === 'ATTR_VAL',
+    `QUOTED-GT-1 属性値の中の > が ATTR_VAL 面に載っている（実測 ${q >= 0 ? FACE_NAME[qf[q + 2]] : '(見つからない)'}）`);
+  ok(tagEndPos(QUOTED_GT_SRC, at, qf) > q + 4,
+    'QUOTED-GT-2 タグ終端は属性値の中の > より後ろ（面から取れている）');
+  const qa = analyze(QUOTED_GT_SRC);
+  ok(qa.unreachableStatic.length === A.unreachableStatic.length,
+    `QUOTED-GT-3 属性を足しても検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${qa.unreachableStatic.length}）`);
 }
 
 // --- ㉑ probe 名が実ファイルに先在する世界【001n ★ / RP-009】------------------
@@ -1805,13 +1919,14 @@ const REGISTRY_WORLD = (() => {
   const frag = html.join('\n') + '\n<script>\n' + js.join('\n') + '\n<\/script>\n';
   // <body> の直後（面で門番）。ここは **probe の注入ではなく敵役の先置き**なので
   // `INJECTED`（受け入れ基準8 の照合元）には**記録しない**。
+  //   001p / Codex 高B: 開始タグの終端も **面から取る**（`tagEndPos`）。
+  //   生テキストの `indexOf('>')` は 属性値に `>` を含む開始タグで、値の中の `>` を掴む。
   const f = classifyFaces(RAW);
   const re = /<body(?=[\s/>])/ig;
   for (let m = re.exec(RAW); m; m = re.exec(RAW)) {
     if (f[m.index] !== FACE.HTML_TAG) continue;
-    const gt = RAW.indexOf('>', m.index);
-    if (gt < 0) break;
-    return RAW.slice(0, gt + 1) + '\n' + frag + RAW.slice(gt + 1);
+    const gt = tagEndPos(RAW, m.index, f);
+    return RAW.slice(0, gt) + '\n' + frag + RAW.slice(gt);
   }
   return RAW + frag;   // <body> が無いファイルでも成立させる（EOF 追記）
 })();
@@ -1882,38 +1997,38 @@ for (const op of OPS) {
 console.log(`  操作 ${OPS.length}/${OP_KEYS.length} 種を実測`
   + `（在庫が尽きて省いた操作: ${OMITTED.map((o) => `${o.key}（${o.why}）`).join(' / ') || 'なし'}）`
   + '。在庫ゼロ耐性は ⑩⑪⑬⑭ が、allowlist 0 件 / 1 件 / キー欠落耐性は ⑩⑭⑮⑯⑲ が、'
-  + '生テキスト anchor 耐性は ⑰ が、未知 on* 属性の在庫耐性は ⑳ が、'
+  + '生テキスト anchor 耐性は ⑰ が、未知 on* 属性の在庫耐性は ⑳（小文字）と ㉒（大文字表記）が、'
+  + '開始タグの属性値に > が在る耐性は ㉓ が、'
   + 'probe 名の先在耐性は ㉑ が常に担うので、ここでは在庫の存在を assert しない'
   + '（ハーネス自衛の形状バッテリ ⑱ / ⑳a〜⑳d は 001l で Issue #816 へ移した）');
 
 // =============================================================================
-// 8. レジストリの網の完全性【001n ★ 受け入れ基準8 / 001o ★ 完全一致化】
+// 8. レジストリの網の完全性【001n ★ 受け入れ基準8 / 001o〜001p ★ 完全一致化】
 //    「レジストリに載っていない固定文字列の probe が 0 個」を機械で示す。
 //    対象へ注入した断片（`INJECTED`）に現れる probe らしきトークンを全部拾い、
-//    それが `uniqIn` / `uniqOnAttrIn` を通った名前から**規則的に導出できる**ことを要求する。
-//    ここが空なら、㉑ の網に**漏れが無い**と言える。
+//    それが**実際に生成された名前**であることを要求する。ここが空なら ㉑ の網に漏れが無い。
 //
-//    ★ 述語（001o・1 文）:
-//      **トークンが「レジストリが生成した名前」「その名前に `probeVariant()` で宣言した接辞を
-//      足した派生名」「登録 base ＋ その base の生成規則が作りうる接尾辞」「`HOSTILE` に明示した
-//      敵役」のいずれかに**完全一致**すること。**
+//    ★ 述語（001p・1 文）:
+//      **トークンが「`uniqIn` / `uniqOnAttrIn` が実際に返した名前（`PROBE_NAMES`）」
+//      「その名前に `probeVariant()` で宣言した接辞を足した派生名（`PROBE_DERIVED`）」
+//      「`HOSTILE` に明示した敵役」のいずれかに**完全一致**すること。**
 //
-//    001n（部分文字列）で通っていた集合との差:
-//      旧 = 「登録名を**どこかに含む**任意の文字列」。＝登録名の前後に**未登録の任意の綴り**を
-//           足したものが全部通った（`__migUnexpectedProbe` / `Unexpected__mig` / `aa__migbb`）。
-//      新 = 上の 4 種の**完全一致**のみ。前後に足せる綴りは
-//           (1) 生成規則が作る接尾辞（数字列 / `x` の反復）と
-//           (2) `probeVariant()` で**その場で宣言した**接辞だけ。
-//      差分＝「登録名を含むが、規則でも宣言でも導出できない綴り」。これが 001n の穴。
-//      この差は空ではなく、実際にこのファイルの 16 種のトークン（`${name}Wire` /
-//      `data-${name}-legacy` / `${migVar}0` 等）が旧では黙って通っていた。001o はそれを
-//      `probeVariant()` の宣言へ置き換えた（＝通る数は同じでも「なぜ通るか」がコードに書いてある）。
+//    通る集合の変遷:
+//      001n = 「登録名を**どこかに含む**任意の文字列」（部分文字列）。登録名の前後に**未登録の
+//             任意の綴り**を足したものが全部通った（`<登録名>Unexpected` / `Unexpected<登録名>` /
+//             `aa<登録名>bb`）。← Codex P1
+//      001o = 完全一致に締めたが、「登録 base ＋ **生成規則が作りうる**接尾辞」という節を足した。
+//             その節が新しい穴で、**一度も生成されていない**`<登録base>999` が通った。← Codex C-1
+//      001p = **実際に生成された名前だけ**。生成関数が返り値を必ず登録するので、規則の節は不要。
+//      差分＝「生成されていないが理屈の上では作れる綴り」＋「登録名を含むだけの綴り」。
+//      なお 17 種の合成トークン（`<登録名>Wire` / `data-<登録名>-legacy` / `<登録名>0` 等）は
+//      `probeVariant()` の宣言に置き換えてある（＝通る数は同じでも「なぜ通るか」がコードに在る）。
 //
-//    ★ 述語が保証しない範囲（正直に書く）:
-//      `probeVariant()` の第 1 引数が「実行時に一意化された値」であることは `PROBE_NAMES` 所属で
-//      しか確かめていない。**登録名と同じ綴りの文字列リテラルを渡した場合、今日の世界では通る。**
-//      その綴りが登録名でなくなった世界（base が対象に先在して連番へ逃げた世界）では `DERIVE-1` が
-//      落ちるので、対象ファイル側の実害が出る世界では捕まる。
+//    ★ この述語が見られない範囲と、その受け皿:
+//      集合への所属しか見ないので、**別の場所が既存の名前を固定文字列で書き写す**形は
+//      区別できない（Codex C-3）。それは 8a の**ソース走査**（`LITERAL-1`）が受け持つ。
+//      また `probeVariant()` の第 1 引数が実行時の値であることは `PROBE_NAMES` 所属でしか
+//      確かめていないが、固定で書けばソース走査に出るので、8a と対で閉じる。
 //
 //    ここは OPS ループの**後**に置く（ループ中の gate() も注入するため）。
 // =============================================================================
@@ -1923,25 +2038,30 @@ console.log('=== probe 名レジストリの網（受け入れ基準8）===');
 //   (b) `data-…=` の属性名        … 目印として置く属性
 //   (c) `on…=` のうち実イベント名でないもの … 未知 on* の probe
 //
-//   001o: (a) は `/__[A-Za-z0-9_$]+/`（`__` 始まり）だった。それだと `Unexpected__mig` から
-//   `__mig` しか切り出せず、**登録名を接尾辞に持つ未登録名（形 b）が原理的に見えない**。
-//   識別子を**丸ごと**取る形へ変える（`__` を含む最長の識別子）。
+//   001o: (a) は `/__[A-Za-z0-9_$]+/`（アンダースコア 2 個始まり）だった。それだと
+//   `Unexpected<登録名>` から登録名の部分しか切り出せず、**登録名を接尾辞に持つ未登録名
+//   （形 b）が原理的に見えない**。識別子を**丸ごと**取る形へ変える（最長の識別子）。
 const PROBE_TOKEN_RES = [
   /[A-Za-z0-9_$]*__[A-Za-z0-9_$]*/g,
   /\bdata-[A-Za-z0-9_-]+(?=\s*=)/g,
   /\b(on[a-z]+)(?=\s*=)/gi,
 ];
-// `\xNN` / `\uXXXX` は識別子の一部ではないので、トークン化の前に区切りへ潰す。
-//   潰さないと `'"${name}()'` から `u0022${name}` という**存在しない綴り**を切り出して
-//   しまう（001o で識別子を丸ごと取る形にしたことで出た副作用。ESCAPE-1 の断片で実測）。
-//   ここで消えるのはエスケープ表記だけなので、`"__migUnexpected` のような未登録名は
-//   復号後もそのまま残って stray になる。
-const unescapeForTokens = (s) => s.replace(/\\u[0-9A-Fa-f]{4}|\\x[0-9A-Fa-f]{2}/g, ' ');
-function probeTokensIn(frags) {
+// `\xNN` / `\uXXXX` / `\u{…}` を**実際の文字へ復号**してからトークン化する。
+//   001o は空白へ**潰して**いた。それだと `\u005f` を並べて綴った識別子（復号後の名前は
+//   アンダースコア 2 個で始まる）がトークナイザには空白始まりでしか渡らず、
+//   `__` を含まないので**トークンが 1 つも出ずに素通り**する（001p / Codex C-2）。
+//   復号すれば本来の綴りが出て stray になる。`\x3c` → `<` / `"` → `"` は
+//   区切り文字そのものなので、001o が潰して回避したかった `u0022` 始まりの偽トークンも同時に消える。
+const unescapeForTokens = (s) => s.replace(/\\u\{([0-9A-Fa-f]{1,6})\}|\\u([0-9A-Fa-f]{4})|\\x([0-9A-Fa-f]{2})/g,
+  (_m, a, b, c) => {
+    const code = parseInt(a || b || c, 16);
+    return code > 0x10FFFF ? ' ' : String.fromCodePoint(code);
+  });
+function probeTokensIn(frags, res) {
   const found = new Map();          // token -> 最初に見つけた断片の抜粋
   for (const raw of frags) {
     const frag = unescapeForTokens(raw);
-    for (const re of PROBE_TOKEN_RES) {
+    for (const re of (res || PROBE_TOKEN_RES)) {
       re.lastIndex = 0;
       for (let m = re.exec(frag); m; m = re.exec(frag)) {
         const tok = m[0];
@@ -1953,16 +2073,11 @@ function probeTokensIn(frags) {
   }
   return found;
 }
-// ★ 述語本体。**完全一致**しか許さない。
-function probeCovered(tok) {
-  if (PROBE_NAMES.has(tok) || PROBE_DERIVED.has(tok) || HOSTILE.has(tok)) return true;
-  for (const [base, rules] of PROBE_RULES) {
-    if (tok.length < base.length || tok.slice(0, base.length) !== base) continue;
-    const suffix = tok.slice(base.length);
-    for (const rule of rules) if (RULE_SUFFIX[rule].test(suffix)) return true;
-  }
-  return false;
-}
+// ★ 述語本体。**実際に生成された名前**との完全一致しか許さない（001p / Codex C-1）。
+//   `uniqIn` / `uniqOnAttrIn` は返した名前を必ず `PROBE_NAMES` に登録し、
+//   `probeVariant()` は派生名を必ず `PROBE_DERIVED` に登録するので、
+//   「生成規則が作りうる綴り」を別途許す節は**不要かつ有害**（未生成の `<登録base>999` を通す）。
+const probeCovered = (tok) => PROBE_NAMES.has(tok) || PROBE_DERIVED.has(tok) || HOSTILE.has(tok);
 const strayProbeTokens = (frags) => [...probeTokensIn(frags).keys()].filter((t) => !probeCovered(t)).sort();
 {
   const found = probeTokensIn(INJECTED);
@@ -1985,47 +2100,113 @@ const strayProbeTokens = (frags) => [...probeTokensIn(frags).keys()].filter((t) 
 }
 
 // =============================================================================
-// 8b. 照合そのものの検出力【001o ★ 受け入れ基準2】
-//    001n は「機械に置き換えた」とだけ書いて、**その機械を破る形**を当てていなかった。
-//    規則ごとに、それを破る形／守る形を 1 つずつ当てて、`REGISTRY-1` の照合が
-//    落ちる・落ちないを常設で測る。対象ファイルは 1 バイトも触らない（合成断片だけ）。
+// 8a. **このテストのソース自身**に固定の probe 名が書かれていないこと【001p ★ C-3】
+//    `REGISTRY-1` は「注入断片に出たトークンが登録名の集合に居るか」しか見ないので、
+//    **別の操作が既存の派生名を固定文字列で書き写す**と素通りする
+//    （`insertTopLevelJs(..., 'var <登録済み派生名>=1;')`。`probeVariant()` を通らないので
+//    `DERIVE-1` も鳴らず、㉑ もその綴りを先置き世界で検証しない）。
+//    集合への所属では区別できない——**書いた場所**を見るしかない。
 //
-//    a〜c は「登録名を含むだけの未登録名」＝ 001n が素通ししていた形。
-//    d〜e は「生成規則が作りうる名前」＝ 締めすぎたときに逆向きの恒久赤になる形。
-//    d / e が無いと「全部 stray と言う」実装でも a〜c は緑になってしまう（＝空振り検出）。
+//    そこで**ソースを機械で読む**。このファイルに現れる probe らしき綴りは、
+//      (1) レジストリの **base**（＝`uniqIn` / `uniqOnAttrIn` に渡す素。ここは固定で正しい）
+//      (2) `HOSTILE`（わざと固定で置く敵役）
+//      (3) `SOURCE_NOTE` に**理由つきで**書いた例外
+//    のどれかでなければならない。**生成された名前・派生名がソースに現れたら FAIL**。
+//    コメントも対象に含める（レキサを持ち込まずに済むし、説明文でも綴りを書けば台帳に載る）。
+//    生成名を説明したいときは `<登録名>Wire` のような**プレースホルダで書く**。
 // =============================================================================
-console.log('=== 照合の検出力（受け入れ基準2: a〜e）===');
+const SELF_SOURCE = fs.readFileSync(__filename, 'utf8');
+const SELF_TOKEN_RES = [
+  /[A-Za-z0-9_$]*__[A-Za-z0-9_$]*/g,
+  /\bdata-[a-z][a-z0-9-]*/g,
+  /\bon[a-z]{3,}\b/g,
+];
+// base でも敵役でもないのにソースに書いてよい綴りと、その理由。
+const SOURCE_NOTE = new Map([
+  ['__probeRegistryAnchor', '㉑ の anchor。レジストリに載せると先置き対象になり自分の anchor を'
+    + '掴んで必ず取り違えるので、意図的に登録しない（001n）。実行時は衝突しなくなるまで `z` で伸びる'],
+  ['__dirname', 'Node の組み込み変数（probe ではない）'],
+  ['__filename', 'Node の組み込み変数（probe ではない）'],
+  ['__', 'トークナイザの説明でアンダースコア 2 個そのものを指す綴り。probe 名ではない'
+    + '（どの base よりも短く、対象に在っても一意化が働くだけ）'],
+]);
+// ★ ソースに書いてよい綴りの述語。**`LITERAL-1` と 8b の検算はこの同じ関数を使う**
+//   （8b が自前のコピーを持つと、この述語を壊しても検算が緑のままになる＝空振り。実測で確認した）。
+const sourceSpellOk = (t) => PROBE_BASES.has(t) || HOSTILE.has(t) || SOURCE_NOTE.has(t);
+const straySpellsIn = (text) => [...probeTokensIn([text], SELF_TOKEN_RES).keys()]
+  .filter((t) => !sourceSpellOk(t)).sort();
+{
+  const found = probeTokensIn([SELF_SOURCE], SELF_TOKEN_RES);
+  const stray = [...found.keys()].filter((t) => !sourceSpellOk(t)).sort();
+  console.log(`  ソース走査: probe らしき綴り ${found.size} 種 / base ${PROBE_BASES.size} 件`
+    + ` / 台帳の例外 ${SOURCE_NOTE.size} 件`);
+  ok(stray.length === 0,
+    `LITERAL-1 ソースに書かれた probe らしき綴りが全部「base / 敵役 / 台帳の例外」`
+    + `（はみ出し ${stray.length} 件: ${stray.slice(0, 8).join(', ') || 'なし'}）`);
+  // 空振り検出: 走査が実際に base を拾えていること（拾えていなければ上は無条件に緑）。
+  const hitBases = [...found.keys()].filter((t) => PROBE_BASES.has(t));
+  ok(hitBases.length >= PROBE_BASES.size,
+    `LITERAL-2 走査が全 base ${PROBE_BASES.size} 件をソース上で拾えている（実測 ${hitBases.length} 件）`);
+  ok([...SOURCE_NOTE.values()].every((why) => why.length >= 10),
+    `LITERAL-3 台帳の例外 ${SOURCE_NOTE.size} 件には全部 理由が付いている`);
+}
+
+// =============================================================================
+// 8b. 照合そのものの検出力【001o ★ / 001p ★ 受け入れ基準2・3・4】
+//    001n は「機械に置き換えた」とだけ書いて、**その機械を破る形**を当てていなかった。
+//    破る形／守る形を 1 つずつ当てて、照合が落ちる・落ちないを常設で測る。
+//    対象ファイルは 1 バイトも触らない（合成断片だけ）。
+//
+//    a〜c   登録名を接頭辞 / 接尾辞 / 途中に含む未登録名   → 落ちる（001n の穴）
+//    d〜e   **一意化関数が実際に返した**連番つきの名前     → 落ちない（締めすぎの逆向き恒久赤）
+//    f      一度も生成されていない規則接尾辞               → 落ちる（001o の穴・Codex C-1）
+//    g〜h   Unicode / hex エスケープで書いた識別子         → 落ちる（Codex C-2）
+//    i      登録済み派生名の固定再利用                     → `LITERAL-1` が落ちる（Codex C-3）
+//
+//    ★ d / e の正例は **規則から綴りを組み立てない**（001p 受け入れ基準4）。
+//      合成 source にわざと base を置いて `uniqIn` / `uniqOnAttrIn` を**実際に呼び**、
+//      関数が返した名前をそのまま使う。組み立てると「照合が許す綴り」を自分で作ることになり、
+//      規則の節を消した瞬間に正例まで崩れる（＝ 001o が f を素通しした原因そのもの）。
+// =============================================================================
+console.log('=== 照合の検出力（受け入れ基準2〜4: a〜i）===');
 {
   // 変異に使う base は**レジストリから引く**（固定文字列で名指ししない＝001n の教訓）。
-  //   `num`   … `uniqIn` の規則（10 進数字列）で登録された base のうち識別子の形のもの
-  //   `alpha` … `uniqOnAttrIn` の規則（`x` の反復）で登録された base のうち on* の形のもの
+  //   `num` = `uniqIn` に渡された base / `alpha` = `uniqOnAttrIn` に渡された base。
   const basesBy = (rule, shape) => [...PROBE_RULES]
     .filter(([b, rs]) => rs.has(rule) && shape.test(b)).map(([b]) => b).sort();
-  // d / e は「生成規則の節が仕事をしていること」を見る形なので、**その節でしか通らない** base を選ぶ。
-  //   規則で作った綴りがたまたま `PROBE_NAMES` / `PROBE_DERIVED` に直接載っていると（㉑ の世界で
-  //   実際に連番へ逃げた base はそうなる）、規則の節を丸ごと落としても d は緑のままで空振りする。
-  const registered = (t) => PROBE_NAMES.has(t) || PROBE_DERIVED.has(t);
-  const pick = (list, variant) => list.find((b) => !registered(variant(b))) || list[0];
-  const numBases = basesBy('num', /^__[A-Za-z0-9_$]+$/);
-  const alphaBases = basesBy('alpha', /^on[a-z]+$/);
-  const numBase = pick(numBases, (b) => `${b}2`);
-  const alphaBase = pick(alphaBases, (b) => `${b}xx`);
+  const numBase = basesBy('num', /^__[A-Za-z0-9_$]+$/)[0];
+  const alphaBase = basesBy('alpha', /^on[a-z]+$/)[0];
   ok(!!numBase && !!alphaBase,
     `REGISTRY-MUT-0 変異に使う base をレジストリから引けた（uniqIn 系 "${numBase}" / uniqOnAttrIn 系 "${alphaBase}"）`);
 
+  // 正例は**関数に作らせる**。base を含む合成 source を渡すので必ず連番側へ逃げる。
+  const numGen = uniqIn(`x ${numBase} x`, numBase);
+  const alphaGen = uniqOnAttrIn(`x ${alphaBase} x`, alphaBase);
+  ok(numGen !== numBase && alphaGen !== alphaBase,
+    `REGISTRY-MUT-GEN 正例は一意化関数が実際に返した名前（"${numGen}" / "${alphaGen}"＝素とは別物）`);
+
   const idFrag = (tok) => `var ${tok}=1;`;
   const onFrag = (tok) => `<div id="x" ${tok}="return false">y</div>`;
+  // 識別子を `\uXXXX` / `\xNN` で綴った断片（トークナイザが復号しないと `__` が消える）。
+  const escU = (tok) => `var ${tok.replace(/_/g, '\\u005f')}=1;`;
+  const escX = (tok) => `var ${tok.replace(/_/g, '\\x5f')}=1;`;
   const FORMS = [
-    { key: 'a', why: '登録済みの短い名前を**接頭辞**に持つ未登録名（Codex の再現形）',
+    { key: 'a', why: '登録済みの短い名前を**接頭辞**に持つ未登録名（001n の穴）',
       tok: `${numBase}UnexpectedProbe`, frag: idFrag, stray: true },
     { key: 'b', why: '登録済みの名前を**接尾辞**に持つ未登録名',
       tok: `Unexpected${numBase}`, frag: idFrag, stray: true },
     { key: 'c', why: '登録済みの名前を**途中に含む**未登録名',
       tok: `aa${numBase}bb`, frag: idFrag, stray: true },
-    { key: 'd', why: '`uniqIn` の規則で導出できる名前（誤検出しないこと）',
-      tok: `${numBase}2`, frag: idFrag, stray: false, viaRule: true },
-    { key: 'e', why: '`uniqOnAttrIn` の規則で導出できる名前（誤検出しないこと）',
-      tok: `${alphaBase}xx`, frag: onFrag, stray: false, viaRule: true },
+    { key: 'd', why: '`uniqIn` が実際に返した名前（誤検出しないこと）',
+      tok: numGen, frag: idFrag, stray: false },
+    { key: 'e', why: '`uniqOnAttrIn` が実際に返した名前（誤検出しないこと）',
+      tok: alphaGen, frag: onFrag, stray: false },
+    { key: 'f', why: '**一度も生成されていない**規則接尾辞つきの名前（001o の穴）',
+      tok: `${numBase}999`, frag: idFrag, stray: true },
+    { key: 'g', why: '`\\uXXXX` で綴った未登録の識別子',
+      tok: `${numBase}UnexpectedProbe`, frag: escU, stray: true },
+    { key: 'h', why: '`\\xNN` で綴った未登録の識別子',
+      tok: `${numBase}UnexpectedProbe`, frag: escX, stray: true },
   ];
   for (const f of FORMS) {
     const frag = f.frag(f.tok);
@@ -2034,18 +2215,23 @@ console.log('=== 照合の検出力（受け入れ基準2: a〜e）===');
     const seen = [...probeTokensIn([frag]).keys()];
     ok(seen.indexOf(f.tok) >= 0,
       `REGISTRY-MUT-${f.key}-tok 注入断片から "${f.tok}" を 1 トークンとして切り出せている（実測 [${seen.join(', ')}]）`);
-    // d / e は生成規則の節**だけ**で通っていること（直接登録されていたら空振り）。
-    if (f.viaRule) {
-      ok(!registered(f.tok),
-        `REGISTRY-MUT-${f.key}-rule "${f.tok}" は登録名でも派生名でもない＝生成規則の節だけが通している`);
-    }
     ok(f.stray ? got.indexOf(f.tok) >= 0 : got.length === 0,
       `REGISTRY-MUT-${f.key} ${f.why}: "${f.tok}" は ${f.stray ? 'REGISTRY-1 が落ちる' : 'REGISTRY-1 が落ちない'}`
       + `（実測 stray [${got.join(', ')}]）`);
   }
-  // この 5 形が「照合を全部 stray と言う／全部 covered と言う」実装では成立しないこと。
+  // 「照合を全部 stray と言う／全部 covered と言う」実装では成立しないこと。
   ok(FORMS.some((f) => f.stray) && FORMS.some((f) => !f.stray),
-    `REGISTRY-MUT-BAL 5 形が両向き（落ちる ${FORMS.filter((f) => f.stray).length} 形 / 落ちない ${FORMS.filter((f) => !f.stray).length} 形）`);
+    `REGISTRY-MUT-BAL ${FORMS.length} 形が両向き（落ちる ${FORMS.filter((f) => f.stray).length} 形 / 落ちない ${FORMS.filter((f) => !f.stray).length} 形）`);
+
+  // --- i: 登録済み派生名の固定再利用（Codex C-3）--------------------------------
+  //   集合への所属では区別できないので、**ソース走査**（8a）が受け持つ。
+  //   合成した「ソース」に既存の派生名を書き写した世界を作り、`LITERAL-1` の述語を当てる。
+  const anyDerived = [...PROBE_DERIVED].sort()[0];
+  ok(!!anyDerived, `REGISTRY-MUT-i0 検算に使う派生名をレジストリから引けた（"${anyDerived}"）`);
+  ok(straySpellsIn(`insertTopLevelJs(s, a, 'var ${anyDerived}=1;');`).indexOf(anyDerived) >= 0,
+    `REGISTRY-MUT-i 登録済み派生名 "${anyDerived}" をソースに固定で書くと LITERAL-1 が落ちる`);
+  ok(straySpellsIn(`const x = uniqIn(src, '${numBase}');`).length === 0,
+    `REGISTRY-MUT-i-pos 対照: base "${numBase}" を固定で書くのは正しい書き方なので落ちない`);
 }
 
 console.log(`PHASE1-REACH-001: PASS=${pass} FAIL=${fail} WARN2=${V.warnings.length}`);
