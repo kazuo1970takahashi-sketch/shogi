@@ -325,6 +325,27 @@
 //     （SCOPE-1 が毎回言う）。#798 の掃除は R0/R1 の検出力と allowlist 照合だけで回す
 //     （掃除は HTML の書き方を変えない）。
 //
+//   ── 001t で直した穴（Codex レビュー・P1 2件 / P2 3件・2026-08-04）──────────────
+//   P1-1 **face レクサの行コメント終端が LF のみ**だった。ES5 §7.3 の LineTerminator は
+//     LF / CR / U+2028 / U+2029 の 4 種で、CR-only 等を行終端に使うと次行の実コードまで
+//     JS_LINE_COMMENT 面に飲まれ、実際の呼出が消えて生きた関数が到達不能と報告される。
+//   P1-2 **文字列の行継続（§7.8.4）で `\` + CRLF の LF が残る**。旧実装の `j += 2` は
+//     `\` と CR しか消費せず、残った LF を文字列終端と誤認して以降の面分類が崩れる
+//     （関数が登録すらされない）。
+//   → lib 001t (k): 改行を扱う字句（行コメント終端 / 文字列の終端・行継続 / 正規表現の
+//     未終端打ち切り）を全部 4 種＋CRLF（1 単位）対応にし、**LT-*（LineTerminator ×
+//     使用箇所の全数表・合成 fixture）**を常設化した。この 2 件は単独では恒久赤に
+//     ならない（実害には「飲まれる / 崩れる範囲に必要な参照が在る」共起が要る）が、
+//     lib は検査1 の本体で、#798 の掃除（JS を削る作業）中に共起が成立しうるため直した。
+//   P2-1 **旧 S3 / S5 が恒真**（lib の定義からどんな入力でも成立＝検出力ゼロ）
+//     → census へ降格（gate() 内の注記）。OP-KEYS-1〜5 も空集合に対して恒真であることを
+//     台帳の注記に明示した（規律ゲートとして残す。扱いは #816 の整理対象）。
+//   P2-2 **REGISTRY-MUT-BAL が実測でなく宣言（FORMS[].stray）を見ていた**
+//     → 各形の実測（gotStray）から両極性を測る形へ。
+//   P2-3 **changelog 断片が 001s の方針転換を記録していなかった**
+//     → 「①〜㉗ と監視機械を #816 へ・常設は検出力＋allowlist 規律のみ・正当編集耐性は
+//     実測していない」を docs/changelog.d/20260801_phase1-reach-001.md に追記。
+//
 //   ── 常設から降ろした事実の明示（無言の降格にしない・中2 / 低）──────────────
 //   - **枯れ検査 `WI-1`〜`WI-6` / `WI-M*` は常設に無い**（battery 側にのみ在る）。
 //     したがって lib の `scanByCss('querySelector')` の 1 行を削っても**このファイルは
@@ -783,10 +804,14 @@ function gate(src, allow, emit, log) {
   const t0 = Date.now();
   const a = analyze(src);
   const elapsed = Date.now() - t0;
-  emit(a.functionDeclsAllDepths >= a.topLevelFunctionCount,
-    `S3 全深さの関数宣言数がトップレベル以上（${a.functionDeclsAllDepths} >= ${a.topLevelFunctionCount}）`);
-  emit(a.inlineHandlerCount === a.htmlHandlerCount + a.derivedHandlerCount,
-    'S5 インライン on*= の合計 = HTML 直書き ＋ 派生パス');
+  // 001t（Codex P2-1）: 旧 S3 / S5 の emit 2 本は **census へ降格**（削除）した。
+  //   どちらも lib の定義から恒真で、どんな入力でも落ちない＝検出力ゼロだった:
+  //   - S3 `functionDeclsAllDepths >= topLevelFunctionCount` … extractFunctions() は
+  //     トップレベル関数になり得る宣言を必ず先に allFunctionDecls へ入れ、
+  //     topLevelFunctionCount はその部分集合を名前で重複排除した件数（常に成立）。
+  //   - S5 `inlineHandlerCount === htmlHandlerCount + derivedHandlerCount` … lib が
+  //     inlineHandlerCount をこの 2 項の和として**定義**している（analyze() の返り値）。
+  //   数の実態は下の census 行に全部出ている（表示は assert しない＝ C4）。
   // C4 census（数の実態。増減しても FAIL にしない＝新規ボタン / 新規 script / 在庫ゼロで赤くならない）
   log(`  census: script=${a.scriptBlocks} 関数=${a.topLevelFunctionCount}(全深さ ${a.functionDeclsAllDepths})`
     + ` root=${a.rootNames.length} on*=${a.inlineHandlerCount}(HTML ${a.htmlHandlerCount}+派生 ${a.derivedHandlerCount})`
@@ -1266,6 +1291,46 @@ ok(ON_EVENT_ATTRS.has('onclick') && ON_EVENT_ATTRS.has('onpointerdown') && !ON_E
   }
 }
 
+// --- LT-*: 字句の行終端の全数表【001t / Codex P1-1・P1-2】-----------------------
+//   クラス（G4）: 「face レクサが ES5 の行終端表現を 1 種類（LF）しか見ていない」。
+//   外延 = LineTerminator 4 種（LF / CR / U+2028 / U+2029。§7.3）＋ CRLF（1 単位の
+//   LineTerminatorSequence）× 改行を扱う使用箇所の全部:
+//     行コメントの終端（P1-1）／文字列の行継続 \+改行（P1-2・§7.8.4）／文字列の終端
+//     ／正規表現リテラルの未終端打ち切り（生の改行・\+改行の両方。§7.8.5）
+//     ／テンプレートリテラル（反例＝生の改行も \+改行も中身が同じ面のままなので
+//     改行の種類に依存しない）。
+//   すべて自給自足の合成文書（対象へ注入しない）＝ C1。実害の向きは両方向:
+//   P1-1/P1-2 は「生きた関数を殺す」（コメント面に飲む / 関数登録が消える）、
+//   正規表現は「後続の実コードを文字列系の面に飲む」。修正（lib 001t (k)）を戻すと
+//   LF 以外の行が落ちることを実測済み（変異検算は 001t RESULT）。
+console.log('=== 字句の行終端の全数表（001t LT-*）===');
+{
+  const LT = [['LF', '\n'], ['CR', '\r'], ['CRLF', '\r\n'], ['LS', '\u2028'], ['PS', '\u2029']];
+  const doc = (js) => `<html><body><script>${js}<\/script></body></html>`;
+  const liveIn = (js, n) => !analyze(doc(js)).unreachableStatic.some((x) => x.name === n);
+  for (const [nm, t] of LT) {
+    // P1-1: 行コメントは 4 種のどれでも終端する（次行の実呼出がコメント面に飲まれない）。
+    ok(liveIn(`function ltA(){ return 1; } //c${t}ltA();`, 'ltA'),
+      `LT-CMT-${nm} 行コメントが ${nm} で終端し、次行の呼出が生きる`);
+    // P1-2: 文字列の行継続（\ + 改行）は 1 単位で消費される（CRLF で LF が残らない）。
+    const mCont = analyze(doc(`var s='x\\${t}y'; function ltB(){ return 1; } ltB();`));
+    ok(mCont.topLevelFunctionCount === 1 && !mCont.unreachableStatic.some((x) => x.name === 'ltB'),
+      `LT-STR-CONT-${nm} 文字列の行継続 \\+${nm} を 1 単位で読む（後続の関数が登録され、生きる）`);
+    // 文字列の終端: 生の LineTerminator は 4 種とも未終端として打ち切る（LF と同じ扱い）。
+    ok(liveIn(`function ltC(){ return 1; } var q='a${t}ltC();`, 'ltC'),
+      `LT-STR-TERM-${nm} 生の ${nm} が文字列を打ち切り、後続の呼出が文字列面に飲まれない`);
+    // 正規表現: 生の LineTerminator で未終端＝除算へフォールバックする。
+    ok(liveIn(`function ltE(){ return 1; } var r = /abc${t}ltE(); var q=2/;`, 'ltE'),
+      `LT-RE-${nm} 正規表現の走査が ${nm} で打ち切られ、後続の呼出が正規表現面に飲まれない`);
+    // 正規表現: \ の直後の LineTerminator も未終端（旧実装は LF ですら \ 越しに飲んでいた）。
+    ok(liveIn(`function ltF(){ return 1; } var r = /a\\${t}ltF(); var q=2/;`, 'ltF'),
+      `LT-RE-ESC-${nm} 正規表現の \\+${nm} も未終端として打ち切る`);
+    // テンプレートリテラル: 生の改行も \+改行も中身は JS_TMPL_STR のまま（改行に依存しない字句＝反例）。
+    ok(liveIn(`var t=\`a${t}b\\${t}c\`; function ltD(){ return 1; } ltD();`, 'ltD'),
+      `LT-TMPL-${nm} テンプレートリテラルは ${nm} でも面が崩れない`);
+  }
+}
+
 // --- イベント名リストの漏れは「生きた関数を殺す」向きに倒れる -------------------
 //   001e のリストには実在イベントが 6 件漏れていて、`onmousewheel` で結線した
 //   生きた関数が R1 error になった＝虚偽の allowlist 登録以外に緑化手段が無かった。
@@ -1330,6 +1395,12 @@ void omit;
 void addOp;
 
 // --- 台帳の照合（001i 中1）---------------------------------------------------
+//   001t 注記（cowork パネル / Codex P2-1 の同型）: OPS / OMITTED / OP_KEYS が全部
+//   空の現在、OP-KEYS-1〜5 は**空集合に対して恒真**（対象ファイルのどんな状態でも
+//   落ちない）。それでも残すのは、これが入力への検出ではなく**このファイルの編集への
+//   規律**だから: 操作を addOp / omit で戻すとき OP_KEYS へ宣言しなければ
+//   OP-KEYS-2/-3 が落ちる（宣言を黙って迂回できない）。空集合の間に検出力が無い事実は
+//   ok() 全数表（001t RESULT）に明記し、恒真のままの扱いは #816 の整理対象とする。
 {
   const keys = OPS.map((o) => o.key);
   const omittedKeys = OMITTED.map((o) => o.key);
@@ -1591,6 +1662,7 @@ console.log('=== 照合の検出力（受け入れ基準2〜4: a〜i）===');
     { key: 'h', why: '`\\xNN` で綴った未登録の識別子',
       tok: `${numBase}UnexpectedProbe`, frag: escX, stray: true },
   ];
+  const mutMeasured = [];   // 001t: 各形の**実測**極性（宣言 f.stray ではなく got から）
   for (const f of FORMS) {
     const frag = f.frag(f.tok);
     const got = strayProbeTokens([frag]);
@@ -1598,13 +1670,20 @@ console.log('=== 照合の検出力（受け入れ基準2〜4: a〜i）===');
     const seen = [...probeTokensIn([frag]).keys()];
     ok(seen.indexOf(f.tok) >= 0,
       `REGISTRY-MUT-${f.key}-tok 注入断片から "${f.tok}" を 1 トークンとして切り出せている（実測 [${seen.join(', ')}]）`);
-    ok(f.stray ? got.indexOf(f.tok) >= 0 : got.length === 0,
+    const gotStray = got.indexOf(f.tok) >= 0;
+    mutMeasured.push({ key: f.key, gotStray });
+    ok(f.stray ? gotStray : got.length === 0,
       `REGISTRY-MUT-${f.key} ${f.why}: "${f.tok}" は ${f.stray ? 'REGISTRY-1 が落ちる' : 'REGISTRY-1 が落ちない'}`
       + `（実測 stray [${got.join(', ')}]）`);
   }
   // 「照合を全部 stray と言う／全部 covered と言う」実装では成立しないこと。
-  ok(FORMS.some((f) => f.stray) && FORMS.some((f) => !f.stray),
-    `REGISTRY-MUT-BAL ${FORMS.length} 形が両向き（落ちる ${FORMS.filter((f) => f.stray).length} 形 / 落ちない ${FORMS.filter((f) => !f.stray).length} 形）`);
+  //   001t（Codex P2-2）: 判定は宣言（FORMS[].stray）ではなく**実測**（各形の gotStray）から
+  //   測る。旧実装は「直前で自分が書いた表に true と false が両方居るか」だけを見ていたので、
+  //   strayProbeTokens() が全トークンを許可 / 拒否する実装になっても常に PASS した（恒真）。
+  //   いまは全許可なら gotStray が全 false、全拒否なら全 true になり、この assert が落ちる。
+  ok(mutMeasured.some((r) => r.gotStray) && mutMeasured.some((r) => !r.gotStray),
+    `REGISTRY-MUT-BAL ${FORMS.length} 形の実測が両向き（実測で落ちた ${mutMeasured.filter((r) => r.gotStray).length} 形`
+    + ` / 落ちなかった ${mutMeasured.filter((r) => !r.gotStray).length} 形）`);
 
   // --- i: 登録済み派生名の固定再利用（Codex C-3）--------------------------------
   //   集合への所属では区別できないので、**ソース走査**（8a）が受け持つ。

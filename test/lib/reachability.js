@@ -149,6 +149,23 @@
 //       ＝ 打ち切りに起因して参照を落とすことは無い。
 //   (j) その報告（R7）の識別子を行番号から**所有関数名＋序数**へ変えた。行番号だと
 //       無関係な編集で行がずれるたびに差分照合が毒される。
+//
+// -----------------------------------------------------------------------------
+// PHASE1-REACH-001t（Codex P1-1 / P1-2・字句の行終端）
+// -----------------------------------------------------------------------------
+//   (k) ES5 §7.3 の LineTerminator は LF / CR / U+2028 / U+2029 の **4 種**だが、
+//       face レクサは改行を `'\n'` の 1 種でしか見ていなかった。
+//       - 行コメントの終端が LF のみ → CR-only / U+2028 / U+2029 の行終端だと
+//         **次行の実コードまで JS_LINE_COMMENT 面に飲まれる**（呼出が消え、生きた
+//         関数が到達不能と報告される）。
+//       - 文字列の行継続（§7.8.4 LineContinuation）で `\` + CRLF は 1 単位なのに
+//         `j += 2` が `\` と CR しか消費せず、**残った LF を文字列終端と誤認**して
+//         以降の面分類が崩れる（関数が登録すらされない）。
+//       改行を扱う字句（行コメント終端・文字列の終端 / 行継続・正規表現リテラルの
+//       未終端判定）はすべて isLineTerminator（4 種）で判定し、CRLF は 1 つの
+//       LineTerminatorSequence として読む。テンプレートリテラルは生の改行も
+//       `\` + 改行も中身が同じ JS_TMPL_STR 面のままなので**改行の種類に依存しない**
+//       （test_reachability_001.js の LT-* が 4 種 × 使用箇所の全組み合わせを固定する）。
 // =============================================================================
 
 // -----------------------------------------------------------------------------
@@ -218,6 +235,8 @@ const ACTIVATION_RE = /\.\s*(?:click|showPicker)\s*\(|\.\s*dispatchEvent\s*\(/;
 const IDSTART = /[A-Za-z_$]/;
 const IDCHAR = /[A-Za-z0-9_$]/;
 const WS = /\s/;
+// ES5 §7.3 LineTerminator の 4 種（001t）。CRLF は呼び出し側で 1 単位として扱う。
+const isLineTerminator = (ch) => ch === '\n' || ch === '\r' || ch === '\u2028' || ch === '\u2029';
 const ATTR_NAME_CH = /[a-zA-Z0-9:_-]/;
 
 // インラインイベントハンドラ属性の**有限リスト**（HTML 仕様の event handler content
@@ -504,8 +523,11 @@ function lexJs(ctx, start, end) {
 
     // ---- コードモード ----
     if (ch === '/' && src[i + 1] === '/') {
-      let j = src.indexOf('\n', i);
-      if (j === -1 || j > end) j = end;
+      // 行コメントの終端は LineTerminator 4 種のいずれか（001t: LF だけだと CR-only /
+      // U+2028 / U+2029 で次行の実コードまでコメント面に飲まれる）。終端文字自体は
+      // コメントに含めない（LF のときの従来挙動と同じ）。
+      let j = i + 2;
+      while (j < end && !isLineTerminator(src[j])) j++;
       ctx.set(i, j, FACE.JS_LINE_COMMENT);
       i = j;
       continue;
@@ -531,11 +553,17 @@ function lexJs(ctx, start, end) {
         let closed = false;
         while (j < end) {
           const c = src[j];
-          if (c === '\\') { j += 2; continue; }
+          if (c === '\\') {
+            // 正規表現の \ の後ろに LineTerminator は置けない（§7.8.5）＝未終端として
+            // 打ち切り、この / は除算へフォールバックする（001t）。
+            if (isLineTerminator(src[j + 1])) break;
+            j += 2;
+            continue;
+          }
           if (c === '[') inClass = true;
           else if (c === ']') inClass = false;
           else if (c === '/' && !inClass) { closed = true; break; }
-          else if (c === '\n') break;
+          else if (isLineTerminator(c)) break;
           j++;
         }
         if (closed) {
@@ -557,8 +585,16 @@ function lexJs(ctx, start, end) {
       const f = q === '"' ? FACE.JS_STR_DQ : FACE.JS_STR_SQ;
       let j = i + 1;
       while (j < end) {
-        if (src[j] === '\\') { j += 2; continue; }
-        if (src[j] === q || src[j] === '\n') break;
+        if (src[j] === '\\') {
+          // LineContinuation（§7.8.4）: `\` + CRLF は 3 文字で 1 単位（001t: 旧実装は
+          // `\` と CR しか消費せず、残った LF を文字列終端と誤認した）。
+          // `\` + LF / CR / U+2028 / U+2029 は従来どおり j += 2 で 1 単位になる。
+          j += (src[j + 1] === '\r' && src[j + 2] === '\n') ? 3 : 2;
+          continue;
+        }
+        // 文字列リテラルの中に生の LineTerminator は置けない（§7.8.4）＝ 4 種の
+        // どれでも未終端として打ち切る（001t: 旧実装は LF しか見ていなかった）。
+        if (src[j] === q || isLineTerminator(src[j])) break;
         j++;
       }
       const e = Math.min(j + (src[j] === q ? 1 : 0), end);
