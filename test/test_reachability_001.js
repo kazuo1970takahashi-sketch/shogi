@@ -192,6 +192,34 @@
 //     `REGISTRY-1` が「登録されていない固定名」を捕まえ、`㉑` が「登録されているが
 //     危ない名前」を捕まえる。**新しい probe を足せば、その瞬間から自動で網に入る。**
 //
+//   ── 001o で塞いだ穴（差し戻し14回目・2026-08-03）★ 機械そのものを攻撃する ─────
+//   001n が入れた `REGISTRY-1` の照合は**部分文字列一致**だった:
+//     `const covered = (tok) => names.some((n) => tok.indexOf(n) >= 0) || HOSTILE.has(tok);`
+//   根拠として「接尾辞つきが安全なのは `uniqIn` の衝突判定が部分文字列だから」と書いたが、
+//   それは**`uniqIn` が生成した名前**についてしか言えない。照合側を生成規則に縛らなかったので
+//   **登録済みの短い名前を接頭辞に持つ任意の未登録トークンが素通り**していた。
+//   `__mig` が登録済みなので、`recordInjection('var __migUnexpectedProbe=1;')` を 1 行足す
+//   だけで（**対象ファイルは無変更**）`REGISTRY-1` は鳴らず 334/0 exit 0 のまま（Codex P1 / 実測再現）。
+//   未登録なので `PROBE_BASES` にも入らず ㉑ の先置きにも含まれない＝**`REGISTRY-1` と ㉑ の
+//   対が、この経路では両方とも空振り**する。001n の変異検算 M1/M2/M3 は登録名と無関係な
+//   文字列を使っていたので、この形には当たっていなかった。
+//   → **述語を「登録名を含む」から「登録名から規則的に導出できる」へ**（`probeCovered`）。
+//     完全一致のみ: `PROBE_NAMES` / `PROBE_DERIVED`（`probeVariant()` で宣言した接辞つき派生名）/
+//     「登録 base ＋ その base の生成規則が作りうる接尾辞」/ `HOSTILE`。
+//   → トークナイザも直した。`/__[A-Za-z0-9_$]+/`（`__` 始まり）では `Unexpected__mig` から
+//     `__mig` しか切り出せず、**登録名を接尾辞に持つ形は原理的に見えなかった**。識別子を丸ごと取る。
+//     その副作用で `"${name}` から `u0022${name}` を拾ってしまうので、
+//     エスケープ表記はトークン化の前に区切りへ潰す（`unescapeForTokens`）。
+//
+//   ★ **そして「照合そのものの検出力」を常設化した**（8b・受け入れ基準2）。
+//     機械を入れたら、その機械を破る形を先に探す——001n はそれを怠った。
+//     規則ごとに、それを破る形／守る形を 1 つずつ当てる 5 形（a〜e）を常設に置く:
+//       a 登録名を接頭辞に持つ未登録名 / b 接尾辞に持つ / c 途中に含む … `REGISTRY-1` が落ちる
+//       d `uniqIn` の規則で導出できる名前 / e `uniqOnAttrIn` の規則で導出できる名前 … 落ちない
+//     d / e が無いと「全部 stray と言う」実装でも a〜c は緑になる（締めすぎ＝逆向きの恒久赤）。
+//     使う base は**レジストリから引く**（名指ししない）。しかも d / e は
+//     「生成規則の節**だけ**で通る base」を選ぶ（規則で作った綴りがたまたま登録名だと空振りするため）。
+//
 //   ── 常設から降ろした事実の明示（無言の降格にしない・中2 / 低）──────────────
 //   - **枯れ検査 `WI-1`〜`WI-6` / `WI-M*` は常設に無い**（battery 側にのみ在る）。
 //     したがって lib の `scanByCss('querySelector')` の 1 行を削っても**このファイルは
@@ -244,14 +272,45 @@ const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.log('  
 //   - `INJECTED`    … 対象へ注入した断片の全文。ここに現れる probe らしきトークンが
 //                     `PROBE_NAMES` に無ければ「レジストリを通っていない固定文字列」
 //   - `HOSTILE`     … probe ではなく**わざと固定**で置く敵役（⑳ の未知 on* / ㉑ の先置き名）
+//
+//   001o ★ 照合は**完全一致**でやる（Codex P1 / BLOCK。経緯は冒頭の 001o 節）。
+//   「登録名を**含む**」ではなく「登録名から**規則的に導出できる**」を述語にする:
+//   - `PROBE_NAMES` … 一意化の結果そのもの（完全一致）
+//   - `PROBE_DERIVED` … 登録名に `probeVariant()` で接辞を足した派生名（完全一致）。
+//                       接辞は固定だが**名前の側が一意化されている**ので、対象が将来その派生名を
+//                       持てば名前が連番へ逃げ、派生名も一緒に動く＝固定文字列ではない。
+//   - `PROBE_RULES` … base ごとの生成規則。`uniqIn` は 10 進数字列、`uniqOnAttrIn` は `x` の反復。
+//                     「登録 base ＋ その規則が作りうる接尾辞」の完全一致も許す（＝ d / e の誤検出防止）
+//   - `HOSTILE`     … 明示の例外（完全一致）
 const PROBE_BASES = new Set();
 const PROBE_NAMES = new Set();
+const PROBE_DERIVED = new Set();
+const PROBE_RULES = new Map();   // base -> Set<'num' | 'alpha'>
 const INJECTED = [];
 const HOSTILE = new Set();
-function registerProbe(base, name) {
+// 生成規則が base の後ろに足しうる接尾辞（空＝衝突しなかった場合）。
+//   `uniqIn` は i を 2 から回すので `1` / `0` / 先頭 0 は作らない。そこまで写す。
+const RULE_SUFFIX = {
+  num: /^([2-9]|[1-9][0-9]+)?$/,
+  alpha: /^x*$/,
+};
+function registerProbe(base, name, rule) {
   PROBE_BASES.add(base);
   PROBE_NAMES.add(name);
+  if (!PROBE_RULES.has(base)) PROBE_RULES.set(base, new Set());
+  PROBE_RULES.get(base).add(rule);
   return name;
+}
+// 登録名に接辞を足して作る派生名（`${name}Wire` / `data-${name}-legacy` など）。
+//   第 1 引数は**実行時に一意化された値**でなければならない。固定文字列を渡すと、その綴りが
+//   登録名でなくなった世界（＝ base が対象に先在して連番へ逃げた世界）で `DERIVE-1` が落ちる。
+//   ここを通さずに書いた合成トークンは `REGISTRY-1` が stray として拾う。
+const DERIVE_BAD = [];
+function probeVariant(name, suffix, prefix) {
+  const v = (prefix || '') + name + (suffix || '');
+  if (!PROBE_NAMES.has(name)) DERIVE_BAD.push(`${v}（素の "${name}" がレジストリ未登録）`);
+  PROBE_DERIVED.add(v);
+  return v;
 }
 const recordInjection = (frag) => { if (typeof frag === 'string' && frag) INJECTED.push(frag); };
 
@@ -621,8 +680,8 @@ const staticNames = (a) => a.unreachableStatic.map((x) => x.name).join(',');
 // 差分照合は「変異で新しく現れた違反」を見るので、注入する名前が**その src に既に
 // 存在していない**ことが前提になる。衝突したら連番を足して必ず未使用の名前にする。
 function uniqIn(src, base) {
-  if (src.indexOf(base) < 0) return registerProbe(base, base);
-  for (let i = 2; ; i++) if (src.indexOf(base + i) < 0) return registerProbe(base, base + i);
+  if (src.indexOf(base) < 0) return registerProbe(base, base, 'num');
+  for (let i = 2; ; i++) if (src.indexOf(base + i) < 0) return registerProbe(base, base + i, 'num');
 }
 // 同じことを**属性名**でやる（001m / Codex P1）。
 //   probe の属性名を固定文字列にしていたので、製品側に `onbogus` / `onbogusderived` が
@@ -633,10 +692,10 @@ function uniqIn(src, base) {
 //   なので `onbogus2` は「on* に見える」形にならず、R8 に出ないまま別の理由で落ちる。
 //   英字を足して伸ばす。候補は必ず伸び続けるので、src 長を超えた時点で必ず未使用になる。
 function uniqOnAttrIn(src, base) {
-  if (src.indexOf(base) < 0) return registerProbe(base, base);
+  if (src.indexOf(base) < 0) return registerProbe(base, base, 'alpha');
   for (let i = 1; ; i++) {
     const cand = base + 'x'.repeat(i);
-    if (src.indexOf(cand) < 0) return registerProbe(base, cand);
+    if (src.indexOf(cand) < 0) return registerProbe(base, cand, 'alpha');
   }
 }
 
@@ -805,8 +864,9 @@ function gate(src, allow, emit, log) {
   //   （JS_CODE）に当たって `T[面]-2` が恒久 FAIL になった。
   //   「移行の申し送りを HTML コメントに 1 行書く」だけで CI が赤くなる形（実測 307/20）。
   //   `apply` は `this.marker` を読むのでアロー関数ではなく**メソッド短縮形**で書く。
-  //   一意化した名前に接尾辞を足すのは安全: `uniqIn` の衝突判定は**部分文字列**なので、
-  //   対象が `<name>X` を持つなら `<name>` も持つ＝そこで既に連番へ逃げている。
+  //   一意化した名前に接尾辞を足すこと自体は安全（対象が `<name>X` を持つなら `<name>` も持つ＝
+  //   そこで既に連番へ逃げている）が、**その安全さは照合側の免罪符にはならない**（001o / Codex P1）。
+  //   接辞つきは必ず `probeVariant()` を通して派生名としてレジストリに載せる。
   const fp = (base) => uniqIn(fx, base);
   const dataOnAttr = uniqIn(fx, 'data-onclick');
   const faceTable = [
@@ -831,7 +891,7 @@ function gate(src, allow, emit, log) {
       face: 'ATTR_NAME', expect: '不変', bucket: 'markupRefs',
       label: '属性名に関数名を置く ＋ data-onclick="deadFn()"（3 版目の破れ方）',
       marker: fp('__faceProbeAttrName'), dataOn: dataOnAttr,
-      apply(s) { return insertHtml(s, `<span id="${this.marker}" data-${dead}-legacy="1" ${this.dataOn}="${dead}()">x</span>`, fxFace); },
+      apply(s) { return insertHtml(s, `<span id="${this.marker}" ${probeVariant(dead, '-legacy', 'data-')}="1" ${this.dataOn}="${dead}()">x</span>`, fxFace); },
     },
     {
       // ★ 2 版目が破られた面。
@@ -892,7 +952,7 @@ function gate(src, allow, emit, log) {
     {
       face: 'JS_TMPL_DELIM', expect: '到達化', spec: REVIVE,
       label: 'テンプレートの ${} の中で呼ぶ', marker: fp('__faceProbeHole'), probe: '${',
-      apply(s) { return insertTopLevelJs(s, fxa, `var ${this.marker}=\`\${window.${this.marker}X?${dead}():1}\`;`); },
+      apply(s) { return insertTopLevelJs(s, fxa, `var ${this.marker}=\`\${window.${probeVariant(this.marker, 'X')}?${dead}():1}\`;`); },
     },
   ];
 
@@ -1004,10 +1064,11 @@ function gate(src, allow, emit, log) {
   // --- C1 派生パス: JS 文字列の中の on*= は参照として数える（罠(7)）-------------
   {
     const name = uniqIn(fx, '__probeStrHandler');
+    const wire = probeVariant(name, 'Wire');
     const s2 = insertTopLevelJs(fx, fxa,
       `function ${name}(){ return 1; }\n`
-      + `function ${name}Wire(){ document.body.insertAdjacentHTML('beforeend','<button onclick="${name}()">go</button>'); }\n`
-      + `${name}Wire();`);
+      + `function ${wire}(){ document.body.insertAdjacentHTML('beforeend','<button onclick="${name}()">go</button>'); }\n`
+      + `${wire}();`);
     const m = analyze(s2);
     // 001e はここを `src.indexOf('beforeend')` の生テキストで anchor していた。**面から引く**。
     emit(derivedOnPos(m, s2, name) >= 0,
@@ -1108,7 +1169,8 @@ ok(ON_EVENT_ATTRS.has('onclick') && ON_EVENT_ATTRS.has('onpointerdown') && !ON_E
   const live = (m, n) => !m.unreachableStatic.some((x) => x.name === n);
 
   const n4 = uniqIn(RAW, '__klNestedScript');
-  ok(!live(mk(`function ${n4}(){ return 1; }\nfunction ${n4}W(){ document.body.insertAdjacentHTML('beforeend','<div><scr'+'ipt>document.write("<b onclick=\\'${n4}()\\'>x</b>")</scr'+'ipt></div>'); }\n${n4}W();`), n4),
+  const n4w = probeVariant(n4, 'W');
+  ok(!live(mk(`function ${n4}(){ return 1; }\nfunction ${n4w}(){ document.body.insertAdjacentHTML('beforeend','<div><scr'+'ipt>document.write("<b onclick=\\'${n4}()\\'>x</b>")</scr'+'ipt></div>'); }\n${n4w}();`), n4),
     'KL-4 JS 文字列の中の <script> の中の文字列に書いた on*= は拾わない（再帰は 1 段）');
 
   // KL-9: 連結オペランドの**中**で on*= が複数リテラルに分割されている形。
@@ -1118,23 +1180,29 @@ ok(ON_EVENT_ATTRS.has('onclick') && ON_EVENT_ATTRS.has('onpointerdown') && !ON_E
   //   リテラルは互いに結合されないまま単独ランになり、on*= が壊れた形でしか見えない。
   //   結果、生きた関数が R1 error で死ぬ。連結の外なら同じ分割で生存する＝深さ 2 の非対称。
   const n9 = uniqIn(RAW, '__klSplitInOperand');
-  const m9 = mk(`function ${n9}Esc(s){ return s; }\nfunction ${n9}(){ return 1; }\n`
-    + `function ${n9}W(){ document.body.innerHTML='<div>'+${n9}Esc('<b onclick="'+'${n9}()'+'">x</b>')+'</div>'; }\n${n9}W();`);
+  const n9e = probeVariant(n9, 'Esc');
+  const n9w = probeVariant(n9, 'W');
+  const m9 = mk(`function ${n9e}(s){ return s; }\nfunction ${n9}(){ return 1; }\n`
+    + `function ${n9w}(){ document.body.innerHTML='<div>'+${n9e}('<b onclick="'+'${n9}()'+'">x</b>')+'</div>'; }\n${n9w}();`);
   ok(!live(m9, n9),
     `KL-9 連結オペランドの中で on*= が複数リテラルに分割されていると参照を落とす（${n9} が R1 error 化する・lib 実バグ・#816 H-5 で修正）`);
   const c9a = uniqIn(RAW, '__klSplitCtrlInner');
-  ok(live(mk(`function ${c9a}Esc(s){ return s; }\nfunction ${c9a}(){ return 1; }\n`
-    + `function ${c9a}W(){ document.body.innerHTML='<div>'+${c9a}Esc('<b onclick="${c9a}()">x</b>')+'</div>'; }\n${c9a}W();`), c9a),
+  const c9aE = probeVariant(c9a, 'Esc');
+  const c9aW = probeVariant(c9a, 'W');
+  ok(live(mk(`function ${c9aE}(s){ return s; }\nfunction ${c9a}(){ return 1; }\n`
+    + `function ${c9aW}(){ document.body.innerHTML='<div>'+${c9aE}('<b onclick="${c9a}()">x</b>')+'</div>'; }\n${c9aW}();`), c9a),
   'KL-9b 対照: オペランドの中が単一リテラルなら拾える（001g の第2掃引で直った形）');
   const c9b = uniqIn(RAW, '__klSplitCtrlOuter');
+  const c9bW = probeVariant(c9b, 'W');
   ok(live(mk(`function ${c9b}(){ return 1; }\n`
-    + `function ${c9b}W(){ document.body.innerHTML='<b onclick="'+'${c9b}()'+'">x</b>'; }\n${c9b}W();`), c9b),
+    + `function ${c9bW}(){ document.body.innerHTML='<b onclick="'+'${c9b}()'+'">x</b>'; }\n${c9bW}();`), c9b),
   'KL-9c 対照: 同じ分割でも連結の外なら拾える（＝ KL-9 は深さ 2 の非対称）');
 
   // KL-10: 関数名そのものを変数にした動的ディスパッチ。静的走査の原理的な限界。
   const n10 = uniqIn(RAW, '__klDynamicDispatch');
+  const n10w = probeVariant(n10, 'W');
   const m10 = mk(`function ${n10}(){ return 1; }\n`
-    + `function ${n10}W(){ var n='${n10}'; document.body.innerHTML='<button onclick="'+n+'()">x</button>'; }\n${n10}W();`);
+    + `function ${n10w}(){ var n='${n10}'; document.body.innerHTML='<button onclick="'+n+'()">x</button>'; }\n${n10w}();`);
   ok(!live(m10, n10),
     `KL-10 'onclick="'+fnName+'()"（関数名の変数化＝動的ディスパッチ）は参照として拾えない（${n10} が R1 error 化する）`);
 
@@ -1170,10 +1238,11 @@ for (const ev of ['onmousewheel', 'onpointerrawupdate', 'onfullscreenchange',
 // \xNN / \uXXXX で書かれた結線も復号して拾う
 {
   const name = uniqIn(RAW, '__probeEscHandler');
+  const wire = probeVariant(name, 'Wire');
   ok(!analyze(insertTopLevelJs(RAW, A,
     `function ${name}(){ return 1; }\n`
-    + `function ${name}Wire(){ document.body.insertAdjacentHTML('beforeend','\\x3cbutton onclick=\\u0022${name}()\\u0022\\x3ego\\x3c/button\\x3e'); }\n`
-    + `${name}Wire();`)).unreachableStatic.some((x) => x.name === name),
+    + `function ${wire}(){ document.body.insertAdjacentHTML('beforeend','\\x3cbutton onclick=\\u0022${name}()\\u0022\\x3ego\\x3c/button\\x3e'); }\n`
+    + `${wire}();`)).unreachableStatic.some((x) => x.name === name),
   'ESCAPE-1 \\xNN / \\uXXXX で書かれた on*= 結線も復号して拾う（001d は落としていた）');
 }
 
@@ -1231,8 +1300,11 @@ function migrateInlineHandlers(src, a) {
   const migAttr = uniqIn(src, 'data-reachmig');
   const wires = [];
   spans.forEach((sp, k) => {
-    wires.push(`  var ${migVar}${k}=document.querySelector('[${migAttr}="${k}"]');\n`
-      + `  if(${migVar}${k}){ ${migVar}${k}.addEventListener('${sp.attrName.replace(/^on/i, '')}', function(event){ ${sp.value} }); }`);
+    // 001o: 連番つきの変数名も**派生名として宣言する**（`__mig0` / `__mig1` は `uniqIn` が
+    //   作りうる接尾辞（2 以上の 10 進数）ではないので、規則では導出できない）。
+    const v = probeVariant(migVar, String(k));
+    wires.push(`  var ${v}=document.querySelector('[${migAttr}="${k}"]');\n`
+      + `  if(${v}){ ${v}.addEventListener('${sp.attrName.replace(/^on/i, '')}', function(event){ ${sp.value} }); }`);
   });
   // 位置がずれないよう後ろから置換する。
   for (let k = spans.length - 1; k >= 0; k--) {
@@ -1815,41 +1887,88 @@ console.log(`  操作 ${OPS.length}/${OP_KEYS.length} 種を実測`
   + '（ハーネス自衛の形状バッテリ ⑱ / ⑳a〜⑳d は 001l で Issue #816 へ移した）');
 
 // =============================================================================
-// 8. レジストリの網の完全性【001n ★ 受け入れ基準8】
+// 8. レジストリの網の完全性【001n ★ 受け入れ基準8 / 001o ★ 完全一致化】
 //    「レジストリに載っていない固定文字列の probe が 0 個」を機械で示す。
 //    対象へ注入した断片（`INJECTED`）に現れる probe らしきトークンを全部拾い、
-//    それが `uniqIn` / `uniqOnAttrIn` を通った名前（`PROBE_NAMES`）から作られている
-//    ことを要求する。ここが空なら、㉑ の網に**漏れが無い**と言える。
+//    それが `uniqIn` / `uniqOnAttrIn` を通った名前から**規則的に導出できる**ことを要求する。
+//    ここが空なら、㉑ の網に**漏れが無い**と言える。
+//
+//    ★ 述語（001o・1 文）:
+//      **トークンが「レジストリが生成した名前」「その名前に `probeVariant()` で宣言した接辞を
+//      足した派生名」「登録 base ＋ その base の生成規則が作りうる接尾辞」「`HOSTILE` に明示した
+//      敵役」のいずれかに**完全一致**すること。**
+//
+//    001n（部分文字列）で通っていた集合との差:
+//      旧 = 「登録名を**どこかに含む**任意の文字列」。＝登録名の前後に**未登録の任意の綴り**を
+//           足したものが全部通った（`__migUnexpectedProbe` / `Unexpected__mig` / `aa__migbb`）。
+//      新 = 上の 4 種の**完全一致**のみ。前後に足せる綴りは
+//           (1) 生成規則が作る接尾辞（数字列 / `x` の反復）と
+//           (2) `probeVariant()` で**その場で宣言した**接辞だけ。
+//      差分＝「登録名を含むが、規則でも宣言でも導出できない綴り」。これが 001n の穴。
+//      この差は空ではなく、実際にこのファイルの 16 種のトークン（`${name}Wire` /
+//      `data-${name}-legacy` / `${migVar}0` 等）が旧では黙って通っていた。001o はそれを
+//      `probeVariant()` の宣言へ置き換えた（＝通る数は同じでも「なぜ通るか」がコードに書いてある）。
+//
+//    ★ 述語が保証しない範囲（正直に書く）:
+//      `probeVariant()` の第 1 引数が「実行時に一意化された値」であることは `PROBE_NAMES` 所属で
+//      しか確かめていない。**登録名と同じ綴りの文字列リテラルを渡した場合、今日の世界では通る。**
+//      その綴りが登録名でなくなった世界（base が対象に先在して連番へ逃げた世界）では `DERIVE-1` が
+//      落ちるので、対象ファイル側の実害が出る世界では捕まる。
 //
 //    ここは OPS ループの**後**に置く（ループ中の gate() も注入するため）。
 // =============================================================================
 console.log('=== probe 名レジストリの網（受け入れ基準8）===');
-{
-  // 注入断片から拾うトークン:
-  //   (a) `__` で始まる識別子      … probe の関数名 / 変数名 / id / class / タグ名
-  //   (b) `data-…=` の属性名        … 目印として置く属性
-  //   (c) `on…=` のうち実イベント名でないもの … 未知 on* の probe
-  const TOKEN_RE = /__[A-Za-z0-9_$]+/g;
-  const DATA_RE = /\bdata-[A-Za-z0-9_-]+(?=\s*=)/g;
-  const ON_RE = /\b(on[a-z]+)(?=\s*=)/gi;
+// 注入断片から拾うトークン:
+//   (a) `__` を含む識別子         … probe の関数名 / 変数名 / id / class / タグ名
+//   (b) `data-…=` の属性名        … 目印として置く属性
+//   (c) `on…=` のうち実イベント名でないもの … 未知 on* の probe
+//
+//   001o: (a) は `/__[A-Za-z0-9_$]+/`（`__` 始まり）だった。それだと `Unexpected__mig` から
+//   `__mig` しか切り出せず、**登録名を接尾辞に持つ未登録名（形 b）が原理的に見えない**。
+//   識別子を**丸ごと**取る形へ変える（`__` を含む最長の識別子）。
+const PROBE_TOKEN_RES = [
+  /[A-Za-z0-9_$]*__[A-Za-z0-9_$]*/g,
+  /\bdata-[A-Za-z0-9_-]+(?=\s*=)/g,
+  /\b(on[a-z]+)(?=\s*=)/gi,
+];
+// `\xNN` / `\uXXXX` は識別子の一部ではないので、トークン化の前に区切りへ潰す。
+//   潰さないと `'"${name}()'` から `u0022${name}` という**存在しない綴り**を切り出して
+//   しまう（001o で識別子を丸ごと取る形にしたことで出た副作用。ESCAPE-1 の断片で実測）。
+//   ここで消えるのはエスケープ表記だけなので、`"__migUnexpected` のような未登録名は
+//   復号後もそのまま残って stray になる。
+const unescapeForTokens = (s) => s.replace(/\\u[0-9A-Fa-f]{4}|\\x[0-9A-Fa-f]{2}/g, ' ');
+function probeTokensIn(frags) {
   const found = new Map();          // token -> 最初に見つけた断片の抜粋
-  for (const frag of INJECTED) {
-    for (const re of [TOKEN_RE, DATA_RE, ON_RE]) {
+  for (const raw of frags) {
+    const frag = unescapeForTokens(raw);
+    for (const re of PROBE_TOKEN_RES) {
       re.lastIndex = 0;
       for (let m = re.exec(frag); m; m = re.exec(frag)) {
         const tok = m[0];
-        if (re === ON_RE && ON_EVENT_ATTRS.has(tok.toLowerCase())) continue;  // 実イベント名は probe ではない
+        // 実イベント名は probe ではない（`onclick=` 等）。
+        if (/^on/i.test(tok) && ON_EVENT_ATTRS.has(tok.toLowerCase())) continue;
         if (!found.has(tok)) found.set(tok, frag.slice(Math.max(0, m.index - 20), m.index + 40));
       }
     }
   }
-  // 判定: 登録済みの名前が部分文字列として含まれていれば OK。
-  //   接尾辞つき（`<name>X` / `<name>0`）が安全なのは `uniqIn` の衝突判定が
-  //   **部分文字列**だから（対象が `<name>X` を持つなら `<name>` も持つ＝連番へ逃げている）。
-  const names = [...PROBE_NAMES];
-  const covered = (tok) => names.some((n) => tok.indexOf(n) >= 0) || HOSTILE.has(tok);
-  const stray = [...found.keys()].filter((t) => !covered(t)).sort();
+  return found;
+}
+// ★ 述語本体。**完全一致**しか許さない。
+function probeCovered(tok) {
+  if (PROBE_NAMES.has(tok) || PROBE_DERIVED.has(tok) || HOSTILE.has(tok)) return true;
+  for (const [base, rules] of PROBE_RULES) {
+    if (tok.length < base.length || tok.slice(0, base.length) !== base) continue;
+    const suffix = tok.slice(base.length);
+    for (const rule of rules) if (RULE_SUFFIX[rule].test(suffix)) return true;
+  }
+  return false;
+}
+const strayProbeTokens = (frags) => [...probeTokensIn(frags).keys()].filter((t) => !probeCovered(t)).sort();
+{
+  const found = probeTokensIn(INJECTED);
+  const stray = [...found.keys()].filter((t) => !probeCovered(t)).sort();
   console.log(`  レジストリ: base ${PROBE_BASES.size} 件 / 一意化後の名前 ${PROBE_NAMES.size} 件`
+    + ` / 接辞つき派生名 ${PROBE_DERIVED.size} 件`
     + ` / 敵役として固定した名前 ${HOSTILE.size} 件（${[...HOSTILE].join(', ')}）`);
   console.log(`  注入断片 ${INJECTED.length} 本 / そこに現れた probe らしきトークン ${found.size} 種`);
   ok(stray.length === 0,
@@ -1861,6 +1980,72 @@ console.log('=== probe 名レジストリの網（受け入れ基準8）===');
     + `（増分 ${grew.length} 件: ${grew.slice(0, 6).join(', ') || 'なし'}）`);
   ok(found.size > 0 && PROBE_NAMES.size > 0,
     `REGISTRY-4 照合そのものが空振りしていない（トークン ${found.size} 種 × 登録名 ${PROBE_NAMES.size} 件）`);
+  ok(DERIVE_BAD.length === 0,
+    `DERIVE-1 派生名の素が全部レジストリの生成物（未登録の素 ${DERIVE_BAD.length} 件: ${DERIVE_BAD.slice(0, 4).join(' / ') || 'なし'}）`);
+}
+
+// =============================================================================
+// 8b. 照合そのものの検出力【001o ★ 受け入れ基準2】
+//    001n は「機械に置き換えた」とだけ書いて、**その機械を破る形**を当てていなかった。
+//    規則ごとに、それを破る形／守る形を 1 つずつ当てて、`REGISTRY-1` の照合が
+//    落ちる・落ちないを常設で測る。対象ファイルは 1 バイトも触らない（合成断片だけ）。
+//
+//    a〜c は「登録名を含むだけの未登録名」＝ 001n が素通ししていた形。
+//    d〜e は「生成規則が作りうる名前」＝ 締めすぎたときに逆向きの恒久赤になる形。
+//    d / e が無いと「全部 stray と言う」実装でも a〜c は緑になってしまう（＝空振り検出）。
+// =============================================================================
+console.log('=== 照合の検出力（受け入れ基準2: a〜e）===');
+{
+  // 変異に使う base は**レジストリから引く**（固定文字列で名指ししない＝001n の教訓）。
+  //   `num`   … `uniqIn` の規則（10 進数字列）で登録された base のうち識別子の形のもの
+  //   `alpha` … `uniqOnAttrIn` の規則（`x` の反復）で登録された base のうち on* の形のもの
+  const basesBy = (rule, shape) => [...PROBE_RULES]
+    .filter(([b, rs]) => rs.has(rule) && shape.test(b)).map(([b]) => b).sort();
+  // d / e は「生成規則の節が仕事をしていること」を見る形なので、**その節でしか通らない** base を選ぶ。
+  //   規則で作った綴りがたまたま `PROBE_NAMES` / `PROBE_DERIVED` に直接載っていると（㉑ の世界で
+  //   実際に連番へ逃げた base はそうなる）、規則の節を丸ごと落としても d は緑のままで空振りする。
+  const registered = (t) => PROBE_NAMES.has(t) || PROBE_DERIVED.has(t);
+  const pick = (list, variant) => list.find((b) => !registered(variant(b))) || list[0];
+  const numBases = basesBy('num', /^__[A-Za-z0-9_$]+$/);
+  const alphaBases = basesBy('alpha', /^on[a-z]+$/);
+  const numBase = pick(numBases, (b) => `${b}2`);
+  const alphaBase = pick(alphaBases, (b) => `${b}xx`);
+  ok(!!numBase && !!alphaBase,
+    `REGISTRY-MUT-0 変異に使う base をレジストリから引けた（uniqIn 系 "${numBase}" / uniqOnAttrIn 系 "${alphaBase}"）`);
+
+  const idFrag = (tok) => `var ${tok}=1;`;
+  const onFrag = (tok) => `<div id="x" ${tok}="return false">y</div>`;
+  const FORMS = [
+    { key: 'a', why: '登録済みの短い名前を**接頭辞**に持つ未登録名（Codex の再現形）',
+      tok: `${numBase}UnexpectedProbe`, frag: idFrag, stray: true },
+    { key: 'b', why: '登録済みの名前を**接尾辞**に持つ未登録名',
+      tok: `Unexpected${numBase}`, frag: idFrag, stray: true },
+    { key: 'c', why: '登録済みの名前を**途中に含む**未登録名',
+      tok: `aa${numBase}bb`, frag: idFrag, stray: true },
+    { key: 'd', why: '`uniqIn` の規則で導出できる名前（誤検出しないこと）',
+      tok: `${numBase}2`, frag: idFrag, stray: false, viaRule: true },
+    { key: 'e', why: '`uniqOnAttrIn` の規則で導出できる名前（誤検出しないこと）',
+      tok: `${alphaBase}xx`, frag: onFrag, stray: false, viaRule: true },
+  ];
+  for (const f of FORMS) {
+    const frag = f.frag(f.tok);
+    const got = strayProbeTokens([frag]);
+    // トークナイザがそもそもその形を切り出せていること（切り出せないと「落ちない」が空振りになる）。
+    const seen = [...probeTokensIn([frag]).keys()];
+    ok(seen.indexOf(f.tok) >= 0,
+      `REGISTRY-MUT-${f.key}-tok 注入断片から "${f.tok}" を 1 トークンとして切り出せている（実測 [${seen.join(', ')}]）`);
+    // d / e は生成規則の節**だけ**で通っていること（直接登録されていたら空振り）。
+    if (f.viaRule) {
+      ok(!registered(f.tok),
+        `REGISTRY-MUT-${f.key}-rule "${f.tok}" は登録名でも派生名でもない＝生成規則の節だけが通している`);
+    }
+    ok(f.stray ? got.indexOf(f.tok) >= 0 : got.length === 0,
+      `REGISTRY-MUT-${f.key} ${f.why}: "${f.tok}" は ${f.stray ? 'REGISTRY-1 が落ちる' : 'REGISTRY-1 が落ちない'}`
+      + `（実測 stray [${got.join(', ')}]）`);
+  }
+  // この 5 形が「照合を全部 stray と言う／全部 covered と言う」実装では成立しないこと。
+  ok(FORMS.some((f) => f.stray) && FORMS.some((f) => !f.stray),
+    `REGISTRY-MUT-BAL 5 形が両向き（落ちる ${FORMS.filter((f) => f.stray).length} 形 / 落ちない ${FORMS.filter((f) => !f.stray).length} 形）`);
 }
 
 console.log(`PHASE1-REACH-001: PASS=${pass} FAIL=${fail} WARN2=${V.warnings.length}`);
