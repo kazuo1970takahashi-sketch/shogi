@@ -561,6 +561,18 @@ function tagEndPos(src, k, face) {
   }
   return src.length;
 }
+// **開始**タグの位置を全部（`lastTagPos` の対）。001q / cowork 高（12 例目）。
+//   001p までは ㉑ と ㉓ がそれぞれ `ig` ループを手書きし、㉓ の検算だけ
+//   `RAW.search(/<body/)`（生テキスト・面ゲート無し・最初の一致）を使っていた。
+//   同じ規則の道具を 3 箇所に分けて持つと、直した箇所の隣に同型が残る（001k で学んだ形）。
+//   **一本にまとめて、開始タグを探す処理は全部これを通す。**
+function openTagPositions(src, tag, face) {
+  const f = face || classifyFaces(src);
+  const re = new RegExp('<' + tag + '(?=[\\s/>])', 'ig');
+  const out = [];
+  for (let m = re.exec(src); m; m = re.exec(src)) if (f[m.index] === FACE.HTML_TAG) out.push(m.index);
+  return out;
+}
 // HTML の末尾（本物の </body> の直前）へ差し込む。無ければ EOF へ追記する。
 //   001n: 対象へ入る断片は**全部 `INJECTED` に記録**する（受け入れ基準8 の照合元）。
 function insertHtml(src, frag, face) {
@@ -1379,11 +1391,11 @@ const addOp = (op) => { OPS.push(op); };
 //   ⑱ が欠番なのは 001l で #816 へ移したから（⑳a〜⑳d も同じ）。⑳ は 001m で足した
 //   別operation（未知 on* 属性の在庫）で、退避した ⑳a〜⑳d とは無関係。
 const OP_KEYS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩',
-  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲', '⑳', '㉑', '㉒', '㉓'];
+  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑲', '⑳', '㉑', '㉒', '㉓', '㉔', '㉕'];
 // そのうち**在庫（実ファイルの死にコード / インライン on* / トップレベル関数 / allowlist）
 // に一切依存しない**もの＝常に実行されなければならない操作。
 const OP_KEYS_ALWAYS = ['①', '②', '⑤', '⑧', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰',
-  '⑲', '⑳', '㉑', '㉒', '㉓'];
+  '⑲', '⑳', '㉑', '㉒', '㉓', '㉔', '㉕'];
 
 {
   const name = uniqIn(RAW, '__opNewButtonHandler');
@@ -1826,41 +1838,101 @@ addOp({
     `UPPER-ON-3 大文字の未知 on* を足しても検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${ua.unreachableStatic.length}）`);
 }
 
-// --- ㉓ 開始タグの属性値に `>` が在る世界【001p / Codex 高B】----------------------
-//   ㉑ の先置き位置を求める処理が生テキストの `indexOf('>')` だったので、属性値の中の
-//   `>` をタグ終端と誤認し、先置きがタグの**内側**に落ちて `REGISTRY-FACE` が恒久赤になった。
-//   終端を面から取る（`tagEndPos`）ように直したうえで、その世界を常設化する。
-//   `/>` を含む形（`data-…="/>"`）も入れる（自己終端タグと紛らわしい綴り）。
-const QUOTED_GT_SRC = (() => {
-  const attr = uniqIn(RAW, 'data-reachquote');
-  const f = classifyFaces(RAW);
-  const re = /<body(?=[\s/>])/ig;
-  for (let m = re.exec(RAW); m; m = re.exec(RAW)) {
-    if (f[m.index] !== FACE.HTML_TAG) continue;
-    const at = m.index + '<body'.length;
-    const frag = ` ${attr}=">" ${probeVariant(attr, '-b')}="/>"`;
+// --- ㉓㉔㉕ 開始タグの属性値に `>` が在る世界 ＋ `<body>` の在り方 2 形 -------------
+//   【001p / Codex 高B ＝ ㉓】㉑ の先置き位置を求める処理が生テキストの `indexOf('>')` で、
+//   属性値の中の `>` をタグ終端と誤認し、先置きがタグの**内側**に落ちて `REGISTRY-FACE` が恒久赤。
+//   終端を面から取る（`tagEndPos`）ように直したうえで、その世界を常設化した。
+//
+//   【001q / cowork 高 ＝ 12 例目】**その ㉓ の検算の中に同じクラスが残っていた。**
+//   世界を作る側は面ゲート付きのループで、`<body>` が面上に無ければ黙って no-op するのに、
+//   検算側は生テキストの `search(/<body/)`（面ゲート無し・最初の一致）で anchor を取って
+//   「注入が成功したこと」を**無条件 assert** していた。実測した破れ方は 2 つ:
+//     (a) `<head>` に `<body …=">">` と書いた HTML コメントを 1 行足すと、検算だけが
+//         偽物を掴む → `QUOTED-GT-1` が恒久赤（PASS=369 FAIL=1 exit 1）
+//     (b) `<body>` 開始タグを省略すると（HTML5 で妥当・001k が `</body></html>` 削除を
+//         正当編集と認めた前例と同クラス）ビルダが no-op → 同じく恒久赤
+//   今 成立しているのは、実ファイルが JS 文字列の中に `<body>` を 3 箇所持っていて
+//   **それが本物より後ろにあるから**でしかない＝「実在の 1 例への依存」そのもの。
+//
+//   直し方（㉑ と同じ形にそろえる）:
+//     1. 開始タグの探索は `openTagPositions`（面ゲート）1 本に集約する
+//     2. `<body>` が無い世界のための**自給フォールバック**をビルダが持つ
+//     3. **位置はビルダが返し、検算はそれを読む**（検算側の生テキスト検索を全廃）
+//   そのうえで (a) (b) の 2 形自体を操作 ㉔ / ㉕ として常設化し、
+//   ㉓ の検算を**その 3 世界の上で当て直す**（`gate()` の外の `ok()` は op を足しても
+//   検査されない＝001k `shapeSelfChecks()` と同じ理由）。
+function buildQuotedGtWorld(src, face) {
+  const attr = uniqIn(src, 'data-reachquote');
+  const frag = ` ${attr}=">" ${probeVariant(attr, '-b')}="/>"`;
+  const valAt = (at) => at + frag.indexOf('=">"') + 2;   // 属性値の中の `>` の位置（自分の断片の中）
+  const f = face || classifyFaces(src);
+  const open = openTagPositions(src, 'body', f)[0];
+  if (open !== undefined) {
+    const at = open + '<body'.length;
     recordInjection(frag);
-    return RAW.slice(0, at) + frag + RAW.slice(at);
+    return { src: src.slice(0, at) + frag + src.slice(at), tagStart: open, valGt: valAt(at), host: '実ファイルの <body>' };
   }
-  return RAW;
-})();
-addOp({
-  key: '㉓',
-  label: '㉓開始タグ（<body>）の属性値に > と /> が在る世界',
-  src: QUOTED_GT_SRC,
-});
+  // `<body>` 開始タグが面の上に無い世界。㉑ の EOF フォールバックと同じく**自給する**。
+  const host = uniqIn(src, '__probeQuotedGtHost');
+  const lead = `\n<span id="${host}"`;
+  const whole = lead + frag + '>x</span>\n';
+  recordInjection(whole);
+  return { src: src + whole, tagStart: src.length + 1, valGt: valAt(src.length + lead.length), host: '自給の <span>' };
+}
+// ㉔ 実ファイルの `<head>` に「偽の `<body …=">">`」を含む HTML コメントが在る世界。
+//   面の上には無いが、生テキストで探すと**本物より前**に見つかる位置に置く（最悪位置）。
+function buildFakeBodyCommentWorld(src, face) {
+  const attr = uniqIn(src, 'data-reachprintnote');
+  const note = uniqIn(src, '__probeFakeBodyNote');
+  const frag = `<!-- ${note}: 印刷帳票は <body ${attr}=">"> を動的生成する（#798 申し送り） -->\n`;
+  const f = face || classifyFaces(src);
+  const h = lastTagPos(src, 'head', f);
+  const at = h >= 0 ? h : 0;   // `</head>` が無い世界ではファイル先頭（どの <body> よりも前）
+  recordInjection(frag);
+  return { src: src.slice(0, at) + frag + src.slice(at), fakeAt: at + frag.indexOf('<body') };
+}
+// ㉕ `<body>` 開始タグが無い世界（HTML5 では開始タグの省略が妥当）。
+function buildNoBodyOpenWorld(src, face) {
+  const f = face || classifyFaces(src);
+  const open = openTagPositions(src, 'body', f)[0];
+  if (open === undefined) return { src, dropped: 0 };   // 既に無い＝目的の世界そのもの
+  return { src: src.slice(0, open) + src.slice(tagEndPos(src, open, f)), dropped: 1 };
+}
+
+const FAKE_BODY = buildFakeBodyCommentWorld(RAW);
+const NO_BODY = buildNoBodyOpenWorld(RAW);
 {
-  // その世界を**実際に作れたこと**＝ `>` が属性値の面に載っていること。
-  const qf = classifyFaces(QUOTED_GT_SRC);
-  const at = QUOTED_GT_SRC.search(/<body(?=[\s/>])/i);
-  const q = QUOTED_GT_SRC.indexOf('=">"', at);
-  ok(q >= 0 && FACE_NAME[qf[q + 2]] === 'ATTR_VAL',
-    `QUOTED-GT-1 属性値の中の > が ATTR_VAL 面に載っている（実測 ${q >= 0 ? FACE_NAME[qf[q + 2]] : '(見つからない)'}）`);
-  ok(tagEndPos(QUOTED_GT_SRC, at, qf) > q + 4,
-    'QUOTED-GT-2 タグ終端は属性値の中の > より後ろ（面から取れている）');
-  const qa = analyze(QUOTED_GT_SRC);
+  const ff = classifyFaces(FAKE_BODY.src);
+  ok(FACE_NAME[ff[FAKE_BODY.fakeAt]] === 'HTML_COMMENT',
+    `FAKE-BODY-1 偽の <body …=">"> は HTML_COMMENT 面に載っている＝面ゲートは騙されない（実測 ${FACE_NAME[ff[FAKE_BODY.fakeAt]]}）`);
+  ok(openTagPositions(FAKE_BODY.src, 'body', ff).length === openTagPositions(RAW, 'body').length,
+    'FAKE-BODY-2 面ゲートを通した <body> 開始タグの本数は増えていない');
+  ok(openTagPositions(NO_BODY.src, 'body').length === 0,
+    `NO-BODY-1 <body> 開始タグが面の上に 1 つも無い世界を作れた（除去 ${NO_BODY.dropped} 件）`);
+}
+addOp({ key: '㉔', label: '㉔<head> の HTML コメントに偽の <body …=">"> が在る世界', src: FAKE_BODY.src });
+addOp({ key: '㉕', label: '㉕<body> 開始タグが無い世界（HTML5 で省略は妥当）', src: NO_BODY.src });
+
+// ㉓ の世界と検算を、上の 3 世界すべての上で当て直す。
+const QGT_WORLDS = [
+  { name: '実ファイルそのまま', src: RAW, op: true },
+  { name: '㉔ 偽の <body> がコメントに在る', src: FAKE_BODY.src, op: false },
+  { name: '㉕ <body> 開始タグが無い', src: NO_BODY.src, op: false },
+];
+for (const w of QGT_WORLDS) {
+  const q = buildQuotedGtWorld(w.src);
+  const qf = classifyFaces(q.src);
+  const got = FACE_NAME[qf[q.valGt]];
+  ok(got === 'ATTR_VAL',
+    `QUOTED-GT-1[${w.name}] 属性値の中の > が ATTR_VAL 面に載っている（host=${q.host}・実測 ${got}）`);
+  ok(tagEndPos(q.src, q.tagStart, qf) > q.valGt + 2,
+    `QUOTED-GT-2[${w.name}] タグ終端は属性値の中の > より後ろ（面から取れている）`);
+  const qa = analyze(q.src);
   ok(qa.unreachableStatic.length === A.unreachableStatic.length,
-    `QUOTED-GT-3 属性を足しても検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${qa.unreachableStatic.length}）`);
+    `QUOTED-GT-3[${w.name}] 属性を足しても検査1 の結果は動かない（static ${A.unreachableStatic.length} → ${qa.unreachableStatic.length}）`);
+  if (w.op) {
+    addOp({ key: '㉓', label: '㉓開始タグ（<body>）の属性値に > と /> が在る世界', src: q.src });
+  }
 }
 
 // --- ㉑ probe 名が実ファイルに先在する世界【001n ★ / RP-009】------------------
@@ -1921,11 +1993,11 @@ const REGISTRY_WORLD = (() => {
   // `INJECTED`（受け入れ基準8 の照合元）には**記録しない**。
   //   001p / Codex 高B: 開始タグの終端も **面から取る**（`tagEndPos`）。
   //   生テキストの `indexOf('>')` は 属性値に `>` を含む開始タグで、値の中の `>` を掴む。
+  //   001q: 開始タグの探索は `openTagPositions` へ集約（㉓ と同じ道具・手書きループを残さない）。
   const f = classifyFaces(RAW);
-  const re = /<body(?=[\s/>])/ig;
-  for (let m = re.exec(RAW); m; m = re.exec(RAW)) {
-    if (f[m.index] !== FACE.HTML_TAG) continue;
-    const gt = tagEndPos(RAW, m.index, f);
+  const open = openTagPositions(RAW, 'body', f)[0];
+  if (open !== undefined) {
+    const gt = tagEndPos(RAW, open, f);
     return RAW.slice(0, gt) + '\n' + frag + RAW.slice(gt);
   }
   return RAW + frag;   // <body> が無いファイルでも成立させる（EOF 追記）
@@ -2057,10 +2129,27 @@ const unescapeForTokens = (s) => s.replace(/\\u\{([0-9A-Fa-f]{1,6})\}|\\u([0-9A-
     const code = parseInt(a || b || c, 16);
     return code > 0x10FFFF ? ' ' : String.fromCodePoint(code);
   });
-function probeTokensIn(frags, res) {
+// 隣り合う文字列リテラルの連結を 1 本の綴りへ畳む【001q / cowork 中】。
+//   `LITERAL-1` は**連続する綴り**しか見ないので、`'<登録 base>' + 'Wire=99;'` と 2 つに
+//   割って書くだけで素通りした（cowork 実測: 注入断片が 1 本増えるのに PASS=370 FAIL=0 exit 0）。
+//   `REGISTRY-1` 側は実行時トークンが `PROBE_DERIVED` に居るので covered、`probeVariant()` を
+//   通らないので `DERIVE-1` も沈黙する＝**どの機械にも映らない**。
+//   字句走査で完全防御は原理的に不可能（`String.fromCharCode` / 配列 join / 変数跨ぎ）なので、
+//   ここで閉じるのは**実際に再現した形だけ**。残りは `LITERAL_LIMITS`（`LITERAL-4`）で台帳に残す。
+const joinAdjacentStringLiterals = (s) => {
+  let out = s;
+  for (let i = 0; i < 8; i++) {
+    const next = out.replace(/(['"])([^'"\\\n]*)\1\s*\+\s*(['"])([^'"\\\n]*)\3/g,
+      (_m, _q1, a, q2, b) => q2 + a + b + q2);
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+};
+function probeTokensIn(frags, res, pre) {
   const found = new Map();          // token -> 最初に見つけた断片の抜粋
   for (const raw of frags) {
-    const frag = unescapeForTokens(raw);
+    const frag = pre ? pre(unescapeForTokens(raw)) : unescapeForTokens(raw);
     for (const re of (res || PROBE_TOKEN_RES)) {
       re.lastIndex = 0;
       for (let m = re.exec(frag); m; m = re.exec(frag)) {
@@ -2133,13 +2222,30 @@ const SOURCE_NOTE = new Map([
 // ★ ソースに書いてよい綴りの述語。**`LITERAL-1` と 8b の検算はこの同じ関数を使う**
 //   （8b が自前のコピーを持つと、この述語を壊しても検算が緑のままになる＝空振り。実測で確認した）。
 const sourceSpellOk = (t) => PROBE_BASES.has(t) || HOSTILE.has(t) || SOURCE_NOTE.has(t);
-const straySpellsIn = (text) => [...probeTokensIn([text], SELF_TOKEN_RES).keys()]
+// ★ 走査の前処理も `LITERAL-1` と 8b の検算で**同じもの**を通す（自前コピーを持たない）。
+const straySpellsIn = (text) => [...probeTokensIn([text], SELF_TOKEN_RES, joinAdjacentStringLiterals).keys()]
   .filter((t) => !sourceSpellOk(t)).sort();
+// `LITERAL-1` が**保証しない範囲**【001q / cowork 中・受け入れ基準6/9】。
+//   字句走査なので「ソースに連続した綴りとして現れるもの」しか見えない。
+//   閉じたことにせず、`KL-*`（lib の既知の限界）と同じ作法で台帳に残す。
+const LITERAL_LIMITS = new Map([
+  ['動的に組み立てた綴り', '`String.fromCharCode` / 配列 join / 変数を跨いだ組み立ては、'
+    + 'ソースのどこにも連続した綴りとして現れない。**字句走査では原理的に見えない**'
+    + '（レキサでも評価器でもなく、実行しないと決まらない）。'
+    + '実行時に注入されれば `REGISTRY-1` が受け持つが、「既に登録済みの派生名を書き写す」形は'
+    + 'そこも通る＝ここが `LITERAL-1` の外側に残る唯一の道'],
+  ['文字列リテラルの連結（一部）', '隣り合う**リテラル同士**の `+` は `joinAdjacentStringLiterals` で'
+    + '畳んでから走査する（cowork が再現した形）。ただし畳むのは引用符とバックスラッシュを'
+    + '含まない単純なリテラルだけで、`\\u` エスケープ入りの断片を跨ぐ連結は畳まない'],
+  ['テンプレートリテラルの補間', '`${…}` の中身は実行時に決まるので、補間を跨いだ綴りは見えない。'
+    + '生成名の説明は `<登録名>Wire` のようなプレースホルダで書く規約（`SOURCE_NOTE`）で'
+    + '「そもそも綴りを書かない」側から閉じている'],
+]);
 {
-  const found = probeTokensIn([SELF_SOURCE], SELF_TOKEN_RES);
+  const found = probeTokensIn([SELF_SOURCE], SELF_TOKEN_RES, joinAdjacentStringLiterals);
   const stray = [...found.keys()].filter((t) => !sourceSpellOk(t)).sort();
   console.log(`  ソース走査: probe らしき綴り ${found.size} 種 / base ${PROBE_BASES.size} 件`
-    + ` / 台帳の例外 ${SOURCE_NOTE.size} 件`);
+    + ` / 台帳の例外 ${SOURCE_NOTE.size} 件 / 保証しない範囲 ${LITERAL_LIMITS.size} 件`);
   ok(stray.length === 0,
     `LITERAL-1 ソースに書かれた probe らしき綴りが全部「base / 敵役 / 台帳の例外」`
     + `（はみ出し ${stray.length} 件: ${stray.slice(0, 8).join(', ') || 'なし'}）`);
@@ -2149,6 +2255,10 @@ const straySpellsIn = (text) => [...probeTokensIn([text], SELF_TOKEN_RES).keys()
     `LITERAL-2 走査が全 base ${PROBE_BASES.size} 件をソース上で拾えている（実測 ${hitBases.length} 件）`);
   ok([...SOURCE_NOTE.values()].every((why) => why.length >= 10),
     `LITERAL-3 台帳の例外 ${SOURCE_NOTE.size} 件には全部 理由が付いている`);
+  for (const [k, why] of LITERAL_LIMITS) console.log(`    保証しない: ${k} … ${why.slice(0, 60)}…`);
+  ok(LITERAL_LIMITS.size >= 3 && [...LITERAL_LIMITS.values()].every((why) => why.length >= 40),
+    `LITERAL-4 保証しない範囲 ${LITERAL_LIMITS.size} 件が理由つきで台帳に載っている`
+    + '（字句走査で完全防御は原理的に不可能なので、閉じたことにしない）');
 }
 
 // =============================================================================
@@ -2232,6 +2342,178 @@ console.log('=== 照合の検出力（受け入れ基準2〜4: a〜i）===');
     `REGISTRY-MUT-i 登録済み派生名 "${anyDerived}" をソースに固定で書くと LITERAL-1 が落ちる`);
   ok(straySpellsIn(`const x = uniqIn(src, '${numBase}');`).length === 0,
     `REGISTRY-MUT-i-pos 対照: base "${numBase}" を固定で書くのは正しい書き方なので落ちない`);
+
+  // --- j: 連結で 2 つに割って書いた派生名（001q / cowork 中）--------------------
+  //   `LITERAL-1` は連続する綴りしか見なかったので、`'<base>' + 'Wire=99;'` で素通りした。
+  const cut = Math.max(1, Math.floor(anyDerived.length / 2));
+  const halves = [anyDerived.slice(0, cut), anyDerived.slice(cut)];
+  ok(straySpellsIn(`x('var ' + '${halves[0]}' + '${halves[1]}' + '=1;');`).indexOf(anyDerived) >= 0,
+    `REGISTRY-MUT-j 連結で 2 つに割って書いた派生名も LITERAL-1 が拾う`
+    + `（"${halves[0]}" ＋ "${halves[1]}"）`);
+  ok(straySpellsIn("const s = 'var ' + 'live=1;';").length === 0,
+    'REGISTRY-MUT-j-pos 対照: probe と無関係なリテラル連結は落ちない（畳んだせいの誤検出が無い）');
+}
+
+// =============================================================================
+// 8c. **生テキスト anchor の全数表**【001q ★ cowork 高（12 例目）/ 受け入れ基準5】
+//    この PR を 16 巡させたクラスは毎回同じ形だった——
+//    「**常設側の assert / ビルダが、実ファイルの生テキスト上の位置に依存している**」。
+//    001j 高1（`lastIndexOf('</body>')`）→ 001k（`lastTagPos` の後方走査）→ 001p 高B
+//    （`indexOf('>')`）→ 001q（`search(/<body/)`）と、直した箇所の**隣**へ移動し続けた。
+//    箇所を 1 つずつ潰すのはもうやめて、**クラスが空であることを機械で示す**（001n の作法）。
+//
+//    外延 = このファイルが `search` / `indexOf` / `lastIndexOf` を呼んでいる**全箇所**。
+//    ＋ 同じことができる `includes` / `startsWith` / `endsWith` も数える
+//    （数えないと「メソッドを変えるだけで台帳から消える」逃げ道が残る）。
+//    それぞれを台帳で分類し、
+//      (1) 未分類が 0 件      … 新しい呼び出しを足したら必ず分類させる
+//      (2) `RAW_POS` が 0 件  … 危険カテゴリが空
+//      (3) 台帳の各行が最低 1 箇所に当たる … 腐った（当たらない）行を残さない
+//      (4) 敵役の合成サイトが `RAW_POS` に落ちる … 分類器が「何でも安全」に壊れていない
+//    を測る。**(4) は 8b と同じ関数を呼ぶ**（自前のコピーを持つと壊しても緑になる・001p の教訓）。
+// =============================================================================
+console.log('=== 生テキスト anchor の全数表（受け入れ基準5）===');
+const ANCHOR_METHODS = ['search', 'indexOf', 'lastIndexOf', 'includes', 'startsWith', 'endsWith'];
+// 呼び出し箇所を機械で抽出する。受け手（レシーバ）は後ろ向きに、括弧の釣り合いを見て取る。
+function anchorCallSites(text) {
+  const lineStarts = [0];
+  for (const re = /\n/g, m0 = {}; ;) {   // eslint-disable-line no-constant-condition
+    const m = re.exec(text);
+    if (!m) break;
+    lineStarts.push(m.index + 1);
+    void m0;
+  }
+  const lineOf = (pos) => {
+    let lo = 0;
+    let hi = lineStarts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (lineStarts[mid] <= pos) lo = mid; else hi = mid - 1;
+    }
+    return { no: lo + 1, start: lineStarts[lo] };
+  };
+  const re = new RegExp('\\.\\s*(' + ANCHOR_METHODS.join('|') + ')\\s*\\(', 'g');
+  const out = [];
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    const { no, start } = lineOf(m.index);
+    let end = m.index;
+    while (end < text.length && text[end] !== '\n') end++;
+    // レシーバを後ろ向きに取る（`x`, `a.b`, `f(...)`, `x[...]` を跨ぐ）。
+    let i = m.index;
+    let depth = 0;
+    while (i > start) {
+      const c = text[i - 1];
+      if (c === ')' || c === ']') { depth++; i--; continue; }
+      if (c === '(' || c === '[') { if (depth === 0) break; depth--; i--; continue; }
+      if (depth > 0) { i--; continue; }
+      if (/[A-Za-z0-9_$.]/.test(c)) { i--; continue; }
+      break;
+    }
+    const argAt = m.index + m[0].length;
+    out.push({
+      line: no,
+      site: text.slice(i, m.index) + '.' + m[1] + '(' + text.slice(argAt, Math.min(argAt + 34, end)),
+      // 行の「その位置より前」に `//` が在れば説明文（この本文は `//` 行コメントしか使わない）。
+      prose: /\/\//.test(text.slice(start, m.index)),
+    });
+  }
+  return out;
+}
+// カテゴリ（`safe: false` は「在ってはいけない」）。
+const ANCHOR_CATS = new Map([
+  ['PROSE', { safe: true, why: 'コメント（説明文）。実行されない' }],
+  ['ARRAY', { safe: true, why: '配列の要素検索。文字列上の位置ではない' }],
+  ['SYNTH', { safe: true, why: '合成文字列に対する検索。実ファイル由来ではない' }],
+  ['SELF', { safe: true, why: '自分で組み立てた断片 / 自分のソースに対する検索。対象ファイルの中身に依存しない' }],
+  ['MEMBER', { safe: true, why: '「在るか」だけを見る（位置を使わない）。外れても安全側（一意化がさらに逃げる）へ倒れる' }],
+  ['SENTINEL', { safe: true, why: '自給の一意 anchor（uniqIn が対象への非存在を保証）から位置を引く＝自給フォールバック相当' }],
+  ['FACE', { safe: true, why: '面ゲートを通した位置だけを採る' }],
+  ['ADJACENT', { safe: true, why: '解析結果の位置から**隣接トークンだけ**を後方に取る（間に別の一致が入りえない）' }],
+  ['RAW_POS', { safe: false, why: '実ファイルの生テキスト上の位置に依存する。**0 件でなければならない**' }],
+]);
+// 台帳。**上から順に最初に当たった行が勝つ**。安全カテゴリは「なぜ安全か」まで書く。
+const ANCHOR_LEDGER = [
+  { re: /^(got|allowed|names|keys|seen|OP_KEYS|PRESEED_BASES)\.indexOf\(/, cat: 'ARRAY',
+    why: '差分・台帳キー・トークン列の要素検索' },
+  { re: /^m\.(rootNames|derivedOnlyReachable)\.indexOf\(/, cat: 'ARRAY', why: '解析結果の配列の要素検索' },
+  { re: /^v\.warnings\.map\(sig\)\.indexOf\(/, cat: 'ARRAY', why: 'warn の署名列の要素検索' },
+  { re: /^straySpellsIn\(/, cat: 'ARRAY', why: '8b の検算。stray 配列の要素検索' },
+  { re: /^(withStyle|bare|s)\.indexOf\(/, cat: 'SYNTH',
+    why: 'T-0c の最小文書 / faceOf・KL-3 の合成文書。対象ファイルを一切読まない' },
+  { re: /^frag\.indexOf\(/, cat: 'SELF', why: '直前に自分で組み立てた断片の中の位置（対象の長さを足すだけ）' },
+  { re: /^src\.indexOf\(base\b/, cat: 'MEMBER', why: 'uniqIn の衝突判定。位置は使わず「在るか」だけ' },
+  { re: /^lowerOf\(src\)\.indexOf\(/, cat: 'MEMBER', why: 'uniqOnAttrIn の衝突判定（ASCII case-insensitive）。同上' },
+  { re: /^sp\.value\.indexOf\(dead\)/, cat: 'MEMBER', why: '面から引いた属性値の中に死んだ関数名が在るか。位置は使わない' },
+  { re: /^RAW\.indexOf\(REG_SENTINEL\)/, cat: 'MEMBER', why: '㉑ の anchor を対象と衝突しなくなるまで伸ばす判定。同上' },
+  { re: /^(REG_SENTINEL|b)\.indexOf\(/, cat: 'MEMBER', why: 'anchor と base の相互包含判定。対象ファイルを読まない' },
+  { re: /^s2\.indexOf\((t\.marker|needle|dataOnAttr|id|dead|wire)\b/, cat: 'SENTINEL',
+    why: '面 × 変異の表。anchor は uniqIn 済みの marker / id / wire なので対象に先在しない' },
+  { re: /^REGISTRY_WORLD\.indexOf\(p\.(sent|base)\b/, cat: 'SENTINEL',
+    why: '㉑ の先置き検算。anchor は REG_SENTINEL+i（対象にもどの base にも含まれないところまで伸ばす）' },
+  { re: /^out\.lastIndexOf\('<style'/, cat: 'FACE',
+    why: 'externalizeStyleBlocks。直後に face[open] === HTML_TAG を確かめて、違えば読み飛ばす' },
+  { re: /^src\.lastIndexOf\('function'/, cat: 'ADJACENT',
+    why: '解析結果の namePos から直前の function キーワードへ。間に別の function は構文上入りえない' },
+];
+// ★ 分類器本体。**8c の全数表と、下の敵役検算（受け入れ基準5 の空振り検出）が同じ関数を呼ぶ。**
+function classifyAnchor(s) {
+  for (const e of ANCHOR_LEDGER) if (e.re.test(s.site)) return e;
+  return null;
+}
+const anchorCatOf = (s) => (s.prose ? { cat: 'PROSE', why: 'コメント' } : classifyAnchor(s));
+{
+  const sites = anchorCallSites(SELF_SOURCE);
+  const used = new Set();
+  const tally = new Map([...ANCHOR_CATS.keys()].map((k) => [k, []]));
+  const unclassified = [];
+  for (const s of sites) {
+    const hit = anchorCatOf(s);
+    if (!hit) { unclassified.push(`L${s.line} ${s.site.slice(0, 48)}`); continue; }
+    if (hit.re) used.add(hit);
+    tally.get(hit.cat).push(s);
+  }
+  for (const [cat, list] of tally) {
+    if (!list.length) continue;
+    console.log(`  ${cat.padEnd(9)} ${String(list.length).padStart(2)} 件  ${ANCHOR_CATS.get(cat).why}`);
+    console.log(`      ${list.map((s) => 'L' + s.line).join(' ')}`);
+  }
+  console.log(`  合計 ${sites.length} 件 / 台帳 ${ANCHOR_LEDGER.length} 行（当たった ${used.size} 行）`
+    + ` / 未分類 ${unclassified.length} 件`);
+  ok(sites.length > 0 && [...tally.values()].some((l) => l.length > 0),
+    `ANCHOR-0 走査が空振りしていない（呼び出し ${sites.length} 箇所を抽出）`);
+  ok(unclassified.length === 0,
+    `ANCHOR-1 全 ${sites.length} 箇所が台帳のどれかに分類されている`
+    + `（未分類 ${unclassified.length} 件: ${unclassified.slice(0, 4).join(' / ') || 'なし'}）`);
+  const danger = [...ANCHOR_CATS].filter(([, v]) => !v.safe).map(([k]) => k);
+  const bad = danger.flatMap((k) => tally.get(k).map((s) => `L${s.line} ${s.site.slice(0, 48)}`));
+  ok(bad.length === 0,
+    `ANCHOR-2 危険カテゴリ（${danger.join('/')}）が 0 件`
+    + `（実測 ${bad.length} 件: ${bad.slice(0, 4).join(' / ') || 'なし'}）`);
+  const rotten = ANCHOR_LEDGER.filter((e) => !used.has(e));
+  ok(rotten.length === 0,
+    `ANCHOR-3 台帳 ${ANCHOR_LEDGER.length} 行が全部 実在の箇所に当たっている`
+    + `（当たらない行 ${rotten.length}: ${rotten.map((e) => e.cat).join(', ') || 'なし'}）`);
+  ok(ANCHOR_LEDGER.every((e) => e.why.length >= 10 && ANCHOR_CATS.has(e.cat)),
+    `ANCHOR-4 台帳の各行に「なぜ安全か」が書かれ、カテゴリが宣言済みの ${ANCHOR_CATS.size} 種のどれか`);
+
+  // ★ 空振り検出（受け入れ基準5）: **12 例目そのもの**を合成サイトとして分類器に当てる。
+  //   台帳に「何でも安全」の行が入ると、ここが落ちる。
+  const M = ANCHOR_METHODS;
+  const hostile = [
+    { site: `RAW.${M[0]}(/<body/)`, why: '12 例目: 生テキストの最初の <body>（面ゲート無し）' },
+    { site: `QUOTED_GT_SRC.${M[1]}('=">"', at)`, why: '12 例目: 生テキストで属性値の位置を引く' },
+    { site: `src.${M[2]}('</body>')`, why: '001j 高1: 生テキストで閉じタグの位置を引く' },
+    { site: `RAW.${M[1]}('>', k)`, why: '001p 高B: 生テキストでタグ終端を引く' },
+  ];
+  const leaked = hostile.filter((h) => classifyAnchor({ site: h.site, prose: false }));
+  ok(leaked.length === 0,
+    `ANCHOR-5 敵役 ${hostile.length} 形が台帳のどの安全行にも当たらない＝RAW_POS へ落ちる`
+    + `（漏れ ${leaked.length} 件: ${leaked.map((h) => h.site).join(' / ') || 'なし'}）`);
+  // 対照（締めすぎの逆向き）: 実在の安全サイトは安全カテゴリへ落ちる。
+  const benign = { site: `out.${M[2]}('<style', i)`, prose: false };
+  const bc = classifyAnchor(benign);
+  ok(!!bc && ANCHOR_CATS.get(bc.cat).safe,
+    `ANCHOR-5-pos 対照: 面ゲート付きの実在サイトは安全カテゴリ（実測 ${bc ? bc.cat : '未分類'}）`);
 }
 
 console.log(`PHASE1-REACH-001: PASS=${pass} FAIL=${fail} WARN2=${V.warnings.length}`);
