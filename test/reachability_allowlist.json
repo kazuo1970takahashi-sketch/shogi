@@ -1,0 +1,350 @@
+{
+  "_about": [
+    "PHASE1-REACH-001 到達可能性チェックの既知例外リスト。",
+    "検査本体は test/test_reachability_001.js / ロジックは test/lib/reachability.js。",
+    "",
+    "ルール（PHASE1-REACH-001d で検査2 を降格した後の姿）:",
+    "  - 【CI をブロックする】static セクション: ここに無い**静的**到達不能関数が 1 つでも",
+    "    あれば CI が落ちる（R1）。到達可能に戻った static エントリの放置も落ちる（R5）。",
+    "  - 【レポートのみ】runtime / bindings セクション: 検査2（結線先 DOM の実在・起動経路）は",
+    "    非ブロッキングの warn。偽陽性が原理的に消せないため（`||` フォールバック 1 行で",
+    "    生きた結線が死んだ扱いになる／セレクタヘルパを関数式へ抽出すると検出自体が消えて",
+    "    R5 が解消不能になる）。走査と出力は残してあり、増減はテスト出力に出る。",
+    "  - 全エントリの記述に**形式照合**がかかる（全セクション error）。PHASE1-REACH-001e:",
+    "    文字数だけの検査は \"x\" を 20 個並べれば通り、任意の死にコードを恒久緑化できた。",
+    "      (a) category が既知の区分キーワード",
+    "          （temporarily-preserved / test-only-hook / leftover-helper / functional-loss-pending）",
+    "      (b) reason が 20 文字以上",
+    "      (c) reason に**根拠参照**（#Issue番号 / L行番号 / YYYY-MM-DD）のいずれかを含む",
+    "    追加が『意識的な行為』になることが、このリストの目的。",
+    "",
+    "初期値は Issue #798（ai-requests/2026-08-01_claude-code_cleanup-deadcode-001_RESULT.md）の",
+    "分類そのまま: 温存マーカー明記 23 / テスト専用フック 4 / 取り残しヘルパ 2 /",
+    "機能欠落クラスタ 6 / 実行時到達不能 9（= 静的 26 + 実行時 9 = 35 関数）。",
+    "",
+    "PHASE1-REACH-001b（2026-08-01）で走査の穴を 2 つ塞いだ結果、静的到達不能が",
+    "26 → 30 に増えた。増分は START-UX-CONSOLIDATE-001 の legacy 一括開始クラスタ",
+    "4 関数（startTournament / collectStartCandidates / showStartValidationErrors /",
+    "resolveNoCandidateMessage）。#798 の「35 関数」は過小で、正しくは 39 関数。",
+    "",
+    "PHASE1-REACH-001c（2026-08-01・PR #799 の差し戻し対応）でさらに 5 つ塞いだ。",
+    "  高1 HTML 側の穴: <script> 外の全バイトを参照として数えていたため、id/class/",
+    "      data-* に関数名と同じトークンが出るだけでルートになっていた。",
+    "  高2 起動経路: 押せない要素（隠しファイル入力）への結線を扱えていなかった。",
+    "  高3 文字列内の on*=: (4) の対処が行き過ぎで、insertAdjacentHTML の結線を",
+    "      参照から落としていた（＝生きた関数を死んだと言う偽陽性）。",
+    "  高4/高5 死んだ領域の終端: 位置ベースから文（statement）単位へ。",
+    "実測の変化は runtime 9 → 10（loadData）／bindings 4 → 5（#loadFile）のみ。",
+    "静的到達不能 30 は不変＝高1 は「今は誤判定が起きていないが、HTML 属性を 1 つ",
+    "足せば起きる」形の穴だった（cowork 実測: data-x 1 つで 30 → 26）。",
+    "合計 40 関数（静的 30 ＋ 実行時 10）。",
+    "",
+    "PHASE1-REACH-001d（2026-08-01・差し戻し 3 回目への対応）で走査を**単一の面レクサ**へ",
+    "全面移行し、検査2 を非ブロッキングへ降格した（作者承認済み）。実測値は 001c と完全に",
+    "一致（静的 30 / 実行時 10 / 結線 5 / 関数 580）＝移行オラクルで退行ゼロを機械検証済み。",
+    "再現手順: node test/tools/reach_migration_oracle.js 9176cc5 shogi_v4.html",
+    "",
+    "PHASE1-REACH-001e（2026-08-01・差し戻し 4 回目への対応）でハーネスと走査の細部を直した。",
+    "実測値はここでも変わらない（静的 30 / 実行時 10 / 結線 5 / 関数 580）。allowlist は",
+    "hasResetUndoSnapshot の reason に根拠参照（#798）を足した 1 箇所だけの変更。",
+    "",
+    "**このリストの関数を消す・直すのは Issue #798 側の別判断。この検査では触らない。**"
+  ],
+
+  "baseline": {
+    "issue": "#798",
+    "source": "ai-requests/2026-08-01_claude-code_cleanup-deadcode-001_RESULT.md",
+    "recorded_at": "2026-08-01",
+    "revised_at": "2026-08-01",
+    "revised_by": "PHASE1-REACH-001e",
+    "revision_note": "走査の穴を塞ぐたびに取り直した実測値。001b で (a) 文字列リテラル内の識別子 (b) 連結セレクタ、001c で (c) HTML マークアップ (d) 起動経路 (e) 死んだ領域の終端 を修正した。#798 に記録された 静的 26 / 合計 35 は過小。001d で単一の面レクサへ全面移行して取り直したが、実測値は 001c と同一。",
+    "migration_oracle": "001d の面レクサ vs 001c の lexBlock: JS 面の文字分類 791,664 文字で不一致 0 ／「参照として数えるか」の判定は全 859,767 文字で不一致 0 ／解析結果（scriptBlocks・関数数・root・静的/実行時到達不能・死んだ結線・死んだ領域・全 580 関数の参照内訳）も全一致。面の完全性は未分類 0・総延長 = ファイル長 859,767。",
+    "target_commit": "5bbf60c0ffab79190f485e0d15f188c993b64c80",
+    "static_unreachable": 30,
+    "runtime_unreachable": 10,
+    "dead_bindings": 5,
+    "top_level_functions": 580,
+    "superseded": [
+      {
+        "by": "PHASE1-REACH-001c",
+        "static_unreachable": 30,
+        "runtime_unreachable": 10,
+        "dead_bindings": 5,
+        "top_level_functions": 580
+      },
+      {
+        "by": "PHASE1-REACH-001b",
+        "static_unreachable": 30,
+        "runtime_unreachable": 9,
+        "dead_bindings": 4,
+        "top_level_functions": 580
+      },
+      {
+        "by": "#798（初回調査）",
+        "static_unreachable": 26,
+        "runtime_unreachable": 9,
+        "dead_bindings": 4,
+        "top_level_functions": 580
+      }
+    ]
+  },
+
+  "_limits_about": [
+    "A5（allowlist の肥大検査）の目安上限。baseline は「そのとき測った事実」の記録なので、",
+    "運用上の上限とは分けて持つ（PHASE1-REACH-001c・#799 レビュー指摘⑤）。",
+    "",
+    "以前は上限が baseline の実測値そのもの（40/40）で余裕ゼロだった。意図的な温存が",
+    "1 件増えると R1 と A5 が同時に赤になり、allowlist に理由つきで足すだけでは緑に",
+    "できず、同じファイルの baseline（＝過去の実測の記録）を書き換える以外に手が無い",
+    "＝ CI が詰まる形になっていた。",
+    "",
+    "PHASE1-REACH-001d でさらに、**上限超過そのものを warn へ降格**した。上限は",
+    "「暴走に気づくための目安」であって門ではない。増えたときに理由を問う運用は",
+    "R4（1 件ごとの理由必須・error）と、テスト出力に毎回出る baseline との差分が担う。",
+    "ここを上げるときは reason を書き換えること（＝引き上げ自体がレビュー対象になる）。"
+  ],
+
+  "limits": {
+    "allowlist_max": 48,
+    "headroom": 8,
+    "reason": "PHASE1-REACH-001c/001d 時点の実測 40 件（静的 30 ＋ 実行時 10）＋ 運用余裕 8 件。意図的な温存が増えても allowlist への追記だけで緑にできる幅を確保する。001d 以降この超過は warn（CI は落とさない）。"
+  },
+
+  "static": [
+    {
+      "name": "validatePhase2ImportData",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L5694「Phase 2: マスタリセットモーダルを開く（22名取込ボタンは撤去・関数は未使用化）」。2026-04-12 大会用 22 名取込の一回限りの移行機能で、UI 導線が撤去済み。"
+    },
+    {
+      "name": "convertPhase2ParticipantsToMembers",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L5694「22名取込ボタンは撤去・関数は未使用化」。test_fee_josei_001.js が単体で参照している。"
+    },
+    {
+      "name": "applyPhase2Import",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L5694「22名取込ボタンは撤去・関数は未使用化」。空マスタ専用の一括取込本体。"
+    },
+    {
+      "name": "buildPhase2ImportModalHtml",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L5694「22名取込ボタンは撤去・関数は未使用化」。撤去された 22 名取込モーダルの builder。"
+    },
+    {
+      "name": "openPhase2ImportModal",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L5694「22名取込ボタンは撤去・関数は未使用化」。このクラスタの入口（呼び出し元ゼロ）。"
+    },
+    {
+      "name": "bindPhase2ImportModalEvents",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L5694「22名取込ボタンは撤去・関数は未使用化」。撤去されたモーダルの bind。"
+    },
+    {
+      "name": "buildPastParticipantsPanelHtml",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L3438「旧 buildPastParticipantsPanelHtml / renderPpRow 系は GOLDEN・回帰資産として無改変で温存（UI 未結線化）」／L4102 同旨。現行の描画は renderPastParticipantsPanel（PP-DENSE-MODE-001）。"
+    },
+    {
+      "name": "_ppCompareAllRow",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L3438 の旧 PP 系（GOLDEN・回帰資産）。buildPastParticipantsPanelHtml 専用の比較器で、test_golden_master_001.js が参照している。"
+    },
+    {
+      "name": "_partitionPpMembersByRegistration",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L3438 の旧 PP 系（GOLDEN・回帰資産）。buildPastParticipantsPanelHtml からのみ呼ばれる分割 helper。"
+    },
+    {
+      "name": "masterSheetCycleMember",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L5488「MASTER-EDIT-FORM-001: 以下2関数はセル結線を外し未使用（編集はフォームに集約）。互換のため残置。」test_master_sheet.js が参照している。"
+    },
+    {
+      "name": "masterSheetCycleGrade",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L5488「以下2関数はセル結線を外し未使用（編集はフォームに集約）。互換のため残置。」test_master_sheet.js が参照している。"
+    },
+    {
+      "name": "onClickAddOneTable",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L10919-10920「①「1卓追加」の UI 導線は撤去 … ハンドラ onClickAddOneTable は #274 多重実行防止テスト等の回帰資産として温存（UI からは未バインド）」。test_progressive_pairing_p1/p2 ほか 5 本が参照している。"
+    },
+    {
+      "name": "saveDataAsFile",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L12832「専用の「バックアップ」ボタンに一本化（役割の重複を解消）。saveDataAsFile は互換のため定義を温存（未使用）」。"
+    },
+    {
+      "name": "openLoadModal",
+      "category": "temporarily-preserved",
+      "reason": "温存マーカーあり: L437「loadFile input は温存（loadData の受け皿・import_routing 資産）。openLoadModal/loadData/loadFromPaste は温存。」test_restore_consolidation.js が参照している。"
+    },
+
+    {
+      "name": "startTournament",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。PHASE1-REACH-001b で新規検出（初版は L9199-9200 の 'SAVE-003-startTournament-' というログ文字列を呼出辺に数えて生きていると誤判定していた）。温存マーカーあり: L9225「START-UX-CONSOLIDATE-001 以降、本関数は UI から呼ばれない legacy / deprecated helper … 互換のため温存する」。#startBtn は goToTournamentFromReg へ置換済み。test_start_ux_consolidate_001.js / test_frp_impl_002.js が「bind されていないこと」を含めて参照している。"
+    },
+    {
+      "name": "collectStartCandidates",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。PHASE1-REACH-001b で新規検出。ROUND-CLASS-START-004 の一括 validate（pure）で、呼び出し元は legacy な startTournament のみ＝そのまま到達不能。test_start_001.js が単体で呼び出し、run_tests.sh B3 が呼出の存在を pin している。"
+    },
+    {
+      "name": "showStartValidationErrors",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。PHASE1-REACH-001b で新規検出。ROUND-CLASS-START-004 の bulk validation errors 集約表示 helper。呼び出し元は legacy な startTournament のみ。"
+    },
+    {
+      "name": "resolveNoCandidateMessage",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。PHASE1-REACH-001b で新規検出。ROUND-CLASS-START-004 の skip 内訳→文言 pure helper。呼び出し元は collectStartCandidates のみで、そこから先は legacy な startTournament へ繋がる。"
+    },
+
+    {
+      "name": "__setAppModalTestResolver",
+      "category": "test-only-hook",
+      "reason": "テスト専用フック（L6624「テスト専用: 設定時はDOMを出さず同期的に onResult を解決（既定 null＝本番は無効）」）。依存テスト 25 本: test_in_app_modal_001.js / test_scenario_e2e_001.js / test_frp_impl_003.js / test_progressive_pairing_p1.js ほか。**削除不可**。"
+    },
+    {
+      "name": "__resolveAppModal",
+      "category": "test-only-hook",
+      "reason": "テスト専用フック（L6685「テスト/自動化用: 現在表示中のアプリ内モーダルを解決（confirm/alert=true/false、prompt=文字列/null）。Phase 1 のテスト追随で使用」）。現在直接参照しているテストは無いが __setAppModalTestResolver と対になる公開 API。"
+    },
+    {
+      "name": "_resetSaveWarningAggregationState",
+      "category": "test-only-hook",
+      "reason": "テスト専用フック（L6724「テスト用 reset。本番 UI からは呼ばない（clear UI / reset UI は実装しない）」）。依存テスト: test_save_branch_master_failure_signal.js / test_save_ux_nonquota_notify_002.js。"
+    },
+    {
+      "name": "__setAuthClientTestFactory",
+      "category": "test-only-hook",
+      "reason": "テスト専用フック（L11732「テスト容易性: __setAuthClientTestFactory で mock client を注入（実 createClient を経由しない）」）。依存テスト: test_in_app_auth_001.js / test_in_app_auth_002_login.js。"
+    },
+
+    {
+      "name": "isBulkEntryFullscreenOpen",
+      "category": "leftover-helper",
+      "reason": "用途不明・要判断。開閉判定の述語だが呼び出し元ゼロ（開閉自体は openBulkEntryFullscreen / closeBulkEntryFullscreen が担当）。参照テストも無い。Issue #798 で「実害なし」と判定済みだが扱いは未決。"
+    },
+    {
+      "name": "hasResetUndoSnapshot",
+      "category": "leftover-helper",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。用途不明・要判断。undoLastReset は生きているが、「↩ 元に戻す」ボタンはリセット成功直後に showResetUndoBanner が無条件で出す設計のためこの述語は使われない。test_reset_undo.js が単体で参照している。"
+    },
+
+    {
+      "name": "addSelectedPastParticipants",
+      "category": "functional-loss-pending",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。機能欠落クラスタの起点＝参照ゼロ。旧「名簿から複数選択→追加」の導線で、現行 UI（handlePpDenseTap の直接受付）に置き換わったが温存マーカーが無い。"
+    },
+    {
+      "name": "finalizeAddPastParticipants",
+      "category": "functional-loss-pending",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。唯一の呼び出し元が addSelectedPastParticipants。#790 ③ のゲスト大会 warn 注記（L4046-4048）がここにあり、構造的に表示不可能であることが実機で確認済み。"
+    },
+    {
+      "name": "openYomiInputDialog",
+      "category": "functional-loss-pending",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。受付時の一括ふりがな補完ダイアログの coordinator。呼び出し元は addSelectedPastParticipants のみ。"
+    },
+    {
+      "name": "applyYomiInputsToMaster",
+      "category": "functional-loss-pending",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。ダイアログ入力をマスタへ書き戻す純関数。呼び出し元は addSelectedPastParticipants のみ。"
+    },
+    {
+      "name": "buildYomiInputModalHtml",
+      "category": "functional-loss-pending",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。ふりがな入力ダイアログの builder。呼び出し元は openYomiInputDialog のみ。"
+    },
+    {
+      "name": "bindYomiInputModalEvents",
+      "category": "functional-loss-pending",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。ふりがな入力ダイアログの bind。呼び出し元は openYomiInputDialog のみ。"
+    }
+  ],
+
+  "runtime": [
+    {
+      "name": "openMigrationWizard",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。温存マーカーあり: L5673「MASTER-MIGRATE-RETIRE-001: ボタン非描画＝no-op（回帰資産として温存）」／L4524「UI 導線を撤去（openMigrationWizard・bind・テスト資産は温存＝onClickAddOneTable 前例）」。結線先 #masterMigrateBtn が描画されない。"
+    },
+    {
+      "name": "buildMigrationModalHtml",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。L4524 / L5673 の MASTER-MIGRATE-RETIRE-001 クラスタ。openMigrationWizard からのみ到達する builder。"
+    },
+    {
+      "name": "bindMigrationModalEvents",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。L4524 / L5673 の MASTER-MIGRATE-RETIRE-001 クラスタ。test_save_ux_nonquota_notify_002.js が単体で参照している。"
+    },
+    {
+      "name": "parseTournamentTextInput",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。L4524 の MASTER-MIGRATE-RETIRE-001 クラスタ。過去大会テキストの parser で bindMigrationModalEvents からのみ到達する。"
+    },
+    {
+      "name": "deriveTournamentMetaForMigration",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。L4524 の MASTER-MIGRATE-RETIRE-001 クラスタ。移行ウィザード専用のメタ導出。"
+    },
+    {
+      "name": "mergeTournamentParticipantsIntoMaster",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。L4524 の MASTER-MIGRATE-RETIRE-001 クラスタ。GOLDEN スナップショット（test/fixtures/golden_master/golden_snapshot_001.json）と test_golden_master_001.js ほか 3 本が参照している。"
+    },
+    {
+      "name": "openMasterEditModal",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。温存マーカーあり: L4549-4550「旧 F7 編集モーダル/.master-edit-btn 系は回帰資産として温存（UI 未結線化）」。結線先 .master-edit-btn が生成されない。"
+    },
+    {
+      "name": "buildMasterEditModalHtml",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。L4549-4550 の旧 F7 編集モーダル系。test_fee_josei_001.js が単体で参照している。"
+    },
+    {
+      "name": "bindMasterEditModalEvents",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。L4549-4550 の旧 F7 編集モーダル系。test/COVERAGE_MAP.md に記載あり。"
+    },
+    {
+      "name": "loadData",
+      "category": "temporarily-preserved",
+      "reason": "PHASE1-REACH-001c で新規検出（起動経路なし）。L14123 で #loadFile の change に結線されるが、その input は L438 で display:none・<label for> も無く、唯一の起動経路 L12996 の .click() は到達不能な openLoadModal の中にしかない。L437 に「loadFile input は温存（loadData の受け皿・import_routing 資産）。openLoadModal/loadData/loadFromPaste は温存。」と明記あり。"
+    }
+  ],
+
+  "bindings": [
+    {
+      "selector": "#masterMigrateBtn",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。L5673 で addEventListener しているが、id は L5672 の getElementById 以外にファイル中どこにも出現しない＝ボタンが描画されない。L5673 に「MASTER-MIGRATE-RETIRE-001: ボタン非描画＝no-op（回帰資産として温存）」と明記あり。"
+    },
+    {
+      "selector": ".master-edit-btn",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。L5729 の querySelectorAll 以外に生成箇所ゼロ。L4547-4550「行の編集/削除ボタンを全廃＝セルをタップで直接編集 … 旧 F7 編集モーダル/.master-edit-btn 系は回帰資産として温存（UI 未結線化）」。"
+    },
+    {
+      "selector": ".master-delete-btn",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。L5738 の querySelectorAll 以外に生成箇所ゼロ。L4547「削除・復元は行選択（checkbox）→選択ツールバー」へ移行済みで、呼び先 applyMasterMemberDelete は選択ツールバー経由で生きている。"
+    },
+    {
+      "selector": ".master-restore-btn",
+      "category": "temporarily-preserved",
+      "reason": "Issue #798 で判断保留。L5814 の querySelectorAll 以外に生成箇所ゼロ。L4547 の「削除・復元は行選択→選択ツールバー」へ移行済みで、呼び先 applyMasterMemberRestore は選択ツールバー経由で生きている。"
+    },
+    {
+      "selector": "#loadFile",
+      "category": "temporarily-preserved",
+      "reason": "PHASE1-REACH-001c で新規検出（kind=inert-trigger＝要素は実在するが起動経路が無い）。L438 の <input type=\"file\" style=\"display:none\"> は利用者が押せず、<label for=\"loadFile\"> も無い。唯一の起動経路 L12996 の .click() は到達不能な openLoadModal の中。L437 の温存マーカーが loadFile / openLoadModal / loadData を名指しで温存と書いている（import_routing 資産）。"
+    }
+  ]
+}
