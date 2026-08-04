@@ -878,6 +878,36 @@ function gate(src, allow, emit, log) {
   emit((allow.bindings || []).length === bl.dead_bindings,
     `WI-8 allowlist（bindings）の件数と baseline.dead_bindings が一致（${(allow.bindings || []).length} / ${bl.dead_bindings}）`);
 
+  // --- WI-9【#816 hotfix】走査が盲目になったことを走査自身に申告させる ---------
+  //   baseline.top_level_functions は読まれて印字までされているのに番人が無かった。
+  //   既存の文字列リテラルに U+2028 を 1 文字置くと関数総数 580 → 17 に落ちるのに
+  //   R5 は「allowlist から外せ」と言うだけで、外せば PASS 全緑 exit 0（緑のまま
+  //   盲目）だった。原因を問わず「関数総数が floor を割った」を FAIL にする。
+  //   ラチェット運用: floor（baseline.top_level_functions）を下げる（#798 の掃除で
+  //   関数が正当に減る等）ときは、top_level_functions_revisions の**先頭**へ
+  //   { value, reason（根拠参照つき・MIN_REASON 字以上）, date } を積むこと。
+  //   WI-9b が「現在値 = 台帳先頭の値」を、WI-9c が台帳全行の理由・日付を強制する。
+  //   ★このラチェットで塞げている範囲（#816 の判定・実測にもとづく申告）:
+  //     塞いだ = 型 / キー削除 / 配列でない台帳（WI-9a・WI-9b の形の照合）。
+  //     塞げていない = 理由の**中身**。WI-9c が見るのは字数・根拠参照の形・日付だけで、
+  //     「その value に下げた理由」であることは照合しない。WI-9b は台帳の先頭しか
+  //     見ないので、既存の reason を一字一句コピペして台帳を 1 行に切り詰めれば
+  //     floor は黙って下げられる（実測: floor 580 → 17 で PASS=354 FAIL=0 exit 0。
+  //     001e で自認した「字数だけでは骨抜きにできる」弱点と同型の穴を継承している）。
+  //     さらに WI-9 は floor の**下側**しか見ない＝ floor が実測に近いことを要求する
+  //     上側の締め（WI-9d）が無く、正当に floor を下げた分の盲目化は恒久的に通る。
+  //     上側の締め（WI-9d）と理由の中身の照合は #816。
+  emit(a.topLevelFunctionCount >= bl.top_level_functions,
+    `WI-9 関数総数が baseline の floor を下回らない（実測 ${a.topLevelFunctionCount} / floor ${bl.top_level_functions}）＝走査の盲目化の申告`);
+  const tlfRevs = Array.isArray(blRaw.top_level_functions_revisions) ? blRaw.top_level_functions_revisions : [];
+  emit(typeof blRaw.top_level_functions === 'number' && blRaw.top_level_functions > 0,
+    `WI-9a baseline.top_level_functions が正の数として実在する（キーの削除で WI-9 を骨抜きにできない。実測 ${blRaw.top_level_functions}）`);
+  emit(tlfRevs.length >= 1 && !!tlfRevs[0] && tlfRevs[0].value === blRaw.top_level_functions,
+    `WI-9b floor の現在値が改訂台帳（top_level_functions_revisions）の先頭と一致する（実測 ${tlfRevs[0] && tlfRevs[0].value} / ${blRaw.top_level_functions}）`);
+  emit(tlfRevs.every((r) => !!r && (r.reason || '').trim().length >= MIN_REASON
+      && EVIDENCE_RE.test(r.reason || '') && /^\d{4}-\d{2}-\d{2}$/.test(r.date || '')),
+  'WI-9c 改訂台帳の全行に理由（根拠参照つき・日付）がある（floor の変更は理由の追記を強制される）');
+
   // --- C1 面 × 変異の全表（合成 fixture）--------------------------------------
   //   対象ファイルの実在の死にコードには一切依存しない。**注入した合成の死んだ関数**
   //   だけを使うので、#798 の掃除が全件終わっても（在庫ゼロでも）表は壊れない。
@@ -1203,6 +1233,43 @@ const G = gate(RAW, ALLOW, ok, console.log);
 const A = G.a;
 const V = G.v;
 
+// --- WI-9 の検出力の自己検査【#816 hotfix / C1】-------------------------------
+//   関数総数が floor を割った**合成世界**（関数 1 本の最小文書 × floor=2 の合成
+//   baseline）に gate() を当て直し、WI-9 が実際に落ちることを毎回確かめる。
+//   gate() から WI-9 を消す / warn へ降格する変異はここで捕まる（R1 の 1 語変異が
+//   素通りした 001i 高3 と同じ理由で、番人には番人の正極性検査を対で置く）。
+//   ★限定（#816 の判定・実測にもとづく申告）: これが測るのは**合成世界の負極性**
+//   （floor を割った合成入力で WI-9 が鳴ること）だけで、**本番の入力に対して WI-9 が
+//   評価されていること**は測っていない。よって「合成世界では鳴るが本番の入力では
+//   鳴らない」向きの変異は素通りする（実測: WI-9 の emit を `src.length >= 1000 || …`
+//   で囲うと、本番で WI-9 が 1 本も出ないのに WI-9-SELF は緑のまま。合成文書は
+//   100 文字弱なので条件が偽になり WI-9 が評価されて鳴るため）。R1 の 1 語変異
+//   （001i 高3）と同型の穴が 1 本残っている。正極性（本番の gate 結果に WI-9 の
+//   ラベルが実際に現れたことを数える）の追加は #816。
+console.log('=== WI-9 の検出力（自己検査） ===');
+{
+  const wiFn = uniqIn(RAW, '__wi9SelfProbe');
+  const wiDoc = `<html><body><script>function ${wiFn}(){ return 1; } ${wiFn}();<\/script></body></html>`;
+  const wiAllow = {
+    baseline: {
+      top_level_functions: 2,
+      top_level_functions_revisions: [{
+        value: 2,
+        reason: 'WI-9 自己検査用の合成 floor（#816 hotfix / 2026-08-04）。実測 1 関数の合成文書に floor=2 を当てて WI-9 の負方向を毎回確かめる。',
+        date: '2026-08-04',
+      }],
+    },
+    limits: clone(ALLOW.limits || {}),
+    static: [],
+    runtime: [],
+    bindings: [],
+  };
+  const wiFails = [];
+  gate(wiDoc, wiAllow, (cond, msg) => { if (!cond) wiFails.push(msg); }, () => {});
+  ok(wiFails.some((m) => m.startsWith('WI-9 ')),
+    `WI-9-SELF 関数総数が floor を割った合成世界で WI-9 が落ちる（実測で落ちた assert: ${wiFails.filter((m) => m.startsWith('WI-9')).length} 本）`);
+}
+
 // =============================================================================
 // 5. 既知の限界を固定する（lib ヘッダの KL-*）
 //    すべて合成の入力に対する判定＝ C1。実ファイルの中身には依存しない。
@@ -1296,6 +1363,8 @@ ok(ON_EVENT_ATTRS.has('onclick') && ON_EVENT_ATTRS.has('onpointerdown') && !ON_E
 //   外延 = LineTerminator 4 種（LF / CR / U+2028 / U+2029。§7.3）＋ CRLF（1 単位の
 //   LineTerminatorSequence）× 改行を扱う使用箇所の全部:
 //     行コメントの終端（P1-1）／文字列の行継続 \+改行（P1-2・§7.8.4）／文字列の終端
+//     （★#816 hotfix: LF / CR だけが打ち切る。U+2028 / U+2029 は ES2019 改訂で
+//     文字列の中に生で置けるので打ち切らない＝箇所ごとに規則が違う）
 //     ／正規表現リテラルの未終端打ち切り（生の改行・\+改行の両方。§7.8.5）
 //     ／テンプレートリテラル（反例＝生の改行も \+改行も中身が同じ面のままなので
 //     改行の種類に依存しない）。
@@ -1307,7 +1376,20 @@ console.log('=== 字句の行終端の全数表（001t LT-*）===');
 {
   const LT = [['LF', '\n'], ['CR', '\r'], ['CRLF', '\r\n'], ['LS', '\u2028'], ['PS', '\u2029']];
   const doc = (js) => `<html><body><script>${js}<\/script></body></html>`;
-  const liveIn = (js, n) => !analyze(doc(js)).unreachableStatic.some((x) => x.name === n);
+  // #816 hotfix の訂正【LT-* の空振り】: 「unreachableStatic に出ない」だけでは、走査が
+  //   完全に盲目になって関数が**登録すらされなかった**ときも真になる（実測: script の
+  //   中身を JS として一切走査しない変異を lib に当てても、落ちる LT-* は
+  //   topLevelFunctionCount を併記していた LT-STR-CONT-* の 5 本だけで、この PR の退行を
+  //   pin しているはずの LT-STR-TERM-LS / -PS は緑のままだった）。LT-* の fixture は
+  //   どれも上位関数をちょうど 1 本だけ宣言するので、LT-STR-CONT-* と同じく
+  //   topLevelFunctionCount を併記し、**登録されたうえで生きている**ことを要求する。
+  const liveIn = (js, n) => {
+    const m = analyze(doc(js));
+    return m.topLevelFunctionCount === 1 && !m.unreachableStatic.some((x) => x.name === n);
+  };
+  // #816 hotfix: fixture の合法 / 非合法の期待値は実エンジン（new Function）に聞く。
+  // 「オラクルにかけられない形」を黙って期待値に使わせないための機械。
+  const engineLegal = (js) => { try { new Function(js); return true; } catch (e) { return false; } };
   for (const [nm, t] of LT) {
     // P1-1: 行コメントは 4 種のどれでも終端する（次行の実呼出がコメント面に飲まれない）。
     ok(liveIn(`function ltA(){ return 1; } //c${t}ltA();`, 'ltA'),
@@ -1316,9 +1398,33 @@ console.log('=== 字句の行終端の全数表（001t LT-*）===');
     const mCont = analyze(doc(`var s='x\\${t}y'; function ltB(){ return 1; } ltB();`));
     ok(mCont.topLevelFunctionCount === 1 && !mCont.unreachableStatic.some((x) => x.name === 'ltB'),
       `LT-STR-CONT-${nm} 文字列の行継続 \\+${nm} を 1 単位で読む（後続の関数が登録され、生きる）`);
-    // 文字列の終端: 生の LineTerminator は 4 種とも未終端として打ち切る（LF と同じ扱い）。
-    ok(liveIn(`function ltC(){ return 1; } var q='a${t}ltC();`, 'ltC'),
-      `LT-STR-TERM-${nm} 生の ${nm} が文字列を打ち切り、後続の呼出が文字列面に飲まれない`);
+    // 文字列の終端【#816 hotfix】: 期待値の出どころは実エンジン（new Function）。
+    //   箇所ごとに規則が違う——LF / CR は文字列を打ち切る（生で置くと SyntaxError＝
+    //   ここで pin するのは未終端文字列からの**復帰挙動**）。U+2028 / U+2029 は
+    //   ES2019 の改訂（§7.8.4 → 現 §12.9.4）で文字列の中に**生で置ける**ので
+    //   打ち切らない。001t は 4 種で平坦に打ち切り、既存リテラルへの LS/PS 1 文字で
+    //   走査が盲目になった（580 関数 → 17 関数・緑のまま）。
+    //   各 fixture の合法 / 非合法をテスト自身が実エンジンに問い合わせて assert する
+    //   （オラクルにかけられない形を期待値に使わせない機械）。
+    if (t === '\u2028' || t === '\u2029') {
+      // 合法 fixture（閉じ引用符あり）: 文字列は閉じ引用符まで 1 つで、後続は生きる。
+      //   関数宣言は文字列より**前**に置く（登録済みの関数の呼出が飲まれる向きで測る。
+      //   宣言ごと飲まれると unreachableStatic に出ず liveIn が空振りで真になるため）。
+      const fixLegal = `function ltC(){ return 1; } var q='a${t}b'; ltC();`;
+      ok(engineLegal(fixLegal),
+        `LT-STR-LEGAL-${nm} fixture が実エンジンで合法（new Function が受理する）`);
+      ok(liveIn(fixLegal, 'ltC'),
+        `LT-STR-TERM-${nm} 生の ${nm} は文字列を打ち切らず（ES2019）、閉じ引用符の後の呼出が生きる`);
+    } else {
+      // LF / CR / CRLF: 生で置いた文字列は実エンジンで SyntaxError（それをテスト自身が
+      // 確かめる）＝合法な fixture は作れない。未終端の打ち切りで後続コードへ復帰する
+      // こと（呼出が文字列面に飲まれないこと）を pin する。
+      const fixIllegal = `function ltC(){ return 1; } var q='a${t}ltC();`;
+      ok(!engineLegal(fixIllegal),
+        `LT-STR-LEGAL-${nm} fixture は実エンジンで SyntaxError（生の ${nm} は文字列に置けない）＝復帰挙動の pin であることの申告`);
+      ok(liveIn(fixIllegal, 'ltC'),
+        `LT-STR-TERM-${nm} 生の ${nm} が未終端文字列を打ち切り、後続の呼出が文字列面に飲まれない（復帰挙動）`);
+    }
     // 正規表現: 生の LineTerminator で未終端＝除算へフォールバックする。
     ok(liveIn(`function ltE(){ return 1; } var r = /abc${t}ltE(); var q=2/;`, 'ltE'),
       `LT-RE-${nm} 正規表現の走査が ${nm} で打ち切られ、後続の呼出が正規表現面に飲まれない`);

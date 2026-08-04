@@ -64,6 +64,13 @@
     "runtime_unreachable": 10,
     "dead_bindings": 5,
     "top_level_functions": 580,
+    "top_level_functions_revisions": [
+      {
+        "value": 580,
+        "reason": "floor の初期値＝#798 / 001e の実測 580 を据え置き（#816 hotfix / 2026-08-04）。関数総数がこれを下回ったら『走査が盲目になった』（例: 文字列リテラル内の U+2028 で面走査が崩れる #816）か大量削除で、どちらも黙って通してはいけない。下げるとき（#798 の掃除で正当に減る等）はこの配列の先頭へ value・reason（根拠参照つき）・date を積む。WI-9b が現在値と台帳先頭の一致を、WI-9c が全行の理由と日付を強制する。",
+        "date": "2026-08-04"
+      }
+    ],
     "superseded": [
       {
         "by": "PHASE1-REACH-001c",
