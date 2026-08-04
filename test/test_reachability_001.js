@@ -886,8 +886,17 @@ function gate(src, allow, emit, log) {
   //   ラチェット運用: floor（baseline.top_level_functions）を下げる（#798 の掃除で
   //   関数が正当に減る等）ときは、top_level_functions_revisions の**先頭**へ
   //   { value, reason（根拠参照つき・MIN_REASON 字以上）, date } を積むこと。
-  //   WI-9b が「現在値 = 台帳先頭の値」を、WI-9c が台帳全行の理由・日付を強制する
-  //   ＝ 1 行書き換えるだけの黙った引き下げはできない（allowlist の reason と同じ規律）。
+  //   WI-9b が「現在値 = 台帳先頭の値」を、WI-9c が台帳全行の理由・日付を強制する。
+  //   ★このラチェットで塞げている範囲（#816 の判定・実測にもとづく申告）:
+  //     塞いだ = 型 / キー削除 / 配列でない台帳（WI-9a・WI-9b の形の照合）。
+  //     塞げていない = 理由の**中身**。WI-9c が見るのは字数・根拠参照の形・日付だけで、
+  //     「その value に下げた理由」であることは照合しない。WI-9b は台帳の先頭しか
+  //     見ないので、既存の reason を一字一句コピペして台帳を 1 行に切り詰めれば
+  //     floor は黙って下げられる（実測: floor 580 → 17 で PASS=354 FAIL=0 exit 0。
+  //     001e で自認した「字数だけでは骨抜きにできる」弱点と同型の穴を継承している）。
+  //     さらに WI-9 は floor の**下側**しか見ない＝ floor が実測に近いことを要求する
+  //     上側の締め（WI-9d）が無く、正当に floor を下げた分の盲目化は恒久的に通る。
+  //     上側の締め（WI-9d）と理由の中身の照合は #816。
   emit(a.topLevelFunctionCount >= bl.top_level_functions,
     `WI-9 関数総数が baseline の floor を下回らない（実測 ${a.topLevelFunctionCount} / floor ${bl.top_level_functions}）＝走査の盲目化の申告`);
   const tlfRevs = Array.isArray(blRaw.top_level_functions_revisions) ? blRaw.top_level_functions_revisions : [];
@@ -1229,6 +1238,14 @@ const V = G.v;
 //   baseline）に gate() を当て直し、WI-9 が実際に落ちることを毎回確かめる。
 //   gate() から WI-9 を消す / warn へ降格する変異はここで捕まる（R1 の 1 語変異が
 //   素通りした 001i 高3 と同じ理由で、番人には番人の正極性検査を対で置く）。
+//   ★限定（#816 の判定・実測にもとづく申告）: これが測るのは**合成世界の負極性**
+//   （floor を割った合成入力で WI-9 が鳴ること）だけで、**本番の入力に対して WI-9 が
+//   評価されていること**は測っていない。よって「合成世界では鳴るが本番の入力では
+//   鳴らない」向きの変異は素通りする（実測: WI-9 の emit を `src.length >= 1000 || …`
+//   で囲うと、本番で WI-9 が 1 本も出ないのに WI-9-SELF は緑のまま。合成文書は
+//   100 文字弱なので条件が偽になり WI-9 が評価されて鳴るため）。R1 の 1 語変異
+//   （001i 高3）と同型の穴が 1 本残っている。正極性（本番の gate 結果に WI-9 の
+//   ラベルが実際に現れたことを数える）の追加は #816。
 console.log('=== WI-9 の検出力（自己検査） ===');
 {
   const wiFn = uniqIn(RAW, '__wi9SelfProbe');
@@ -1359,7 +1376,17 @@ console.log('=== 字句の行終端の全数表（001t LT-*）===');
 {
   const LT = [['LF', '\n'], ['CR', '\r'], ['CRLF', '\r\n'], ['LS', '\u2028'], ['PS', '\u2029']];
   const doc = (js) => `<html><body><script>${js}<\/script></body></html>`;
-  const liveIn = (js, n) => !analyze(doc(js)).unreachableStatic.some((x) => x.name === n);
+  // #816 hotfix の訂正【LT-* の空振り】: 「unreachableStatic に出ない」だけでは、走査が
+  //   完全に盲目になって関数が**登録すらされなかった**ときも真になる（実測: script の
+  //   中身を JS として一切走査しない変異を lib に当てても、落ちる LT-* は
+  //   topLevelFunctionCount を併記していた LT-STR-CONT-* の 5 本だけで、この PR の退行を
+  //   pin しているはずの LT-STR-TERM-LS / -PS は緑のままだった）。LT-* の fixture は
+  //   どれも上位関数をちょうど 1 本だけ宣言するので、LT-STR-CONT-* と同じく
+  //   topLevelFunctionCount を併記し、**登録されたうえで生きている**ことを要求する。
+  const liveIn = (js, n) => {
+    const m = analyze(doc(js));
+    return m.topLevelFunctionCount === 1 && !m.unreachableStatic.some((x) => x.name === n);
+  };
   // #816 hotfix: fixture の合法 / 非合法の期待値は実エンジン（new Function）に聞く。
   // 「オラクルにかけられない形」を黙って期待値に使わせないための機械。
   const engineLegal = (js) => { try { new Function(js); return true; } catch (e) { return false; } };
