@@ -9,8 +9,10 @@
 //   S3. CSS: 氏名=左(既定)+ellipsis / 参加費=右寄せ+tabular-nums / 縮退時の操作は space-between
 //   S4. CSS: 列見出し行 .player-row-head は既定で非表示
 //   S5. CSS: コンテナ幅による自動切替 — 受付リスト要素がコンテナ（container-type:inline-size）で、
-//       @container 広幅時のみ承認済み6列 grid（No.34px/氏名 minmax(120px,1fr)/会員区分118px/
-//       会費区分92px/参加費74px/操作auto）＋列見出し行（行と同一列定義）
+//       @container 広幅時のみ承認済み6列 grid（No.34px/氏名 minmax(120px,300px)/会員区分118px/
+//       会費区分92px/参加費74px/操作auto/末尾1fr 空トラック）＋列見出し行（行と同一列定義）。
+//       氏名列の上限と末尾空トラックは WORLD-STD-ALIGN-003（#824 作者決定 2026-08-07）:
+//       氏名列が余白を全部吸って氏名〜会員区分に空洞が出るのを防ぎ、余白を行の右端へ送る。
 //   S6. JS: renderRegList の列見出し行は textContent のみで組立（escape ヒューリスティック非接触）・0名時は出さない
 //   B1. makePlayerRow の DOM 構造不変（.player-row > main(4子) + actions(2子)・操作ボタン3個）
 //   B2. renderRegList: 参加者ありのクラスは先頭に .player-row-head（span 6個・ラベル一致）＋人数分の .player-row
@@ -55,10 +57,10 @@ const RAW = fs.readFileSync(targetPath,'utf8');
     'S5-1 受付リスト要素（regClassListId の3系統）がコンテナ');
   const cq = RAW.match(/@container \(min-width:\d+px\)\{[\s\S]*?\n\}/);
   assert(!!cq, 'S5-2 @container ブロックが存在する');
-  assert(!!cq && /\.player-row\{grid-template-columns:34px minmax\(120px,1fr\) 118px 92px 74px auto;grid-template-areas:none\}/.test(cq[0]),
-    'S5-3 広幅では承認済み6列 grid（34px/minmax(120px,1fr)/118px/92px/74px/auto）');
-  assert(!!cq && /\.player-row-head\{display:grid;grid-template-columns:34px minmax\(120px,1fr\) 118px 92px 74px auto;/.test(cq[0]),
-    'S5-4 広幅では列見出し行を行と同一列定義で表示');
+  assert(!!cq && /\.player-row\{grid-template-columns:34px minmax\(120px,300px\) 118px 92px 74px auto 1fr;grid-template-areas:none\}/.test(cq[0]),
+    'S5-3 広幅では承認済み6列 grid＋氏名上限＋末尾空トラック（34px/minmax(120px,300px)/118px/92px/74px/auto/1fr・#824）');
+  assert(!!cq && /\.player-row-head\{display:grid;grid-template-columns:34px minmax\(120px,300px\) 118px 92px 74px auto 1fr;/.test(cq[0]),
+    'S5-4 広幅では列見出し行を行と同一列定義で表示（#824 の列定義と一致）');
   assert(!!cq && /grid-area:auto/.test(cq[0]),
     'S5-5 広幅では縮退用 grid-area をリセット（source 順の自動配置に戻す）');
   assert(/headRow\.className='player-row-head'/.test(RAW),

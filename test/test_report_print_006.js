@@ -5,7 +5,8 @@
 // 観点:
 //   A. 構造検査
 //     A1. printResults() 関数定義あり
-//     A2. h2 「スイス式トーナメント　対戦成績」が維持されている
+//     A2. h2 「スイス式トーナメント　対戦成績」が撤去されている（PRINT-RESULTS-LAYOUT-001 #825:
+//         doc-header の「対戦成績」と重複するため削除。旧 pin を反転して再発を塞ぐ）
 //     A3. UI ボタン文言「対戦成績を印刷 / PDF保存」が維持されている
 //     A4. 帳票生成本体(B-5a で buildPrintResultsHtml へ抽出)が共通 helper(buildTournamentPdfFilename /
 //         buildPdfDocHeaderHtml)経由でファイル名/見出しを生成し、その helper が normalize 系を必ず
@@ -35,7 +36,7 @@
 //     D3. <title> は 8桁開催日始まり。旧 PR#204「YYYY年M月度」literal / 旧 '月度_月例将棋大会結果' は出ない
 //
 //   E. 既存互換
-//     E1. h2 「スイス式トーナメント　対戦成績」維持
+//     E1. h2 「スイス式トーナメント　対戦成績」が出力に無い（#825 で削除・doc-header 見出しは維持）
 //     E2. table 構造 (順位 / 氏名 / N回戦 / 勝数(A) / 負数 / B / C) 維持
 //     E3. entry_no 非表示維持（RANK-PRINT-001、'｜' 区切りなし）
 //     E4. B/C 注釈「対戦相手の最終勝数合計」維持
@@ -208,9 +209,9 @@ function makeStateWithMatches(playersA, resultsA, rounds, reportOverrides){
 // A1
 assert(/function\s+printResults\s*\(/.test(htmlSrc), 'A1 function printResults() 定義あり');
 
-// A2: h2 維持
-assert(htmlSrc.indexOf("<h2>スイス式トーナメント　対戦成績</h2>") >= 0,
-  'A2 h2「スイス式トーナメント　対戦成績」が維持されている');
+// A2: h2 撤去（PRINT-RESULTS-LAYOUT-001 #825）
+assert(htmlSrc.indexOf("<h2>スイス式トーナメント　対戦成績</h2>") < 0,
+  'A2 h2「スイス式トーナメント　対戦成績」が撤去されている（#825）');
 
 // A3: UI ボタン文言維持
 assert(/onclick="printResults\(\)"[^>]*>対戦成績を印刷 \/ PDF保存</.test(htmlSrc),
@@ -471,14 +472,16 @@ function extractTitle(html){
 // SECTION E: 既存互換
 // ============================================================
 
-// E1: h2 維持
+// E1: h2 が出力に無い（PRINT-RESULTS-LAYOUT-001 #825）。doc-header の種別見出しは維持されること。
 {
   const env = loadEnv(targetPath);
   setupBasic(env, {date:'2026-05-19'});
   env.printResults();
   const html = env._getPrintedHtml();
-  assert(html.indexOf('<h2>スイス式トーナメント　対戦成績</h2>') >= 0,
-    'E1 h2「スイス式トーナメント　対戦成績」維持');
+  assert(html.indexOf('<h2>スイス式トーナメント　対戦成績</h2>') < 0,
+    'E1 h2「スイス式トーナメント　対戦成績」が出力に無い（#825）');
+  assert(html.indexOf('対戦成績</div>') >= 0,
+    'E1b doc-header の種別見出し「対戦成績」は維持');
 }
 
 // E2: table 構造維持
