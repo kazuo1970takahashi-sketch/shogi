@@ -98,8 +98,8 @@ ok(placements >= MIN_PLACEMENTS,
 //   通ってしまう。モジュールの CHARS と、sweep が「実際に挿入した」と申告する
 //   r.chars[].ch の両方を、実文字コードポイントで pin する。
 {
-  const LS = ' ';
-  const PS = ' ';
+  const LS = String.fromCharCode(0x2028); // 生文字もエスケープも置かない（転送・整形での不可視破損を防ぐ）
+  const PS = String.fromCharCode(0x2029);
   const codes = (xs) => xs.map((c) => 'U+' + c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')).join(',');
   const moduleChars = CHARS.map((c) => c[1]);
   const usedChars = r.chars.map((c) => c.ch);

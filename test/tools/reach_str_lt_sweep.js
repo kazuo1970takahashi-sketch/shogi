@@ -43,7 +43,9 @@ const fs = require('fs');
 const path = require('path');
 const { analyze, classifyFaces, FACE } = require(path.join(__dirname, '..', 'lib', 'reachability.js'));
 
-const CHARS = [['U+2028 (LS)', ' '], ['U+2029 (PS)', ' ']];
+const LS = String.fromCharCode(0x2028); // U+2028 LINE SEPARATOR（生文字もエスケープも置かない＝整形・転送での不可視破損を防ぐ）
+const PS = String.fromCharCode(0x2029); // U+2029 PARAGRAPH SEPARATOR
+const CHARS = [['U+2028 (LS)', LS], ['U+2029 (PS)', PS]];
 
 // faceIntact(f1, f2, mid) → 挿入位置 mid の 1 文字を除いて面分類が完全一致か
 //   f1 = 原本の classifyFaces / f2 = 挿入後の classifyFaces。
