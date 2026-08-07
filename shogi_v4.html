@@ -4154,7 +4154,8 @@ function bindPastParticipantsToggle(){
 //   純関数群（parse/resolve/validate/bulkAddPlayers/format）は DOM・localStorage・マスタへ触れない。
 
 // 貼り付けテキストを行配列へ分解する純関数。1行1人・タブがあればタブ区切り（Excel コピペ）、
-// 無ければカンマ区切り（CSV）。空行はスキップ。4列目以降は無視（Excel の余り列対策）。
+// 無ければカンマ区切り（CSV。日本語入力の全角カンマ「，」も受理＝BULK-ENTRY-DELIM-001）。
+// 空行はスキップ。4列目以降は無視（Excel の余り列対策）。
 // lineNo は貼り付けテキスト内の行番号（1始まり）＝プレビューから元リストの行を特定できる。
 function parseBulkEntryText(text){
   var out=[];
@@ -4163,7 +4164,12 @@ function parseBulkEntryText(text){
   for(var i=0;i<lines.length;i++){
     var line=lines[i];
     if(!line||!line.replace(/[\s　]/g,''))continue;
-    var cells=(line.indexOf('\t')>=0)?line.split('\t'):line.split(',');
+    // 区切りは1行につき1種類だけを優先順で選ぶ: タブ（Excel 貼り付けの生命線）＞ 半角カンマ ＞ 全角カンマ「，」。
+    // ★読点「、」は区切りにしない。氏名の括弧内注記に現実に現れ（例「山田太郎（沼津、東部）」）、
+    // 区切りの無い1列貼り付けでその氏名が分断される（反証パネル実測）。全角スペースも受理しない
+    // （姓名間の空白と衝突するため）。
+    var sep=(line.indexOf('\t')>=0)?'\t':(line.indexOf(',')>=0)?',':(line.indexOf('，')>=0)?'，':',';
+    var cells=line.split(sep);
     out.push({
       lineNo:i+1,
       name:(cells[0]||'').replace(/^[\s　]+|[\s　]+$/g,''),
