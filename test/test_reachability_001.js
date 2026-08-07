@@ -342,6 +342,27 @@
 //     台帳の注記に明示した（規律ゲートとして残す。扱いは #816 の整理対象）。
 //   P2-2 **REGISTRY-MUT-BAL が実測でなく宣言（FORMS[].stray）を見ていた**
 //     → 各形の実測（gotStray）から両極性を測る形へ。
+//     ★ 816A で本数を実測して確定した（cowork の申告 6 本・パネルの数え 9 本のどちらでもない）。
+//     ★ 816A-2 で再実測した（#819 判定の指示）。**本数は変わらない: 恒真 8 本・重複 2 本**。
+//       `ok()` の全数表も 361 本・`WI-*` 欄 14 本のまま（816A-2 は assert を 1 本も増減させず、
+//       `WI-10` の述語だけを件数から集合包含へ変えたため）。実測の根拠:
+//       (1) `A5-2` … `evaluate()` から A5 の上限検査を丸ごと消しても `PASS=361 FAIL=0` exit 0
+//           ＝ 816A と同じ（検出力ゼロのまま）。
+//       (2) 対照として `WI-10` の述語を反転すると `PASS=357 FAIL=4` exit 1
+//           （`WI-10` / `WI-9-SELF-b` / `WI-10-SELF-N` / `WI-10-SELF-P`）＝ **`WI-10` は恒真ではない**。
+//           件数版から集合包含版へ変えても検出力は落ちていない（むしろ #819 (B) のすり替えを拾う）。
+//     判定の基準＝「対象ファイル・allowlist のどんな状態でも落ちない（入力に対する検出力ゼロ）」。
+//     **恒真 = 8 本**:
+//       `A5-2`（`A5` は `add('warn', …)` からしか出ないので `errors.some(rule==='A5')` は
+//         構造上つねに false。実測: `evaluate()` から A5 の上限検査を丸ごと消しても
+//         PASS=361 FAIL=0 exit 0）／`OP-KEYS-1`〜`-5`（`OPS`/`OMITTED`/`OP_KEYS` は
+//         このファイル内の定数の空配列で、入力では 1 件も populate できない）／
+//       `SCOPE-1`（`SCOPE_LIMITS` がこのファイル内の定数）／
+//       `L-4`（`faceStats` が histogram を `ALL_FACES` から初期化するのでキー集合は入力に依存しない）。
+//     **恒真ではないが重複 = 2 本**: `L-2` / `L-3`。`face` は `Uint8Array(src.length)` なので
+//       `covered + unclassified === src.length`、かつ histogram の総和 ≡ `covered`。
+//       ＝ `L-1` / `L-2` / `L-3` は同じ条件の言い換えで、検出力はあるが 2 本は重なっている。
+//     整理（削除・降格）そのものは 816A の範囲外（「やらないこと」に明記）。本数の確定だけを置く。
 //   P2-3 **changelog 断片が 001s の方針転換を記録していなかった**
 //     → 「①〜㉗ と監視機械を #816 へ・常設は検出力＋allowlist 規律のみ・正当編集耐性は
 //     実測していない」を docs/changelog.d/20260801_phase1-reach-001.md に追記。
@@ -356,11 +377,26 @@
 //     baseline の二重記帳の照合。**`WI-8` は検査2 由来の bindings を実質ブロッキングに
 //     引き上げる非対称**（R5 warn の指示どおり allowlist から外すと WI-8 が赤くなる）。
 //     これも #816 で整理する。
-//   - **`baseline.static_unreachable` は assert していない**（C4 census の表示だけ）。
-//     runtime / bindings は `WI-7` / `WI-8` で件数照合しているのに static だけ非対称。
-//     static は R1（error）と R5（error）の**双方向照合**で既にラチェットされており、
-//     件数の二重記帳を足すと「死にコード 1 本削除」ごとに baseline 更新を強制することに
-//     なるため、意図的に外している。baseline の意味論そのものは #816 H-6 で整理する。
+//   - ~~**`baseline.static_unreachable` は assert していない**（C4 census の表示だけ）。~~
+//     ── **816A で番人を置いた（`WI-10`）。上の「R1/R5 の双方向照合で既にラチェットされて
+//     いる」は偽だった。** DOM へ一度も挿入されない死んだ HTML テンプレートを 1 つ置くと、
+//     allowlist 済みの死にコードが `R6`（JS 文字列の中の `on*=`）経由で静的到達不能から外れ、
+//     `R1` も `R5` も整合したまま台帳が 30 → 12 に痩せる（実測 PASS=354 FAIL=0 WARN2=20
+//     exit 0・関数総数は 580 のまま＝ `WI-9` も無力）。**その事故を意図的除外の判断ごと
+//     反証したので #816 H-6（baseline の意味論の整理）を前倒しした。**
+//     件数の二重記帳（`WI-7`/`WI-8` と同じ「一致」の形）を避ける理由は当時のまま正しい
+//     ので採らず、**「その時点で静的到達不能だった関数名の集合」を台帳に持つ形**にした
+//     （＝ static の baseline の意味論は「件数」ではなく「名前の集合」）。詳細は gate() の
+//     `WI-10` の節。#798 の掃除では台帳を 1 バイトも更新しなくてよい（実測済み）。
+//     ── **816A-2 で述語を件数から集合包含へ直した（#819 の判定）**。816A は台帳を名前集合で
+//     持ちながら、番人だけは「実測の**件数** >= 生存分の**件数**」で近似していた。これが
+//     正極性の自己検査 `WI-10-SELF-P`（台帳 +1 で落ちること＝実測 <= 生存分）と対になって
+//     **実測 === 生存分の等式**を強制し、(A) 新しい死にコードを `R5` の指示どおり allowlist へ
+//     正規追記しただけで恒久赤（`ok()` 直打ちなので allowlist では消せない）・(B) 台帳の 18 本を
+//     到達可能化しつつ同数の死にコードを足せば相殺できて `PASS=361 FAIL=0 WARN2=20` exit 0
+//     ＝**番人を置く前と同じ姿**、の 2 つを同時に生んでいた（着手時に両方を実測で再現）。
+//     `suAlive ⊆ unreachableStatic` に変えると (A) は緑・(B) は「化けた 18 件」を名指しで赤。
+//     台帳の形（`WI-10a`/`b`/`c`）と自己検査（`WI-10-SELF-N`/`-P`）は 1 行も変えていない。
 //   - `insertTopLevelJs` はトップレベル関数が 0 個のファイルでは新しい `<script>` を
 //     足す側にフォールバックする（旧版はバイト 0 に注入して面の表が全崩れした）。
 //   - fixture の probe 名は **001m で属性名 / 001n で marker とその他すべて**を
@@ -908,6 +944,98 @@ function gate(src, allow, emit, log) {
       && EVIDENCE_RE.test(r.reason || '') && /^\d{4}-\d{2}-\d{2}$/.test(r.date || '')),
   'WI-9c 改訂台帳の全行に理由（根拠参照つき・日付）がある（floor の変更は理由の追記を強制される）');
 
+  // --- WI-10【#816 816A】static の実測に番人を置く -----------------------------
+  //   捕まえる事故（パネルが構成・cowork が独立に再現。Issue #816
+  //   `#issuecomment-5187453832` §1）: **DOM に一度も挿入されない死んだ HTML
+  //   テンプレートを 1 つ置くだけ**で、allowlist 済みの死にコードが静的到達不能から
+  //   外れる（`onclick="fn()"` を含む文字列なので R6 の warn 扱いで到達可能になる）。
+  //   R5 は「allowlist から外せ」と言うので、指示どおり刈ると 18 本が台帳から黙って
+  //   消えたまま **PASS=354 FAIL=0 WARN2=20 exit 0**（実測）。R1 も R5 も整合している
+  //   ので鳴りようがなく、関数総数は 580 のまま動かないので `WI-9` も無力。
+  //
+  //   ★止める向きの設計（実装レーンの判断・理由）:
+  //   件数だけの照合（`WI-7`/`WI-8` と同じ「一致」の形）は採らない。採ると #798 の
+  //   掃除で死にコードを 1 本消すたびに baseline 更新を強制することになり、
+  //   L359-364 が static を意図的に外した理由をそのまま再現するだけになる（実測でも
+  //   掃除 1/15/30 本の世界は静的到達不能が 29/15/0 へ素直に落ちる）。
+  //   **「減った分が、ファイルから消えた分で説明がつくか」を見る。** そのために台帳
+  //   （`baseline.static_unreachable_revisions` の先頭＝スナップショット）へ
+  //   **そのとき静的到達不能だった関数名の集合**を持たせ、
+  //   「台帳の名前のうち **いまもトップレベル関数として実在するもの**」が
+  //   **1 本残らず静的到達不能のままか**を見る（＝ suAlive ⊆ unreachableStatic の集合包含）。
+  //     - #798 の掃除: 関数がファイルから消える → 生存分からも消える → 台帳は無改変で緑
+  //     - §1 の事故: 関数は実在したまま到達可能へ化ける → 包含が破れる → 赤
+  //     - 通常の PR（生きた関数を足す / 新しい死にコードを allowlist へ足す）: 包含は動かない
+  //     - 混在 PR（掃除しつつ新しい死にコードを足す）も誤検知しない
+  //   `baseline.top_level_functions` を許容量に使わないのは、`WI-9` のラチェットが
+  //   #798 の掃除でそれ自体を下げるため（下げた瞬間に許容量が 0 に戻って赤くなる）。
+  //   ＝ static の意味論は「件数」ではなく「**その時点の名前の集合**」で持つ（#816 H-6）。
+  //
+  //   ★816A-2 で件数（`実測 >= 生存分`）から集合包含へ変えた理由（#819 の判定・両方を実測で再現）:
+  //   意味論は上の設計のまま。**それを件数で近似していたところだけ**を名前で直接見る形に直した。
+  //   (A) **誤検知**: 新しい死にコードを 1 本足して `R5` の指示どおり allowlist へ正規追記
+  //       するだけで恒久赤になった（実測 31 / 生存分 30 で `WI-10` 自体は緑だが、
+  //       正極性の自己検査 `WI-10-SELF-P` が「台帳 +1 で `WI-10` が落ちること」を要求する
+  //       ＝ 実測 <= 生存分 を含意し、`WI-10` の下限と対で **実測 === 生存分の等式**を
+  //       強制していた）。`ok()` 直打ちなので **allowlist に何を書いても消せない**。
+  //   (B) **見逃し**: 件数は集合ではないので**減った分を足し戻せば相殺できた**。台帳の 18 本を
+  //       死んだ HTML テンプレートで到達可能化し、同じ PR で新しい死にコードを 18 本足して
+  //       allowlist へ正規追記すると、実測 30 / 生存分 30 で `WI-10` が緑
+  //       （実測 `PASS=361 FAIL=0 WARN2=20` exit 0 ＝**番人を置く前と同じ姿**）。
+  //   集合包含にすると (A) は「包含が破れていない」ので緑・(B) は「化けた 18 件」を名指しで
+  //   赤にする。**台帳の形（`WI-10a`/`b`/`c`）も自己検査（`WI-10-SELF-N`/`-P`）も 1 行も
+  //   変えずに済む**＝ `WI-10-SELF-P` の正極性の作り方自体は正しかった（`WI-9-SELF` に
+  //   無かった軸を本当に埋めている）。壊していたのは `WI-10` 側が件数だったこと 1 点。
+  //   ── クラス（#819 G4）: 「**番人と、その番人の自己検査が、合わさって等式を強制する**」。
+  //   `emit(実測 >= 台帳)` 型の下限と「台帳 +1 で落ちること」を要求する正極性が対で置かれると
+  //   必ず起きる。**集合包含は「+1 で落ちる」が上限を含意しない**ので反例になっている。
+  //   816B で `WI-9` に正極性を足すときは同じ形の再発に注意すること。
+  //
+  //   ★このラチェットで塞げている範囲（実測にもとづく申告・「骨抜きにできない」とは書かない）:
+  //     塞いだ = 型 / キー削除 / 件数と名前の食い違い / `baseline.static_unreachable` を
+  //       台帳と別々に下げること（WI-10a・WI-10b の形の照合）。
+  //     塞げていない = 理由の**中身**。`WI-10c` が見るのは字数・根拠参照の形・日付だけで、
+  //       「その value / その名前集合に取り直した理由」であることは照合しない
+  //       （`WI-9c` が継承した穴と同型。既存 reason のコピペで台帳は書き換えられる）。
+  //     塞げていない = **台帳の枯渇**。#798 の掃除が全件終わると生存分が 0 になり、
+  //       空集合の包含＝恒真 assert になる。そのときスナップショットを取り直す運用が要る
+  //       （毎回 census 行と WI-10 のメッセージへ「台帳 N 件中 実在 M 件」を出して
+  //        枯渇が黙って進まないようにしてある）。
+  //     塞げていない = **台帳の先頭行の書き換え**（#819 判定 §3・816A-2 で SCOPE-1 (e) に追記）。
+  //       事故を起こした側が `WI-10b` の言うとおり先頭行の `names` / `value` を実測へ
+  //       書き換えれば（reason は既存のまま・行は増やさない）、`WI-10c` は全行の**形**しか
+  //       見ないので何も鳴らない。**`WI-9c` から継承した穴の実体で、閉じ方は 816B**。
+  const suRevs = Array.isArray(blRaw.static_unreachable_revisions) ? blRaw.static_unreachable_revisions : [];
+  const suSnap = suRevs[0] || null;
+  const suNames = (suSnap && Array.isArray(suSnap.names)) ? suSnap.names : [];
+  // 「いまもトップレベル関数として実在するか」は実測から引く（allowlist は R5 で刈られる
+  // ので基準に使えない）。lib の公開返り値には全関数名の一覧が無いため _internal.byName。
+  const topNames = (a._internal && a._internal.byName) || new Map();
+  const suAlive = suNames.filter((n) => topNames.has(n));
+  // ★816A-2: 件数ではなく**名前の集合そのもの**を見る（下の「なぜ件数をやめたか」）。
+  const suNow = new Set(a.unreachableStatic.map((x) => x.name));
+  const suMissing = suAlive.filter((n) => !suNow.has(n));
+  log(`  静的到達不能の台帳: ${suNames.length} 件中 いまも実在 ${suAlive.length} 件`
+    + `（実測の静的到達不能 ${a.unreachableStatic.length} 件 / 到達可能へ化けた ${suMissing.length} 件）`);
+  emit(suMissing.length === 0,
+    `WI-10 台帳の生存分が 1 本残らず静的到達不能のまま（台帳 ${suNames.length} 件中 実在 ${suAlive.length} 件`
+    + ` / 到達可能へ化けた ${suMissing.length} 件${suMissing.length ? ': ' + suMissing.slice(0, 5).join(', ')
+      + (suMissing.length > 5 ? ` …他 ${suMissing.length - 5} 件` : '') : ''}）＝台帳が黙って痩せたことの申告`);
+  emit(typeof blRaw.static_unreachable === 'number' && blRaw.static_unreachable >= 0
+      && !!suSnap && suSnap.value === blRaw.static_unreachable,
+  `WI-10a baseline.static_unreachable が 0 以上の数として実在し、台帳先頭の value と一致する`
+    + `（実測 ${blRaw.static_unreachable} / ${suSnap && suSnap.value}）`);
+  emit(!!suSnap && suNames.length === suSnap.value
+      && suNames.every((n) => typeof n === 'string' && n.length > 0)
+      && new Set(suNames).size === suNames.length,
+  `WI-10b 台帳先頭の names が value 件ちょうどの重複なし文字列配列（実測 ${suNames.length} 件`
+    + ` / value ${suSnap && suSnap.value} / 重複排除後 ${new Set(suNames).size} 件）`);
+  emit(suRevs.length >= 1 && suRevs.every((r) => !!r && Array.isArray(r.names)
+      && typeof r.value === 'number'
+      && (r.reason || '').trim().length >= MIN_REASON
+      && EVIDENCE_RE.test(r.reason || '') && /^\d{4}-\d{2}-\d{2}$/.test(r.date || '')),
+  'WI-10c 改訂台帳の全行に value / names / 理由（根拠参照つき・日付）がある（取り直しは理由の追記を強制される）');
+
   // --- C1 面 × 変異の全表（合成 fixture）--------------------------------------
   //   対象ファイルの実在の死にコードには一切依存しない。**注入した合成の死んだ関数**
   //   だけを使うので、#798 の掃除が全件終わっても（在庫ゼロでも）表は壊れない。
@@ -1258,6 +1386,16 @@ console.log('=== WI-9 の検出力（自己検査） ===');
         reason: 'WI-9 自己検査用の合成 floor（#816 hotfix / 2026-08-04）。実測 1 関数の合成文書に floor=2 を当てて WI-9 の負方向を毎回確かめる。',
         date: '2026-08-04',
       }],
+      // 816A: この合成 allowlist に static の台帳を持たせないと **WI-10 系で自爆する**
+      //   （WI-10a / WI-10b がキー欠落で落ち、WI-9-SELF の実測本数の表示が濁る）。
+      //   空の台帳（0 件）＝ WI-10 の下限 0 で、WI-9 の負方向だけを測る世界にする。
+      static_unreachable: 0,
+      static_unreachable_revisions: [{
+        value: 0,
+        names: [],
+        reason: 'WI-9 自己検査用の合成スナップショット（#816 816A / 2026-08-05）。この世界で測りたいのは WI-9 の負方向だけなので、WI-10 の下限は 0 件に置いて自爆させない。',
+        date: '2026-08-05',
+      }],
     },
     limits: clone(ALLOW.limits || {}),
     static: [],
@@ -1268,6 +1406,70 @@ console.log('=== WI-9 の検出力（自己検査） ===');
   gate(wiDoc, wiAllow, (cond, msg) => { if (!cond) wiFails.push(msg); }, () => {});
   ok(wiFails.some((m) => m.startsWith('WI-9 ')),
     `WI-9-SELF 関数総数が floor を割った合成世界で WI-9 が落ちる（実測で落ちた assert: ${wiFails.filter((m) => m.startsWith('WI-9')).length} 本）`);
+  ok(!wiFails.some((m) => m.startsWith('WI-10')),
+    `WI-9-SELF-b 合成 allowlist に static の台帳を持たせたので WI-10 系は 1 本も落ちない（実測 ${wiFails.filter((m) => m.startsWith('WI-10')).length} 本）`);
+}
+
+// --- WI-10 の検出力の自己検査【#816 816A / C1】--------------------------------
+//   WI-9-SELF に足りなかった**正極性**を対で置く。
+//   - 負極性（合成世界）: 台帳に「実在するのに到達可能な関数名」を 1 本入れた最小文書へ
+//     gate() を当て直し、WI-10 が実際に落ちることを毎回確かめる。WI-10 を gate() から
+//     消す / warn へ降格する変異はここで捕まる。
+//   - ★正極性（**本番の入力**）: 同じことを `RAW` に対してやる。WI-9-SELF は合成文書
+//     （100 文字弱）でしか測っていなかったので、`emit` を `src.length >= 1000 || …` で
+//     囲う変異＝「本番では常に真になって 1 本も鳴らないが合成世界では鳴る」を素通しした
+//     （実測で確認済み）。本番サイズの入力で落ちることを要求すれば、その変異は捕まる。
+console.log('=== WI-10 の検出力（自己検査） ===');
+{
+  // 負極性: 到達可能な関数 1 本だけの世界に「その名前が静的到達不能だった」台帳を当てる。
+  const w10Fn = uniqIn(RAW, '__wi10SelfProbe');
+  const w10Doc = `<html><body><script>function ${w10Fn}(){ return 1; } ${w10Fn}();<\/script></body></html>`;
+  const w10Allow = {
+    baseline: {
+      top_level_functions: 1,
+      top_level_functions_revisions: [{
+        value: 1,
+        reason: 'WI-10 自己検査用の合成 floor（#816 816A / 2026-08-05）。WI-9 を巻き込まないよう実測どおり 1 に置く。',
+        date: '2026-08-05',
+      }],
+      static_unreachable: 1,
+      static_unreachable_revisions: [{
+        value: 1,
+        names: [w10Fn],
+        reason: `WI-10 自己検査用の合成スナップショット（#816 816A / 2026-08-05）。${w10Fn} は実在したまま到達可能なので、生存分 1 に対して実測の静的到達不能 0 となり WI-10 が落ちる。`,
+        date: '2026-08-05',
+      }],
+    },
+    limits: clone(ALLOW.limits || {}),
+    static: [],
+    runtime: [],
+    bindings: [],
+  };
+  const w10Fails = [];
+  gate(w10Doc, w10Allow, (cond, msg) => { if (!cond) w10Fails.push(msg); }, () => {});
+  ok(w10Fails.some((m) => m.startsWith('WI-10 ')),
+    `WI-10-SELF-N 台帳の生存分が到達可能へ化けた合成世界で WI-10 が落ちる（実測で落ちた WI-10 系: ${w10Fails.filter((m) => m.startsWith('WI-10')).length} 本）`);
+
+  // ★正極性: **本番の入力（RAW）** に対して WI-10 が実際に評価されていることを測る。
+  //   台帳へ「実在するが到達可能な関数」を 1 本足すと、その 1 本が生存分に入りながら
+  //   unreachableStatic には居ない＝包含が破れて WI-10 だけが落ちる世界になる
+  //   （value / static_unreachable も 1 増やして WI-10a / WI-10b は緑のまま）。
+  //   ★816A-2: WI-10 が集合包含になったので、この正極性は「実測 <= 生存分」を含意しない。
+  //   件数版では下限（WI-10）と対で **実測 === 生存分の等式**を強制していて、新しい死にコード
+  //   1 本を allowlist へ正規追記しただけで恒久赤になった（#819 判定 (A)・実測で再現）。
+  const liveNames = [...A._internal.byName.keys()]
+    .filter((n) => !A.unreachableStatic.some((x) => x.name === n)).sort();
+  const w10Live = liveNames[0];
+  const pAllow = clone(ALLOW);
+  const pSnap = pAllow.baseline.static_unreachable_revisions[0];
+  pSnap.names = pSnap.names.concat([w10Live]);
+  pSnap.value += 1;
+  pAllow.baseline.static_unreachable += 1;
+  const pFails = [];
+  gate(RAW, pAllow, (cond, msg) => { if (!cond) pFails.push(msg); }, () => {});
+  ok(!!w10Live && pFails.some((m) => m.startsWith('WI-10 ')),
+    `WI-10-SELF-P 本番の入力（${RAW.length} 文字）でも WI-10 が評価されている`
+    + `（台帳へ実在する到達可能な関数 ${w10Live} を 1 本足すと WI-10 が落ちる。実測で落ちた assert: ${pFails.length} 本 ${pFails.map((m) => m.split(' ')[0]).join(' / ') || 'なし'}）`);
 }
 
 // =============================================================================
@@ -1826,8 +2028,28 @@ const SCOPE_LIMITS = new Map([
     + '変えたとき」で、#798 はそれをしない（2026-08-03 / #816）'],
   ['このファイルに残る実ファイル依存', 'A5-0 / A5-1 が allowlist の limits キーの実在に依存する'
     + '（#816 受理済み・2026-08-03）。在庫ゼロ操作と一緒に ZERO-1 の 12 周上限も #816 へ移った。'
+    + '816A で **WI-10 系と WI-10-SELF-P が実ファイル依存として増えた**（下項）。'
     + 'それ以外のブロッキング assert は合成 fixture と「解析結果 × allowlist の照合」だけに'
     + '依存する（C1 / C2 / C3 の拘束はヘッダのとおり）'],
+  ['WI-10 が守れない形（816A で足した実ファイル依存の申告）', 'WI-10 は '
+    + 'baseline.static_unreachable_revisions[0].names（実ファイルの関数名 30 件）のうち'
+    + '「いまもトップレベル関数として実在するもの」が 1 本残らず静的到達不能のままかを見る'
+    + '（816A-2 で件数の下限から集合包含へ変えた。件数だと (i) 新しい死にコードを allowlist へ'
+    + '正規追記しただけで WI-10-SELF-P と対になって恒久赤 (ii) 減った分を足し戻すと'
+    + 'すり替えを相殺できる、の両方が起きた＝ #819 判定）。よって次は守れない: '
+    + '(a) **関数の改名** … 台帳の名前が byName から消えるので「削除された」と同じ扱いになり、'
+    + '改名した関数が到達可能へ化けても鳴らない。'
+    + '(b) **台帳の枯渇** … #798 の掃除が全件終わると生存分が 0 になり空集合の包含＝恒真 assert に'
+    + 'なる。そのときスナップショットを取り直す運用が要る（毎回 census 行に「台帳 N 件中 実在 M 件」を'
+    + '出して枯渇が黙って進まないようにしてある）。'
+    + '(c) **台帳より後に足した死にコード** … スナップショットに載っていないので包含に効かない。'
+    + '(d) **理由の中身** … WI-10c は字数・根拠参照の形・日付しか見ない（WI-9c と同型の穴）。'
+    + '(e) **台帳の先頭行の書き換え** … 事故を起こした側が WI-10b の言うとおり先頭行の '
+    + 'names / value を実測へ書き換えれば（reason は既存のまま・行は増やさない）、'
+    + 'WI-10c は全行の**形**しか見ないので何も鳴らない。件数版でも集合包含版でも同じく通る'
+    + '（#819 判定 §3・WI-9c から継承した穴の実体で、閉じ方は 816B が WI-9 側と一緒に扱う）。'
+    + 'WI-10-SELF-P は本番の入力（RAW）へ gate() を当て直すので、実ファイルが 0 関数になれば'
+    + '空振りする（#816 816A / 816A-2 / 2026-08-05）'],
 ]);
 {
   for (const [k, why] of SCOPE_LIMITS) console.log(`  保証しない（001s）: ${k} … ${why.slice(0, 50)}…`);
