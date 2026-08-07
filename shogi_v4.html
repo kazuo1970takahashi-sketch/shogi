@@ -161,7 +161,10 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
    - 既定（狭幅・container query 非対応環境のフォールバック）= 縮退グリッド3段
      （1段目=No.+氏名+参加費が行間で縦に揃う／2段目=会員区分+会費区分／3段目=操作ボタン・列見出しなし）
    - リスト実幅が広い場合（@container）= 承認済み6列 grid
-     （No.34px/氏名 minmax(120px,1fr) 左寄せ+ellipsis/会員区分118px/会費区分92px/参加費74px 右寄せ+tabular-nums/操作auto）＋列見出し行
+     （No.34px/氏名 minmax(120px,300px) 左寄せ+ellipsis/会員区分118px/会費区分92px/参加費74px 右寄せ+tabular-nums/操作auto）＋列見出し行
+   WORLD-STD-ALIGN-003 (#824 作者決定 2026-08-07): 広幅の氏名列は 1fr→minmax(120px,300px) に上限を設け、
+   末尾に空トラック 1fr を足して余白を行の右端へ送る（氏名〜会員区分の間の約500px 空洞を解消。
+   DOM 不変＝子要素6個・7列目は空。.player-row / .player-row-head の両宣言を同時に変えることが列位置一致の条件）。
    受付リストは PC で A/B クラス2列並び（1クラス≒470px @1024px 窓）のため viewport 幅では判定できない。
    grid-area の割当は makePlayerRow の DOM 順（span=No.→.player-name→select=会員区分→select=会費区分）に
    依存する構造セレクタ（makePlayerRow の子要素順を変えるときはここも更新すること）。
@@ -185,12 +188,12 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
    inline-size containment のみ（高さは auto のまま）。 */
 #a-list,#b-list,[id^="class-list-"]{container-type:inline-size}
 @container (min-width:720px){
-  .player-row{grid-template-columns:34px minmax(120px,1fr) 118px 92px 74px auto;grid-template-areas:none}
+  .player-row{grid-template-columns:34px minmax(120px,300px) 118px 92px 74px auto 1fr;grid-template-areas:none}
   .player-row .player-row-main>span:first-child,.player-row .player-name,
   .player-row .player-row-main>select:nth-of-type(1),.player-row .player-row-main>select:nth-of-type(2),
   .player-row .player-fee,.player-row .player-row-buttons{grid-area:auto}
   .player-row .player-row-buttons{justify-content:flex-start}
-  .player-row-head{display:grid;grid-template-columns:34px minmax(120px,1fr) 118px 92px 74px auto;gap:6px;align-items:center;padding:2px 10px;border:1px solid transparent;margin-bottom:2px;font-size:11px;font-weight:600;color:#555}
+  .player-row-head{display:grid;grid-template-columns:34px minmax(120px,300px) 118px 92px 74px auto 1fr;gap:6px;align-items:center;padding:2px 10px;border:1px solid transparent;margin-bottom:2px;font-size:11px;font-weight:600;color:#555}
   .player-row-head span:nth-child(5){text-align:right}
 }
 .sel-sm{height:44px;padding:0 6px;border:1px solid #ccc;border-radius:6px;font-size:16px;background:#fff;font-family:inherit} /* INPUT-STD-001 (#715): 会費区分等は当日最多用＝13px/34px→16px/44px（iOS 自動ズーム防止＋44px タップ標的） */
@@ -13412,31 +13415,34 @@ function buildPrintResultsHtml(){
       if(classes[i]&&classes[i].id===cls&&classes[i].name){className=classes[i].name;break;}
     }
     var html='<div style="margin:16px 0 0">';
-    html+='<div style="font-size:15px;font-weight:bold;color:#1F3864;margin-bottom:4px">'+escapeHtml(className)+'</div>';
+    // PRINT-RESULTS-LAYOUT-001 (#825 作者決定 2026-08-07): クラス見出しに（N名）を付す（N=finals.length）。
+    html+='<div style="font-size:15px;font-weight:bold;color:#1F3864;margin-bottom:4px">'+escapeHtml(className+'（'+finals.length+'名）')+'</div>';
     html+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px">';
-    html+='<thead><tr style="background:#e8f0f8"><th style="padding:6px 8px;border:1px solid #ccc;text-align:center">順位</th><th style="padding:6px 8px;border:1px solid #ccc;text-align:left">氏名</th>';
-    for(var r=1;r<=roundsForClass(cls);r++)html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+r+'回戦</th>';
-    html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">勝数(A)</th>';
-    html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">負数</th>';
-    html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">B<br><small style="font-weight:normal;font-size:10px">対戦相手<br>勝数合計</small></th>';
-    html+='<th style="padding:6px 8px;border:1px solid #ccc;text-align:center">C<br><small style="font-weight:normal;font-size:10px">勝った相手<br>勝数合計</small></th>';
+    // PRINT-RESULTS-LAYOUT-001 (#825): セル padding を 6px 8px→4px 6px に詰め、B/C 見出しは
+    // white-space:nowrap で「B／対戦相手／勝数合計」の3行固定（語中折り返しで5行に膨らむのを防ぐ）。
+    html+='<thead><tr style="background:#e8f0f8"><th style="padding:4px 6px;border:1px solid #ccc;text-align:center">順位</th><th style="padding:4px 6px;border:1px solid #ccc;text-align:left">氏名</th>';
+    for(var r=1;r<=roundsForClass(cls);r++)html+='<th style="padding:4px 6px;border:1px solid #ccc;text-align:center">'+r+'回戦</th>';
+    html+='<th style="padding:4px 6px;border:1px solid #ccc;text-align:center;white-space:nowrap">勝数(A)</th>';
+    html+='<th style="padding:4px 6px;border:1px solid #ccc;text-align:center">負数</th>';
+    html+='<th style="padding:4px 6px;border:1px solid #ccc;text-align:center;white-space:nowrap">B<br><small style="font-weight:normal;font-size:10px">対戦相手<br>勝数合計</small></th>';
+    html+='<th style="padding:4px 6px;border:1px solid #ccc;text-align:center;white-space:nowrap">C<br><small style="font-weight:normal;font-size:10px">勝った相手<br>勝数合計</small></th>';
     html+='</tr></thead><tbody>';
     var displayRanks=computeDisplayRanks(finals,cls);
     for(var idx=0;idx<finals.length;idx++){
       var f=finals[idx];var rank=displayRanks[idx];
       var bg=rank===1?'#fef8e7':rank===2?'#f5f5f5':rank===3?'#eaf3fb':'#fff';
       html+='<tr style="background:'+bg+'">';
-      html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;font-weight:bold">'+rank+'位</td>';
+      html+='<td style="padding:4px 6px;border:1px solid #ccc;text-align:center;font-weight:bold">'+rank+'位</td>';
       // RANK-PRINT-001: 印刷/PDF 帳票では entry_no を表示せず氏名のみを出力する。
       //   画面 UI（buildResultsMobileHtml / buildResultsDesktopHtml）や受付・対局カード・
       //   参加者一覧では従来通り getNameWithNo を使用し本変更の影響を受けない。
-      html+='<td style="padding:6px 8px;border:1px solid #ccc;font-weight:bold">'+playerNameRubyHtml(getName(f.p.id,cls),yomiOf(f.p.id,cls))+'</td>';
+      html+='<td style="padding:4px 6px;border:1px solid #ccc;font-weight:bold">'+playerNameRubyHtml(getName(f.p.id,cls),yomiOf(f.p.id,cls))+'</td>';
       for(var r=0;r<roundsForClass(cls);r++){
         var round=state.results[cls][r];
-        if(!round){html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;color:#ccc">-</td>';continue;}
+        if(!round){html+='<td style="padding:4px 6px;border:1px solid #ccc;text-align:center;vertical-align:top;color:#ccc">-</td>';continue;}
         var match=null;
         for(var m=0;m<round.length;m++){if(round[m].p1===f.p.id||round[m].p2===f.p.id){match=round[m];break;}}
-        if(!match){html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;color:#ccc">-</td>';continue;}
+        if(!match){html+='<td style="padding:4px 6px;border:1px solid #ccc;text-align:center;vertical-align:top;color:#ccc">-</td>';continue;}
         var oppId=match.p1===f.p.id?match.p2:match.p1;
         // RANK-PRINT-001: 印刷/PDF の対戦相手表示も entry_no なしの氏名のみに変更。
         var oppName=getName(oppId,cls);
@@ -13444,12 +13450,14 @@ function buildPrintResultsHtml(){
         var won=match.winner===f.p.id;
         var color=won?'#27500A':'#222';
         var markStr2=match.winner===null?'－':(won?'○':'●');
-        html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center"><span style="font-weight:bold;color:'+color+'">'+markStr2+'</span><br><small style="color:#333">'+playerNameRubyHtml(oppName,yomiOf(oppId,cls))+'('+oppWins+')</small></td>';
+        // PRINT-RESULTS-LAYOUT-001 (#825): 回戦セルは「1行目=○/●・2行目=相手名(勝数)」の固定2行。
+        //   white-space:nowrap で相手名の折り返しを禁止し、vertical-align:top で ○/● の縦位置を全行で揃える。
+        html+='<td style="padding:4px 6px;border:1px solid #ccc;text-align:center;vertical-align:top;white-space:nowrap"><span style="font-weight:bold;color:'+color+'">'+markStr2+'</span><br><small style="color:#333">'+playerNameRubyHtml(oppName,yomiOf(oppId,cls))+'('+oppWins+')</small></td>';
       }
-      html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center;font-weight:bold">'+f.A+'</td>';
-      html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+(f.played-f.A)+'</td>';
-      html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+f.B+'</td>';
-      html+='<td style="padding:6px 8px;border:1px solid #ccc;text-align:center">'+f.C+'</td>';
+      html+='<td style="padding:4px 6px;border:1px solid #ccc;text-align:center;font-weight:bold">'+f.A+'</td>';
+      html+='<td style="padding:4px 6px;border:1px solid #ccc;text-align:center">'+(f.played-f.A)+'</td>';
+      html+='<td style="padding:4px 6px;border:1px solid #ccc;text-align:center">'+f.B+'</td>';
+      html+='<td style="padding:4px 6px;border:1px solid #ccc;text-align:center">'+f.C+'</td>';
       html+='</tr>';
     }
     html+='</tbody></table>';
@@ -13498,8 +13506,9 @@ function buildPrintResultsHtml(){
     +'ruby{ruby-position:over}rt{font-size:.6em;font-weight:normal;color:#333;line-height:1}'
     +'@media print{body{padding:0}.no-print{display:none}}</style>'
     +'</head><body>'
+    // PRINT-RESULTS-LAYOUT-001 (#825): h2「スイス式トーナメント　対戦成績」は doc-header の
+    //   「対戦成績」と重複するため削除（各クラス1ページ収まりの補助）。
     +buildPdfDocHeaderHtml('対戦成績')
-    +'<h2>スイス式トーナメント　対戦成績</h2>'
     +tablesHtml
     +'<script>window.addEventListener("load",function(){try{window.focus();}catch(e){}setTimeout(function(){window.print();},300);});window.onafterprint=function(){window.close();};<\/script></body></html>';
   return html;
