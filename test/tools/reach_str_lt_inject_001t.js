@@ -10,8 +10,10 @@
 //
 //   使い方:  node test/tools/reach_str_lt_inject_001t.js [target]
 //     target … 既定 shogi_v4.html（この tree の実ファイル）
-//   終了コード: 新テストが**欠陥入り tree で exit 1**（＝検出できた）なら 0、
-//               検出できなかった／注入に失敗したなら 1。
+//   終了コード: ①注入前の複製 tree（対照）で新テストが exit 0、かつ
+//               ②欠陥入り tree で **exit 1・HIT-0 の FAIL・ヒット>0**（＝注入欠陥の
+//               シグネチャで赤くなった）なら 0。それ以外（対照が赤い／検出できない／
+//               exit 1 だがシグネチャ不一致／注入失敗）は 1。
 //
 //   ── なぜ CI（自動発見）に載せないか ────────────────────────────────────
 //   このスクリプトは lib の生テキストへの anchor（下の DEFECT の置換前後の文字列）を
@@ -46,6 +48,23 @@ try {
   fs.cpSync(path.join(ROOT, 'test'), path.join(tmp, 'test'), { recursive: true });
   fs.copyFileSync(srcTarget, path.join(tmp, path.basename(target)));
 
+  // --- 1b. 対照実行: 注入前の複製 tree で新テストが exit 0 であること -----------
+  //   これが無いと「構文エラー・依存欠落・無関係な pin の赤で exit 1」でも
+  //   「検出できた」と誤読する（Codex 1巡目 P2 指摘）。欠陥以外の理由で赤く
+  //   なる tree では、注入後の exit 1 は検出の証拠にならない。
+  const testPath = path.join(tmp, 'test', 'test_reach_str_lt_sweep_001.js');
+  console.log(`$ node test/test_reach_str_lt_sweep_001.js ${path.basename(target)}   （対照＝注入前の複製 tree 内）`);
+  const control = spawnSync(process.execPath, [testPath, path.basename(target)], {
+    cwd: tmp, encoding: 'utf8',
+  });
+  process.stdout.write(control.stdout || '');
+  process.stderr.write(control.stderr || '');
+  console.log(`対照の終了コード: ${control.status}`);
+  if (control.status !== 0) {
+    console.log('✗ 対照実行が exit 0 でない。この tree では注入後の exit 1 を検出の証拠にできない。');
+    throw new InjectAborted();
+  }
+
   // --- 2. lib のコピーへ 001t 型欠陥を 1 行だけ注入 -----------------------------
   const libPath = path.join(tmp, 'test', 'lib', 'reachability.js');
   const lib = fs.readFileSync(libPath, 'utf8');
@@ -64,7 +83,6 @@ try {
   console.log(`  + ${DEFECT.to.trim()}`);
 
   // --- 3. 注入 tree で新テストを走らせる ---------------------------------------
-  const testPath = path.join(tmp, 'test', 'test_reach_str_lt_sweep_001.js');
   console.log(`\n$ node test/test_reach_str_lt_sweep_001.js ${path.basename(target)}   （注入 tree 内）`);
   const run = spawnSync(process.execPath, [testPath, path.basename(target)], {
     cwd: tmp, encoding: 'utf8',
@@ -73,9 +91,19 @@ try {
   process.stderr.write(run.stderr || '');
   console.log(`\n終了コード: ${run.status}`);
 
-  if (run.status === 1) {
-    console.log('✓ 基準2: 欠陥入り tree で新テストが exit 1（検出できた）');
+  // --- 4. 判定: exit 1 だけでなく「注入欠陥のシグネチャで赤くなった」ことまで見る --
+  //   ① exit 1 ② HIT-0 の FAIL 行がある ③ 最終行サマリの ヒット= が 0 でない。
+  //   ①だけだと無関係な pin の赤も「検出」と誤読する（Codex 1巡目 P2 指摘）。
+  const out = run.stdout || '';
+  const hitLine = out.match(/ヒット=(\d+)/);
+  const hitCount = hitLine ? parseInt(hitLine[1], 10) : -1;
+  const sigOk = /FAIL: HIT-0 /.test(out) && hitCount > 0;
+  if (run.status === 1 && sigOk) {
+    console.log(`✓ 基準2: 欠陥入り tree で新テストが exit 1・HIT-0 の FAIL・ヒット=${hitCount}（注入欠陥を検出できた）`);
     code = 0;
+  } else if (run.status === 1) {
+    console.log(`✗ 基準2: exit 1 だが注入欠陥のシグネチャが無い（HIT-0 FAIL 行=${/FAIL: HIT-0 /.test(out)} / ヒット=${hitCount}）。別の理由で赤くなっている。`);
+    code = 1;
   } else {
     console.log(`✗ 基準2: 欠陥を注入したのに新テストが exit ${run.status}（検出できていない）`);
     code = 1;

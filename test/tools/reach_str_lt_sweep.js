@@ -3,40 +3,63 @@
 // #816 hotfix 受け入れ基準1: 既存の JS 文字列リテラルへの U+2028 / U+2029 挿入走査
 //
 //   対象ファイルの JS 文字列リテラル（JS_STR_SQ / JS_STR_DQ）を面レクサで列挙し、
-//   等間隔サンプルした各リテラルの**中央**へ LS / PS を 1 文字挿入して analyze() を
-//   回し、走査が壊れた配置（= 関数総数が基準から動く / 生きた関数が静的到達不能に
-//   落ちる）を数える。ブラウザ・node は U+2028 / U+2029 を文字列リテラル中で合法と
-//   して実行する（ES2019）ので、**正しい走査ならヒット 0 件**になるはず。
+//   等間隔サンプルした各リテラルの**中央**へ LS / PS を 1 文字挿入して、走査が
+//   壊れた配置を数える。ブラウザ・node は U+2028 / U+2029 を文字列リテラル中で
+//   合法として実行する（ES2019）ので、**正しい面レクサならヒット 0 件**になるはず。
 //
-//   001t の退行（文字列終端が LineTerminator 4 種で打ち切り）では 20% 超の配置で
-//   走査が壊れた（パネル実測 97/400 = 24.3% / cowork 実測 48/207 = 23.2%）。
+//   ── ヒット判定 = 面分類保存オラクル（PR #823 Codex 1巡目 P1 対応）──────────
+//   「壊れた」＝ **挿入位置 1 文字を除いて classifyFaces() の結果が原本と完全一致
+//   しない**こと。正しいレクサなら文字列中への LS/PS 挿入は面を 1 文字ずらすだけで
+//   分類を変えない。終端退行（001t 型）なら挿入点以降の面が崩れるので必ず一致しない。
+//   初版は「analyze() の到達性差分」をヒットにしていたが、それだと **onclick 結線を
+//   持つ生きたリテラル**（エスケープ復号ランで参照を拾う正規機能）に挿入したとき、
+//   レクサ無傷でも参照が変わって偽赤になる（実測: 39+1 リテラルの反例で 2/80）。
+//   面オラクルは同じ反例で 0/80、001t 注入では 20/80 → **80/80** に検出が強まり、
+//   analyze() を配置ごとに回さないぶん速い（作者機・cloud とも実測で確認）。
+//   到達性差分は**ヒット時の診断表示にだけ**使う（判定には使わない）。
+//
+//   001t の退行（文字列終端が LineTerminator 4 種で打ち切り）の実測:
+//   到達性差分版で 97/400 = 24.3%（パネル）/ 48/207 = 23.2%（cowork）/ 20/80（注入）。
+//   面オラクル版で 80/80（注入・2026-08-07）。
 //
 //   使い方:  node test/tools/reach_str_lt_sweep.js [target] [sampleN]
 //     target  … 既定 shogi_v4.html
 //     sampleN … 文字ごとのサンプル配置数の上限（既定 400・全リテラルが上限）
 //   終了コード: ヒット 0 件なら 0、1 件でもあれば 1。
 //
-//   ── 816E: CI 常設化のための関数 export（走査ロジックは不変）────────────────
+//   ── 816E: CI 常設化のための関数 export ─────────────────────────────────────
 //   `test/tools/` は run_tests.sh の自動発見（`test/test_*.js` の非再帰 glob）の外な
 //   ので、このツール単体は CI からは走らない。**CI で走るのは
 //   `test/test_reach_str_lt_sweep_001.js`（自動発見に載る薄い wrapper）**で、
 //   下の `sweep()` を N=40/文字で require して呼ぶ。走査の二重実装を避けるため、
-//   計算を `sweep()`・表示を `formatReport()` に括り出し、CLI 実行時（require.main）
-//   の標準出力と終了コードは 816E 以前と 1 バイトも変えていない
-//   （`shogi_v4.html` に対し N=40 / N=400 の stdout が diff 0 であることを実測）。
+//   計算を `sweep()`・表示を `formatReport()` に括り出した（括り出し自体は挙動不変
+//   を byte 一致で実測済み）。その後 Codex 1巡目 P1 対応でヒット判定を面オラクルへ
+//   変更した（上のヘッダ参照）。**ヒット 0 の対象（現行 tree の shogi_v4.html）では
+//   stdout・終了コードとも変更前と同一**（diff 0 を実測）。数字が変わるのは欠陥入り
+//   tree に対してだけで、そちらは変更後のほうが正しい。
 // =============================================================================
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const { analyze, classifyFaces, FACE } = require(path.join(__dirname, '..', 'lib', 'reachability.js'));
 
-const CHARS = [['U+2028 (LS)', '\u2028'], ['U+2029 (PS)', '\u2029']];
+const CHARS = [['U+2028 (LS)', ' '], ['U+2029 (PS)', ' ']];
+
+// faceIntact(f1, f2, mid) → 挿入位置 mid の 1 文字を除いて面分類が完全一致か
+//   f1 = 原本の classifyFaces / f2 = 挿入後の classifyFaces。
+function faceIntact(f1, f2, mid) {
+  if (f2.length !== f1.length + 1) return false;
+  for (let i = 0; i < mid; i++) if (f2[i] !== f1[i]) return false;
+  for (let i = mid; i < f1.length; i++) if (f2[i + 1] !== f1[i]) return false;
+  return true;
+}
 
 // sweep(target, sampleN) → 走査結果（表示はしない）
-//   { target, srcLength, spanCount, baseCount, chars: [{label, placements, hits, worst, killed}],
-//     totalHits }
-//   placements は「実際に analyze() を回した配置数」（= サンプル件数）。CI 側はこれを
-//   pin して「spans が 0 に縮退して 0/0 で緑」を落とす。
+//   { target, srcLength, spanCount, baseCount,
+//     chars: [{label, ch, placements, hits, worst, killed}], totalHits }
+//   placements は「実際に判定を回した配置数」（= サンプル件数）。CI 側はこれを
+//   pin して「spans が 0 に縮退して 0/0 で緑」を落とす。ch は実際に挿入した文字
+//   （CI 側が LS / PS の実文字を pin するために返す）。
 function sweep(target, sampleN) {
   const src = fs.readFileSync(target, 'utf8');
 
@@ -78,22 +101,25 @@ function sweep(target, sampleN) {
       const mutated = src.slice(0, mid) + ch + src.slice(mid);
       let hit = false;
       try {
-        const a = analyze(mutated);
-        const newlyDead = a.unreachableStatic.filter((x) => !baseUnreach.has(x.name));
-        if (a.topLevelFunctionCount !== baseCount || newlyDead.length > 0) {
-          hit = true;
-          for (const x of newlyDead) killed.add(x.name);
+        // 判定は面オラクルのみ（到達性差分は使わない。上のヘッダ参照）
+        hit = !faceIntact(face, classifyFaces(mutated), mid);
+      } catch (err) {
+        hit = true; // 面分類自体が例外で死ぬのも「壊れた」
+      }
+      if (hit) {
+        hits++;
+        // 診断表示用の到達性差分（判定には使わない。ヒット時だけ回すので clean では 0 コスト）
+        try {
+          const a = analyze(mutated);
+          for (const x of a.unreachableStatic) if (!baseUnreach.has(x.name)) killed.add(x.name);
           if (a.topLevelFunctionCount < worst.count) {
             worst = { count: a.topLevelFunctionCount, line: src.slice(0, mid).split('\n').length };
           }
-        }
-      } catch (err) {
-        hit = true; // 走査自体が例外で死ぬのも「壊れた」
+        } catch (err) { /* 診断が取れなくても判定は変えない */ }
       }
-      if (hit) hits++;
     }
     totalHits += hits;
-    chars.push({ label, placements: sample.length, hits, worst, killed: [...killed] });
+    chars.push({ label, ch, placements: sample.length, hits, worst, killed: [...killed] });
   }
 
   return { target, srcLength: src.length, spanCount: spans.length, baseCount, chars, totalHits };
