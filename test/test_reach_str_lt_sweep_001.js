@@ -7,22 +7,31 @@
 //   再利用する**（child_process ではなく関数 require にした理由: ①走査ロジックの
 //   二重実装をしない ②配置数・ヒット数を stdout の文言から拾い直さずに構造化された
 //   値で受け取れる＝下の PLACE-1 のような pin を文言解析なしで書ける ③子プロセス起動
-//   ぶんの時間を足さない）。tool 単体の全量走査（既定 N=400）の使い方は不変
-//   （判定の面オラクル化はツール側も同じ。ヒット 0 の対象では stdout も不変）。
+//   ぶんの時間を足さない）。tool 単体（既定 N=400・**全量ではなく 6.6% のサンプル**）
+//   の使い方は不変。ヒット 0 の対象では tool の stdout も 816E 以前と byte 一致。
 //
 //   ── CI で走らせる量 ────────────────────────────────────────────────────
-//   N=40 / 文字（LS・PS の 2 文字）＝ 80 配置。等間隔サンプル＝乱数なしで決定的。
-//   ヒット判定は面分類保存オラクル（tool 側ヘッダ参照）。001t 級の終端退行は
-//   **面が必ず崩れる**ので注入実測 80/80 ＝ 80 配置で確実に捕まる（到達性差分で
-//   判定していた初版は 20/80。97/400・48/207 も同判定の実測値）。
+//   N=40 / 文字（LS・PS の 2 文字）＝ 80 配置。等間隔サンプル＝乱数なしで決定的
+//   （＝同じ欠陥・同じ対象なら**どの機械でも同じヒット数**になる。機械差で数字は動かない）。
+//   実行時間は cloud Linux / Node v22 で約 19 秒（緑の道）。
+//   ヒット判定は「面分類の保存」と「analyze() が例外死しない」の OR（tool 側ヘッダ）。
+//   注入で測った検出力: 素の 001t 型（終端 4 種化）で 80/80、面は保存されるが
+//   analyze() が例外死する型で 18/80。**「必ず」ではない** —— ファイル後半だけを
+//   壊す変種では 6/80 まで余裕が落ちる（赤にはなる）。
 //   N を上げ下げするときは時間予算と見逃し確率の両方を数字で書くこと。
 //
 //   ── この 1 本が守る範囲 ────────────────────────────────────────────────
-//   「JS 文字列リテラル内の LS / PS で**面レクサの終端が壊れる**」という
-//   **1 クラス専用の番人**。それ以上（消費位置バグ一般・他の面の退行・エスケープ
-//   復号（結線デコーダ）の退行）は守備範囲と主張しない。復号側を判定に含めると
-//   onclick 結線を持つ生きたリテラルへの挿入（＝正当な意味変化）と区別できず
-//   偽赤になる（Codex 1巡目 P1・反例実測 2/80）。
+//   「JS 文字列リテラル内の LS / PS で**面レクサの終端が壊れる**」＋「同じ入力で
+//   **走査が例外死する**」の 2 クラス。それ以上は守備範囲と主張しない。特に:
+//   - **エスケープ復号（結線デコーダ）の到達性への影響**は判定に含めない。含めると
+//     onclick 結線を持つ生きたリテラルへの挿入（＝正当な意味変化）と区別できず
+//     偽赤になる（Codex 1巡目 P1・反例実測 2/80）。復号退行は兄弟の
+//     `test_reachability_001.js` が別途 pin している。
+//   - **テンプレートリテラル / HTML 属性値**の同型退行はサンプル対象外（0/80 緑）。
+//     これらも兄弟テスト（`LT-TMPL-LS/PS`・`T[ATTR_VAL_ON]-13〜15`）が捕らえる。
+//   ★ 未解決（#816 へ切り出し済み・この便では直していない）:
+//     偽赤 —— 挿入点がエスケープの被エスケープ位置に落ちると正しいレクサでも赤が出る。
+//     骨抜き —— 陽性対照が無いので `hit` を恒久 false にする改変が下の pin を素通りする。
 //
 //   ── 骨抜きを塞ぐ pin（#816 E 受け入れ基準3 ＋ Codex 1巡目 P2 対応）────────
 //   (i)  TARGET 無視     … TARGET-1（sweep が読んだのは run_tests が渡したファイルか）
@@ -69,23 +78,32 @@ for (const c of r.chars) console.log(`  ${c.label}: ${c.hits}/${c.placements} �
 //   「sweep() が引数を捨てて既定へハードコードする」退行と区別が付かない。
 //   実体の異なる一時ファイルを渡し、申告（target / srcLength / spanCount）が
 //   その実体と一致することを見る。
+//   注意2点（どちらも反証パネル 2026-08-07 の指摘）:
+//   - `mkdtempSync` / `writeFileSync` は **try の中**に置く。外に出すと
+//     `os.tmpdir()` が書けない CI（読み取り専用・容量ゼロ）で raw stack trace の
+//     まま落ち、**本命の HIT-0 が一度も評価されない**。
+//   - 判定に `totalHits` を混ぜない。混ぜると 001t 退行が入ったときに、追随は
+//     完璧なのに「TARGET を無視する退行も入った」と読める FAIL が出る（誤診）。
 {
   const os = require('os');
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reach816e-'));
-  const tmpFile = path.join(tmpDir, 'probe.html');
   const probe = '<!DOCTYPE html>\n<html><body><script>\n'
     + "var p0 = 'probe literal zero';\n"
     + 'var p1 = "probe literal one";\n'
     + '</scr' + 'ipt></body></html>\n';
+  let tmpDir = null;
   try {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reach816e-'));
+    const tmpFile = path.join(tmpDir, 'probe.html');
     fs.writeFileSync(tmpFile, probe);
     const r2 = sweep(tmpFile, 2);
     ok(r2.target === tmpFile && r2.srcLength === probe.length && r2.srcLength !== r.srcLength
-      && r2.spanCount === 2 && r2.totalHits === 0,
+      && r2.spanCount === 2,
       `TARGET-1b 非既定の一時ファイルへ sweep が追随（解析: ${r2.target} / 長さ ${r2.srcLength}`
-      + ` vs 実体 ${probe.length} / リテラル ${r2.spanCount} vs 2 / ヒット ${r2.totalHits}）`);
+      + ` vs 実体 ${probe.length} / リテラル ${r2.spanCount} vs 2）`);
+  } catch (e) {
+    ok(false, `TARGET-1b 一時ファイルを用意できず検査できなかった（TMPDIR=${require('os').tmpdir()} / ${e && e.message}）`);
   } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (tmpDir) { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) { /* 後始末の失敗で判定を変えない */ } }
   }
 }
 
@@ -115,9 +133,18 @@ ok(r.totalHits === 0,
 if (r.totalHits > 0) {
   for (const c of r.chars) {
     if (!c.hits) continue;
-    console.log(`  ${c.label}: 最悪の配置で関数総数 ${r.baseCount} → ${c.worst.count}（挿入行 L${c.worst.line} 付近）`
-      + `／「到達不能」へ落ちた生きた関数 ${c.killed.length} 本`
-      + (c.killed.length ? `（例: ${c.killed.slice(0, 8).join(', ')}）` : ''));
+    // 例外死は面オラクルとは別経路なので分けて出す。混ぜると「関数総数 580 → 580 /
+    // 到達不能 0 本」だけが並んで、何も起きていないように読める（反証パネル指摘）。
+    if (c.throws > 0) {
+      console.log(`  ${c.label}: analyze() が例外死した配置 ${c.throws}/${c.placements}`
+        + `（初出 L${c.firstThrow.line} 付近: ${c.firstThrow.message}）`);
+    }
+    if (c.faceHits > 0) {
+      console.log(`  ${c.label}: 面分類が崩れた配置 ${c.faceHits}/${c.placements}`
+        + `／最悪の配置で関数総数 ${r.baseCount} → ${c.worst.count}（挿入行 L${c.worst.line} 付近）`
+        + `／「到達不能」へ落ちた生きた関数 ${c.killed.length} 本`
+        + (c.killed.length ? `（例: ${c.killed.slice(0, 8).join(', ')}）` : ''));
+    }
   }
 }
 
