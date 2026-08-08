@@ -140,10 +140,15 @@ if (r.totalHits > 0) {
         + `（初出 L${c.firstThrow.line} 付近: ${c.firstThrow.message}）`);
     }
     if (c.faceHits > 0) {
+      // 到達性の値は analyze() が成功した配置がある場合だけ出す。`worst` の初期値は
+      // sentinel（baseCount / L0）なので、面は崩れたが全配置で analyze() も例外死した
+      // ケースでこれを出すと測っていない値を実測のように書くことになる（Codex 2巡目 P2）。
       console.log(`  ${c.label}: 面分類が崩れた配置 ${c.faceHits}/${c.placements}`
-        + `／最悪の配置で関数総数 ${r.baseCount} → ${c.worst.count}（挿入行 L${c.worst.line} 付近）`
-        + `／「到達不能」へ落ちた生きた関数 ${c.killed.length} 本`
-        + (c.killed.length ? `（例: ${c.killed.slice(0, 8).join(', ')}）` : ''));
+        + (c.diagSamples > 0
+          ? `／最悪の配置で関数総数 ${r.baseCount} → ${c.worst.count}（挿入行 L${c.worst.line} 付近）`
+            + `／「到達不能」へ落ちた生きた関数 ${c.killed.length} 本`
+            + (c.killed.length ? `（例: ${c.killed.slice(0, 8).join(', ')}）` : '')
+          : '／到達性の診断は取れず（該当配置ではすべて analyze() が例外死）'));
     }
   }
 }
