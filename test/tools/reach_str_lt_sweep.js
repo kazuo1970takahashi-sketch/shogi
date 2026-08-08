@@ -7,7 +7,7 @@
 //   壊れた配置を数える。ブラウザ・node は U+2028 / U+2029 を文字列リテラル中で
 //   合法として実行する（ES2019）ので、**正しい面レクサならヒット 0 件**になるはず。
 //
-//   ── ヒット判定 = 2 つのオラクルの OR ────────────────────────────────
+//   ── ヒット判定 = 2 つのオラクルの OR ────────────────────────────
 //   (1) **面分類の保存**: 挿入位置 1 文字を除いて classifyFaces() の結果が原本と
 //       完全一致しなければヒット。正しいレクサなら文字列中への LS/PS 挿入は面を
 //       1 文字ずらすだけで分類を変えない。001t 型の終端退行なら挿入点以降の面が
@@ -81,7 +81,8 @@ function faceIntact(f1, f2, mid) {
 
 // sweep(target, sampleN) → 走査結果（表示はしない）
 //   { target, srcLength, spanCount, baseCount, totalHits, totalThrows,
-//     chars: [{label, ch, placements, hits, faceHits, throws, firstThrow, worst, killed}] }
+//     chars: [{label, ch, placements, hits, faceHits, throws, firstThrow,
+//              diagSamples, worst, killed}] }
 //   placements は「実際に判定を回した配置数」（= サンプル件数）。CI 側はこれを
 //   pin して「spans が 0 に縮退して 0/0 で緑」を落とす。ch は実際に挿入した文字
 //   （CI 側が LS / PS の実文字を pin するために返す）。
@@ -123,6 +124,11 @@ function sweep(target, sampleN) {
     let faceHits = 0;   // オラクル1 が落とした配置数
     let throws = 0;     // オラクル2 が落とした配置数（両方に該当する配置は両方に数える）
     let firstThrow = null;
+    // diagSamples = ヒットした配置のうち **analyze() が成功した**件数。
+    //   到達性の診断（worst / killed）はここが 0 のとき「一度も測っていない」ので、
+    //   表示側はこれで gate する。0 のまま worst を出すと sentinel（baseCount / L0）を
+    //   実測値のように印字してしまう（Codex 2巡目 P2）。
+    let diagSamples = 0;
     let worst = { count: baseCount, line: 0 };
     const killed = new Set();
     for (const [s, e] of sample) {
@@ -161,6 +167,7 @@ function sweep(target, sampleN) {
         hits++;
         // 診断表示用（判定には使わない）
         if (a) {
+          diagSamples++;
           for (const x of a.unreachableStatic) if (!baseUnreach.has(x.name)) killed.add(x.name);
           if (a.topLevelFunctionCount < worst.count) worst = { count: a.topLevelFunctionCount, line: lineOf() };
         }
@@ -168,7 +175,7 @@ function sweep(target, sampleN) {
     }
     totalHits += hits;
     totalThrows += throws;
-    chars.push({ label, ch, placements: sample.length, hits, faceHits, throws, firstThrow, worst, killed: [...killed] });
+    chars.push({ label, ch, placements: sample.length, hits, faceHits, throws, firstThrow, diagSamples, worst, killed: [...killed] });
   }
 
   return { target, srcLength: src.length, spanCount: spans.length, baseCount, chars, totalHits, totalThrows };
@@ -182,10 +189,19 @@ function formatReport(r) {
   for (const c of r.chars) {
     const pct = c.placements ? ((c.hits / c.placements) * 100).toFixed(1) : '0.0';
     lines.push(`\n${c.label}: ${c.hits}/${c.placements} 配置で走査が壊れた（${pct}%）`);
-    if (c.hits > 0) {
+    // 到達性の診断は **analyze() が成功した配置が 1 件でもあるとき**だけ出す。
+    //   `worst` の初期値は sentinel（baseCount / L0）なので、全配置で analyze() が
+    //   例外死した場合にこれを出すと「関数総数 580 → 580（挿入行 L0 付近）／
+    //   到達不能 0 本」という**測っていない値**を実測のように印字することになる
+    //   （Codex 2巡目 P2。まさに例外死型の退行＝この便で検出できるようにした
+    //   クラスで起きる）。wrapper 側は既に分離済みなので、それに揃える。
+    if (c.diagSamples > 0) {
       lines.push(`  最悪の配置: 関数総数 ${r.baseCount} → ${c.worst.count}（挿入行 L${c.worst.line} 付近）`);
       lines.push(`  「到達不能」へ落ちた生きた関数（累積）: ${c.killed.length} 本`
-        + (c.killed.length ? `（例: ${c.killed.slice(0, 8).join(', ')}）` : ''));
+        + (c.killed.length ? `（例: ${c.killed.slice(0, 8).join(', ')}）` : '')
+        + (c.diagSamples < c.hits ? `／うち ${c.hits - c.diagSamples} 配置は analyze() が例外死して測れず` : ''));
+    } else if (c.hits > 0) {
+      lines.push('  到達性の診断は取れなかった（ヒットした配置ではすべて analyze() が例外死）');
     }
     // ヒット 0 の対象では 1 行も足さない（＝clean の stdout を変えない）
     if (c.throws > 0) {
