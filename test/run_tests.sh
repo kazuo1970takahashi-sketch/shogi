@@ -138,7 +138,7 @@ grep -A3 "^function getFee" "$TARGET" | grep -q "member==='member'" && ok "getFe
 #   範囲を A50 に拡大し、pane-+ / result-+ プレフィックスや classes-driven 構造 / rep-place / モーダル閉じを確認する。
 grep -A50 "^function resetAll" "$TARGET" | grep -qE "pane-A|pane-'\+c\.id|getElementById\('pane-'" && ok "resetAll: pane-{classId} クリア" || ng "pane-{classId} 未クリア"
 grep -A50 "^function resetAll" "$TARGET" | grep -qE "result-A|result-'\+c\.id|getElementById\('result-'" && ok "resetAll: result-{classId} クリア" || ng "result-{classId} 未クリア"
-grep -A50 "^function resetAll" "$TARGET" | grep -q "rep-place" && ok "resetAll: rep-place 初期化" || ng "rep-place 未初期化"
+grep -A90 "^function resetAll" "$TARGET" | grep -q "rep-place" && ok "resetAll: rep-place 初期化" || ng "rep-place 未初期化"
 grep -A50 "^function resetAll" "$TARGET" | grep -q "bulk-edit-modal" && ok "resetAll: モーダル閉じ" || ng "モーダル閉じなし"
 
 # 2-13. loadData の再選択対応

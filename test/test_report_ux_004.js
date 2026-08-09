@@ -78,11 +78,16 @@ assert(/function\s+normalizeReportTitle\s*\(/.test(htmlSrc), 'A1 normalizeReport
   assert(m !== null, 'A2 #rep-title input が DOM に存在する');
 }
 
-// A3
+// A3（CLUB-PROFILE-001 で反転: 分散していた schema literal は factoryReport() に一本化された。
+//   旧 pin は「6箇所以上に複製がある」ことを要求していたが、複製こそが沼津ハードコード問題の
+//   温床だったため、「唯一の定義＋生成系が factory/profile 関数経由」を pin する）
 {
   const count = (htmlSrc.match(/title\s*:\s*['"]沼津支部月例将棋大会['"]/g) || []).length;
-  assert(count >= 6,
-    'A3 schema literal に title:"沼津支部月例将棋大会" が 6 箇所以上ある（実測 '+count+'）');
+  assert(count === 1,
+    'A3 title:"沼津支部月例将棋大会" の schema literal は factoryReport() の1箇所のみ（実測 '+count+'）');
+  assert(htmlSrc.indexOf('function factoryReport()') >= 0, 'A3b factoryReport が定義されている');
+  const genCount = (htmlSrc.match(/report:\s*(profileReport|factoryReport)\(\)/g) || []).length;
+  assert(genCount >= 2, 'A3c 生成系が factory/profile 関数経由で report を構築する（実測 '+genCount+'）');
 }
 
 // A4

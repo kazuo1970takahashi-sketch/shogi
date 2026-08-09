@@ -58,6 +58,9 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .btn-success{background:#27500A;color:#fff;border-color:#27500A}
 .btn-danger{background:#A32D2D;color:#fff;border-color:#A32D2D}
 .btn-sm{padding:6px 12px;font-size:13px}
+.btn-outline-primary{background:#fff;color:#1F3864;border:1.5px solid #1F3864} /* CLUB-PROFILE-001 (Codex P2): 新規ボタンの色・枠は class 系で定義（§1-2）。inline は layout のみ */
+/* CLUB-PROFILE-001 (Codex 2巡目 P2×2): disclosure の色は class 側（§1）、タップ目標は 44px 以上（§10.3）。 */
+.club-profile-summary{font-size:12px;color:#666;cursor:pointer;min-height:44px;display:flex;align-items:center;padding:4px 2px}
 .alert{padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px}
 .alert-err{background:#fcebeb;color:#A32D2D;border:1px solid #f09595}
 .alert-ok{background:#eaf3de;color:#27500A;border:1px solid #97c459}
@@ -828,6 +831,17 @@ body.sb-active{overflow:hidden}
       </div>
       <!-- REPORT-UX-007B-1: 会計提出文（footer 2行目 / accountingNote）。既定 '※役員会で…提出ください。'。改行維持→帳票で<br>。 -->
       <div class="rep-fld"><label>会計提出文</label><textarea id="rep-accounting-note" placeholder="※役員会で会計長へ収支報告書として提出ください。"></textarea></div>
+      <!-- CLUB-PROFILE-001: クラブ既定の明示保存（作者決定＝自動反映しない）。置き場所は
+           会計提出文の直下・.rep-form 内末尾（実ブラウザ 390px でモック確認済み・固定バーの印刷系と分離）。
+           Codex P2（PR #845）: 低頻度の準備操作のため <details> 格納（STYLE-GUIDE §7）・
+           ボタンの色/枠は .btn-outline-primary（§1-2）。id / bind は不変。 -->
+      <details id="club-profile-details" class="rep-fld no-print" style="border-top:1px dashed #ccc;margin-top:12px;padding-top:12px">
+        <summary class="club-profile-summary">⚙ クラブの既定（全リセット後の初期値）を保存する</summary>
+        <div style="margin-top:8px">
+          <button type="button" id="saveClubProfileBtn" class="btn-outline-primary" style="width:100%;min-height:44px">💾 この設定をクラブの既定として保存</button>
+          <div style="font-size:11px;color:#777;margin-top:5px;line-height:1.5">全リセット後も、この端末では上の報告書設定（大会名・主催・会場・FAX・事務局名・会計提出文・賞金・持ち時間）と現在のクラス構成・回戦数が初期値になります。開催日・開始/終了時刻・正副役員・申し送りは保存されません（大会ごとの値）。</div>
+        </div>
+      </details>
     </div>
     <!-- ACTION-BAR-001 (#605): 最終結果タブ終盤の主要アクションを画面下部の固定バーに集約。☁送信クラスタ
          （？ヘルプ[HELP-UX-006] / ☁送信 / 送信ステータス / 送信対象級[#567]）を一緒に移設し文脈を保つ。
@@ -858,20 +872,207 @@ body.sb-active{overflow:hidden}
 </div>
 
 <script>
-var state = {
-  players: {A:[], B:[]},
-  rounds: 4,
-  pairings: {A:[], B:[]},
-  results: {A:[], B:[]},
-  started: false,
-  report: {date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会', organizer:'日本将棋連盟沼津支部', fax:'943-9443', officeName:'沼津支部事務局', accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30},
-  // ROUND-CLASS-START-003: classId 単位 started を正とする state.classes を導入。
-  //   既存 dict (players/pairings/results) は当面 A/B 固定構造で維持。詳細: spec §5.2
-  classes: [
+// ============================================================
+// CLUB-PROFILE-001: リセットを跨ぐ「クラブ設定」層（G1-a）
+//   目的: resetAll（毎月押す操作）がクラブ設定（報告書既定・クラス構成・回戦数）を
+//   沼津 factory 値へ戻す問題の構造的解決。shogi_branch_master と同じ手法＝
+//   別 localStorage キーに住まわせる（resetAll は STORAGE_KEY と legacy しか消さない）。
+//   設計原則（反証パネル 2026-08-09 の指摘を反映）:
+//   - profile を当てるのは「新しい state を作る生成系」のみ。normalizeState /
+//     normalizeReportField / REPORT_FIELD_SPECS の def は factory 固定（profile-aware に
+//     すると過去大会 snapshot の欠落フィールドが今のクラブ値で埋まり歴史が書き換わる＝実証済み）
+//   - profile の読み書きは常に deep copy（参照共有で「保存していない値が既定化」する事故の防止）
+//   - 保存は明示ボタンのみ（作者決定）。resetAll は実行時に localStorage を読み直す（read-at-use）
+// ============================================================
+var CLUB_PROFILE_KEY='shogi_club_profile';
+// factoryReport(): 沼津 factory 値の唯一の定義（呼び出しごとに fresh なオブジェクトを返す）。
+//   REPORT_FIELD_SPECS の def もここから導出する（沼津リテラルの置き場を1つに）。
+function factoryReport(){
+  return {date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会', organizer:'日本将棋連盟沼津支部', fax:'943-9443', officeName:'沼津支部事務局', accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30};
+}
+function factoryClasses(){
+  return [
     {id:'A', name:'Aクラス', started:false},
     {id:'B', name:'Bクラス', started:false}
-  ]
-};
+  ];
+}
+var FACTORY_ROUNDS=4;
+// profile が既定を上書きできる report のキー（date/start/end/sei/fuku/note は大会ごとの値＝対象外）
+var CLUB_PROFILE_REPORT_KEYS=['title','organizer','place','fax','officeName','accountingNote','prize','timeType','timeMain','timeByoyomi'];
+// localStorage から読み・検証する。不正（型崩れ・A/B 欠落・壊れた JSON・storage 例外）は
+//   fail-soft で null（=factory）。値の検証はここで完結させる（この時点では REPORT_FIELD_SPECS
+//   未評価のため normalize helper に依存しない＝top-level 評価順の罠を避ける・パネル指摘）。
+function readClubProfileRaw(){
+  var raw=null;
+  try{raw=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){return null;}
+  if(!raw)return null;
+  var p=null;
+  try{p=JSON.parse(raw);}catch(e){return null;}
+  if(!p||typeof p!=='object')return null;
+  // 実装パネル指摘: schema_version は将来版（v2 で意味が変わった profile を旧バイナリが誤読する）
+  //   への防波堤として厳密に検証する。1 以外は fail-soft で factory。
+  if(Math.floor(Number(p.schema_version))!==1)return null;
+  var out={schema_version:1,report:{},classes:null,rounds:null};
+  if(p.report&&typeof p.report==='object'){
+    for(var i=0;i<CLUB_PROFILE_REPORT_KEYS.length;i++){
+      var k=CLUB_PROFILE_REPORT_KEYS[i];var v=p.report[k];
+      if(k==='prize'){ if(typeof v==='number'&&isFinite(v)&&v>=0)out.report.prize=v; }
+      else if(k==='timeType'){ if(v==='sudden'||v==='byoyomi')out.report.timeType=v; }
+      else if(k==='timeMain'||k==='timeByoyomi'){ var n=Math.floor(Number(v)); if(!isNaN(n)&&n>=1)out.report[k]=n; }
+      else{ if(typeof v==='string'&&v.replace(/\s+/g,'')!=='')out.report[k]=v; }
+    }
+  }
+  if(Array.isArray(p.classes)){
+    var cls=[];var hasA=false,hasB=false;var seenIds={};
+    for(var j=0;j<p.classes.length;j++){
+      var c=p.classes[j];
+      if(!c||typeof c.id!=='string'||!c.id)continue;
+      // 実装パネル指摘: normalizeClasses が守る不変条件（id の安全性・一意性）をこの入力経路
+      //   だけが破れる非対称があった。isSafeClassId 違反はスキップ・重複 id は初出のみ採用
+      //   （重複入り JSON のインポート→保存で profile に恒久化し、全リセットでも再生成される穴）。
+      if(typeof isSafeClassId==='function'&&!isSafeClassId(c.id))continue;
+      if(seenIds[c.id])continue;
+      seenIds[c.id]=true;
+      var name=(typeof c.name==='string'&&c.name)?c.name:(c.id+'クラス');
+      var entry={id:c.id,name:name};
+      var rn=Math.floor(Number(c.rounds));
+      if(c.rounds!=null&&!isNaN(rn)&&rn>=1)entry.rounds=rn;   // クラス別回戦数上書き（ROUNDS-PER-CLASS-001）
+      cls.push(entry);
+      if(c.id==='A')hasA=true;if(c.id==='B')hasB=true;
+    }
+    // A/B は削除不可の builtin（canDeleteClass）かつ normalizeClasses が強制補完する不変条件。
+    //   欠けた profile は不正として classes ごと factory へ（パネル指摘: 往復不整合の防止）
+    if(cls.length>0&&hasA&&hasB)out.classes=cls;
+  }
+  var rr=Math.floor(Number(p.rounds));
+  if(p.rounds!=null&&!isNaN(rr)&&rr>=1)out.rounds=rr;
+  return out;
+}
+var clubProfile=readClubProfileRaw();
+// 生成系用アクセサ。いずれも毎呼び出し deep copy を返す（参照共有の禁止・パネル指摘）。
+function profileReport(){
+  var base=factoryReport();
+  if(clubProfile&&clubProfile.report){
+    for(var i=0;i<CLUB_PROFILE_REPORT_KEYS.length;i++){
+      var k=CLUB_PROFILE_REPORT_KEYS[i];
+      if(Object.prototype.hasOwnProperty.call(clubProfile.report,k))base[k]=clubProfile.report[k];
+    }
+  }
+  return base;
+}
+function profileClasses(){
+  var src=(clubProfile&&clubProfile.classes)?clubProfile.classes:null;
+  if(!src)return factoryClasses();
+  var out=[];
+  for(var i=0;i<src.length;i++){
+    var c=src[i];
+    var entry={id:c.id,name:c.name,started:false};   // started は profile に持たない（常に false で生成）
+    if(c.rounds!=null)entry.rounds=c.rounds;
+    out.push(entry);
+  }
+  return out;
+}
+function profileRounds(){
+  return (clubProfile&&clubProfile.rounds!=null)?clubProfile.rounds:FACTORY_ROUNDS;
+}
+// 保存: localStorage 書き込みと同時にモジュール変数も差し替える（「保存→即リセット」で
+//   古い既定が使われる穴の防止・パネル指摘）。戻り値 true=保存成功。
+function saveClubProfile(profile){
+  var json='';
+  try{json=JSON.stringify(profile);}catch(e){return false;}
+  try{localStorage.setItem(CLUB_PROFILE_KEY,json);}catch(e){return false;}
+  // Codex P1（PR #845）: setItem が受理されても値が保持されない/読めない browser
+  //   （probeStorageWritable が検査する故障モード）がある。書き戻しの検証は
+  //   「何か有効な profile が読める」では不十分（古い値が残っていると素通りする＝
+  //   自前テスト P10 が実証）。書いた JSON と byte 同値であることまで照合する。
+  //   失敗時はメモリ上の clubProfile（直前の有効値）を触らない。
+  var readBackRaw=null;
+  try{readBackRaw=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){return false;}
+  if(readBackRaw!==json)return false;
+  var readBack=readClubProfileRaw();
+  if(!readBack)return false;
+  clubProfile=readBack;
+  return true;
+}
+// 現 state からクラブ既定を組み立てる（保存ボタン・初回シード共用）。
+//   報告書欄は input/change の両 bind で state.report に即時同期される（state が SoT）ため
+//   DOM ではなく state から読む。値は既存の normalize helper（実行はランタイム＝定義順の罠なし）。
+function buildClubProfileFromState(){
+  var srcRep=(state&&state.report&&typeof state.report==='object')?state.report:{};
+  var rep={
+    title:normalizeReportField(srcRep.title,'title'),
+    organizer:normalizeReportField(srcRep.organizer,'organizer'),
+    place:normalizeReportField(srcRep.place,'place'),
+    fax:normalizeReportField(srcRep.fax,'fax'),
+    officeName:normalizeReportField(srcRep.officeName,'officeName'),
+    accountingNote:normalizeReportField(srcRep.accountingNote,'accountingNote'),
+    prize:normalizeReportField(srcRep.prize,'prize'),
+    timeType:normalizeReportTimeType(srcRep.timeType),
+    timeMain:normalizeReportTimeMain(srcRep.timeMain),
+    timeByoyomi:normalizeReportTimeByoyomi(srcRep.timeByoyomi)
+  };
+  var cls=[];var seenIds={};
+  var srcCls=(state&&Array.isArray(state.classes))?state.classes:factoryClasses();
+  for(var i=0;i<srcCls.length;i++){
+    var c=srcCls[i];
+    if(!c||typeof c.id!=='string')continue;
+    // 保存側でも id の安全性・一意性を守る（重複入り state を保存しても profile を汚さない）
+    if(typeof isSafeClassId==='function'&&!isSafeClassId(c.id))continue;
+    if(seenIds[c.id])continue;
+    seenIds[c.id]=true;
+    var entry={id:c.id,name:(typeof c.name==='string'&&c.name)?c.name:(c.id+'クラス')};   // started は保存しない
+    var rn=Math.floor(Number(c.rounds));
+    if(c.rounds!=null&&!isNaN(rn)&&rn>=1)entry.rounds=rn;   // クラス別回戦数上書きも既定に含める
+    cls.push(entry);
+  }
+  var rr=Math.floor(Number(state&&state.rounds));
+  return {schema_version:1,report:rep,classes:cls,rounds:(!isNaN(rr)&&rr>=1)?rr:FACTORY_ROUNDS};
+}
+// 初回シード（作者決定: 今の値でシード）。CLUB_PROFILE_KEY が「存在しない」ときだけ1回走る。
+//   キーの存在自体をマーカーにする（state 有無を条件にすると、任意の起動で他クラブの
+//   インポート state が既定として恒久化する穴＝反証パネル指摘）。まっさらな端末では
+//   factory 相当が書かれてマーカー化される。実行位置は initApp の load() 後
+//   （top-level に置くと normalize helper 未評価で TypeError→シード永久不発＝パネル指摘）。
+function seedClubProfileOnce(){
+  var raw=null;
+  try{raw=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){return;}
+  if(raw!==null)return;
+  saveClubProfile(buildClubProfileFromState());
+}
+// 「💾 この設定をクラブの既定として保存」ボタン（報告書タブ・明示保存＝作者決定。自動反映はしない）
+function onSaveClubProfileClick(){
+  var prof=buildClubProfileFromState();
+  if(saveClubProfile(prof)){
+    // 実装パネル指摘: クラス別回戦数の上書きは UI に出ない（既存の表示バグ・別起票）ため、
+    //   せめて保存 toast では件数を明示する（設計 v2 §5）。
+    var ovCount=0;
+    for(var i=0;i<prof.classes.length;i++){ if(prof.classes[i].rounds!=null)ovCount++; }
+    showToast('クラブの既定として保存しました（報告書設定・クラス'+prof.classes.length+'つ・'+prof.rounds+'回戦'+(ovCount>0?'・クラス別の回戦数上書き'+ovCount+'件':'')+'）');
+  }else{
+    // Codex P2（PR #845）: データ保存の失敗は一過性 toast ではなくブロッキング通知
+    //   （STYLE-GUIDE §3）。見逃すと次の全リセットで意図しない既定が適用されるため。
+    appAlert('クラブ既定を保存できませんでした。\n\nブラウザの保存領域の制限（プライベートブラウジング・容量不足など）が原因の可能性があります。このまま全リセットすると、以前に保存した既定（無い場合は沼津の初期値）が適用されます。\n\n通常のウィンドウで開き直してから、もう一度お試しください。');
+  }
+}
+
+// CLUB-PROFILE-001: 初期 state は profile から構築する（report だけでなく classes / rounds も）。
+//   「全リセット→タブを閉じる→翌月起動」は STORAGE_KEY が空のままこのリテラルで起動する
+//   最頻経路であり、report のみの profile 化では目的の半分が未達（パネルが vm で実証）。
+//   emptyClassDict は関数宣言（hoisting）のためこの時点で呼べる。
+var state = (function(){
+  var _initClasses=profileClasses();
+  return {
+    players: emptyClassDict(_initClasses,function(){return [];}),
+    rounds: profileRounds(),
+    pairings: emptyClassDict(_initClasses,function(){return [];}),
+    results: emptyClassDict(_initClasses,function(){return [];}),
+    started: false,
+    report: profileReport(),
+    // ROUND-CLASS-START-003: classId 単位 started を正とする state.classes を導入。
+    //   既存 dict (players/pairings/results) は当面 A/B 固定構造で維持。詳細: spec §5.2
+    classes: _initClasses
+  };
+})();
 
 var STORAGE_KEY='shogi_v4';
 var LEGACY_STORAGE_KEYS=['shogi_v3'];
@@ -1287,7 +1488,12 @@ function normalizeState(raw){
     pairings:emptyClassDict(classes,function(){return [];}),
     results:emptyClassDict(classes,function(){return [];}),
     started:false,
-    report:{date:'', place:'労政会館', start:'', end:'', sei:'', fuku:'', note:'', prize:7000, title:'沼津支部月例将棋大会', organizer:'日本将棋連盟沼津支部', fax:'943-9443', officeName:'沼津支部事務局', accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30},
+    // CLUB-PROFILE-001: normalizeState の schema base は factory 固定（profileReport ではない）。
+    //   本関数はインポート／undo 復元／ライブ閲覧／クラウド過去大会閲覧の計7経路で呼ばれるため、
+    //   profile-aware にすると過去 snapshot の欠落フィールドが今のクラブ既定で埋まり歴史が
+    //   書き換わる（反証パネルが実証）。factoryReport() は毎回 fresh を返す＝base.report への
+    //   直接代入でも共有汚染しない。
+    report:factoryReport(),
     classes:classes
   };
   classes.forEach(function(c){
@@ -1781,17 +1987,21 @@ function formatJapaneseTimeFromHhmm(hm){
 //   string フィールド共通: 文字列なら trim し、結果が非空ならそれを、空 / 非文字列は def を返す。
 //   （帳票表示は呼出側 downloadReport 等で escapeHtml されるため本 helper では sanitize しない）
 // ============================================================
+// CLUB-PROFILE-001: def は factoryReport() から導出（沼津リテラルの置き場を1つに）。
+//   ★profile では上書きしない（factory 固定）。normalizeReportField は正規化系＝
+//   snapshot 復元・インポート経路からも呼ばれるため、profile-aware にすると歴史が書き換わる。
+var _FACTORY_REPORT_FOR_SPECS=factoryReport();
 var REPORT_FIELD_SPECS={
-  title:{def:'沼津支部月例将棋大会', stripSuffix:true},
-  organizer:{def:'日本将棋連盟沼津支部'},
-  fax:{def:'943-9443'},
-  officeName:{def:'沼津支部事務局'},
-  accountingNote:{def:'※役員会で会計長へ収支報告書として提出ください。'},
-  place:{def:'労政会館'},
+  title:{def:_FACTORY_REPORT_FOR_SPECS.title, stripSuffix:true},
+  organizer:{def:_FACTORY_REPORT_FOR_SPECS.organizer},
+  fax:{def:_FACTORY_REPORT_FOR_SPECS.fax},
+  officeName:{def:_FACTORY_REPORT_FOR_SPECS.officeName},
+  accountingNote:{def:_FACTORY_REPORT_FOR_SPECS.accountingNote},
+  place:{def:_FACTORY_REPORT_FOR_SPECS.place},
   sei:{def:''},
   fuku:{def:''},
   note:{def:''},
-  prize:{def:7000, numeric:true}
+  prize:{def:_FACTORY_REPORT_FOR_SPECS.prize, numeric:true}
 };
 function normalizeReportField(value, key){
   var spec=REPORT_FIELD_SPECS[key]||{def:''};
@@ -1969,7 +2179,7 @@ function getReportClassLabel(c){
 //   state.report の値は populateReportFields が input.value にコピーした「後」に呼ぶ前提。
 //   helper 内で state.report も同期更新する（保存忘れ防止）。
 function ensureReportDateTimeDefaults(){
-  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30};
+  if(!state.report)state.report=profileReport();  // CLUB-PROFILE-001: live state 専用ガード（歴史問題なし）＝profile 生成系
   var pairs=[
     {key:'date', defaultFn:function(){return formatLocalDateForInput(new Date());}},
     {key:'start',defaultFn:function(){return '13:00';}},
@@ -13382,7 +13592,7 @@ function buildTournamentHeldDateCompact(){
 //     - 全トークンが空でも buildSafePdfFilename が '将棋大会' に fallback する。
 //   危険文字（OS 禁止文字 / パス区切り / 制御文字 / 前後空白）は sanitizeFilenamePart で除去済み。
 function buildTournamentPdfFilename(kind,className){
-  var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):'沼津支部月例将棋大会';
+  var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):REPORT_FIELD_SPECS.title.def;
   return buildSafePdfFilename([buildTournamentHeldDateCompact(),title,className,kind],'_');
 }
 
@@ -13403,7 +13613,7 @@ function countTournamentParticipants(){
 // PDF 帳票の見出し HTML（大会名 / 種別 / 対象月 / 開催日）。印刷・配布時に単体で意味が通るようにする。
 //   未入力（対象月・開催日が空）でも崩れないよう、存在する項目だけを表示する。すべて escapeHtml 済み。
 function buildPdfDocHeaderHtml(kindLabel){
-  var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):'沼津支部月例将棋大会';
+  var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):REPORT_FIELD_SPECS.title.def;
   var monthLabel=buildTournamentTargetMonthLabel();
   var heldLabel=buildTournamentHeldDateLabel();
   var metaParts=[];
@@ -13620,7 +13830,7 @@ function printPairings(){
 
   // 大会名 / 日付は state.report SoT 経由で取得（normalize helper を必ず通す）。
   //   日付は YYYY-MM-DD → 「YYYY年M月D日」表記に変換、未入力時は空文字で扱う。
-  var reportTitle=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):'沼津支部月例将棋大会';
+  var reportTitle=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):REPORT_FIELD_SPECS.title.def;
   var dateRaw=(typeof normalizeReportDateForInput==='function')?normalizeReportDateForInput(state.report&&state.report.date):'';
   var dateDisplay=dateRaw&&typeof formatJapaneseDateFromYmd==='function'?formatJapaneseDateFromYmd(dateRaw):'';
 
@@ -13969,6 +14179,32 @@ function captureResetSnapshot(kind){
 function hasResetUndoSnapshot(){
   try{ return !!localStorage.getItem(UNDO_KEY); }catch(e){ return false; }
 }
+// CLUB-PROFILE-001（実装パネル指摘）: 現在の state.classes に無い動的クラスの DOM を除去する共通掃除。
+//   候補は「呼出側が控えた旧クラス集合」に加えて「DOM 実態（受付 section の data-class-id）」も走査する。
+//   これにより (a) resetAll でクラス集合が縮む遷移の残留（従来からの幽霊バグ）、
+//   (b) profile 導入で新設された「集合が増える resetAll → undo で縮む」経路の残留、
+//   (c) インポート等で state 追跡から漏れていた既存の幽霊 section、をまとめて閉じる。
+//   A/B は静的 DOM のため対象外（isSafeClassId で不正 id も除外）。
+function cleanupStaleClassDom(keepClasses,extraCandidates){
+  var keep={A:true,B:true};
+  (Array.isArray(keepClasses)?keepClasses:[]).forEach(function(c){ if(c&&typeof c.id==='string')keep[c.id]=true; });
+  var cand={};
+  (Array.isArray(extraCandidates)?extraCandidates:[]).forEach(function(c){ if(c&&typeof c.id==='string')cand[c.id]=true; });
+  try{
+    var secs=document.querySelectorAll('[data-class-id]');
+    for(var i=0;i<secs.length;i++){
+      var cid=secs[i]&&secs[i].getAttribute?secs[i].getAttribute('data-class-id'):null;
+      if(cid)cand[cid]=true;
+    }
+  }catch(e){}
+  Object.keys(cand).forEach(function(cid){
+    if(cid==='A'||cid==='B')return;
+    if(keep[cid])return;
+    if(typeof isSafeClassId==='function'&&!isSafeClassId(cid))return;
+    removeClassDomNodes(cid);
+  });
+}
+
 function undoLastReset(){
   try{
     var raw=localStorage.getItem(UNDO_KEY);
@@ -13979,6 +14215,9 @@ function undoLastReset(){
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
     try{ localStorage.removeItem(UNDO_KEY); }catch(e){}
     _pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
+    // CLUB-PROFILE-001（実装パネル指摘）: 「集合が増える resetAll（profile に C）→ undo（A/B へ復元）」で
+    //   reset が生やした C の受付 section が幽霊として残る。復元後の classes 基準で差分掃除する。
+    cleanupStaleClassDom(state.classes,null);
     populateReportFields();
     renderRegList();
     renderPastParticipantsPanel();
@@ -14043,24 +14282,31 @@ function resetTournamentProgressOnly(){
 
 function resetAll(){
   // IN-APP-MODAL-001 (#606): native confirm→appConfirm（挙動同値）。破壊操作ゆえ danger:true（既定キャンセル）。
-  appConfirm('参加者一覧・組み合わせ・勝敗結果を含む大会データをすべてリセットします。\n支部マスタは保持されます。',function(_ok){
+  appConfirm('参加者一覧・組み合わせ・勝敗結果を含む大会データをすべてリセットします。\n支部マスタとクラブ既定（大会名・会場・クラス構成など）は保持されます。',function(_ok){
   if(!_ok)return;
   captureResetSnapshot('all');
+  // CLUB-PROFILE-001: 実行時に localStorage から profile を読み直す（read-at-use）。
+  //   起動時の1回読みだけだと「保存→即・全リセット」で古い既定が使われ、2タブ運用では
+  //   恒常的に stale になる（反証パネル指摘）。resetAll は毎月1回の低頻度操作＝再読込コスト無視可。
+  clubProfile=readClubProfileRaw();
+  // CLUB-PROFILE-001: DOM 差分掃除用に、差し替え前の旧クラス集合を先に控える。
+  //   旧実装は新 state.classes しか DOM をクリアせず、クラス数が減る遷移（例: 臨時 C クラス→
+  //   profile は A/B）で旧クラスの pane・受付 section が幽霊として残った（実ブラウザ班が再現。
+  //   既存バグだが、クラス集合の可変化で頻度が上がるため本便で同時に閉じる）。
+  var _oldClasses=Array.isArray(state.classes)?state.classes.slice():[];
   // ROUND-CLASS-START-004b (spec §12.3 / §8.2 例外):
-  //   state.classes 駆動で全リセット。{A:[],B:[]} 固定 literal を廃止し、emptyClassDict 経由で
-  //   classId ベースに初期化する。既定 classes は ['A','B']（A/B 大会の互換維持、Phase 6 までは現状維持）。
+  //   state.classes 駆動で全リセット。emptyClassDict 経由で classId ベースに初期化する。
+  //   CLUB-PROFILE-001: 既定 classes / report / rounds はクラブ既定（profile）から構築。
+  //   profile 未保存端末は factory（従来の A/B・沼津値）＝挙動不変。
   //   全体初期化系のため started 直接代入を例外的に許容（spec §8.2 例外境界）。
-  var defaultClasses=[
-    {id:'A',name:'Aクラス',started:false},
-    {id:'B',name:'Bクラス',started:false}
-  ];
+  var defaultClasses=profileClasses();
   state={
     players:emptyClassDict(defaultClasses,function(){return [];}),
-    rounds:4,
+    rounds:profileRounds(),
     pairings:emptyClassDict(defaultClasses,function(){return [];}),
     results:emptyClassDict(defaultClasses,function(){return [];}),
     started:false,
-    report:{date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30},
+    report:profileReport(),
     classes:defaultClasses
   };
   _pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
@@ -14080,19 +14326,23 @@ function resetAll(){
     var pane=document.getElementById('pane-'+c.id);if(pane)pane.innerHTML='';
     var rslt=document.getElementById('result-'+c.id);if(rslt)rslt.innerHTML='';
   });
-  // 大会報告書入力欄を初期化
-  var repPlace=document.getElementById('rep-place');if(repPlace)repPlace.value='労政会館';
+  // CLUB-PROFILE-001: 新集合に無い旧クラスの DOM（受付 section / pane / result）を除去。
+  //   旧 state 追跡（_oldClasses）に加えて DOM 実態（data-class-id）も走査するため、
+  //   インポート等で state 追跡から漏れていた既存の幽霊 section も同時に掃除される。
+  cleanupStaleClassDom(state.classes,_oldClasses);
+  // 大会報告書入力欄を初期化（CLUB-PROFILE-001: 直書きの沼津値を廃し、profile 構築済みの state.report から反映）
+  var repPlace=document.getElementById('rep-place');if(repPlace)repPlace.value=state.report.place;
   var repSei=document.getElementById('rep-sei');if(repSei)repSei.value='';
   var repFuku=document.getElementById('rep-fuku');if(repFuku)repFuku.value='';
   var repNote=document.getElementById('rep-note');if(repNote)repNote.value='';
-  // REPORT-UX-007A: footer 1行目の FAX番号 / 事務局名は schema 既定値に戻す（空欄ではなく default 値）。
+  // REPORT-UX-007A: footer 1行目の FAX番号 / 事務局名は既定値に戻す（空欄ではなく default 値）。
   //   後段の populateReportFields でも state からの再同期で同じ default が反映されるため二重ではあるが、
   //   既存の resetAll の DOM 明示初期化方針に揃える。
-  var repFax=document.getElementById('rep-fax');if(repFax)repFax.value='943-9443';
-  var repOfficeName=document.getElementById('rep-office-name');if(repOfficeName)repOfficeName.value='沼津支部事務局';
-  // REPORT-UX-007B-1: footer 2行目（会計提出文）も schema 既定値に戻す（空欄ではなく default 文言）。
+  var repFax=document.getElementById('rep-fax');if(repFax)repFax.value=state.report.fax;
+  var repOfficeName=document.getElementById('rep-office-name');if(repOfficeName)repOfficeName.value=state.report.officeName;
+  // REPORT-UX-007B-1: footer 2行目（会計提出文）も既定値に戻す（空欄ではなく default 文言）。
   //   note と異なり空欄運用なしのため、reset 時は default 文言へ戻す方針。
-  var repAccountingNote=document.getElementById('rep-accounting-note');if(repAccountingNote)repAccountingNote.value='※役員会で会計長へ収支報告書として提出ください。';
+  var repAccountingNote=document.getElementById('rep-accounting-note');if(repAccountingNote)repAccountingNote.value=state.report.accountingNote;
   var inpYomiR=document.getElementById('inp-yomi');if(inpYomiR)inpYomiR.value='';
   var inpNameR=document.getElementById('inp-name');if(inpNameR)inpNameR.value='';
   // REPORT-UX-001 (Codex Should Fix - resetAll defaults 再適用):
@@ -14389,7 +14639,7 @@ function renderTimeControlFields(){
 }
 
 function populateReportFields(){
-  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30};
+  if(!state.report)state.report=profileReport();  // CLUB-PROFILE-001: live state 専用ガード（歴史問題なし）＝profile 生成系
   // REPORT-UX-001 (Codex Must Fix 1):
   //   date / start / end は <input type="date|time"> の value 制約に合わせて正規化してから代入する。
   //   旧形式 "YYYY年MM月DD日" / "H時MM分" が来ても、HTML5 input が値を空に戻して
@@ -14545,7 +14795,7 @@ function updateReportFieldFromElement(el,eventType){
   }
   if(!key&&el.id&&el.id.indexOf('rep-')===0)key=el.id.substring(4);
   if(!key)return;
-  if(!state.report)state.report={date:'',place:'労政会館',start:'',end:'',sei:'',fuku:'',note:'',prize:7000,title:'沼津支部月例将棋大会',organizer:'日本将棋連盟沼津支部',fax:'943-9443',officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。',timeType:'sudden',timeMain:25,timeByoyomi:30};
+  if(!state.report)state.report=profileReport();  // CLUB-PROFILE-001: live state 専用ガード（歴史問題なし）＝profile 生成系
   // REPORT-UX-003A: prize は数値として保存する。空欄・負数・不正値は 7000 にフォールバック。
   //   0 は有効値として 0 のまま保存（normalizeReportPrize 内部で 0 を valid 扱い）。
   //   既存の string field (date/place/start/end/sei/fuku/note) の保存挙動は変えない。
@@ -14721,6 +14971,9 @@ function bindReportEvents(){
   }
   var btn=document.getElementById('downloadReportBtn');
   if(btn)btn.addEventListener('click',downloadReport);
+  // CLUB-PROFILE-001: クラブ既定の明示保存ボタン（静的 HTML・id=saveClubProfileBtn）
+  var saveClubProfileBtn=document.getElementById('saveClubProfileBtn');
+  if(saveClubProfileBtn)saveClubProfileBtn.addEventListener('click',onSaveClubProfileClick);
   // HELP-UX-002 (#322): 見出し脇「？ ヘルプ」ボタン（静的 HTML・id=helpBtnReport）の click を
   //   openHelpModal('report') に bind（追加のみ・表示のみ）。build/bind 分離のため結線はここで行う
   //   （#309 の helpBtnFirstRound_ → bindClassActionBarEvents と同型）。
@@ -14822,6 +15075,7 @@ function checkStorageAndWarn(){
 function initApp(){
   checkStorageAndWarn();
   load();
+  seedClubProfileOnce();  // CLUB-PROFILE-001: load() 完了後・キー不在のときだけ1回（legacy v3 由来の復元も拾う）
   populateReportFields();
   renderRegList();
   renderPastParticipantsPanel();
@@ -15826,7 +16080,7 @@ function renderScoreboard(){
     var players=(state.players&&state.players[c.id])||[];
     if(players.length>0)activeClasses.push(c.id);
   }
-  var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):'沼津支部月例将棋大会';
+  var title=(typeof normalizeReportTitle==='function')?normalizeReportTitle(state.report&&state.report.title):REPORT_FIELD_SPECS.title.def;
   var monthLabel=buildTournamentTargetMonthLabel();
   var heldLabel=buildTournamentHeldDateLabel();
   var metaParts=[];
