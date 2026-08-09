@@ -283,6 +283,11 @@ function makeMatsumotoState(env){
   assert(RAW.indexOf('.btn-outline-primary{')>=0, 'P11-3 .btn-outline-primary が class として定義されている');
   const saveFn=RAW.slice(RAW.indexOf('function onSaveClubProfileClick'), RAW.indexOf('function onSaveClubProfileClick')+1600);
   assert(saveFn.indexOf('appAlert(')>=0, 'P11-4 保存失敗はブロッキング通知（§3・一過性 toast にしない）');
+  // Codex 2巡目 P2×2: disclosure の色は class 側（§1）・タップ目標 44px 以上（§10.3）
+  assert(/<summary class="club-profile-summary"/.test(RAW), 'P11-5 summary は class 指定（inline に色を書かない）');
+  const sumCss=RAW.slice(RAW.indexOf('.club-profile-summary{'), RAW.indexOf('.club-profile-summary{')+200);
+  assert(sumCss.indexOf('min-height:44px')>=0, 'P11-6 summary のタップ目標が 44px 以上（§10.3）');
+  assert(sumCss.indexOf('color:#666')>=0, 'P11-7 summary の色は class 側で定義');
 }
 
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----
