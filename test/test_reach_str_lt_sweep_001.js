@@ -15,7 +15,7 @@
 //   N=40 / 文字（LS・PS の 2 文字）＝ 80 配置。等間隔サンプル＝乱数なしで決定的
 //   （＝サンプル位置は決定的なので、同じ欠陥・同じ対象なら**面オラクル側のヒット数は
 //     機械差で動かない**。例外オラクル側はエンジン差の影響を原理的には受けうる）。
-//   実行時間は cloud Linux / Node v22 で約 19.5 秒（緑の道）。うち陽性対照
+//   実行時間は cloud Linux / Node v22 で約 19.1 秒（緑の道）。うち陽性対照
 //   （CONTROL-1H/1T/2）が約 7 秒（陽性対照なしの `e56cdfb` で 12.4〜12.6 秒）。
 //   対照は**本番と同じ N=40** で回す（小さい N で回すと `sampleN` で経路を切り替える
 //   骨抜きに無力なため。実測でその抜け道を確認済み）。面の対照 2 本では `analyze` を
@@ -66,10 +66,11 @@
 //                          `continue` 1 行・申告と実挿入の切り離し・「リテラルだけ切り出して
 //                          比べる」最適化（無条件版／`src.length` 分岐版／`sampleN` 分岐版）・
 //                          `analyze(mutated)` を `if (hit)` の中へ移す最適化・`faceIntact` の
-//                          前半/後半ループを 1 行消す整理・`catch` に `RangeError` 除外
-//                          フィルタを足す「フレーク対策」が**全部素通りする**（反証パネル
-//                          2026-08-07 / 08 実測。いずれも clean の stdout は byte 一致で
-//                          001t 注入も検出しない）。CONTROL 群はこの 9 種を落とす。
+//                          前半/後半ループを 1 行消す整理・`faceIntact` を「両端だけ比べる」
+//                          形へ退化させる整理・`catch` に `RangeError` / `ReferenceError` の
+//                          除外フィルタを足す「フレーク対策」が**全部素通りする**（反証パネル
+//                          2026-08-07 / 08 ＋ Codex 実測。いずれも clean の stdout は
+//                          byte 一致で 001t 注入も検出しない）。CONTROL 群はこの 11 種を落とす。
 //                          落とせないのは `opts` を検出して分岐する 2 種だけ（上の ★）。
 //   pin の一覧: TARGET-1 / TARGET-1b / CONTROL-1H / CONTROL-1T / CONTROL-1P /
 //              CONTROL-2 / CONTROL-2P / PLACE-1 / PLACE-2 / HIT-0 —— 緑なら PASS=10。
@@ -146,11 +147,12 @@ for (const c of r.chars) console.log(`  ${c.label}: ${c.hits}/${c.placements} �
 //   申告する文字」であって実際に挿入した文字ではない。だから判定ループの手前に
 //   `if (true) continue;` を 1 行置くだけで全部素通りする（反証パネル 2026-08-07 実測）。
 //   さらに悪いことに、**テストを一切意識していない善意の変更でも同じことが起きる**
-//   （すべて反証パネル 2026-08-07 / 08 の実測。いずれも clean の stdout は byte 一致・
-//   他の pin は無反応・001t 注入も検出しない）:
+//   （すべて反証パネル 2026-08-07 / 08 ＋ Codex の実測。いずれも clean の stdout は
+//   byte 一致・他の pin は無反応・001t 注入も検出しない）:
 //   ① `faceIntact` の**後半ループ 1 行**を「1 文字挿入なら後ろは 1 つずれただけ」と
 //      整理して消す → 001t の被害は全部挿入点より後ろなので **80/80 → 0/80**。
 //      面配列の長さは常に `src.length` なので、残った長さ検査は本番では永久に false。
+//   ①' 同じ理屈で `faceIntact` を「両端だけ比べる」形へ退化させる → これも **0/80**。
 //   ② `catch` に `if (!(err instanceof RangeError))` を足して「環境由来のフレーク除外」
 //      とする → 例外死型の退行（実測 18/80）が **0/80** に。
 //   ③「リテラルだけ切り出して比べる」最適化（無条件版・`src.length` 分岐版とも）。
@@ -166,6 +168,7 @@ for (const c of r.chars) console.log(`  ${c.label}: ${c.hits}/${c.placements} �
 //   - 面の対照は **長さを合わせたまま**壊す。長さ違いで済ませると ① を見逃す。
 //     さらに **挿入点より前（head）と後ろ（tail）を別々に**壊し、`faceIntact` の
 //     2 本のループを 1 本ずつ pin する（片方だけだと消えたもう片方に気付けない）。
+//     壊す位置は **端だけでなく内側も**、区間を 4 分割して呼び出しごとに回す（①' 対策）。
 //   - 「オラクルが赤を出せたか（CONTROL-1H/1T/2）」と「差し替え口をそもそも通ったか
 //     （CONTROL-1P/2P）」を **別々の pin にする**。混ぜると、差し替え口を通らなくなる
 //     改造（例: 面を `analyze()` の内部値から再利用するリファクタ）のときに
@@ -183,30 +186,42 @@ for (const c of r.chars) console.log(`  ${c.label}: ${c.hits}/${c.placements} �
   const CTL_PLACEMENTS = CTL_N * 2;
   const LS = String.fromCharCode(0x2028);
   const PS = String.fromCharCode(0x2029);
+  const SPOTS = 4;                              // 破壊位置を 4 分割で回す（下の ★2 を参照）
 
-  //   原本と変異版の差から「実際に挿入された 1 文字」を復元する。
-  //   1 文字挿入以外（長さが合わない・2 箇所以上違う・そもそも別文字列）なら null。
+  //   原本と変異版の差から「1 文字挿入の位置」を復元する。挿入以外（長さが合わない・
+  //   2 箇所以上違う・そもそも別文字列）なら -1。
   //   ★ 復元は**受け取った瞬間**に行い、変異文字列そのものは保持しない。
   //     860KB の複製を 80 本×2 本ためると必要ヒープが 16MB → 36MB に跳ね、
   //     `--max-old-space-size` を絞った CI で **要約行を 1 行も出さずに OOM** する
-  //     （反証パネル 2026-08-08 実測）。判定に要るのは挿入文字だけ。
-  const insertedCharOf = (orig, mut) => {
-    if (mut.length !== orig.length + 1) return null;
+  //     （反証パネル 2026-08-08 実測）。判定に要るのは位置と挿入文字だけ。
+  const insertionIndexOf = (orig, mut) => {
+    if (mut.length !== orig.length + 1) return -1;
     let i = 0;
     while (i < orig.length && orig[i] === mut[i]) i++;
-    if (orig.slice(i) !== mut.slice(i + 1)) return null;
-    return mut[i];
+    if (orig.slice(i) !== mut.slice(i + 1)) return -1;
+    return i;
   };
-  //   観測した入力が「本番 TARGET へ LS/PS を 1 文字入れたもの」ちょうど expect 件で、
-  //   LS と PS が半々か。
-  const probeVerdict = (seen, expect) => {
-    const nLS = seen.filter((c) => c === LS).length;
-    const nPS = seen.filter((c) => c === PS).length;
-    const nBad = seen.filter((c) => c === null).length;
+
+  //   観測の記録。**呼び出し回数ではなく「異なる変異入力の数」**を数える。
+  //   回数で数えると、同じ変異ソースに対してレクサを 2 回呼ぶだけの（挙動を変えない）
+  //   リファクタや診断追加が偽赤になる（Codex P2）。位置＋挿入文字を鍵に重複排除する。
+  const makeProbe = () => ({ seen: new Set(), bad: 0, calls: 0 });
+  const record = (p, s, src0) => {
+    p.calls++;
+    const i = insertionIndexOf(src0, s);
+    if (i < 0) { p.bad++; return -1; }
+    p.seen.add(i + ':' + s[i]);
+    return i;
+  };
+  const verdict = (p) => {
+    const chars = [...p.seen].map((k) => k.slice(k.indexOf(':') + 1));
+    const nLS = chars.filter((c) => c === LS).length;
+    const nPS = chars.filter((c) => c === PS).length;
     return {
-      ok: seen.length === expect && nLS === expect / 2 && nPS === expect / 2 && nBad === 0,
-      text: `観測 ${seen.length}/${expect} 件（LS ${nLS} / PS ${nPS}`
-        + `・本番 TARGET の 1 文字挿入として復元できなかったもの ${nBad} 件）`,
+      ok: p.seen.size === CTL_PLACEMENTS && nLS === CTL_PLACEMENTS / 2
+        && nPS === CTL_PLACEMENTS / 2 && p.bad === 0,
+      text: `異なる変異入力 ${p.seen.size}/${CTL_PLACEMENTS} 件（LS ${nLS} / PS ${nPS}`
+        + `・呼び出し ${p.calls} 回・本番 TARGET の 1 文字挿入として復元できなかったもの ${p.bad} 件）`,
     };
   };
 
@@ -222,58 +237,98 @@ for (const c of r.chars) console.log(`  ${c.label}: ${c.hits}/${c.placements} �
     //   レクサ。正しい faceIntact なら必ず不一致＝全配置ヒットになる。
     //   head は挿入点より前の要素、tail は挿入点より後ろの要素を壊すので、
     //   faceIntact の前半ループ・後半ループを 1 本ずつ検査できる。
-    const seenLex = [];
-    const brokenLexAt = (where) => (s) => {
-      if (s === src0) return classifyFaces(s);   // 原本はそのまま（span 列挙は正しく行わせる）
-      seenLex.push(insertedCharOf(src0, s));     // ★ wrapper 自身の観測（sweep の申告ではない）
-      const f = classifyFaces(s);
-      const i = where === 'head' ? 0 : f.length - 1;
-      f[i] = f[i] ^ 0xff;
-      return f;
+    //   ★2 壊す位置は **端だけでなく内側も**、区間を 4 分割して呼び出しごとに回す。
+    //     端（index 0 と末尾）しか壊さないと、faceIntact を「両端だけ比べる」形へ
+    //     退化させる改変が対照を素通りする（Codex P1・実測: wrapper は PASS=10 FAIL=0
+    //     のまま、001t 注入の検出が 80/80 → 0/80 に落ちる）。
+    //     head 側は [0, mid) を、tail 側は (mid, 末尾] を 4 分割して端と内側を混ぜる
+    //     （どの位置でも「面が違う」ことに変わりはないので、正しい faceIntact なら
+    //     全配置ヒットのまま）。
+    const spotOf = (where, mid, len) => (k) => (where === 'head'
+      ? Math.floor((k * (mid - 1)) / (SPOTS - 1))                      // [0, mid)
+      : mid + 1 + Math.floor((k * (len - 1 - (mid + 1))) / (SPOTS - 1))); // (mid, len-1]
+    const makeFaceControl = (where) => {
+      const p = makeProbe();
+      return {
+        probe: p,
+        lex: (s) => {
+          if (s === src0) return classifyFaces(s);  // 原本はそのまま（span 列挙は正しく行わせる）
+          const k = (p.calls) % SPOTS;              // ★ wrapper 自身の観測（sweep の申告ではない）
+          const mid = record(p, s, src0);
+          const f = classifyFaces(s);
+          if (mid < 0) return f;                    // 想定外の入力は壊さない（verdict 側で赤にする）
+          const j = spotOf(where, mid, f.length)(k);
+          f[j] = f[j] ^ 0xff;
+          return f;
+        },
+      };
     };
-    const cH = sweep(TARGET, CTL_N, { classifyFaces: brokenLexAt('head'), analyze: stubAnalyze });
-    const cT = sweep(TARGET, CTL_N, { classifyFaces: brokenLexAt('tail'), analyze: stubAnalyze });
+    const ctlH = makeFaceControl('head');
+    const ctlT = makeFaceControl('tail');
+    const cH = sweep(TARGET, CTL_N, { classifyFaces: ctlH.lex, analyze: stubAnalyze });
+    const cT = sweep(TARGET, CTL_N, { classifyFaces: ctlT.lex, analyze: stubAnalyze });
     const cHp = cH.chars.reduce((n, c) => n + c.placements, 0);
     const cTp = cT.chars.reduce((n, c) => n + c.placements, 0);
-    const v1 = probeVerdict(seenLex, CTL_PLACEMENTS * 2);
+    const vH = verdict(ctlH.probe);
+    const vT = verdict(ctlT.probe);
 
     ok(cH.totalHits === CTL_PLACEMENTS && cHp === CTL_PLACEMENTS,
       `CONTROL-1H 面オラクルの陽性対照（挿入点より前）—— 面が違うのにヒットしない配置がある`
       + `（ヒット ${cH.totalHits}/${cHp}・期待 ${CTL_PLACEMENTS}）。`
-      + `faceIntact の**前半ループ**が消えている／面比較が常に「無傷」を返す可能性。`);
+      + `faceIntact の**前半ループ**が消えている／両端しか比べていない／面比較が常に`
+      + `「無傷」を返す可能性。`);
     ok(cT.totalHits === CTL_PLACEMENTS && cTp === CTL_PLACEMENTS,
       `CONTROL-1T 面オラクルの陽性対照（挿入点より後ろ）—— 面が違うのにヒットしない配置がある`
       + `（ヒット ${cT.totalHits}/${cTp}・期待 ${CTL_PLACEMENTS}）。`
-      + `faceIntact の**後半ループ**が消えている可能性。001t の被害はすべて挿入点より`
-      + `後ろにあるので、これが落ちているとき本番の検出力は 80/80 → 0/80 になる。`);
-    ok(v1.ok,
-      `CONTROL-1P 面レクサの差し替え口を本番と同じ形で通っていない —— ${v1.text}。`
-      + `**オラクル自体は生きているかもしれない**が、この対照はもう検査できていない`
-      + `（判定ループを飛ばした／リテラル断片だけを比べている／面を他所から再利用している）。`);
+      + `faceIntact の**後半ループ**が消えている／両端しか比べていない可能性。001t の被害は`
+      + `すべて挿入点より後ろにあるので、これが落ちているとき本番の検出力は 80/80 → 0/80 になる。`);
+    ok(vH.ok && vT.ok,
+      `CONTROL-1P 面レクサの差し替え口を本番と同じ形で通っていない —— head: ${vH.text}`
+      + `／tail: ${vT.text}。**オラクル自体は生きているかもしれない**が、この対照はもう`
+      + `検査できていない（判定ループを飛ばした／リテラル断片だけを比べている／`
+      + `面を他所から再利用している）。`);
 
     // --- 陽性対照 2: 例外オラクル ----------------------------------------------
     //   変異入力に対して必ず throw する analyze。面オラクルは本物のまま（＝ヒット 0）
     //   なので、ここで全配置ヒットになるのは **例外オラクルが実際に走った**ときだけ。
-    //   ★ 例外の**クラスを毎回変える**。1 クラスだけだと「RangeError は環境由来なので
+    //   ★ 例外の**種類を毎回変える**。1 種類だけだと「RangeError は環境由来なので
     //     ヒットに数えない」型のフィルタが対照を素通りする（実測: 例外死型の検出が
-    //     18/80 → 0/80 になるのに CI は緑）。
-    const KINDS = [RangeError, TypeError, SyntaxError, Error];
-    const seenAnz = [];
+    //     18/80 → 0/80 になるのに CI は緑）。ECMAScript の組み込み Error 系を全部と、
+    //     name を差し替えたサブクラス相当、さらに **Error ですらない throw**（文字列・
+    //     プレーンオブジェクト）まで回す。
+    //     ※ 有限の列挙である以上「この列挙に無い型だけを握り潰す」フィルタは残る。
+    //       そこまで狙い撃つ改変は骨抜きの意図が明白なので、ここでは追わない（Codex P1）。
+    const MAKE_ERR = [
+      () => new Error('CONTROL-2 injected'),
+      () => new RangeError('CONTROL-2 injected'),
+      () => new TypeError('CONTROL-2 injected'),
+      () => new SyntaxError('CONTROL-2 injected'),
+      () => new ReferenceError('CONTROL-2 injected'),
+      () => new EvalError('CONTROL-2 injected'),
+      () => new URIError('CONTROL-2 injected'),
+      () => new AggregateError([], 'CONTROL-2 injected'),
+      () => Object.assign(new Error('CONTROL-2 injected'), { name: 'AnalyzeError' }),
+      () => 'CONTROL-2 injected（Error ではない throw: 文字列）',
+      () => ({ message: 'CONTROL-2 injected（Error ではない throw: プレーンオブジェクト）' }),
+    ];
+    const pA = makeProbe();
     const throwingAnalyze = (s) => {
       if (s === src0) return realAnalyze(s);
-      seenAnz.push(insertedCharOf(src0, s));
-      throw new KINDS[seenAnz.length % KINDS.length]('CONTROL-2 injected');
+      const k = pA.calls % MAKE_ERR.length;
+      record(pA, s, src0);
+      throw MAKE_ERR[k]();
     };
     const c2 = sweep(TARGET, CTL_N, { analyze: throwingAnalyze });
     const c2p = c2.chars.reduce((n, c) => n + c.placements, 0);
-    const v2 = probeVerdict(seenAnz, CTL_PLACEMENTS);
+    const vA = verdict(pA);
 
     ok(c2.totalHits === CTL_PLACEMENTS && c2.totalThrows === CTL_PLACEMENTS && c2p === CTL_PLACEMENTS,
       `CONTROL-2 例外オラクルの陽性対照 —— 必ず throw する analyze を渡したのに`
       + `ヒットしない配置がある（ヒット ${c2.totalHits}/${c2p}・うち例外 ${c2.totalThrows}`
-      + `・期待 ${CTL_PLACEMENTS}）。例外を握り潰す／種別で選り分ける改変が入っている可能性。`);
-    ok(v2.ok,
-      `CONTROL-2P analyze の差し替え口を本番と同じ形で通っていない —— ${v2.text}。`
+      + `・期待 ${CTL_PLACEMENTS}・投げた種類 ${MAKE_ERR.length} 種）。`
+      + `例外を握り潰す／種別で選り分ける改変が入っている可能性。`);
+    ok(vA.ok,
+      `CONTROL-2P analyze の差し替え口を本番と同じ形で通っていない —— ${vA.text}。`
       + `**オラクル自体は生きているかもしれない**が、この対照はもう検査できていない`
       + `（analyze(mutated) が条件付きになった／呼ばれていない）。`);
   } catch (e) {
