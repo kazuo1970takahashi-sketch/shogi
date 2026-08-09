@@ -95,10 +95,15 @@ grep -q "Aクラスが奇数です" "$TARGET" && ok "startTournament: 奇数チ�
 grep -q "進行中の大会データがあります" "$TARGET" && ok "startTournament: 再開始確認あり" || ng "再開始確認なし"
 
 # 2-5. submitRoundの4チェック
+# FIRSTROUND-ODD-001: 旧「未割当拒否」(1回戦の全員割当必須)は廃止。#272 の Codex P1 で
+#   意図的にロックされたが、同じ Codex が 2026-08-09 に「1回戦だけ別の状態機械は誤り」と
+#   再評価したため解除。代わりに (a) 旧アラートの再導入が無いこと (b) 空回戦ガードが
+#   1回戦にも効く統一形で在ることを pin する。
 grep -q "全試合の結果を入力してください" "$TARGET" && ok "submitRound: 未入力拒否" || ng "未入力拒否なし"
 grep -q "登録されていない選手が含まれています" "$TARGET" && ok "submitRound: 存在しない選手拒否" || ng "存在しない選手拒否なし"
 grep -q "が複数の対局に登録されています" "$TARGET" && ok "submitRound: 重複拒否" || ng "重複拒否なし"
-grep -q "次の参加者が対局に登録されていません" "$TARGET" && ok "submitRound: 未割当拒否" || ng "未割当拒否なし"
+grep -q "この回戦の組み合わせがありません" "$TARGET" && ok "submitRound: 空回戦拒否（1回戦にも統一適用）" || ng "空回戦拒否なし"
+if grep -q "次の参加者が対局に登録されていません" "$TARGET"; then ng "旧・1回戦未割当拒否が再導入されている（FIRSTROUND-ODD-001 違反）"; else ok "submitRound: 1回戦の全員割当必須は廃止済み"; fi
 
 # 2-6. 対戦相手変更の安全機構 (Hotfix Phase 4: replace + swap 自動分岐)
 grep -q "結果入力済みのため変更できません" "$TARGET" && ok "changePairing: 入口 winner 阻止" || ng "入口 winner 阻止なし"
