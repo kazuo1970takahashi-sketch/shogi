@@ -151,8 +151,10 @@ assert(/function\s+normalizeReportOfficeName\s*\(/.test(htmlSrc), 'A1-2 normaliz
   const body = m ? m[0] : '';
   assert(/getElementById\(['"]rep-fax['"]\)/.test(body), 'A6-1 resetAll で #rep-fax を初期化する');
   assert(/getElementById\(['"]rep-office-name['"]\)/.test(body), 'A6-2 resetAll で #rep-office-name を初期化する');
-  assert(/['"]943-9443['"]/.test(body), 'A6-3 resetAll で fax を "943-9443" に戻す');
-  assert(/['"]沼津支部事務局['"]/.test(body), 'A6-4 resetAll で officeName を "沼津支部事務局" に戻す');
+  // CLUB-PROFILE-001: 沼津値の直書きを廃し、profile 構築済みの state.report から反映する形に追随。
+  //   （profile 未保存端末では state.report.fax==='943-9443' なので挙動同値＝B 系の動的テストが担保）
+  assert(/repFax\.value=state\.report\.fax/.test(body), 'A6-3 resetAll で fax を既定（state.report.fax=profile 構築値）に戻す');
+  assert(/repOfficeName\.value=state\.report\.officeName/.test(body), 'A6-4 resetAll で officeName を既定（state.report.officeName=profile 構築値）に戻す');
 }
 
 // A7: form input element

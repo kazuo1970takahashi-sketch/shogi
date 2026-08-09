@@ -82,11 +82,12 @@ assert(/function\s+normalizeReportPlace\s*\(/.test(htmlSrc),
   assert(m !== null, 'A2 #rep-place input が DOM に存在する');
 }
 
-// A3
+// A3（CLUB-PROFILE-001 で反転: schema literal は factoryReport() に一本化。旧 pin は複製≥6を
+//   要求していたが、複製こそ沼津ハードコード問題の温床だったため「唯一の定義」を pin する）
 {
   const count = (htmlSrc.match(/place\s*:\s*['"]労政会館['"]/g) || []).length;
-  assert(count >= 6,
-    'A3 schema literal に place:"労政会館" が 6 箇所以上ある（実測 '+count+'）');
+  assert(count === 1,
+    'A3 place:"労政会館" の schema literal は factoryReport() の1箇所のみ（実測 '+count+'）');
 }
 
 // A4

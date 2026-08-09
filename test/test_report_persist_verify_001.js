@@ -105,20 +105,29 @@ const nsMatch = htmlSrc.match(/function normalizeState\(raw\)[\s\S]*?\n\}\n/);
 const nsBody = nsMatch ? nsMatch[0] : '';
 assert(nsBody.length > 0, 'A0 normalizeState 本体を切り出せる');
 
-// A1: base.report schema literal に 13 フィールドが既定値付きで存在
+// A1（CLUB-PROFILE-001 で追随: schema 既定は factoryReport() に一本化された。
+//   normalizeState の base は factoryReport() 参照＝★profile ではなく factory 固定
+//   （snapshot 復元・インポート経路で歴史を書き換えないため）。既定値そのものの pin は
+//   唯一の定義である factoryReport 本体に対して行う）
+assert(nsBody.indexOf('report:factoryReport()') >= 0,
+  'A1 normalizeState の schema base が factoryReport() 参照（profileReport ではない＝歴史保護）');
+assert(nsBody.indexOf('profileReport(') < 0,
+  'A1b normalizeState 本体に profileReport 参照が無い（正規化系は factory 固定）');
+const frMatch = htmlSrc.match(/function factoryReport\(\)\{[\s\S]*?\n\}/);
+const frBody = frMatch ? frMatch[0] : '';
+assert(frBody.length > 0, 'A1c factoryReport 本体を切り出せる');
 FIELDS.forEach(function(k){
-  // schema literal は `report:{...}` のオブジェクトリテラル。各キー名の出現を確認。
   const re = new RegExp('\\b' + k + ':');
-  assert(re.test(nsBody), 'A1 normalizeState schema literal に "' + k + '" キーがある');
+  assert(re.test(frBody), 'A1 factoryReport schema literal に "' + k + '" キーがある');
 });
-// 既定値そのものが schema literal に含まれること（代表的な non-empty default）
-assert(nsBody.indexOf("place:'労政会館'") >= 0, 'A1-def place 既定値 "労政会館"');
-assert(nsBody.indexOf('prize:7000') >= 0, 'A1-def prize 既定値 7000');
-assert(nsBody.indexOf("title:'沼津支部月例将棋大会'") >= 0, 'A1-def title 既定値');
-assert(nsBody.indexOf("organizer:'日本将棋連盟沼津支部'") >= 0, 'A1-def organizer 既定値');
-assert(nsBody.indexOf("fax:'943-9443'") >= 0, 'A1-def fax 既定値');
-assert(nsBody.indexOf("officeName:'沼津支部事務局'") >= 0, 'A1-def officeName 既定値');
-assert(nsBody.indexOf("accountingNote:'※役員会で会計長へ収支報告書として提出ください。'") >= 0,
+// 既定値そのものが factoryReport literal に含まれること（代表的な non-empty default）
+assert(frBody.indexOf("place:'労政会館'") >= 0, 'A1-def place 既定値 "労政会館"');
+assert(frBody.indexOf('prize:7000') >= 0, 'A1-def prize 既定値 7000');
+assert(frBody.indexOf("title:'沼津支部月例将棋大会'") >= 0, 'A1-def title 既定値');
+assert(frBody.indexOf("organizer:'日本将棋連盟沼津支部'") >= 0, 'A1-def organizer 既定値');
+assert(frBody.indexOf("fax:'943-9443'") >= 0, 'A1-def fax 既定値');
+assert(frBody.indexOf("officeName:'沼津支部事務局'") >= 0, 'A1-def officeName 既定値');
+assert(frBody.indexOf("accountingNote:'※役員会で会計長へ収支報告書として提出ください。'") >= 0,
   'A1-def accountingNote 既定値');
 
 // A2: 13 フィールド各々に hasOwnProperty ガード + 専用 normalizer 復元分岐

@@ -146,8 +146,9 @@ assert(/function\s+normalizeReportAccountingNote\s*\(/.test(htmlSrc),
   const body = m ? m[0] : '';
   assert(/getElementById\(['"]rep-accounting-note['"]\)/.test(body),
     'A6-1 resetAll で #rep-accounting-note を初期化する');
-  assert(body.indexOf(DEFAULT_NOTE) >= 0,
-    'A6-2 resetAll で accountingNote を default 文言に戻す');
+  // CLUB-PROFILE-001: default 文言の直書きを廃し、profile 構築済みの state.report から反映する形に追随。
+  assert(/repAccountingNote\.value=state\.report\.accountingNote/.test(body),
+    'A6-2 resetAll で accountingNote を既定（state.report.accountingNote=profile 構築値）に戻す');
 }
 
 // A7: form textarea element
@@ -156,12 +157,14 @@ assert(/id="rep-accounting-note"/.test(htmlSrc),
 assert(/<textarea[^>]*id="rep-accounting-note"/.test(htmlSrc),
   'A7-2 #rep-accounting-note は textarea である');
 
-// A8: schema literal 6 箇所すべてに accountingNote が含まれる
+// A8（CLUB-PROFILE-001 で反転: schema literal は factoryReport() に一本化＝1箇所のみ。
+//   旧 pin の「6箇所すべて」は複製の同期を守る番人だったが、複製自体を廃したため
+//   「唯一の定義に officeName+accountingNote のペアが在る」ことを pin する）
 {
   const literalCount = (htmlSrc.match(/officeName:'沼津支部事務局',accountingNote:'※役員会で会計長へ収支報告書として提出ください。'/g) || []).length;
   const literalCountSpaced = (htmlSrc.match(/officeName:'沼津支部事務局', accountingNote:'※役員会で会計長へ収支報告書として提出ください。'/g) || []).length;
-  assert(literalCount + literalCountSpaced === 6,
-    'A8 schema literal 6 箇所すべてに accountingNote が含まれる (count=' + (literalCount + literalCountSpaced) + ')');
+  assert(literalCount + literalCountSpaced === 1,
+    'A8 officeName+accountingNote の schema literal は factoryReport() の1箇所のみ (count=' + (literalCount + literalCountSpaced) + ')');
 }
 
 // ============================================================
