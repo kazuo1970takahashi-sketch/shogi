@@ -11,7 +11,7 @@
 //   の使い方は不変。ヒット 0 の対象では tool の stdout も `e56cdfb`（陽性対照を足す
 //   直前のコミット）と byte 一致。
 //
-//   ── CI で走らせる量 ──────────────────────────────────────────────
+//   ── CI で走らせる量 ──────────────────────────────────
 //   N=40 / 文字（LS・PS の 2 文字）＝ 80 配置。等間隔サンプル＝乱数なしで決定的
 //   （＝サンプル位置は決定的なので、同じ欠陥・同じ対象なら**面オラクル側のヒット数は
 //     機械差で動かない**。例外オラクル側はエンジン差の影響を原理的には受けうる）。
@@ -28,7 +28,7 @@
 //   限定した変種で 8/80、`src.length/2` に限定で 42/80。いずれも赤にはなる）。
 //   N を上げ下げするときは時間予算と見逃し確率の両方を数字で書くこと。
 //
-//   ── この 1 本が守る範囲 ──────────────────────────────────────────
+//   ── この 1 本が守る範囲 ────────────────────────────────
 //   「JS 文字列リテラル内の LS / PS で**面レクサの終端が壊れる**」＋「同じ入力で
 //   **走査が例外死する**」の 2 クラス。それ以上は守備範囲と主張しない。特に:
 //   - **エスケープ復号（結線デコーダ）の到達性への影響**は判定に含めない。含めると
@@ -70,7 +70,7 @@
 //                          形へ退化させる整理・`catch` に `RangeError` / `ReferenceError` の
 //                          除外フィルタを足す「フレーク対策」が**全部素通りする**（反証パネル
 //                          2026-08-07 / 08 ＋ Codex 実測。いずれも clean の stdout は
-//                          byte 一致で 001t 注入も検出しない）。CONTROL 群はこの 11 種を落とす。
+//                          byte 一致で 001t 注入も検出しない）。CONTROL 群はこの 12 種を落とす。
 //                          落とせないのは `opts` を検出して分岐する 2 種だけ（上の ★）。
 //   pin の一覧: TARGET-1 / TARGET-1b / CONTROL-1H / CONTROL-1T / CONTROL-1P /
 //              CONTROL-2 / CONTROL-2P / PLACE-1 / PLACE-2 / HIT-0 —— 緑なら PASS=10。
@@ -79,7 +79,7 @@ const fs = require('fs');
 const path = require('path');
 const { sweep, CHARS } = require(path.join(__dirname, 'tools', 'reach_str_lt_sweep.js'));
 // 陽性対照（CONTROL-1H/1T/2）が「壊れたオラクル」を組み立てるために使う本物。
-const { classifyFaces, analyze: realAnalyze } = require(path.join(__dirname, 'lib', 'reachability.js'));
+const { classifyFaces, analyze: realAnalyze, FACE } = require(path.join(__dirname, 'lib', 'reachability.js'));
 
 const TARGET = process.argv[2] || 'shogi_v4.html';
 const SAMPLE_N = 40;                 // 1 文字あたりのサンプル配置数
@@ -158,6 +158,9 @@ for (const c of r.chars) console.log(`  ${c.label}: ${c.hits}/${c.placements} �
 //   ③「リテラルだけ切り出して比べる」最適化（無条件版・`src.length` 分岐版とも）。
 //   ④ `analyze(mutated)` を `if (hit)` の中へ移す → オラクル2 が本番で一度も走らない。
 //      しかも 12.4 秒 → 3.9 秒と**速くなるので改善に見える**。
+//   ⑤ 挿入位置 `mid` を `[s,e]` から切り離す（例: 連続した位置 200〜239 を使う）→ 配置数も
+//      ユニークな位置＋文字の数も変わらないので、位置だけを見ない対照は素通りする。
+//      実測: wrapper は PASS=10 FAIL=0 のまま、001t 注入が **ヒット=0 exit 0**（完全な見逃し）。
 //
 //   そこで **呼び出し側が自分で用意したオラクル**を `sweep()` へ渡し、**それが
 //   呼ばれた回数と渡された文字列を自分で数える**。設計の要点は 4 つ:
@@ -169,6 +172,8 @@ for (const c of r.chars) console.log(`  ${c.label}: ${c.hits}/${c.placements} �
 //     さらに **挿入点より前（head）と後ろ（tail）を別々に**壊し、`faceIntact` の
 //     2 本のループを 1 本ずつ pin する（片方だけだと消えたもう片方に気付けない）。
 //     壊す位置は **端だけでなく内側も**、区間を 4 分割して呼び出しごとに回す（①' 対策）。
+//   - 観測は「異なる変異入力の数」で数え、さらに **その位置がサンプルしたリテラルの中心か**
+//     まで見る（⑤ 対策）。期待位置は wrapper が独立に導出する（sweep の申告を借りない）。
 //   - 「オラクルが赤を出せたか（CONTROL-1H/1T/2）」と「差し替え口をそもそも通ったか
 //     （CONTROL-1P/2P）」を **別々の pin にする**。混ぜると、差し替え口を通らなくなる
 //     改造（例: 面を `analyze()` の内部値から再利用するリファクタ）のときに
@@ -213,16 +218,48 @@ for (const c of r.chars) console.log(`  ${c.label}: ${c.hits}/${c.placements} �
     p.seen.add(i + ':' + s[i]);
     return i;
   };
-  const verdict = (p) => {
+  const verdict = (p, expectedMids) => {
     const chars = [...p.seen].map((k) => k.slice(k.indexOf(':') + 1));
+    const poss = new Set([...p.seen].map((k) => parseInt(k.slice(0, k.indexOf(':')), 10)));
     const nLS = chars.filter((c) => c === LS).length;
     const nPS = chars.filter((c) => c === PS).length;
+    // ★ 位置が**サンプルしたリテラルの中心**と一致するか（Codex P1）。
+    //   「80 個のユニークな位置＋文字」だけでは、mid を [s,e] から切り離す改変
+    //   （例: 連続した位置 200〜239 を使う）が 10 本の pin を全部通ってしまう。
+    //   実測: その改変で wrapper は PASS=10 FAIL=0 のまま、001t 注入が ヒット=0 exit 0。
+    const offMid = [...poss].filter((i) => !expectedMids.has(i));
+    const missed = [...expectedMids].filter((i) => !poss.has(i));
     return {
       ok: p.seen.size === CTL_PLACEMENTS && nLS === CTL_PLACEMENTS / 2
-        && nPS === CTL_PLACEMENTS / 2 && p.bad === 0,
+        && nPS === CTL_PLACEMENTS / 2 && p.bad === 0
+        && offMid.length === 0 && missed.length === 0,
       text: `異なる変異入力 ${p.seen.size}/${CTL_PLACEMENTS} 件（LS ${nLS} / PS ${nPS}`
-        + `・呼び出し ${p.calls} 回・本番 TARGET の 1 文字挿入として復元できなかったもの ${p.bad} 件）`,
+        + `・呼び出し ${p.calls} 回・1 文字挿入として復元できなかったもの ${p.bad} 件`
+        + `・サンプル中心と違う位置 ${offMid.length} 件`
+        + (offMid.length ? `（例: ${offMid.slice(0, 3).join(', ')}）` : '')
+        + `・一度も挿入されなかったサンプル中心 ${missed.length} 件`
+        + (missed.length ? `（例: ${missed.slice(0, 3).join(', ')}）` : '') + '）',
     };
+  };
+
+  //   期待される挿入位置（＝等間隔サンプルした各リテラルの中心）を **wrapper 自身が
+  //   独立に導出する**。sweep が返す spans / mid を借りると、まさにその値がずれる改変を
+  //   見逃す。ここだけは走査ロジックの二重実装を承知で書く（Codex P1 への対応）。
+  const expectedMidsOf = (src0, n) => {
+    const f = classifyFaces(src0);
+    const spans = [];
+    for (let i = 0; i < f.length; i++) {
+      const v = f[i];
+      if (v !== FACE.JS_STR_SQ && v !== FACE.JS_STR_DQ) continue;
+      let j = i;
+      while (j < f.length && f[j] === v) j++;
+      if (j - i >= 3) spans.push([i, j]);
+      i = j - 1;
+    }
+    const picked = spans.length <= n
+      ? spans
+      : Array.from({ length: n }, (_, k) => spans[Math.floor((k * spans.length) / n)]);
+    return new Set(picked.map(([s, e]) => Math.floor((s + 1 + e - 1) / 2)));
   };
 
   try {
@@ -269,8 +306,9 @@ for (const c of r.chars) console.log(`  ${c.label}: ${c.hits}/${c.placements} �
     const cT = sweep(TARGET, CTL_N, { classifyFaces: ctlT.lex, analyze: stubAnalyze });
     const cHp = cH.chars.reduce((n, c) => n + c.placements, 0);
     const cTp = cT.chars.reduce((n, c) => n + c.placements, 0);
-    const vH = verdict(ctlH.probe);
-    const vT = verdict(ctlT.probe);
+    const expectedMids = expectedMidsOf(src0, CTL_N);
+    const vH = verdict(ctlH.probe, expectedMids);
+    const vT = verdict(ctlT.probe, expectedMids);
 
     ok(cH.totalHits === CTL_PLACEMENTS && cHp === CTL_PLACEMENTS,
       `CONTROL-1H 面オラクルの陽性対照（挿入点より前）—— 面が違うのにヒットしない配置がある`
@@ -286,7 +324,7 @@ for (const c of r.chars) console.log(`  ${c.label}: ${c.hits}/${c.placements} �
       `CONTROL-1P 面レクサの差し替え口を本番と同じ形で通っていない —— head: ${vH.text}`
       + `／tail: ${vT.text}。**オラクル自体は生きているかもしれない**が、この対照はもう`
       + `検査できていない（判定ループを飛ばした／リテラル断片だけを比べている／`
-      + `面を他所から再利用している）。`);
+      + `面を他所から再利用している／**挿入点がサンプルしたリテラルの中心から外れている**）。`);
 
     // --- 陽性対照 2: 例外オラクル ----------------------------------------------
     //   変異入力に対して必ず throw する analyze。面オラクルは本物のまま（＝ヒット 0）
@@ -320,7 +358,7 @@ for (const c of r.chars) console.log(`  ${c.label}: ${c.hits}/${c.placements} �
     };
     const c2 = sweep(TARGET, CTL_N, { analyze: throwingAnalyze });
     const c2p = c2.chars.reduce((n, c) => n + c.placements, 0);
-    const vA = verdict(pA);
+    const vA = verdict(pA, expectedMids);
 
     ok(c2.totalHits === CTL_PLACEMENTS && c2.totalThrows === CTL_PLACEMENTS && c2p === CTL_PLACEMENTS,
       `CONTROL-2 例外オラクルの陽性対照 —— 必ず throw する analyze を渡したのに`
