@@ -92,8 +92,10 @@ assert(/function\s+normalizeReportAccountingNote\s*\(/.test(htmlSrc),
 {
   const m = htmlSrc.match(/function normalizeState\(raw\)[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
-  assert(/normalizeReportAccountingNote\s*\(\s*s\.report\.accountingNote\s*\)/.test(body),
-    'A2 normalizeState が normalizeReportAccountingNote(s.report.accountingNote) を呼ぶ');
+  // CLUB-PROFILE-002（Codex P1・PR #847）: normalizeReportPersistedEmptyable 経由になった
+  //   （明示的な空文字はそのまま・未指定は専用 normalizer で factory 補完）。意図は不変。
+  assert(/normalizeReportAccountingNote\s*\(\s*s\.report\.accountingNote\s*\)/.test(body)||/normalizeReportPersistedEmptyable\s*\(\s*s\.report\.accountingNote\s*,\s*['"]accountingNote['"]\s*,\s*normalizeReportAccountingNote\s*\)/.test(body),
+    'A2 normalizeState が accountingNote を normalizeReportAccountingNote で復元（PersistedEmptyable ラッパー可）');
 }
 
 // A3
@@ -356,11 +358,12 @@ function makeBaseState(reportOverrides){
   assertEq(c3b.report.accountingNote, DEFAULT_NOTE, 'C3-2 accountingNote=object → default');
   const c3c = env.normalizeState({report:{accountingNote:[]}});
   assertEq(c3c.report.accountingNote, DEFAULT_NOTE, 'C3-3 accountingNote=array → default');
-  // C4: 空白のみ
+  // C4: 空白のみ ★CLUB-PROFILE-002 で反転（空白のみ＝意図的な空として保持。
+  //   キー欠落・null・非文字列＝未指定は C1〜C3 が従来どおり default を pin している）
   const c4 = env.normalizeState({report:{accountingNote:'   '}});
-  assertEq(c4.report.accountingNote, DEFAULT_NOTE, 'C4-1 accountingNote 空白 → default');
+  assertEq(c4.report.accountingNote, '', 'C4-1 accountingNote 空白のみ → 空のまま（意図的な空）');
   const c4b = env.normalizeState({report:{accountingNote:'　　'}});
-  assertEq(c4b.report.accountingNote, DEFAULT_NOTE, 'C4-2 accountingNote 全角空白 → default');
+  assertEq(c4b.report.accountingNote, '', 'C4-2 accountingNote 全角空白のみ → 空のまま（意図的な空）');
   // C5: 通常文字列 trim
   const c5 = env.normalizeState({report:{accountingNote:' 別文言 '}});
   assertEq(c5.report.accountingNote, '別文言', 'C5 accountingNote trim');

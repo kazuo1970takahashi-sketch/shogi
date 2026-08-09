@@ -88,10 +88,12 @@ assert(/function\s+normalizeReportOfficeName\s*\(/.test(htmlSrc), 'A1-2 normaliz
 {
   const m = htmlSrc.match(/function normalizeState\(raw\)[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
-  assert(/normalizeReportFax\s*\(\s*s\.report\.fax\s*\)/.test(body),
-    'A2-1 normalizeState が normalizeReportFax(s.report.fax) を呼ぶ');
-  assert(/normalizeReportOfficeName\s*\(\s*s\.report\.officeName\s*\)/.test(body),
-    'A2-2 normalizeState が normalizeReportOfficeName(s.report.officeName) を呼ぶ');
+  // CLUB-PROFILE-002（Codex P1・PR #847）: normalizeReportPersistedEmptyable(値,キー,専用normalizer)
+  //   経由になった（明示的な空文字はそのまま・未指定は専用 normalizer で factory 補完）。意図は不変。
+  assert(/normalizeReportFax\s*\(\s*s\.report\.fax\s*\)/.test(body)||/normalizeReportPersistedEmptyable\s*\(\s*s\.report\.fax\s*,\s*['"]fax['"]\s*,\s*normalizeReportFax\s*\)/.test(body),
+    'A2-1 normalizeState が fax を normalizeReportFax で復元（PersistedEmptyable ラッパー可）');
+  assert(/normalizeReportOfficeName\s*\(\s*s\.report\.officeName\s*\)/.test(body)||/normalizeReportPersistedEmptyable\s*\(\s*s\.report\.officeName\s*,\s*['"]officeName['"]\s*,\s*normalizeReportOfficeName\s*\)/.test(body),
+    'A2-2 normalizeState が officeName を normalizeReportOfficeName で復元（PersistedEmptyable ラッパー可）');
 }
 
 // A3
@@ -357,10 +359,10 @@ function makeBaseState(reportOverrides){
   const c3b = env.normalizeState({report:{fax:{},officeName:[]}});
   assertEq(c3b.report.fax, '943-9443', 'C3-3 fax=object → default');
   assertEq(c3b.report.officeName, '沼津支部事務局', 'C3-4 officeName=array → default');
-  // C4: 空白のみ
+  // C4: 空白のみ ★CLUB-PROFILE-002 で反転（空白のみ＝意図的な空として保持。未指定は C3 群が pin）
   const c4 = env.normalizeState({report:{fax:'   ',officeName:'　　'}});
-  assertEq(c4.report.fax, '943-9443', 'C4-1 fax 空白 → default');
-  assertEq(c4.report.officeName, '沼津支部事務局', 'C4-2 officeName 全角空白 → default');
+  assertEq(c4.report.fax, '', 'C4-1 fax 空白のみ → 空のまま（意図的な空・CLUB-PROFILE-002）');
+  assertEq(c4.report.officeName, '', 'C4-2 officeName 全角空白のみ → 空のまま（意図的な空・CLUB-PROFILE-002）');
   // C5: 通常文字列 trim
   const c5 = env.normalizeState({report:{fax:' 055-111-2222 ',officeName:' 富士支部事務局 '}});
   assertEq(c5.report.fax, '055-111-2222', 'C5-1 fax trim');

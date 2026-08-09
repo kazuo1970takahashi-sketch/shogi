@@ -131,12 +131,18 @@ assert(frBody.indexOf("accountingNote:'※役員会で会計長へ収支報告�
   'A1-def accountingNote 既定値');
 
 // A2: 13 フィールド各々に hasOwnProperty ガード + 専用 normalizer 復元分岐
+//   ★CLUB-PROFILE-002（Codex P1・PR #847）: fax/officeName/accountingNote は
+//   normalizeReportPersistedEmptyable(値, キー, 専用normalizer) 経由になった。
+//   「明示的な空文字はそのまま・それ以外は専用 normalizer」という意味であり、
+//   pin の意図（hasOwnProperty ガード＋専用 normalizer で復元）は保たれる。
+const EMPTYABLE_KEYS = ['fax','officeName','accountingNote'];
 FIELDS.forEach(function(k){
   const guard = new RegExp("hasOwnProperty\\.call\\(\\s*s\\.report\\s*,\\s*['\"]" + k + "['\"]\\s*\\)");
   assert(guard.test(nsBody), 'A2-guard normalizeState が s.report."' + k + '" を hasOwnProperty ガード');
   const norm = new RegExp(NORMALIZER[k] + "\\s*\\(\\s*s\\.report\\." + k + "\\s*\\)");
-  assert(norm.test(nsBody),
-    'A2-norm "' + k + '" は ' + NORMALIZER[k] + '(s.report.' + k + ') で復元');
+  const wrapped = new RegExp("normalizeReportPersistedEmptyable\\s*\\(\\s*s\\.report\\." + k + "\\s*,\\s*['\"]" + k + "['\"]\\s*,\\s*" + NORMALIZER[k] + "\\s*\\)");
+  assert(norm.test(nsBody) || (EMPTYABLE_KEYS.indexOf(k) >= 0 && wrapped.test(nsBody)),
+    'A2-norm "' + k + '" は ' + NORMALIZER[k] + ' で復元（emptyable は PersistedEmptyable ラッパー経由）');
 });
 
 // A3: 13 フィールド分の normalizer 関数が定義されている（重複名は Set で）
@@ -331,13 +337,29 @@ function makeBaseState(reportOverrides){
 
 // C2: 各フィールド空文字 → 既定値
 //   string 系（date/start/end/sei/fuku/note）は '' のまま、それ以外は default、prize は 7000。
+//   ★CLUB-PROFILE-002（Codex P1・PR #847）: fax/officeName/accountingNote は
+//   「明示的な空文字」を保持するようになった（クラブによっては存在しない項目。空にした設定が
+//   リロードで factory に戻る穴を塞ぐため）。**キー欠落・null は従来どおり既定へ補完**され、
+//   そちらは C1/C3 が pin しているので歴史保護（過去 snapshot の補完）は不変。
 {
   const env = loadEnv(targetPath);
   const emptyReport = {};
   FIELDS.forEach(function(k){ emptyReport[k] = ''; }); // prize も '' を渡す
   const n = env.normalizeState({report:emptyReport});
   FIELDS.forEach(function(k){
-    assertEq(n.report[k], DEFAULTS[k], 'C2 "' + k + '"=空文字 → 既定値 ' + JSON.stringify(DEFAULTS[k]));
+    const expected = (EMPTYABLE_KEYS.indexOf(k) >= 0) ? '' : DEFAULTS[k];
+    assertEq(n.report[k], expected,
+      'C2 "' + k + '"=空文字 → ' + (EMPTYABLE_KEYS.indexOf(k) >= 0 ? '空のまま（意図的な空）' : '既定値 ' + JSON.stringify(DEFAULTS[k])));
+  });
+}
+// C2b: emptyable 3キーも「キー欠落 / null」は従来どおり既定値（未指定と空の区別・歴史保護）
+{
+  const env = loadEnv(targetPath);
+  const n1 = env.normalizeState({report:{}});
+  const n2 = env.normalizeState({report:{fax:null,officeName:null,accountingNote:null}});
+  EMPTYABLE_KEYS.forEach(function(k){
+    assertEq(n1.report[k], DEFAULTS[k], 'C2b-miss "' + k + '" キー欠落 → 既定値（未指定は既定のまま）');
+    assertEq(n2.report[k], DEFAULTS[k], 'C2b-null "' + k + '" null → 既定値（未指定は既定のまま）');
   });
 }
 
@@ -350,7 +372,10 @@ function makeBaseState(reportOverrides){
   env.save(); env.load();
   const r = env._getState().report;
   FIELDS.forEach(function(k){
-    assertEq(r[k], DEFAULTS[k], 'C3 空値 save→load 往復後も "' + k + '" が既定値');
+    // ★CLUB-PROFILE-002（Codex P1・PR #847）: emptyable 3キーは save→load 往復でも
+    //   「明示的な空」を保つ（これが保たれないと、空にした設定がリロードで factory に戻る）。
+    const expectedC3 = (EMPTYABLE_KEYS.indexOf(k) >= 0) ? '' : DEFAULTS[k];
+    assertEq(r[k], expectedC3, 'C3 空値 save→load 往復後の "' + k + '"' + (EMPTYABLE_KEYS.indexOf(k) >= 0 ? '（意図的な空を保持）' : ' が既定値'));
   });
 }
 

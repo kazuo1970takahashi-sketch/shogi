@@ -839,7 +839,7 @@ body.sb-active{overflow:hidden}
         <summary class="club-profile-summary">⚙ クラブの既定（全リセット後の初期値）を保存する</summary>
         <div style="margin-top:8px">
           <button type="button" id="saveClubProfileBtn" class="btn-outline-primary" style="width:100%;min-height:44px">💾 この設定をクラブの既定として保存</button>
-          <div style="font-size:11px;color:#777;margin-top:5px;line-height:1.5">全リセット後も、この端末では上の報告書設定（大会名・主催・会場・FAX・事務局名・会計提出文・賞金・持ち時間）と現在のクラス構成・回戦数が初期値になります。開催日・開始/終了時刻・正副役員・申し送りは保存されません（大会ごとの値）。</div>
+          <div style="font-size:11px;color:#777;margin-top:5px;line-height:1.5">全リセット後も、この端末では上の報告書設定（大会名・主催・会場・開始/終了時刻・FAX・事務局名・会計提出文・賞金・持ち時間）と現在のクラス構成・回戦数が初期値になります。開催日・正副役員・申し送りは保存されません（大会ごとの値）。空欄にした項目は空欄のまま保存されます。</div>
         </div>
       </details>
     </div>
@@ -927,6 +927,17 @@ function normalizeReportFieldForInput(value,key){
   }
   return normalizeReportField(value,key);
 }
+// 保存済み state の復元時（normalizeState）に、emptyable な3キーの「明示的な空」を保つ。
+//   ★Codex P1（PR #847）: これが無いと、空にした値は resetAll 直後は空でも**リロードで factory に戻る**
+//     （normalizeState は起動時の load() でも通るため）。実測で再現。
+//   ★歴史保護は壊れない: 旧版の normalizeState は fax/officeName/accountingNote を必ず既定値へ
+//     正規化して保存していたため、**旧データにこれらの空文字は存在しない**。空文字が入っている
+//     state は新版が「意図的に空にした」ものだけ＝そのまま保つのが正しい。
+//     キー欠落・null・非文字列（＝未指定）は従来どおり専用 normalizer で factory 既定へ補完する。
+function normalizeReportPersistedEmptyable(value,key,fallbackNormalizer){
+  if(typeof value==='string'&&value.replace(/\s+/g,'')==='')return '';
+  return fallbackNormalizer(value);
+}
 // localStorage から読み・検証する。不正（型崩れ・A/B 欠落・壊れた JSON・storage 例外）は
 //   fail-soft で null（=factory）。値の検証はここで完結させる（この時点では REPORT_FIELD_SPECS
 //   未評価のため normalize helper に依存しない＝top-level 評価順の罠を避ける・パネル指摘）。
@@ -936,7 +947,14 @@ function readClubProfileRaw(){
   if(!raw)return null;
   var p=null;
   try{p=JSON.parse(raw);}catch(e){return null;}
-  if(!p||typeof p!=='object')return null;
+  return sanitizeClubProfileObject(p);
+}
+// ★Codex P1（PR #847）: 検証を「読むとき」だけでなく「書く前」にも使えるよう純関数として切り出す。
+//   これが無いと、壊れたバックアップの club_profile を先に localStorage へ書いてから検証に失敗し、
+//   **それまで有効だったクラブ既定が失われる**（書いた後に readClubProfileRaw が null を返すため）。
+//   不正なら null を返す（＝呼び出し側は書かない / factory へ fail-soft）。
+function sanitizeClubProfileObject(p){
+  if(!p||typeof p!=='object'||Object.prototype.toString.call(p)==='[object Array]')return null;
   // 実装パネル指摘: schema_version は将来版（v2 で意味が変わった profile を旧バイナリが誤読する）
   //   への防波堤として厳密に検証する。1 以外は fail-soft で factory。
   if(Math.floor(Number(p.schema_version))!==1)return null;
@@ -1010,8 +1028,12 @@ function profileRounds(){
 // 保存: localStorage 書き込みと同時にモジュール変数も差し替える（「保存→即リセット」で
 //   古い既定が使われる穴の防止・パネル指摘）。戻り値 true=保存成功。
 function saveClubProfile(profile){
+  // ★Codex P1（PR #847）: 書く前に検証する。不正な profile（壊れたバックアップ由来など）で
+  //   既存の有効なクラブ既定を破壊しない。sanitize 済みの正準形を書く。
+  var clean=sanitizeClubProfileObject(profile);
+  if(!clean)return false;
   var json='';
-  try{json=JSON.stringify(profile);}catch(e){return false;}
+  try{json=JSON.stringify(clean);}catch(e){return false;}
   try{localStorage.setItem(CLUB_PROFILE_KEY,json);}catch(e){return false;}
   // Codex P1（PR #845）: setItem が受理されても値が保持されない/読めない browser
   //   （probeStorageWritable が検査する故障モード）がある。書き戻しの検証は
@@ -1654,13 +1676,13 @@ function normalizeState(raw){
     //   旧データ (fax 欠落) は base.report.fax='943-9443'（schema 既定）のまま維持。
     //   fax=null / '' / '   ' / 非文字列も既定値 '943-9443' に揃える。
     if(Object.prototype.hasOwnProperty.call(s.report,'fax')){
-      base.report.fax=normalizeReportFax(s.report.fax);
+      base.report.fax=normalizeReportPersistedEmptyable(s.report.fax,'fax',normalizeReportFax);
     }
     // REPORT-UX-007A: officeName 文字列フィールド。normalizeReportOfficeName で trim/fallback。
     //   旧データ (officeName 欠落) は base.report.officeName='沼津支部事務局'（schema 既定）のまま維持。
     //   officeName=null / '' / '   ' / 非文字列も既定値 '沼津支部事務局' に揃える。
     if(Object.prototype.hasOwnProperty.call(s.report,'officeName')){
-      base.report.officeName=normalizeReportOfficeName(s.report.officeName);
+      base.report.officeName=normalizeReportPersistedEmptyable(s.report.officeName,'officeName',normalizeReportOfficeName);
     }
     // REPORT-UX-007B-1: accountingNote 文字列フィールド。normalizeReportAccountingNote で trim/fallback。
     //   旧データ (accountingNote 欠落) は base.report.accountingNote='※役員会で会計長へ収支報告書として提出ください。'
@@ -1669,7 +1691,7 @@ function normalizeState(raw){
     //   （footer 2行目を空にしたいケースは現状想定外、必要なら後続タスクで非表示機能を追加）。
     //   中間改行は normalizeReportAccountingNote が保持する。
     if(Object.prototype.hasOwnProperty.call(s.report,'accountingNote')){
-      base.report.accountingNote=normalizeReportAccountingNote(s.report.accountingNote);
+      base.report.accountingNote=normalizeReportPersistedEmptyable(s.report.accountingNote,'accountingNote',normalizeReportAccountingNote);
     }
     // TIME-CONTROL-001: 持ち時間（区分/分/秒）。旧データ欠落時は schema 既定（25分切れ負け）を維持。
     if(Object.prototype.hasOwnProperty.call(s.report,'timeType')){
@@ -13467,7 +13489,12 @@ function exportTournamentBackup(){
 function importTournamentBackupFromText(text){
   var res=parseTournamentBackup(text);
   if(!res.ok){ alert(res.message); return false; }
-  appConfirm('現在の大会データを上書きしてバックアップを復元しますか？この操作は元に戻せません。',function(ok){
+  // ★Codex P1（PR #847）: バックアップにクラブ既定が含まれる場合、復元は「今の大会データ」だけでなく
+  //   **この端末の恒久的な既定（全リセット後の初期値）も置き換える**。確認文でそれを明示する。
+  var confirmMsg=res.club_profile
+    ? '現在の大会データを上書きしてバックアップを復元しますか？\n\nこのバックアップにはクラブ既定（大会名・会場・クラス構成など、全リセット後の初期値）も含まれます。復元するとこの端末の既定も置き換わります。\n\nこの操作は元に戻せません。'
+    : '現在の大会データを上書きしてバックアップを復元しますか？この操作は元に戻せません。';
+  appConfirm(confirmMsg,function(ok){
     if(!ok)return;
     try{
       // CLUB-PROFILE-002: クラブ既定は state より先に復元する（applyLoadedJson→normalizeState→
