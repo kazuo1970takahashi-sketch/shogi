@@ -261,6 +261,30 @@ function makeMatsumotoState(env){
   assert(ns2.report.title==='2025年特別大会', 'P8-4 snapshot の実データは維持される');
 }
 
+// ---- P10: 書き込みが黙って捨てられる storage（Codex P1・PR #845） ----
+{
+  const store={};
+  const env=loadEnv(store);
+  makeMatsumotoState(env);
+  assert(env.saveClubProfile(env.buildClubProfileFromState())===true, 'P10-1 正常 storage では保存成功');
+  // setItem が受理される（throw しない）が値を保持しない storage を再現
+  env._ls.setItem=function(){ /* 受理するが保持しない */ };
+  env._getState().report.title='保存されない新値';
+  const ok=env.saveClubProfile(env.buildClubProfileFromState());
+  assert(ok===false, 'P10-2 読み戻し検証で失敗を検知し false を返す（成功と偽らない）');
+  env.resetAll();
+  assert(env._getState().report.title==='松本支部月例将棋大会', 'P10-3 失敗後もメモリ/storage 上の直前の既定が生きている');
+}
+
+// ---- P11: 保存 UI の構造 pin（Codex P2・PR #845） ----
+{
+  assert(/<details[^>]*id="club-profile-details"/.test(RAW), 'P11-1 保存操作は <details> 格納（低頻度の準備操作・STYLE-GUIDE §7）');
+  assert(/id="saveClubProfileBtn"[^>]*class="btn-outline-primary"|class="btn-outline-primary"[^>]*id="saveClubProfileBtn"/.test(RAW), 'P11-2 ボタンの色・枠は class 系（§1-2）');
+  assert(RAW.indexOf('.btn-outline-primary{')>=0, 'P11-3 .btn-outline-primary が class として定義されている');
+  const saveFn=RAW.slice(RAW.indexOf('function onSaveClubProfileClick'), RAW.indexOf('function onSaveClubProfileClick')+1600);
+  assert(saveFn.indexOf('appAlert(')>=0, 'P11-4 保存失敗はブロッキング通知（§3・一過性 toast にしない）');
+}
+
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----
 {
   const m=RAW.match(/function resetAll\(\)[\s\S]*?\n\}\n/);

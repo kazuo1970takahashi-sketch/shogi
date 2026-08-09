@@ -58,6 +58,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .btn-success{background:#27500A;color:#fff;border-color:#27500A}
 .btn-danger{background:#A32D2D;color:#fff;border-color:#A32D2D}
 .btn-sm{padding:6px 12px;font-size:13px}
+.btn-outline-primary{background:#fff;color:#1F3864;border:1.5px solid #1F3864} /* CLUB-PROFILE-001 (Codex P2): 新規ボタンの色・枠は class 系で定義（§1-2）。inline は layout のみ */
 .alert{padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px}
 .alert-err{background:#fcebeb;color:#A32D2D;border:1px solid #f09595}
 .alert-ok{background:#eaf3de;color:#27500A;border:1px solid #97c459}
@@ -829,11 +830,16 @@ body.sb-active{overflow:hidden}
       <!-- REPORT-UX-007B-1: 会計提出文（footer 2行目 / accountingNote）。既定 '※役員会で…提出ください。'。改行維持→帳票で<br>。 -->
       <div class="rep-fld"><label>会計提出文</label><textarea id="rep-accounting-note" placeholder="※役員会で会計長へ収支報告書として提出ください。"></textarea></div>
       <!-- CLUB-PROFILE-001: クラブ既定の明示保存（作者決定＝自動反映しない）。置き場所は
-           会計提出文の直下・.rep-form 内末尾（実ブラウザ 390px でモック確認済み・固定バーの印刷系と分離）。 -->
-      <div class="rep-fld no-print" style="border-top:1px dashed #ccc;margin-top:12px;padding-top:12px">
-        <button type="button" id="saveClubProfileBtn" style="width:100%;min-height:44px;padding:8px 12px;border-radius:8px;border:1.5px solid #1F3864;background:#fff;color:#1F3864;font-size:14px;font-family:inherit;cursor:pointer">💾 この設定をクラブの既定として保存</button>
-        <div style="font-size:11px;color:#777;margin-top:5px;line-height:1.5">全リセット後も、この端末では上の報告書設定（大会名・主催・会場・FAX・事務局名・会計提出文・賞金・持ち時間）と現在のクラス構成・回戦数が初期値になります。開催日・開始/終了時刻・正副役員・申し送りは保存されません（大会ごとの値）。</div>
-      </div>
+           会計提出文の直下・.rep-form 内末尾（実ブラウザ 390px でモック確認済み・固定バーの印刷系と分離）。
+           Codex P2（PR #845）: 低頻度の準備操作のため <details> 格納（STYLE-GUIDE §7）・
+           ボタンの色/枠は .btn-outline-primary（§1-2）。id / bind は不変。 -->
+      <details id="club-profile-details" class="rep-fld no-print" style="border-top:1px dashed #ccc;margin-top:12px;padding-top:12px">
+        <summary style="font-size:12px;color:#666;cursor:pointer;padding:4px 2px">⚙ クラブの既定（全リセット後の初期値）を保存する</summary>
+        <div style="margin-top:8px">
+          <button type="button" id="saveClubProfileBtn" class="btn-outline-primary" style="width:100%;min-height:44px">💾 この設定をクラブの既定として保存</button>
+          <div style="font-size:11px;color:#777;margin-top:5px;line-height:1.5">全リセット後も、この端末では上の報告書設定（大会名・主催・会場・FAX・事務局名・会計提出文・賞金・持ち時間）と現在のクラス構成・回戦数が初期値になります。開催日・開始/終了時刻・正副役員・申し送りは保存されません（大会ごとの値）。</div>
+        </div>
+      </details>
     </div>
     <!-- ACTION-BAR-001 (#605): 最終結果タブ終盤の主要アクションを画面下部の固定バーに集約。☁送信クラスタ
          （？ヘルプ[HELP-UX-006] / ☁送信 / 送信ステータス / 送信対象級[#567]）を一緒に移設し文脈を保つ。
@@ -973,7 +979,17 @@ function saveClubProfile(profile){
   var json='';
   try{json=JSON.stringify(profile);}catch(e){return false;}
   try{localStorage.setItem(CLUB_PROFILE_KEY,json);}catch(e){return false;}
-  clubProfile=readClubProfileRaw();
+  // Codex P1（PR #845）: setItem が受理されても値が保持されない/読めない browser
+  //   （probeStorageWritable が検査する故障モード）がある。書き戻しの検証は
+  //   「何か有効な profile が読める」では不十分（古い値が残っていると素通りする＝
+  //   自前テスト P10 が実証）。書いた JSON と byte 同値であることまで照合する。
+  //   失敗時はメモリ上の clubProfile（直前の有効値）を触らない。
+  var readBackRaw=null;
+  try{readBackRaw=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){return false;}
+  if(readBackRaw!==json)return false;
+  var readBack=readClubProfileRaw();
+  if(!readBack)return false;
+  clubProfile=readBack;
   return true;
 }
 // 現 state からクラブ既定を組み立てる（保存ボタン・初回シード共用）。
@@ -1031,7 +1047,9 @@ function onSaveClubProfileClick(){
     for(var i=0;i<prof.classes.length;i++){ if(prof.classes[i].rounds!=null)ovCount++; }
     showToast('クラブの既定として保存しました（報告書設定・クラス'+prof.classes.length+'つ・'+prof.rounds+'回戦'+(ovCount>0?'・クラス別の回戦数上書き'+ovCount+'件':'')+'）');
   }else{
-    showToast('保存に失敗しました。ブラウザの保存領域を確認してください',{kind:'err'});
+    // Codex P2（PR #845）: データ保存の失敗は一過性 toast ではなくブロッキング通知
+    //   （STYLE-GUIDE §3）。見逃すと次の全リセットで意図しない既定が適用されるため。
+    appAlert('クラブ既定を保存できませんでした。\n\nブラウザの保存領域の制限（プライベートブラウジング・容量不足など）が原因の可能性があります。このまま全リセットすると、以前に保存した既定（無い場合は沼津の初期値）が適用されます。\n\n通常のウィンドウで開き直してから、もう一度お試しください。');
   }
 }
 
