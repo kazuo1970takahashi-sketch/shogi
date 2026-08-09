@@ -253,6 +253,16 @@ function assignedSet(pairings){
   var h1e=env1e.buildCurrentPairingsHtml('A',2,false);
   assert(h1e.indexOf('1局目に入らないまま待機')<0, 'SUBMIT-2f 2回戦以降には1局目注意書きを出さない');
 
+  // Codex P2（PR #835）: 全1回戦（rounds=1）では「2回戦からの参加」と言わず「対局しないまま終了」と言う
+  var env1f=loadEnv();
+  var s1f=env1f.normalizeState({rounds:1,started:true,
+    classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:true}],
+    players:{A:makePlayers('A',5),B:[]},pairings:{A:[],B:[]},results:{A:[],B:[]}});
+  s1f.pairings.A=[{p1:'a1',p2:'a2',winner:'a1',lastModifiedBy:'auto'},{p1:'a3',p2:'a4',winner:'a3',lastModifiedBy:'auto'}];
+  env1f._setState(s1f);
+  var h1f=env1f.buildCurrentPairingsHtml('A',1,false);
+  assert(h1f.indexOf('対局しないまま')>=0 && h1f.indexOf('2回戦からの参加')<0, 'SUBMIT-2g 全1回戦では「2回戦からの参加」と言わない（存在しない回戦を約束しない・Codex P2）');
+
   // Codex P1: round2 偶数（N=6）で組み合わせ外の待機2名（途中追加相当）→ ブロックせず確定できる。
   //   旧挙動（偶数は許容0でブロック）は複数の途中追加を進行不能にしたため改める。
   var env2=loadEnv(); stateRound2(env2,'A',6);

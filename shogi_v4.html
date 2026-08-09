@@ -10597,7 +10597,13 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       var frNames=[];
       for(var fni=0;fni<frUnassigned.length&&fni<6;fni++)frNames.push(frUnassigned[fni].name);
       var frNameStr=frNames.join('、')+(frUnassigned.length>6?' ほか':'');
-      html+='<div class="alert alert-warn" style="margin:8px 0 0">⚠ 確定すると、未割当 <strong>'+frUnassigned.length+'名</strong>（'+escapeHtml(frNameStr)+'）は1局目に入らないまま待機となり、2回戦からの参加になります。1局目に入れる場合は確定の前に対局を追加してください。</div>';
+      // Codex P2（PR #835）: 全1回戦（roundsForClass===1）だと「2回戦からの参加」は存在しない回戦を
+      //   約束する嘘になる（確定＝クラス終了で generatePairing は呼ばれない）。最終回戦のときは
+      //   「対局しないまま終了」と事実を言う文言に分岐する。
+      var frTail=(roundsForClass(cls)<=1)
+        ?'は1局も対局しないまま、このクラスの全日程が終了します（このクラスは全1回戦です）。対局させる場合は確定の前に対局を追加してください。'
+        :'は1局目に入らないまま待機となり、2回戦からの参加になります。1局目に入れる場合は確定の前に対局を追加してください。';
+      html+='<div class="alert alert-warn" style="margin:8px 0 0">⚠ 確定すると、未割当 <strong>'+frUnassigned.length+'名</strong>（'+escapeHtml(frNameStr)+'）'+frTail+'</div>';
     }
   }
   html+='<div style="display:flex;gap:8px;margin-top:8px">'
