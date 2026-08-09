@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // HELP-UX-001 (#308): 対局画面の迷子防止 in-app ヘルプの単体テスト。
-//   範囲（issue #308 の3点）:
-//     (1) submitRound の round-1 未割当アラートが「原因＋次の行動」文言へ更新され、かつテスト pin の
-//         部分文字列「次の参加者が対局に登録されていません」と未割当者名の表示を維持していること。
+//   範囲（issue #308 の3点。※(1) は FIRSTROUND-ODD-001 で反転済み）:
+//     (1) 旧: round-1 未割当アラートの文言 pin。FIRSTROUND-ODD-001（2026-08-09）で1回戦の
+//         全員割当必須が廃止されアラートごと消えたため、現在は「再導入の禁止」と
+//         「空回戦ガードの統一適用」を pin する（本文 (1) 節のコメント参照）。
 //     (2) ヘルプモーダル（HELP_TEXTS レジストリ＋buildHelpModalHtml/openHelpModal/bindHelpModalEvents）が
 //         三層パターンで存在し、open/close/ヘルプ文 present・本文は escapeHtml 経由（XSS 流入を増やさない）。
 //         「？ ヘルプ」ボタンが対局画面の未割当セクション見出し脇に出て openHelpModal('first-round') に結線。
@@ -218,14 +219,18 @@ assert(secA.indexOf('今すぐ始める対局だけを1卓ずつ追加します�
 assert(secA.indexOf('未割当の参加者から、作れる対局をまとめて作成します。')>=0, 'T4 「まとめて作成」title が承認済み文言');
 
 // ───────────────────────────────────────────────────────────────────
-// (1) submitRound のアラート文言改善（pin 部分文字列維持 + 原因/行動）
+// (1) submitRound のアラート（FIRSTROUND-ODD-001 で反転）
+//   旧 A1〜A4 は HELP-UX-001 (#308) の未割当アラート文言を pin していたが、
+//   1回戦の全員割当必須の廃止（#272 ロックを Codex 2026-08-09 再評価で解除）に伴い
+//   アラートごと消えたため、「再導入の禁止」と「統一後の空回戦ガード」を pin する。
 // ───────────────────────────────────────────────────────────────────
-assert(RAW.indexOf('次の参加者が対局に登録されていません')>=0, 'A1 アラート pin 部分文字列「次の参加者が対局に登録されていません」を維持');
+assert(RAW.indexOf('次の参加者が対局に登録されていません')<0, 'A1 旧・未割当アラートは廃止済み（FIRSTROUND-ODD-001・再導入しない）');
+assert(RAW.indexOf("missing.join('、')")<0, 'A2 未割当者名の missing 計算・表示は削除済み');
 const srStart = RAW.indexOf('function submitRound');
-const srBody = RAW.slice(srStart, srStart+2500);
-assert(srBody.indexOf("missing.join('、')")>=0, 'A2 未割当者名（missing.join）の表示を維持');
-assert(srBody.indexOf('参加人数が奇数')>=0 && srBody.indexOf('1名を待機')>=0, 'A3 原因（奇数）と次の行動（偶数化/1名待機）を出す文言へ更新');
-assert(srBody.indexOf('対戦相手変更')>=0 && srBody.indexOf('組み合わせを再生成')>=0, 'A4 割り当て手段（対戦相手変更/再生成）の案内を維持');
+const srBody = RAW.slice(srStart, srStart+4000);
+const srCode = srBody.replace(/\/\/[^\n]*/g, '');
+assert(srCode.indexOf('この回戦の組み合わせがありません')>=0, 'A3 空回戦ガード文言は維持（1回戦にも統一適用）');
+assert(srCode.indexOf('results[cls].length===0')<0, 'A4 submitRound 本文（コメント除く）に1回戦専用分岐が無い（確定条件は全回戦統一）');
 
 // ───────────────────────────────────────────────────────────────────
 console.log('\n  HELP-UX-001 テスト: PASS '+pass+'件 / FAIL '+fail+'件');

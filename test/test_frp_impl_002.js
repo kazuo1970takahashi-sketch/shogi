@@ -424,18 +424,23 @@ function fnBody(name){
 }
 
 // ============================================================
-// S. 既存挙動不変の回帰（構造ガード）：一括開始 / submitRound missing チェック / 部分開始の非流用
+// S. 既存挙動不変の回帰（構造ガード）：一括開始 / submitRound 確定条件（FIRSTROUND-ODD-001 で統一） / 部分開始の非流用
 // ============================================================
 {
   // 受付一括開始 #startBtn 系（legacy startTournament）は無変更で残る・部分開始を混ぜていない
   const stb = fnBody('startTournament');
   assert(stb.indexOf('collectStartCandidates')>=0 && stb.indexOf('applyStartForCandidates')>=0, 'S1 startTournament の一括開始ロジック（collect/apply）が無変更で残る');
   assert(stb.indexOf('startClassPartial')<0 && stb.indexOf('startBtnPartial')<0, 'S2 一括開始フローに部分開始を混入していない');
-  // submitRound の missing チェックは不変（全員在籍まで2回戦へ進めない＝奇数の最終確定も従来モデル）
+  // FIRSTROUND-ODD-001: 旧 S4 は「missing チェックが残る（緩和していない）」の番人だった
+  //   （#272 Codex P1 による意図的ロック）。同じ Codex の 2026-08-09 再評価（1回戦だけ別の
+  //   状態機械になっているのが誤り）を受けて解除し、逆向きの番人（再導入の禁止）に反転した。
+  //   S5 は本来「部分手合いロジックの混入防止」であってコメントの検閲ではないため、
+  //   コメント除去後の本文で判定する（解説コメントは関数名に言及してよい）。
   const srb = fnBody('submitRound');
+  const srbCode = srb.replace(/\/\/[^\n]*/g, '');
   assert(srb.indexOf('全試合の結果を入力してください')>=0, 'S3 submitRound の全結果入力チェックが残る');
-  assert(srb.indexOf('対局に登録されていません')>=0, 'S4 submitRound の全員在籍(missing)チェックが残る（緩和していない）');
-  assert(srb.indexOf('startClassPartial')<0 && srb.indexOf('getUnassignedFirstRoundPlayers')<0, 'S5 submitRound に部分手合いを混ぜていない');
+  assert(srbCode.indexOf('対局に登録されていません')<0 && srbCode.indexOf('missing')<0, 'S4 submitRound の全員在籍(missing)チェックは廃止済み（FIRSTROUND-ODD-001・再導入しない）');
+  assert(srbCode.indexOf('startClassPartial')<0 && srbCode.indexOf('getUnassignedFirstRoundPlayers')<0, 'S5 submitRound 本文（コメント除く）に部分手合いロジックを混ぜていない');
   // startClassPartial は generatePairing / startTournamentForClass / applyStartForCandidates を流用しない
   const scp = fnBody('startClassPartial');
   assert(scp.indexOf('generatePairing')<0, 'S6 startClassPartial は generatePairing を呼ばない');
