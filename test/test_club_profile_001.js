@@ -327,6 +327,21 @@ function makeMatsumotoState(env){
   assert(brBody.indexOf("officeName!==''")>=0&&brBody.indexOf("accountingNote!==''")>=0, 'P13-5 帳票 footer は空の事務局名・会計提出文の行を出さない');
 }
 
+// ---- P14: バックアップにクラブ既定を同梱（CLUB-PROFILE-002・#839 制約5/基準11） ----
+{
+  const bm=RAW.match(/function buildTournamentBackupObject\([\s\S]*?\n\}/);
+  const bBody=bm?bm[0]:'';
+  assert(/club_profile\s*:/.test(bBody), 'P14-1 バックアップ JSON にクラブ既定を同梱する');
+  assert(bBody.indexOf('BACKUP_SCHEMA_VERSION')>=0&&!/BACKUP_SCHEMA_VERSION\s*=\s*2/.test(RAW), 'P14-2 BACKUP_SCHEMA_VERSION は上げない（制約4）');
+  const pm=RAW.match(/function parseTournamentBackup\([\s\S]*?\n\}/);
+  const pBody=pm?pm[0]:'';
+  assert(/club_profile/.test(pBody), 'P14-3 復元側が club_profile を読む（無ければ null＝旧バックアップ互換）');
+  const im=RAW.match(/function importTournamentBackupFromText\([\s\S]*?\n\}/);
+  const iBody=im?im[0]:'';
+  assert(/saveClubProfile\s*\(\s*res\.club_profile\s*\)/.test(iBody), 'P14-4 復元時にクラブ既定も書き戻す');
+  assert(/if\s*\(\s*res\.club_profile\s*\)/.test(iBody), 'P14-5 バックアップに無ければ既定を触らない（この端末の設定を消さない）');
+}
+
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----
 {
   const m=RAW.match(/function resetAll\(\)[\s\S]*?\n\}\n/);

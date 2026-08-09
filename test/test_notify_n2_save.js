@@ -47,7 +47,10 @@ ok((RAW.match(/showToast\('データを読み込みました'\)/g)||[]).length==
 ok(!/alert\([^)]*にバックアップを保存しました/.test(RAW),'S5 バックアップ保存成功 alert が無い');
 ok(RAW.indexOf("showToast('バックアップを保存しました（ダウンロードフォルダ）')")>=0,'S6 バックアップ保存は toast');
 ok(RAW.indexOf("alert('バックアップを復元しました')")<0,'S7 復元成功 alert が無い');
-ok(RAW.indexOf("showToast('バックアップを復元しました')")>=0,'S8 復元成功は toast');
+// CLUB-PROFILE-002: クラブ既定をバックアップに同梱したため、復元 toast は
+//   「（クラブ既定も復元）」の有無で分岐する三項式になった。pin の意図＝「復元成功は toast（alert でない）」は不変。
+ok(/showToast\(\s*cpRestored\s*\?\s*'バックアップを復元しました（クラブ既定も復元）'\s*:\s*'バックアップを復元しました'\s*\)/.test(RAW)
+   ||RAW.indexOf("showToast('バックアップを復元しました')")>=0,'S8 復元成功は toast');
 ok(RAW.indexOf("alert('バックアップの保存に失敗しました')")>=0,'S9 失敗系 alert（バックアップ保存失敗）は維持');
 ok(RAW.indexOf("alert('復元に失敗しました。正しいバックアップファイルか確認してください')")>=0,'S10 失敗系 alert（復元失敗）は維持');
 ok(RAW.indexOf('これは支部マスタ（名簿）ファイルです')>=0,'S11 誤ファイル案内 alert は維持');

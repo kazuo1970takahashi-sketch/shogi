@@ -13582,7 +13582,13 @@ function buildTournamentBackupObject(s,nowIso){
     kind:BACKUP_KIND,
     app:'shogi_v4',
     exported_at:(typeof nowIso==='string')?nowIso:'',
-    local:{ state:s },
+    // CLUB-PROFILE-002（#839 制約5・受け入れ基準11）: クラブ既定をバックアップに同梱する。
+    //   機種変更・端末故障・2台目セットアップで設定が factory に戻る穴を塞ぐ。
+    //   ★BACKUP_SCHEMA_VERSION は上げない（制約4: `!==` の厳密一致のため、上げると先月までの
+    //   バックアップが全拒否になり、旧版を握る2台目端末が新版 JSON を拒否する）。
+    //   旧版アプリは local.club_profile を読まないだけ＝前方互換。旧バックアップにキーが無い場合は
+    //   復元側が「クラブ既定は触らない」で fail-soft。
+    local:{ state:s, club_profile:(typeof readClubProfileRaw==='function')?readClubProfileRaw():null },
     anonymous:buildBackupAnonymous(s)
   };
 }
@@ -13611,7 +13617,10 @@ function parseTournamentBackup(text){
   if(!st||typeof st!=='object'||Object.prototype.toString.call(st)==='[object Array]'){
     return {ok:false,reason:'no_state',message:'バックアップに大会データが含まれていません。'};
   }
-  return {ok:true,state:st};
+  // CLUB-PROFILE-002: club_profile は「あれば返す・無ければ null」（旧バックアップとの互換）。
+  //   値の検証は復元時に saveClubProfile→readClubProfileRaw が行う（不正なら profile は変わらない）。
+  var cp=(parsed.local&&parsed.local.club_profile&&typeof parsed.local.club_profile==='object')?parsed.local.club_profile:null;
+  return {ok:true,state:st,club_profile:cp};
 }
 
 // coordinator: 現在の state を backup JSON としてダウンロードする（saveDataAsFile を踏襲）。
@@ -13651,10 +13660,15 @@ function importTournamentBackupFromText(text){
   appConfirm('現在の大会データを上書きしてバックアップを復元しますか？この操作は元に戻せません。',function(ok){
     if(!ok)return;
     try{
+      // CLUB-PROFILE-002: クラブ既定は state より先に復元する（applyLoadedJson→normalizeState→
+      //   populateReportFields が live 入力系の空欄判定で参照するため）。
+      //   バックアップに含まれない旧ファイルでは触らない＝この端末の既定を消さない。
+      var cpRestored=false;
+      if(res.club_profile){ cpRestored=saveClubProfile(res.club_profile); }
       // 復元は独自正規化を作らず、既存 applyLoadedJson（state=normalizeState(...)→save→再描画）を再利用する。
       applyLoadedJson(JSON.stringify(res.state));
       // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert・復元前の confirm は維持）。
-      showToast('バックアップを復元しました');
+      showToast(cpRestored?'バックアップを復元しました（クラブ既定も復元）':'バックアップを復元しました');
     }catch(err){
       alert('復元に失敗しました。正しいバックアップファイルか確認してください');
     }
