@@ -342,6 +342,44 @@ function makeMatsumotoState(env){
   assert(/if\s*\(\s*res\.club_profile\s*\)/.test(iBody), 'P14-5 バックアップに無ければ既定を触らない（この端末の設定を消さない）');
 }
 
+// ---- P15: Codex 指摘（PR #847）の回帰 ----
+{
+  // P15-1/2: 明示的な空はリロード（normalizeState）を越えて保たれる ★これが無いと空はリロードで消える
+  const store={};
+  const env=loadEnv(store);
+  const s=env._getState();
+  s.report.fax=''; s.report.accountingNote=''; s.report.title='松本支部月例将棋大会';
+  env.saveClubProfile(env.buildClubProfileFromState());
+  env.resetAll();
+  env._ls.setItem('shogi_v4',JSON.stringify(env._getState()));   // save() 相当
+  const env2=loadEnv(store);                                     // 「タブを閉じて開き直す」
+  assert(env2._getState().report.fax==='', 'P15-1 空にした FAX がリロード後も空（normalizeState が factory に戻さない）');
+  assert(env2._getState().report.accountingNote==='', 'P15-2 空にした会計提出文がリロード後も空');
+  // 未指定（キー欠落）は従来どおり factory へ＝歴史保護は不変
+  const ns=env2.normalizeState({players:{A:[],B:[]},results:{A:[],B:[]},pairings:{A:[],B:[]}});
+  assert(ns.report.fax==='943-9443'&&ns.report.accountingNote==='※役員会で会計長へ収支報告書として提出ください。', 'P15-3 キー欠落（未指定）は従来どおり factory 補完（過去 snapshot の歴史保護）');
+
+  // P15-4/5: 不正な profile を保存しようとしても、既存の有効な既定を壊さない
+  const env3=loadEnv({});
+  env3._getState().report.title='松本支部月例将棋大会';
+  env3.saveClubProfile(env3.buildClubProfileFromState());
+  const before=env3.readClubProfileRaw();
+  assert(before&&before.report.title==='松本支部月例将棋大会', 'P15-4 前提: 有効な既定が保存されている');
+  const bad=env3.saveClubProfile({schema_version:2,report:{title:'壊れた'},classes:[],rounds:0});
+  assert(bad===false, 'P15-5a 不正な profile の保存は false を返す');
+  const after=env3.readClubProfileRaw();
+  assert(after&&after.report.title==='松本支部月例将棋大会', 'P15-5b 不正な保存で既存の既定が壊れない（書く前に検証）');
+
+  // P15-6: 復元確認文がクラブ既定の置き換えを明示する
+  const im=RAW.match(/function importTournamentBackupFromText\([\s\S]*?\n\}/);
+  const iBody=im?im[0]:'';
+  assert(/res\.club_profile\s*\n?\s*\?/.test(iBody)&&iBody.indexOf('この端末の既定も置き換わります')>=0, 'P15-6 クラブ既定を含むバックアップの復元確認文が既定の置き換えを明示する');
+
+  // P15-7: 保存ボタンの説明文が start/end を含む（実装と食い違わない）
+  assert(RAW.indexOf('会場・開始/終了時刻・FAX')>=0, 'P15-7 説明文に開始/終了時刻が含まれる');
+  assert(!/開催日・開始\/終了時刻・正副役員・申し送りは保存されません/.test(RAW), 'P15-8 「開始/終了時刻は保存されません」の古い記述が残っていない');
+}
+
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----
 {
   const m=RAW.match(/function resetAll\(\)[\s\S]*?\n\}\n/);

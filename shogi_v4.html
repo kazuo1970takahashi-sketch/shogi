@@ -974,9 +974,6 @@ function normalizeReportPersistedEmptyable(value,key,fallbackNormalizer){
   if(typeof value==='string'&&value.replace(/\s+/g,'')==='')return '';
   return fallbackNormalizer(value);
 }
-
-
-
 // localStorage から読み・検証する。不正（型崩れ・A/B 欠落・壊れた JSON・storage 例外）は
 //   fail-soft で null（=factory）。値の検証はここで完結させる（この時点では REPORT_FIELD_SPECS
 //   未評価のため normalize helper に依存しない＝top-level 評価順の罠を避ける・パネル指摘）。
@@ -13657,7 +13654,12 @@ function exportTournamentBackup(){
 function importTournamentBackupFromText(text){
   var res=parseTournamentBackup(text);
   if(!res.ok){ alert(res.message); return false; }
-  appConfirm('現在の大会データを上書きしてバックアップを復元しますか？この操作は元に戻せません。',function(ok){
+  // ★Codex P1（PR #847）: バックアップにクラブ既定が含まれる場合、復元は「今の大会データ」だけでなく
+  //   **この端末の恒久的な既定（全リセット後の初期値）も置き換える**。確認文でそれを明示する。
+  var confirmMsg=res.club_profile
+    ? '現在の大会データを上書きしてバックアップを復元しますか？\n\nこのバックアップにはクラブ既定（大会名・会場・クラス構成など、全リセット後の初期値）も含まれます。復元するとこの端末の既定も置き換わります。\n\nこの操作は元に戻せません。'
+    : '現在の大会データを上書きしてバックアップを復元しますか？この操作は元に戻せません。';
+  appConfirm(confirmMsg,function(ok){
     if(!ok)return;
     try{
       // CLUB-PROFILE-002: クラブ既定は state より先に復元する（applyLoadedJson→normalizeState→
