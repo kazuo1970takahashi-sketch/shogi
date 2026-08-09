@@ -901,6 +901,9 @@ function readClubProfileRaw(){
   var p=null;
   try{p=JSON.parse(raw);}catch(e){return null;}
   if(!p||typeof p!=='object')return null;
+  // 実装パネル指摘: schema_version は将来版（v2 で意味が変わった profile を旧バイナリが誤読する）
+  //   への防波堤として厳密に検証する。1 以外は fail-soft で factory。
+  if(Math.floor(Number(p.schema_version))!==1)return null;
   var out={schema_version:1,report:{},classes:null,rounds:null};
   if(p.report&&typeof p.report==='object'){
     for(var i=0;i<CLUB_PROFILE_REPORT_KEYS.length;i++){
@@ -912,10 +915,16 @@ function readClubProfileRaw(){
     }
   }
   if(Array.isArray(p.classes)){
-    var cls=[];var hasA=false,hasB=false;
+    var cls=[];var hasA=false,hasB=false;var seenIds={};
     for(var j=0;j<p.classes.length;j++){
       var c=p.classes[j];
       if(!c||typeof c.id!=='string'||!c.id)continue;
+      // 実装パネル指摘: normalizeClasses が守る不変条件（id の安全性・一意性）をこの入力経路
+      //   だけが破れる非対称があった。isSafeClassId 違反はスキップ・重複 id は初出のみ採用
+      //   （重複入り JSON のインポート→保存で profile に恒久化し、全リセットでも再生成される穴）。
+      if(typeof isSafeClassId==='function'&&!isSafeClassId(c.id))continue;
+      if(seenIds[c.id])continue;
+      seenIds[c.id]=true;
       var name=(typeof c.name==='string'&&c.name)?c.name:(c.id+'クラス');
       var entry={id:c.id,name:name};
       var rn=Math.floor(Number(c.rounds));
@@ -984,11 +993,15 @@ function buildClubProfileFromState(){
     timeMain:normalizeReportTimeMain(srcRep.timeMain),
     timeByoyomi:normalizeReportTimeByoyomi(srcRep.timeByoyomi)
   };
-  var cls=[];
+  var cls=[];var seenIds={};
   var srcCls=(state&&Array.isArray(state.classes))?state.classes:factoryClasses();
   for(var i=0;i<srcCls.length;i++){
     var c=srcCls[i];
     if(!c||typeof c.id!=='string')continue;
+    // 保存側でも id の安全性・一意性を守る（重複入り state を保存しても profile を汚さない）
+    if(typeof isSafeClassId==='function'&&!isSafeClassId(c.id))continue;
+    if(seenIds[c.id])continue;
+    seenIds[c.id]=true;
     var entry={id:c.id,name:(typeof c.name==='string'&&c.name)?c.name:(c.id+'クラス')};   // started は保存しない
     var rn=Math.floor(Number(c.rounds));
     if(c.rounds!=null&&!isNaN(rn)&&rn>=1)entry.rounds=rn;   // クラス別回戦数上書きも既定に含める
@@ -1012,7 +1025,11 @@ function seedClubProfileOnce(){
 function onSaveClubProfileClick(){
   var prof=buildClubProfileFromState();
   if(saveClubProfile(prof)){
-    showToast('クラブの既定として保存しました（報告書設定・クラス'+prof.classes.length+'つ・'+prof.rounds+'回戦）');
+    // 実装パネル指摘: クラス別回戦数の上書きは UI に出ない（既存の表示バグ・別起票）ため、
+    //   せめて保存 toast では件数を明示する（設計 v2 §5）。
+    var ovCount=0;
+    for(var i=0;i<prof.classes.length;i++){ if(prof.classes[i].rounds!=null)ovCount++; }
+    showToast('クラブの既定として保存しました（報告書設定・クラス'+prof.classes.length+'つ・'+prof.rounds+'回戦'+(ovCount>0?'・クラス別の回戦数上書き'+ovCount+'件':'')+'）');
   }else{
     showToast('保存に失敗しました。ブラウザの保存領域を確認してください',{kind:'err'});
   }
@@ -14142,6 +14159,32 @@ function captureResetSnapshot(kind){
 function hasResetUndoSnapshot(){
   try{ return !!localStorage.getItem(UNDO_KEY); }catch(e){ return false; }
 }
+// CLUB-PROFILE-001（実装パネル指摘）: 現在の state.classes に無い動的クラスの DOM を除去する共通掃除。
+//   候補は「呼出側が控えた旧クラス集合」に加えて「DOM 実態（受付 section の data-class-id）」も走査する。
+//   これにより (a) resetAll でクラス集合が縮む遷移の残留（従来からの幽霊バグ）、
+//   (b) profile 導入で新設された「集合が増える resetAll → undo で縮む」経路の残留、
+//   (c) インポート等で state 追跡から漏れていた既存の幽霊 section、をまとめて閉じる。
+//   A/B は静的 DOM のため対象外（isSafeClassId で不正 id も除外）。
+function cleanupStaleClassDom(keepClasses,extraCandidates){
+  var keep={A:true,B:true};
+  (Array.isArray(keepClasses)?keepClasses:[]).forEach(function(c){ if(c&&typeof c.id==='string')keep[c.id]=true; });
+  var cand={};
+  (Array.isArray(extraCandidates)?extraCandidates:[]).forEach(function(c){ if(c&&typeof c.id==='string')cand[c.id]=true; });
+  try{
+    var secs=document.querySelectorAll('[data-class-id]');
+    for(var i=0;i<secs.length;i++){
+      var cid=secs[i]&&secs[i].getAttribute?secs[i].getAttribute('data-class-id'):null;
+      if(cid)cand[cid]=true;
+    }
+  }catch(e){}
+  Object.keys(cand).forEach(function(cid){
+    if(cid==='A'||cid==='B')return;
+    if(keep[cid])return;
+    if(typeof isSafeClassId==='function'&&!isSafeClassId(cid))return;
+    removeClassDomNodes(cid);
+  });
+}
+
 function undoLastReset(){
   try{
     var raw=localStorage.getItem(UNDO_KEY);
@@ -14152,6 +14195,9 @@ function undoLastReset(){
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
     try{ localStorage.removeItem(UNDO_KEY); }catch(e){}
     _pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
+    // CLUB-PROFILE-001（実装パネル指摘）: 「集合が増える resetAll（profile に C）→ undo（A/B へ復元）」で
+    //   reset が生やした C の受付 section が幽霊として残る。復元後の classes 基準で差分掃除する。
+    cleanupStaleClassDom(state.classes,null);
     populateReportFields();
     renderRegList();
     renderPastParticipantsPanel();
@@ -14261,17 +14307,9 @@ function resetAll(){
     var rslt=document.getElementById('result-'+c.id);if(rslt)rslt.innerHTML='';
   });
   // CLUB-PROFILE-001: 新集合に無い旧クラスの DOM（受付 section / pane / result）を除去。
-  //   A/B は静的 DOM（removeClassDomNodes の対象にしない）。新集合には必ず A/B が居る
-  //   （profile 検証・normalizeClasses の不変条件）ため、ここで消すのは動的クラスのみ。
-  (function(){
-    var newIds={};
-    state.classes.forEach(function(c){ if(c&&typeof c.id==='string')newIds[c.id]=true; });
-    _oldClasses.forEach(function(c){
-      if(!c||typeof c.id!=='string')return;
-      if(c.id==='A'||c.id==='B')return;
-      if(!newIds[c.id])removeClassDomNodes(c.id);
-    });
-  })();
+  //   旧 state 追跡（_oldClasses）に加えて DOM 実態（data-class-id）も走査するため、
+  //   インポート等で state 追跡から漏れていた既存の幽霊 section も同時に掃除される。
+  cleanupStaleClassDom(state.classes,_oldClasses);
   // 大会報告書入力欄を初期化（CLUB-PROFILE-001: 直書きの沼津値を廃し、profile 構築済みの state.report から反映）
   var repPlace=document.getElementById('rep-place');if(repPlace)repPlace.value=state.report.place;
   var repSei=document.getElementById('rep-sei');if(repSei)repSei.value='';

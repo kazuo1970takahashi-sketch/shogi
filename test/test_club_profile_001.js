@@ -181,6 +181,19 @@ function makeMatsumotoState(env){
   assert(st2.classes.length===2&&st2.classes[0].id==='A', 'P4-3 A/B 欠落 profile の classes は factory（A/B）に fail-soft');
   assert(st2.report.title==='X会', 'P4-4 report 側の有効値は独立に生きる（フィールド単位の検証）');
   assert(st2.rounds===9, 'P4-5 rounds の有効値は独立に生きる');
+  // 実装パネル指摘の3穴: 重複 id・不正 id（isSafeClassId 違反）・schema_version 不一致
+  const env3=loadEnv({'shogi_club_profile': JSON.stringify({schema_version:1,report:{},classes:[{id:'A',name:'Aクラス'},{id:'B',name:'Bクラス'},{id:'C',name:'C1'},{id:'C',name:'C2'},{id:'C X"',name:'不正'}],rounds:4})});
+  const ids3=env3._getState().classes.map(function(c){return c.id;});
+  assert(JSON.stringify(ids3)===JSON.stringify(['A','B','C']), 'P4-6 重複 id は初出のみ・不正 id は除外（実測 '+ids3.join(',')+'）');
+  assert(env3._getState().classes[2].name==='C1', 'P4-7 重複 id は初出のエントリが勝つ');
+  const env4=loadEnv({'shogi_club_profile': JSON.stringify({schema_version:2,report:{title:'未来クラブ大会'},classes:[{id:'A',name:'A'},{id:'B',name:'B'}],rounds:9})});
+  assert(env4._getState().report.title==='沼津支部月例将棋大会'&&env4._getState().rounds===4, 'P4-8 schema_version≠1 は全体を factory に fail-soft');
+  // 保存側の防御: 重複 id 入り state を保存しても profile は汚れない
+  const env5=loadEnv({});
+  env5._getState().classes.push({id:'C',name:'C甲',started:false});
+  env5._getState().classes.push({id:'C',name:'C乙',started:false});
+  const built=env5.buildClubProfileFromState();
+  assert(built.classes.map(function(c){return c.id;}).join(',')==='A,B,C', 'P4-9 buildClubProfileFromState も重複 id を初出のみ採用');
 }
 
 // ---- P5: シードは「キー不在」のときだけ1回 ----
@@ -252,9 +265,13 @@ function makeMatsumotoState(env){
 {
   const m=RAW.match(/function resetAll\(\)[\s\S]*?\n\}\n/);
   const body=m?m[0]:'';
-  assert(body.indexOf('removeClassDomNodes')>=0, 'P9-1 resetAll に旧クラスの DOM 差分掃除（removeClassDomNodes）がある');
+  assert(body.indexOf('cleanupStaleClassDom')>=0, 'P9-1 resetAll に旧クラスの DOM 差分掃除（cleanupStaleClassDom）がある');
   assert(body.indexOf('_oldClasses')>=0, 'P9-2 差し替え前の旧クラス集合を控えてから差分を取る');
   assert(body.indexOf('readClubProfileRaw()')>=0, 'P9-3 resetAll は実行時に profile を読み直す（read-at-use）');
+  // 実装パネル指摘: 「集合が増える resetAll → undo」で幽霊 section が残る新規経路への対応
+  const um=RAW.match(/function undoLastReset\(\)[\s\S]*?\n\}\n/);
+  const ubody=um?um[0]:'';
+  assert(ubody.indexOf('cleanupStaleClassDom')>=0, 'P9-4 undoLastReset にも DOM 差分掃除がある（増える reset→undo の幽霊防止）');
 }
 
 console.log('\n  CLUB-PROFILE-001 テスト: PASS '+pass+'件 / FAIL '+fail+'件');
