@@ -100,8 +100,10 @@ assert(/function\s+normalizeReportAccountingNote\s*\(/.test(htmlSrc),
 {
   const m = htmlSrc.match(/function populateReportFields[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
-  assert(/normalizeReportAccountingNote\s*\(\s*state\.report\.accountingNote\s*\)/.test(body),
-    'A3-1 populateReportFields が normalizeReportAccountingNote(state.report.accountingNote) を呼ぶ');
+  // CLUB-PROFILE-002: live 入力系は normalizeReportFieldForInput 経由（クラブ既定が明示的な空を
+  //   宣言していない限り normalizeReportField= 従来と同一結果）。pin の意図は不変なので両形を許容。
+  assert(/normalizeReportAccountingNote\s*\(\s*state\.report\.accountingNote\s*\)/.test(body)||/normalizeReportFieldForInput\s*\(\s*state\.report\.accountingNote\s*,\s*['"]accountingNote['"]\s*\)/.test(body),
+    'A3-1 populateReportFields が accountingNote を正規化して反映する（直接 or ForInput ラッパー）');
   assert(/state\.report\.accountingNote\s*=\s*normalizedAccountingNote/.test(body),
     'A3-2 populateReportFields が state.report.accountingNote に書き戻す');
 }
@@ -112,8 +114,8 @@ assert(/function\s+normalizeReportAccountingNote\s*\(/.test(htmlSrc),
   const body = m ? m[0] : '';
   assert(/key\s*===\s*['"]accountingNote['"]/.test(body),
     'A4-1 key === "accountingNote" 分岐がある');
-  assert(/normalizeReportAccountingNote\s*\(\s*el\.value\s*\)/.test(body),
-    'A4-2 accountingNote 分岐で normalizeReportAccountingNote(el.value) を使う');
+  assert(/normalizeReportAccountingNote\s*\(\s*el\.value\s*\)/.test(body)||/normalizeReportFieldForInput\s*\(\s*el\.value\s*,\s*['"]accountingNote['"]\s*\)/.test(body),
+    'A4-2 accountingNote 分岐で el.value を正規化する（直接 or ForInput ラッパー・CLUB-PROFILE-002）');
   assert(/eventType\s*===\s*['"]change['"]\s*\)\s*el\.value\s*=\s*normalizedAccountingNote/.test(body),
     'A4-3 accountingNote 分岐で change 時のみ DOM 書き戻し (IME-safe)');
 }
@@ -124,8 +126,8 @@ assert(/function\s+normalizeReportAccountingNote\s*\(/.test(htmlSrc),
   //   （assert ラベルの downloadReport は報告書生成フローの歴史的表記として保持）。
   const m = htmlSrc.match(/function buildReportHtml\(\)[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
-  assert(/normalizeReportAccountingNote\s*\(\s*state\.report\s*&&\s*state\.report\.accountingNote\s*\)/.test(body),
-    'A5-1 downloadReport が normalizeReportAccountingNote(state.report && state.report.accountingNote) を呼ぶ');
+  assert(/normalizeReportAccountingNote\s*\(\s*state\.report\s*&&\s*state\.report\.accountingNote\s*\)/.test(body)||/normalizeReportFieldForInput\s*\(\s*state\.report\s*&&\s*state\.report\.accountingNote\s*,\s*['"]accountingNote['"]\s*\)/.test(body),
+    'A5-1 downloadReport が accountingNote を正規化して取得する（直接 or ForInput ラッパー・CLUB-PROFILE-002）');
   // DOM 直読み撤去
   assert(!/getElementById\(['"]rep-accounting-note['"]\)\.value/.test(body),
     'A5-2 downloadReport が #rep-accounting-note.value を直読みしていない');
@@ -396,14 +398,24 @@ function makeBaseState(reportOverrides){
   assertEq(env._getState().report.accountingNote, '別会計提出文', 'D1-2 任意文言 → state 同期');
 }
 
-// D2: 空欄 / null → default
+// D2: 明示的な空文字は**空のまま** / 未指定(null)は default（CLUB-PROFILE-002 で分割・作者決定）
+//   会計提出文を持たないクラブが空にできない原因だった（#839 制約2・論点6）。帳票側は行を畳む。
+//   正規化系（normalizeState）の既定補完は factory 固定のまま＝過去 snapshot の挙動は不変（A2 が pin）。
 {
   const env = loadEnv(targetPath);
   env._setState(makeBaseState({accountingNote:''}));
   seedReportDom(env._ctx);
   env.populateReportFields();
-  assertEq(env._ctx.document.getElementById('rep-accounting-note').value, DEFAULT_NOTE, 'D2-1 "" → DOM default');
-  assertEq(env._getState().report.accountingNote, DEFAULT_NOTE, 'D2-2 "" → state default');
+  assertEq(env._ctx.document.getElementById('rep-accounting-note').value, '', 'D2-1 "" → 空のまま（DOM）');
+  assertEq(env._getState().report.accountingNote, '', 'D2-2 "" → 空のまま（state）');
+}
+{
+  // 未指定（null）は「空にしたい」ではない＝従来どおり default へ補完
+  const env = loadEnv(targetPath);
+  env._setState(makeBaseState({accountingNote:null}));
+  seedReportDom(env._ctx);
+  env.populateReportFields();
+  assertEq(env._getState().report.accountingNote, DEFAULT_NOTE, 'D2-3 null → default（未指定は既定のまま）');
 }
 {
   const env = loadEnv(targetPath);
@@ -505,8 +517,8 @@ function makeBaseState(reportOverrides){
   el.value = '';
   const fns = (el._handlers && el._handlers['change']) || [];
   for(let i=0;i<fns.length;i++) fns[i].call(el, {type:'change', target:el});
-  assertEq(env._getState().report.accountingNote, DEFAULT_NOTE, 'E3-1 空欄 change → state default');
-  assertEq(env._ctx.document.getElementById('rep-accounting-note').value, DEFAULT_NOTE, 'E3-2 空欄 change → DOM default');
+  assertEq(env._getState().report.accountingNote, '', 'E3-1 空欄 change → 空のまま（state・CLUB-PROFILE-002）');
+  assertEq(env._ctx.document.getElementById('rep-accounting-note').value, '', 'E3-2 空欄 change → 空のまま（DOM・CLUB-PROFILE-002）');
 }
 
 // E4: trim change

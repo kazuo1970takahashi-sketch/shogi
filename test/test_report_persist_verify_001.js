@@ -374,20 +374,31 @@ function makeBaseState(reportOverrides){
   });
 }
 
-// D2: 空欄 change → 既定値補正（state-as-SoT の補正動作・代表 default 系フィールド）
+// D2: 空欄 change → 既定値補正（state-as-SoT の補正動作）
+//   ★CLUB-PROFILE-002（作者決定 2026-08-09「空欄を保存できるように」）で仕様を分割した:
+//     - 大会の体裁に必須のフィールド（place/title/prize/organizer）＝従来どおり既定値へ補正
+//     - クラブによっては存在しないフィールド（fax/officeName/accountingNote）＝**空のまま通す**
+//       （FAX を持たないクラブ・会計提出文の無いクラブ。帳票側は空の行を畳む）
+//   正規化系（normalizeState）は factory 固定のままなので、過去 snapshot の補完挙動は不変（A1 群が pin）。
 {
   const env = loadEnv(targetPath);
   env._setState(makeBaseState(VALID));
   env.bindReportEvents();
-  [['place','労政会館'],['title','沼津支部月例将棋大会'],['prize',7000],
-   ['organizer','日本将棋連盟沼津支部'],['officeName','沼津支部事務局'],
-   ['accountingNote','※役員会で会計長へ収支報告書として提出ください。']].forEach(function(p){
-    const k = p[0], def = p[1];
+  function fireEmptyChange(k){
     const el = env._ctx.document.getElementById(DOM_ID[k]);
     el.value = '';
     const fns = (el._handlers && el._handlers['change']) || [];
     for(let i=0;i<fns.length;i++) fns[i].call(el, {type:'change', target:el});
-    assertEq(env._getState().report[k], def, 'D2 "' + k + '" 空欄 change → 既定値補正');
+  }
+  [['place','労政会館'],['title','沼津支部月例将棋大会'],['prize',7000],
+   ['organizer','日本将棋連盟沼津支部']].forEach(function(p){
+    const k = p[0], def = p[1];
+    fireEmptyChange(k);
+    assertEq(env._getState().report[k], def, 'D2 "' + k + '" 空欄 change → 既定値補正（必須フィールド）');
+  });
+  ['fax','officeName','accountingNote'].forEach(function(k){
+    fireEmptyChange(k);
+    assertEq(env._getState().report[k], '', 'D2-empty "' + k + '" 空欄 change → 空のまま（CLUB-PROFILE-002・クラブによっては存在しない項目）');
   });
 }
 

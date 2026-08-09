@@ -898,7 +898,35 @@ function factoryClasses(){
 }
 var FACTORY_ROUNDS=4;
 // profile が既定を上書きできる report のキー（date/start/end/sei/fuku/note は大会ごとの値＝対象外）
-var CLUB_PROFILE_REPORT_KEYS=['title','organizer','place','fax','officeName','accountingNote','prize','timeType','timeMain','timeByoyomi'];
+// CLUB-PROFILE-002（#839 受け入れ基準1）: start/end もクラブ固有（13:00 開始でないクラブが毎月
+//   打ち直していた）。date は大会ごとの値なので**含めない**（基準2＝#804 と同じ向き）。
+var CLUB_PROFILE_REPORT_KEYS=['title','organizer','place','fax','officeName','accountingNote','prize','timeType','timeMain','timeByoyomi','start','end'];
+// CLUB-PROFILE-002（#839 論点6・制約2・作者決定 2026-08-09「空欄を保存できるように」）:
+//   FAX を持たないクラブ・会計提出文の無いクラブが空欄にしても factory 値が復活する問題への対応。
+//   この3キーだけは profile に「明示的な空」を保存でき、live 入力系がそれを尊重する。
+//   ★正規化系（normalizeState / normalizeReportField）は factory 固定のまま＝過去 snapshot は
+//   従来どおり factory で補完される（歴史保護の原則は不変）。
+var CLUB_PROFILE_EMPTYABLE_KEYS=['fax','officeName','accountingNote'];
+function isClubProfileEmptyable(key){
+  for(var i=0;i<CLUB_PROFILE_EMPTYABLE_KEYS.length;i++){ if(CLUB_PROFILE_EMPTYABLE_KEYS[i]===key)return true; }
+  return false;
+}
+// live 入力系用の正規化: emptyable な3キーは**空入力を空のまま通す**。
+//   ★「クラブ既定が空を宣言しているときだけ空を許す」設計は循環で成立しない（実測）:
+//     クリア → live 正規化が即 factory 値へ戻す → 保存時には空が state にも DOM にも残っていない
+//     → 空を既定として保存できない。よって live 入力系では無条件に空を通す。
+//   ★正規化系（normalizeState / normalizeReportField / REPORT_FIELD_SPECS.def）は factory 固定のまま＝
+//     過去 snapshot・インポートの欠落フィールドは従来どおり factory で補完される（歴史保護は不変）。
+//   帳票側は空の行を畳む（buildReportFooterHtml）。FAX はもともと帳票非出力。
+//   ★「明示的な空」とは**空文字列（または空白のみの文字列）**のこと。`null`/`undefined`/非文字列は
+//     「未指定」であって「空にしたい」ではないため、従来どおり factory 既定へ補完する
+//     （キー欠落の旧データが既定を失うのを防ぐ）。
+function normalizeReportFieldForInput(value,key){
+  if(isClubProfileEmptyable(key)&&typeof value==='string'&&value.replace(/\s+/g,'')===''){
+    return '';
+  }
+  return normalizeReportField(value,key);
+}
 // localStorage から読み・検証する。不正（型崩れ・A/B 欠落・壊れた JSON・storage 例外）は
 //   fail-soft で null（=factory）。値の検証はここで完結させる（この時点では REPORT_FIELD_SPECS
 //   未評価のため normalize helper に依存しない＝top-level 評価順の罠を避ける・パネル指摘）。
@@ -919,6 +947,10 @@ function readClubProfileRaw(){
       if(k==='prize'){ if(typeof v==='number'&&isFinite(v)&&v>=0)out.report.prize=v; }
       else if(k==='timeType'){ if(v==='sudden'||v==='byoyomi')out.report.timeType=v; }
       else if(k==='timeMain'||k==='timeByoyomi'){ var n=Math.floor(Number(v)); if(!isNaN(n)&&n>=1)out.report[k]=n; }
+      // CLUB-PROFILE-002: start/end は HH:MM のみ受理（<input type="time"> の value 制約に合わせる）
+      else if(k==='start'||k==='end'){ if(typeof v==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(v))out.report[k]=v; }
+      // CLUB-PROFILE-002: emptyable な3キーは「明示的な空」を有効値として受理する（論点6）
+      else if(isClubProfileEmptyable(k)){ if(typeof v==='string'&&(v===''||v.replace(/\s+/g,'')!==''))out.report[k]=v; }
       else{ if(typeof v==='string'&&v.replace(/\s+/g,'')!=='')out.report[k]=v; }
     }
   }
@@ -999,18 +1031,30 @@ function saveClubProfile(profile){
 //   DOM ではなく state から読む。値は既存の normalize helper（実行はランタイム＝定義順の罠なし）。
 function buildClubProfileFromState(){
   var srcRep=(state&&state.report&&typeof state.report==='object')?state.report:{};
+  // CLUB-PROFILE-002: emptyable キーは「今 DOM/state が空なら空のまま保存」する（論点6）。
+  //   保存ボタンを押した時点の見た目どおりを既定にする＝「空欄にして保存」で空が既定になる。
+  function pickEmptyable(key){
+    return normalizeReportFieldForInput(srcRep[key],key);
+  }
+  // start/end は HH:MM のみ採用。不正・空は保存しない（＝profile に載らず factory の 13:00/17:00）
+  function pickTime(key){
+    var v=srcRep[key];
+    return (typeof v==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(v))?v:null;
+  }
   var rep={
     title:normalizeReportField(srcRep.title,'title'),
     organizer:normalizeReportField(srcRep.organizer,'organizer'),
     place:normalizeReportField(srcRep.place,'place'),
-    fax:normalizeReportField(srcRep.fax,'fax'),
-    officeName:normalizeReportField(srcRep.officeName,'officeName'),
-    accountingNote:normalizeReportField(srcRep.accountingNote,'accountingNote'),
+    fax:pickEmptyable('fax'),
+    officeName:pickEmptyable('officeName'),
+    accountingNote:pickEmptyable('accountingNote'),
     prize:normalizeReportField(srcRep.prize,'prize'),
     timeType:normalizeReportTimeType(srcRep.timeType),
     timeMain:normalizeReportTimeMain(srcRep.timeMain),
     timeByoyomi:normalizeReportTimeByoyomi(srcRep.timeByoyomi)
   };
+  var pStart=pickTime('start'); if(pStart!==null)rep.start=pStart;
+  var pEnd=pickTime('end');     if(pEnd!==null)rep.end=pEnd;
   var cls=[];var seenIds={};
   var srcCls=(state&&Array.isArray(state.classes))?state.classes:factoryClasses();
   for(var i=0;i<srcCls.length;i++){
@@ -13348,7 +13392,13 @@ function buildTournamentBackupObject(s,nowIso){
     kind:BACKUP_KIND,
     app:'shogi_v4',
     exported_at:(typeof nowIso==='string')?nowIso:'',
-    local:{ state:s },
+    // CLUB-PROFILE-002（#839 制約5・受け入れ基準11）: クラブ既定をバックアップに同梱する。
+    //   機種変更・端末故障・2台目セットアップで設定が factory に戻る穴を塞ぐ。
+    //   ★BACKUP_SCHEMA_VERSION は上げない（制約4: `!==` の厳密一致のため、上げると先月までの
+    //   バックアップが全拒否になり、旧版を握る2台目端末が新版 JSON を拒否する）。
+    //   旧版アプリは local.club_profile を読まないだけ＝前方互換。旧バックアップにキーが無い場合は
+    //   復元側が「クラブ既定は触らない」で fail-soft。
+    local:{ state:s, club_profile:(typeof readClubProfileRaw==='function')?readClubProfileRaw():null },
     anonymous:buildBackupAnonymous(s)
   };
 }
@@ -13377,7 +13427,10 @@ function parseTournamentBackup(text){
   if(!st||typeof st!=='object'||Object.prototype.toString.call(st)==='[object Array]'){
     return {ok:false,reason:'no_state',message:'バックアップに大会データが含まれていません。'};
   }
-  return {ok:true,state:st};
+  // CLUB-PROFILE-002: club_profile は「あれば返す・無ければ null」（旧バックアップとの互換）。
+  //   値の検証は復元時に saveClubProfile→readClubProfileRaw が行う（不正なら profile は変わらない）。
+  var cp=(parsed.local&&parsed.local.club_profile&&typeof parsed.local.club_profile==='object')?parsed.local.club_profile:null;
+  return {ok:true,state:st,club_profile:cp};
 }
 
 // coordinator: 現在の state を backup JSON としてダウンロードする（saveDataAsFile を踏襲）。
@@ -13417,10 +13470,15 @@ function importTournamentBackupFromText(text){
   appConfirm('現在の大会データを上書きしてバックアップを復元しますか？この操作は元に戻せません。',function(ok){
     if(!ok)return;
     try{
+      // CLUB-PROFILE-002: クラブ既定は state より先に復元する（applyLoadedJson→normalizeState→
+      //   populateReportFields が live 入力系の空欄判定で参照するため）。
+      //   バックアップに含まれない旧ファイルでは触らない＝この端末の既定を消さない。
+      var cpRestored=false;
+      if(res.club_profile){ cpRestored=saveClubProfile(res.club_profile); }
       // 復元は独自正規化を作らず、既存 applyLoadedJson（state=normalizeState(...)→save→再描画）を再利用する。
       applyLoadedJson(JSON.stringify(res.state));
       // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert・復元前の confirm は維持）。
-      showToast('バックアップを復元しました');
+      showToast(cpRestored?'バックアップを復元しました（クラブ既定も復元）':'バックアップを復元しました');
     }catch(err){
       alert('復元に失敗しました。正しいバックアップファイルか確認してください');
     }
@@ -14046,13 +14104,15 @@ function buildReportHtml(){
   //   ※ Codex 追加 Must Fix: FAX番号は実在しないため報告書 footer から削除（出力しない）。
   //     state.report.fax / normalizeReportFax / #rep-fax 入力欄は schema・保存読込互換のため残置するが、
   //     報告書出力（downloadReport）では一切参照しない。
-  var officeName=normalizeReportOfficeName(state.report&&state.report.officeName);
+  //   CLUB-PROFILE-002: クラブ既定が明示的な空を宣言している場合は空のまま（footer 側で行を畳む）。
+  var officeName=normalizeReportFieldForInput(state.report&&state.report.officeName,'officeName');
 
   // REPORT-UX-007B-1: footer 2行目（会計提出文）は state.report.accountingNote から取得。
   //   既定値 '※役員会で会計長へ収支報告書として提出ください。' は normalizeReportAccountingNote
   //   側に集約済み。default のままなら footer 2行目の出力文字列は従来固定値の帳票と完全一致。
   //   escapeHtml(...).split('\n').join('<br>') で XSS 安全 + 改行表示に変換する（note と同パターン）。
-  var accountingNote=normalizeReportAccountingNote(state.report&&state.report.accountingNote);
+  //   CLUB-PROFILE-002: 同上（空なら footer 2行目ごと出さない）。
+  var accountingNote=normalizeReportFieldForInput(state.report&&state.report.accountingNote,'accountingNote');
 
   // REPORT-REFACTOR-B5C: 報告書 footer（申し送り事項 table ＋ 事務局名/会計提出文の <p>2行）を
   //   buildReportHtml 内のネスト関数として抽出（引数なし・note/officeName/accountingNote を
@@ -14065,8 +14125,14 @@ function buildReportHtml(){
       +'<tr><td style="padding:6px 10px;border:1px solid #999;background:#f0f0f0;font-weight:bold;width:120px">申し送り事項</td>'
       +'<td style="padding:6px 10px;border:1px solid #999;height:60px">'+escapeHtml(note).split('\n').join('<br>')+'</td></tr>'
       +'</table>'
-      +'<p style="margin-top:12px;font-size:11px">※ホームページ掲載の為、当日夜までにメールまたは直接'+escapeHtml(officeName)+'まで</p>'
-      +'<p style="font-size:11px">'+escapeHtml(accountingNote).split('\n').join('<br>')+'</p>';
+      // CLUB-PROFILE-002（論点6・作者決定）: 事務局名・会計提出文をクラブ既定で空にした場合は
+      //   行ごと畳む（「直接まで」のような壊れた文・空の <p> を出さない）。値がある従来運用は byte 同値。
+      +((typeof officeName==='string'&&officeName!=='')
+        ?'<p style="margin-top:12px;font-size:11px">※ホームページ掲載の為、当日夜までにメールまたは直接'+escapeHtml(officeName)+'まで</p>'
+        :'')
+      +((typeof accountingNote==='string'&&accountingNote!=='')
+        ?'<p style="font-size:11px">'+escapeHtml(accountingNote).split('\n').join('<br>')+'</p>'
+        :'');
   }
 
   var html='<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">'
@@ -14748,7 +14814,8 @@ function populateReportFields(){
   //   - state.report.fax も同期書き込み（不正値クリーンアップ）
   var faxEl=document.getElementById('rep-fax');
   if(faxEl){
-    var normalizedFax=normalizeReportFax(state.report.fax);
+    // CLUB-PROFILE-002: クラブ既定が明示的な空を宣言している場合のみ空を保つ（FAX を持たないクラブ）
+    var normalizedFax=normalizeReportFieldForInput(state.report.fax,'fax');
     state.report.fax=normalizedFax;
     faxEl.value=normalizedFax;
   }
@@ -14757,7 +14824,8 @@ function populateReportFields(){
   //   - state.report.officeName も同期書き込み（不正値クリーンアップ）
   var officeNameEl=document.getElementById('rep-office-name');
   if(officeNameEl){
-    var normalizedOfficeName=normalizeReportOfficeName(state.report.officeName);
+    // CLUB-PROFILE-002: クラブ既定が「明示的な空」を宣言している場合のみ空を保つ（live 入力系）
+    var normalizedOfficeName=normalizeReportFieldForInput(state.report.officeName,'officeName');
     state.report.officeName=normalizedOfficeName;
     officeNameEl.value=normalizedOfficeName;
   }
@@ -14767,7 +14835,8 @@ function populateReportFields(){
   //   - 中間改行は維持（normalizeReportAccountingNote が保持）
   var accountingNoteEl=document.getElementById('rep-accounting-note');
   if(accountingNoteEl){
-    var normalizedAccountingNote=normalizeReportAccountingNote(state.report.accountingNote);
+    // CLUB-PROFILE-002: 同上（明示的な空のときだけ空を保つ）
+    var normalizedAccountingNote=normalizeReportFieldForInput(state.report.accountingNote,'accountingNote');
     state.report.accountingNote=normalizedAccountingNote;
     accountingNoteEl.value=normalizedAccountingNote;
   }
@@ -14875,14 +14944,16 @@ function updateReportFieldFromElement(el,eventType){
     //   報告書 footer 1行目の '※…FAX（XXX）…' ラベル文言は downloadReport 側で付与するため、state には含めない。
     //   IME-safe: title / organizer 等と同じく、DOM 書き戻しは change イベント時のみに限定。
     //   input 時は state 更新と save のみ（日本語/全角 IME composing 中のカーソル位置を壊さない）。
-    var normalizedFax=normalizeReportFax(el.value);
+    // CLUB-PROFILE-002: 同上
+    var normalizedFax=normalizeReportFieldForInput(el.value,'fax');
     state.report.fax=normalizedFax;
     if(eventType==='change')el.value=normalizedFax;
   } else if(key==='officeName'){
     // REPORT-UX-007A: officeName は trim + 空欄 fallback で正規化。state には純粋な事務局名のみを保存。
     //   報告書 footer 1行目の '…直接<officeName>まで' ラベル文言は downloadReport 側で付与する。
     //   IME-safe: organizer / sei / fuku 等と同じく、DOM 書き戻しは change イベント時のみに限定。
-    var normalizedOfficeName=normalizeReportOfficeName(el.value);
+    // CLUB-PROFILE-002: クラブ既定が「明示的な空」を宣言しているときだけ空を保つ（論点6）
+    var normalizedOfficeName=normalizeReportFieldForInput(el.value,'officeName');
     state.report.officeName=normalizedOfficeName;
     if(eventType==='change')el.value=normalizedOfficeName;
   } else if(key==='accountingNote'){
@@ -14890,7 +14961,8 @@ function updateReportFieldFromElement(el,eventType){
     //   footer 2行目 '※役員会で…' の文言全体を state.report.accountingNote から取得するため、
     //   空欄 change → default 文言に戻す（note と異なり「非表示」運用ではない）。
     //   IME-safe: textarea 内の日本語 IME composing を壊さないよう DOM 書き戻しは change 時のみ。
-    var normalizedAccountingNote=normalizeReportAccountingNote(el.value);
+    // CLUB-PROFILE-002: 同上
+    var normalizedAccountingNote=normalizeReportFieldForInput(el.value,'accountingNote');
     state.report.accountingNote=normalizedAccountingNote;
     if(eventType==='change')el.value=normalizedAccountingNote;
   } else {
