@@ -9374,6 +9374,14 @@ function getUnassignedFirstRoundPlayers(cls){
   var out=[];
   for(var j=0;j<players.length;j++){
     var p=players[j];if(!p)continue;
+    // FIRSTROUND-ODD-001: WITHDRAW-001 は 2回戦以降の経路にしか実装されていなかった。
+    //   getRoundLeftoverPlayers(9392-) / generatePairing(9906-) は棄権者を除外するのに、
+    //   1回戦の3関数（本関数 / buildFirstRoundPartialPairs / submitRound）は withdrawn を
+    //   一度も参照していなかった＝実測。棄権者は「待機」ではないので除外する。
+    //   本関数は FRP 全経路（1卓追加 / 選択して追加 / まとめて作成）と
+    //   shouldShowRegenerateButton の入力元（呼び出し元6箇所）なので、ここ1箇所で全て正される。
+    //   buildFirstRoundPartialPairs は「呼出側で未割当に再検証済みを渡す」契約の pure helper のため無改変。
+    if(p.withdrawn)continue;
     if(!assigned[p.id])out.push(p);
   }
   out.sort(function(a,b){
@@ -10310,26 +10318,31 @@ function submitRound(cls){
     usedIds[m.p1]=true;
     usedIds[m.p2]=true;
   }
-  var missing=[];
-  for(var i=0;i<state.players[cls].length;i++){
-    var p=state.players[cls][i];
-    if(!usedIds[p.id])missing.push(p.name);
-  }
-  // Issue #272 / Codex P1: 1回戦(results 空)は従来どおり全員割当を必須にする（FRP の未割当は別経路で扱う）。
-  //   2回戦以降は待機者が複数いてよい——奇数の leftover に加え、回戦生成後に途中追加された参加者
-  //   （addPlayer で確認済み）はその回戦の組み合わせに入らず正当に待機する。これらは次回戦で組み合わせに
-  //   戻り、対局管理画面の待機バナー(getRoundLeftoverPlayers)で運営に明示される。旧実装は人数の偶奇
-  //   (allowedMissing=N%2)で判定したため、偶数のまま2名以上を途中追加すると未割当2名で確定できず進行
-  //   不能になっていた（＝Codex 指摘）。2回戦以降は待機者数でブロックせず、参加者がいるのに0卓という
-  //   退行的な空回戦だけをガードする。
-  if(state.results[cls].length===0){
-    if(missing.length>0){
-      // HELP-UX-001 (#308 (1)): 原因（奇数なら待機が出る）と次の行動を出す文言へ。未割当者名は残す。
-      //   テスト pin（run_tests.sh / test_frp_impl_002.js / test_pairing_odd_leftover_272.js）は
-      //   「次の参加者が対局に登録されていません」の部分文字列で維持＝同期更新不要。
-      alert('次の参加者が対局に登録されていません：\n'+missing.join('、')+'\n\n参加人数が奇数の場合は、人数を偶数にするか、1名を待機にして開始できます。割り当てるには「対戦相手変更」または「組み合わせを再生成」を使ってください。');return;
-    }
-  }else if(state.pairings[cls].length===0&&state.players[cls].length>=2){
+  // FIRSTROUND-ODD-001: 1回戦と2回戦以降で確定条件を統一する（旧: 1回戦だけ全員割当を必須にしていた）。
+  //
+  //   【なぜ変えるか】旧実装のコメントは「FRP の未割当は別経路で扱う」と書いていたが、その別経路は
+  //   submitRound に実装されていなかった。結果、部分開始(FRP)で1卓を作ると未割当が必ず1名以上残り、
+  //   1回戦を永久に確定できなかった。しかも脱出路が3つとも塞がっている（実測）:
+  //     - 「対戦相手変更」→ changePairing が「結果入力済みのため変更できません」で拒否
+  //     - 「組み合わせを再生成」→ shouldShowRegenerateButton(9423-) が **同一条件** で false を返し
+  //       ボタン自体が DOM に存在しない（alert は存在しないボタンを案内していた）
+  //     - 「棄権にする」→ 旧 missing 計算が withdrawn を見ないため効かない（本 PR で併せて解消）
+  //   奇数クラスは小規模クラブほど日常的に発生するため、当日運営が止まる唯一のハードストップだった。
+  //
+  //   【新しい不変条件】1卓以上が成立し、各選手が最大1卓にだけ割り当てられ、全卓の勝者が入力済みなら
+  //   確定できる。未割当者は待機者として次回戦候補へ戻る（1回戦は getUnassignedFirstRoundPlayers、
+  //   2回戦以降は getRoundLeftoverPlayers が画面に明示する）。これで奇数人数・受付継続・途中追加・棄権が
+  //   すべて同じモデルで扱える。
+  //
+  //   【#272 の保護は維持】「参加者がいるのに0卓」という退行的な空回戦のガードは残す（下の条件）。
+  //   #272 の原バグ（偶数のまま2名以上を途中追加すると未割当2名で確定できず進行不能）も、
+  //   待機者数でブロックしなくなることで同時に解消される。
+  //   なお旧 missing 配列は本ガードの廃止により参照元が無くなったため計算ごと削除した。
+  //   未割当者の可視化は上記2つの reader が担う（submitRound は表示を持たない）。
+  //   境界（反証パネル2体が独立に指摘・2026-08-09）: 旧条件 players>=2 は1名クラスで空回戦の
+  //   push を素通りさせた（UI からは0卓時に確定ボタン自体が描画されず到達不能だが、潜在退行）。
+  //   1名でも「参加者がいるのに0卓」は空回戦としてブロックする（>=1）。0名は従来どおり素通り＝既存挙動維持。
+  if(state.pairings[cls].length===0&&state.players[cls].length>=1){
     alert('この回戦の組み合わせがありません。「組み合わせを再生成」で対局を作成してください。');return;
   }
   state.results[cls].push(JSON.parse(JSON.stringify(state.pairings[cls])));
@@ -10574,6 +10587,19 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
   html+=(unfinishedCount>0
     ?'<div class="alert alert-warn" style="margin:8px 0 0">残り <strong>'+unfinishedCount+'</strong> 卓 未入力です（全'+totalTables+'卓）。すべて入力すると「確定して次へ」が押せます。</div>'
     :'<div class="alert alert-ok" style="margin:8px 0 0">✓ 全 '+totalTables+' 卓 入力済みです。「確定して次へ」を押せます。</div>');
+  // FIRSTROUND-ODD-001（反証パネル指摘・作者決定 2026-08-09）: 1回戦の全員割当必須の廃止で、
+  //   未割当を残したままの確定が無言で通るようになった。誤タップで確定しても気づけるよう、
+  //   確定ボタンの直前（＝操作した場所から見える位置・UI-RESULT-VISIBILITY 原則）に注意書きを出す。
+  //   表示のみ・同期処理のまま。confirm は挟まない（別便判断）。1回戦（results 空）限定。
+  if(state.results[cls].length===0){
+    var frUnassigned=getUnassignedFirstRoundPlayers(cls);
+    if(frUnassigned.length>0){
+      var frNames=[];
+      for(var fni=0;fni<frUnassigned.length&&fni<6;fni++)frNames.push(frUnassigned[fni].name);
+      var frNameStr=frNames.join('、')+(frUnassigned.length>6?' ほか':'');
+      html+='<div class="alert alert-warn" style="margin:8px 0 0">⚠ 確定すると、未割当 <strong>'+frUnassigned.length+'名</strong>（'+escapeHtml(frNameStr)+'）は1局目に入らないまま待機となり、2回戦からの参加になります。1局目に入れる場合は確定の前に対局を追加してください。</div>';
+    }
+  }
   html+='<div style="display:flex;gap:8px;margin-top:8px">'
     +'<button class="btn-success" id="submitBtn_'+cls+'"'+(unfinishedCount>0?' disabled aria-disabled="true" style="opacity:0.5;cursor:not-allowed"':'')+'>'+roundNum+'回戦 確定して次へ</button>'
     // FRP-IMPL-004B (設計 §5.4 / §5.4.2): 部分手合い組成中（started・results 空・未割当>0）は

@@ -197,10 +197,14 @@ function assignedSet(pairings){
 });
 
 // ============================================================
-// SUBMIT. submitRound の許容範囲（round1 / 偶数 / 余り>1 はブロック）。
+// SUBMIT. submitRound の許容範囲（全回戦統一: 0卓のみブロック・待機は許容）。
+//   FIRSTROUND-ODD-001: 旧 SUBMIT-1/2 は「1回戦は未割当1名でもブロック」を pin していた
+//   （#272 Codex P1 による意図的ロック）。同じ Codex が 2026-08-09 に「1回戦だけ別の
+//   状態機械になっているのが誤り」と再評価したため、新しい不変条件（1卓以上成立・
+//   各選手最大1卓・全卓勝者入力済みなら確定可・未割当は待機として次回戦へ）に反転した。
 // ============================================================
 {
-  // round1（results 空）で1名未割当 → 従来どおりブロック（待機を許容しない）
+  // round1（results 空）で1名未割当 → 確定できる（待機者として次回戦候補へ戻る）
   var env1=loadEnv();
   var s1=env1.normalizeState({rounds:4,started:true,
     classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:true}],
@@ -209,8 +213,45 @@ function assignedSet(pairings){
   s1.pairings.A=[{p1:'a1',p2:'a2',winner:'a1',lastModifiedBy:'auto'},{p1:'a3',p2:'a4',winner:'a3',lastModifiedBy:'auto'}];
   env1._setState(s1);
   env1.submitRound('A');
-  assert(env1._getState().results.A.length===0, 'SUBMIT-1 1回戦は未割当1名でも確定をブロック（待機を許容しない）');
-  assert(env1._alerts.length>=1 && env1._alerts.join('\n').indexOf('対局に登録されていません')>=0, 'SUBMIT-2 1回戦ブロック時に未割当アラート');
+  assert(env1._getState().results.A.length===1, 'SUBMIT-1 1回戦は未割当1名でも確定できる（FIRSTROUND-ODD-001・待機を許容）');
+  assert(env1._alerts.length===0, 'SUBMIT-2 1回戦の確定時に未割当アラートを出さない（FIRSTROUND-ODD-001）');
+
+  // 陽性対照: round1・0卓（参加者2名以上）→ 空回戦ガードが1回戦にも新しく効く（ブロック）
+  var env1b=loadEnv();
+  var s1b=env1b.normalizeState({rounds:4,started:true,
+    classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:true}],
+    players:{A:makePlayers('A',5),B:[]},pairings:{A:[],B:[]},results:{A:[],B:[]}});
+  env1b._setState(s1b);
+  env1b.submitRound('A');
+  assert(env1b._getState().results.A.length===0, 'SUBMIT-2b 1回戦でも0卓（空回戦）は確定をブロック（#272 保護の統一適用）');
+  assert(env1b._alerts.length>=1 && env1b._alerts.join('\n').indexOf('この回戦の組み合わせがありません')>=0, 'SUBMIT-2c 空回戦アラート文言');
+
+  // 陽性対照: 1名クラス・0卓 → 空回戦をブロック（境界 players>=1。反証パネル2体が独立に指摘した
+  //   「>=2 だと1名クラスだけ空回戦が素通りする」潜在退行への対応）
+  var env1c=loadEnv();
+  var s1c=env1c.normalizeState({rounds:4,started:true,
+    classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:true}],
+    players:{A:makePlayers('A',1),B:[]},pairings:{A:[],B:[]},results:{A:[],B:[]}});
+  env1c._setState(s1c);
+  env1c.submitRound('A');
+  assert(env1c._getState().results.A.length===0, 'SUBMIT-2d 1名クラスでも0卓（空回戦）は確定をブロック（境界 players>=1）');
+
+  // 陽性対照: 1回戦・未割当あり → 確定ボタン脇に注意書き（無言確定の防止・表示のみ・作者決定 2026-08-09）
+  var env1d=loadEnv();
+  var s1d=env1d.normalizeState({rounds:4,started:true,
+    classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:true}],
+    players:{A:makePlayers('A',5),B:[]},pairings:{A:[],B:[]},results:{A:[],B:[]}});
+  s1d.pairings.A=[{p1:'a1',p2:'a2',winner:'a1',lastModifiedBy:'auto'},{p1:'a3',p2:'a4',winner:'a3',lastModifiedBy:'auto'}];
+  env1d._setState(s1d);
+  var h1d=env1d.buildCurrentPairingsHtml('A',1,false);
+  assert(h1d.indexOf('1局目に入らないまま待機')>=0, 'SUBMIT-2e 1回戦・未割当ありの確定前に注意書きを表示');
+  // 反例: 2回戦以降（results 非空）には1局目の注意書きを出さない（待機は既存の待機バナーが担う）
+  var env1e=loadEnv(); stateRound2(env1e,'A',5);
+  var s1e=env1e._getState();
+  s1e.pairings.A=[{p1:'a1',p2:'a2',winner:null,lastModifiedBy:'auto'}];
+  env1e._setState(s1e);
+  var h1e=env1e.buildCurrentPairingsHtml('A',2,false);
+  assert(h1e.indexOf('1局目に入らないまま待機')<0, 'SUBMIT-2f 2回戦以降には1局目注意書きを出さない');
 
   // Codex P1: round2 偶数（N=6）で組み合わせ外の待機2名（途中追加相当）→ ブロックせず確定できる。
   //   旧挙動（偶数は許容0でブロック）は複数の途中追加を進行不能にしたため改める。
