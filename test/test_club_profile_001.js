@@ -83,6 +83,7 @@ function loadEnv(store){
        readClubProfileRaw:readClubProfileRaw, saveClubProfile:saveClubProfile,
        buildClubProfileFromState:buildClubProfileFromState, seedClubProfileOnce:seedClubProfileOnce,
        CLUB_PROFILE_KEY:CLUB_PROFILE_KEY,
+       verifyWholeStatePersisted:verifyWholeStatePersisted,
        __setAppModalTestResolver:(typeof __setAppModalTestResolver!=='undefined'?__setAppModalTestResolver:undefined),
        _setState:function(s){state=s;}, _getState:function(){return state;},
        _getClubProfileVar:function(){return clubProfile;}
@@ -378,6 +379,36 @@ function makeMatsumotoState(env){
   // P15-7: 保存ボタンの説明文が start/end を含む（実装と食い違わない）
   assert(RAW.indexOf('会場・開始/終了時刻・FAX')>=0, 'P15-7 説明文に開始/終了時刻が含まれる');
   assert(!/開催日・開始\/終了時刻・正副役員・申し送りは保存されません/.test(RAW), 'P15-8 「開始/終了時刻は保存されません」の古い記述が残っていない');
+
+  // ---- Codex 2巡目（PR #847）の回帰 ----
+  // P15-9: 空欄保存の説明が対象3項目に限定されている（全項目が空欄保存できると読めない）
+  assert(RAW.indexOf('空欄のまま保存できるのは FAX・事務局名・会計提出文の3つです')>=0, 'P15-9 空欄保存の説明を対象3項目に限定している');
+  assert(RAW.indexOf('大会名・主催・会場・賞金は空欄にすると既定値に戻ります')>=0, 'P15-10 空欄にすると既定へ戻る項目も明記している');
+  // P15-11/12: 復元は部分適用を作らない（既定が書けなければ大会を取り込まない／逆向きも検知）
+  const im2=RAW.match(/function importTournamentBackupFromText\([\s\S]*?\n\}/);
+  const iBody2=im2?im2[0]:'';
+  assert(/if\s*\(\s*!cpRestored\s*\)/.test(iBody2)&&iBody2.indexOf('復元を中止しました')>=0, 'P15-11 クラブ既定を保存できなければ復元を中止する（大会データに触れない）');
+  assert(/if\s*\(\s*!verifyWholeStatePersisted\(\)\s*\)/.test(iBody2), 'P15-12 大会データの保存失敗も検知して明示する（逆向きの分裂）');
+  assert(RAW.indexOf('function verifyWholeStatePersisted()')>=0, 'P15-13 verifyWholeStatePersisted が定義されている（save() は失敗を飲み込むため）');
+}
+
+// ---- P16: verifyWholeStatePersisted の挙動（Codex 2巡目 P1） ----
+{
+  const store={};
+  const env=loadEnv(store);
+  env._getState().report.title='松本支部月例将棋大会';
+  env._ls.setItem('shogi_v4',JSON.stringify(env._getState()));
+  assert(env.verifyWholeStatePersisted()===true, 'P16-1 保存済みなら true');
+  env._getState().report.title='保存していない変更';
+  assert(env.verifyWholeStatePersisted()===false, 'P16-2 state と localStorage がずれていれば false（save() の飲み込みを検知）');
+  // P16-3: 同名衝突の再発防止。既存 verifyStatePersisted(playerId,expectedName) と同名にすると
+  //   後方の関数宣言で上書きされ、無引数呼び出しが常に false になる（実装中に実際に踏んだ）。
+  assert(RAW.indexOf('function verifyStatePersisted()')<0, 'P16-3 無引数版 verifyStatePersisted() を再定義していない（既存2引数版と衝突するため）');
+  assert(RAW.indexOf('function verifyStatePersisted(playerId,expectedName)')>=0, 'P16-4 既存の氏名保存確認 verifyStatePersisted(playerId,expectedName) は残っている');
+  // P16-5: applyLoadedJson は save 後に再描画し ensureReportDateTimeDefaults が date を補完するため、
+  //   照合の直前に save() を挟まないと「保存できていない」と必ず誤検知する（実装中に踏んだ）。
+  assert(/applyLoadedJson\(JSON\.stringify\(res\.state\)\);[\s\S]{0,600}?\n\s*save\(\);\s*\n\s*if\s*\(\s*!verifyWholeStatePersisted\(\)\s*\)/.test(RAW),
+    'P16-5 復元後の照合は save() を挟んでから行う（再描画による date 補完で誤検知しない）');
 }
 
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----
