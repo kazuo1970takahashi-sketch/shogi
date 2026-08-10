@@ -1895,6 +1895,19 @@ function formatSaveStatusTime(ms){
 }
 
 
+// ★Codex 2巡目 P1（PR #847）: save() は失敗を飲み込む（fail-soft）ため、
+//   「保存できたつもりで進む」と部分適用が起きる経路がある（バックアップ復元）。
+//   現 state が localStorage に実際に載っているかを byte 照合で確かめる。
+//   iOS プライベート等「setItem は通るが残らない」故障モードもここで検出できる。
+//   ★命名注意: 後方にある verifyStatePersisted(playerId,expectedName)（氏名編集の保存確認）とは別物。
+//   同名にすると後方の関数宣言に巻き上げで上書きされ、無引数呼び出しが常に false になるため名前を分ける。
+function verifyWholeStatePersisted(){
+  var expect='';
+  try{expect=JSON.stringify(state);}catch(e){return false;}
+  var actual=null;
+  try{actual=localStorage.getItem(STORAGE_KEY);}catch(e){return false;}
+  return actual===expect;
+}
 
 function save(){
   try{
@@ -13665,10 +13678,30 @@ function importTournamentBackupFromText(text){
       // CLUB-PROFILE-002: クラブ既定は state より先に復元する（applyLoadedJson→normalizeState→
       //   populateReportFields が live 入力系の空欄判定で参照するため）。
       //   バックアップに含まれない旧ファイルでは触らない＝この端末の既定を消さない。
+      // ★Codex 2巡目 P1（PR #847）: 既定の書き込みが**実行時に失敗**した場合（容量・
+      //   プライベートブラウジング・読み戻し不一致）に大会だけ復元すると、
+      //   「取り込んだ大会 × この端末の古い既定」という中途半端な組み合わせが残る。
+      //   書けなかったら**大会の取り込みに進まず中止**し、理由を明示する（部分適用を作らない）。
       var cpRestored=false;
-      if(res.club_profile){ cpRestored=saveClubProfile(res.club_profile); }
+      if(res.club_profile){
+        cpRestored=saveClubProfile(res.club_profile);
+        if(!cpRestored){
+          appAlert('復元を中止しました。\n\nこのバックアップに含まれるクラブ既定を、この端末に保存できませんでした（ブラウザの保存領域の制限が原因の可能性があります）。\n\n大会データは変更していません。通常のウィンドウで開き直してから、もう一度お試しください。');
+          return;
+        }
+      }
       // 復元は独自正規化を作らず、既存 applyLoadedJson（state=normalizeState(...)→save→再描画）を再利用する。
       applyLoadedJson(JSON.stringify(res.state));
+      // ★Codex 2巡目 P1: 逆向きの分裂（既定は入ったが大会の保存が失敗）も検知する。
+      //   applyLoadedJson の save() は失敗を飲み込むため、書けたかを localStorage 側で確かめる。
+      //   照合の前に save() を1回挟むのは、applyLoadedJson が save 後に再描画し、その中の
+      //   ensureReportDateTimeDefaults（REPORT-UX-001）が state.report.date を補完して
+      //   state と localStorage を必ずずらすため。ここで再保存しないと常に誤検知になる。
+      save();
+      if(!verifyWholeStatePersisted()){
+        appAlert('大会データを保存できませんでした。\n\nクラブ既定は復元済みですが、大会データはこの端末に保存されていません（ブラウザの保存領域の制限が原因の可能性があります）。\n\nこのままアプリを閉じると取り込んだ大会は失われます。通常のウィンドウで開き直してから、もう一度お試しください。');
+        return;
+      }
       // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert・復元前の confirm は維持）。
       showToast(cpRestored?'バックアップを復元しました（クラブ既定も復元）':'バックアップを復元しました');
     }catch(err){
