@@ -742,6 +742,43 @@ function makeMatsumotoState(env){
   assert(/ok:false,status:'corrupt'/.test(rb)&&/ok:false,status:'unreadable'/.test(rb), 'P21-12 corrupt と unreadable は ok:false');
 }
 
+// ---- P22: 空文字は「無い」ではない（Codex 8巡目 P1） ----
+//   保存が中途半端に終わった端末には '' が残り得る。これを null に丸めると
+//   「そもそも設定していない端末」と誤判定し、書き出しの中止判定を素通りする。
+{
+  const env=loadEnv({});
+  env._ls.setItem('k','');
+  const r=env.readStorageRaw('k');
+  assert(r.ok===true&&r.raw==='', 'P22-1 ★空文字はそのまま返す（null に丸めない）');
+  const r2=env.readStorageRaw('無いキー');
+  assert(r2.ok===true&&r2.raw===null, 'P22-2 キーが無ければ null');
+}
+{
+  // 空文字のクラブ既定は corrupt（absent ではない）
+  const store={};
+  store['shogi_club_profile']='';
+  const env=loadEnv(store);
+  const res=env.readClubProfileResult();
+  assert(res.ok===false&&res.status==='corrupt', 'P22-3 ★空文字のクラブ既定は corrupt（書き出しを中止できる）');
+  assert(env.readClubProfileRaw()===null, 'P22-4 起動時は従来どおり null（factory へ fail-soft）');
+  env.resetAll();
+  assert(env._getState().report.title==='沼津支部月例将棋大会', 'P22-5 空文字でも全リセットは factory で動く');
+}
+{
+  // 巻き戻しは '' を「元に戻った」と見なさない
+  const env=loadEnv({});
+  env._ls.setItem('k','');
+  assert(env.revertStorageRaw('k',null)===true, 'P22-6 元が「無い」なら空文字は削除して戻す');
+  assert(env._ls.getItem('k')===null||env._ls.getItem('k')===undefined, 'P22-7 ★空文字を残したまま「戻った」と言わない');
+}
+{
+  // ソース pin: 空文字を null に丸める書き方を復活させない
+  const rs=RAW.match(/function readStorageRaw\([\s\S]*?\n\}/);
+  assert(!/v!==''/.test(rs?rs[0]:''), 'P22-8 readStorageRaw で空文字を除外しない');
+  const rv=RAW.match(/function revertStorageRaw\([\s\S]*?\n\}/);
+  assert(!/back===null\|\|back===''/.test(rv?rv[0]:''), 'P22-9 巻き戻しの照合で空文字を null と同一視しない');
+}
+
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----
 {
   const m=RAW.match(/function resetAll\(\)[\s\S]*?\n\}\n/);

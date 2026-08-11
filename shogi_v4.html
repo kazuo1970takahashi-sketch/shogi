@@ -952,10 +952,15 @@ function normalizeReportPersistedEmptyable(value,key,fallbackNormalizer){
 //     {ok:true , raw:string} … 読めた
 //     {ok:true , raw:null}   … キーが無い（正常。初回起動など）
 //     {ok:false, raw:null}   … 読み取り自体が失敗（端末が読めない状態）
+//   ★Codex 8巡目 P1（PR #847）: 空文字は「無い」ではなく**中身が空という値がある**状態。
+//   保存が中途半端に終わった端末では '' が残り得るが、これを null に丸めると
+//   「そもそも設定していない端末」と誤判定して、書き出しの中止判定を素通りする。
+//   raw は getItem の戻り値をそのまま返し、'' の解釈は各キーの読み手に委ねる
+//   （クラブ既定なら JSON として解釈できず 'corrupt' に落ちる）。
 function readStorageRaw(key){
   var v=null;
   try{v=localStorage.getItem(key);}catch(e){return {ok:false,raw:null};}
-  return {ok:true,raw:(typeof v==='string'&&v!=='')?v:null};
+  return {ok:true,raw:(typeof v==='string')?v:null};
 }
 // クラブ既定の読み取り。status は4値:
 //   'ok'         … 有効な既定を読めた（profile あり）
@@ -1078,8 +1083,10 @@ function revertStorageRaw(key,prevRaw){
   var cur=null,readable=true;
   try{cur=localStorage.getItem(key);}catch(e){readable=false;}
   if(readable){
+    // ★Codex 8巡目 P1: '' は「無い」ではない。厳密に null と比べる（'' を残したまま
+    //   「元に戻っている」と判定すると、壊れたバイトが居座る）。
     if(typeof prevRaw==='string'){ if(cur===prevRaw)return true; }
-    else if(cur===null||cur==='')return true;
+    else if(cur===null)return true;
   }
   try{
     if(typeof prevRaw==='string')localStorage.setItem(key,prevRaw);
@@ -1088,14 +1095,14 @@ function revertStorageRaw(key,prevRaw){
   var back=null;
   try{back=localStorage.getItem(key);}catch(e){return false;}
   if(typeof prevRaw==='string')return back===prevRaw;
-  return back===null||back==='';
+  return back===null;
 }
 function writeStorageAtomic(key,value,validate){
   var prevRaw=null;
   // 書く前の姿を読めない端末では触らない（戻せる保証が無いまま壊す方が悪い）。
   try{prevRaw=localStorage.getItem(key);}catch(e){return 'reverted';}
   // 既に同値なら書かない（無駄な書き込みで容量エラーを踏まない）。
-  if(value===null){ if(prevRaw===null||prevRaw==='')return 'ok'; }
+  if(value===null){ if(prevRaw===null)return 'ok'; }
   else if(prevRaw===value&&(!validate||validate()))return 'ok';
   try{
     if(value===null)localStorage.removeItem(key);
@@ -1110,7 +1117,7 @@ function writeStorageAtomic(key,value,validate){
   //   書いた文字列と byte 同値であることまで照合する。
   var back=null,readOk=true;
   try{back=localStorage.getItem(key);}catch(e){readOk=false;}
-  var good=readOk&&((value===null)?(back===null||back===''):(back===value))&&(!validate||validate());
+  var good=readOk&&((value===null)?(back===null):(back===value))&&(!validate||validate());
   if(good)return 'ok';
   // ★Codex 5巡目 P1: ここが今回の穴だった。読み戻しに失敗した時点で**既に書き込みは走っている**。
   //   そのまま失敗を返すと「保存できませんでした」と言いながら中身は置き換わっている。必ず巻き戻す。
