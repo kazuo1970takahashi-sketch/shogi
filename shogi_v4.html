@@ -368,6 +368,12 @@ body.sb-active{overflow:hidden}
 .sb-mark-lose{color:#b23030}
 .sb-mark-none{color:#bbb}
 .sb-opp{font-size:10px;color:#777;display:block;margin-top:1px}
+/* SCOREBOARD-INPROGRESS-MARKS-001 (#832 作者決定3): 確定前の回戦は「確定値と誤認させない」ため
+   淡色＋点線の下線＋薄い背景で区別する。幹事が回戦を確定すると通常表示に変わる（凡例で明示）。 */
+.sb-cell-live{background:#f4f8fd}
+.sb-mark-live{opacity:0.55;border-bottom:1px dotted currentColor}
+.sb-table thead th.sb-th-live{background:#2E75B6}
+.sb-table thead th.sb-th-live small{display:block;font-weight:400;font-size:10px;opacity:0.9}
 .sb-wins{font-weight:700;color:#1F3864;font-size:15px}
 .sb-metric{color:#555;font-size:12px}
 /* WORLD-STD-ALIGN-001: 氏名=左寄せ/数値(勝・負・B・C)=右寄せ（世界標準の揃え・承認済み挙動変更スライス）。
@@ -15823,12 +15829,22 @@ function sbClassDisplayName(cls){
 //   各ラウンド列は ○（勝ち）/×（負け）/－（未対局）と対戦相手番号（#NN）を表示する。
 //   Codex Should Fix 1: 現場要望「○×の星取表」に合わせ、負けは ● ではなく × で表示する。
 //   氏名・番号はすべて escapeHtml してから描画する（XSS 安全）。
-function buildScoreboardClassTableHtml(cls,sourceState,focusId){
+// SCOREBOARD-INPROGRESS-MARKS-001 (#832・作者決定 2026-08-09):
+//   第4引数 showInProgress=true のときだけ「まだ確定していない回戦」の列を state.pairings から描く。
+//   ★ opt-in にした理由（論点1の裁定）: 呼び出し元は4つあり、うち2つは**保存済み snapshot の閲覧**
+//     （renderHistoryDetail / buildCloudSnapshotScoreboardHtml）。終わった大会の詳細に「進行中」が
+//     恒久表示されるのは嘘になるので、履歴系では出さない。無指定＝従来出力と1バイトも変わらない
+//     （golden も my_view の sha256 pin も無改変で緑）。
+//   ★ live（?live=）と会場閲覧（#scoreboard 系）は renderScoreboard の同一呼び出しを通るので、
+//     作者決定2「経路分岐は作らない」は満たされる。
+//   ★ 作者決定1: ここで描くのは**マークだけ**。勝・負・B・C・順位は calcFinal / computeDisplayRanks
+//     のまま＝確定後にしか動かない（確定前の誤入力が順位を上下させない）。
+function buildScoreboardClassTableHtml(cls,sourceState,focusId,showInProgress){
   // SHOGI-TOUR-HISTORY-STEP1: 後方互換 optional 引数。sourceState 指定時のみ描画データ源を一時的に
   //   差し替える（withSourceState が global state を退避→finally で必ず復元）。引数なし呼び出し＝live
   //   経路の挙動は完全に従来どおり（本体不変＝#213 のふりがな ruby 表示もそのまま維持される）。
   if(sourceState!==undefined&&sourceState!==null&&sourceState!==state){
-    return withSourceState(sourceState,function(){return buildScoreboardClassTableHtml(cls,undefined,focusId);});
+    return withSourceState(sourceState,function(){return buildScoreboardClassTableHtml(cls,undefined,focusId,showInProgress);});
   }
   var players=(state.players&&state.players[cls])||[];
   if(players.length===0)return '';
@@ -15841,11 +15857,18 @@ function buildScoreboardClassTableHtml(cls,sourceState,focusId){
   //   （GOLDEN 不変・sourceState と同じ後方互換）。指定時（null 含む）のみ行タップ属性を付け、
   //   focusId 一致行に sb-row-me を付与する。
   var tap=(focusId!==undefined);
+  // #832: 進行中回戦の 0-based index。条件を満たさないときは -1（＝従来どおり results だけを見る）。
+  //   done のときは pairings が空になる（最終回戦確定後）が、念のため両方で弾く。
+  var livePairings=(state.pairings&&state.pairings[cls])||[];
+  var liveRound=(showInProgress===true&&!done&&livePairings.length>0&&resultsArr.length<rounds)?resultsArr.length:-1;
   var html='<div class="sb-class">';
   html+='<div class="sb-class-h">'+escapeHtml(sbClassDisplayName(cls))+'　<span style="font-weight:400;color:#888;font-size:12px">'+(done?'最終結果':'途中経過')+'</span></div>';
   html+='<div class="sb-scroll"><table class="sb-table"><thead><tr>';
   html+='<th class="sb-col-rank">順位</th><th class="sb-col-name">氏名</th>';
-  for(var r=1;r<=rounds;r++)html+='<th>'+r+'回戦</th>';
+  for(var r=1;r<=rounds;r++){
+    // #832 作者決定3: 確定前の列は見出しでも区別する（「N回戦 対局中」相当）。
+    html+=(r-1===liveRound)?('<th class="sb-th-live">'+r+'回戦<small>進行中</small></th>'):('<th>'+r+'回戦</th>');
+  }
   html+='<th>勝</th><th>負</th><th>B</th><th>C</th></tr></thead><tbody>';
   for(var i=0;i<finals.length;i++){
     var f=finals[i];var rank=ranks[i];
@@ -15856,20 +15879,25 @@ function buildScoreboardClassTableHtml(cls,sourceState,focusId){
     // FURIGANA-VIEW-002: 氏名にルビ（空 yomi は氏名のみ）。No.xx 補助表示は従来どおり維持。
     html+='<td class="sb-col-name">'+playerNameRubyHtml(getName(f.p.id,cls),yomiOf(f.p.id,cls))+'<span style="font-size:10px;color:#999;font-weight:400">　'+escapeHtml('No.'+entryNoOf(cls,f.p.id))+'</span></td>';
     for(var rr=0;rr<rounds;rr++){
-      var round=resultsArr[rr];
+      // #832: 進行中回戦だけ pairings を見る。それ以外の列は従来どおり results のみ。
+      var isLive=(rr===liveRound);
+      var round=isLive?livePairings:resultsArr[rr];
       var cell='<span class="sb-mark sb-mark-none">－</span>';
       if(round){
         var match=null;
-        for(var m=0;m<round.length;m++){if(round[m].p1===f.p.id||round[m].p2===f.p.id){match=round[m];break;}}
+        for(var m=0;m<round.length;m++){if(round[m]&&(round[m].p1===f.p.id||round[m].p2===f.p.id)){match=round[m];break;}}
         if(match){
           var oppId=match.p1===f.p.id?match.p2:match.p1;
           var won=match.winner===f.p.id;
           var markCls=(match.winner==null)?'sb-mark-none':(won?'sb-mark-win':'sb-mark-lose');
           var markStr=(match.winner==null)?'－':(won?'○':'×');
+          // 進行中の未入力は「－（未対局）」ではなく「…（結果待ち）」＝これから入る、と読ませる。
+          if(isLive&&match.winner==null)markStr='…';
+          if(isLive)markCls+=' sb-mark-live';
           cell='<span class="sb-mark '+markCls+'">'+markStr+'</span><span class="sb-opp">'+escapeHtml('#'+entryNoOf(cls,oppId))+'</span>';
         }
       }
-      html+='<td>'+cell+'</td>';
+      html+='<td'+(isLive?' class="sb-cell-live"':'')+'>'+cell+'</td>';
     }
     html+='<td class="sb-wins">'+f.A+'</td>';
     html+='<td class="sb-metric">'+(f.played-f.A)+'</td>';
@@ -15878,7 +15906,11 @@ function buildScoreboardClassTableHtml(cls,sourceState,focusId){
     html+='</tr>';
   }
   html+='</tbody></table></div>';
-  html+='<div class="sb-legend">○=勝ち／×=負け／－=未対局　・　#NN=対戦相手の番号　・　勝・負=勝敗数　・　B=対戦相手の勝数合計／C=勝った相手の勝数合計（順位判定の主要指標）'+(tap?'　・　行タップ＝その対局者の個人ビュー':'')+'</div>';
+  // #832 作者決定3: 進行中列を出したときだけ凡例を足す（出していないときの文言は従来と同一）。
+  var liveLegend=(liveRound>=0)
+    ? '　・　<span class="sb-mark sb-mark-win sb-mark-live">○</span><span class="sb-mark sb-mark-lose sb-mark-live">×</span>=まだ確定していない回戦（幹事が確定すると通常の表示になります）／…=結果待ち　・　勝・負・B・C・順位は回戦が確定してから動きます'
+    : '';
+  html+='<div class="sb-legend">○=勝ち／×=負け／－=未対局　・　#NN=対戦相手の番号　・　勝・負=勝敗数　・　B=対戦相手の勝数合計／C=勝った相手の勝数合計（順位判定の主要指標）'+liveLegend+(tap?'　・　行タップ＝その対局者の個人ビュー':'')+'</div>';
   return html+'</div>';
 }
 
@@ -15897,7 +15929,10 @@ function sbFindCurrentMatch(cls,id){
   for(var i=0;i<pa.length;i++){
     var m=pa[i];
     if(!m)continue;
-    if(m.p1===id||m.p2===id)return {oppId:(m.p1===id?m.p2:m.p1),table:i+1};
+    // SCOREBOARD-INPROGRESS-MARKS-001 (#832 論点2): 勝敗が入っていれば won も返す。
+    //   星取表に進行中の○×が出るのに個人ビューだけ「次の対戦」と言い続ける不整合を消すため。
+    //   winner 未入力なら won=null＝従来どおり「次の対戦」。
+    if(m.p1===id||m.p2===id)return {oppId:(m.p1===id?m.p2:m.p1),table:i+1,won:(m.winner==null?null:(m.winner===id))};
   }
   return null;
 }
@@ -15998,9 +16033,17 @@ function buildScoreboardPlayerViewHtml(cls,focusId){
   if(done){
     html+='<div class="sb-next"><div class="sb-next-b">全対局が終了しました（最終結果）</div></div>';
   }else if(cur){
-    html+='<div class="sb-next"><div class="sb-next-h">次の対戦・'+(resultsArr.length+1)+'回戦</div>'
-      +'<div class="sb-next-b">♟ '+cur.table+'卓　'+playerNameRubyHtml(getName(cur.oppId,cls),yomiOf(cur.oppId,cls))
-      +'<span class="sb-fres-no">　'+escapeHtml('No.'+entryNoOf(cls,cur.oppId))+'</span></div></div>';
+    // #832 論点2: 当該卓の勝敗が入っていれば「次の対戦」ではなく進行中の結果を出す（星取表と整合）。
+    //   勝・負・順位は上の sb-pv-stats のまま＝確定後にしか動かない（作者決定1）。
+    var curHead=(cur.won===null)?('次の対戦・'+(resultsArr.length+1)+'回戦')
+                                :((resultsArr.length+1)+'回戦（進行中）');
+    var curMark=(cur.won===null)?''
+      :('<span class="sb-mark '+(cur.won?'sb-mark-win':'sb-mark-lose')+' sb-mark-live">'+(cur.won?'○':'×')+'</span>　');
+    html+='<div class="sb-next"><div class="sb-next-h">'+curHead+'</div>'
+      +'<div class="sb-next-b">'+curMark+'♟ '+cur.table+'卓　'+playerNameRubyHtml(getName(cur.oppId,cls),yomiOf(cur.oppId,cls))
+      +'<span class="sb-fres-no">　'+escapeHtml('No.'+entryNoOf(cls,cur.oppId))+'</span></div>'
+      +(cur.won===null?'':'<div style="font-size:11px;color:#667;margin-top:4px">まだ確定していません。幹事が回戦を確定すると勝敗数と順位に反映されます。</div>')
+      +'</div>';
   }else{
     html+='<div class="sb-next"><div class="sb-next-h">次の対戦</div><div class="sb-next-none">まだ決まっていません</div></div>';
   }
@@ -16244,7 +16287,9 @@ function renderScoreboard(){
     if(!bodyHtml){
       finder=buildScoreboardFinderHtml(activeClasses);
       var shown=(_sbClassFilter==='all')?activeClasses:[_sbClassFilter];
-      for(var s=0;s<shown.length;s++)bodyHtml+=buildScoreboardClassTableHtml(shown[s],undefined,null);
+      // SCOREBOARD-INPROGRESS-MARKS-001 (#832): 閲覧ビュー（live / #scoreboard 系の両方）だけ
+      //   進行中回戦の○×を出す。履歴詳細・クラウド過去大会は第4引数を渡さない＝従来どおり。
+      for(var s=0;s<shown.length;s++)bodyHtml+=buildScoreboardClassTableHtml(shown[s],undefined,null,true);
     }
   }
   view.innerHTML=head+(_sbFocusId?'':tabs)+finder+'<div class="sb-body">'+bodyHtml+'</div>';
