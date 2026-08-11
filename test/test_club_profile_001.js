@@ -290,6 +290,43 @@ function makeMatsumotoState(env){
   assert(sumCss.indexOf('color:#666')>=0, 'P11-7 summary の色は class 側で定義');
 }
 
+// ---- P12: start/end もクラブ既定（CLUB-PROFILE-002・#839 受け入れ基準1） ----
+{
+  const env=loadEnv({});
+  const s=env._getState();
+  s.report.start='09:30'; s.report.end='12:00'; s.report.title='松本支部月例将棋大会';
+  env.saveClubProfile(env.buildClubProfileFromState());
+  env.resetAll();
+  const st=env._getState();
+  assert(st.report.start==='09:30'&&st.report.end==='12:00', 'P12-1 resetAll 後も開始/終了時刻が profile 値（13:00/17:00 に戻らない）');
+  assert(/^(\d{4}-\d{2}-\d{2})?$/.test(st.report.date), 'P12-2 date は profile に載せない（#804 と同じ向き＝前月の実施日を残さない）');
+  // 不正な時刻は保存しない（factory へ）
+  const env2=loadEnv({'shogi_club_profile': JSON.stringify({schema_version:1,report:{start:'25:99',end:'ほげ'},classes:[{id:'A',name:'A'},{id:'B',name:'B'}],rounds:4})});
+  const st2=env2._getState();
+  assert(st2.report.start===''&&st2.report.end==='', 'P12-3 不正な時刻文字列は profile に採用しない');
+}
+
+// ---- P13: 空欄をクラブ既定として保存できる（CLUB-PROFILE-002・#839 論点6・作者決定） ----
+{
+  const env=loadEnv({});
+  const s=env._getState();
+  s.report.fax=''; s.report.accountingNote=''; s.report.officeName='松本支部事務局';
+  const prof=env.buildClubProfileFromState();
+  assert(prof.report.fax===''&&prof.report.accountingNote==='', 'P13-1 空欄が「明示的な空」として profile に保存される');
+  env.saveClubProfile(prof);
+  env.resetAll();
+  const st=env._getState();
+  assert(st.report.fax===''&&st.report.accountingNote==='', 'P13-2 resetAll 後も空欄のまま（factory 値が復活しない）');
+  assert(st.report.officeName==='松本支部事務局', 'P13-3 空にしていないキーは通常どおり保持');
+  // ★歴史保護: 正規化系（normalizeState）は空宣言に影響されず factory のまま
+  const ns=env.normalizeState({players:{A:[],B:[]},results:{A:[],B:[]},pairings:{A:[],B:[]}});
+  assert(ns.report.accountingNote==='※役員会で会計長へ収支報告書として提出ください。', 'P13-4 normalizeState は空宣言に影響されず factory（過去 snapshot の歴史保護）');
+  // 帳票は空の行を畳む（構造 pin）
+  const brm=RAW.match(/function buildReportFooterHtml\(\)[\s\S]*?\n  \}/);
+  const brBody=brm?brm[0]:'';
+  assert(brBody.indexOf("officeName!==''")>=0&&brBody.indexOf("accountingNote!==''")>=0, 'P13-5 帳票 footer は空の事務局名・会計提出文の行を出さない');
+}
+
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----
 {
   const m=RAW.match(/function resetAll\(\)[\s\S]*?\n\}\n/);
