@@ -957,15 +957,25 @@ function readStorageRaw(key){
   try{v=localStorage.getItem(key);}catch(e){return {ok:false,raw:null};}
   return {ok:true,raw:(typeof v==='string'&&v!=='')?v:null};
 }
-// クラブ既定の読み取り（3値版）。profile は「有効な既定」か null。
-//   ok:false（読めない）と ok:true/profile:null（無い・壊れている）を呼び出し側が区別できる。
+// クラブ既定の読み取り。status は4値:
+//   'ok'         … 有効な既定を読めた（profile あり）
+//   'absent'     … そもそも保存されていない（正常。初回起動など）
+//   'unreadable' … 読み取り自体が失敗（端末が読めない状態）
+//   'corrupt'    … バイトはあるが JSON として壊れている / 既定として無効
+//   ★Codex 7巡目 P1（PR #847）: 6巡目で 'unreadable' だけを区別したが、指摘文は
+//   「読み取りが失敗する **か、保存されたバイトを読み解けない**」の両方を挙げていた。
+//   'corrupt' を 'absent' と同一視すると、既定が壊れている端末で「設定の入っていない
+//   バックアップ」を成功として書き出してしまう（欠落に気づくのは移行先で復元した後）。
+//   ok は「既定として使える状態か」＝'ok' か 'absent' のときだけ true。
 function readClubProfileResult(){
   var r=readStorageRaw(CLUB_PROFILE_KEY);
-  if(!r.ok)return {ok:false,profile:null};
-  if(r.raw===null)return {ok:true,profile:null};
+  if(!r.ok)return {ok:false,status:'unreadable',profile:null};
+  if(r.raw===null)return {ok:true,status:'absent',profile:null};
   var p=null;
-  try{p=JSON.parse(r.raw);}catch(e){return {ok:true,profile:null};}
-  return {ok:true,profile:sanitizeClubProfileObject(p)};
+  try{p=JSON.parse(r.raw);}catch(e){return {ok:false,status:'corrupt',profile:null};}
+  var clean=sanitizeClubProfileObject(p);
+  if(!clean)return {ok:false,status:'corrupt',profile:null};
+  return {ok:true,status:'ok',profile:clean};
 }
 // 従来どおり「有効な既定 or null」を返す薄い入口。起動時のように
 //   「読めない＝既定なし＝factory」で正しく fail-soft できる経路だけがこれを使う。
@@ -13581,9 +13591,13 @@ function exportTournamentBackup(){
     // ★Codex 6巡目 P1: 「読めなかった」を「クラブ既定が無い」と同一視すると、設定の入っていない
     //   バックアップを「保存しました」と言って渡すことになる。機種変更時に設定だけが失われるので、
     //   読めない場合は書き出さずに中止する（不完全なファイルを成功として残さない）。
+    // ★Codex 7巡目 P1: 中止するのは 'unreadable'（読めない）と 'corrupt'（壊れている）の両方。
+    //   'absent'（そもそも設定していない）は従来どおり club_profile:null で正常に書き出す。
     var cp=readClubProfileResult();
     if(!cp.ok){
-      alert('バックアップの保存に失敗しました。\n\nこの端末に保存されているクラブ既定（大会名・会場・クラス構成など）を読み取れませんでした。\n\n不完全なバックアップを作らないため、保存を中止しました。通常のウィンドウで開き直してから、もう一度お試しください。');
+      alert(cp.status==='corrupt'
+        ? 'バックアップの保存に失敗しました。\n\nこの端末に保存されているクラブ既定（大会名・会場・クラス構成など）の内容が壊れており、読み解けませんでした。\n\n設定の欠けたバックアップを作らないため、保存を中止しました。報告書の設定を確認して「この設定をクラブの既定として保存」をやり直してから、もう一度お試しください。'
+        : 'バックアップの保存に失敗しました。\n\nこの端末に保存されているクラブ既定（大会名・会場・クラス構成など）を読み取れませんでした。\n\n不完全なバックアップを作らないため、保存を中止しました。通常のウィンドウで開き直してから、もう一度お試しください。');
       return false;
     }
     var json=serializeTournamentBackup(state,now.toISOString(),cp.profile);

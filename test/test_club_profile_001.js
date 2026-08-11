@@ -694,6 +694,54 @@ function makeMatsumotoState(env){
   assert(eb.indexOf('if(!cp.ok)')<eb.indexOf('new Blob'), 'P20-18 中止判定はファイル生成より前');
 }
 
+// ---- P21: 「壊れている」を「無い」と同一視しない（Codex 7巡目 P1） ----
+//   6巡目の対応は「読み取りが失敗する」だけを見ており、指摘文のもう半分
+//   「保存されたバイトを読み解けない」を取りこぼしていた。4値で区別する。
+{
+  const env=loadEnv({});
+  let r=env.readClubProfileResult();
+  assert(r.ok===true&&r.status==='absent'&&r.profile===null, 'P21-1 保存されていなければ absent（正常）');
+  makeMatsumotoState(env);
+  assert(env.saveClubProfile(env.buildClubProfileFromState())===true, 'P21-2 前提: 既定を保存できる');
+  r=env.readClubProfileResult();
+  assert(r.ok===true&&r.status==='ok'&&r.profile.report.title==='松本支部月例将棋大会', 'P21-3 読めれば ok');
+  // JSON として壊れている
+  env._ls.setItem(env.CLUB_PROFILE_KEY,'{壊れた JSON');
+  r=env.readClubProfileResult();
+  assert(r.ok===false&&r.status==='corrupt'&&r.profile===null, 'P21-4 ★JSON が壊れていれば corrupt（absent と区別する）');
+  // JSON だが既定として無効（schema_version 不正）
+  env._ls.setItem(env.CLUB_PROFILE_KEY,JSON.stringify({schema_version:99,report:{title:'x'}}));
+  r=env.readClubProfileResult();
+  assert(r.ok===false&&r.status==='corrupt', 'P21-5 既定として無効でも corrupt');
+  // 読み取り自体が失敗
+  const realGet=env._ls.getItem.bind(env._ls);
+  env._ls.getItem=function(k){ if(k===env.CLUB_PROFILE_KEY)throw new Error('SecurityError(mock)'); return realGet(k); };
+  r=env.readClubProfileResult();
+  env._ls.getItem=realGet;
+  assert(r.ok===false&&r.status==='unreadable', 'P21-6 読めなければ unreadable');
+}
+{
+  // 起動時は corrupt でも factory へ fail-soft（大会運営を止めない）＝従来挙動を維持
+  const store={};
+  store['shogi_club_profile']='{壊れた JSON';
+  const env=loadEnv(store);
+  assert(env.readClubProfileRaw()===null, 'P21-7 corrupt でも readClubProfileRaw は null（従来どおり）');
+  env.resetAll();
+  assert(env._getState().report.title==='沼津支部月例将棋大会', 'P21-8 corrupt な既定でも全リセットは factory で動く');
+}
+{
+  // 書き出しの中止条件は unreadable と corrupt の両方
+  const ex3=RAW.match(/function exportTournamentBackup\(\)[\s\S]*?\n\}/);
+  const eb3=ex3?ex3[0]:'';
+  assert(/cp\.status===['"]corrupt['"]/.test(eb3), 'P21-9 ★corrupt 用の文言がある（読めない場合と原因が違うため）');
+  assert(eb3.indexOf('内容が壊れており')>=0&&eb3.indexOf('設定の欠けたバックアップを作らないため')>=0, 'P21-10 corrupt の理由と対処を伝える');
+  // absent は中止しない（設定していない端末では従来どおり書き出せる）
+  const rr=RAW.match(/function readClubProfileResult\(\)[\s\S]*?\n\}/);
+  const rb=rr?rr[0]:'';
+  assert(/status:'absent'[\s\S]*?ok:true|ok:true,status:'absent'/.test(rb), 'P21-11 absent は ok:true（中止しない）');
+  assert(/ok:false,status:'corrupt'/.test(rb)&&/ok:false,status:'unreadable'/.test(rb), 'P21-12 corrupt と unreadable は ok:false');
+}
+
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----
 {
   const m=RAW.match(/function resetAll\(\)[\s\S]*?\n\}\n/);
