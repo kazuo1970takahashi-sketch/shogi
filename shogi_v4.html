@@ -10093,6 +10093,29 @@ function evaluatePairingQuality(pairings, results, players){
   var forcedMixed=Math.ceil(oddGroupCount/2)+unmatchableEvenGroupCount;
   var avoidableWinDiffPairs=Math.max(0,currentMixedCount-forcedMixed);
 
+  // 4b. WARNBANNER-846-UNAVOIDABLE-REMATCH-001（#846 の小片・表示のみ）:
+  //   母集団（＝現回戦の組み合わせに実際に入っている選手）の全ペアが対戦済みなら、
+  //   どう組み替えても再戦は減らない（どの完全マッチングでも再戦件数＝母集団/2 で固定）。
+  //   運営が「組み合わせを再生成」を繰り返しても消えない警告なので、その旨を出すための旗。
+  //   ★ ここは O(n^2) の完全グラフ判定「だけ」を行う。最小再戦数の一般解（マッチング）は
+  //     求めない。true のときは常に真＝偽陽性を出さない側に倒し、取りこぼし（完全グラフでは
+  //     ないが再戦0が不能な形）は false のまま従来表示にする。一般解は設計B2（重み付き
+  //     Blossom）側の課題であり、この小片では扱わない。
+  //   ★ 母集団は safePairings に登場する選手のみ。待機者・棄権者は数えない
+  //     （state.players と pairings の食い違いをこの判定に持ち込まないため）。
+  var pairedList=[];
+  for(var pk in pairedIds){ if(pairedIds.hasOwnProperty(pk))pairedList.push(pk); }
+  var rematchUnavoidable=false;
+  if(pairedList.length>=2){
+    rematchUnavoidable=true;
+    for(var ai=0;ai<pairedList.length&&rematchUnavoidable;ai++){
+      var histA=history[pairedList[ai]];
+      for(var bi=ai+1;bi<pairedList.length;bi++){
+        if(!(histA&&histA[pairedList[bi]])){ rematchUnavoidable=false; break; }
+      }
+    }
+  }
+
   // 5. ラベル付与（§2）
   var warningHit=(rematchCount>0)||(avoidableWinDiffPairs>0)||(maxWinDiff>=2);
   for(var di=0;di<pairDetails.length;di++){
@@ -10116,6 +10139,7 @@ function evaluatePairingQuality(pairings, results, players){
     sameScorePairCount:sameScorePairCount,
     rematchCount:rematchCount,
     avoidableWinDiffPairs:avoidableWinDiffPairs,
+    rematchUnavoidable:rematchUnavoidable,
     warningHit:warningHit,
     pairDetails:pairDetails
   };
@@ -10687,7 +10711,11 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
   var quality=evaluatePairingQuality(state.pairings[cls],state.results[cls],state.players[cls]);
   if(quality.warningHit){
     var warns=[];
-    if(quality.rematchCount>0)warns.push('再戦 '+quality.rematchCount+'件');
+    // WARNBANNER-846-UNAVOIDABLE-REMATCH-001: 全員と対戦済みで再戦が数学的に不可避のときは、
+    //   「組み直せば消える」と読めてしまう文言を避け、消せないことを明示する（表示のみ）。
+    if(quality.rematchCount>0)warns.push(quality.rematchUnavoidable
+      ?'再戦 '+quality.rematchCount+'件（全員と対戦済みのため避けられません）'
+      :'再戦 '+quality.rematchCount+'件');
     if(quality.avoidableWinDiffPairs>0)warns.push('同勝数で組めた可能性のある異勝数ペア '+quality.avoidableWinDiffPairs+'件');
     if(quality.maxWinDiff>=2)warns.push('勝数差 '+quality.maxWinDiff+' のペアあり');
     // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT (PR #100 Phase 1):

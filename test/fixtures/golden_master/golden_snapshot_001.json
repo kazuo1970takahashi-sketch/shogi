@@ -228,6 +228,7 @@
     "maxWinDiff": 0,
     "pairDetails": [],
     "rematchCount": 0,
+    "rematchUnavoidable": false,
     "sameScorePairCount": 0,
     "totalWinDiff": 0,
     "warningHit": false
@@ -263,6 +264,7 @@
       }
     ],
     "rematchCount": 2,
+    "rematchUnavoidable": false,
     "sameScorePairCount": 0,
     "totalWinDiff": 2,
     "warningHit": true
