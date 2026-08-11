@@ -370,6 +370,8 @@ body.sb-active{overflow:hidden}
 .sb-opp{font-size:10px;color:#777;display:block;margin-top:1px}
 /* SCOREBOARD-INPROGRESS-MARKS-001 (#832 作者決定3): 確定前の回戦は「確定値と誤認させない」ため
    淡色＋点線の下線＋薄い背景で区別する。幹事が回戦を確定すると通常表示に変わる（凡例で明示）。 */
+/* LIVE-QR-SHOW-001: 全画面QRを出している間は背面をスクロールさせない（#scoreboard の sb-active と同方針・別クラス）。 */
+body.live-qr-open{overflow:hidden}
 .sb-cell-live{background:#f4f8fd}
 .sb-mark-live{opacity:0.55;border-bottom:1px dotted currentColor}
 .sb-table thead th.sb-th-live{background:#2E75B6}
@@ -493,7 +495,25 @@ body.sb-active{overflow:hidden}
 <div id="live-bar" class="no-print" role="status" aria-live="polite">
   <span class="live-bar-badge">📡 配信中</span>
   <span id="live-bar-status"></span>
+  <!-- LIVE-QR-SHOW-001 (作者運用 2026-08-11): 大会の最中に「途中経過を知りたい」人が受付に来る。
+       その場でQRを読ませるので、最終結果タブまで移動せずに **どのタブからでも1タップ** で出せる必要がある。
+       掲示・印刷用のQRは従来どおり最終結果タブ側に残す（用途が別）。 -->
+  <button type="button" class="btn-sm no-print" id="liveBarQrBtn" style="min-height:32px;background:#2b6cb0;border:1px solid #2b6cb0;color:#fff">📱 QRを見せる</button>
   <button type="button" class="btn-sm no-print" id="liveBarStopBtn" style="min-height:32px;background:#fff;border:1px solid #2b6cb0;color:#2b6cb0">⏹ 配信を停止</button>
+</div>
+<!-- LIVE-QR-SHOW-001: 受付で相手に読ませるためのQR全画面（既定非表示・no-print・表示のみ）。
+     #pp-fullscreen と同型の fixed overlay。QR は画面の短辺に合わせて大きく出す（机越しでも読める）。
+     閉じると元の画面にそのまま戻る（運営操作は何も起きない）。 -->
+<div id="live-qr-fullscreen" class="no-print" aria-hidden="true" role="dialog" aria-modal="true" aria-label="配信QRコード" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#fff;z-index:9600;overflow-y:auto;-webkit-overflow-scrolling:touch">
+  <div style="position:sticky;top:0;z-index:5;background:#1F3864;color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px">
+    <span style="font-size:15px;font-weight:600">📱 スマホのカメラで読み取ってください</span>
+    <button type="button" class="btn-sm" id="liveQrFsCloseBtn" style="background:#fff;color:#1F3864;min-height:36px;white-space:nowrap;flex-shrink:0">✕ 閉じる</button>
+  </div>
+  <div style="padding:16px 14px 40px;text-align:center">
+    <div id="liveQrFs" style="margin:0 auto;line-height:0"></div>
+    <div style="font-size:14px;color:#1F3864;margin-top:14px;font-weight:600">順位・星取・手合せが見られます</div>
+    <div id="liveQrFsUrl" style="font-size:11px;color:#777;word-break:break-all;margin-top:8px"></div>
+  </div>
 </div>
 <!-- BACKUP-NUDGE (当日第2弾⑫): 節目（大会開始/クラス完了/全終了）で「今ひかえますか？」を非ブロッキングで促す。既定非表示・あとで可・端末事故の全損防止。 -->
 <div id="backup-nudge" class="no-print" role="status" aria-live="polite" style="display:none;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#faeeda;border:1px solid #EF9F27;color:#633806;padding:10px 14px;margin:0 12px 0;border-radius:0 0 8px 8px;font-size:13px">
@@ -762,12 +782,18 @@ body.sb-active{overflow:hidden}
         <button type="button" id="liveToggleBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">📡 ライブ配信を開始</button>
       </div>
       <div id="liveStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
-      <div id="liveQrBox" style="display:none;margin-top:8px;padding:10px;border:1px dashed #2b6cb0;border-radius:8px;background:#fff;text-align:center">
+      <!-- LIVE-QR-SHOW-001 (#832 の続き・作者報告 2026-08-11): 配信を開始すると、このボックスが開いて
+           下の順位表（途中経過）を 335〜393px 押し下げ、スマホでは初期表示から完全に外していた（実測）。
+           掲示・印刷用の QR なので常時開いている必要はない＝<details> に格納して既定は閉じる。
+           受付で相手に読ませる用途は配信中の帯の「📱 QRを見せる」（全画面）で満たす。
+           要素 id / bind / 文言はすべて不変（div → details の置換と summary の追加だけ）。 -->
+      <details id="liveQrBox" style="display:none;margin-top:8px;padding:10px;border:1px dashed #2b6cb0;border-radius:8px;background:#fff;text-align:center">
+        <summary class="club-profile-summary" style="justify-content:center">▸ QRコード・配信URL（印刷して会場に掲示する用）</summary>
         <div id="liveQr" style="margin:0 auto"></div>
         <div id="liveUrlText" style="font-size:12px;word-break:break-all;margin-top:6px;color:#333"></div>
         <button type="button" id="liveCopyUrlBtn" class="btn-sm" style="margin-top:6px;border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">URLをコピー</button>
         <div style="font-size:11px;color:#777;margin-top:6px">このQRを印刷して会場に掲示してください。受付タブレット（キオスク）はURL末尾に <code>&amp;kiosk=1</code> を付けて開きます（無操作60秒で星取表へ自動リセット）。</div>
-      </div>
+      </details>
     </div>
     <!-- HELP-UX-004 (#341): 順位タブの迷子防止ヘルプ。#309/#323 のモーダル三層を流用し topic 追加のみ。
          順位表は per-class 動的描画（buildResultsClassHtml=golden 対象）のため、静的アンカーをここに置き
@@ -15146,6 +15172,16 @@ function bindReportEvents(){
     var st=document.getElementById('liveStatus');
     liveToggleBroadcastUI(function(msg){ applyCloudStatus(st,msg); }).then(function(){ liveRefreshToggleUI(); });
   });
+  // LIVE-QR-SHOW-001: 配信中バーの「📱 QRを見せる」→ 全画面QR（どのタブからでも1タップ）。
+  //   ✕ と Esc で閉じる。閉じるだけで運営状態は何も変わらない。
+  var liveBarQrBtn=document.getElementById('liveBarQrBtn');
+  if(liveBarQrBtn)liveBarQrBtn.addEventListener('click',function(){liveShowQrFullscreen();});
+  var liveQrFsCloseBtn=document.getElementById('liveQrFsCloseBtn');
+  if(liveQrFsCloseBtn)liveQrFsCloseBtn.addEventListener('click',function(){liveHideQrFullscreen();});
+  document.addEventListener('keydown',function(e){
+    if(!e)return;
+    if((e.key==='Escape'||e.key==='Esc')&&liveQrFullscreenIsOpen())liveHideQrFullscreen();
+  });
   // 配信中バー（静的・id=liveBarStopBtn）の停止 → liveStopBroadcastUI（結果は #liveStatus と共通）。
   var liveBarStopBtn=document.getElementById('liveBarStopBtn');
   if(liveBarStopBtn)liveBarStopBtn.addEventListener('click',function(){
@@ -15809,6 +15845,74 @@ function liveHideQr(){
   if(qrEl)qrEl.innerHTML='';
   var urlEl=document.getElementById('liveUrlText');
   if(urlEl)urlEl.textContent='';
+  liveHideQrFullscreen();   // LIVE-QR-SHOW-001: 配信停止で全画面QRも閉じる（古いURLを見せ続けない）
+}
+
+// ============================================================
+// LIVE-QR-SHOW-001（作者運用 2026-08-11）: 受付でその場で読ませるためのQR全画面。
+//   背景: 紙の対局表をやめたため、大会の最中に「途中経過を知りたい」人が受付に来る。
+//   そのときに初めてQRを読ませる運用なので、(1) どのタブからでも1タップで出せること
+//   (2) 机越しに相手のスマホで読める大きさであること が要る。最終結果タブの QR は
+//   「印刷して掲示する」用途で、220px 固定・タブ移動が要るため、この用途には合わない。
+//   表示のみ。通信もしないし state も触らない（閉じれば元の画面にそのまま戻る）。
+// ============================================================
+function liveShowQrFullscreen(){
+  var ov=document.getElementById('live-qr-fullscreen');
+  if(!ov)return false;
+  if(!liveIsActive())return false;              // 配信していないときは古い/無効なURLを見せない
+  var url=liveViewerUrl(_liveSlug);
+  var urlEl=document.getElementById('liveQrFsUrl');
+  if(urlEl)urlEl.textContent=url;
+  var qrEl=document.getElementById('liveQrFs');
+  if(qrEl){
+    qrEl.innerHTML='';
+    // 掲示用（liveShowQr）と同じ遅延ロード経路を使う。ライブラリが未ロードでも、
+    //   ロード完了後に描き直す（fail-soft: 最後まで駄目なら下のURLを共有してもらう）。
+    function drawFs(){
+      try{
+        if(typeof window!=='undefined'&&typeof window.qrcode==='function'){
+          var qr=window.qrcode(0,'M');
+          qr.addData(url);
+          qr.make();
+          qrEl.innerHTML=qr.createSvgTag({cellSize:4,margin:4,scalable:true});
+          var svg=qrEl.querySelector?qrEl.querySelector('svg'):null;
+          // 掲示用の 220px 固定と違い、画面の短辺に合わせて大きく出す（受付で相手に読ませるため）。
+          if(svg&&svg.style){svg.style.width='min(86vw,58vh)';svg.style.height='min(86vw,58vh)';}
+          return true;
+        }
+      }catch(e){}
+      return false;
+    }
+    if(!drawFs()){
+      qrEl.textContent='QRを準備しています…';
+      try{
+        var sc=document.createElement('script');
+        sc.src='https://cdn.jsdelivr.net/npm/qrcode-generator@1.5.0/qrcode.js';
+        sc.integrity='sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k';
+        sc.crossOrigin='anonymous';
+        sc.onload=function(){if(!drawFs())qrEl.textContent='QRを表示できませんでした。下のURLを読んでもらってください。';};
+        sc.onerror=function(){qrEl.textContent='QRを表示できませんでした。下のURLを読んでもらってください。';};
+        document.head.appendChild(sc);
+      }catch(e2){qrEl.textContent='QRを表示できませんでした。下のURLを読んでもらってください。';}
+    }
+  }
+  ov.style.display='block';
+  if(ov.setAttribute)ov.setAttribute('aria-hidden','false');
+  if(document.body&&document.body.classList)document.body.classList.add('live-qr-open');
+  var cb=document.getElementById('liveQrFsCloseBtn');
+  if(cb&&cb.focus){try{cb.focus();}catch(eF){}}
+  return true;
+}
+function liveHideQrFullscreen(){
+  var ov=document.getElementById('live-qr-fullscreen');
+  if(!ov)return;
+  ov.style.display='none';
+  if(ov.setAttribute)ov.setAttribute('aria-hidden','true');
+  if(document.body&&document.body.classList)document.body.classList.remove('live-qr-open');
+}
+function liveQrFullscreenIsOpen(){
+  var ov=document.getElementById('live-qr-fullscreen');
+  return !!(ov&&ov.style&&ov.style.display==='block');
 }
 // 配信開始（§4.3①）: 既存クラウド経路（loadCloudDeps→getSession）で authenticated client を作り start_live_session を呼ぶ。
 function liveStartBroadcastUI(setStatus){
