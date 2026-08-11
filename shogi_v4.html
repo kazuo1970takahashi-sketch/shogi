@@ -327,6 +327,10 @@ body.sb-active{overflow:hidden}
 /* LIVE-MOBILE-SCOREBOARD-001 §1: 最終更新時刻（閲覧ビューが state を最後に読み込んだ時刻）。 */
 .sb-updated{font-size:11px;opacity:0.92;margin-top:3px;font-variant-numeric:tabular-nums}
 /* Codex Must Fix 1: 「運営画面へ」戻りボタン(.sb-back)は read-only 徹底のため廃止（CSS も削除）。 */
+/* LIVE-ORGANIZER-RETURN-001 (#833 作者決定 2026-08-11): #712 / #751 と同型の意図的更新。
+   read-only 原則（参加者を運営UIに到達させない）は維持したまま、運営画面をこのタブで描いた
+   実績がある文脈に限って復帰導線を出す。参加者・据置き掲示には描画されない（sbCanReturnToOrganizer）。 */
+.sb-org-return{position:fixed;right:12px;bottom:12px;z-index:7;padding:10px 16px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;border-radius:22px;font-size:13px;font-family:inherit;cursor:pointer;min-height:44px;box-shadow:0 2px 8px rgba(0,0,0,0.18)}
 /* SB-CLOSE-OPENER-001 (#712 作者決定 2026-07-09): 運営タブの window.open から開かれたタブ限定の
    「✕ 閉じる」（window.close() のみ・運営画面へのナビゲーションではない＝Must Fix 1 の原則は不変）。
    URL 直接アクセス（参加者共有・live・キオスク）では opener が無く描画されない。
@@ -16038,6 +16042,62 @@ function sbBindCloseBtn(view){
   });
 }
 
+// ============================================================
+// LIVE-ORGANIZER-RETURN-001 (#833・作者決定 2026-08-11): 閲覧専用ビュー → 運営画面の復帰導線。
+//   背景: 配信URL / QR / #scoreboard を運営端末の同じタブで開くと、閲覧専用ビューに切り替わって
+//   運営画面へ戻る手段が画面上に無い（#712 の Codex Must Fix 1 で exitScoreboardRoute を意図的に
+//   廃止したため）。当日、幹事が「順位表が見えなくなった」と詰まった経路。
+//
+//   ★ read-only 原則は維持する。参加者を運営UIに到達させないために、述語を2条件の AND にした:
+//     (1) このタブで運営画面を実際に描いた実績がある（sessionStorage・タブ単位）
+//     (2) window.opener が無い（別タブとして開かれた文脈ではない）
+//
+//   なぜ localStorage ではなく sessionStorage か（実測・2026-08-11 Chromium）:
+//     - `resetAll` は localStorage[STORAGE_KEY] を removeItem して再 save しない。キー有無を述語に
+//       すると「全リセット直後に配信を確認する」という典型的なタイミングで導線が出ない。
+//     - 運営アプリを一度でも操作した端末（お下がり・家族共有）では、参加者としての閲覧でも出てしまう。
+//     sessionStorage はタブ単位なので、どちらも構造的に起きない。
+//
+//   なぜ (2) が要るか（実測）:
+//     sessionStorage は window.open で開いた子タブに **コピーされる**（実測値 "1"）。
+//     「📱スマホ星取表」で開いた据置き用タブは opener を持つので、(2) が無いと観客の前に導線が出る。
+//     `sbIsKioskMode` は live ルート限定（先頭で return false）なので kiosk フラグでは塞げない。
+//
+//   対象外（既知・issue #833 のスコープ注記どおり）: QR を別ブラウザのカメラで読んだ場合は
+//   運営文脈が遷移していないため導線は出ない。その場合は元のブラウザに運営画面が残っている。
+//
+//   遷移は location.pathname のみ（search と hash を落とす）＝ applyScoreboardRoute の else 分岐に入る。
+//   新規レンダラ・新規通信・保存スキーマ変更なし。
+// ============================================================
+var SB_ORG_CTX_KEY=STORAGE_KEY+'_org_ctx';
+function sbMarkOrganizerContext(){
+  try{sessionStorage.setItem(SB_ORG_CTX_KEY,'1');}catch(e){}
+}
+function sbCanReturnToOrganizer(){
+  try{
+    if(window.opener&&window.opener!==window)return false;
+    return sessionStorage.getItem(SB_ORG_CTX_KEY)==='1';
+  }catch(e){return false;}
+}
+// 閲覧ビューの末尾に復帰ボタンを1つだけ置く（idempotent＝再描画のたびに張り替える）。
+//   到達点は本ボタンのみ。renderScoreboard の外に別の運営導線は足さない（受け入れ基準6）。
+function sbAppendOrganizerReturn(view){
+  if(!view||!view.querySelector)return;
+  var old=view.querySelector('#sb-org-return-btn');
+  if(old&&old.parentNode)old.parentNode.removeChild(old);
+  if(!sbCanReturnToOrganizer())return;
+  var btn=document.createElement('button');
+  btn.type='button';
+  btn.id='sb-org-return-btn';
+  btn.className='sb-org-return no-print';
+  btn.textContent='▶ 運営画面へ戻る';
+  if(btn.setAttribute)btn.setAttribute('aria-label','この端末の運営画面へ戻る');
+  btn.addEventListener('click',function(){
+    try{location.href=location.pathname;}catch(e){}
+  });
+  view.appendChild(btn);
+}
+
 function renderScoreboard(){
   var view=document.getElementById('scoreboard-view');
   if(!view)return;
@@ -16052,6 +16112,7 @@ function renderScoreboard(){
       +'</div>';
     var sbReturnEl=view.querySelector?view.querySelector('#sb-live-return-btn'):null;
     if(sbReturnEl)sbReturnEl.addEventListener('click',function(){_sbLiveDone=false;try{sbLiveStartPolling();}catch(eL){}renderScoreboard();});
+    sbAppendOrganizerReturn(view);   // LIVE-ORGANIZER-RETURN-001 (#833): live 終了画面
     return;
   }
   // LIVE-BROADCAST-001 Phase2 §5.2: live ルートは公開スナップショット（state 部分集合）をデータ源に
@@ -16066,6 +16127,7 @@ function renderScoreboard(){
         +(_sbLiveNote?'<br><span style="font-size:12px;color:#b23030">'+escapeHtml(_sbLiveNote)+'</span>':'')
         +'</div>';
       sbBindCloseBtn(view);
+      sbAppendOrganizerReturn(view); // LIVE-ORGANIZER-RETURN-001 (#833): live 待機画面（envelope 未受信）
       return;
     }
     var lt=Date.parse(_sbLiveEnvelope&&_sbLiveEnvelope.updated_at);
@@ -16180,6 +16242,9 @@ function renderScoreboard(){
   // Codex Must Fix 1: 「運営画面へ」戻りボタンは廃止。閲覧ビューには運営画面への導線を束縛しない。
   // SB-CLOSE-OPENER-001 / LIVE-CLOSE-001: ✕ 閉じるの束縛は sbBindCloseBtn（window.close＋live のみ終了画面フォールバック・画面遷移なし）。
   sbBindCloseBtn(view);
+  // LIVE-ORGANIZER-RETURN-001 (#833): 非 live #scoreboard と live（envelope 受信済み）の両方がここを通る。
+  //   live（受信済み）は withSourceState 経由で再入するため、この1箇所で被覆される。
+  sbAppendOrganizerReturn(view);
 }
 
 // hash に応じて閲覧専用ビューと運営画面を切り替える。
@@ -16200,6 +16265,9 @@ function applyScoreboardRoute(){
     try{if(sbIsLiveRoute())sbLiveStartPolling();else sbLiveStopPolling();}catch(eP){}
   }else{
     try{sbLiveStopPolling();}catch(eP2){}
+    // LIVE-ORGANIZER-RETURN-001 (#833): 運営画面をこのタブで描いた実績を記録する（タブ単位）。
+    //   ここが唯一の記録点。閲覧ルート側では絶対に立てない＝参加者のタブには永久に立たない。
+    sbMarkOrganizerContext();
     document.body.classList.remove('sb-active');
     view.style.display='none';
     view.setAttribute('aria-hidden','true');
