@@ -84,6 +84,7 @@ function loadEnv(store){
        buildClubProfileFromState:buildClubProfileFromState, seedClubProfileOnce:seedClubProfileOnce,
        CLUB_PROFILE_KEY:CLUB_PROFILE_KEY,
        verifyWholeStatePersisted:verifyWholeStatePersisted,
+       restoreClubProfileRaw:restoreClubProfileRaw,
        __setAppModalTestResolver:(typeof __setAppModalTestResolver!=='undefined'?__setAppModalTestResolver:undefined),
        _setState:function(s){state=s;}, _getState:function(){return state;},
        _getClubProfileVar:function(){return clubProfile;}
@@ -409,6 +410,48 @@ function makeMatsumotoState(env){
   //   照合の直前に save() を挟まないと「保存できていない」と必ず誤検知する（実装中に踏んだ）。
   assert(/applyLoadedJson\(JSON\.stringify\(res\.state\)\);[\s\S]{0,600}?\n\s*save\(\);\s*\n\s*if\s*\(\s*!verifyWholeStatePersisted\(\)\s*\)/.test(RAW),
     'P16-5 復元後の照合は save() を挟んでから行う（再描画による date 補完で誤検知しない）');
+}
+
+// ---- P17: 大会データの保存に失敗したらクラブ既定を巻き戻す（Codex 3巡目 P1） ----
+{
+  const env=loadEnv({});
+  // 松本を既定として保存 → その生バイトを控える → 別クラブの既定で上書き → 巻き戻す
+  makeMatsumotoState(env);
+  assert(env.saveClubProfile(env.buildClubProfileFromState())===true, 'P17-0 前提: 松本の既定を保存できる');
+  const prevRaw=env._ls.getItem(env.CLUB_PROFILE_KEY);
+  const s=env._getState();
+  s.report.title='甲府支部月例将棋大会';
+  assert(env.saveClubProfile(env.buildClubProfileFromState())===true, 'P17-1 上書き保存が成功する（巻き戻し前の状態を作る）');
+  assert(env.restoreClubProfileRaw(prevRaw)===true, 'P17-2 巻き戻しが成功する');
+  assert(env._ls.getItem(env.CLUB_PROFILE_KEY)===prevRaw, 'P17-3 localStorage の生バイトが復元前と一致する');
+  assert(env._getClubProfileVar().report.title==='松本支部月例将棋大会', 'P17-4 メモリ上の clubProfile も巻き戻る（localStorage と食い違わない）');
+  env.resetAll();
+  assert(env._getState().report.title==='松本支部月例将棋大会', 'P17-5 巻き戻し後の全リセットは元の既定に戻る');
+}
+{
+  // 既定が「無かった」端末では、巻き戻しはキーの削除でなければならない（空文字を書くと壊れた profile が残る）
+  const env=loadEnv({});
+  assert(env._ls.getItem(env.CLUB_PROFILE_KEY)===null||env._ls.getItem(env.CLUB_PROFILE_KEY)===undefined, 'P17-6 前提: 既定が無い端末');
+  makeMatsumotoState(env);
+  assert(env.saveClubProfile(env.buildClubProfileFromState())===true, 'P17-7 前提: 既定を書ける');
+  assert(env.restoreClubProfileRaw(null)===true, 'P17-8 既定が無かった端末では null を渡して巻き戻せる');
+  assert(!env._ls.getItem(env.CLUB_PROFILE_KEY), 'P17-9 キーごと削除される');
+  assert(env._getClubProfileVar()===null, 'P17-10 メモリ上の clubProfile も null に戻る');
+  env.resetAll();
+  assert(env._getState().report.title==='沼津支部月例将棋大会', 'P17-11 巻き戻し後の全リセットは factory に戻る');
+}
+{
+  // 構造 pin: 保存失敗の分岐で「既定の巻き戻し」と「メモリ上の大会データの巻き戻し」を両方やる
+  const im3=RAW.match(/function importTournamentBackupFromText\([\s\S]*?\n\}/);
+  const b3=im3?im3[0]:'';
+  assert(/prevProfileRaw\s*=\s*localStorage\.getItem\(CLUB_PROFILE_KEY\)/.test(b3), 'P17-12 既定を書く前に生バイトを控えている');
+  assert(/prevStateJson\s*=\s*JSON\.stringify\(state\)/.test(b3), 'P17-13 復元前の大会データも控えている');
+  assert(/if\s*\(\s*!verifyWholeStatePersisted\(\)\s*\)\s*\{[\s\S]{0,900}?restoreClubProfileRaw\(prevProfileRaw\)/.test(b3),
+    'P17-14 大会データを保存できなければクラブ既定を巻き戻す');
+  assert(/if\s*\(\s*!verifyWholeStatePersisted\(\)\s*\)\s*\{[\s\S]{0,900}?applyLoadedJson\(prevStateJson\)/.test(b3),
+    'P17-15 メモリ上の state も復元前に戻す（localStorage と食い違わせない）');
+  assert(b3.indexOf('クラブ既定も元に戻したので、この端末は復元前のままです')>=0, 'P17-16 巻き戻せた場合は「元のまま」と伝える');
+  assert(b3.indexOf('クラブ既定を元に戻すこともできませんでした')>=0, 'P17-17 巻き戻せなかった場合は正直に伝える（別文言）');
 }
 
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----

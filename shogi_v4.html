@@ -1048,6 +1048,26 @@ function saveClubProfile(profile){
   clubProfile=readBack;
   return true;
 }
+// ★Codex 3巡目 P1（PR #847）: クラブ既定を「書く前の生バイト」へ差し戻す。
+//   復元は ①既定を書く → ②大会データを書く の2段だが、②が容量不足等で失敗すると
+//   「新しい既定 × 復元前の大会」という、どちらの支部の実態とも違う組み合わせが端末に残る。
+//   ②が失敗したら①を巻き戻して、端末を復元前の状態に揃える。
+//   prevRaw は localStorage.getItem の生の戻り値（既定が無かった場合は null）。
+//   巻き戻しに成功したら true。失敗（書けない・読み戻し不一致）なら false を返し、
+//   呼び出し側は「元に戻せなかった」ことを利用者に明示する。
+function restoreClubProfileRaw(prevRaw){
+  try{
+    if(typeof prevRaw==='string')localStorage.setItem(CLUB_PROFILE_KEY,prevRaw);
+    else localStorage.removeItem(CLUB_PROFILE_KEY);
+  }catch(e){return false;}
+  var back=null;
+  try{back=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){return false;}
+  if(typeof prevRaw==='string'){ if(back!==prevRaw)return false; }
+  else { if(back!==null&&back!=='')return false; }
+  // メモリ側も localStorage と揃える（既定が無かった場合は null＝factory へ fail-soft）。
+  clubProfile=readClubProfileRaw();
+  return true;
+}
 // 現 state からクラブ既定を組み立てる（保存ボタン・初回シード共用）。
 //   報告書欄は input/change の両 bind で state.report に即時同期される（state が SoT）ため
 //   DOM ではなく state から読む。値は既存の normalize helper（実行はランタイム＝定義順の罠なし）。
@@ -13518,6 +13538,12 @@ function importTournamentBackupFromText(text){
       //   プライベートブラウジング・読み戻し不一致）に大会だけ復元すると、
       //   「取り込んだ大会 × この端末の古い既定」という中途半端な組み合わせが残る。
       //   書けなかったら**大会の取り込みに進まず中止**し、理由を明示する（部分適用を作らない）。
+      // ★Codex 3巡目 P1（PR #847）: ②が失敗したときに①を巻き戻せるよう、書く前の姿を控える。
+      //   prevProfileRaw は生バイト（既定が無ければ null）、prevStateJson は復元前の大会データ。
+      var prevProfileRaw=null;
+      try{prevProfileRaw=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){prevProfileRaw=null;}
+      var prevStateJson=null;
+      try{prevStateJson=JSON.stringify(state);}catch(e){prevStateJson=null;}
       var cpRestored=false;
       if(res.club_profile){
         cpRestored=saveClubProfile(res.club_profile);
@@ -13535,7 +13561,14 @@ function importTournamentBackupFromText(text){
       //   state と localStorage を必ずずらすため。ここで再保存しないと常に誤検知になる。
       save();
       if(!verifyWholeStatePersisted()){
-        appAlert('大会データを保存できませんでした。\n\nクラブ既定は復元済みですが、大会データはこの端末に保存されていません（ブラウザの保存領域の制限が原因の可能性があります）。\n\nこのままアプリを閉じると取り込んだ大会は失われます。通常のウィンドウで開き直してから、もう一度お試しください。');
+        // ★Codex 3巡目 P1: ここで止めるだけだと「新しいクラブ既定 × 復元前の大会」が端末に残り、
+        //   リロード後にどちらの支部の実態とも違う組み合わせが現れる。①を巻き戻して端末を
+        //   復元前へ揃える。メモリ上の state も復元前へ戻し、localStorage との食い違いを残さない。
+        var rolledBack=cpRestored?restoreClubProfileRaw(prevProfileRaw):true;
+        if(prevStateJson){ try{applyLoadedJson(prevStateJson);}catch(e){} }
+        appAlert(rolledBack
+          ? '復元を中止しました。\n\n取り込んだ大会データをこの端末に保存できませんでした（ブラウザの保存領域の空きが不足している可能性があります）。\n\nクラブ既定も元に戻したので、この端末は復元前のままです。不要な大会データを整理するか、通常のウィンドウで開き直してから、もう一度お試しください。'
+          : '復元に失敗しました。\n\n大会データを保存できず、クラブ既定を元に戻すこともできませんでした。\n\nこの端末には「バックアップのクラブ既定」と「復元前の大会データ」が残っています。通常のウィンドウで開き直し、もう一度復元をやり直してください。');
         return;
       }
       // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert・復元前の confirm は維持）。
