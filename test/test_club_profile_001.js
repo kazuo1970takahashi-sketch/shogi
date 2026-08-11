@@ -84,7 +84,8 @@ function loadEnv(store){
        buildClubProfileFromState:buildClubProfileFromState, seedClubProfileOnce:seedClubProfileOnce,
        CLUB_PROFILE_KEY:CLUB_PROFILE_KEY,
        verifyWholeStatePersisted:verifyWholeStatePersisted,
-       restoreClubProfileRaw:restoreClubProfileRaw,
+       restoreClubProfileRaw:restoreClubProfileRaw, restoreTournamentRaw:restoreTournamentRaw,
+       buildTournamentBackupObject:buildTournamentBackupObject, serializeTournamentBackup:serializeTournamentBackup,
        __setAppModalTestResolver:(typeof __setAppModalTestResolver!=='undefined'?__setAppModalTestResolver:undefined),
        _setState:function(s){state=s;}, _getState:function(){return state;},
        _getClubProfileVar:function(){return clubProfile;}
@@ -451,7 +452,72 @@ function makeMatsumotoState(env){
   assert(/if\s*\(\s*!verifyWholeStatePersisted\(\)\s*\)\s*\{[\s\S]{0,900}?applyLoadedJson\(prevStateJson\)/.test(b3),
     'P17-15 メモリ上の state も復元前に戻す（localStorage と食い違わせない）');
   assert(b3.indexOf('クラブ既定も元に戻したので、この端末は復元前のままです')>=0, 'P17-16 巻き戻せた場合は「元のまま」と伝える');
-  assert(b3.indexOf('クラブ既定を元に戻すこともできませんでした')>=0, 'P17-17 巻き戻せなかった場合は正直に伝える（別文言）');
+  assert(b3.indexOf('元の状態に戻すこともできませんでした')>=0, 'P17-17 巻き戻せなかった場合は正直に伝える（別文言）');
+}
+
+// ---- P18: 巻き戻し自体の検証と、builder の純粋性（Codex 4巡目 P1×2） ----
+{
+  // 大会データ側の巻き戻しも「書いて読み戻して照合」できたときだけ true
+  const store={};
+  const env=loadEnv(store);
+  env._getState().report.title='復元前の大会';
+  const prevRaw=JSON.stringify(env._getState());
+  env._ls.setItem('shogi_v4',prevRaw);
+  env._getState().report.title='取り込んだ大会';
+  env._ls.setItem('shogi_v4',JSON.stringify(env._getState()));
+  assert(env.restoreTournamentRaw(prevRaw)===true, 'P18-1 復元前の生バイトへ戻せたら true');
+  assert(env._ls.getItem('shogi_v4')===prevRaw, 'P18-2 localStorage が復元前とバイト一致する');
+  assert(env.restoreTournamentRaw(null)===true, 'P18-3 元が「大会データ無し」なら削除で戻せる');
+  assert(!env._ls.getItem('shogi_v4'), 'P18-4 キーごと削除される');
+}
+{
+  // 書き込みが通らない端末では巻き戻し失敗を false で返す（成功と偽らない）
+  const store={};
+  const env=loadEnv(store);
+  const prevRaw=JSON.stringify(env._getState());
+  env._ls.setItem('shogi_v4','取り込んだ別の中身');
+  env._ls.setItem=function(){ throw new Error('QuotaExceeded(mock)'); };
+  assert(env.restoreTournamentRaw(prevRaw)===false, 'P18-5 書き戻せなければ false（「戻したつもり」で成功を報告しない）');
+}
+{
+  // 既に復元前と同じなら書かずに true（取り込みの setItem が throw して旧バイトが残った場合。
+  //   ここで書きに行くと同じ故障で失敗し、実際は無傷なのに「中途半端かもしれない」と誤警告する）
+  const store={};
+  const env=loadEnv(store);
+  const prevRaw=JSON.stringify(env._getState());
+  env._ls.setItem('shogi_v4',prevRaw);
+  env._ls.setItem=function(){ throw new Error('QuotaExceeded(mock)'); };
+  assert(env.restoreTournamentRaw(prevRaw)===true, 'P18-18 既に復元前と同じなら書かずに true（書けない端末でも誤警告しない）');
+  assert(env._ls.getItem('shogi_v4')===prevRaw, 'P18-19 中身は変わらない');
+}
+{
+  const im4=RAW.match(/function importTournamentBackupFromText\([\s\S]*?\n\}/);
+  const b4=im4?im4[0]:'';
+  assert(/prevStateRaw\s*=\s*localStorage\.getItem\(STORAGE_KEY\)/.test(b4), 'P18-6 照合対象として localStorage の生バイトを控えている');
+  assert(/restoreTournamentRaw\(prevStateRaw\)/.test(b4), 'P18-7 大会データ側も巻き戻す');
+  assert(/rolledBack\s*=\s*cpRolledBack\s*&&\s*stRolledBack/.test(b4), 'P18-8 「元のまま」と言えるのは両方戻せたときだけ');
+  assert(b4.indexOf('applyLoadedJson(prevStateJson)')<b4.indexOf('restoreTournamentRaw(prevStateRaw)'),
+    'P18-9 生バイトの書き戻しは applyLoadedJson の後（その save() に上書きされないため）');
+  // builder は localStorage を読まない（pure）。読むのは bind 層だけ。
+  const bb=RAW.match(/function buildTournamentBackupObject\([\s\S]*?\n\}/);
+  const bbody=bb?bb[0]:'';
+  assert(/function buildTournamentBackupObject\(s,nowIso,clubProfile\)/.test(RAW), 'P18-10 clubProfile は引数注入');
+  assert(bbody.indexOf('readClubProfileRaw')<0&&bbody.indexOf('localStorage')<0, 'P18-11 builder は localStorage を読まない（同じ引数なら同じ結果）');
+  assert(/function serializeTournamentBackup\(s,nowIso,clubProfile\)/.test(RAW), 'P18-12 serialize も clubProfile を受け取って渡すだけ');
+  const ex=RAW.match(/function exportTournamentBackup\(\)[\s\S]*?\n\}/);
+  assert(/serializeTournamentBackup\(state,now\.toISOString\(\),readClubProfileRaw\(\)\)/.test(ex?ex[0]:''), 'P18-13 読むのは bind 層（exportTournamentBackup）だけ');
+}
+{
+  // 機能: 渡さなければ club_profile は null（端末の既定が snapshot に紛れ込まない）
+  const env=loadEnv({});
+  makeMatsumotoState(env);
+  assert(env.saveClubProfile(env.buildClubProfileFromState())===true, 'P18-14 前提: 端末に既定がある');
+  const snap=env.normalizeState(JSON.parse(JSON.stringify(env._getState())));
+  const noProf=env.buildTournamentBackupObject(snap,'2026-08-11T00:00:00.000Z');
+  assert(noProf.local.club_profile===null, 'P18-15 渡さなければ club_profile は null（端末の既定を勝手に付けない）');
+  const withProf=env.buildTournamentBackupObject(snap,'2026-08-11T00:00:00.000Z',env.readClubProfileRaw());
+  assert(withProf.local.club_profile&&withProf.local.club_profile.report.title==='松本支部月例将棋大会', 'P18-16 渡せば同梱される');
+  assert(JSON.stringify(env.buildTournamentBackupObject(snap,'2026-08-11T00:00:00.000Z'))===JSON.stringify(noProf), 'P18-17 同じ引数なら同じ結果（pure）');
 }
 
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----
