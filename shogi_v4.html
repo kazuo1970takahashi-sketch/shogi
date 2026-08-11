@@ -1056,6 +1056,13 @@ function saveClubProfile(profile){
 //   巻き戻しに成功したら true。失敗（書けない・読み戻し不一致）なら false を返し、
 //   呼び出し側は「元に戻せなかった」ことを利用者に明示する。
 function restoreClubProfileRaw(prevRaw){
+  // 既に復元前と同じなら書かない（restoreTournamentRaw と同じ理由）。
+  var cur=null;
+  try{cur=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){cur=undefined;}
+  if(cur!==undefined&&((typeof prevRaw==='string'&&cur===prevRaw)||(typeof prevRaw!=='string'&&(cur===null||cur==='')))){
+    clubProfile=readClubProfileRaw();
+    return true;
+  }
   try{
     if(typeof prevRaw==='string')localStorage.setItem(CLUB_PROFILE_KEY,prevRaw);
     else localStorage.removeItem(CLUB_PROFILE_KEY);
@@ -1067,6 +1074,30 @@ function restoreClubProfileRaw(prevRaw){
   // メモリ側も localStorage と揃える（既定が無かった場合は null＝factory へ fail-soft）。
   clubProfile=readClubProfileRaw();
   return true;
+}
+// ★Codex 4巡目 P1（PR #847）: 大会データ側も同じ形で巻き戻す。
+//   applyLoadedJson の save() は失敗を飲み込むため、「戻したつもり」で成功を報告すると
+//   localStorage には取り込んだ大会が残ったまま「端末は復元前のまま」と嘘をつくことになる。
+//   復元前の生バイトをそのまま書き戻し、読み戻しで照合できたときだけ true を返す。
+//   ※ 呼び出し側は applyLoadedJson（メモリ復帰＋その save）の**後**に呼ぶこと。
+//     先に呼ぶと applyLoadedJson の save() が日付補完済みの別バイトで上書きしてしまう。
+function restoreTournamentRaw(prevRaw){
+  // 既に復元前と同じなら書かない（書き込みが通らない端末で「戻せていないのに失敗扱い」に
+  //   なるのを避ける。取り込みの setItem が throw していれば旧バイトがそのまま残っている）。
+  var cur=null;
+  try{cur=localStorage.getItem(STORAGE_KEY);}catch(e){cur=undefined;}
+  if(cur!==undefined){
+    if(typeof prevRaw==='string'){ if(cur===prevRaw)return true; }
+    else if(cur===null||cur==='')return true;
+  }
+  try{
+    if(typeof prevRaw==='string')localStorage.setItem(STORAGE_KEY,prevRaw);
+    else localStorage.removeItem(STORAGE_KEY);
+  }catch(e){return false;}
+  var back=null;
+  try{back=localStorage.getItem(STORAGE_KEY);}catch(e){return false;}
+  if(typeof prevRaw==='string')return back===prevRaw;
+  return back===null||back==='';
 }
 // 現 state からクラブ既定を組み立てる（保存ボタン・初回シード共用）。
 //   報告書欄は input/change の両 bind で state.report に即時同期される（state が SoT）ため
@@ -13442,7 +13473,10 @@ function buildBackupAnonymous(s){
 // エクスポート構造（pure）: schema_version 付きの backup オブジェクトを組み立てる。
 //   local.state = 復元の正本（氏名を含むフル state）。anonymous = 派生・匿名（氏名なし）。
 //   nowIso は呼び出し側が new Date().toISOString() で渡す（pure 化のため引数注入）。
-function buildTournamentBackupObject(s,nowIso){
+//   ★Codex 4巡目 P1（PR #847）: clubProfile も同じ理由で引数注入する。ここで localStorage を
+//   読むと「同じ引数で呼んでも端末の状態で結果が変わる」ため pure ではなくなり、渡された
+//   snapshot（過去の大会）に**その端末の今の既定**が紛れ込む。読むのは bind 層（exportTournamentBackup）。
+function buildTournamentBackupObject(s,nowIso,clubProfile){
   return {
     schema_version:BACKUP_SCHEMA_VERSION,
     kind:BACKUP_KIND,
@@ -13454,14 +13488,14 @@ function buildTournamentBackupObject(s,nowIso){
     //   バックアップが全拒否になり、旧版を握る2台目端末が新版 JSON を拒否する）。
     //   旧版アプリは local.club_profile を読まないだけ＝前方互換。旧バックアップにキーが無い場合は
     //   復元側が「クラブ既定は触らない」で fail-soft。
-    local:{ state:s, club_profile:(typeof readClubProfileRaw==='function')?readClubProfileRaw():null },
+    local:{ state:s, club_profile:(clubProfile==null)?null:clubProfile },
     anonymous:buildBackupAnonymous(s)
   };
 }
 
-// エクスポート JSON 文字列（pure）。
-function serializeTournamentBackup(s,nowIso){
-  return JSON.stringify(buildTournamentBackupObject(s,nowIso),null,2);
+// エクスポート JSON 文字列（pure）。clubProfile は buildTournamentBackupObject へそのまま渡す。
+function serializeTournamentBackup(s,nowIso,clubProfile){
+  return JSON.stringify(buildTournamentBackupObject(s,nowIso,clubProfile),null,2);
 }
 
 // インポート検証（pure）: text を parse・検証し {ok:true,state} か {ok:false,reason,message} を返す。
@@ -13493,7 +13527,8 @@ function parseTournamentBackup(text){
 function exportTournamentBackup(){
   try{
     var now=new Date();
-    var json=serializeTournamentBackup(state,now.toISOString());
+    // ★Codex 4巡目 P1: localStorage を読むのは bind 層のここだけ。pure builder には値を渡す。
+    var json=serializeTournamentBackup(state,now.toISOString(),readClubProfileRaw());
     var y=now.getFullYear();
     var mo=('0'+(now.getMonth()+1)).slice(-2);
     var d=('0'+now.getDate()).slice(-2);
@@ -13544,6 +13579,10 @@ function importTournamentBackupFromText(text){
       try{prevProfileRaw=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){prevProfileRaw=null;}
       var prevStateJson=null;
       try{prevStateJson=JSON.stringify(state);}catch(e){prevStateJson=null;}
+      // ★Codex 4巡目 P1: 巻き戻しの照合対象は「メモリの JSON」ではなく **localStorage の生バイト**。
+      //   両者は日付補完などで元々ずれ得るので、生バイトを控えないと戻せたか判定できない。
+      var prevStateRaw=null;
+      try{prevStateRaw=localStorage.getItem(STORAGE_KEY);}catch(e){prevStateRaw=null;}
       var cpRestored=false;
       if(res.club_profile){
         cpRestored=saveClubProfile(res.club_profile);
@@ -13564,11 +13603,16 @@ function importTournamentBackupFromText(text){
         // ★Codex 3巡目 P1: ここで止めるだけだと「新しいクラブ既定 × 復元前の大会」が端末に残り、
         //   リロード後にどちらの支部の実態とも違う組み合わせが現れる。①を巻き戻して端末を
         //   復元前へ揃える。メモリ上の state も復元前へ戻し、localStorage との食い違いを残さない。
-        var rolledBack=cpRestored?restoreClubProfileRaw(prevProfileRaw):true;
+        // ★Codex 4巡目 P1: 巻き戻し**自体**が同じ保存障害で失敗し得る。両方戻せたことを
+        //   確かめてからでなければ「復元前のまま」とは言えない。applyLoadedJson の save() は
+        //   失敗を飲み込むため、メモリを戻したあとに生バイトを書き戻して照合する。
+        var cpRolledBack=cpRestored?restoreClubProfileRaw(prevProfileRaw):true;
         if(prevStateJson){ try{applyLoadedJson(prevStateJson);}catch(e){} }
+        var stRolledBack=restoreTournamentRaw(prevStateRaw);
+        var rolledBack=cpRolledBack&&stRolledBack;
         appAlert(rolledBack
           ? '復元を中止しました。\n\n取り込んだ大会データをこの端末に保存できませんでした（ブラウザの保存領域の空きが不足している可能性があります）。\n\nクラブ既定も元に戻したので、この端末は復元前のままです。不要な大会データを整理するか、通常のウィンドウで開き直してから、もう一度お試しください。'
-          : '復元に失敗しました。\n\n大会データを保存できず、クラブ既定を元に戻すこともできませんでした。\n\nこの端末には「バックアップのクラブ既定」と「復元前の大会データ」が残っています。通常のウィンドウで開き直し、もう一度復元をやり直してください。');
+          : '復元に失敗しました。\n\n大会データを保存できず、元の状態に戻すこともできませんでした。\n\nこの端末のデータは中途半端な状態になっている可能性があります（クラブ既定と大会データが食い違っているかもしれません）。このまま操作を続けず、通常のウィンドウで開き直してバックアップから復元し直してください。');
         return;
       }
       // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert・復元前の confirm は維持）。
