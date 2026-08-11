@@ -1027,77 +1027,93 @@ function profileRounds(){
 }
 // 保存: localStorage 書き込みと同時にモジュール変数も差し替える（「保存→即リセット」で
 //   古い既定が使われる穴の防止・パネル指摘）。戻り値 true=保存成功。
-function saveClubProfile(profile){
+// ★Codex 5巡目 P1（PR #847）／作者判断 2026-08-11「書き込み処理を作り直す」:
+//   2〜5巡目で同じ形の指摘が4回続いた。原因は書き込みごとに後始末を場当たりで書いていたこと。
+//   ここで**保存の意味論を1箇所に固定**する。すなわち localStorage への1キーの書き込みは
+//   「反映されたか、さもなくば書く前のバイトがそのまま残っているか」のどちらかしか取らない。
+//
+//   STORAGE-ATOMIC-001 の不変条件:
+//     'ok'       … 反映済み（読み戻しで byte 一致・validate も通過）
+//     'reverted' … 反映されず、書く前のバイトが残っている（＝端末は無傷。安全な失敗）
+//     'broken'   … 反映も巻き戻しもできなかった（＝端末が中途半端。利用者に明示が必要）
+//   value===null は削除を意味する。validate は byte 一致の後に走る任意の意味検証で、
+//   false を返した場合も巻き戻す（「書けたが中身として無効」を残さない）。
+function revertStorageRaw(key,prevRaw){
+  // 既に書く前と同じなら触らない。書き込みが通らない端末で「無傷なのに失敗扱い」に
+  //   なるのを避ける（setItem が throw していれば旧バイトがそのまま残っている）。
+  var cur=null,readable=true;
+  try{cur=localStorage.getItem(key);}catch(e){readable=false;}
+  if(readable){
+    if(typeof prevRaw==='string'){ if(cur===prevRaw)return true; }
+    else if(cur===null||cur==='')return true;
+  }
+  try{
+    if(typeof prevRaw==='string')localStorage.setItem(key,prevRaw);
+    else localStorage.removeItem(key);
+  }catch(e){return false;}
+  var back=null;
+  try{back=localStorage.getItem(key);}catch(e){return false;}
+  if(typeof prevRaw==='string')return back===prevRaw;
+  return back===null||back==='';
+}
+function writeStorageAtomic(key,value,validate){
+  var prevRaw=null;
+  // 書く前の姿を読めない端末では触らない（戻せる保証が無いまま壊す方が悪い）。
+  try{prevRaw=localStorage.getItem(key);}catch(e){return 'reverted';}
+  // 既に同値なら書かない（無駄な書き込みで容量エラーを踏まない）。
+  if(value===null){ if(prevRaw===null||prevRaw==='')return 'ok'; }
+  else if(prevRaw===value&&(!validate||validate()))return 'ok';
+  try{
+    if(value===null)localStorage.removeItem(key);
+    else localStorage.setItem(key,value);
+  }catch(e){
+    // 書けなかった＝prevRaw がそのまま残っている（setItem は失敗時に既存値を消さない）。
+    //   ただし「一部書けた」端末も想定し、無傷であることを確かめてから 'reverted' と言う。
+    return revertStorageRaw(key,prevRaw)?'reverted':'broken';
+  }
+  // Codex P1（PR #845）: setItem が受理されても値が保持されない/読めない browser がある。
+  //   「何か有効な値が読める」では不十分（古い値が残っていると素通りする＝自前テスト P10 が実証）。
+  //   書いた文字列と byte 同値であることまで照合する。
+  var back=null,readOk=true;
+  try{back=localStorage.getItem(key);}catch(e){readOk=false;}
+  var good=readOk&&((value===null)?(back===null||back===''):(back===value))&&(!validate||validate());
+  if(good)return 'ok';
+  // ★Codex 5巡目 P1: ここが今回の穴だった。読み戻しに失敗した時点で**既に書き込みは走っている**。
+  //   そのまま失敗を返すと「保存できませんでした」と言いながら中身は置き換わっている。必ず巻き戻す。
+  return revertStorageRaw(key,prevRaw)?'reverted':'broken';
+}
+// クラブ既定の保存。status を渡すと status.result に 'ok'/'reverted'/'broken' が入る。
+function saveClubProfile(profile,status){
+  status=status||{};
+  status.result='reverted';
   // ★Codex P1（PR #847）: 書く前に検証する。不正な profile（壊れたバックアップ由来など）で
   //   既存の有効なクラブ既定を破壊しない。sanitize 済みの正準形を書く。
   var clean=sanitizeClubProfileObject(profile);
   if(!clean)return false;
   var json='';
   try{json=JSON.stringify(clean);}catch(e){return false;}
-  try{localStorage.setItem(CLUB_PROFILE_KEY,json);}catch(e){return false;}
-  // Codex P1（PR #845）: setItem が受理されても値が保持されない/読めない browser
-  //   （probeStorageWritable が検査する故障モード）がある。書き戻しの検証は
-  //   「何か有効な profile が読める」では不十分（古い値が残っていると素通りする＝
-  //   自前テスト P10 が実証）。書いた JSON と byte 同値であることまで照合する。
-  //   失敗時はメモリ上の clubProfile（直前の有効値）を触らない。
-  var readBackRaw=null;
-  try{readBackRaw=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){return false;}
-  if(readBackRaw!==json)return false;
-  var readBack=readClubProfileRaw();
-  if(!readBack)return false;
-  clubProfile=readBack;
-  return true;
-}
-// ★Codex 3巡目 P1（PR #847）: クラブ既定を「書く前の生バイト」へ差し戻す。
-//   復元は ①既定を書く → ②大会データを書く の2段だが、②が容量不足等で失敗すると
-//   「新しい既定 × 復元前の大会」という、どちらの支部の実態とも違う組み合わせが端末に残る。
-//   ②が失敗したら①を巻き戻して、端末を復元前の状態に揃える。
-//   prevRaw は localStorage.getItem の生の戻り値（既定が無かった場合は null）。
-//   巻き戻しに成功したら true。失敗（書けない・読み戻し不一致）なら false を返し、
-//   呼び出し側は「元に戻せなかった」ことを利用者に明示する。
-function restoreClubProfileRaw(prevRaw){
-  // 既に復元前と同じなら書かない（restoreTournamentRaw と同じ理由）。
-  var cur=null;
-  try{cur=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){cur=undefined;}
-  if(cur!==undefined&&((typeof prevRaw==='string'&&cur===prevRaw)||(typeof prevRaw!=='string'&&(cur===null||cur==='')))){
+  // validate: byte 一致の後、「読み直して有効な profile として解釈できるか」まで確かめる。
+  var r=writeStorageAtomic(CLUB_PROFILE_KEY,json,function(){ return !!readClubProfileRaw(); });
+  status.result=r;
+  if(r!=='ok'){
+    // 失敗時はメモリ上の clubProfile を localStorage と揃え直す（'reverted' なら直前の有効値へ戻る）。
     clubProfile=readClubProfileRaw();
-    return true;
+    return false;
   }
-  try{
-    if(typeof prevRaw==='string')localStorage.setItem(CLUB_PROFILE_KEY,prevRaw);
-    else localStorage.removeItem(CLUB_PROFILE_KEY);
-  }catch(e){return false;}
-  var back=null;
-  try{back=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){return false;}
-  if(typeof prevRaw==='string'){ if(back!==prevRaw)return false; }
-  else { if(back!==null&&back!=='')return false; }
+  clubProfile=readClubProfileRaw();
+  return !!clubProfile;
+}
+// 巻き戻しの薄い入口（意味は revertStorageRaw に集約）。メモリ側の同期だけ担う。
+function restoreClubProfileRaw(prevRaw){
+  if(!revertStorageRaw(CLUB_PROFILE_KEY,prevRaw))return false;
   // メモリ側も localStorage と揃える（既定が無かった場合は null＝factory へ fail-soft）。
   clubProfile=readClubProfileRaw();
   return true;
 }
-// ★Codex 4巡目 P1（PR #847）: 大会データ側も同じ形で巻き戻す。
-//   applyLoadedJson の save() は失敗を飲み込むため、「戻したつもり」で成功を報告すると
-//   localStorage には取り込んだ大会が残ったまま「端末は復元前のまま」と嘘をつくことになる。
-//   復元前の生バイトをそのまま書き戻し、読み戻しで照合できたときだけ true を返す。
-//   ※ 呼び出し側は applyLoadedJson（メモリ復帰＋その save）の**後**に呼ぶこと。
-//     先に呼ぶと applyLoadedJson の save() が日付補完済みの別バイトで上書きしてしまう。
+// ※ 呼び出し側は applyLoadedJson（メモリ復帰＋その save）の**後**に呼ぶこと。
+//   先に呼ぶと applyLoadedJson の save() が日付補完済みの別バイトで上書きしてしまう。
 function restoreTournamentRaw(prevRaw){
-  // 既に復元前と同じなら書かない（書き込みが通らない端末で「戻せていないのに失敗扱い」に
-  //   なるのを避ける。取り込みの setItem が throw していれば旧バイトがそのまま残っている）。
-  var cur=null;
-  try{cur=localStorage.getItem(STORAGE_KEY);}catch(e){cur=undefined;}
-  if(cur!==undefined){
-    if(typeof prevRaw==='string'){ if(cur===prevRaw)return true; }
-    else if(cur===null||cur==='')return true;
-  }
-  try{
-    if(typeof prevRaw==='string')localStorage.setItem(STORAGE_KEY,prevRaw);
-    else localStorage.removeItem(STORAGE_KEY);
-  }catch(e){return false;}
-  var back=null;
-  try{back=localStorage.getItem(STORAGE_KEY);}catch(e){return false;}
-  if(typeof prevRaw==='string')return back===prevRaw;
-  return back===null||back==='';
+  return revertStorageRaw(STORAGE_KEY,prevRaw);
 }
 // 現 state からクラブ既定を組み立てる（保存ボタン・初回シード共用）。
 //   報告書欄は input/change の両 bind で state.report に即時同期される（state が SoT）ため
@@ -13585,9 +13601,14 @@ function importTournamentBackupFromText(text){
       try{prevStateRaw=localStorage.getItem(STORAGE_KEY);}catch(e){prevStateRaw=null;}
       var cpRestored=false;
       if(res.club_profile){
-        cpRestored=saveClubProfile(res.club_profile);
+        // ★Codex 5巡目 P1: 保存は writeStorageAtomic に集約され「反映('ok')／無傷('reverted')／
+        //   中途半端('broken')」の3値を返す。'broken' だけは端末に手当てが必要なので文言を分ける。
+        var cpStatus={};
+        cpRestored=saveClubProfile(res.club_profile,cpStatus);
         if(!cpRestored){
-          appAlert('復元を中止しました。\n\nこのバックアップに含まれるクラブ既定を、この端末に保存できませんでした（ブラウザの保存領域の制限が原因の可能性があります）。\n\n大会データは変更していません。通常のウィンドウで開き直してから、もう一度お試しください。');
+          appAlert(cpStatus.result==='broken'
+            ? '復元を中止しました。\n\nクラブ既定を保存できず、元の設定に戻すこともできませんでした。\n\n大会データは変更していません。ただしこの端末のクラブ既定（全リセット後の初期値）が失われている可能性があります。通常のウィンドウで開き直し、報告書の設定を確認して保存し直してください。'
+            : '復元を中止しました。\n\nこのバックアップに含まれるクラブ既定を、この端末に保存できませんでした（ブラウザの保存領域の制限が原因の可能性があります）。\n\n大会データもクラブ既定も変更していません。通常のウィンドウで開き直してから、もう一度お試しください。');
           return;
         }
       }

@@ -85,6 +85,7 @@ function loadEnv(store){
        CLUB_PROFILE_KEY:CLUB_PROFILE_KEY,
        verifyWholeStatePersisted:verifyWholeStatePersisted,
        restoreClubProfileRaw:restoreClubProfileRaw, restoreTournamentRaw:restoreTournamentRaw,
+       writeStorageAtomic:writeStorageAtomic, revertStorageRaw:revertStorageRaw,
        buildTournamentBackupObject:buildTournamentBackupObject, serializeTournamentBackup:serializeTournamentBackup,
        __setAppModalTestResolver:(typeof __setAppModalTestResolver!=='undefined'?__setAppModalTestResolver:undefined),
        _setState:function(s){state=s;}, _getState:function(){return state;},
@@ -341,7 +342,10 @@ function makeMatsumotoState(env){
   assert(/club_profile/.test(pBody), 'P14-3 復元側が club_profile を読む（無ければ null＝旧バックアップ互換）');
   const im=RAW.match(/function importTournamentBackupFromText\([\s\S]*?\n\}/);
   const iBody=im?im[0]:'';
-  assert(/saveClubProfile\s*\(\s*res\.club_profile\s*\)/.test(iBody), 'P14-4 復元時にクラブ既定も書き戻す');
+  // STORAGE-ATOMIC-001: saveClubProfile は結果詳細を受け取る status 引数を取るようになった
+  //   （'ok'/'reverted'/'broken' の3値。'broken' だけ文言を分けるため）。pin の意図＝
+  //   「復元時にクラブ既定も書き戻す」は不変なので、第2引数を許容する形に更新する。
+  assert(/saveClubProfile\s*\(\s*res\.club_profile\s*(,[^)]*)?\)/.test(iBody), 'P14-4 復元時にクラブ既定も書き戻す');
   assert(/if\s*\(\s*res\.club_profile\s*\)/.test(iBody), 'P14-5 バックアップに無ければ既定を触らない（この端末の設定を消さない）');
 }
 
@@ -518,6 +522,100 @@ function makeMatsumotoState(env){
   const withProf=env.buildTournamentBackupObject(snap,'2026-08-11T00:00:00.000Z',env.readClubProfileRaw());
   assert(withProf.local.club_profile&&withProf.local.club_profile.report.title==='松本支部月例将棋大会', 'P18-16 渡せば同梱される');
   assert(JSON.stringify(env.buildTournamentBackupObject(snap,'2026-08-11T00:00:00.000Z'))===JSON.stringify(noProf), 'P18-17 同じ引数なら同じ結果（pure）');
+}
+
+// ---- P19: STORAGE-ATOMIC-001（Codex 5巡目 P1 / 作者判断「書き込み処理を作り直す」） ----
+//   不変条件: 1キーの書き込みは「反映('ok')」か「書く前のバイトが残っている('reverted')」の
+//   どちらかしか取らない。両方できなければ 'broken' を返して呼び出し側に明示させる。
+{
+  const env=loadEnv({});
+  env._ls.setItem('k','元の値');
+  assert(env.writeStorageAtomic('k','新しい値')==='ok', 'P19-1 正常に書ければ ok');
+  assert(env._ls.getItem('k')==='新しい値', 'P19-2 反映される');
+  assert(env.writeStorageAtomic('k','新しい値')==='ok', 'P19-3 同値なら書かずに ok');
+  assert(env.writeStorageAtomic('k',null)==='ok', 'P19-4 null は削除');
+  assert(!env._ls.getItem('k'), 'P19-5 削除される');
+}
+{
+  // ★今回の指摘そのもの: setItem は通るが読み戻しが throw する端末。
+  //   書き込みは既に走っているので、巻き戻さなければ「失敗」と言いながら中身が置き換わる。
+  const env=loadEnv({});
+  env._ls.setItem('k','元の値');
+  const realGet=env._ls.getItem.bind(env._ls);
+  let calls=0;
+  env._ls.getItem=function(key){
+    // 1回目（書く前の控え）は通し、書いた後の読み戻しだけ throw させる
+    if(key==='k'&&++calls===2)throw new Error('SecurityError(mock)');
+    return realGet(key);
+  };
+  const r=env.writeStorageAtomic('k','新しい値');
+  env._ls.getItem=realGet;
+  assert(r==='reverted', 'P19-6 読み戻しが読めなければ reverted（失敗と言い切る）');
+  assert(env._ls.getItem('k')==='元の値', 'P19-7 ★書き込みは巻き戻され、元の値が残る（今回の指摘の本体）');
+}
+{
+  // 読み戻せるが byte が違う端末（書けたつもりで保持されない）
+  const env=loadEnv({});
+  env._ls.setItem('k','元の値');
+  const realSet=env._ls.setItem.bind(env._ls);
+  env._ls.setItem=function(key,v){ return realSet(key,(key==='k'&&v==='新しい値')?'化けた値':v); };
+  const r=env.writeStorageAtomic('k','新しい値');
+  env._ls.setItem=realSet;
+  assert(r==='reverted', 'P19-8 byte 不一致なら reverted');
+  assert(env._ls.getItem('k')==='元の値', 'P19-9 元の値へ巻き戻る');
+}
+{
+  // validate が落ちる場合も巻き戻す（書けたが中身として無効）
+  const env=loadEnv({});
+  env._ls.setItem('k','元の値');
+  const r=env.writeStorageAtomic('k','新しい値',function(){ return false; });
+  assert(r==='reverted', 'P19-10 validate が false なら reverted');
+  assert(env._ls.getItem('k')==='元の値', 'P19-11 元の値へ巻き戻る');
+}
+{
+  // 巻き戻しもできない端末は broken（成功とも無傷とも言わない）
+  const env=loadEnv({});
+  env._ls.setItem('k','元の値');
+  const realSet=env._ls.setItem.bind(env._ls);
+  const realGet=env._ls.getItem.bind(env._ls);
+  env._ls.setItem=function(key,v){ if(key==='k'&&v==='元の値')throw new Error('QuotaExceeded(mock)'); return realSet(key,'化けた値'); };
+  const r=env.writeStorageAtomic('k','新しい値');
+  env._ls.setItem=realSet; env._ls.getItem=realGet;
+  assert(r==='broken', 'P19-12 反映も巻き戻しもできなければ broken');
+}
+{
+  // saveClubProfile がこの仕組みに乗っていること（読み戻し失敗で既定が壊れない）
+  const env=loadEnv({});
+  makeMatsumotoState(env);
+  assert(env.saveClubProfile(env.buildClubProfileFromState())===true, 'P19-13 前提: 松本の既定を保存できる');
+  const prevRaw=env._ls.getItem(env.CLUB_PROFILE_KEY);
+  env._getState().report.title='甲府支部月例将棋大会';
+  const realGet=env._ls.getItem.bind(env._ls);
+  let n=0;
+  env._ls.getItem=function(key){ if(key===env.CLUB_PROFILE_KEY&&++n===2)throw new Error('SecurityError(mock)'); return realGet(key); };
+  const st={};
+  const ok=env.saveClubProfile(env.buildClubProfileFromState(),st);
+  env._ls.getItem=realGet;
+  assert(ok===false, 'P19-14 読み戻せなければ保存は失敗');
+  assert(st.result==='reverted', 'P19-15 status に reverted が入る');
+  assert(env._ls.getItem(env.CLUB_PROFILE_KEY)===prevRaw, 'P19-16 ★元のクラブ既定がバイト単位で残る（置き換わらない）');
+  assert(env._getClubProfileVar().report.title==='松本支部月例将棋大会', 'P19-17 メモリ上も元の既定のまま');
+  env.resetAll();
+  assert(env._getState().report.title==='松本支部月例将棋大会', 'P19-18 全リセットしても元の既定に戻る');
+}
+{
+  // 復元側が 'broken' のときだけ別文言を出す（構造 pin）
+  const im5=RAW.match(/function importTournamentBackupFromText\([\s\S]*?\n\}/);
+  const b5=im5?im5[0]:'';
+  assert(/saveClubProfile\(res\.club_profile,\s*cpStatus\)/.test(b5), 'P19-19 復元は status を受け取る');
+  assert(/cpStatus\.result===['"]broken['"]/.test(b5), 'P19-20 broken のときだけ文言を分ける');
+  assert(b5.indexOf('元の設定に戻すこともできませんでした')>=0, 'P19-21 broken 用の文言がある');
+  assert(b5.indexOf('大会データもクラブ既定も変更していません')>=0, 'P19-22 reverted 用は「どちらも変更していない」と言い切る');
+  // 保存の意味論が1箇所に集約されていること（場当たりの書き込みを増やさない）
+  const sc=RAW.match(/function saveClubProfile\([\s\S]*?\n\}/);
+  const scBody=sc?sc[0]:'';
+  assert(scBody.indexOf('localStorage.setItem')<0, 'P19-23 saveClubProfile は自前で setItem しない（writeStorageAtomic 経由）');
+  assert(/writeStorageAtomic\(CLUB_PROFILE_KEY/.test(scBody), 'P19-24 writeStorageAtomic を使う');
 }
 
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----
