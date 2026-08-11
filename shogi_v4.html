@@ -962,6 +962,26 @@ function readStorageRaw(key){
   try{v=localStorage.getItem(key);}catch(e){return {ok:false,raw:null};}
   return {ok:true,raw:(typeof v==='string')?v:null};
 }
+// ★EXTERNAL-INPUT-001（作者判断 2026-08-11「外部ファイルの検査を作り直す」）:
+//   これは STORAGE-ATOMIC-001 の**3つ目の境界**。1つ目は書き込み（反映か、元のまま）、
+//   2つ目は読み取り（読めた／無い／読めない／壊れている）、そして3つ目が
+//   「外から来たファイルの項目」。同じ失敗の形が9巡にわたり別々の場所で現れたのは、
+//   どの境界でも「**壊れている**」を「**無い**」に丸めていたためだった。
+//   ここで分類を1箇所に固定する:
+//     'absent'  … キーが無い / 明示的な null（＝その項目を含まないファイル。正常）
+//     'present' … 値があり、検証も通った
+//     'invalid' … 値はあるが形が違う（壊れたファイル。**absent に丸めてはいけない**）
+//   丸めると、壊れたファイルが「その項目を含まない正常なファイル」として通り、
+//   一部だけ取り込まれた中途半端な状態を作る。呼び出し側は 'invalid' を必ず拒否すること。
+function classifyExternalField(container,key,isValid){
+  if(!container||typeof container!=='object')return {status:'absent',value:null};
+  if(!Object.prototype.hasOwnProperty.call(container,key))return {status:'absent',value:null};
+  var v=container[key];
+  // 明示的な null / undefined は「その項目は無い」という意思表示として受け入れる。
+  if(v===null||typeof v==='undefined')return {status:'absent',value:null};
+  if(typeof isValid==='function'&&!isValid(v))return {status:'invalid',value:null};
+  return {status:'present',value:v};
+}
 // クラブ既定の読み取り。status は4値:
 //   'ok'         … 有効な既定を読めた（profile あり）
 //   'absent'     … そもそも保存されていない（正常。初回起動など）
@@ -13585,9 +13605,20 @@ function parseTournamentBackup(text){
     return {ok:false,reason:'no_state',message:'バックアップに大会データが含まれていません。'};
   }
   // CLUB-PROFILE-002: club_profile は「あれば返す・無ければ null」（旧バックアップとの互換）。
-  //   値の検証は復元時に saveClubProfile→readClubProfileRaw が行う（不正なら profile は変わらない）。
-  var cp=(parsed.local&&parsed.local.club_profile&&typeof parsed.local.club_profile==='object')?parsed.local.club_profile:null;
-  return {ok:true,state:st,club_profile:cp};
+  // ★Codex 9巡目 P1（PR #847）／作者判断 2026-08-11「外部ファイルの検査を作り直す」:
+  //   旧実装は「オブジェクトでなければ null」と丸めていたため、'' / false / 数値のような
+  //   **壊れた値**が「その項目を含まない正常なファイル」として通り、大会だけ復元して
+  //   この端末の古い既定と混ざった状態を作っていた（しかも成功と報告する）。
+  //   分類は classifyExternalField に集約する（EXTERNAL-INPUT-001）。
+  var cpField=classifyExternalField(parsed.local,'club_profile',function(v){
+    // 「オブジェクトである」ではなく「クラブ既定として成立する」まで見る。
+    //   ここで弾いておけば、復元側の saveClubProfile 失敗は純粋に保存障害だけになる。
+    return !!sanitizeClubProfileObject(v);
+  });
+  if(cpField.status==='invalid'){
+    return {ok:false,reason:'invalid_club_profile',message:'バックアップに含まれるクラブ既定（大会名・会場・クラス構成など）の形式が正しくありません。ファイルが壊れている可能性があります。\n\n大会データには手を付けていません。別のバックアップでお試しください。'};
+  }
+  return {ok:true,state:st,club_profile:cpField.value};
 }
 
 // coordinator: 現在の state を backup JSON としてダウンロードする（saveDataAsFile を踏襲）。

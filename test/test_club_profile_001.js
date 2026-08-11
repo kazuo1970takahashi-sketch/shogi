@@ -87,6 +87,7 @@ function loadEnv(store){
        restoreClubProfileRaw:restoreClubProfileRaw, restoreTournamentRaw:restoreTournamentRaw,
        writeStorageAtomic:writeStorageAtomic, revertStorageRaw:revertStorageRaw,
        readStorageRaw:readStorageRaw, readClubProfileResult:readClubProfileResult,
+       classifyExternalField:classifyExternalField, parseTournamentBackup:parseTournamentBackup,
        buildTournamentBackupObject:buildTournamentBackupObject, serializeTournamentBackup:serializeTournamentBackup,
        __setAppModalTestResolver:(typeof __setAppModalTestResolver!=='undefined'?__setAppModalTestResolver:undefined),
        _setState:function(s){state=s;}, _getState:function(){return state;},
@@ -777,6 +778,54 @@ function makeMatsumotoState(env){
   assert(!/v!==''/.test(rs?rs[0]:''), 'P22-8 readStorageRaw で空文字を除外しない');
   const rv=RAW.match(/function revertStorageRaw\([\s\S]*?\n\}/);
   assert(!/back===null\|\|back===''/.test(rv?rv[0]:''), 'P22-9 巻き戻しの照合で空文字を null と同一視しない');
+}
+
+// ---- P23: 外から来たファイルの項目は absent / present / invalid（Codex 9巡目 P1） ----
+//   EXTERNAL-INPUT-001。9巡すべての共通原因は「壊れている」を「無い」に丸めたこと。
+//   3つ目の境界（外部ファイル）でも同じ規律を敷く。
+{
+  const env=loadEnv({});
+  const isObj=function(v){ return !!v&&typeof v==='object'&&Object.prototype.toString.call(v)!=='[object Array]'; };
+  assert(env.classifyExternalField({},'x',isObj).status==='absent', 'P23-1 キーが無ければ absent');
+  assert(env.classifyExternalField({x:null},'x',isObj).status==='absent', 'P23-2 明示的な null は absent（意思表示として受け入れる）');
+  assert(env.classifyExternalField({x:undefined},'x',isObj).status==='absent', 'P23-3 undefined も absent');
+  assert(env.classifyExternalField(null,'x',isObj).status==='absent', 'P23-4 入れ物が無くても落ちない');
+  const ok=env.classifyExternalField({x:{a:1}},'x',isObj);
+  assert(ok.status==='present'&&ok.value.a===1, 'P23-5 検証を通れば present（値をそのまま返す）');
+  assert(env.classifyExternalField({x:''},'x',isObj).status==='invalid', 'P23-6 ★空文字は invalid（absent に丸めない）');
+  assert(env.classifyExternalField({x:false},'x',isObj).status==='invalid', 'P23-7 ★false は invalid');
+  assert(env.classifyExternalField({x:42},'x',isObj).status==='invalid', 'P23-8 ★数値は invalid');
+  assert(env.classifyExternalField({x:[]},'x',isObj).status==='invalid', 'P23-9 ★配列は invalid');
+}
+{
+  // 復元入口: 壊れたクラブ既定を含むファイルは、大会データに触れる前に拒否する
+  const env=loadEnv({});
+  const base=JSON.parse(env.serializeTournamentBackup(env.normalizeState(JSON.parse(JSON.stringify(env._getState()))),'2026-08-11T00:00:00.000Z',null));
+  function withProfile(v){ const o=JSON.parse(JSON.stringify(base)); o.local.club_profile=v; return JSON.stringify(o); }
+  for(const bad of ['',false,42,[],{schema_version:99}]){
+    const r=env.parseTournamentBackup(withProfile(bad));
+    assert(r.ok===false&&r.reason==='invalid_club_profile', 'P23-10 壊れたクラブ既定（'+JSON.stringify(bad)+'）を含むファイルは拒否する');
+  }
+  // 明示的な null と、キーそのものが無い旧バックアップは従来どおり通る
+  const rNull=env.parseTournamentBackup(withProfile(null));
+  assert(rNull.ok===true&&rNull.club_profile===null, 'P23-11 明示的な null は通る（既定に触れない）');
+  const noKey=JSON.parse(JSON.stringify(base)); delete noKey.local.club_profile;
+  const rNo=env.parseTournamentBackup(JSON.stringify(noKey));
+  assert(rNo.ok===true&&rNo.club_profile===null, 'P23-12 旧バックアップ（キー無し）は通る＝前方互換');
+  // 正しい既定は present として返る
+  makeMatsumotoState(env);
+  assert(env.saveClubProfile(env.buildClubProfileFromState())===true, 'P23-13 前提: 既定を作れる');
+  const good=env.parseTournamentBackup(withProfile(env.readClubProfileRaw()));
+  assert(good.ok===true&&good.club_profile&&good.club_profile.report.title==='松本支部月例将棋大会', 'P23-14 正しい既定は present');
+}
+{
+  // 構造 pin: 分類は共通処理に集約し、丸め込みを復活させない
+  const pt=RAW.match(/function parseTournamentBackup\([\s\S]*?\n\}/);
+  const pb=pt?pt[0]:'';
+  assert(/classifyExternalField\(parsed\.local,'club_profile'/.test(pb), 'P23-15 復元入口は共通の分類を使う');
+  assert(/cpField\.status===['"]invalid['"]/.test(pb), 'P23-16 invalid を拒否する');
+  assert(!/typeof parsed\.local\.club_profile==='object'\)\?/.test(pb), 'P23-17 「オブジェクトでなければ null」の丸め込みを復活させない');
+  assert(pb.indexOf('大会データには手を付けていません')>=0, 'P23-18 拒否時に「大会データは無傷」と伝える');
 }
 
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----
