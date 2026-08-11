@@ -371,13 +371,14 @@
     if(!(mo>=1&&mo<=12))return '';
     return y+'年'+mo+'月度';
   }
+  // ★NUMAZU-BEHAVIOR-001 (#840・作者決定 2026-08-11「入れたものをそのまま出す」):
+  //   shogi_v4.html 側と逐語で揃える（#608 の3整形をすべて外す）。片方だけ直すと、当日の画面と
+  //   この管理ページで同じ大会が別名で並ぶ。実装の1本化は別便（本便は挙動だけ揃える）。
+  //   空のときの '(名称未設定)' も本体と同値。ここでクラブ名を出す案は auth.js に clubs の
+  //   新規 select を足す設計変更になるため採らない（#840 論点4）。
   function canonicalizeCloudTournamentName(name){
     var s=String(name==null?'':name).trim();
-    if(s==='')return '沼津支部月例将棋大会';
-    if(s.length>=3&&s.slice(-3)==='報告書'){ s=s.slice(0,-3).replace(/[\s　]+$/,''); }
-    s=s.replace(/[\s　]*[（(]?\s*(?:\d{4}[-\/]\d{1,2}(?:[-\/]\d{1,2})?|\d{4}年\d{1,2}月(?:\d{1,2}日)?度?)\s*[)）]?\s*$/,'');
-    s=s.replace(/[\s　]+$/,'');
-    if(s===''||s.indexOf('月例')>=0)return '沼津支部月例将棋大会';
+    if(s==='')return '(名称未設定)';
     return s;
   }
   function buildCloudTournamentDisplayTitle(name, dateYmd){

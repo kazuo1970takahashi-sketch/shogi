@@ -82,8 +82,10 @@ const A = loadAuth();
   assert(et2.indexOf('<ruby>甲一<rt>こういち</rt></ruby>')>=0, 'E6 ふりがなはルビ表示（yomi 無しはルビなし）');
   assert(et2.indexOf('最終結果')>=0, 'E7 クラス見出しに「最終結果」');
   var th = A.buildTournamentHeadHtml({ id:'t1', name:'六月例会', date:'2026-06-23', season:'2026年度', status:'confirmed' });
-  // #608 CLOUD-TOURNEY-NAMING: 見出しの名称は正規化タイトル（一覧と単一ソース）。'六月例会'→'沼津支部月例将棋大会'＋月度。
-  assert(th.indexOf('2026-06-23')>=0 && th.indexOf('2026年6月度 沼津支部月例将棋大会')>=0 && th.indexOf('2026年度')>=0 && th.indexOf('確定')>=0, 'E8 大会見出し（日付・名称=正規化・年度/状態）');
+  // [反転] 理由(#840): #608 の置き換え（'月例' を含む→沼津支部月例将棋大会）を廃止し、
+  //        入力された大会名をそのまま見出しに出す。一覧と単一ソースである点は維持。
+  assert(th.indexOf('2026-06-23')>=0 && th.indexOf('2026年6月度 六月例会')>=0 && th.indexOf('2026年度')>=0 && th.indexOf('確定')>=0, 'E8 [反転] 大会見出し（日付・名称=生名・年度/状態）');
+  assert(th.indexOf('沼津')<0, 'E8b 見出しに沼津の名前が生えない');
   assert(A.buildTournamentHeadHtml(null)==='', 'E9 大会不明時は見出しなし（fail-soft）');
   // APP-UX-004A2: 一覧⇄詳細のビュー切替（結果視認性の原則）
   var av = A.buildAppViewHtml({ isAdmin:false, role:'organizer' }, []);

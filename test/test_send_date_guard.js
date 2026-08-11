@@ -56,7 +56,10 @@ t('D1 未設定（空）＋キャンセル→中止（cancelled-date・案内 st
     ok(res&&res.ok===false&&res.step==='cancelled-date','D1a step=cancelled-date（got '+JSON.stringify(res)+'）');
     ok(L.confirmCalls.length===1,'D1b confirm は1回（got '+L.confirmCalls.length+'）');
     var c=L.confirmCalls[0]||'';
-    ok(c.indexOf('として記録します')>=0,'D1c confirm 文言に「として記録します」');
+    // [反転] 理由(#840): 確認文言に大会名を並べたため「〜として記録します」から
+    //        「この内容でクラウドに記録します。」＋大会名／実施日の2行表示へ変更。
+    ok(c.indexOf('この内容でクラウドに記録します')>=0,'D1c [反転] confirm 文言に「この内容でクラウドに記録します」');
+    ok(c.indexOf('大会名')>=0&&c.indexOf('架空例会')>=0,'D1c2 confirm に大会名（報告書タブの入力そのまま）を明示');
     ok(c.indexOf(L.env.todayYmd())>=0,'D1d 未設定は自動補完された今日の日付を明示（YYYY-MM-DD）');
     var st=lastStatus(msgs);
     ok(st.indexOf('中止')>=0&&st.indexOf('実施日')>=0,'D1e status は中止＋次の行動（実施日の確認・修正）を案内');
@@ -125,7 +128,9 @@ t('D6 不正文字列（日付として解釈不能）→今日の日付で conf
 console.log('=== S: 静的チェック ===');
 ok(RAW.indexOf('SEND-DATE-CONFIRM-002')>=0,'S1 ガードのコメントマーカー（SEND-DATE-CONFIRM-002）が存在');
 ok(RAW.indexOf("step:'cancelled-date'")>=0,'S2 cancelled-date 中止経路が存在');
-ok(RAW.indexOf('として記録します')>=0,'S3 毎回 confirm 文言（〜として記録します）が存在');
+// [反転] 理由(#840): 送信前確認に大会名を並べたため文言が変わった。
+ok(RAW.indexOf('この内容でクラウドに記録します')>=0,'S3 [反転] 毎回 confirm 文言（この内容でクラウドに記録します）が存在');
+ok(RAW.indexOf('大会名   ')>=0,'S3b 確認文言に大会名の行が存在（#840）');
 var iGuard=RAW.indexOf('SEND-DATE-CONFIRM-002 (#622)');
 var iSending=RAW.indexOf("setStatus('クラウドへ送信中…')");
 ok(iGuard>=0&&iSending>=0&&iGuard<iSending,'S4 ガードは送信開始（クラウドへ送信中…）より前');
