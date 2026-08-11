@@ -146,8 +146,11 @@ assert(!/normalizeReportFax\s*\(/.test(brBody),
   'S7-7b buildReportHtml は FAX を出力しないため normalizeReportFax() を呼ばない（FAX削除）');
 assert(brBody.indexOf("'沼津支部事務局'") === -1 && brBody.indexOf('"沼津支部事務局"') === -1,
   'S7-7c 事務局名 literal は REPORT-UX-007A で撤去済み（state.report.officeName 経由）');
-assert(/normalizeReportOfficeName\s*\(/.test(brBody),
-  'S7-7d 007A: buildReportHtml が normalizeReportOfficeName() を呼ぶ');
+// CLUB-PROFILE-002: officeName の正規化は live 入力系ラッパー normalizeReportFieldForInput 経由に
+//   なった（クラブ既定が明示的な空を宣言していない限り従来と同一結果）。pin の意図＝「literal ではなく
+//   officeName の正規化を通す」は不変なので両形を許容する。
+assert(/normalizeReportOfficeName\s*\(/.test(brBody)||/normalizeReportFieldForInput\s*\([^)]*['"]officeName['"]\s*\)/.test(brBody),
+  'S7-7d 007A: buildReportHtml が officeName の正規化を通す（直接 or ForInput ラッパー）');
 
 // ============================================================
 // SECTION B: 振る舞いテスト (loadEnv 経由)

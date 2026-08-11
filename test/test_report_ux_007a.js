@@ -88,20 +88,25 @@ assert(/function\s+normalizeReportOfficeName\s*\(/.test(htmlSrc), 'A1-2 normaliz
 {
   const m = htmlSrc.match(/function normalizeState\(raw\)[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
-  assert(/normalizeReportFax\s*\(\s*s\.report\.fax\s*\)/.test(body),
-    'A2-1 normalizeState が normalizeReportFax(s.report.fax) を呼ぶ');
-  assert(/normalizeReportOfficeName\s*\(\s*s\.report\.officeName\s*\)/.test(body),
-    'A2-2 normalizeState が normalizeReportOfficeName(s.report.officeName) を呼ぶ');
+  // CLUB-PROFILE-002（Codex P1・PR #847）: normalizeReportPersistedEmptyable(値,キー,専用normalizer)
+  //   経由になった（明示的な空文字はそのまま・未指定は専用 normalizer で factory 補完）。意図は不変。
+  assert(/normalizeReportFax\s*\(\s*s\.report\.fax\s*\)/.test(body)||/normalizeReportPersistedEmptyable\s*\(\s*s\.report\.fax\s*,\s*['"]fax['"]\s*,\s*normalizeReportFax\s*\)/.test(body),
+    'A2-1 normalizeState が fax を normalizeReportFax で復元（PersistedEmptyable ラッパー可）');
+  assert(/normalizeReportOfficeName\s*\(\s*s\.report\.officeName\s*\)/.test(body)||/normalizeReportPersistedEmptyable\s*\(\s*s\.report\.officeName\s*,\s*['"]officeName['"]\s*,\s*normalizeReportOfficeName\s*\)/.test(body),
+    'A2-2 normalizeState が officeName を normalizeReportOfficeName で復元（PersistedEmptyable ラッパー可）');
 }
 
 // A3
 {
   const m = htmlSrc.match(/function populateReportFields[\s\S]*?\n\}\n/);
   const body = m ? m[0] : '';
-  assert(/normalizeReportFax\s*\(\s*state\.report\.fax\s*\)/.test(body),
-    'A3-1 populateReportFields が normalizeReportFax(state.report.fax) を呼ぶ');
-  assert(/normalizeReportOfficeName\s*\(\s*state\.report\.officeName\s*\)/.test(body),
-    'A3-2 populateReportFields が normalizeReportOfficeName(state.report.officeName) を呼ぶ');
+  // CLUB-PROFILE-002: live 入力系は normalizeReportFieldForInput 経由（両形を許容・意図は不変）
+  assert(/normalizeReportFax\s*\(\s*state\.report\.fax\s*\)/.test(body)||/normalizeReportFieldForInput\s*\(\s*state\.report\.fax\s*,\s*['"]fax['"]\s*\)/.test(body),
+    'A3-1 populateReportFields が fax を正規化して反映する（直接 or ForInput ラッパー）');
+  // CLUB-PROFILE-002: live 入力系は normalizeReportFieldForInput 経由（明示的な空のときだけ空を保つ・
+  //   それ以外は normalizeReportField= 従来と同一結果）。pin の意図＝「state から正規化して反映」は不変。
+  assert(/normalizeReportOfficeName\s*\(\s*state\.report\.officeName\s*\)/.test(body)||/normalizeReportFieldForInput\s*\(\s*state\.report\.officeName\s*,\s*['"]officeName['"]\s*\)/.test(body),
+    'A3-2 populateReportFields が officeName を正規化して反映する（直接 or ForInput ラッパー）');
   assert(/state\.report\.fax\s*=\s*normalizedFax/.test(body),
     'A3-3 populateReportFields が state.report.fax に書き戻す');
   assert(/state\.report\.officeName\s*=\s*normalizedOfficeName/.test(body),
@@ -114,8 +119,8 @@ assert(/function\s+normalizeReportOfficeName\s*\(/.test(htmlSrc), 'A1-2 normaliz
   const body = m ? m[0] : '';
   assert(/key\s*===\s*['"]fax['"]/.test(body), 'A4-1 key === "fax" 分岐がある');
   assert(/key\s*===\s*['"]officeName['"]/.test(body), 'A4-2 key === "officeName" 分岐がある');
-  assert(/normalizeReportFax\s*\(\s*el\.value\s*\)/.test(body), 'A4-3 fax 分岐で normalizeReportFax(el.value) を使う');
-  assert(/normalizeReportOfficeName\s*\(\s*el\.value\s*\)/.test(body), 'A4-4 officeName 分岐で normalizeReportOfficeName(el.value) を使う');
+  assert(/normalizeReportFax\s*\(\s*el\.value\s*\)/.test(body)||/normalizeReportFieldForInput\s*\(\s*el\.value\s*,\s*['"]fax['"]\s*\)/.test(body), 'A4-3 fax 分岐で el.value を正規化する（直接 or ForInput ラッパー・CLUB-PROFILE-002）');
+  assert(/normalizeReportOfficeName\s*\(\s*el\.value\s*\)/.test(body)||/normalizeReportFieldForInput\s*\(\s*el\.value\s*,\s*['"]officeName['"]\s*\)/.test(body), 'A4-4 officeName 分岐で el.value を正規化する（直接 or ForInput ラッパー・CLUB-PROFILE-002）');
   assert(/eventType\s*===\s*['"]change['"]\s*\)\s*el\.value\s*=\s*normalizedFax/.test(body),
     'A4-5 fax 分岐で change 時のみ DOM 書き戻し (IME-safe)');
   assert(/eventType\s*===\s*['"]change['"]\s*\)\s*el\.value\s*=\s*normalizedOfficeName/.test(body),
@@ -131,8 +136,8 @@ assert(/function\s+normalizeReportOfficeName\s*\(/.test(htmlSrc), 'A1-2 normaliz
   // FAX削除対応: downloadReport は FAX を一切出力しないため、fax を参照しない。
   assert(!/normalizeReportFax\s*\(/.test(body),
     'A5-1 downloadReport は FAX を出力しないため normalizeReportFax() を呼ばない（FAX削除）');
-  assert(/normalizeReportOfficeName\s*\(\s*state\.report\s*&&\s*state\.report\.officeName\s*\)/.test(body),
-    'A5-2 downloadReport が normalizeReportOfficeName(state.report && state.report.officeName) を呼ぶ');
+  assert(/normalizeReportOfficeName\s*\(\s*state\.report\s*&&\s*state\.report\.officeName\s*\)/.test(body)||/normalizeReportFieldForInput\s*\(\s*state\.report\s*&&\s*state\.report\.officeName\s*,\s*['"]officeName['"]\s*\)/.test(body),
+    'A5-2 downloadReport が officeName を正規化して取得する（直接 or ForInput ラッパー・CLUB-PROFILE-002）');
   // DOM 直読み撤去
   assert(!/getElementById\(['"]rep-fax['"]\)\.value/.test(body),
     'A5-3 downloadReport が #rep-fax.value を直読みしていない');
@@ -354,10 +359,10 @@ function makeBaseState(reportOverrides){
   const c3b = env.normalizeState({report:{fax:{},officeName:[]}});
   assertEq(c3b.report.fax, '943-9443', 'C3-3 fax=object → default');
   assertEq(c3b.report.officeName, '沼津支部事務局', 'C3-4 officeName=array → default');
-  // C4: 空白のみ
+  // C4: 空白のみ ★CLUB-PROFILE-002 で反転（空白のみ＝意図的な空として保持。未指定は C3 群が pin）
   const c4 = env.normalizeState({report:{fax:'   ',officeName:'　　'}});
-  assertEq(c4.report.fax, '943-9443', 'C4-1 fax 空白 → default');
-  assertEq(c4.report.officeName, '沼津支部事務局', 'C4-2 officeName 全角空白 → default');
+  assertEq(c4.report.fax, '', 'C4-1 fax 空白のみ → 空のまま（意図的な空・CLUB-PROFILE-002）');
+  assertEq(c4.report.officeName, '', 'C4-2 officeName 全角空白のみ → 空のまま（意図的な空・CLUB-PROFILE-002）');
   // C5: 通常文字列 trim
   const c5 = env.normalizeState({report:{fax:' 055-111-2222 ',officeName:' 富士支部事務局 '}});
   assertEq(c5.report.fax, '055-111-2222', 'C5-1 fax trim');
@@ -402,16 +407,22 @@ function makeBaseState(reportOverrides){
   assertEq(env._getState().report.officeName, '富士支部事務局', 'D2-2 officeName → state 同期');
 }
 
-// D3: 空欄 / null / 非文字列 → default に補正
+// D3: 空欄 / null → 空のまま（CLUB-PROFILE-002 で反転）
+//   ★旧 pin は「空欄・null は沼津既定へ補正」を要求していたが、FAX を持たないクラブ・
+//   事務局名を出さないクラブが空にできない原因そのものだった（#839 制約2・論点6）。
+//   作者決定（2026-08-09）により、live 入力系ではこの2キー＋accountingNote を空のまま通す。
+//   帳票側は空の行を畳む（buildReportFooterHtml）。FAX はもともと帳票非出力。
+//   ※正規化系（normalizeState）の既定補完は factory 固定のまま＝過去 snapshot の挙動は不変。
 {
   const env = loadEnv(targetPath);
   env._setState(makeBaseState({fax:'',officeName:null}));
   seedReportDom(env._ctx);
   env.populateReportFields();
-  assertEq(env._ctx.document.getElementById('rep-fax').value, '943-9443', 'D3-1 fax "" → DOM default');
-  assertEq(env._getState().report.fax, '943-9443', 'D3-2 fax "" → state default');
-  assertEq(env._ctx.document.getElementById('rep-office-name').value, '沼津支部事務局', 'D3-3 officeName null → DOM default');
-  assertEq(env._getState().report.officeName, '沼津支部事務局', 'D3-4 officeName null → state default');
+  assertEq(env._ctx.document.getElementById('rep-fax').value, '', 'D3-1 fax "" → 空のまま（DOM）');
+  assertEq(env._getState().report.fax, '', 'D3-2 fax "" → 空のまま（state）');
+  // null は「未指定」であって「空にしたい」ではない＝従来どおり既定へ補完（CLUB-PROFILE-002 の線引き）
+  assertEq(env._ctx.document.getElementById('rep-office-name').value, '沼津支部事務局', 'D3-3 officeName null → DOM default（未指定は既定のまま）');
+  assertEq(env._getState().report.officeName, '沼津支部事務局', 'D3-4 officeName null → state default（未指定は既定のまま）');
 }
 
 // D3b: legacy raw (前後空白) → trim 同期
@@ -514,7 +525,7 @@ function makeBaseState(reportOverrides){
   assertEq(el.value, '富士支部事務局', 'E4-2 input 時は DOM 書き戻しなし (IME-safe)');
 }
 
-// E5: 空欄 change → state も DOM も default に補正
+// E5: 空欄 change → state も DOM も **空のまま**（CLUB-PROFILE-002 で反転・D3 と同じ理由）
 {
   const env = loadEnv(targetPath);
   env._setState(makeBaseState({fax:'055-111-2222',officeName:'富士支部事務局'}));
@@ -534,10 +545,10 @@ function makeBaseState(reportOverrides){
     const fns = (el._handlers && el._handlers['change']) || [];
     for(let i=0;i<fns.length;i++) fns[i].call(el, {type:'change', target:el});
   }
-  assertEq(env._getState().report.fax, '943-9443', 'E5-1 空欄 change → state.fax default');
-  assertEq(env._ctx.document.getElementById('rep-fax').value, '943-9443', 'E5-2 空欄 change → DOM fax default');
-  assertEq(env._getState().report.officeName, '沼津支部事務局', 'E5-3 空欄 change → state.officeName default');
-  assertEq(env._ctx.document.getElementById('rep-office-name').value, '沼津支部事務局', 'E5-4 空欄 change → DOM officeName default');
+  assertEq(env._getState().report.fax, '', 'E5-1 空欄 change → state.fax は空のまま');
+  assertEq(env._ctx.document.getElementById('rep-fax').value, '', 'E5-2 空欄 change → DOM fax は空のまま');
+  assertEq(env._getState().report.officeName, '', 'E5-3 空欄 change → state.officeName は空のまま');
+  assertEq(env._ctx.document.getElementById('rep-office-name').value, '', 'E5-4 空欄 change → DOM officeName は空のまま');
 }
 
 // E5b: trim change

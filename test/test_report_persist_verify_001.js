@@ -131,12 +131,18 @@ assert(frBody.indexOf("accountingNote:'※役員会で会計長へ収支報告�
   'A1-def accountingNote 既定値');
 
 // A2: 13 フィールド各々に hasOwnProperty ガード + 専用 normalizer 復元分岐
+//   ★CLUB-PROFILE-002（Codex P1・PR #847）: fax/officeName/accountingNote は
+//   normalizeReportPersistedEmptyable(値, キー, 専用normalizer) 経由になった。
+//   「明示的な空文字はそのまま・それ以外は専用 normalizer」という意味であり、
+//   pin の意図（hasOwnProperty ガード＋専用 normalizer で復元）は保たれる。
+const EMPTYABLE_KEYS = ['fax','officeName','accountingNote'];
 FIELDS.forEach(function(k){
   const guard = new RegExp("hasOwnProperty\\.call\\(\\s*s\\.report\\s*,\\s*['\"]" + k + "['\"]\\s*\\)");
   assert(guard.test(nsBody), 'A2-guard normalizeState が s.report."' + k + '" を hasOwnProperty ガード');
   const norm = new RegExp(NORMALIZER[k] + "\\s*\\(\\s*s\\.report\\." + k + "\\s*\\)");
-  assert(norm.test(nsBody),
-    'A2-norm "' + k + '" は ' + NORMALIZER[k] + '(s.report.' + k + ') で復元');
+  const wrapped = new RegExp("normalizeReportPersistedEmptyable\\s*\\(\\s*s\\.report\\." + k + "\\s*,\\s*['\"]" + k + "['\"]\\s*,\\s*" + NORMALIZER[k] + "\\s*\\)");
+  assert(norm.test(nsBody) || (EMPTYABLE_KEYS.indexOf(k) >= 0 && wrapped.test(nsBody)),
+    'A2-norm "' + k + '" は ' + NORMALIZER[k] + ' で復元（emptyable は PersistedEmptyable ラッパー経由）');
 });
 
 // A3: 13 フィールド分の normalizer 関数が定義されている（重複名は Set で）
@@ -331,13 +337,29 @@ function makeBaseState(reportOverrides){
 
 // C2: 各フィールド空文字 → 既定値
 //   string 系（date/start/end/sei/fuku/note）は '' のまま、それ以外は default、prize は 7000。
+//   ★CLUB-PROFILE-002（Codex P1・PR #847）: fax/officeName/accountingNote は
+//   「明示的な空文字」を保持するようになった（クラブによっては存在しない項目。空にした設定が
+//   リロードで factory に戻る穴を塞ぐため）。**キー欠落・null は従来どおり既定へ補完**され、
+//   そちらは C1/C3 が pin しているので歴史保護（過去 snapshot の補完）は不変。
 {
   const env = loadEnv(targetPath);
   const emptyReport = {};
   FIELDS.forEach(function(k){ emptyReport[k] = ''; }); // prize も '' を渡す
   const n = env.normalizeState({report:emptyReport});
   FIELDS.forEach(function(k){
-    assertEq(n.report[k], DEFAULTS[k], 'C2 "' + k + '"=空文字 → 既定値 ' + JSON.stringify(DEFAULTS[k]));
+    const expected = (EMPTYABLE_KEYS.indexOf(k) >= 0) ? '' : DEFAULTS[k];
+    assertEq(n.report[k], expected,
+      'C2 "' + k + '"=空文字 → ' + (EMPTYABLE_KEYS.indexOf(k) >= 0 ? '空のまま（意図的な空）' : '既定値 ' + JSON.stringify(DEFAULTS[k])));
+  });
+}
+// C2b: emptyable 3キーも「キー欠落 / null」は従来どおり既定値（未指定と空の区別・歴史保護）
+{
+  const env = loadEnv(targetPath);
+  const n1 = env.normalizeState({report:{}});
+  const n2 = env.normalizeState({report:{fax:null,officeName:null,accountingNote:null}});
+  EMPTYABLE_KEYS.forEach(function(k){
+    assertEq(n1.report[k], DEFAULTS[k], 'C2b-miss "' + k + '" キー欠落 → 既定値（未指定は既定のまま）');
+    assertEq(n2.report[k], DEFAULTS[k], 'C2b-null "' + k + '" null → 既定値（未指定は既定のまま）');
   });
 }
 
@@ -350,7 +372,10 @@ function makeBaseState(reportOverrides){
   env.save(); env.load();
   const r = env._getState().report;
   FIELDS.forEach(function(k){
-    assertEq(r[k], DEFAULTS[k], 'C3 空値 save→load 往復後も "' + k + '" が既定値');
+    // ★CLUB-PROFILE-002（Codex P1・PR #847）: emptyable 3キーは save→load 往復でも
+    //   「明示的な空」を保つ（これが保たれないと、空にした設定がリロードで factory に戻る）。
+    const expectedC3 = (EMPTYABLE_KEYS.indexOf(k) >= 0) ? '' : DEFAULTS[k];
+    assertEq(r[k], expectedC3, 'C3 空値 save→load 往復後の "' + k + '"' + (EMPTYABLE_KEYS.indexOf(k) >= 0 ? '（意図的な空を保持）' : ' が既定値'));
   });
 }
 
@@ -374,20 +399,31 @@ function makeBaseState(reportOverrides){
   });
 }
 
-// D2: 空欄 change → 既定値補正（state-as-SoT の補正動作・代表 default 系フィールド）
+// D2: 空欄 change → 既定値補正（state-as-SoT の補正動作）
+//   ★CLUB-PROFILE-002（作者決定 2026-08-09「空欄を保存できるように」）で仕様を分割した:
+//     - 大会の体裁に必須のフィールド（place/title/prize/organizer）＝従来どおり既定値へ補正
+//     - クラブによっては存在しないフィールド（fax/officeName/accountingNote）＝**空のまま通す**
+//       （FAX を持たないクラブ・会計提出文の無いクラブ。帳票側は空の行を畳む）
+//   正規化系（normalizeState）は factory 固定のままなので、過去 snapshot の補完挙動は不変（A1 群が pin）。
 {
   const env = loadEnv(targetPath);
   env._setState(makeBaseState(VALID));
   env.bindReportEvents();
-  [['place','労政会館'],['title','沼津支部月例将棋大会'],['prize',7000],
-   ['organizer','日本将棋連盟沼津支部'],['officeName','沼津支部事務局'],
-   ['accountingNote','※役員会で会計長へ収支報告書として提出ください。']].forEach(function(p){
-    const k = p[0], def = p[1];
+  function fireEmptyChange(k){
     const el = env._ctx.document.getElementById(DOM_ID[k]);
     el.value = '';
     const fns = (el._handlers && el._handlers['change']) || [];
     for(let i=0;i<fns.length;i++) fns[i].call(el, {type:'change', target:el});
-    assertEq(env._getState().report[k], def, 'D2 "' + k + '" 空欄 change → 既定値補正');
+  }
+  [['place','労政会館'],['title','沼津支部月例将棋大会'],['prize',7000],
+   ['organizer','日本将棋連盟沼津支部']].forEach(function(p){
+    const k = p[0], def = p[1];
+    fireEmptyChange(k);
+    assertEq(env._getState().report[k], def, 'D2 "' + k + '" 空欄 change → 既定値補正（必須フィールド）');
+  });
+  ['fax','officeName','accountingNote'].forEach(function(k){
+    fireEmptyChange(k);
+    assertEq(env._getState().report[k], '', 'D2-empty "' + k + '" 空欄 change → 空のまま（CLUB-PROFILE-002・クラブによっては存在しない項目）');
   });
 }
 
