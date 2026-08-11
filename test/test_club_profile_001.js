@@ -86,6 +86,7 @@ function loadEnv(store){
        verifyWholeStatePersisted:verifyWholeStatePersisted,
        restoreClubProfileRaw:restoreClubProfileRaw, restoreTournamentRaw:restoreTournamentRaw,
        writeStorageAtomic:writeStorageAtomic, revertStorageRaw:revertStorageRaw,
+       readStorageRaw:readStorageRaw, readClubProfileResult:readClubProfileResult,
        buildTournamentBackupObject:buildTournamentBackupObject, serializeTournamentBackup:serializeTournamentBackup,
        __setAppModalTestResolver:(typeof __setAppModalTestResolver!=='undefined'?__setAppModalTestResolver:undefined),
        _setState:function(s){state=s;}, _getState:function(){return state;},
@@ -449,7 +450,9 @@ function makeMatsumotoState(env){
   // 構造 pin: 保存失敗の分岐で「既定の巻き戻し」と「メモリ上の大会データの巻き戻し」を両方やる
   const im3=RAW.match(/function importTournamentBackupFromText\([\s\S]*?\n\}/);
   const b3=im3?im3[0]:'';
-  assert(/prevProfileRaw\s*=\s*localStorage\.getItem\(CLUB_PROFILE_KEY\)/.test(b3), 'P17-12 既定を書く前に生バイトを控えている');
+  // STORAGE-ATOMIC-001（読み取り側）: 生バイトの取得は readStorageRaw（3値）経由になった。
+  //   pin の意図＝「書く前に控えを取る」は不変。
+  assert(/prevProfileRead\s*=\s*readStorageRaw\(CLUB_PROFILE_KEY\)/.test(b3)&&/prevProfileRaw\s*=\s*prevProfileRead\.raw/.test(b3), 'P17-12 既定を書く前に生バイトを控えている');
   assert(/prevStateJson\s*=\s*JSON\.stringify\(state\)/.test(b3), 'P17-13 復元前の大会データも控えている');
   assert(/if\s*\(\s*!verifyWholeStatePersisted\(\)\s*\)\s*\{[\s\S]{0,900}?restoreClubProfileRaw\(prevProfileRaw\)/.test(b3),
     'P17-14 大会データを保存できなければクラブ既定を巻き戻す');
@@ -497,7 +500,7 @@ function makeMatsumotoState(env){
 {
   const im4=RAW.match(/function importTournamentBackupFromText\([\s\S]*?\n\}/);
   const b4=im4?im4[0]:'';
-  assert(/prevStateRaw\s*=\s*localStorage\.getItem\(STORAGE_KEY\)/.test(b4), 'P18-6 照合対象として localStorage の生バイトを控えている');
+  assert(/prevStateRead\s*=\s*readStorageRaw\(STORAGE_KEY\)/.test(b4)&&/prevStateRaw\s*=\s*prevStateRead\.raw/.test(b4), 'P18-6 照合対象として localStorage の生バイトを控えている');
   assert(/restoreTournamentRaw\(prevStateRaw\)/.test(b4), 'P18-7 大会データ側も巻き戻す');
   assert(/rolledBack\s*=\s*cpRolledBack\s*&&\s*stRolledBack/.test(b4), 'P18-8 「元のまま」と言えるのは両方戻せたときだけ');
   assert(b4.indexOf('applyLoadedJson(prevStateJson)')<b4.indexOf('restoreTournamentRaw(prevStateRaw)'),
@@ -509,7 +512,7 @@ function makeMatsumotoState(env){
   assert(bbody.indexOf('readClubProfileRaw')<0&&bbody.indexOf('localStorage')<0, 'P18-11 builder は localStorage を読まない（同じ引数なら同じ結果）');
   assert(/function serializeTournamentBackup\(s,nowIso,clubProfile\)/.test(RAW), 'P18-12 serialize も clubProfile を受け取って渡すだけ');
   const ex=RAW.match(/function exportTournamentBackup\(\)[\s\S]*?\n\}/);
-  assert(/serializeTournamentBackup\(state,now\.toISOString\(\),readClubProfileRaw\(\)\)/.test(ex?ex[0]:''), 'P18-13 読むのは bind 層（exportTournamentBackup）だけ');
+  assert(/readClubProfileResult\(\)/.test(ex?ex[0]:'')&&/serializeTournamentBackup\(state,now\.toISOString\(\),cp\.profile\)/.test(ex?ex[0]:''), 'P18-13 読むのは bind 層（exportTournamentBackup）だけ');
 }
 {
   // 機能: 渡さなければ club_profile は null（端末の既定が snapshot に紛れ込まない）
@@ -616,6 +619,79 @@ function makeMatsumotoState(env){
   const scBody=sc?sc[0]:'';
   assert(scBody.indexOf('localStorage.setItem')<0, 'P19-23 saveClubProfile は自前で setItem しない（writeStorageAtomic 経由）');
   assert(/writeStorageAtomic\(CLUB_PROFILE_KEY/.test(scBody), 'P19-24 writeStorageAtomic を使う');
+}
+
+// ---- P20: 読み取り側の3値（Codex 6巡目 P1×3 / 作者判断「読み取り側も作り直す」） ----
+//   不変条件: 「読めた」「無い」「読めない」を区別し、読めない端末では書き込み・復元・
+//   書き出しを始めない。読めないことを「無い」と扱うと、削除・嘘の報告・不完全な
+//   バックアップの3つが同時に起こる。
+{
+  const env=loadEnv({});
+  env._ls.setItem('k','値');
+  const r1=env.readStorageRaw('k');
+  assert(r1.ok===true&&r1.raw==='値', 'P20-1 読めたら ok:true と生バイト');
+  const r2=env.readStorageRaw('無いキー');
+  assert(r2.ok===true&&r2.raw===null, 'P20-2 キーが無いのは ok:true / raw:null（正常）');
+  env._ls.getItem=function(){ throw new Error('SecurityError(mock)'); };
+  const r3=env.readStorageRaw('k');
+  assert(r3.ok===false&&r3.raw===null, 'P20-3 ★読めないのは ok:false（「無い」と区別する）');
+}
+{
+  // 読めない端末で readClubProfileResult が ok:false を返す
+  const env=loadEnv({});
+  makeMatsumotoState(env);
+  assert(env.saveClubProfile(env.buildClubProfileFromState())===true, 'P20-4 前提: 既定を保存できる');
+  const realGet=env._ls.getItem.bind(env._ls);
+  env._ls.getItem=function(k){ if(k===env.CLUB_PROFILE_KEY)throw new Error('SecurityError(mock)'); return realGet(k); };
+  const res=env.readClubProfileResult();
+  env._ls.getItem=realGet;
+  assert(res.ok===false&&res.profile===null, 'P20-5 クラブ既定が読めなければ ok:false');
+  assert(env.readClubProfileResult().ok===true&&env.readClubProfileResult().profile.report.title==='松本支部月例将棋大会', 'P20-6 読めれば ok:true と既定');
+}
+{
+  // ★Codex 6巡目 P1: 書き込みは ok なのに直後の読み直しが失敗して false を返す穴。
+  //   書いたのは sanitize 済みの正準形なので、それをメモリへ載せる（読み直さない）。
+  const env=loadEnv({});
+  makeMatsumotoState(env);
+  const realGet=env._ls.getItem.bind(env._ls);
+  let n=0;
+  // 1回目=書く前の控え、2回目=byte 照合、3回目=validate。それ以降（最終の読み直し）で throw
+  env._ls.getItem=function(k){ if(k===env.CLUB_PROFILE_KEY&&++n>=4)throw new Error('SecurityError(mock)'); return realGet(k); };
+  const st={};
+  const ok=env.saveClubProfile(env.buildClubProfileFromState(),st);
+  env._ls.getItem=realGet;
+  assert(ok===true&&st.result==='ok', 'P20-7 ★書けたなら true（最終の読み直し失敗で嘘をつかない）');
+  assert(env._getClubProfileVar()&&env._getClubProfileVar().report.title==='松本支部月例将棋大会', 'P20-8 メモリ上の既定も正しく載る');
+  const sc=RAW.match(/function saveClubProfile\([\s\S]*?\n\}/);
+  assert(/clubProfile=clean;/.test(sc?sc[0]:''), 'P20-9 書いた正準形をそのまま載せる（末尾で読み直さない）');
+}
+{
+  // ★Codex 6巡目 P1: 保存に失敗しただけでメモリ上の既定を factory に落とさない
+  const env=loadEnv({});
+  makeMatsumotoState(env);
+  assert(env.saveClubProfile(env.buildClubProfileFromState())===true, 'P20-10 前提: 既定を保存できる');
+  const realGet=env._ls.getItem.bind(env._ls);
+  env._ls.setItem=function(){ throw new Error('QuotaExceeded(mock)'); };
+  env._ls.getItem=function(k){ if(k===env.CLUB_PROFILE_KEY)throw new Error('SecurityError(mock)'); return realGet(k); };
+  env._getState().report.title='甲府支部月例将棋大会';
+  const ok=env.saveClubProfile(env.buildClubProfileFromState());
+  env._ls.getItem=realGet;
+  assert(ok===false, 'P20-11 保存は失敗する');
+  assert(env._getClubProfileVar()&&env._getClubProfileVar().report.title==='松本支部月例将棋大会', 'P20-12 ★読めない端末ではメモリ上の既定を触らない（factory に落とさない）');
+}
+{
+  // 構造 pin: 復元は控えが取れなければ何も書かずに中止する
+  const im6=RAW.match(/function importTournamentBackupFromText\([\s\S]*?\n\}/);
+  const b6=im6?im6[0]:'';
+  assert(/if\s*\(\s*!prevProfileRead\.ok\s*\|\|\s*!prevStateRead\.ok\s*\)/.test(b6), 'P20-13 ★控えを取れなければ中止する');
+  assert(b6.indexOf('元へ戻せません')>=0&&b6.indexOf('何も変更していません')>=0, 'P20-14 中止の理由を伝える');
+  assert(b6.indexOf('if(!prevProfileRead.ok||!prevStateRead.ok)')<b6.indexOf('saveClubProfile('), 'P20-15 中止判定は最初の書き込みより前');
+  // 構造 pin: 書き出しは既定を読めなければ中止する（不完全なバックアップを成功と言わない）
+  const ex2=RAW.match(/function exportTournamentBackup\(\)[\s\S]*?\n\}/);
+  const eb=ex2?ex2[0]:'';
+  assert(/if\s*\(\s*!cp\.ok\s*\)/.test(eb), 'P20-16 ★既定を読めなければ書き出しを中止する');
+  assert(eb.indexOf('不完全なバックアップを作らないため')>=0, 'P20-17 中止の理由を伝える');
+  assert(eb.indexOf('if(!cp.ok)')<eb.indexOf('new Blob'), 'P20-18 中止判定はファイル生成より前');
 }
 
 // ---- P9: resetAll の旧クラス DOM 差分掃除（構造 pin） ----

@@ -153,8 +153,13 @@ const saveSrc=RAW.slice(RAW.indexOf('function save()'),RAW.indexOf('function sav
 assert(saveSrc.indexOf('markAutosaveStatus()')>=0, 'K1 save() 成功パスで markAutosaveStatus（温存）');
 const syncSrc=RAW.slice(RAW.indexOf('function syncBranchMasterOnSave'),RAW.indexOf('function saveData'));  // YOMI-SYNC-OVERWRITE-001 で関数が伸びたため関数全体を対象に
 assert(/masterSaved!==false\)\{[\s\S]{0,1200}markSaveStatus\('meibo'\)/.test(syncSrc), 'K2 名簿同期成功時のみ meibo 記録（温存）');
-const expSrc=RAW.slice(RAW.indexOf('function exportTournamentBackup'),RAW.indexOf('function exportTournamentBackup')+1400);
+// CLUB-PROFILE-002 / Codex 6巡目 P1: クラブ既定を読めない場合に書き出しを中止する分岐が
+//   先頭に入って関数が伸びたため、固定長 slice では末尾の markSaveStatus に届かなくなった。
+//   pin の意図＝「成功パス（return true の直前）で backup を記録する」は不変なので関数全体で照合する。
+const expSrc=(RAW.match(/function exportTournamentBackup\(\)[\s\S]*?\n\}/)||[''])[0];
 assert(expSrc.indexOf("markSaveStatus('backup')")>=0&&expSrc.indexOf("markSaveStatus('backup')")<expSrc.indexOf('return true;')+30, 'K3 バックアップ成功時に backup 記録（温存）');
+// 中止パスでは記録しない（不完全なバックアップを「保存済み」として残さない）
+assert(expSrc.indexOf('if(!cp.ok)')>=0&&expSrc.indexOf('if(!cp.ok)')<expSrc.indexOf("markSaveStatus('backup')"), 'K3b 既定を読めない場合は記録前に中止する');
 // SEND-DATE-CONFIRM-002 (#622)/SEND-DATE-GUARD-001 (#600): 冒頭の日付確認ガードで関数が伸びたため窓を 5200 に拡大（チェック内容は不変）。
 // GUEST-TOURNAMENT-MODE-001 (#760): 冒頭のゲスト大会ガードでさらに伸びたため窓を 6400 に拡大（チェック内容は不変）。
 const cloudSrc=RAW.slice(RAW.indexOf('function sendTournamentToCloud'),RAW.indexOf('function sendTournamentToCloud')+6400);

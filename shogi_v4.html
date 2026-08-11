@@ -941,13 +941,37 @@ function normalizeReportPersistedEmptyable(value,key,fallbackNormalizer){
 // localStorage から読み・検証する。不正（型崩れ・A/B 欠落・壊れた JSON・storage 例外）は
 //   fail-soft で null（=factory）。値の検証はここで完結させる（この時点では REPORT_FIELD_SPECS
 //   未評価のため normalize helper に依存しない＝top-level 評価順の罠を避ける・パネル指摘）。
-function readClubProfileRaw(){
-  var raw=null;
-  try{raw=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){return null;}
-  if(!raw)return null;
+// ★Codex 6巡目 P1×3（PR #847）／作者判断 2026-08-11「読み取り側も作り直す」:
+//   STORAGE-ATOMIC-001 は書き込みの意味論を固定したが、**読み取りも失敗しうる**ことを
+//   設計に入れていなかった。localStorage.getItem は throw し得るのに、これまでは
+//   catch して null を返していたため「読めなかった」と「そもそも無い」が区別できず、
+//   ①巻き戻し用の控えが取れなかったのに「大会データが無い」と誤解してキーごと削除する
+//   ②書けたのに読み直せず「保存できませんでした」と嘘をつく
+//   ③クラブ既定を読めないまま「設定の入っていないバックアップ」を成功として書き出す
+//   という3つの穴が同じ原因から生じていた。読み取りにも同じ3値の規律を入れる。
+//     {ok:true , raw:string} … 読めた
+//     {ok:true , raw:null}   … キーが無い（正常。初回起動など）
+//     {ok:false, raw:null}   … 読み取り自体が失敗（端末が読めない状態）
+function readStorageRaw(key){
+  var v=null;
+  try{v=localStorage.getItem(key);}catch(e){return {ok:false,raw:null};}
+  return {ok:true,raw:(typeof v==='string'&&v!=='')?v:null};
+}
+// クラブ既定の読み取り（3値版）。profile は「有効な既定」か null。
+//   ok:false（読めない）と ok:true/profile:null（無い・壊れている）を呼び出し側が区別できる。
+function readClubProfileResult(){
+  var r=readStorageRaw(CLUB_PROFILE_KEY);
+  if(!r.ok)return {ok:false,profile:null};
+  if(r.raw===null)return {ok:true,profile:null};
   var p=null;
-  try{p=JSON.parse(raw);}catch(e){return null;}
-  return sanitizeClubProfileObject(p);
+  try{p=JSON.parse(r.raw);}catch(e){return {ok:true,profile:null};}
+  return {ok:true,profile:sanitizeClubProfileObject(p)};
+}
+// 従来どおり「有効な既定 or null」を返す薄い入口。起動時のように
+//   「読めない＝既定なし＝factory」で正しく fail-soft できる経路だけがこれを使う。
+//   読めなかったことを区別する必要がある経路は readClubProfileResult を使うこと。
+function readClubProfileRaw(){
+  return readClubProfileResult().profile;
 }
 // ★Codex P1（PR #847）: 検証を「読むとき」だけでなく「書く前」にも使えるよう純関数として切り出す。
 //   これが無いと、壊れたバックアップの club_profile を先に localStorage へ書いてから検証に失敗し、
@@ -1093,21 +1117,31 @@ function saveClubProfile(profile,status){
   var json='';
   try{json=JSON.stringify(clean);}catch(e){return false;}
   // validate: byte 一致の後、「読み直して有効な profile として解釈できるか」まで確かめる。
-  var r=writeStorageAtomic(CLUB_PROFILE_KEY,json,function(){ return !!readClubProfileRaw(); });
+  //   読み取り自体が失敗した場合も false（＝巻き戻す）。書けたか分からないまま先へ進まない。
+  var r=writeStorageAtomic(CLUB_PROFILE_KEY,json,function(){
+    var back=readClubProfileResult();
+    return back.ok&&!!back.profile;
+  });
   status.result=r;
   if(r!=='ok'){
-    // 失敗時はメモリ上の clubProfile を localStorage と揃え直す（'reverted' なら直前の有効値へ戻る）。
-    clubProfile=readClubProfileRaw();
+    // ★Codex 6巡目 P1: 読めない端末では clubProfile を触らない。ここで null を入れると
+    //   「保存に失敗しただけ」なのにメモリ上の既定まで factory に落ちる。
+    var cur=readClubProfileResult();
+    if(cur.ok)clubProfile=cur.profile;   // 'reverted' なら直前の有効値へ戻る
     return false;
   }
-  clubProfile=readClubProfileRaw();
-  return !!clubProfile;
+  // ★Codex 6巡目 P1: ここで読み直すと、書き込みは 'ok' で確定しているのに読み取りだけ
+  //   失敗して false を返し、「どちらも変更していません」と嘘をつく経路ができる。
+  //   書いたのは sanitize 済みの正準形そのものなので、それをそのままメモリへ載せる。
+  clubProfile=clean;
+  return true;
 }
 // 巻き戻しの薄い入口（意味は revertStorageRaw に集約）。メモリ側の同期だけ担う。
 function restoreClubProfileRaw(prevRaw){
   if(!revertStorageRaw(CLUB_PROFILE_KEY,prevRaw))return false;
-  // メモリ側も localStorage と揃える（既定が無かった場合は null＝factory へ fail-soft）。
-  clubProfile=readClubProfileRaw();
+  // メモリ側も localStorage と揃える。読めない端末では触らない（上と同じ理由）。
+  var cur=readClubProfileResult();
+  if(cur.ok)clubProfile=cur.profile;
   return true;
 }
 // ※ 呼び出し側は applyLoadedJson（メモリ復帰＋その save）の**後**に呼ぶこと。
@@ -13544,7 +13578,15 @@ function exportTournamentBackup(){
   try{
     var now=new Date();
     // ★Codex 4巡目 P1: localStorage を読むのは bind 層のここだけ。pure builder には値を渡す。
-    var json=serializeTournamentBackup(state,now.toISOString(),readClubProfileRaw());
+    // ★Codex 6巡目 P1: 「読めなかった」を「クラブ既定が無い」と同一視すると、設定の入っていない
+    //   バックアップを「保存しました」と言って渡すことになる。機種変更時に設定だけが失われるので、
+    //   読めない場合は書き出さずに中止する（不完全なファイルを成功として残さない）。
+    var cp=readClubProfileResult();
+    if(!cp.ok){
+      alert('バックアップの保存に失敗しました。\n\nこの端末に保存されているクラブ既定（大会名・会場・クラス構成など）を読み取れませんでした。\n\n不完全なバックアップを作らないため、保存を中止しました。通常のウィンドウで開き直してから、もう一度お試しください。');
+      return false;
+    }
+    var json=serializeTournamentBackup(state,now.toISOString(),cp.profile);
     var y=now.getFullYear();
     var mo=('0'+(now.getMonth()+1)).slice(-2);
     var d=('0'+now.getDate()).slice(-2);
@@ -13591,14 +13633,21 @@ function importTournamentBackupFromText(text){
       //   書けなかったら**大会の取り込みに進まず中止**し、理由を明示する（部分適用を作らない）。
       // ★Codex 3巡目 P1（PR #847）: ②が失敗したときに①を巻き戻せるよう、書く前の姿を控える。
       //   prevProfileRaw は生バイト（既定が無ければ null）、prevStateJson は復元前の大会データ。
-      var prevProfileRaw=null;
-      try{prevProfileRaw=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){prevProfileRaw=null;}
-      var prevStateJson=null;
-      try{prevStateJson=JSON.stringify(state);}catch(e){prevStateJson=null;}
+      // ★Codex 6巡目 P1: 控えが取れないまま進むと、巻き戻しのときに「無かった」と誤解して
+      //   キーごと削除し、一時的な読み取り不良が既存データの消失に化ける。
+      //   控えを取れない端末では、**どちらにも書く前に**中止する。
+      var prevProfileRead=readStorageRaw(CLUB_PROFILE_KEY);
       // ★Codex 4巡目 P1: 巻き戻しの照合対象は「メモリの JSON」ではなく **localStorage の生バイト**。
       //   両者は日付補完などで元々ずれ得るので、生バイトを控えないと戻せたか判定できない。
-      var prevStateRaw=null;
-      try{prevStateRaw=localStorage.getItem(STORAGE_KEY);}catch(e){prevStateRaw=null;}
+      var prevStateRead=readStorageRaw(STORAGE_KEY);
+      if(!prevProfileRead.ok||!prevStateRead.ok){
+        appAlert('復元を中止しました。\n\nこの端末に保存されている現在のデータを読み取れないため、復元に失敗したときに元へ戻せません。\n\n何も変更していません。通常のウィンドウで開き直してから、もう一度お試しください。');
+        return;
+      }
+      var prevProfileRaw=prevProfileRead.raw;
+      var prevStateRaw=prevStateRead.raw;
+      var prevStateJson=null;
+      try{prevStateJson=JSON.stringify(state);}catch(e){prevStateJson=null;}
       var cpRestored=false;
       if(res.club_profile){
         // ★Codex 5巡目 P1: 保存は writeStorageAtomic に集約され「反映('ok')／無傷('reverted')／
