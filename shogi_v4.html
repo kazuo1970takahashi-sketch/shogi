@@ -4962,15 +4962,16 @@ function buildMasterTabHtml(master){
   return html;
 }
 
-// NUMAZU-BEHAVIOR-001 (#840 ②): 個人情報の利用目的の文面。主催者名が入っていればそれを主体にし、
-//   未設定なら主体を特定しない文面にする（沼津固有の主体を残さない＝受け入れ基準4）。
-//   ※ 主催者名は state.report.organizer。クラブ設定（CLUB-PROFILE-001/002）でクラブごとの値になる。
+// NUMAZU-BEHAVIOR-001 (#840 ②): 個人情報の利用目的の文面。主体を名指ししない。
+//   ★ 反証パネル（2026-08-11・1巡目）で「主催者名を差し込む」案を撤回した。実測の理由:
+//     `normalizeReportOrganizer('')` は factory 固定（profile では上書きしない）なので、
+//     主催者欄を空にしても必ず `日本将棋連盟沼津支部` に戻る。つまり「未設定」分岐は実機で到達不能で、
+//     報告書設定を触っていない他クラブの端末では
+//       「本ツールは、**日本将棋連盟沼津支部**の大会運営目的で…」
+//     と出る。旧文言「沼津支部内」より主体が具体的な法人名になり、**同意の有効性としては悪化**していた。
+//   主体を書かない文面なら、沼津でも松本でも事実であり、報告書設定に依存しない。
+//   ※ 値を差し込まないので注入経路も無い（定数文字列）。
 function buildMasterConsentPurposeText(){
-  var org='';
-  try{
-    if(state&&state.report&&typeof state.report.organizer==='string')org=state.report.organizer.trim();
-  }catch(e){org='';}
-  if(org!=='')return '本ツールは、'+escapeHtml(org)+'の大会運営目的で、過去参加者の氏名・参加履歴をこの端末内に保存します。';
   return '本ツールは、この端末で運営する大会の運営目的で、過去参加者の氏名・参加履歴をこの端末内に保存します。';
 }
 
@@ -16993,18 +16994,19 @@ function buildMonthlyPeriodLabel(dateYmd){
   if(!(mo>=1&&mo<=12))return '';
   return y+'年'+mo+'月度';
 }
-// NUMAZU-BEHAVIOR-001 (#840 ①・作者決定 2026-08-11): 大会名が空のときの既定は
-//   クラブ設定（shogi_club_profile）の大会名を使い、未保存なら factory へ fail-soft。
-//   これは #839 論点5 と同一の決定（issue #840 受け入れ基準2）。
+// NUMAZU-BEHAVIOR-001 (#840 ①): 大会名が空のときの既定。
+//   ★ 反証パネル（2026-08-11・1巡目）で「クラブ設定から取る」案を撤回した。理由は3つとも実測:
+//     (1) `seedClubProfileOnce()` が初回起動時に factory（沼津）で shogi_club_profile を書くので、
+//         「クラブ既定を保存していない端末」は存在しない＝他クラブでも結局 沼津 を返す（効かない）
+//     (2) 表示時に profile を読むと **クラブ設定を変えた瞬間に過去大会の表示名が遡って変わる**。
+//         CLUB-PROFILE-001 が「profile を当てるのは生成系のみ」と決めた設計原則の違反で、
+//         ①が撤去したのと同じ形の問題を別のキーで再導入することになる
+//     (3) キャッシュ済みの profileReport() ではなく readClubProfileRaw() を直読みするため、
+//         保存失敗時のガード（#845/#847 の Codex P1）をバイパスする
+//   したがって従来どおり factory 固定に戻す。`normalizeReportTitle('')` と同じ値になるので、
+//   アプリ内で「空の既定」が2種類ある状態も解消する（本テスト C-9 で固定）。
 //   ★ 沼津リテラルを増やさないため factoryReport() から取る（CLUB-PROFILE-001 の一本化を維持）。
 function defaultCloudTournamentTitle(){
-  try{
-    var p=readClubProfileRaw();
-    if(p&&p.report&&typeof p.report.title==='string'){
-      var t=p.report.title.trim();
-      if(t!=='')return t;
-    }
-  }catch(e){}
   return factoryReport().title;
 }
 // NUMAZU-BEHAVIOR-001 (#840 ①): 「月例」を含む大会名を無条件で沼津の名前へ集約する行を外した。

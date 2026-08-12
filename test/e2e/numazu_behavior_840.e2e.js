@@ -60,8 +60,13 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
   ok(joined.indexOf('2026年8月度 松本支部月例将棋大会') >= 0, '① 松本の大会名がそのまま並ぶ  [実測 ' + joined.slice(0, 120) + ']');
   ok(joined.indexOf('2026年7月度 〇〇将棋クラブ月例会') >= 0, '① 「月例会」を含む名前もそのまま');
   ok(joined.indexOf('2026年6月度 松本支部将棋大会') >= 0, '① 月例を含まない名前は従来どおり');
-  ok(joined.indexOf('2026年5月度 松本支部月例将棋大会') >= 0, '① 名前が空の行はクラブ設定の大会名が既定になる');
-  ok(list.hasNumazu === false, '① 松本の端末のクラウド一覧に「沼津」が1文字も出ない');
+  // ★パネル1巡目の指摘を反映: 空名の既定は factory 固定に戻した（クラブ設定案は撤回）。
+  //   したがって空名の行だけは沼津既定が出る。これは「入力された名前を勝手に置換しない」という
+  //   ①の主張とは別の話（空名はそもそもアプリの送信経路では作られない）。
+  ok(joined.indexOf('2026年5月度 沼津支部月例将棋大会') >= 0, '① 名前が空の行は factory 既定（クラブ設定に依存しない）');
+  ok(list.hasNumazu === true, '① 沼津が出るのは空名の行だけ（入力された名前は置換されない）');
+  ok(joined.split('松本支部月例将棋大会').length - 1 >= 1 && joined.indexOf('沼津支部月例将棋大会 開催日 2026-08-09') < 0,
+    '① 入力された「松本支部月例将棋大会」の行は沼津に化けていない');
 
   // ローカル履歴（生名）とクラウド一覧の表記が揃う（受け入れ基準7）
   const same = await pg.evaluate(() => {
@@ -78,20 +83,33 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
     const i = t.indexOf('本ツールは');
     return i >= 0 ? t.slice(i, i + 90) : null;
   });
-  ok(consent && consent.indexOf('日本将棋連盟松本支部の大会運営目的') >= 0,
-    '② 同意文の主体がそのクラブの主催者名になる  [実測 ' + String(consent).slice(0, 70) + '…]');
-  ok(consent && consent.indexOf('沼津支部内の大会運営目的') < 0, '② 旧文言「沼津支部内の大会運営目的」は出ない');
+  // ★パネル1巡目＋Codex P1 の指摘を反映: 主催者名の差し込みは撤回した。
+  //   normalizeReportOrganizer が空を factory（日本将棋連盟沼津支部）へ戻すので、
+  //   差し込む設計だと他クラブの端末で必ず沼津が主体になり、旧文言より悪化していた。
+  ok(consent && consent.indexOf('この端末で運営する大会の運営目的') >= 0,
+    '② 同意文は主体を名指ししない  [実測 ' + String(consent).slice(0, 70) + '…]');
+  ok(consent && consent.indexOf('沼津') < 0, '② 同意文に沼津が出ない');
 
-  // 主催者が未設定のときの文面
-  const generic = await pg.evaluate(() => {
-    state.report.organizer = '';
-    renderMasterTab();
+  // ★ 主催者欄を実際に空にして blur（＝正規化を通す実操作）しても文面が変わらないこと
+  const afterClear = await pg.evaluate(() => {
+    showTab('result');
+    const inp = document.getElementById('rep-organizer');
+    let normalized = null;
+    if (inp) {
+      inp.value = '';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      inp.dispatchEvent(new Event('change', { bubbles: true }));
+      normalized = inp.value;
+    }
+    showTab('master'); renderMasterTab();
     const t = (document.getElementById('pane-master') || document.body).textContent || '';
     const i = t.indexOf('本ツールは');
-    return i >= 0 ? t.slice(i, i + 90) : null;
+    return { normalized, consent: i >= 0 ? t.slice(i, i + 90) : null };
   });
-  ok(generic && generic.indexOf('この端末で運営する大会の運営目的') >= 0,
-    '② 主催者が未設定なら主体を特定しない文面  [実測 ' + String(generic).slice(0, 70) + '…]');
+  ok(afterClear.consent && afterClear.consent.indexOf('この端末で運営する大会の運営目的') >= 0,
+    '② 主催者欄を空にして正規化を通しても文面は変わらない  [正規化後の欄 = "' + afterClear.normalized + '"]');
+  ok(afterClear.consent && afterClear.consent.indexOf('沼津') < 0,
+    '② ★このとき沼津が主体にならない（Codex P1・パネルB/C の指摘した経路）');
 
   ok(errors.length === 0, '未捕捉例外なし' + (errors.length ? '（実際: ' + errors[0] + '）' : ''));
 
