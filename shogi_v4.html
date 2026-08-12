@@ -12811,7 +12811,11 @@ function sendTournamentToCloud(setStatus){
       if(nowTitle!==_confirmedSend.title)diff.push('大会名（確認時「'+(_confirmedSend.title||'(名称未設定)')+'」→ 現在「'+(nowTitle||'(名称未設定)')+'」）');
       if(nowDate!==_confirmedSend.date)diff.push('実施日（確認時「'+_confirmedSend.date+'」→ 現在「'+(nowDate||'(未設定)')+'）」');
       if(!diff.length)return null;
-      return '送信を中止しました：確認した内容が送信中に変わりました＝'+diff.join('・')+'。もう一度「☁ クラウドへ送信」を押して、新しい内容で確認してください（運営は続行できます）。';
+      // ★Codex P2（PR #857 3巡目）: 先頭の ⚠ は装飾ではない。classifyCloudStatusKind は
+      //   「失敗/エラー」→err、「⚠」→warn、「〜しました」→ok の順で見るため、⚠ が無いと
+      //   「送信を中止**しました**」が ok（緑）に分類され、**送れていない送信が成功色で出る**。
+      //   運営者が押し直す必要がある状態なので warn（橙）でなければならない。
+      return '⚠ 送信を中止しました：確認した内容が送信中に変わりました＝'+diff.join('・')+'。もう一度「☁ クラウドへ送信」を押して、新しい内容で確認してください（運営は続行できます）。';
     }
     // CLOUD-SEND-UNLINKED-GUARD-001: 送信直前ガード。未連携者がいれば確認（無ければ従来どおり即送信）。
     //   ①名簿に反映して送信＝既存 syncBranchMasterOnSave（初参加者に member_id 付与）→送信 ②このまま送信 ③中止。
@@ -12845,7 +12849,17 @@ function sendTournamentToCloud(setStatus){
             if(_drift){ setStatus(_drift); return {ok:false,step:'changed-after-confirm'}; }
             var master=(typeof loadBranchMaster==='function')?loadBranchMaster():{members:[]};
             try{ if(typeof ensureTournamentId==='function')ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report)); }catch(e){}
-            return syncTournamentToCloud(client,master,{clubId:clubId}).then(function(res){
+            // ★Codex P2（PR #857 3巡目）: 照合を通した state の**写し**を星取表スナップショット用に固定する。
+            //   buildCloudSyncPayload は syncTournamentToCloud の入口で1回だけ組むので tournaments.name は
+            //   ここの state で確定するが、_withSnapshot は members/players/tournaments/entries の upsert が
+            //   終わった**後**に buildPublicLiveSnapshot(global state) を呼ぶ。その間に大会名を編集されると
+            //   tournaments.name は確認値・snapshot.meta.title は編集後、という食い違いが同じ送信の中で起きる。
+            //   写しを渡して、1回の送信が作る成果物を全部この時点の state から作る。
+            //   ★参照渡し（snapshotSource:state）では意味が無い。state は同じオブジェクトが書き換わるため。
+            //   写しが作れない場合は undefined＝従来どおり global state（fail-soft・送信は止めない）。
+            var _snapSrc;
+            try{ _snapSrc=JSON.parse(JSON.stringify(state)); }catch(eC){ _snapSrc=undefined; }
+            return syncTournamentToCloud(client,master,{clubId:clubId,snapshotSource:_snapSrc}).then(function(res){
               if(res&&res.ok){
                 // A-2 (SYSTEM-REVIEW #377 follow): 未解決 entry を黙って成功扱いにしない。
                 //   unresolved>0 は ⚠ 警告（U-1 で橙）＝集計欠落に気づける。skipped(マスタ未連携)は当初「対象外の中立注記」

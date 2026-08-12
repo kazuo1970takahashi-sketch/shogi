@@ -230,15 +230,24 @@ ok(RAW.indexOf('_confirmedSend={title:_recTitle,date:_recDate}')>=0,'N38 確認�
 ok(RAW.indexOf("step:'changed-after-confirm'")>=0,'N39 食い違ったら専用の中止経路へ');
 // 巻き上げ事故の番人（PR #847 P16-1 と同型）: appConfirm はテスト解決器で onResult を同期で呼ぶため、
 //   `var _confirmedSend=null;` が _dateGate() より後ろにあると凍結値が直後に null へ戻り照合が黙って死ぬ。
-var iDecl=RAW.indexOf('var _confirmedSend=null;');
-var iGate=RAW.indexOf('function _dateGate()');
-var iFreeze=RAW.indexOf('_confirmedSend={title:');
+//   ★Codex P2（PR #857 3巡目）: 初版は RAW をそのまま indexOf していたため、**宣言の直上にある
+//     説明コメント**（同じ文字列を引用している）に先に当たっていた。コメントは実際の宣言より前にあるので、
+//     宣言を悪い位置（_dateGate の後ろ）へ戻しても iDecl<iGate が成立し、N40/N40b は通ってしまう
+//     ＝防ぐはずの回帰が入ったまま緑になる。**この番人自体が嘘をついていた。**
+//     位置を見る前にコメント行を除去する（2巡目に自分で指摘された「窓からコメントを外す」と同じ手当て）。
+var SRC_NOCOMMENT=RAW.replace(/^[ \t]*\/\/.*$/gm,'');
+var iDecl=SRC_NOCOMMENT.indexOf('var _confirmedSend=null;');
+var iGate=SRC_NOCOMMENT.indexOf('function _dateGate()');
+var iFreeze=SRC_NOCOMMENT.indexOf('_confirmedSend={title:');
+ok(SRC_NOCOMMENT.split('var _confirmedSend=null;').length-1===1,
+   'N40pre 実行される宣言はちょうど1つ（コメント混入や二重宣言で位置比較が無意味にならない）');
 ok(iDecl>=0&&iGate>iDecl,'N40 `var _confirmedSend=null;` の宣言が _dateGate より前（巻き上げで凍結値が消えない）');
 ok(iFreeze>iDecl,'N40b 凍結の代入は宣言より後');
 // 照合は payload 生成（ensureTournamentId／syncTournamentToCloud）より前に置く。
-var iDrift=RAW.indexOf('var _drift=_describeSendDrift();');
-var iEnsure=RAW.indexOf('ensureTournamentId(state,master,getTournamentDateFromReport');
-var iSync=RAW.indexOf('return syncTournamentToCloud(client,master,{clubId:clubId})');
+//   位置比較はすべてコメント除去後のソースで見る（N40 と同じ理由）。
+var iDrift=SRC_NOCOMMENT.indexOf('var _drift=_describeSendDrift();');
+var iEnsure=SRC_NOCOMMENT.indexOf('ensureTournamentId(state,master,getTournamentDateFromReport');
+var iSync=SRC_NOCOMMENT.indexOf('return syncTournamentToCloud(client,master,');
 ok(iDrift>=0&&iEnsure>iDrift&&iSync>iDrift,'N41 照合は ensureTournamentId / syncTournamentToCloud より前');
 // 大会名だけでなく実施日も見る（#622 の確認にも同じ穴があるため片側だけ直さない）。
 ok(/_describeSendDrift[\s\S]{0,900}nowTitle!==_confirmedSend\.title/.test(RAW),'N42 大会名の食い違いを見る');
@@ -247,6 +256,24 @@ ok(/_describeSendDrift[\s\S]{0,900}nowDate!==_confirmedSend\.date/.test(RAW),'N4
 var driftSrc=(RAW.match(/function _describeSendDrift\(\)\{[\s\S]*?\n    \}/)||[''])[0];
 ok(driftSrc!==''&&driftSrc.indexOf('state.report.title=')<0&&driftSrc.indexOf('state.report.date=')<0,
    'N44 照合は state を書き戻さない（確認時の値で上書きして編集を捨てない）');
+
+// ---- Codex P2（PR #857 3巡目）----
+console.log('=== N: 3巡目の指摘（ステータス色・スナップショットの凍結） ===');
+// ① 中止は warn（橙）でなければならない。classifyCloudStatusKind は
+//    「失敗/エラー」→err →「⚠」→warn →「〜しました」→ok の順に見るので、⚠ が無いと
+//    「送信を中止しました」が **ok（緑）** になり、送れていない送信が成功色で出る。
+ok(driftSrc.indexOf("return '⚠ 送信を中止しました")>=0,'N45 確認内容の食い違いによる中止は ⚠ 始まり（warn 分類）');
+var _kindSrc=(RAW.match(/function classifyCloudStatusKind\([\s\S]*?\n\}/)||[''])[0];
+ok(_kindSrc.indexOf("indexOf('\\u26a0')>=0)return 'warn'")>=0&&
+   _kindSrc.indexOf("indexOf('\\u26a0')")<_kindSrc.indexOf("indexOf('しました')"),
+   'N45b classifyCloudStatusKind は ⚠ を「しました」より先に見る（この前提が崩れたら N45 の効果も消える）');
+// ② 1回の送信が作る成果物を同じ state から作る。_withSnapshot は upsert 列の**後**に
+//    buildPublicLiveSnapshot を呼ぶため、写しを渡さないと snapshot.meta.title だけ編集後になる。
+ok(SRC_NOCOMMENT.indexOf('snapshotSource:_snapSrc')>=0,'N46 星取表スナップショットに凍結した写しを渡す');
+ok(/_snapSrc=JSON\.parse\(JSON\.stringify\(state\)\)/.test(SRC_NOCOMMENT),'N46b 参照ではなく写し（同一オブジェクトの書き換えを受けない）');
+var iSnap=SRC_NOCOMMENT.indexOf('_snapSrc=JSON.parse(JSON.stringify(state))');
+ok(iSnap>iDrift,'N46c 写しは照合を通った**後**に取る（未確認の state を固定しない）');
+ok(/catch\(eC\)\{ _snapSrc=undefined; \}/.test(SRC_NOCOMMENT),'N46d 写しに失敗しても送信は止めない（undefined＝従来どおり・fail-soft）');
 
 console.log('\nNUMAZU-BEHAVIOR-001: PASS '+pass+'件 / FAIL '+fail+'件');
 process.exit(fail>0?1:0);

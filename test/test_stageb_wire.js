@@ -17,7 +17,7 @@ function makeContext(){
 function loadEnv(){
   const ctx=makeContext();const js=extractScripts(RAW);const cryptoMock={randomUUID(){return '00000000-0000-0000-0000-000000000000';}};
   const fn=new Function('document','window','localStorage','crypto','alert','confirm','prompt','FileReader','Blob','URL','console','Promise','setTimeout',
-    `${js};return { pickActiveClubId:pickActiveClubId, sendTournamentToCloud:sendTournamentToCloud, __setAppModalTestResolver:__setAppModalTestResolver, _setState:function(s){ state=s; } };`);
+    `${js};return { pickActiveClubId:pickActiveClubId, sendTournamentToCloud:sendTournamentToCloud, __setAppModalTestResolver:__setAppModalTestResolver, classifyCloudStatusKind:classifyCloudStatusKind, _setState:function(s){ state=s; } };`);
   const env=fn(ctx.document,ctx.window,ctx.localStorage,cryptoMock,function(){},function(){return true;},function(){return '';},function(){},function(){},{createObjectURL:function(){return 'blob:mock';},revokeObjectURL:function(){}},{log:function(){},warn:function(){},error:function(){}},Promise,function(cb){return 0;});
   // IN-APP-MODAL-001: 送信前 confirm はアプリ内モーダル化済。同期解決シームで OK 固定（送信フローへ通過）。
   if(typeof env.__setAppModalTestResolver==='function')env.__setAppModalTestResolver(function(){return true;});
@@ -27,7 +27,11 @@ function loadEnv(){
 function makeClient(cfg){
   cfg=cfg||{}; var calls=[];
   function builder(table,rows,opts){var b={_sel:null};b.select=function(c){this._sel=c;return this;};
-    b.then=function(res,rej){calls.push({table:table,rows:rows,onConflict:opts&&opts.onConflict});var t=cfg.tables&&cfg.tables[table]||{};return Promise.resolve({data:(t.data!==undefined?t.data:null),error:(t.error||null)}).then(res,rej);};return b;}
+    b.then=function(res,rej){calls.push({table:table,rows:rows,onConflict:opts&&opts.onConflict});
+      // NUMAZU-BEHAVIOR-001 (#840・Codex P2 PR #857 3巡目): upsert 列の**途中**を再現するフック。
+      //   照合を通った後・星取表スナップショット生成前に報告書を編集する状況を作る。
+      if(typeof cfg.onUpsert==='function'){ try{ cfg.onUpsert(table); }catch(e){} }
+      var t=cfg.tables&&cfg.tables[table]||{};return Promise.resolve({data:(t.data!==undefined?t.data:null),error:(t.error||null)}).then(res,rej);};return b;}
   return { _calls:calls,
     auth:{ getSession:function(){ return Promise.resolve({data:{session:cfg.session!==undefined?cfg.session:null}}); } },
     // NUMAZU-BEHAVIOR-001 (#840・Codex P2 PR #857 2巡目): 確認 → payload 生成の間の**非同期区間**を
@@ -133,6 +137,36 @@ function setCloud(ctx,clientCfg){
   for(var di=0;di<((cli4&&cli4._calls.length)||0);di++){ if(cli4._calls[di].table==='tournaments')tRow=cli4._calls[di].rows; }
   var tName=(tRow&&(Array.isArray(tRow)?tRow[0]:tRow))?((Array.isArray(tRow)?tRow[0]:tRow).name):null;
   ok(tName==='六月例会','D4 送信された tournaments.name が確認した大会名と一致（生名・#840 で集約しない・got '+JSON.stringify(tName)+'）');
+
+  // D5 中止ステータスは warn（橙）に分類される（Codex P2 3巡目）。
+  //   「送信を中止しました」は classifyCloudStatusKind の「〜しました」分岐に落ちるため、
+  //   ⚠ が無いと **送れていない送信が成功色（緑）で出る**。
+  ok(d1.env.classifyCloudStatusKind(msgD1)==='warn',
+     'D5 確認内容の食い違いによる中止は warn 分類（got '+d1.env.classifyCloudStatusKind(msgD1)+'）');
+  ok(d1.env.classifyCloudStatusKind(msgD3)==='ok','D5b 成功は従来どおり ok 分類（分類そのものを壊していない）');
+
+  // D6 1回の送信が作る成果物は同じ state から作る（Codex P2 3巡目）。
+  //   照合を通った後・entries upsert の時点で大会名を編集しても、
+  //   tournaments.name と tournament_snapshots.snapshot.meta.title が食い違わないこと。
+  var d6=loadEnv(); var st6=mkState(); d6.env._setState(st6);
+  var cli6=null;
+  d6.ctx.window.SHOGI_CLOUD_CONFIG={url:'https://x.supabase.co',publishableKey:'sb_publishable_ok'};
+  d6.ctx.window.supabase={createClient:function(){
+    cli6=makeClient(Object.assign({},okCloud,{onUpsert:function(table){ if(table==='entries')st6.report.title='送信中に変えた名前'; }}));
+    return cli6; }};
+  var rD6=await d6.env.sendTournamentToCloud(function(){});
+  ok(rD6&&rD6.ok===true,'D6 送信自体は成立する（この経路はガードで止めない）');
+  var tRow6=null,snapRow6=null;
+  for(var dj=0;dj<((cli6&&cli6._calls.length)||0);dj++){
+    var cl=cli6._calls[dj];
+    if(cl.table==='tournaments')tRow6=Array.isArray(cl.rows)?cl.rows[0]:cl.rows;
+    if(cl.table==='tournament_snapshots')snapRow6=Array.isArray(cl.rows)?cl.rows[0]:cl.rows;
+  }
+  var snapTitle=snapRow6&&snapRow6.snapshot&&snapRow6.snapshot.meta?snapRow6.snapshot.meta.title:null;
+  ok(snapRow6!==null,'D6pre 星取表スナップショットが送られている（送られていないと D6b が無意味に通る）');
+  ok(tRow6&&tRow6.name==='六月例会','D6b tournaments.name は確認した名前（got '+JSON.stringify(tRow6&&tRow6.name)+'）');
+  ok(snapTitle==='六月例会','D6c snapshot.meta.title も確認した名前（送信中の編集を拾わない・got '+JSON.stringify(snapTitle)+'）');
+  ok(st6.report.title==='送信中に変えた名前','D6d 運営者の編集自体は state に残る（写しを取るだけで書き戻さない）');
 
   console.log('\nPASS='+pass+' FAIL='+fail);
   process.exit(fail>0?1:0);
