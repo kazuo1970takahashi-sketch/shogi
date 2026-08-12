@@ -155,9 +155,13 @@ const syncSrc=RAW.slice(RAW.indexOf('function syncBranchMasterOnSave'),RAW.index
 assert(/masterSaved!==false\)\{[\s\S]{0,1200}markSaveStatus\('meibo'\)/.test(syncSrc), 'K2 名簿同期成功時のみ meibo 記録（温存）');
 const expSrc=RAW.slice(RAW.indexOf('function exportTournamentBackup'),RAW.indexOf('function exportTournamentBackup')+1400);
 assert(expSrc.indexOf("markSaveStatus('backup')")>=0&&expSrc.indexOf("markSaveStatus('backup')")<expSrc.indexOf('return true;')+30, 'K3 バックアップ成功時に backup 記録（温存）');
-// SEND-DATE-CONFIRM-002 (#622)/SEND-DATE-GUARD-001 (#600): 冒頭の日付確認ガードで関数が伸びたため窓を 5200 に拡大（チェック内容は不変）。
-// GUEST-TOURNAMENT-MODE-001 (#760): 冒頭のゲスト大会ガードでさらに伸びたため窓を 6400 に拡大（チェック内容は不変）。
-const cloudSrc=RAW.slice(RAW.indexOf('function sendTournamentToCloud'),RAW.indexOf('function sendTournamentToCloud')+6400);
+// SEND-DATE-CONFIRM-002 (#622)/SEND-DATE-GUARD-001 (#600): 冒頭の日付確認ガードで関数が伸びたため窓を 5200 に拡大。
+// GUEST-TOURNAMENT-MODE-001 (#760): 冒頭のゲスト大会ガードでさらに伸びたため窓を 6400 に拡大。
+// NUMAZU-BEHAVIOR-001 (#840): 確認内容の凍結・照合でさらに伸びて 6400 を超えた。**固定長をまた広げるのはやめ、
+//   関数全体を対象にする**（チェック内容は不変）。固定長の窓は関数が伸びるたびに黙ってズレ、
+//   「落ちる」だけでなく「何も見ていないのに通る」状態も作りうるため、数字を増やす対処を打ち切る。
+const cloudSrc=(RAW.match(/function sendTournamentToCloud\([\s\S]*?\n\}/)||[''])[0];
+assert(cloudSrc!==''&&cloudSrc.indexOf('function _send()')>=0, 'K4pre sendTournamentToCloud 全体を切り出せた（切り出し失敗による誤 PASS を防ぐ）');
 assert(/res&&res\.ok[\s\S]{0,900}markSaveStatus\('cloud'\)/.test(cloudSrc), 'K4 送信 res.ok 時に cloud 記録（温存）');
 
 // B バックアップ modal 冒頭の「最終バックアップ」表示（backup 時刻の移設先）
