@@ -30,7 +30,9 @@ function makeClient(cfg){
     b.then=function(res,rej){calls.push({table:table,rows:rows,onConflict:opts&&opts.onConflict});var t=cfg.tables&&cfg.tables[table]||{};return Promise.resolve({data:(t.data!==undefined?t.data:null),error:(t.error||null)}).then(res,rej);};return b;}
   return { _calls:calls,
     auth:{ getSession:function(){ return Promise.resolve({data:{session:cfg.session!==undefined?cfg.session:null}}); } },
-    rpc:function(name){ return Promise.resolve({data:(cfg.memberships!==undefined?cfg.memberships:[]),error:null}); },
+    // NUMAZU-BEHAVIOR-001 (#840・Codex P2 PR #857 2巡目): 確認 → payload 生成の間の**非同期区間**を
+    //   再現するためのフック。この区間はモーダルが閉じており、報告書タブは編集できる。
+    rpc:function(name){ if(typeof cfg.onRpc==='function'){ try{ cfg.onRpc(); }catch(e){} } return Promise.resolve({data:(cfg.memberships!==undefined?cfg.memberships:[]),error:null}); },
     from:function(table){ return { upsert:function(rows,opts){ return builder(table,rows,opts); } }; } };
 }
 let pass=0,fail=0;function ok(c,m){if(c)pass++;else{fail++;console.log('  FAIL: '+m);}}
@@ -82,6 +84,55 @@ function setCloud(ctx,clientCfg){
   var msgF=''; var rF=await fx.env.sendTournamentToCloud(function(m){msgF=m;});
   ok(rF&&rF.ok===false&&rF.step==='members','F1 members 失敗→ok:false step=members');
   ok(msgF.indexOf('失敗')>=0&&msgF.indexOf('続行')>=0,'F2 失敗でも運営続行を案内');
+
+  // ============================================================================
+  // D: NUMAZU-BEHAVIOR-001 (#840・Codex P2 PR #857 2巡目)
+  //    確認した内容が、送信中（loadCloudDeps / getSession / claim_organizer_seat の非同期区間）に
+  //    編集されたら送信しない。buildCloudSyncPayload は payload 生成時に state.report を読み直すため、
+  //    ここを守らないと「確認した名前と違う名前が共有履歴に残る」。
+  // ============================================================================
+  console.log('=== D: 確認後に報告書が編集されたら送信しない ===');
+  var okCloud={session:{user:{}},memberships:[{status:'active',club_id:'club-1'}],
+    tables:{players:{data:[{id:'p1',member_id:'m_a1'}]},tournaments:{data:[{id:'t-uuid'}]}}};
+
+  // D1 大会名が変わった
+  var d1=loadEnv(); var st1=mkState(); d1.env._setState(st1);
+  var cli1=null;
+  d1.ctx.window.SHOGI_CLOUD_CONFIG={url:'https://x.supabase.co',publishableKey:'sb_publishable_ok'};
+  d1.ctx.window.supabase={createClient:function(){ cli1=makeClient(Object.assign({},okCloud,{onRpc:function(){ st1.report.title='別の大会名'; }})); return cli1; }};
+  var msgD1=''; var rD1=await d1.env.sendTournamentToCloud(function(m){msgD1=m;});
+  ok(rD1&&rD1.ok===false&&rD1.step==='changed-after-confirm','D1 大会名が変わったら step=changed-after-confirm（got '+JSON.stringify(rD1)+'）');
+  ok(msgD1.indexOf('大会名')>=0&&msgD1.indexOf('六月例会')>=0&&msgD1.indexOf('別の大会名')>=0,'D1b 中止メッセージが確認時と現在の大会名を両方示す');
+  ok(msgD1.indexOf('続行')>=0,'D1c 運営は続行できると案内（fail-soft）');
+  ok(cli1&&cli1._calls.length===0,'D1d ★1件も upsert していない（クラウドに何も書いていない）');
+
+  // D2 実施日が変わった（#622 の確認にも同じ穴がある＝片側だけ直さない）
+  var d2=loadEnv(); var st2=mkState(); d2.env._setState(st2);
+  var cli2=null;
+  d2.ctx.window.SHOGI_CLOUD_CONFIG={url:'https://x.supabase.co',publishableKey:'sb_publishable_ok'};
+  d2.ctx.window.supabase={createClient:function(){ cli2=makeClient(Object.assign({},okCloud,{onRpc:function(){ st2.report.date='2026-06-21'; }})); return cli2; }};
+  var msgD2=''; var rD2=await d2.env.sendTournamentToCloud(function(m){msgD2=m;});
+  ok(rD2&&rD2.ok===false&&rD2.step==='changed-after-confirm','D2 実施日が変わっても step=changed-after-confirm');
+  ok(msgD2.indexOf('実施日')>=0&&msgD2.indexOf('2026-06-14')>=0&&msgD2.indexOf('2026-06-21')>=0,'D2b 中止メッセージが確認時と現在の実施日を両方示す');
+  ok(cli2&&cli2._calls.length===0,'D2c ★1件も upsert していない');
+
+  // D3 何も編集していなければ従来どおり送信できる（ガードが常時ブロックしていないこと）
+  var d3=loadEnv(); d3.env._setState(mkState());
+  setCloud(d3.ctx,okCloud);
+  var msgD3=''; var rD3=await d3.env.sendTournamentToCloud(function(m){msgD3=m;});
+  ok(rD3&&rD3.ok===true,'D3 編集が無ければ従来どおり成功（ガードは通常経路を止めない）');
+  ok(msgD3.indexOf('送信しました')>=0,'D3b 成功ステータス');
+
+  // D4 確認した内容がそのまま payload に載る（確認 = 送信内容）
+  var d4=loadEnv(); d4.env._setState(mkState());
+  var cli4=null;
+  d4.ctx.window.SHOGI_CLOUD_CONFIG={url:'https://x.supabase.co',publishableKey:'sb_publishable_ok'};
+  d4.ctx.window.supabase={createClient:function(){ cli4=makeClient(okCloud); return cli4; }};
+  await d4.env.sendTournamentToCloud(function(){});
+  var tRow=null;
+  for(var di=0;di<((cli4&&cli4._calls.length)||0);di++){ if(cli4._calls[di].table==='tournaments')tRow=cli4._calls[di].rows; }
+  var tName=(tRow&&(Array.isArray(tRow)?tRow[0]:tRow))?((Array.isArray(tRow)?tRow[0]:tRow).name):null;
+  ok(tName==='六月例会','D4 送信された tournaments.name が確認した大会名と一致（生名・#840 で集約しない・got '+JSON.stringify(tName)+'）');
 
   console.log('\nPASS='+pass+' FAIL='+fail);
   process.exit(fail>0?1:0);

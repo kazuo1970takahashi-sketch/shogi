@@ -132,7 +132,15 @@ console.log('=== W: ソース配線（RAW）===');
 ok(RAW.indexOf('function collectUnlinkedParticipantsForSend(')>=0,'W1 未連携検知の純関数が存在');
 ok(RAW.indexOf('function _confirmUnlinkedBeforeSend(')>=0,'W2 送信前ガードの確認関数が存在');
 ok(RAW.indexOf('function _guardThenSend(')>=0,'W3 _guardThenSend が存在');
-ok(RAW.indexOf('} else { _guardThenSend(); }')>=0&&RAW.indexOf('_guardThenSend();\n        });')>=0,'W4 送信は _dateGate→_guardThenSend 経由（_send 直呼びを置換）');
+// NUMAZU-BEHAVIOR-001 (#840): 確認内容の凍結（_confirmedSend）を confirm の OK 経路に足したため、
+//   初版の `'_guardThenSend();\n        });'` という**行の並びそのもの**への一致が外れた。
+//   チェックの意図は「_dateGate が _send を直呼びせず _guardThenSend を経由すること」なので、
+//   空白や隣接行に依存しない形（_dateGate の本体を切り出して中身を見る）に置き換える。
+var _dgI=RAW.indexOf('function _dateGate()');
+//   コメント行は除く（説明文に _send() と書けるようにするため）。
+var _dgSrc=(_dgI>=0)?RAW.slice(_dgI,RAW.indexOf('function _guardThenSend(',_dgI)).replace(/^[ \t]*\/\/.*$/gm,''):'';
+ok(_dgSrc!==''&&_dgSrc.indexOf('appConfirm(')>=0,'W4pre _dateGate の本体を切り出せた（切り出し失敗による誤 PASS を防ぐ）');
+ok(_dgSrc.indexOf('_guardThenSend();')>=0&&!/(^|[^_A-Za-z])_send\(\)/.test(_dgSrc),'W4 送信は _dateGate→_guardThenSend 経由（_send 直呼びを置換）');
 ok(RAW.indexOf("syncBranchMasterOnSave(function(){ _send(); })")>=0,'W5 「名簿に反映して送信」は既存 syncBranchMasterOnSave→送信');
 ok(RAW.indexOf("okText:'名簿に反映して送信'")>=0&&RAW.indexOf("okText:'このまま送信'")>=0,'W6 3択（反映して送信／このまま送信）の文言を appConfirm 2 段で構成');
 ok(RAW.indexOf("step:'cancelled-unlinked'")>=0,'W7 中止は step:cancelled-unlinked（fail-soft・運営続行）');

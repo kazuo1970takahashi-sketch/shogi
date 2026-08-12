@@ -2,8 +2,14 @@
 // NUMAZU-BEHAVIOR-001 (#840) — 沼津固有が「文言」ではなく「挙動」として埋まっていた2箇所を外したことの受入テスト。
 //   ① canonicalizeCloudTournamentName の3整形（末尾「報告書」除去・末尾日付除去・「月例」→沼津名の集約）を撤去し、
 //      入力された大会名をそのまま表示する（shogi_v4.html と app/auth.js の**両実装**）。
-//   ② 会員名簿タブの同意文の主体を、報告書の主催者から**生のまま**取る（未設定なら主体を書かない）。
-//   ③ 送信前確認（#622）に大会名を並べる（作者決定 2026-08-11）。
+//   ② 会員名簿タブの同意文から**主体そのものを外す**（作者決定 2026-08-12・#840 論点6 の第2案）。
+//      ★初版は「報告書の主催者を生のまま差し込む」実装だったが、Codex P1（PR #857）のとおり
+//        このアプリには「主催者を設定していない」と「主催者が沼津」を区別する手段が無く
+//        （factory 既定・normalizeReportOrganizer・seedClubProfileOnce・sanitizeClubProfileObject が
+//        すべて '日本将棋連盟沼津支部' へ倒す）、他クラブの画面に沼津が出ていた。この契約は**破棄**。
+//        現在の不変条件は「organizer が何であっても同意文は同一の一般文」。差し込みを復活させないこと。
+//   ③ 送信前確認（#622）に大会名を並べる（作者決定 2026-08-11）。確認した内容は payload 生成の直前まで
+//      凍結し、非同期区間中に報告書が編集されていたら送信を中止する（Codex P2・PR #857 2巡目）。
 //   受け入れ基準1（allowlist 実装は不可）・2（空の既定）・3（他の整形は無い）・4（同意文の literal）・
 //   7（ローカル履歴とクラウド一覧の表記が揃う）に対応する。入力は完全架空。実データ・実ネットワーク不使用。
 var fs=require('fs');
@@ -171,15 +177,23 @@ var cNow=consentPara(E.buildMasterTabHtml(EMPTY_MASTER));
 ok(cNow.indexOf('沼津')<0,'N22 factory 既定（沼津）のままでも同意文に沼津が出ない');
 ok(cNow.indexOf('支部')<0,'N23 特定のクラブ形態（支部）も名乗らない');
 // 実装に分岐が無いこと自体を pin する（分岐が生えたら再混入の余地が戻る）。
-//   ★コメントは含めず、**実際に組み立てている連結式だけ**を切り出す（区切り文字ベース。
-//     固定長 slice はブロックが伸びると窓から外れて誤 PASS になる＝#853 で踏んだ罠）。
-var _ci1=RAW.indexOf("+'本ツールは");
-var _ci2=RAW.indexOf("</div>'",_ci1);
-var consentSrc=(_ci1>=0&&_ci2>_ci1)?RAW.slice(_ci1,_ci2):'';
-ok(consentSrc!=='','N24pre 同意文の連結式を切り出せた（切り出し失敗による誤 PASS を防ぐ）');
+//   ★Codex P2（PR #857 2巡目）: 初版は「'本ツールは' の直後にある最初の `</div>'`」を終端にしていた。
+//     同意ブロックに入れ子の <div> が入ると窓が**黙って縮み**、その閉じタグより後ろに organizer 依存の
+//     式を足しても N24pre / N24 / N25 が全部通ってしまう（実行時 assert も「この端末内に保存します。」
+//     までしか見ていないので拾えない）。終端を内側のタグに預けるのをやめ、
+//     **「<h3>利用目的</h3> から buildMasterTabHtml の終わり（＝次の関数定義）まで」**を窓にする。
+//     見出し「沼津支部 参加者マスタ」は 利用目的 より前にあるので窓に入らない＝N25 は誤検知しない。
+//     コメント行は除去する（説明のために沼津や organizer を書けるようにするため）。
+var _cf=RAW.indexOf('function buildMasterTabHtml(');
+var _ci1=(_cf>=0)?RAW.indexOf('<h3>利用目的</h3>',_cf):-1;
+var _ci2=(_ci1>=0)?RAW.indexOf('\nfunction ',_ci1):-1;
+var consentSrc=(_ci1>=0)?RAW.slice(_ci1,(_ci2>_ci1)?_ci2:RAW.length).replace(/^[ \t]*\/\/.*$/gm,''):'';
+ok(consentSrc!==''&&consentSrc.indexOf('本ツールは')>=0&&consentSrc.indexOf('この端末内に保存します。')>=0,
+   'N24pre 同意文を含む窓（利用目的〜関数末尾）を切り出せた（切り出し失敗による誤 PASS を防ぐ）');
+ok(_ci2>_ci1,'N24pre2 窓の終端が関数の外側（次の関数定義）で取れている＝内側のタグに依存しない');
 ok(consentSrc.indexOf('_consentOrg')<0&&consentSrc.indexOf('organizer')<0,
    'N24 同意文の組み立てが organizer を参照しない（分岐ゼロ＝再混入経路ゼロ）');
-ok(consentSrc.indexOf('沼津')<0,'N25 同意文の連結式に沼津リテラルが無い');
+ok(consentSrc.indexOf('沼津')<0,'N25 同意文の窓に沼津リテラルが無い');
 // 到達性: 会員0件（初回起動）でも出る＝#840 本文の実測どおり。
 ok(consentPara(E.buildMasterTabHtml({schema_version:1,members:[]}))===CONSENT,'N26 データ0件（初回起動）でも同意文が出る');
 
@@ -195,6 +209,44 @@ var iSending=RAW.indexOf("setStatus('クラウドへ送信中…')");
 ok(iTitleGate>=0&&iSending>=0&&iTitleGate<iSending,'N30 確認は送信開始より前');
 ok(RAW.indexOf('送信を中止しました（報告書タブで大会名・実施日を確認・修正してから再送信してください）')>=0,
    'N31 中止時の案内が大会名にも触れる');
+
+// ---- Codex P2（PR #857 2巡目）: STYLE-GUIDE §3 N1 / §4.2 の confirm 文体 ----
+console.log('=== N: 確認文体（STYLE-GUIDE §4.2） ===');
+var _dm1=RAW.indexOf("var _dmsg='この内容でクラウドに記録します。");
+var _dm2=RAW.indexOf('\n',RAW.indexOf('よろしいですか？',_dm1));
+var dmsgSrc=(_dm1>=0&&_dm2>_dm1)?RAW.slice(_dm1,_dm2):'';
+ok(dmsgSrc!=='','N32pre 確認文言の組み立てを切り出せた');
+ok(dmsgSrc.indexOf('よろしいですか？')>=0,'N32 §4.2 テンプレートの結び「よろしいですか？」がある');
+ok(dmsgSrc.indexOf('送信を取り消すボタンはありません')>=0,'N33 §4.2「戻せないこと」＝取り消す手段が無いことを明記');
+ok(dmsgSrc.indexOf('大会履歴にこの名前と日付が残ります')>=0,'N34 §4.2「何が起きるか」＝共有履歴に残ることを明記');
+ok(dmsgSrc.indexOf('同じ大会として送り直します')>=0,'N35 §4.3 失敗時は次の行動を1つ添える（直し方）');
+// 「取り消せません」と言い切らない（同一大会IDの再送で upsert され実際は直せる＝嘘になる）。
+ok(dmsgSrc.indexOf('取り消せません')<0&&dmsgSrc.indexOf('元に戻せません')<0,'N36 直せるのに「取り消せない」と断定しない（§4.3 由来に依存した断定をしない）');
+ok(/okText:'この内容で送信'/.test(RAW),'N37 肯定ボタンが操作名（既定の「はい」で流さない）');
+
+// ---- Codex P2（PR #857 2巡目）: 確認内容の凍結と照合 ----
+console.log('=== N: 確認内容の凍結（送信中の編集検知） ===');
+ok(RAW.indexOf('_confirmedSend={title:_recTitle,date:_recDate}')>=0,'N38 確認時に大会名・実施日を凍結する');
+ok(RAW.indexOf("step:'changed-after-confirm'")>=0,'N39 食い違ったら専用の中止経路へ');
+// 巻き上げ事故の番人（PR #847 P16-1 と同型）: appConfirm はテスト解決器で onResult を同期で呼ぶため、
+//   `var _confirmedSend=null;` が _dateGate() より後ろにあると凍結値が直後に null へ戻り照合が黙って死ぬ。
+var iDecl=RAW.indexOf('var _confirmedSend=null;');
+var iGate=RAW.indexOf('function _dateGate()');
+var iFreeze=RAW.indexOf('_confirmedSend={title:');
+ok(iDecl>=0&&iGate>iDecl,'N40 `var _confirmedSend=null;` の宣言が _dateGate より前（巻き上げで凍結値が消えない）');
+ok(iFreeze>iDecl,'N40b 凍結の代入は宣言より後');
+// 照合は payload 生成（ensureTournamentId／syncTournamentToCloud）より前に置く。
+var iDrift=RAW.indexOf('var _drift=_describeSendDrift();');
+var iEnsure=RAW.indexOf('ensureTournamentId(state,master,getTournamentDateFromReport');
+var iSync=RAW.indexOf('return syncTournamentToCloud(client,master,{clubId:clubId})');
+ok(iDrift>=0&&iEnsure>iDrift&&iSync>iDrift,'N41 照合は ensureTournamentId / syncTournamentToCloud より前');
+// 大会名だけでなく実施日も見る（#622 の確認にも同じ穴があるため片側だけ直さない）。
+ok(/_describeSendDrift[\s\S]{0,900}nowTitle!==_confirmedSend\.title/.test(RAW),'N42 大会名の食い違いを見る');
+ok(/_describeSendDrift[\s\S]{0,900}nowDate!==_confirmedSend\.date/.test(RAW),'N43 実施日の食い違いも見る（#622 の同型の穴）');
+// snapshot の値で黙って送らない（運営者の編集を捨てない）。
+var driftSrc=(RAW.match(/function _describeSendDrift\(\)\{[\s\S]*?\n    \}/)||[''])[0];
+ok(driftSrc!==''&&driftSrc.indexOf('state.report.title=')<0&&driftSrc.indexOf('state.report.date=')<0,
+   'N44 照合は state を書き戻さない（確認時の値で上書きして編集を捨てない）');
 
 console.log('\nNUMAZU-BEHAVIOR-001: PASS '+pass+'件 / FAIL '+fail+'件');
 process.exit(fail>0?1:0);

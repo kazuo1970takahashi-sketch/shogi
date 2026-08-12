@@ -12724,6 +12724,12 @@ function _unlinkedSkippedNote(count){
 function sendTournamentToCloud(setStatus){
   setStatus=setStatus||function(){};
   return new Promise(function(resolve){
+    // 確認済みの内容（_dateGate で凍結・確認を通っていないときは null＝照合しない）。
+    //   ★宣言はこの executor の**先頭**に置くこと。appConfirm はテスト解決器（__setAppModalTestResolver）
+    //     使用時に onResult を**同期で**呼ぶため、_dateGate() より後ろに `var _confirmedSend=null;` を
+    //     書くと、凍結した直後に巻き上げ後の初期化で null に戻り、照合が黙って無効化される
+    //     （PR #847 の P16-1 と同型の巻き上げ事故）。
+    var _confirmedSend=null;
     // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会の結果はクラウドへ送信しない（冒頭ガード・fail-soft）。
     //   buildCloudSyncPayload はマスタ正本＝未連携者スキップのため、ゲスト大会を送ると「ほぼ全員欠落」か
     //   「同名1件自動紐付けで部外者成績が会員履歴へ混入」のどちらかになる。説明メッセージで中止し運営は続行。
@@ -12769,12 +12775,42 @@ function sendTournamentToCloud(setStatus){
           ? normalizeReportTitle((typeof state!=='undefined'&&state&&state.report)?state.report.title:'') : '';
       }catch(eT){ _recTitle=''; }
       if(_recDate){
-        var _dmsg='この内容でクラウドに記録します。\n\n  大会名   '+(_recTitle||'(名称未設定)')+'\n  実施日   '+_recDate+'\n\n違う場合は報告書タブで修正してから、もう一度送信してください。';
+        // ★Codex P2（PR #857 2巡目）: STYLE-GUIDE §3 N1 / §4.2 の confirm 文体テンプレート
+        //   「（何が起きるか）。（失われるもの/戻せないこと）。よろしいですか？」に合わせる。
+        //   初版は「違う場合は…してください」で終わっており、①戻せないこと ②よろしいですか？ を欠いていた。
+        //   ※「取り消せない」とは言い切らない（同じ大会IDで送り直せば upsert で直る＝嘘になる）。
+        //     実際に無いのは**取り消すボタン**と、直し方を知らない運営者にとっての可逆性。そこを書く。
+        var _dmsg='この内容でクラウドに記録します。\n\n  大会名   '+(_recTitle||'(名称未設定)')+'\n  実施日   '+_recDate
+          +'\n\n送信を取り消すボタンはありません。違う内容のまま送ると、共有される大会履歴にこの名前と日付が残ります（直すには報告書タブで直してから、同じ大会として送り直します）。よろしいですか？';
         appConfirm(_dmsg,function(_okd){
           if(!_okd){ setStatus('送信を中止しました（報告書タブで大会名・実施日を確認・修正してから再送信してください）'); resolve({ok:false,step:'cancelled-date'}); return; }
+          // ★Codex P2（PR #857 2巡目）: 確認した内容を**凍結**する。
+          //   confirm を閉じた後、_send() 内の loadCloudDeps / getSession / claim_organizer_seat は非同期で、
+          //   その間モーダルは無く報告書タブは編集できる。buildCloudSyncPayload は payload 生成時に
+          //   グローバル state.report.title を読み直すため、**確認した名前と違う名前が送られうる**。
+          //   実施日（#622）も同じ穴（ensureTournamentId が getTournamentDateFromReport を読み直す）なので両方凍結する。
+          //   ★snapshot の値で送る（＝編集を黙って捨てる）ことはしない。運営者が意図して直した可能性があり、
+          //     どちらの意図かはアプリには分からない。「確認した内容と送る内容が一致する」不変条件だけを守り、
+          //     食い違ったら中止して再確認させる（fail-soft・押し直せば新しい内容で確認できる）。
+          _confirmedSend={title:_recTitle,date:_recDate};
           _guardThenSend();
-        });
+        },{okText:'この内容で送信',cancelText:'中止'});
       } else { _guardThenSend(); }
+    }
+    // payload を組む直前に、確認した内容から変わっていないかを照合する。
+    //   戻り値: 変わっていなければ null / 変わっていれば中止理由の文字列。
+    function _describeSendDrift(){
+      if(!_confirmedSend)return null;
+      var nowTitle='',nowDate='';
+      try{ nowTitle=(typeof normalizeReportTitle==='function')
+        ? normalizeReportTitle((typeof state!=='undefined'&&state&&state.report)?state.report.title:'') : ''; }catch(e1){ nowTitle=''; }
+      try{ nowDate=(typeof getTournamentDateFromReport==='function')
+        ? getTournamentDateFromReport((typeof state!=='undefined'&&state)?state.report:null) : ''; }catch(e2){ nowDate=''; }
+      var diff=[];
+      if(nowTitle!==_confirmedSend.title)diff.push('大会名（確認時「'+(_confirmedSend.title||'(名称未設定)')+'」→ 現在「'+(nowTitle||'(名称未設定)')+'」）');
+      if(nowDate!==_confirmedSend.date)diff.push('実施日（確認時「'+_confirmedSend.date+'」→ 現在「'+(nowDate||'(未設定)')+'）」');
+      if(!diff.length)return null;
+      return '送信を中止しました：確認した内容が送信中に変わりました＝'+diff.join('・')+'。もう一度「☁ クラウドへ送信」を押して、新しい内容で確認してください（運営は続行できます）。';
     }
     // CLOUD-SEND-UNLINKED-GUARD-001: 送信直前ガード。未連携者がいれば確認（無ければ従来どおり即送信）。
     //   ①名簿に反映して送信＝既存 syncBranchMasterOnSave（初参加者に member_id 付与）→送信 ②このまま送信 ③中止。
@@ -12801,6 +12837,11 @@ function sendTournamentToCloud(setStatus){
           return client.rpc('claim_organizer_seat').then(function(rc){
             var clubId=pickActiveClubId((rc&&rc.data)||[]);
             if(!clubId){ setStatus('送信先クラブを一意に特定できません（有効な幹事クラブが無い／複数所属の可能性・管理ページを確認してください）'); return {ok:false,step:'club'}; }
+            // ★Codex P2（PR #857 2巡目）: payload を組む直前＝非同期区間を抜けた最初の地点で照合する。
+            //   ここより後は ensureTournamentId（実施日を読む）と buildCloudSyncPayload（大会名を読む）が
+            //   現在の state を読み直すため、ここが「確認した内容 = 送る内容」を保証できる最後の場所。
+            var _drift=_describeSendDrift();
+            if(_drift){ setStatus(_drift); return {ok:false,step:'changed-after-confirm'}; }
             var master=(typeof loadBranchMaster==='function')?loadBranchMaster():{members:[]};
             try{ if(typeof ensureTournamentId==='function')ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report)); }catch(e){}
             return syncTournamentToCloud(client,master,{clubId:clubId}).then(function(res){
