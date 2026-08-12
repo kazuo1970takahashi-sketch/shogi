@@ -4951,9 +4951,9 @@ function buildMasterTabHtml(master){
   html+='<h3>利用目的</h3>';
   // NUMAZU-BEHAVIOR-001 (#840 ②・作者決定 2026-08-11): 同意文の主体が「沼津支部内」で固定されていた。
   //   他クラブの幹事が、自分のクラブの参加者に対して**事実と異なる利用目的で同意を取る**ことになる。
-  //   文言の問題ではなく同意の有効性の問題なので、主催者名（state.report.organizer・クラブ設定で
-  //   クラブごとの値になる）を差し込み、未設定のときは主体を特定しない文面へ倒す。
-  //   organizer は利用者入力なので escapeHtml を通す（この関数は innerHTML に入る）。
+  //   → 主体を名指ししない**定数文**へ倒した（撤回の実測理由は buildMasterConsentPurposeText の注釈）。
+  //   ★ ここは state.report.organizer を一切読まない。値の差し込みが無いので、この innerHTML 組み立てに
+  //     注入経路は無い（初版は organizer を差し込み escapeHtml を通す設計だったが、その案は撤回済み）。
   html+='<div style="font-size:13px;color:#444;line-height:1.6">'
     +buildMasterConsentPurposeText()
     +'削除した参加者は一覧・サジェスト・過去参加者から非表示になりますが、参加履歴データは端末内に残ります（誤削除時はバックアップからの上書きインポートで復元できる予定）。'

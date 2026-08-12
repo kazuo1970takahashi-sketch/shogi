@@ -91,6 +91,29 @@ function fnSource(name){
   return '';
 }
 
+// ★ ランダム生成コーパス（A2 と G で**同じ物**を使う）。
+//   Codex P2（2巡目）: A2 の 3000 件は shogi_v4.html 側だけを通していて、2実装の一致検査 [G] は
+//   固定16件しか見ていなかった。「その16件だけ allowlist して残りは従来どおり /月例/ 集約する」
+//   app/auth.js 実装が G-1〜G-3 も全スイートも緑にできてしまう。同じコーパスを両実装に通して塞ぐ。
+//   決定的な擬似乱数（実行ごとに揺れない＝失敗が再現する）。
+function makeCorpus(n, seed0){
+  var seed=seed0;
+  function rnd(){ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; }
+  var parts=['支部','将棋','クラブ','こども','市民','オープン','杯','戦','会','大会','第3回','ABC','XYZ',
+             '松本','高崎','三島','小田原','長野','ぬまづ','沼','津','東','西','南','北','　',' ','・','-','＆'];
+  var out=[];
+  for(var k=0;k<n;k++){
+    var m=1+Math.floor(rnd()*5), s='';
+    for(var i=0;i<m;i++)s+=parts[Math.floor(rnd()*parts.length)];
+    var at=Math.floor(rnd()*(s.length+1));
+    out.push(s.slice(0,at)+'月例'+s.slice(at));
+  }
+  return out;
+}
+// 「報告書」末尾・日付サフィックスの除去規則が絡む入力は、規則の対象なので A2 では除外して
+//   「集約されないこと」だけを純粋に見る（除去規則そのものは [B] で検査する）
+const DATE_SUFFIX_RE=/[\s　]*[（(]?\s*(?:\d{4}[-\/]\d{1,2}(?:[-\/]\d{1,2})?|\d{4}年\d{1,2}月(?:\d{1,2}日)?度?)\s*[)）]?\s*$/;
+
 console.log('\n[A1] 受け入れ基準1: 実例で、他クラブの大会名がそのまま返る');
 (function(){
   eq(C('松本支部月例将棋大会'), '松本支部月例将棋大会', 'A1-1 松本支部月例将棋大会');
@@ -103,26 +126,11 @@ console.log('\n[A1] 受け入れ基準1: 実例で、他クラブの大会名が
 
 console.log('\n[A2] ★受け入れ基準1を「性質」で検査（allowlist / 対応表 実装を弾く）');
 (function(){
-  // 決定的な擬似乱数（実行ごとに揺れないこと＝失敗が再現すること）
-  var seed=20260811;
-  function rnd(){ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; }
-  var parts=['支部','将棋','クラブ','こども','市民','オープン','杯','戦','会','大会','第3回','ABC','XYZ',
-             '松本','高崎','三島','小田原','長野','ぬまづ','沼','津','東','西','南','北','　',' ','・','-','＆'];
-  function gen(){
-    var n=1+Math.floor(rnd()*5), s='';
-    for(var i=0;i<n;i++)s+=parts[Math.floor(rnd()*parts.length)];
-    var at=Math.floor(rnd()*(s.length+1));
-    s=s.slice(0,at)+'月例'+s.slice(at);
-    return s;
-  }
-  var N=3000, bad=[], skipped=0;
-  // 「報告書」末尾・日付サフィックスの除去規則が絡む入力は、規則の対象なので除外して
-  //   「集約されないこと」だけを純粋に見る（除去規則そのものは [B] で検査する）
-  var dateRe=/[\s　]*[（(]?\s*(?:\d{4}[-\/]\d{1,2}(?:[-\/]\d{1,2})?|\d{4}年\d{1,2}月(?:\d{1,2}日)?度?)\s*[)）]?\s*$/;
-  for(var k=0;k<N;k++){
-    var x=gen();
+  var N=3000, corpus=makeCorpus(N,20260811), bad=[], skipped=0;
+  for(var k=0;k<corpus.length;k++){
+    var x=corpus[k];
     var t=x.trim();
-    if(t===''||t.slice(-3)==='報告書'||dateRe.test(t)){skipped++;continue;}
+    if(t===''||t.slice(-3)==='報告書'||DATE_SUFFIX_RE.test(t)){skipped++;continue;}
     if(C(x)!==t)bad.push({in:x, out:C(x), want:t});
   }
   assert(bad.length===0,
@@ -130,8 +138,8 @@ console.log('\n[A2] ★受け入れ基準1を「性質」で検査（allowlist /
     +(bad.length?'（最初の不一致 '+JSON.stringify(bad[0])+'／計 '+bad.length+' 件）':''));
   assert(N-skipped>2000, 'A2-2 検査に使えた入力が十分ある（実測 '+(N-skipped)+' 件）');
   // 沼津へ倒れた件数を独立に数える（A2-1 とは別の見方）
-  var toNumazu=0;
-  for(var k2=0;k2<N;k2++){ var y=gen(); if(y.indexOf('沼津支部月例将棋大会')<0 && C(y)==='沼津支部月例将棋大会')toNumazu++; }
+  var corpus2=makeCorpus(N,20260812), toNumazu=0;
+  for(var k2=0;k2<corpus2.length;k2++){ var y=corpus2[k2]; if(y.indexOf('沼津支部月例将棋大会')<0 && C(y)==='沼津支部月例将棋大会')toNumazu++; }
   assert(toNumazu===0, 'A2-3 生成入力のうち沼津へ集約されたものは0件（実測 '+toNumazu+' 件）');
 })();
 
@@ -241,6 +249,46 @@ console.log('\n[G] ★shogi_v4.html と app/auth.js の2実装が一致する（
   assert(d2.length===0, 'G-2 表示タイトルの合成も一致（実測の不一致 '+JSON.stringify(d2)+'）');
   var authSrc=fs.readFileSync(AUTH_PATH,'utf8');
   assert(authSrc.indexOf("s.indexOf('月例')>=0")<0, 'G-3 app/auth.js からも月例集約の分岐が消えている');
+
+  // ★ Codex P2（2巡目）: 固定16件だけでは「その16件を allowlist した app/auth.js」を弾けない。
+  //   A2 と同じ 3000 件コーパスを**両実装**に通し、答えが一致することを見る。
+  var corpus=makeCorpus(3000,20260811), d3=[], numazuAuth=0;
+  for(var m=0;m<corpus.length;m++){
+    var s=corpus[m];
+    var a2=C(s), b2=A.canonicalizeCloudTournamentName(s);
+    if(a2!==b2&&d3.length<5)d3.push({in:s, v4:a2, auth:b2});
+    if(s.indexOf('沼津支部月例将棋大会')<0 && b2==='沼津支部月例将棋大会')numazuAuth++;
+  }
+  assert(d3.length===0,
+    'G-4 ★生成 '+corpus.length+' 件すべてで2実装の戻り値が一致（allowlist 実装を弾く）'
+    +(d3.length?'（最初の不一致 '+JSON.stringify(d3[0])+'）':''));
+  assert(numazuAuth===0, 'G-5 ★app/auth.js 側も生成入力を沼津へ集約しない（実測 '+numazuAuth+' 件）');
+  var d4=[];
+  for(var m2=0;m2<corpus.length;m2++){
+    var s2=corpus[m2];
+    var x2=env.buildCloudTournamentDisplayTitle(s2,'2026-04-15');
+    var y2=A.buildCloudTournamentDisplayTitle(s2,'2026-04-15');
+    if(x2!==y2&&d4.length<5)d4.push({in:s2, v4:x2, auth:y2});
+  }
+  assert(d4.length===0, 'G-6 ★表示タイトルの合成も生成コーパス全件で一致'
+    +(d4.length?'（最初の不一致 '+JSON.stringify(d4[0])+'）':''));
+})();
+
+console.log('\n[H] ★app/ の cache-bust 番号（#343 ロールバック事故の番人・Codex P1 2巡目）');
+(function(){
+  // app/auth.js を変えたら app/index.html の ?v=N をバンプする規則（#343）。
+  //   ただし app/ はリリース列車で運ばず別系統で同期するため dev と production で番号がずれる。
+  //   実測 2026-08-12: production=44 / dev=42 → 素朴に 43 へ上げると production から見て**番号が戻る**。
+  //   ここは「production の実測値 44 を必ず上回る」floor を固定して、そのロールバックを弾く。
+  var IDX=path.join(__dirname,'..','app','index.html');
+  assert(fs.existsSync(IDX), 'H-0 app/index.html がある');
+  var src=fs.readFileSync(IDX,'utf8');
+  var m=src.match(/auth\.js\?v=(\d+)/);
+  assert(!!m, 'H-1 auth.js?v=N の指定がある');
+  if(!m)return;
+  var v=Number(m[1]);
+  assert(v>44, 'H-2 ★cache-bust 番号が production 実測値 44 を上回る（実測 v='+v+'・#343 の番号巻き戻し防止）');
+  assert(src.indexOf('auth.js"')<0&&src.indexOf("auth.js'")<0, 'H-3 cache-bust 無しの auth.js 読み込みが混ざっていない');
 })();
 
 console.log('\n  NUMAZU-BEHAVIOR-001: PASS '+pass+'件 / FAIL '+fail+'件');
