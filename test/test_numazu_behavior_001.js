@@ -140,29 +140,48 @@ function consentPara(html){
   var m=html.match(/本ツールは[\s\S]*?この端末内に保存します。/);
   return m?m[0]:'';
 }
-// 主催者未設定（空）→ 主体を書かない。この literal を固定する。
-E._setReportOrganizer('');
-var c0=consentPara(E.buildMasterTabHtml(EMPTY_MASTER));
-eq(c0,'本ツールは大会運営目的で、過去参加者の氏名・参加履歴をこの端末内に保存します。',
-   'N20 主催者未設定→主体を書かない（literal 固定）');
-ok(c0.indexOf('沼津')<0,'N21 主催者未設定でも沼津の名前が同意文に出ない（normalizeReportOrganizer を使わない証拠）');
-// 主催者を設定 → その名前が主体になる。
-E._setReportOrganizer('日本将棋連盟松本支部');
-var c1=consentPara(E.buildMasterTabHtml(EMPTY_MASTER));
-eq(c1,'本ツールは日本将棋連盟松本支部の大会運営目的で、過去参加者の氏名・参加履歴をこの端末内に保存します。',
-   'N22 主催者設定→その名前が主体（literal 固定）');
-ok(c1.indexOf('沼津')<0,'N23 松本の幹事の同意文に沼津が出ない');
-// 沼津の幹事は従来どおり沼津が出る（非回帰）。
+var CONSENT='本ツールは、大会運営の目的で参加者の氏名・参加履歴をこの端末内に保存します。';
+// 受け入れ基準4: 文面を先に確定し、その文字列を literal で assert（作者決定 2026-08-12）。
+eq(consentPara(E.buildMasterTabHtml(EMPTY_MASTER)),CONSENT,'N20 同意文の literal 固定');
+// ★Codex P1（PR #857）の番人。初版は state.report.organizer を差し込む実装で、テストも
+//   organizer='' を直接代入して緑にしていた。しかし実アプリでは organizer が空になる経路が無く
+//   （factory 既定・normalizeReportOrganizer・seedClubProfileOnce・sanitizeClubProfileObject の
+//   4つが全部 '日本将棋連盟沼津支部' へ倒す＝実機で再現）、松本のクラブの画面に沼津が出ていた。
+//   作者決定で主体を名乗らない一般文にしたので、**organizer が何であっても同意文は不変**。
+//   organizer を実アプリで起きうる全パターンに振って、それを確かめる（直接代入で緑にしない）。
+var ORG_CASES=[
+  ['日本将棋連盟沼津支部','factory 既定のまま（初回起動・全リセット直後・シード済み profile）'],
+  ['日本将棋連盟松本支部','他クラブが打ち替えた'],
+  ['','空（現状この経路は無いが将来 emptyable 化しても不変であること）'],
+  ['　 　','空白のみ（全角含む）'],
+  ['<b>支部','HTML を含む名前'],
+  [null,'null'],
+  [undefined,'undefined'],
+  [12345,'非文字列']
+];
+var consentStable=true;
+for(var m2=0;m2<ORG_CASES.length;m2++){
+  E._setReportOrganizer(ORG_CASES[m2][0]);
+  var got=consentPara(E.buildMasterTabHtml(EMPTY_MASTER));
+  if(got!==CONSENT){consentStable=false;console.log('    差分（'+ORG_CASES[m2][1]+'）: 「'+got+'」');}
+}
+ok(consentStable,'N21 organizer が何であっても同意文は不変（実アプリで起きうる8パターン）');
 E._setReportOrganizer('日本将棋連盟沼津支部');
-ok(consentPara(E.buildMasterTabHtml(EMPTY_MASTER)).indexOf('本ツールは日本将棋連盟沼津支部の大会運営目的で')>=0,'N24 沼津の幹事には従来どおり沼津（非回帰）');
-// XSS: 主催者名は escapeHtml 経由。
-E._setReportOrganizer('<b>支部');
-var c3=consentPara(E.buildMasterTabHtml(EMPTY_MASTER));
-ok(c3.indexOf('&lt;b&gt;支部')>=0&&c3.indexOf('本ツールは<b>支部の')<0,'N25 主催者名は esc 経由（XSS 安全）');
-// 前後空白のみ → 未設定と同じ扱い（全角空白含む）。
-E._setReportOrganizer('　 　');
-ok(consentPara(E.buildMasterTabHtml(EMPTY_MASTER)).indexOf('本ツールは大会運営目的で')>=0,'N26 空白のみ（全角含む）は未設定扱い');
-E._setReportOrganizer('日本将棋連盟沼津支部');
+var cNow=consentPara(E.buildMasterTabHtml(EMPTY_MASTER));
+ok(cNow.indexOf('沼津')<0,'N22 factory 既定（沼津）のままでも同意文に沼津が出ない');
+ok(cNow.indexOf('支部')<0,'N23 特定のクラブ形態（支部）も名乗らない');
+// 実装に分岐が無いこと自体を pin する（分岐が生えたら再混入の余地が戻る）。
+//   ★コメントは含めず、**実際に組み立てている連結式だけ**を切り出す（区切り文字ベース。
+//     固定長 slice はブロックが伸びると窓から外れて誤 PASS になる＝#853 で踏んだ罠）。
+var _ci1=RAW.indexOf("+'本ツールは");
+var _ci2=RAW.indexOf("</div>'",_ci1);
+var consentSrc=(_ci1>=0&&_ci2>_ci1)?RAW.slice(_ci1,_ci2):'';
+ok(consentSrc!=='','N24pre 同意文の連結式を切り出せた（切り出し失敗による誤 PASS を防ぐ）');
+ok(consentSrc.indexOf('_consentOrg')<0&&consentSrc.indexOf('organizer')<0,
+   'N24 同意文の組み立てが organizer を参照しない（分岐ゼロ＝再混入経路ゼロ）');
+ok(consentSrc.indexOf('沼津')<0,'N25 同意文の連結式に沼津リテラルが無い');
+// 到達性: 会員0件（初回起動）でも出る＝#840 本文の実測どおり。
+ok(consentPara(E.buildMasterTabHtml({schema_version:1,members:[]}))===CONSENT,'N26 データ0件（初回起動）でも同意文が出る');
 
 // ============================================================================
 // N. ③ 送信前確認に大会名（作者決定 2026-08-11）
