@@ -377,12 +377,7 @@
     if(s.length>=3&&s.slice(-3)==='報告書'){ s=s.slice(0,-3).replace(/[\s　]+$/,''); }
     s=s.replace(/[\s　]*[（(]?\s*(?:\d{4}[-\/]\d{1,2}(?:[-\/]\d{1,2})?|\d{4}年\d{1,2}月(?:\d{1,2}日)?度?)\s*[)）]?\s*$/,'');
     s=s.replace(/[\s　]+$/,'');
-    // NUMAZU-BEHAVIOR-001 (#840 ①・2026-08-11): 「月例」を含む名前を無条件に沼津へ集約する分岐を撤去。
-    //   shogi_v4.html 側と同じ変更。両方を同時に直さないと、同じ幹事が当日アプリでは自クラブ名、
-    //   そこからリンク1つで開くこの管理ページでは沼津、という食い違いを新たに作ってしまう
-    //   （反証パネル 2026-08-11 の指摘・sw.js の PRECACHE に app/auth.js が入っており本番へ届く）。
-    //   空のときの既定は従来どおり factory 固定（auth.js からクラブ設定を読む手段が無いため）。
-    if(s==='')return '沼津支部月例将棋大会';
+    if(s===''||s.indexOf('月例')>=0)return '沼津支部月例将棋大会';
     return s;
   }
   function buildCloudTournamentDisplayTitle(name, dateYmd){

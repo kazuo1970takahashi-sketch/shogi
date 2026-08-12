@@ -188,13 +188,8 @@
   <script src="config.js" onerror="window.__SHOGI_CONFIG_MISSING=true"></script>
   <!-- Supabase JS（UMD・global `supabase` を生やす）。publishable key + URL のみ使用。 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js" integrity="sha384-nD3dwv4+ZqdYnmZKe/249ImlV04om7xTCcsoSeQYI+RO+XlKPoqAWaJR1M5SJH9p" crossorigin="anonymous"></script>
-  <!-- cache-bust: app/auth.js 変更時に ?v=N をバンプ（app/ は cache-bust が無く旧 JS を握る問題の対策・#343）
-       ★ 番号は production の値を必ず上回ること。app/ はリリース列車で運ばない（別系統で同期する）ので
-         dev と production で番号がずれる。実測 2026-08-12: production=44 / dev=42（production が先行）。
-         ここを素朴に 42→43 とすると production から見て**番号が戻り**、#343 のロールバック事故を再現する。
-         今回 app/auth.js を変更した（NUMAZU-BEHAVIOR-001 #840）ので 45 へバンプする。
-         下限は test/test_numazu_behavior_840.js [G-4] が番人になる。-->
-  <script src="auth.js?v=45"></script>
+  <!-- cache-bust: app/auth.js 変更時に ?v=N をバンプ（app/ は cache-bust が無く旧 JS を握る問題の対策・#343）-->
+  <script src="auth.js?v=42"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       try { window.ShogiAuth.boot(); }

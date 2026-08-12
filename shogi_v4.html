@@ -4949,30 +4949,12 @@ function buildMasterTabHtml(master){
   html+='</div>';
   html+='<hr class="separator">';
   html+='<h3>利用目的</h3>';
-  // NUMAZU-BEHAVIOR-001 (#840 ②・作者決定 2026-08-11): 同意文の主体が「沼津支部内」で固定されていた。
-  //   他クラブの幹事が、自分のクラブの参加者に対して**事実と異なる利用目的で同意を取る**ことになる。
-  //   → 主体を名指ししない**定数文**へ倒した（撤回の実測理由は buildMasterConsentPurposeText の注釈）。
-  //   ★ ここは state.report.organizer を一切読まない。値の差し込みが無いので、この innerHTML 組み立てに
-  //     注入経路は無い（初版は organizer を差し込み escapeHtml を通す設計だったが、その案は撤回済み）。
   html+='<div style="font-size:13px;color:#444;line-height:1.6">'
-    +buildMasterConsentPurposeText()
+    +'本ツールは沼津支部内の大会運営目的で、過去参加者の氏名・参加履歴をこの端末内に保存します。'
     +'削除した参加者は一覧・サジェスト・過去参加者から非表示になりますが、参加履歴データは端末内に残ります（誤削除時はバックアップからの上書きインポートで復元できる予定）。'
     +'</div>';
   html+='</div>';
   return html;
-}
-
-// NUMAZU-BEHAVIOR-001 (#840 ②): 個人情報の利用目的の文面。主体を名指ししない。
-//   ★ 反証パネル（2026-08-11・1巡目）で「主催者名を差し込む」案を撤回した。実測の理由:
-//     `normalizeReportOrganizer('')` は factory 固定（profile では上書きしない）なので、
-//     主催者欄を空にしても必ず `日本将棋連盟沼津支部` に戻る。つまり「未設定」分岐は実機で到達不能で、
-//     報告書設定を触っていない他クラブの端末では
-//       「本ツールは、**日本将棋連盟沼津支部**の大会運営目的で…」
-//     と出る。旧文言「沼津支部内」より主体が具体的な法人名になり、**同意の有効性としては悪化**していた。
-//   主体を書かない文面なら、沼津でも松本でも事実であり、報告書設定に依存しない。
-//   ※ 値を差し込まないので注入経路も無い（定数文字列）。
-function buildMasterConsentPurposeText(){
-  return '本ツールは、この端末で運営する大会の運営目的で、過去参加者の氏名・参加履歴をこの端末内に保存します。';
 }
 
 function buildMasterEditModalHtml(member){
@@ -16994,38 +16976,13 @@ function buildMonthlyPeriodLabel(dateYmd){
   if(!(mo>=1&&mo<=12))return '';
   return y+'年'+mo+'月度';
 }
-// NUMAZU-BEHAVIOR-001 (#840 ①): 大会名が空のときの既定。
-//   ★ 反証パネル（2026-08-11・1巡目）で「クラブ設定から取る」案を撤回した。理由は3つとも実測:
-//     (1) `seedClubProfileOnce()` が初回起動時に factory（沼津）で shogi_club_profile を書くので、
-//         「クラブ既定を保存していない端末」は存在しない＝他クラブでも結局 沼津 を返す（効かない）
-//     (2) 表示時に profile を読むと **クラブ設定を変えた瞬間に過去大会の表示名が遡って変わる**。
-//         CLUB-PROFILE-001 が「profile を当てるのは生成系のみ」と決めた設計原則の違反で、
-//         ①が撤去したのと同じ形の問題を別のキーで再導入することになる
-//     (3) キャッシュ済みの profileReport() ではなく readClubProfileRaw() を直読みするため、
-//         保存失敗時のガード（#845/#847 の Codex P1）をバイパスする
-//   したがって従来どおり factory 固定に戻す。`normalizeReportTitle('')` と同じ値になるので、
-//   アプリ内で「空の既定」が2種類ある状態も解消する（本テスト C-9 で固定）。
-//   ★ 沼津リテラルを増やさないため factoryReport() から取る（CLUB-PROFILE-001 の一本化を維持）。
-function defaultCloudTournamentTitle(){
-  return factoryReport().title;
-}
-// NUMAZU-BEHAVIOR-001 (#840 ①): 「月例」を含む大会名を無条件で沼津の名前へ集約する行を外した。
-//   狙っている利用者は全員が月例会をやるクラブなので、**大会名を正しく入れた幹事ほど踏んでいた**
-//   （`松本支部月例将棋大会` → `沼津支部月例将棋大会`）。同じ大会履歴タブの上下で、
-//   ローカル履歴（生名）とクラウド一覧（集約後）が別名で並ぶ食い違いも起きていた。
-//   ★ 保存側（tournaments.name）は元から生名なのでデータ移行は不要（#840 に実測記録）。
-//     大会の同一性キーは (club_id, app_tournament_id) で name はキーではない＝大会が割れることもない。
-//   ★ 代償（受け入れ基準5・作者が許容）: 沼津の過去大会のうち `月例将棋大会` `六月例会` のような
-//     揺れた生名は、一覧で別々の名前として並ぶ。#608 が担っていた「揺れた名前を1つに見せる」機能は、
-//     他クラブの大会名を沼津にしてしまう代償のほうが大きいため撤去する。
-//   ★ 末尾「報告書」除去・日付サフィックス除去は従来どおり維持（受け入れ基準3）。
 function canonicalizeCloudTournamentName(name){
   var s=String(name==null?'':name).trim();
-  if(s==='')return defaultCloudTournamentTitle();
+  if(s==='')return '沼津支部月例将棋大会';
   if(s.length>=3&&s.slice(-3)==='報告書'){ s=s.slice(0,-3).replace(/[\s　]+$/,''); }
   s=s.replace(/[\s　]*[（(]?\s*(?:\d{4}[-\/]\d{1,2}(?:[-\/]\d{1,2})?|\d{4}年\d{1,2}月(?:\d{1,2}日)?度?)\s*[)）]?\s*$/,'');
   s=s.replace(/[\s　]+$/,'');
-  if(s==='')return defaultCloudTournamentTitle();
+  if(s===''||s.indexOf('月例')>=0)return '沼津支部月例将棋大会';
   return s;
 }
 function buildCloudTournamentDisplayTitle(name, dateYmd){
