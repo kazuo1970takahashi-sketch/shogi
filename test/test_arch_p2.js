@@ -51,7 +51,12 @@ let pass=0,fail=0; function ok(c,m){if(c)pass++;else{fail++;console.log('  FAIL:
   ok(on.ctx.headCalls.length>0,'A9-3 online→script 注入を試みる（従来動作）');
   ok(!rn.offline,'A9-4 online→offline マーカー無し');
   // P3 fix: 呼び出し側が offline を cfg より先に判定し offline 案内
-  ok(RAW.indexOf("if(dep.offline){ setStatus('オフラインのため送信できません")>=0,'A9-5 送信 caller が offline を先に判定');
+  // CLOUD-TID-GUARD-001 (#800 案#2): 接続一式（loadCloudDeps→client→auth→rpc）を _connectForSend に括り出した
+  //   （送信先の照合を未連携ガードより前に、1送信あたり1回だけ行うため）。判定の中身と順序は不変なので、
+  //   「setStatus が直に並んでいる」という書き方ではなく、判定順序そのものをピンし直す（チェックはむしろ強くなる）。
+  var _cf=RAW.slice(RAW.indexOf('function _connectForSend()'),RAW.indexOf('function _guardThenSend()'));
+  ok(_cf.indexOf("if(dep.offline)return {ok:false,step:'offline',message:'オフラインのため送信できません")>=0
+     &&_cf.indexOf('!dep.cfg')>_cf.indexOf('dep.offline'),'A9-5 送信 caller が offline を cfg より先に判定');
   ok(RAW.indexOf("if(dep.offline){ setStatus('オフラインのため取得できません")>=0,'A9-6 取得 caller が offline を先に判定');
   ok(RAW.indexOf("resolve({cfg:_cloudCfgReady(),sb:_cloudSbReady(),offline:true})")>=0,'A9-7 preguard が offline:true を返す');
 

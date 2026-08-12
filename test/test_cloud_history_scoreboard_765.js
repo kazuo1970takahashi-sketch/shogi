@@ -60,7 +60,9 @@ const master={ members:[{id:'m_a1',name:'架空甲',yomi:'かくうこう'},{id:
     'U4 snapshot は buildPublicLiveSnapshot 形（schema_version/回戦別 results 入り）');
   ok(snap&&snap.state.players&&snap.state.players.A[0]&&snap.state.players.A[0].name==='架空甲'&&!('member_id' in snap.state.players.A[0]),
     'U5 display_mode:full＝氏名あり・member_id 等はホワイトリスト外（wire に載らない）');
-  var order=cli._calls.map(function(c){return c.table;}).join(',');
+  // CLOUD-TID-GUARD-001 (#800 案#2): 書き込みの前に送信先の大会日を1回 select で照会するようになったため、
+  //   「upsert の順序」を見る本アサートは op==='upsert' に絞る（チェック内容＝末尾工程であることは不変）。
+  var order=cli._calls.filter(function(c){return c.op==='upsert';}).map(function(c){return c.table;}).join(',');
   ok(order==='members,players,tournaments,entries,tournament_snapshots','U6 snapshot upsert は entries 成立後の末尾工程 (got '+order+')');
 
   // snapshot upsert 失敗 → entries 送信は成立（受入基準4・fail-soft）
