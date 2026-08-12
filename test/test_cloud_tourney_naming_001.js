@@ -34,14 +34,19 @@ eq(E.buildMonthlyPeriodLabel(null),'','M8 null→空');
 eq(E.buildMonthlyPeriodLabel('2026-4-5'),'','M9 0詰め無し→空（YYYY-MM-DD 必須）');
 
 console.log('=== C: canonicalizeCloudTournamentName ===');
-eq(E.canonicalizeCloudTournamentName('月例将棋大会2026-04'),'沼津支部月例将棋大会','C1 埋込日付除去→月例→正規名');
+// NUMAZU-BEHAVIOR-001 (#840 ①・2026-08-11): 「月例」を含む名前を沼津へ集約する挙動を撤去したため、
+//   期待値を反転させた（削除ではなく反転＝#835 と同じやり方）。日付サフィックス除去は維持される。
+//   沼津の過去大会でこの形の生名は、一覧に生名のまま並ぶ（#840 受け入れ基準5・作者が許容）。
+eq(E.canonicalizeCloudTournamentName('月例将棋大会2026-04'),'月例将棋大会','C1 埋込日付除去（月例集約は撤去済み＝生名を保つ）');
 eq(E.canonicalizeCloudTournamentName('沼津支部月例将棋大会'),'沼津支部月例将棋大会','C2 既に正規名→同');
 eq(E.canonicalizeCloudTournamentName(''),'沼津支部月例将棋大会','C3 空→既定');
-eq(E.canonicalizeCloudTournamentName('月例将棋大会 報告書'),'沼津支部月例将棋大会','C4 報告書除去→月例→正規名');
+// NUMAZU-BEHAVIOR-001 (#840 ①): 同上。末尾「報告書」除去は維持（受け入れ基準3）。
+eq(E.canonicalizeCloudTournamentName('月例将棋大会 報告書'),'月例将棋大会','C4 報告書除去（月例集約は撤去済み＝生名を保つ）');
 eq(E.canonicalizeCloudTournamentName('第10回沼津竜王戦'),'第10回沼津竜王戦','C5 非月例固有名→温存');
 eq(E.canonicalizeCloudTournamentName('○○杯2026-04'),'○○杯','C6 固有名＋末尾日付→末尾除去して温存');
 eq(E.canonicalizeCloudTournamentName('沼津支部月例将棋大会 2026年4月'),'沼津支部月例将棋大会','C7 末尾「YYYY年M月」除去→正規名');
-eq(E.canonicalizeCloudTournamentName('月例大会（2026-04）'),'沼津支部月例将棋大会','C8 全角括弧日付除去→月例→正規名');
+// NUMAZU-BEHAVIOR-001 (#840 ①): 同上。全角括弧の日付サフィックス除去は維持（受け入れ基準3）。
+eq(E.canonicalizeCloudTournamentName('月例大会（2026-04）'),'月例大会','C8 全角括弧日付除去（月例集約は撤去済み＝生名を保つ）');
 // #657 P1: 裸の4桁数字は日付とみなさず温存（区切り/月成分が必須）
 eq(E.canonicalizeCloudTournamentName('支部対抗戦2025'),'支部対抗戦2025','C9 [P1] 裸4桁は日付でない→温存');
 eq(E.canonicalizeCloudTournamentName('○○杯2026'),'○○杯2026','C10 [P1] 裸4桁は日付でない→温存');
@@ -50,7 +55,8 @@ eq(E.canonicalizeCloudTournamentName('2026-04'),'沼津支部月例将棋大会'
 eq(E.canonicalizeCloudTournamentName('   '),'沼津支部月例将棋大会','C12 空白のみ→既定');
 
 console.log('=== T: buildCloudTournamentDisplayTitle ===');
-eq(E.buildCloudTournamentDisplayTitle('月例将棋大会2026-04','2026-04-15'),'2026年4月度 沼津支部月例将棋大会','T1 合成（GOLDEN）');
+// NUMAZU-BEHAVIOR-001 (#840 ①): GOLDEN も反転。月度プレフィックスの付与自体は不変。
+eq(E.buildCloudTournamentDisplayTitle('月例将棋大会2026-04','2026-04-15'),'2026年4月度 月例将棋大会','T1 合成（GOLDEN・月例集約は撤去済み）');
 eq(E.buildCloudTournamentDisplayTitle('沼津支部月例将棋大会','2026-04-15'),'2026年4月度 沼津支部月例将棋大会','T2 正規名＋period');
 eq(E.buildCloudTournamentDisplayTitle('第10回沼津竜王戦','2026-05-10'),'2026年5月度 第10回沼津竜王戦','T3 特別名は温存し前に月度');
 eq(E.buildCloudTournamentDisplayTitle('沼津支部月例将棋大会',''),'沼津支部月例将棋大会','T4 日付欠損→base のみ（fail-soft）');

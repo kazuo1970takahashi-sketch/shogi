@@ -41,21 +41,29 @@ eq(A.buildMonthlyPeriodLabel(null),'','M8 null→空');
 eq(A.buildMonthlyPeriodLabel('2026-4-5'),'','M9 0詰め無し→空');
 
 console.log('=== C: canonicalizeCloudTournamentName ===');
-eq(A.canonicalizeCloudTournamentName('月例将棋大会2026-04'),'沼津支部月例将棋大会','C1 埋込日付除去→月例→正規名');
+// NUMAZU-BEHAVIOR-001 (#840 ①・2026-08-11): 「月例」を含む名前を沼津へ集約する挙動を撤去したため
+//   期待値を反転（削除ではなく反転＝#835 と同じやり方）。日付/報告書の除去規則は維持されている。
+eq(A.canonicalizeCloudTournamentName('月例将棋大会2026-04'),'月例将棋大会','C1 埋込日付除去（月例集約は撤去済み＝生名を保つ）');
 eq(A.canonicalizeCloudTournamentName('沼津支部月例将棋大会'),'沼津支部月例将棋大会','C2 既に正規名→同');
 eq(A.canonicalizeCloudTournamentName(''),'沼津支部月例将棋大会','C3 空→既定');
-eq(A.canonicalizeCloudTournamentName('月例将棋大会 報告書'),'沼津支部月例将棋大会','C4 報告書除去→月例→正規名');
+// NUMAZU-BEHAVIOR-001 (#840 ①・2026-08-11): 「月例」を含む名前を沼津へ集約する挙動を撤去したため
+//   期待値を反転（削除ではなく反転＝#835 と同じやり方）。日付/報告書の除去規則は維持されている。
+eq(A.canonicalizeCloudTournamentName('月例将棋大会 報告書'),'月例将棋大会','C4 報告書除去（月例集約は撤去済み＝生名を保つ）');
 eq(A.canonicalizeCloudTournamentName('第10回沼津竜王戦'),'第10回沼津竜王戦','C5 非月例固有名→温存');
 eq(A.canonicalizeCloudTournamentName('○○杯2026-04'),'○○杯','C6 固有名＋末尾日付→末尾除去して温存');
 eq(A.canonicalizeCloudTournamentName('沼津支部月例将棋大会 2026年4月'),'沼津支部月例将棋大会','C7 末尾「YYYY年M月」除去→正規名');
-eq(A.canonicalizeCloudTournamentName('月例大会（2026-04）'),'沼津支部月例将棋大会','C8 全角括弧日付除去→月例→正規名');
+// NUMAZU-BEHAVIOR-001 (#840 ①・2026-08-11): 「月例」を含む名前を沼津へ集約する挙動を撤去したため
+//   期待値を反転（削除ではなく反転＝#835 と同じやり方）。日付/報告書の除去規則は維持されている。
+eq(A.canonicalizeCloudTournamentName('月例大会（2026-04）'),'月例大会','C8 全角括弧日付除去（月例集約は撤去済み＝生名を保つ）');
 eq(A.canonicalizeCloudTournamentName('支部対抗戦2025'),'支部対抗戦2025','C9 [P1] 裸4桁は日付でない→温存');
 eq(A.canonicalizeCloudTournamentName('○○杯2026'),'○○杯2026','C10 [P1] 裸4桁は日付でない→温存');
 eq(A.canonicalizeCloudTournamentName('2026-04'),'沼津支部月例将棋大会','C11 [P2] 日付のみ→空化→月例既定');
 eq(A.canonicalizeCloudTournamentName('   '),'沼津支部月例将棋大会','C12 空白のみ→既定');
 
 console.log('=== T: buildCloudTournamentDisplayTitle ===');
-eq(A.buildCloudTournamentDisplayTitle('月例将棋大会2026-04','2026-04-15'),'2026年4月度 沼津支部月例将棋大会','T1 合成（GOLDEN）');
+// NUMAZU-BEHAVIOR-001 (#840 ①・2026-08-11): 「月例」を含む名前を沼津へ集約する挙動を撤去したため
+//   期待値を反転（削除ではなく反転＝#835 と同じやり方）。日付/報告書の除去規則は維持されている。
+eq(A.buildCloudTournamentDisplayTitle('月例将棋大会2026-04','2026-04-15'),'2026年4月度 月例将棋大会','T1 合成（GOLDEN・月例集約は撤去済み）');
 eq(A.buildCloudTournamentDisplayTitle('沼津支部月例将棋大会','2026-04-15'),'2026年4月度 沼津支部月例将棋大会','T2 正規名＋period');
 eq(A.buildCloudTournamentDisplayTitle('第10回沼津竜王戦','2026-05-10'),'2026年5月度 第10回沼津竜王戦','T3 特別名は温存し前に月度');
 eq(A.buildCloudTournamentDisplayTitle('沼津支部月例将棋大会',''),'沼津支部月例将棋大会','T4 日付欠損→base のみ（fail-soft）');
@@ -66,10 +74,14 @@ eq(A.buildCloudTournamentDisplayTitle('','2026-04-15'),'2026年4月度 沼津支
 // ---- end-to-end: 一覧と詳細が同一 display title を出す（単一ソース・#657 P1）----
 console.log('=== E2E: 一覧⇔詳細の単一ソース ===');
 var listHtml=A.buildTournamentListHtml([{id:'t1',name:'月例将棋大会2026-04',date:'2026-04-15',season:'2026年度',status:'confirmed'}]);
-ok(listHtml.indexOf('2026年4月度 沼津支部月例将棋大会')>=0,'L1 一覧タイトルが正規化表示');
+// NUMAZU-BEHAVIOR-001 (#840 ①・2026-08-11): 「月例」を含む名前を沼津へ集約する挙動を撤去したため
+//   期待値を反転（削除ではなく反転＝#835 と同じやり方）。日付/報告書の除去規則は維持されている。
+ok(listHtml.indexOf('2026年4月度 月例将棋大会')>=0,'L1 一覧タイトルが生名＋月度');
 ok(listHtml.indexOf('data-id="t1"')>=0&&listHtml.indexOf('2026-04-15')>=0,'L2 date/id は温存（情報を減らさない）');
 var headHtml=A.buildTournamentHeadHtml({name:'月例将棋大会2026-04',date:'2026-04-15',season:'2026年度',status:'confirmed'});
-ok(headHtml.indexOf('2026年4月度 沼津支部月例将棋大会')>=0,'L3 詳細見出しも同一正規化表示（単一ソース）');
+// NUMAZU-BEHAVIOR-001 (#840 ①・2026-08-11): 「月例」を含む名前を沼津へ集約する挙動を撤去したため
+//   期待値を反転（削除ではなく反転＝#835 と同じやり方）。日付/報告書の除去規則は維持されている。
+ok(headHtml.indexOf('2026年4月度 月例将棋大会')>=0,'L3 詳細見出しも一覧と同一（単一ソース）');
 // 特別名は温存（一覧・詳細とも）
 var listHtml2=A.buildTournamentListHtml([{id:'t2',name:'第10回沼津竜王戦',date:'2026-05-10',season:'2026年度',status:'synced'}]);
 ok(listHtml2.indexOf('2026年5月度 第10回沼津竜王戦')>=0,'L4 特別名は温存＋月度（一覧）');
