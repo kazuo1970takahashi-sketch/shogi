@@ -34,30 +34,39 @@ eq(E.buildMonthlyPeriodLabel(null),'','M8 null→空');
 eq(E.buildMonthlyPeriodLabel('2026-4-5'),'','M9 0詰め無し→空（YYYY-MM-DD 必須）');
 
 console.log('=== C: canonicalizeCloudTournamentName ===');
-eq(E.canonicalizeCloudTournamentName('月例将棋大会2026-04'),'沼津支部月例将棋大会','C1 埋込日付除去→月例→正規名');
-eq(E.canonicalizeCloudTournamentName('沼津支部月例将棋大会'),'沼津支部月例将棋大会','C2 既に正規名→同');
-eq(E.canonicalizeCloudTournamentName(''),'沼津支部月例将棋大会','C3 空→既定');
-eq(E.canonicalizeCloudTournamentName('月例将棋大会 報告書'),'沼津支部月例将棋大会','C4 報告書除去→月例→正規名');
-eq(E.canonicalizeCloudTournamentName('第10回沼津竜王戦'),'第10回沼津竜王戦','C5 非月例固有名→温存');
-eq(E.canonicalizeCloudTournamentName('○○杯2026-04'),'○○杯','C6 固有名＋末尾日付→末尾除去して温存');
-eq(E.canonicalizeCloudTournamentName('沼津支部月例将棋大会 2026年4月'),'沼津支部月例将棋大会','C7 末尾「YYYY年M月」除去→正規名');
-eq(E.canonicalizeCloudTournamentName('月例大会（2026-04）'),'沼津支部月例将棋大会','C8 全角括弧日付除去→月例→正規名');
-// #657 P1: 裸の4桁数字は日付とみなさず温存（区切り/月成分が必須）
-eq(E.canonicalizeCloudTournamentName('支部対抗戦2025'),'支部対抗戦2025','C9 [P1] 裸4桁は日付でない→温存');
-eq(E.canonicalizeCloudTournamentName('○○杯2026'),'○○杯2026','C10 [P1] 裸4桁は日付でない→温存');
-// #657 P2: 固有名が日付/報告書のみ→strip後空→月例既定（意図を固定）
-eq(E.canonicalizeCloudTournamentName('2026-04'),'沼津支部月例将棋大会','C11 [P2] 日付のみ→空化→月例既定');
-eq(E.canonicalizeCloudTournamentName('   '),'沼津支部月例将棋大会','C12 空白のみ→既定');
+// ★NUMAZU-BEHAVIOR-001 (#840・作者決定 2026-08-11「入れたものをそのまま出す」):
+//   #608 の3整形（末尾「報告書」除去・末尾日付除去・「月例」→沼津名の集約）を**すべて外した**。
+//   以下の期待値は削除ではなく**反転**させてある（#835 で pin を逆向きの番人にしたのと同じやり方）。
+//   反転の理由は各行のコメントに残す。整形が復活したらここが落ちる＝再発の番人。
+eq(E.canonicalizeCloudTournamentName('月例将棋大会2026-04'),'月例将棋大会2026-04','C1 [反転] 末尾日付も「月例」集約も効かない＝生名そのまま');
+eq(E.canonicalizeCloudTournamentName('沼津支部月例将棋大会'),'沼津支部月例将棋大会','C2 既に正規名→同（不変）');
+eq(E.canonicalizeCloudTournamentName(''),'(名称未設定)','C3 [反転] 空の既定は沼津名ではなく (名称未設定)＝記録に無い名前を画面が作らない');
+eq(E.canonicalizeCloudTournamentName('月例将棋大会 報告書'),'月例将棋大会 報告書','C4 [反転] 末尾「報告書」も落とさない＝生名そのまま');
+eq(E.canonicalizeCloudTournamentName('第10回沼津竜王戦'),'第10回沼津竜王戦','C5 非月例固有名→温存（不変）');
+eq(E.canonicalizeCloudTournamentName('○○杯2026-04'),'○○杯2026-04','C6 [反転] 末尾日付を落とさない＝生名そのまま');
+eq(E.canonicalizeCloudTournamentName('沼津支部月例将棋大会 2026年4月'),'沼津支部月例将棋大会 2026年4月','C7 [反転] 末尾「YYYY年M月」も落とさない');
+eq(E.canonicalizeCloudTournamentName('月例大会（2026-04）'),'月例大会（2026-04）','C8 [反転] 全角括弧日付も落とさない');
+eq(E.canonicalizeCloudTournamentName('支部対抗戦2025'),'支部対抗戦2025','C9 裸4桁は日付でない→温存（不変）');
+eq(E.canonicalizeCloudTournamentName('○○杯2026'),'○○杯2026','C10 裸4桁は日付でない→温存（不変）');
+eq(E.canonicalizeCloudTournamentName('2026-04'),'2026-04','C11 [反転] 日付だけの名前も打ったまま出す');
+eq(E.canonicalizeCloudTournamentName('   '),'(名称未設定)','C12 [反転] 空白のみは空扱い→(名称未設定)');
+// ★受け入れ基準1（#840）: allowlist 実装（特定文字列だけ素通し）で緑にならないことの担保。
+//   「月例」を含む他クラブ名を4種、いずれも生名のまま返ること。
+eq(E.canonicalizeCloudTournamentName('松本支部月例将棋大会'),'松本支部月例将棋大会','C13 他クラブ①＝生名そのまま');
+eq(E.canonicalizeCloudTournamentName('〇〇将棋クラブ月例会'),'〇〇将棋クラブ月例会','C14 他クラブ②＝生名そのまま');
+eq(E.canonicalizeCloudTournamentName('高崎こども将棋クラブ 月例戦'),'高崎こども将棋クラブ 月例戦','C15 他クラブ③＝生名そのまま');
+eq(E.canonicalizeCloudTournamentName('MATSUMOTO月例CUP'),'MATSUMOTO月例CUP','C16 他クラブ④＝生名そのまま');
+eq(E.canonicalizeCloudTournamentName('六月例会'),'六月例会','C17 「六月」＋「例会」の誤爆も無くなる');
 
 console.log('=== T: buildCloudTournamentDisplayTitle ===');
-eq(E.buildCloudTournamentDisplayTitle('月例将棋大会2026-04','2026-04-15'),'2026年4月度 沼津支部月例将棋大会','T1 合成（GOLDEN）');
-eq(E.buildCloudTournamentDisplayTitle('沼津支部月例将棋大会','2026-04-15'),'2026年4月度 沼津支部月例将棋大会','T2 正規名＋period');
-eq(E.buildCloudTournamentDisplayTitle('第10回沼津竜王戦','2026-05-10'),'2026年5月度 第10回沼津竜王戦','T3 特別名は温存し前に月度');
-eq(E.buildCloudTournamentDisplayTitle('沼津支部月例将棋大会',''),'沼津支部月例将棋大会','T4 日付欠損→base のみ（fail-soft）');
-eq(E.buildCloudTournamentDisplayTitle('○○杯2026','2026-07-05'),'2026年7月度 ○○杯2026','T5 裸4桁温存＋月度');
-// 二重付与ガード（#657 P2）: base 先頭に既に「YYYY年M月度」があれば period を重ねない
-eq(E.buildCloudTournamentDisplayTitle('2026年4月度 特別戦','2026-04-15'),'2026年4月度 特別戦','T6 [P2] 先頭 period 重複を防ぐ');
-eq(E.buildCloudTournamentDisplayTitle('','2026-04-15'),'2026年4月度 沼津支部月例将棋大会','T7 空名→月例既定＋月度');
+eq(E.buildCloudTournamentDisplayTitle('月例将棋大会2026-04','2026-04-15'),'2026年4月度 月例将棋大会2026-04','T1 [反転] 合成（GOLDEN）＝生名に月度を前置するだけ');
+eq(E.buildCloudTournamentDisplayTitle('沼津支部月例将棋大会','2026-04-15'),'2026年4月度 沼津支部月例将棋大会','T2 正規名＋period（不変＝きちんと入力した行は見た目が変わらない）');
+eq(E.buildCloudTournamentDisplayTitle('第10回沼津竜王戦','2026-05-10'),'2026年5月度 第10回沼津竜王戦','T3 特別名は温存し前に月度（不変）');
+eq(E.buildCloudTournamentDisplayTitle('沼津支部月例将棋大会',''),'沼津支部月例将棋大会','T4 日付欠損→base のみ（fail-soft・不変）');
+eq(E.buildCloudTournamentDisplayTitle('○○杯2026','2026-07-05'),'2026年7月度 ○○杯2026','T5 裸4桁温存＋月度（不変）');
+eq(E.buildCloudTournamentDisplayTitle('2026年4月度 特別戦','2026-04-15'),'2026年4月度 特別戦','T6 先頭 period 重複を防ぐ（不変）');
+eq(E.buildCloudTournamentDisplayTitle('','2026-04-15'),'2026年4月度 (名称未設定)','T7 [反転] 空名→(名称未設定)＋月度');
+eq(E.buildCloudTournamentDisplayTitle('松本支部月例将棋大会','2026-08-09'),'2026年8月度 松本支部月例将棋大会','T8 他クラブの月例会が沼津名に化けない（本 issue の主症状）');
 
 console.log('\nPASS='+pass+' FAIL='+fail);
 process.exit(fail>0?1:0);
