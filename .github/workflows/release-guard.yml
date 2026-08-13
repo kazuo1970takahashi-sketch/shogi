@@ -1,0 +1,107 @@
+# =============================================================================
+# release-guard.yml — [SW-QUERY-CACHE-001 #858] production への push を検査する
+# -----------------------------------------------------------------------------
+# ★ このファイルは **production 系列にだけ** 置く。開発本流には正本の写しがあり、
+#   両者が byte 一致することを dev 側の CI が見張る（ドリフト検出）。
+#
+# なぜ production に置くのか（実測にもとづく）:
+#   - `app/auth.js` を触った production コミット33件のうち **27件が `sw.js` 非同梱**
+#   - その2ファイル便は `(#NNN)` が無く親も1つ ＝ **PR を通っていない直 push**
+#   - production に `.github/` が0件。リリース PR #861 の check_runs は `total_count: 0`
+#   `pull_request` のワークフローは base と head をマージした ref から解決されるため、
+#   production 系列に `.github/` が無い限り起動しない。事故は直 push で起きているので、
+#   「production に置いて `push` で発火」が唯一の実効的な手だった。
+#
+# 何を検査するか:
+#   push の差分に `app/auth.js` が含まれるなら、**同じ差分に `sw.js` の `CACHE` 値の
+#   変更も含まれる**こと。ファイルの有無ではなく **値** を見る。
+#
+#   理由（#858 の実測）: オフライン端末に新しい `auth.js` を届ける手段は
+#   **`CACHE` 名のバンプだけ**。`?v=` は Service Worker の経路では効かない
+#   （`PRECACHE` の bare エントリが `ignoreSearch` で先にマッチするため）。
+#   `sw.js` の書き方を変えても救えないことを実 SW で確認済み。
+#
+# 権限: contents: read のみ。何も書き換えない（read-only な番人）。
+# =============================================================================
+name: Release Guard
+
+on:
+  push:
+    branches:
+      - production
+      # ★ この番人自身が本当に赤くなることを、production を触らずに実証するための枝。
+      #   「走っているつもりで走っていない」を繰り返さないために常設する（#865 の教訓）。
+      - 'test/release-guard-probe-**'
+
+permissions:
+  contents: read
+
+jobs:
+  app-auth-needs-cache-bump:
+    name: app/auth.js を運ぶなら sw.js の CACHE も上げる
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 差分を検査
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+
+          ZERO='0000000000000000000000000000000000000000'
+          if [ "$BEFORE" = "$ZERO" ] || [ -z "$BEFORE" ]; then
+            echo "ブランチ作成 push（比較元が無い）→ 検査 SKIP"
+            exit 0
+          fi
+          if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            # fail closed: 比較元を解決できないのに素通りさせない
+            echo "::error::比較元 $BEFORE を解決できない → 検査できないので失敗にする"
+            exit 1
+          fi
+
+          CHANGED=$(git diff --name-only "$BEFORE" "$AFTER")
+          echo "この push の差分:"; echo "$CHANGED" | sed 's/^/  /'
+          echo ""
+
+          if ! echo "$CHANGED" | grep -qx 'app/auth.js'; then
+            echo "app/auth.js は含まれていない → 検査対象外（PASS）"
+            exit 0
+          fi
+
+          echo "app/auth.js が含まれる → sw.js の CACHE 値の変化を確認する"
+
+          # sw.js は両側に存在しなければならない（fail closed）
+          if ! git cat-file -e "${BEFORE}:sw.js" 2>/dev/null || ! git cat-file -e "${AFTER}:sw.js" 2>/dev/null; then
+            echo "::error::sw.js を解決できない（before または after 側）→ 失敗にする"
+            exit 1
+          fi
+
+          OLD=$(git show "${BEFORE}:sw.js" | sed -n "s/^var CACHE = '\([^']*\)'.*/\1/p" | head -1)
+          NEW=$(git show "${AFTER}:sw.js"  | sed -n "s/^var CACHE = '\([^']*\)'.*/\1/p" | head -1)
+          echo "  CACHE (before) = '${OLD}'"
+          echo "  CACHE (after)  = '${NEW}'"
+
+          if [ -z "$OLD" ] || [ -z "$NEW" ]; then
+            echo "::error::sw.js から CACHE の値を取り出せない（var CACHE = '...' の形が変わった？）→ 失敗にする"
+            exit 1
+          fi
+
+          if [ "$OLD" = "$NEW" ]; then
+            echo "::error::app/auth.js を運んでいるのに sw.js の CACHE が '${NEW}' のまま変わっていない。"
+            echo "::error::オフライン端末は古い auth.js を走らせ続ける（#858）。CACHE を上げてから push すること。"
+            echo ""
+            echo "  なぜ ?v= のバンプでは足りないか:"
+            echo "    sw.js は PRECACHE に bare の app/auth.js を入れ、コード資産の"
+            echo "    オフライン救済を caches.match(req,{ignoreSearch:true}) で引いている。"
+            echo "    そのため auth.js?v=N の要求は挿入順で先にある古いエントリにマッチする。"
+            echo "    実 Service Worker で確認済み（#858）。効くのは CACHE 名のバンプだけ。"
+            exit 1
+          fi
+
+          echo ""
+          echo "OK: CACHE が '${OLD}' → '${NEW}' に変わっている"
