@@ -14564,6 +14564,11 @@ function retrySaveRestoredState(){
   }
   // 保存できた時点で undo は完了している。陳腐化した snapshot を残さない。
   try{ localStorage.removeItem(UNDO_KEY); }catch(e){}
+  // ★Codex 5巡目 P1 (r3774389102): この関数は save() を通らないので、save() が持つ
+  //   唯一の publish フックも通らない。ライブ配信 ON のときに undo の初回保存が失敗し、
+  //   ここで復旧しても**参加者向けの配信面はリセット後のまま**取り残される（次の通常保存まで）。
+  //   save() と同じ fail-soft の形で publish する（OFF なら liveIsActive()=false で即 return）。
+  try{ if(typeof liveSchedulePublish==='function')liveSchedulePublish(); }catch(eLive){}
   showMsg('この端末に保存しました','ok');
   return true;
 }

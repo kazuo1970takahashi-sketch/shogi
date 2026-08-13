@@ -360,6 +360,38 @@ async function run(browser, mode) {
       '[R2-P2] リセット側の代替文言が実装に入っている');
   }
 
+  // ---- Codex 5巡目 P1: 再試行の成功でも配信面を更新する（save() の publish フックを通らない）----
+  //   ライブ配信 ON のとき、undo の初回保存が失敗して再試行で復旧しても、参加者向けの
+  //   配信面がリセット後のまま取り残される（次の通常保存まで）。
+  {
+    const pg = await browser.newPage();
+    pg.on('dialog', d => d.dismiss().catch(() => {}));
+    await pg.goto(TARGET, { waitUntil: 'domcontentloaded' });
+    const r = await pg.evaluate(() => {
+      state.classes = [{ id: 'A', name: 'Aクラス' }];
+      state.players = { A: [{ id: 'p1', name: '選手1', entry_no: 1 }] };
+      save(); captureResetSnapshot('all'); localStorage.removeItem('shogi_v4');
+      showResetUndoBanner('大会データを全リセットしました');
+      // publish フックを数える（実装を差し替えず、呼ばれた回数だけ見る）
+      let published = 0;
+      const realPublish = window.liveSchedulePublish;
+      window.liveSchedulePublish = function () { published++; };
+      const real = localStorage.setItem.bind(localStorage);
+      localStorage.setItem = function (k, v) { if (k === 'shogi_v4') return; return real(k, v); };
+      document.getElementById('reset-undo-btn').click();          // undo → 保存に失敗
+      localStorage.setItem = real;
+      const beforeRetry = published;
+      document.getElementById('reset-save-retry-btn').click();     // 再試行で復旧
+      const afterRetry = published;
+      window.liveSchedulePublish = realPublish;
+      return { beforeRetry, afterRetry, stored: localStorage.getItem('shogi_v4') !== null };
+    });
+    await pg.close();
+    ok(r.stored === true, '[R5-P1] 前提: 再試行で端末に保存できている');
+    ok(r.afterRetry > r.beforeRetry,
+      '[R5-P1] ★再試行の成功でも配信面の更新が走る  [実測 ' + r.beforeRetry + ' → ' + r.afterRetry + ']');
+  }
+
   const allErr = [].concat(okc.errors, q.errors, s.errors);
   ok(allErr.length === 0, '未捕捉例外なし' + (allErr.length ? '（実際: ' + allErr[0] + '）' : ''));
 
