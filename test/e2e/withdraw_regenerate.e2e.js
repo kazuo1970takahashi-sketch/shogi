@@ -68,8 +68,24 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
   const btn = await page.$('#repairBtn_A');
   ok(!!btn, '「組み合わせを再生成」ボタンが対局管理に描画される');
 
-  // 2) 本物のボタンを実クリック（→ 実ハンドラ → generatePairing）
+  // 2) 本物のボタンを実クリック（→ 実ハンドラ → 確認モーダル → generatePairing）
   if (btn) await btn.click();
+  await page.waitForTimeout(300);
+
+  // ★ IN-APP-MODAL-001 (#606) 以降、破壊操作の確認は native confirm ではなく
+  //   アプリ内モーダル（#app-modal / .app-modal-ok）になっている。
+  //   このテストは native confirm 時代のまま page.on('dialog') に頼っていたため、
+  //   モーダルが出たまま誰も押さず、generatePairing が一度も走らないのに
+  //   「棄権者が含まれる」と報告して**ずっと落ちていた**（E2E-NOT-RUN-001 #865 で発覚）。
+  //   確認が出ること自体も検査対象にする（破壊操作なので確認は必須）。
+  const modal = await page.evaluate(() => {
+    const ov = document.getElementById('app-modal');
+    return ov ? { shown: true, text: (ov.textContent || '').replace(/\s+/g, ' ').slice(0, 60),
+                  hasOk: !!ov.querySelector('.app-modal-ok'), hasCancel: !!ov.querySelector('.app-modal-cancel') } : { shown: false };
+  });
+  ok(modal.shown, '入力済みの勝敗があるので確認モーダルが出る  [' + (modal.text || '') + ']');
+  ok(modal.hasOk && modal.hasCancel, '確認モーダルに OK とキャンセルの両方がある（破壊操作なので既定キャンセル）');
+  await page.evaluate(() => { const b = document.querySelector('#app-modal .app-modal-ok'); if (b) b.click(); });
   await page.waitForTimeout(300);
 
   // 3) 検証: クラッシュ無し／棄権者が新ペアリングから除外

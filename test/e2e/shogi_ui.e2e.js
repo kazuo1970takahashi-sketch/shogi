@@ -71,6 +71,19 @@ const RESET_FRESH = `state={players:{A:[],B:[]},rounds:4,pairings:{A:[],B:[]},re
   ok(!!hasRepair, '「組み合わせを再生成」ボタンが描画される');
   if (hasRepair) await hasRepair.click();
   await page.waitForTimeout(250);
+  // ★ IN-APP-MODAL-001 (#606) 以降、破壊操作の確認は native confirm ではなくアプリ内モーダル。
+  //   このテストは native confirm 時代のまま page.on('dialog') に頼っていたため、
+  //   モーダルが出たまま誰も押さず、generatePairing が一度も走らないのに落ちていた
+  //   （E2E-NOT-RUN-001 #865 で発覚。走らせていなかったので誰も気づかなかった）。
+  const s1modal = await page.evaluate(() => {
+    const ov = document.getElementById('app-modal');
+    if (!ov) return false;
+    const b = ov.querySelector('.app-modal-ok');
+    if (b) b.click();
+    return true;
+  });
+  ok(s1modal, '再生成は確認モーダルを出す（破壊操作なので確認は必須）');
+  await page.waitForTimeout(250);
   const s1 = await page.evaluate(() => ({ p2: (state.pairings.A || []).some(m => m.p1 === 'p2' || m.p2 === 'p2'), prs: (state.pairings.A || []).map(m => m.p1 + 'v' + m.p2) }));
   ok(pageErrors.length === e1before, '再生成クリックで未捕捉例外が出ない' + (pageErrors.length > e1before ? '（' + pageErrors[pageErrors.length - 1] + '）' : ''));
   ok(!s1.p2, '再生成後の組み合わせに棄権者(p2)が含まれない  [' + s1.prs.join(', ') + ']');

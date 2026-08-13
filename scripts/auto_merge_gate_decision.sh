@@ -69,7 +69,7 @@
 
 # branch ruleset の必須チェック名（= e2e.yml の有効な check run 名）。
 # 両者の一致は test/test_auto_merge_gate_decision.sh が機械照合する（ドリフト検出）。
-AMG_DEFAULT_REQUIRED_CHECKS='Unit (run_tests.sh),Security Scan'
+AMG_DEFAULT_REQUIRED_CHECKS='Unit (run_tests.sh),Security Scan,E2E (Playwright)'
 
 # amg_has_label <labels_csv> <name> -> 0(あり)/1(なし)
 amg_has_label() {

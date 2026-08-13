@@ -3,7 +3,18 @@
 実 Chromium で `shogi_v4.html` を開き、UI を実操作して主要フローが壊れていないかを検証する。
 node/jsdom モックの回帰スイート（`test/run_tests.sh`）を補完する、ブラウザレベルの確認。
 
-> Chromium 本体が必要なため CI/サンドボックス（root 権限なし）では動かない。**Mac 等の実機で手動実行**する。
+>**CI で毎回走る**（E2E-NOT-RUN-001 #865）。`.github/workflows/e2e.yml` の `E2E (Playwright)` ジョブが
+> `bash test/run_e2e.sh` を実行し、`test/e2e/*.e2e.js` を全部走らせる。
+>
+> ※ 以前はここに「Chromium 本体が必要なため CI では動かない。Mac 等の実機で手動実行する」と書いてあったが、
+> それは誤りだった。CI では `npx playwright install --with-deps chromium` で導入できる。
+> この記述のせいで **2スイートが落ちたまま長期間放置**されていた（#606 で破壊操作の確認が
+> native confirm からアプリ内モーダルへ変わった際の追従漏れ）。手元での実行も従来どおりできる。
+
+## 命名規約
+
+`test/e2e/` に置く実行可能なスイートは **必ず `*.e2e.js`** にすること。`test/run_e2e.sh` の
+glob から外れると**静かに走らなくなる**。`test/test_e2e_wired_001.js` [P-2] が番人。
 
 ## セットアップ（初回のみ）
 
@@ -17,20 +28,20 @@ npx playwright install chromium
 リポジトリ直下から（`__dirname` 基準で `shogi_v4.html` を解決するのでどこからでも可）:
 
 ```
-NODE_PATH="$(npm root -g)" node test/e2e/shogi_ui_e2e.js
+NODE_PATH="$(npm root -g)" node test/e2e/shogi_ui.e2e.js
 ```
 
 本番を対象にする場合（実データは実行前後で退避・復元される）:
 
 ```
-NODE_PATH="$(npm root -g)" node test/e2e/shogi_ui_e2e.js "https://kazuo1970takahashi-sketch.github.io/shogi/shogi_v4.html?v=54"
+NODE_PATH="$(npm root -g)" node test/e2e/shogi_ui.e2e.js "https://kazuo1970takahashi-sketch.github.io/shogi/shogi_v4.html?v=54"
 ```
 
 終了コード 0=全PASS / 1=失敗。
 
 ## スクリプト
 
-- `shogi_ui_e2e.js` — 統合スイート（S1〜S5）:
+- `shogi_ui.e2e.js` — 統合スイート（S1〜S5）:
   - S1 途中棄権 →「組み合わせを再生成」実クリックでクラッシュしない／棄権者を除外
   - S2 「クラスを追加」ボタン実クリックでクラスが増える
   - S3 回戦数セレクト(`#inp-rounds`)の実操作で回戦数が反映／クラス別上書きも効く
