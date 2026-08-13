@@ -144,21 +144,68 @@ async function run(browser, mode) {
         return real(k, v);
       };
       document.getElementById('reset-undo-btn').click();           // 実クリック
-      const after = !!document.getElementById('reset-undo-btn');
+      // ★Codex 3巡目 P1: 失敗後の導線は「もう一度 undo」ではなく「もう一度保存する」。
+      //   別 id にしてあるので、undoLastReset を呼ぶ UI が増えていないことも同時に見られる。
+      const after = !!document.getElementById('reset-save-retry-btn');
+      const undoBtnGone = !document.getElementById('reset-undo-btn');
       // 容量が空いた想定で、残っているボタンからやり直せるか
       localStorage.setItem = real;
       let retried = false, storedAfterRetry = false;
-      const b2 = document.getElementById('reset-undo-btn');
+      const b2 = document.getElementById('reset-save-retry-btn');
       if (b2) { b2.click(); retried = true; storedAfterRetry = localStorage.getItem('shogi_v4') !== null; }
-      return { before, after, retried, storedAfterRetry, undoLeft: localStorage.getItem('shogi_undo_snapshot') !== null };
+      return { before, after, undoBtnGone, retried, storedAfterRetry, undoLeft: localStorage.getItem('shogi_undo_snapshot') !== null };
     });
     await pg.close();
     ok(r.before === true, '[P1-1] 前提: リセット直後は「↩ 元に戻す」がある');
     ok(r.after === true,
-      '[P1-1] ★保存に失敗したあとも「↩ 元に戻す」が残っている（残した UNDO_KEY に到達できる）  [実測 ' + r.after + ']');
+      '[P1-1] ★保存に失敗したあとも再試行の導線が残っている  [実測 ' + r.after + ']');
+    ok(r.undoBtnGone === true,
+      '[P1-1] ★失敗バナーには undo を呼ぶボタンを置かない（古い snapshot への直通路を作らない）  [実測 消えている=' + r.undoBtnGone + ']');
     ok(r.retried && r.storedAfterRetry === true,
       '[P1-1] ★容量が空いたあと、残ったボタンから実際にやり直せて保存される  [実測 保存=' + r.storedAfterRetry + ']');
     ok(r.undoLeft === false, '[P1-1] やり直しに成功したら UNDO_KEY は消える');
+  }
+
+  // ---- Codex 3巡目 P1: 再試行は「いまの内容の保存」であって undo の再実行ではない ----
+  //   失敗後に保存が回復してから加えた変更を、再試行ボタンが巻き戻してはいけない。
+  //   旧版（undoLastReset を呼ぶボタンを残す）で実測: 「回復後に追加した人」が消えた。
+  {
+    const pg = await browser.newPage();
+    pg.on('dialog', d => d.dismiss().catch(() => {}));
+    await pg.goto(TARGET, { waitUntil: 'domcontentloaded' });
+    const r = await pg.evaluate(() => {
+      state.classes = [{ id: 'A', name: 'Aクラス' }];
+      state.players = { A: [{ id: 'p1', name: 'リセット前からいる人', entry_no: 1 }] };
+      save(); captureResetSnapshot('all'); localStorage.removeItem('shogi_v4');
+      showResetUndoBanner('大会データを全リセットしました');
+      const real = localStorage.setItem.bind(localStorage);
+      localStorage.setItem = function (k, v) { if (k === 'shogi_v4') return; return real(k, v); };  // silent 故障
+      document.getElementById('reset-undo-btn').click();          // undo → 保存に失敗
+      localStorage.setItem = real;                                 // 保存機能が回復
+      // 回復後に新しい参加者を足して正常に保存できる
+      state.players.A.push({ id: 'p9', name: '回復後に追加した人', entry_no: 9 });
+      save();
+      const savedAfterRecovery = ((JSON.parse(localStorage.getItem('shogi_v4')).players || {}).A || [])
+        .some(function (p) { return p.name === '回復後に追加した人'; });
+      const btn = document.getElementById('reset-save-retry-btn');
+      const clickable = !!btn;
+      if (btn) btn.click();                                        // 残っている導線を押す
+      const stored = JSON.parse(localStorage.getItem('shogi_v4') || '{}');
+      return {
+        savedAfterRecovery: savedAfterRecovery,
+        clickable: clickable,
+        storedNames: (((stored.players || {}).A) || []).map(function (p) { return p.name; }),
+        memoryNames: (state.players.A || []).map(function (p) { return p.name; }),
+        undoLeft: localStorage.getItem('shogi_undo_snapshot') !== null
+      };
+    });
+    await pg.close();
+    ok(r.savedAfterRecovery === true, '[R3-P1] 前提: 保存が回復したあとの追加は正常に保存される');
+    ok(r.clickable === true, '[R3-P1] 前提: そのとき再試行の導線はまだ押せる');
+    ok(r.storedNames.indexOf('回復後に追加した人') >= 0,
+      '[R3-P1] ★再試行を押しても、失敗後に加えた変更が巻き戻らない  [実測 ' + r.storedNames.join('/') + ']');
+    ok(r.memoryNames.indexOf('回復後に追加した人') >= 0, '[R3-P1] メモリ上の state も巻き戻らない');
+    ok(r.undoLeft === false, '[R3-P1] 保存できた時点で undo は完了＝陳腐化した snapshot を残さない');
   }
 
   // ---- Codex P1-2: スナップショットを取れなかったら undo を提示しない ----
@@ -251,7 +298,8 @@ async function run(browser, mode) {
           if (a.mode === 'silent') localStorage.setItem = function (k, v) { if (k === 'shogi_v4') return; return real(k, v); };
           undoLastReset();
           localStorage.setItem = real;
-          const btn = document.getElementById('reset-undo-btn');
+          // 失敗バナーの導線は再試行ボタン（Codex 3巡目 P1 で id を分けた）
+          const btn = document.getElementById('reset-save-retry-btn');
           const rect = btn ? btn.getBoundingClientRect() : null;
           return {
             pane: ['reg', 'tournament', 'result'].filter(function (t) {
@@ -268,7 +316,7 @@ async function run(browser, mode) {
     }
     ok(seen['true/silent'].btnInDom === true, '[R2-P1-B] 前提: 進行中の大会でも失敗バナーは DOM に在る');
     ok(seen['true/silent'].btnVisible === true,
-      '[R2-P1-B] ★進行中の大会を復元して保存に失敗しても、警告と「↩ 元に戻す」が実際に見える  [実測 見える=' +
+      '[R2-P1-B] ★進行中の大会を復元して保存に失敗しても、警告と再試行ボタンが実際に見える  [実測 見える=' +
       seen['true/silent'].btnVisible + ' / 表示ペイン=' + seen['true/silent'].pane + ']');
     ok(seen['false/silent'].btnVisible === true, '[R2-P1-B] 受付段階でも見える（従来どおり）');
     ok(seen['true/ok'].pane === 'tournament',

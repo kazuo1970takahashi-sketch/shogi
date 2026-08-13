@@ -14511,10 +14511,10 @@ function undoLastReset(){
     //   成功と同じ緑で伝えない。メモリ上の state は復元済みのまま（そのほうが利用者は
     //   バックアップを取れる）なので、「今の画面は正しいが、閉じると失われる」ことを言う。
     if(!_undoPersisted){
-      // ★ showMsg ではなく undo ボタン付きのバナーで伝える（Codex P1-1）。
-      //   showMsg だと #reg-msg が置き換わって「もう一度押す」導線そのものが消え、
-      //   残した UNDO_KEY にアプリから到達できなくなる（実測で確認済み）。
-      showResetUndoBanner('元に戻しましたが、この端末に保存できませんでした。閉じる前に「バックアップ」でデータを控えてください。この「↩ 元に戻す」はもう一度押せます','err');
+      // ★ showMsg ではなく再試行ボタン付きのバナーで伝える（Codex P1-1）。
+      //   showMsg だと #reg-msg が置き換わって「もう一度押す」導線そのものが消える。
+      // ★ 導線は undo の再実行ではなく「いまの内容を保存し直す」（Codex 3巡目 P1）。
+      showResetUndoBanner('元に戻しましたが、この端末に保存できませんでした。閉じる前に「バックアップ」でデータを控えてください。この「💾 もう一度保存する」で再試行できます','err','retry');
       return false;
     }
     showMsg('リセットを元に戻しました','ok');
@@ -14522,19 +14522,50 @@ function undoLastReset(){
   }catch(e){ showMsg('元に戻すのに失敗しました','err'); return false; }
 }
 // リセット成功＋「元に戻す」ボタンを #reg-msg に表示（showMsg と同じ場所・次のメッセージで自然に消える＝一時的提示）。
-function showResetUndoBanner(msg,kind){
+function showResetUndoBanner(msg,kind,action){
   // UNDO-SAVE-VERIFY-001 (#862 / Codex P1-1): 種別を受け取れるようにした。
   //   undo の保存が失敗したときに showMsg で伝えると、**押した #reset-undo-btn 自体が消える**
   //   （showMsg は #reg-msg.innerHTML を置き換える）。undoLastReset を呼ぶ UI はこのボタン
   //   だけなので、残した UNDO_KEY にアプリから到達できなくなっていた（実測で確認）。
-  //   失敗バナーにも undo ボタンを残し、原因を取り除いてから再試行できるようにする。
+  //   失敗バナーにも導線を残し、原因を取り除いてから再試行できるようにする。
+  // ★Codex 3巡目 P1 (r3773764224): その導線は「もう一度 undo する」ではなく
+  //   **「いま画面にある内容をもう一度保存する」**でなければならない（action='retry'）。
+  //   実測: 失敗後に保存が回復して参加者を追加し正常に保存できても、undoLastReset を呼ぶ
+  //   ボタンが残っていると、押した瞬間に古い snapshot が再適用されて**追加分が消える**。
+  //   別 id にしてあるのは「undoLastReset を呼ぶ UI は #reset-undo-btn だけ」という
+  //   不変条件を保つため（この前提の上で導線の有無を検査している）。
   var _kind=(kind==='err'||kind==='warn')?kind:'ok';
+  var _retry=(action==='retry');
+  var _id=_retry?'reset-save-retry-btn':'reset-undo-btn';
+  var _label=_retry?'💾 もう一度保存する':'↩ 元に戻す';
   var el=document.getElementById('reg-msg'); if(!el){ showMsg(msg,_kind); return; }
   el.innerHTML='<div class="alert alert-'+_kind+'" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
     +'<span>'+escapeHtml(String(msg||''))+'</span>'
-    +'<button type="button" id="reset-undo-btn" class="btn-sm" style="min-height:36px;background:#fff;border:1px solid #1F3864;color:#1F3864">↩ 元に戻す</button></div>';
-  var b=document.getElementById('reset-undo-btn');
-  if(b)b.addEventListener('click',function(){ undoLastReset(); });
+    +'<button type="button" id="'+_id+'" class="btn-sm" style="min-height:36px;background:#fff;border:1px solid #1F3864;color:#1F3864">'+_label+'</button></div>';
+  var b=document.getElementById(_id);
+  if(b)b.addEventListener('click',_retry?function(){ retrySaveRestoredState(); }:function(){ undoLastReset(); });
+}
+// ★Codex 3巡目 P1 (r3773764224): undo の保存に失敗したあとの再試行。
+//   undoLastReset を呼び直すのではなく、**いまメモリにある state をそのまま保存し直す**。
+//   undo 自体はメモリ上では成功しており、足りないのは端末への書き込みだけだから。
+//   こうすると、失敗のあとに加えた変更（参加者の追加・勝敗の入力）を巻き戻さない。
+function retrySaveRestoredState(){
+  var _expect='';
+  try{ _expect=JSON.stringify(state); }
+  catch(e){ showResetUndoBanner('保存できませんでした（データを文字列にできませんでした）。「バックアップ」でデータを控えてください','err','retry'); return false; }
+  var _saved=false;
+  try{
+    localStorage.setItem(STORAGE_KEY,_expect);
+    _saved=(localStorage.getItem(STORAGE_KEY)===_expect);   // throw しない故障も見る
+  }catch(e){ _saved=false; }
+  if(!_saved){
+    showResetUndoBanner('まだこの端末に保存できません。閉じる前に「バックアップ」でデータを控えてください','err','retry');
+    return false;
+  }
+  // 保存できた時点で undo は完了している。陳腐化した snapshot を残さない。
+  try{ localStorage.removeItem(UNDO_KEY); }catch(e){}
+  showMsg('この端末に保存しました','ok');
+  return true;
 }
 
 function resetTournamentProgressOnly(){

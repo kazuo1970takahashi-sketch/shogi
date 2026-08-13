@@ -63,7 +63,15 @@ ok(/function resetAll\(\)\{[\s\S]{0,600}captureResetSnapshot\('all'\)/.test(RAW)
 ok(/function resetTournamentProgressOnly\(\)\{[\s\S]{0,600}captureResetSnapshot\('progress'\)/.test(RAW),'W2 resetProgress が confirm 後に snapshot');
 ok(RAW.indexOf("showResetUndoBanner('大会データを全リセットしました')")>=0,'W3 全リセット成功で undo バナー');
 ok(RAW.indexOf("showResetUndoBanner('大会進行データをリセットしました')")>=0,'W4 進行リセット成功で undo バナー');
-ok(/id="reset-undo-btn"[\s\S]{0,200}undoLastReset\(\)/.test(RAW)||/reset-undo-btn'\)[\s\S]{0,120}undoLastReset/.test(RAW),'W5 元に戻すボタン→undoLastReset 結線');
+// UNDO-SAVE-VERIFY-001 (#862 / Codex 3巡目 P1): ボタン id と結線が分岐したので追随。
+//   成功バナー = #reset-undo-btn → undoLastReset ／ 失敗バナー = #reset-save-retry-btn →
+//   retrySaveRestoredState（undo を呼び直すと、失敗後に加えた変更を巻き戻すため）。
+//   ★この2件はソース形状の pin。実際に押したときの挙動は e2e
+//     test/e2e/undo_reset_save_862.e2e.js の [P1-1] / [R3-P1] が実クリックで見ている。
+var _bannerBody=(RAW.match(/function showResetUndoBanner\([\s\S]*?\n\}/)||[''])[0].replace(/^\s*\/\/.*$/gm,'');
+ok(_bannerBody.indexOf('reset-undo-btn')>=0&&_bannerBody.indexOf('undoLastReset()')>=0,'W5 元に戻すボタン→undoLastReset 結線');
+ok(/retrySaveRestoredState\(\)[\s\S]{0,60}undoLastReset\(\)/.test(_bannerBody)&&_bannerBody.indexOf('reset-save-retry-btn')>=0,
+  'W5b 失敗バナーの再試行は undo を呼び直さない（Codex 3巡目 P1）');
 
 console.log('RESET-UNDO: PASS='+pass+' FAIL='+fail);
 process.exit(fail===0?0:1);
