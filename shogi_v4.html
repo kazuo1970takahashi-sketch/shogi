@@ -13811,9 +13811,16 @@ function importTournamentBackupFromText(text){
         //   確かめてからでなければ「復元前のまま」とは言えない。applyLoadedJson の save() は
         //   失敗を飲み込むため、メモリを戻したあとに生バイトを書き戻して照合する。
         var cpRolledBack=cpRestored?restoreClubProfileRaw(prevProfileRaw):true;
-        if(prevStateJson){ try{applyLoadedJson(prevStateJson);}catch(e){} }
+        var memRolledBack=true;
+        if(prevStateJson){ try{applyLoadedJson(prevStateJson);}catch(e){ memRolledBack=false; } }
         var stRolledBack=restoreTournamentRaw(prevStateRaw);
-        var rolledBack=cpRolledBack&&stRolledBack;
+        // ★Codex 5巡目 P1 (r3774367112): メモリの巻き戻しが失敗したことを握りつぶさない。
+        //   前便で prevStateJson を**生バイト由来**にしたので、JSON としては読めても
+        //   normalizeState が例外を投げる形（player の name が {"toString":null} 等）が通り得る。
+        //   その場合メモリには「取り込んだ大会」が残ったままなのに、生バイトだけ戻れば
+        //   「復元前のまま」と告げてしまい、次の save() で戻したバイトを取り込み後のメモリで
+        //   上書きする。メモリ側の成否も巻き戻し判定に含める。
+        var rolledBack=cpRolledBack&&stRolledBack&&memRolledBack;
         // ★Codex P2（PR #864 r3771873287）: 文言の軸は `cpRestored × rolledBack` の 2×2。
         //   旧実装は rolledBack だけで割っていたため、**クラブ既定を含まない旧バックアップ**でも
         //   「クラブ既定も元に戻した」「クラブ既定と大会データが食い違っている」と言っていた。

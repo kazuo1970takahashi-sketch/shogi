@@ -749,5 +749,28 @@ const BACKUP_LEGACY=makeBackupText(false);       // 旧バックアップ（club
     'P19-G3 ★メモリ上の state も同じスナップショット（画面と保存値が食い違わない）  [実測 '+env._getState().report.title+']');
 }
 
+// ---- P19-H ★メモリの巻き戻しが失敗したら「復元前のまま」と言わない（Codex 5巡目 P1） ----
+//   prevStateJson は生バイト由来なので、JSON としては読めても normalizeState が例外を
+//   投げる形（player の name が {"toString":null} 等）が通り得る。握りつぶすと、
+//   メモリに「取り込んだ大会」が残ったままで「復元前のまま」と告げてしまう。
+{
+  const store={};
+  const faults={};
+  const env=loadEnv(store,faults);
+  makeMatsumotoState(env);
+  env.saveClubProfile(env.buildClubProfileFromState());
+  // 復元前の生バイトを「JSON としては妥当だが normalizeState が投げる」形にしておく
+  const brokenPrev=JSON.stringify({players:{A:[{id:'x',name:{toString:null},entry_no:1}]},classes:[{id:'A',name:'A'}],results:{},pairings:{},report:{}});
+  env._ls.setItem(env.STORAGE_KEY,brokenPrev);
+  faults[env.STORAGE_KEY]='dropOnSet';      // 取り込みの保存だけ失敗させて巻き戻しへ入らせる
+  env.importTournamentBackupFromText(BACKUP_WITH_PROFILE);
+  const a=env._alerts().join('\n');
+  assert(a.length>0, 'P19-H0 前提: 失敗通知が出ている');
+  assert(a.indexOf('この端末は復元前のままです')<0,
+    'P19-H1 ★メモリを戻せていないのに「復元前のまま」と言わない  [実測 '+a.slice(0,40).replace(/\n/g,' ')+'…]');
+  assert(a.indexOf('元の状態に戻すこともできませんでした')>=0,
+    'P19-H2 戻せなかったことを正直に伝える');
+}
+
 console.log('\n  CLUB-PROFILE-001 テスト: PASS '+pass+'件 / FAIL '+fail+'件');
 process.exit(fail===0?0:1);
