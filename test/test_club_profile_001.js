@@ -705,5 +705,42 @@ const BACKUP_LEGACY=makeBackupText(false);       // 旧バックアップ（club
   assert(env._getState().report.title==='この端末の既定', 'P19-F2 全リセット後もこの端末の既定のまま');
 }
 
+// ---- P19-G ★確認ダイアログを出している間に別タブが更新しても踏み潰さない（Codex 3巡目 P1） ----
+//   appConfirm は非同期。確認前に控えた生バイトを巻き戻し先にすると、確認中に
+//   別の運営タブが書いた最新データを、古い値で上書きしてしまう。
+{
+  const store={};
+  const faults={};
+  const env=loadEnv(store,faults);
+  makeMatsumotoState(env);
+  env._getState().report.title='確認を出す前の既定';
+  env.saveClubProfile(env.buildClubProfileFromState());
+  env._ls.setItem(env.STORAGE_KEY,JSON.stringify(env._getState()));
+
+  // 確認モーダルが出ている「間」に、別タブが既定と大会データを書き換える
+  let otherTabProfileBytes=null;
+  env.__setAppModalTestResolver(function(type,message){
+    env._modals.push({type:type,message:String(message==null?'':message)});
+    if(type==='confirm'){
+      const other=loadEnv({});
+      makeMatsumotoState(other);
+      other._getState().report.title='別タブが書いた既定';
+      other.saveClubProfile(other.buildClubProfileFromState());
+      otherTabProfileBytes=other._store[other.CLUB_PROFILE_KEY];
+      store[env.CLUB_PROFILE_KEY]=otherTabProfileBytes;
+      store[env.STORAGE_KEY]='別タブが書いた大会データ';
+    }
+    return true;
+  });
+
+  faults[env.STORAGE_KEY]='dropOnSet';              // 大会データの保存だけ失敗させて巻き戻しへ入らせる
+  env.importTournamentBackupFromText(BACKUP_WITH_PROFILE);
+  assert(otherTabProfileBytes!==null, 'P19-G0 前提: 確認中に別タブが書き込んだ');
+  assert(store[env.CLUB_PROFILE_KEY]===otherTabProfileBytes,
+    'P19-G1 ★巻き戻しが別タブの最新の既定を古い値で踏み潰さない');
+  assert(store[env.STORAGE_KEY]==='別タブが書いた大会データ',
+    'P19-G2 ★大会データ側も別タブの最新のまま');
+}
+
 console.log('\n  CLUB-PROFILE-001 テスト: PASS '+pass+'件 / FAIL '+fail+'件');
 process.exit(fail===0?0:1);

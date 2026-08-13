@@ -13745,6 +13745,18 @@ function importTournamentBackupFromText(text){
   appConfirm(confirmMsg,function(ok){
     if(!ok)return;
     try{
+      // ★Codex 3巡目 P1 (r3773792291): appConfirm は非同期。確認モーダルを出している間に
+      //   別の運営タブが同じ localStorage を更新していると、確認前に控えた生バイトは古い。
+      //   そのまま巻き戻すと**別タブの最新データを古い値で踏み潰す**。
+      //   確認前の読み取り検査（読めない端末では聞く前に中止する）は維持したうえで、
+      //   巻き戻し対象は**書き始める直前の値**に取り直す。
+      var _reReadOk=true;
+      try{prevProfileRaw=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){_reReadOk=false;}
+      try{prevStateRaw=localStorage.getItem(STORAGE_KEY);}catch(e){_reReadOk=false;}
+      if(!_reReadOk){
+        appAlert('復元を中止しました。\n\nこの端末に今保存されているデータを読み取れませんでした。このまま復元すると、途中で失敗したときに元へ戻せません。\n\nデータは何も変更していません。ブラウザを開き直してから、もう一度お試しください。');
+        return;
+      }
       // CLUB-PROFILE-002: クラブ既定は state より先に復元する（applyLoadedJson→normalizeState→
       //   populateReportFields が live 入力系の空欄判定で参照するため）。
       //   バックアップに含まれない旧ファイルでは触らない＝この端末の既定を消さない。
