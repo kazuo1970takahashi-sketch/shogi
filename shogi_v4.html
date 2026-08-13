@@ -14414,9 +14414,29 @@ function downloadReport(){
 // ============================================================
 var UNDO_KEY='shogi_undo_snapshot';
 function captureResetSnapshot(kind){
+  // UNDO-SAVE-VERIFY-001 (#862 / Codex P1-2): 成否を返す。
+  //   旧実装は失敗を握りつぶして何も返さず、しかも**古いスナップショットを残した**。
+  //   実測: setItem を失敗させても古い値がそのまま残る／戻り値は undefined。
+  //   その状態でリセットの undo バナーが従来どおり出るので、押すと「直前」ではなく
+  //   **さらに前のリセット時点**まで巻き戻り、間に保存した変更が失われる。
+  //   ★ 失敗したら古いスナップショットを消す。間違った巻き戻しを提示するより
+  //     undo を提示しないほうが安全（呼び出し側は戻り値でバナーを出し分ける）。
+  //   ★ Codex 2巡目 P1: throw しない故障（受理するが値が残らない）は try/catch では捕まらない。
+  //     実測（実 Chromium・UNDO_KEY への setItem だけを silent 故障させた場合）:
+  //       戻り値 = true ／ localStorage に残るのは**前回**のスナップショット。
+  //       ＝呼び出し側は undo を提示し、押すと「直前」ではなく前回のリセット時点まで巻き戻る。
+  //       間に保存した参加者が消えるところまで再現した。
+  //     undoLastReset 側と同じく byte 照合し、書けていなければ陳腐化した値を消して false を返す。
   try{
-    localStorage.setItem(UNDO_KEY, JSON.stringify({kind:String(kind||''), savedAt:Date.now(), payload:JSON.stringify(state)}));
-  }catch(e){ /* quota 等は握りつぶす＝リセット自体は続行（安全網は best-effort） */ }
+    var _snap=JSON.stringify({kind:String(kind||''), savedAt:Date.now(), payload:JSON.stringify(state)});
+    localStorage.setItem(UNDO_KEY,_snap);
+    if(localStorage.getItem(UNDO_KEY)===_snap)return true;
+    try{ localStorage.removeItem(UNDO_KEY); }catch(e3){}
+    return false;
+  }catch(e){
+    try{ localStorage.removeItem(UNDO_KEY); }catch(e2){}
+    return false;
+  }
 }
 function hasResetUndoSnapshot(){
   try{ return !!localStorage.getItem(UNDO_KEY); }catch(e){ return false; }
@@ -14454,8 +14474,23 @@ function undoLastReset(){
     var snap=JSON.parse(raw);
     if(!snap||typeof snap.payload!=='string'){ showMsg('元に戻せる直前のデータがありません','warn'); return false; }
     state=normalizeState(JSON.parse(snap.payload));   // load() と同じ復元経路
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
-    try{ localStorage.removeItem(UNDO_KEY); }catch(e){}
+    // UNDO-SAVE-VERIFY-001 (#862): 書き込みの成否を見てから「戻しました」と言う。
+    //   旧実装は `try{ setItem(...) }catch(e){}` で失敗を完全に握りつぶし、そのうえで
+    //   **無条件に**「リセットを元に戻しました」を出し、さらに UNDO_KEY を消していた。
+    //   実測（実 Chromium・setItem を quota で失敗させた場合）:
+    //     戻り値 true ／ 画面「リセットを元に戻しました」／ localStorage.shogi_v4 = null
+    //     ／ undo スナップショット = 消えている
+    //   ＝書けていないのに「戻した」と言い、唯一のやり直し材料まで消していた。リロードで全部失われる。
+    //   ★ throw しない故障（iOS プライベート等「setItem は通るが値が残らない」）も捕まえるため
+    //     byte 照合まで行う（saveClubProfile が #845 Codex P1 で同じ理由で採っている方法）。
+    var _undoPersisted=false;
+    try{
+      var _expect=JSON.stringify(state);
+      localStorage.setItem(STORAGE_KEY,_expect);
+      _undoPersisted=(localStorage.getItem(STORAGE_KEY)===_expect);
+    }catch(e){ _undoPersisted=false; }
+    // ★ 書けていないときは UNDO_KEY を消さない。消すとやり直しの手段が無くなる。
+    if(_undoPersisted){ try{ localStorage.removeItem(UNDO_KEY); }catch(e){} }
     _pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
     // CLUB-PROFILE-001（実装パネル指摘）: 「集合が増える resetAll（profile に C）→ undo（A/B へ復元）」で
     //   reset が生やした C の受付 section が幽霊として残る。復元後の classes 基準で差分掃除する。
@@ -14463,26 +14498,86 @@ function undoLastReset(){
     populateReportFields();
     renderRegList();
     renderPastParticipantsPanel();
-    if(state.started){ showTab(isTournamentDone()?'result':'tournament'); } else { showTab('reg'); }
+    // UNDO-SAVE-VERIFY-001 (#862 / Codex 2巡目 P1): 保存に失敗したときは受付タブに留める。
+    //   失敗バナーと「↩ 元に戻す」は #reg-msg（＝#pane-reg の中）にしか出せないが、
+    //   showTab('tournament'/'result') は #pane-reg を display:none にする。
+    //   実測（実 Chromium・state.started=true で undo・保存を silent 故障させた場合）:
+    //     表示中のペイン = tournament ／ pane-reg = none ／ ボタンは DOM に在るが**不可視**
+    //   ＝運営者は「保存できていない」ことに気づけないまま操作を続け、閉じた時点で失う。
+    //   成功時の遷移は従来どおり（作者裁定 2026-08-13「失敗時は受付タブに留める（最小）」）。
+    if(!_undoPersisted){ showTab('reg'); }
+    else if(state.started){ showTab(isTournamentDone()?'result':'tournament'); } else { showTab('reg'); }
+    // UNDO-SAVE-VERIFY-001 (#862): 画面には戻っているが端末に保存できていない状態を、
+    //   成功と同じ緑で伝えない。メモリ上の state は復元済みのまま（そのほうが利用者は
+    //   バックアップを取れる）なので、「今の画面は正しいが、閉じると失われる」ことを言う。
+    if(!_undoPersisted){
+      // ★ showMsg ではなく再試行ボタン付きのバナーで伝える（Codex P1-1）。
+      //   showMsg だと #reg-msg が置き換わって「もう一度押す」導線そのものが消える。
+      // ★ 導線は undo の再実行ではなく「いまの内容を保存し直す」（Codex 3巡目 P1）。
+      showResetUndoBanner('元に戻しましたが、この端末に保存できませんでした。閉じる前に「バックアップ」でデータを控えてください。この「💾 もう一度保存する」で再試行できます','err','retry');
+      return false;
+    }
     showMsg('リセットを元に戻しました','ok');
     return true;
   }catch(e){ showMsg('元に戻すのに失敗しました','err'); return false; }
 }
 // リセット成功＋「元に戻す」ボタンを #reg-msg に表示（showMsg と同じ場所・次のメッセージで自然に消える＝一時的提示）。
-function showResetUndoBanner(msg){
-  var el=document.getElementById('reg-msg'); if(!el){ showMsg(msg,'ok'); return; }
-  el.innerHTML='<div class="alert alert-ok" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+function showResetUndoBanner(msg,kind,action){
+  // UNDO-SAVE-VERIFY-001 (#862 / Codex P1-1): 種別を受け取れるようにした。
+  //   undo の保存が失敗したときに showMsg で伝えると、**押した #reset-undo-btn 自体が消える**
+  //   （showMsg は #reg-msg.innerHTML を置き換える）。undoLastReset を呼ぶ UI はこのボタン
+  //   だけなので、残した UNDO_KEY にアプリから到達できなくなっていた（実測で確認）。
+  //   失敗バナーにも導線を残し、原因を取り除いてから再試行できるようにする。
+  // ★Codex 3巡目 P1 (r3773764224): その導線は「もう一度 undo する」ではなく
+  //   **「いま画面にある内容をもう一度保存する」**でなければならない（action='retry'）。
+  //   実測: 失敗後に保存が回復して参加者を追加し正常に保存できても、undoLastReset を呼ぶ
+  //   ボタンが残っていると、押した瞬間に古い snapshot が再適用されて**追加分が消える**。
+  //   別 id にしてあるのは「undoLastReset を呼ぶ UI は #reset-undo-btn だけ」という
+  //   不変条件を保つため（この前提の上で導線の有無を検査している）。
+  var _kind=(kind==='err'||kind==='warn')?kind:'ok';
+  var _retry=(action==='retry');
+  var _id=_retry?'reset-save-retry-btn':'reset-undo-btn';
+  var _label=_retry?'💾 もう一度保存する':'↩ 元に戻す';
+  var el=document.getElementById('reg-msg'); if(!el){ showMsg(msg,_kind); return; }
+  el.innerHTML='<div class="alert alert-'+_kind+'" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
     +'<span>'+escapeHtml(String(msg||''))+'</span>'
-    +'<button type="button" id="reset-undo-btn" class="btn-sm" style="min-height:36px;background:#fff;border:1px solid #1F3864;color:#1F3864">↩ 元に戻す</button></div>';
-  var b=document.getElementById('reset-undo-btn');
-  if(b)b.addEventListener('click',function(){ undoLastReset(); });
+    +'<button type="button" id="'+_id+'" class="btn-sm" style="min-height:36px;background:#fff;border:1px solid #1F3864;color:#1F3864">'+_label+'</button></div>';
+  var b=document.getElementById(_id);
+  if(b)b.addEventListener('click',_retry?function(){ retrySaveRestoredState(); }:function(){ undoLastReset(); });
+}
+// ★Codex 3巡目 P1 (r3773764224): undo の保存に失敗したあとの再試行。
+//   undoLastReset を呼び直すのではなく、**いまメモリにある state をそのまま保存し直す**。
+//   undo 自体はメモリ上では成功しており、足りないのは端末への書き込みだけだから。
+//   こうすると、失敗のあとに加えた変更（参加者の追加・勝敗の入力）を巻き戻さない。
+function retrySaveRestoredState(){
+  var _expect='';
+  try{ _expect=JSON.stringify(state); }
+  catch(e){ showResetUndoBanner('保存できませんでした（データを文字列にできませんでした）。「バックアップ」でデータを控えてください','err','retry'); return false; }
+  var _saved=false;
+  try{
+    localStorage.setItem(STORAGE_KEY,_expect);
+    _saved=(localStorage.getItem(STORAGE_KEY)===_expect);   // throw しない故障も見る
+  }catch(e){ _saved=false; }
+  if(!_saved){
+    showResetUndoBanner('まだこの端末に保存できません。閉じる前に「バックアップ」でデータを控えてください','err','retry');
+    return false;
+  }
+  // 保存できた時点で undo は完了している。陳腐化した snapshot を残さない。
+  try{ localStorage.removeItem(UNDO_KEY); }catch(e){}
+  // ★Codex 5巡目 P1 (r3774389102): この関数は save() を通らないので、save() が持つ
+  //   唯一の publish フックも通らない。ライブ配信 ON のときに undo の初回保存が失敗し、
+  //   ここで復旧しても**参加者向けの配信面はリセット後のまま**取り残される（次の通常保存まで）。
+  //   save() と同じ fail-soft の形で publish する（OFF なら liveIsActive()=false で即 return）。
+  try{ if(typeof liveSchedulePublish==='function')liveSchedulePublish(); }catch(eLive){}
+  showMsg('この端末に保存しました','ok');
+  return true;
 }
 
 function resetTournamentProgressOnly(){
   // IN-APP-MODAL-001 (#606): native confirm→appConfirm（挙動同値）。破壊操作ゆえ danger:true（既定キャンセル）。
   appConfirm('参加者一覧は残したまま、現在の組み合わせ・勝敗結果を削除します。\nよろしいですか？',function(_ok){
   if(!_ok)return;
-  captureResetSnapshot('progress');
+  var _snapOk=captureResetSnapshot('progress');
   // B. 大会進行データ（局単位）のみ初期化
   // ROUND-CLASS-START-004b (spec §12.2):
   //   state.classes 駆動で全クラス一括リセット。A/B 固定 literal を廃止し、
@@ -14518,7 +14613,13 @@ function resetTournamentProgressOnly(){
   var _ppSearchReset=document.getElementById('pp-search');
   if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel(_ppSearchReset?_ppSearchReset.value:'');
   showTab('reg');
-  showResetUndoBanner('大会進行データをリセットしました');
+  // ★ スナップショットを取れていないなら undo を提示しない（Codex P1-2）。
+  //   提示すると、古い（陳腐化した）スナップショットで意図しない地点まで巻き戻る。
+  if(_snapOk)showResetUndoBanner('大会進行データをリセットしました');
+  //   ★ 原因は断定しない（Codex 2巡目 P2）。captureResetSnapshot は例外を種別で分けずに
+  //     boolean だけを返すので、容量不足とは限らない（SecurityError＝保存がブロックされている
+  //     端末でも同じ false になる。実測で確認）。確かめていない原因を言わない。
+  else showMsg('大会進行データをリセットしました（この端末に保存できなかったため「元に戻す」は使えません）','warn');
   },{danger:true});
 }
 
@@ -14526,7 +14627,7 @@ function resetAll(){
   // IN-APP-MODAL-001 (#606): native confirm→appConfirm（挙動同値）。破壊操作ゆえ danger:true（既定キャンセル）。
   appConfirm('参加者一覧・組み合わせ・勝敗結果を含む大会データをすべてリセットします。\n支部マスタとクラブ既定（大会名・会場・クラス構成など）は保持されます。',function(_ok){
   if(!_ok)return;
-  captureResetSnapshot('all');
+  var _snapOk=captureResetSnapshot('all');
   // CLUB-PROFILE-001: 実行時に localStorage から profile を読み直す（read-at-use）。
   //   起動時の1回読みだけだと「保存→即・全リセット」で古い既定が使われ、2タブ運用では
   //   恒常的に stale になる（反証パネル指摘）。resetAll は毎月1回の低頻度操作＝再読込コスト無視可。
@@ -14597,7 +14698,10 @@ function resetAll(){
   var _ppSearchReset=document.getElementById('pp-search');
   if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel(_ppSearchReset?_ppSearchReset.value:'');
   showTab('reg');
-  showResetUndoBanner('大会データを全リセットしました');
+  // ★ 同上（Codex P1-2）。
+  if(_snapOk)showResetUndoBanner('大会データを全リセットしました');
+  //   ★ 同上（Codex 2巡目 P2）。原因は断定しない。
+  else showMsg('大会データを全リセットしました（この端末に保存できなかったため「元に戻す」は使えません）','warn');
   },{danger:true});
 }
 
