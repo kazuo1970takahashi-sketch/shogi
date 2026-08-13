@@ -74,7 +74,8 @@ mk_checks() {
 # branch ruleset と同じ必須 2 チェックがすべて SUCCESS の状態
 green_checks() {
   mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS" \
-            "Security Scan|COMPLETED|SUCCESS"
+            "Security Scan|COMPLETED|SUCCESS" \
+            "E2E (Playwright)|COMPLETED|SUCCESS"
 }
 
 # 既定の「発火してよい」状態（ここから 1 要素ずつ壊して停止条件を確認する）
@@ -182,9 +183,42 @@ decide "FIRE" "allowlist を上書きでき、その全てが SUCCESS なら FIR
 reset_env
 mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS" \
           "Security Scan|COMPLETED|SUCCESS" \
-          "E2E (Playwright)|COMPLETED|SKIPPED" \
+          "E2E (Playwright)|COMPLETED|SUCCESS" \
           "auto-merge-gate|IN_PROGRESS|"
-decide "FIRE" "allowlist 外のskip E2Eと未完了ゲートは発火を妨げない"
+decide "FIRE" "allowlist 外の未完了ゲート自身は発火を妨げない"
+
+# ---- E2E-NOT-RUN-001 (#865/#866) 以降、E2E (Playwright) は必須チェック ----
+#   #866 で e2e が CI で実際に走るようになったが、必須チェックに入れないと
+#   「E2E が赤でも auto-merge が通る」状態のままになる（#866 の実測で確認）。
+#   ここは E2E を allowlist に入れたことが効いているかの番人。
+reset_env
+mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS" \
+          "Security Scan|COMPLETED|SUCCESS" \
+          "E2E (Playwright)|COMPLETED|FAILURE"
+decide "SKIP ci-red" "★E2E が赤なら発火しない（#866 以降 E2E は必須）"
+
+reset_env
+mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS" \
+          "Security Scan|COMPLETED|SUCCESS" \
+          "E2E (Playwright)|COMPLETED|SKIPPED"
+decide "SKIP ci-red" "★E2E が SKIPPED なら発火しない（P1-2: SUCCESS 以外は green ではない）"
+
+reset_env
+mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS" \
+          "Security Scan|COMPLETED|SUCCESS" \
+          "E2E (Playwright)|IN_PROGRESS|"
+decide "SKIP ci-pending" "★E2E が未完了なら待つ（poll 対象）"
+
+reset_env
+mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS" \
+          "Security Scan|COMPLETED|SUCCESS"
+decide "SKIP ci-unregistered" "★E2E が未登録なら発火しない（登録されるまで待つ）"
+
+reset_env
+mk_checks "Unit (run_tests.sh)|COMPLETED|SUCCESS" \
+          "Security Scan|COMPLETED|SUCCESS"
+AMG_POLL_EXHAUSTED="true"; export AMG_POLL_EXHAUSTED
+decide "SKIP ci-none" "★待ち切っても E2E が登録されなければ green の証明なし"
 
 echo ""
 echo "【停止条件 6: conclusion は SUCCESS のみ green（P1-2）】"
@@ -269,12 +303,12 @@ else
   ng "allowlist 不一致 (workflow='$_wf_required' decision='$AMG_DEFAULT_REQUIRED_CHECKS')"
 fi
 
-# e2e.yml に存在する、ruleset対象の2つのjob表示名だけを抽出して照合する。
-# skip中の E2E (Playwright) は意図的に必須対象外。
-_e2e_names=$(grep -E '^    name: (Unit \(run_tests\.sh\)|Security Scan)$' "$E2E_EFF" \
+# e2e.yml に存在する必須対象の job 表示名を抽出して照合する。
+# ★E2E-NOT-RUN-001 (#866) で E2E (Playwright) を必須に加えた（旧: 2件・E2E は skip 中で対象外）。
+_e2e_names=$(grep -E '^    name: (Unit \(run_tests\.sh\)|Security Scan|E2E \(Playwright\))$' "$E2E_EFF" \
   | sed 's/^    name: //' | tr '\n' ',' | sed 's/,$//')
 if [ -n "$_e2e_names" ] && [ "$_e2e_names" = "$AMG_DEFAULT_REQUIRED_CHECKS" ]; then
-  ok "e2e.yml の必須job表示名2件が allowlist と完全一致（順序込み）"
+  ok "e2e.yml の必須job表示名3件が allowlist と完全一致（順序込み）"
 else
   ng "e2e.yml の job 名とのドリフト (e2e='$_e2e_names' allowlist='$AMG_DEFAULT_REQUIRED_CHECKS')"
 fi
