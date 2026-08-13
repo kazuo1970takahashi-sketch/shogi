@@ -10599,9 +10599,92 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
     +'<div style="margin-bottom:20px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">後手</label>'
     +'<select id="chg-p2" style="width:100%;min-height:44px;border:1px solid #ccc;border-radius:8px;font-size:16px">'+sel2.html+'</select></div>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end">'
-    +'<button onclick="document.getElementById(\'chg-modal\').remove()" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
+    // CHG-MODAL-FOCUS-TRAP-001 (#837): 閉じ口を closeChangePairingModal に一本化（inert / keydown / フォーカス戻しを取りこぼさない）
+    +'<button onclick="closeChangePairingModal()" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
     +'<button id="chg-save" style="'+saveBtnStyle+'"'+saveBtnAttr+'>変更を保存</button>'
     +'</div></div></div>';
+}
+
+// CHG-MODAL-FOCUS-TRAP-001 (#837): 対戦相手変更モーダルは背後を覆うだけで、フォーカスは
+//   呼び出し元の「変更」ボタンに残っていた。実測（実 Chromium・dev 1b5180c・当日と同じ形）:
+//     ・開いた直後の activeElement は chgbtn_<cls>_<idx>（背後のボタン）
+//     ・Tab 1回 + Enter で背後の卓に勝敗が入り、localStorage まで保存される
+//       （画面はモーダルに覆われて見えないので、幹事は入ったことに気づけない）
+//     ・さらに Tab で背後の別の「変更」に届き、Enter で2枚目が開く。id 固定（chg-modal /
+//       chg-save）のため bindChangePairingModalEvents の listener は1枚目に積み、
+//       手前に見える「変更を保存」は押しても何も起きない
+//     ・Escape では閉じない
+//   #606 の app-modal と同じ作り（role=dialog / aria-modal / フォーカスをモーダル内へ）に
+//   揃え、背後を inert にする。inert 非対応環境のために Tab の巻き取りも併せて持つ。
+//   ★ マウス・タップ単独では踏めない（オーバーレイが viewport 全面）。PC・iPad＋キーボード限定。
+var _chgModalFocusReturn=null;    // 開いたときにフォーカスがあった要素（閉じたら戻す）
+var _chgModalInertedNodes=null;   // この便で inert を付けた body 直下の要素だけを覚える
+                                  // （元から inert のものは触らない＝他機能の状態を壊さない）
+
+function _chgModalFocusableIn(root){
+  if(!root||!root.querySelectorAll)return [];
+  var nodes=root.querySelectorAll('select,button,input,textarea,a[href],[tabindex]');
+  var out=[];
+  for(var i=0;i<nodes.length;i++){
+    var el=nodes[i];
+    if(el.disabled)continue;                                        // 候補0人時の「変更を保存」など
+    if(el.getAttribute&&el.getAttribute('tabindex')==='-1')continue;
+    out.push(el);
+  }
+  return out;
+}
+
+function _chgModalKeydown(e){
+  var modal=document.getElementById('chg-modal');
+  if(!modal){ closeChangePairingModal(); return; }   // 別経路（resetAll 等）で DOM だけ消された場合の自己修復
+  // ★ アプリ内モーダル（appConfirm）が手前にある間は一切割り込まない。
+  //   Escape を横取りすると確認ではなく変更モーダルが閉じ、Tab を巻き取ると「はい」に届かない。
+  //   showAppModal は Escape も既定フォーカスも自前で持っている（#606）。
+  if(document.getElementById('app-modal'))return;
+  var k=e.keyCode||e.which;
+  if(k===27){ if(e.preventDefault)e.preventDefault(); closeChangePairingModal(); return; }
+  if(k!==9)return;
+  var items=_chgModalFocusableIn(modal);
+  if(!items.length)return;
+  var first=items[0], last=items[items.length-1], a=document.activeElement;
+  if(!modal.contains(a)){ if(e.preventDefault)e.preventDefault(); try{first.focus();}catch(err){} return; }
+  if(e.shiftKey&&a===first){ if(e.preventDefault)e.preventDefault(); try{last.focus();}catch(err){} }
+  else if(!e.shiftKey&&a===last){ if(e.preventDefault)e.preventDefault(); try{first.focus();}catch(err){} }
+}
+
+function openChangePairingModalFocus(){
+  var modal=document.getElementById('chg-modal');
+  if(!modal)return;
+  try{ modal.setAttribute('role','dialog'); modal.setAttribute('aria-modal','true'); }catch(e){}
+  _chgModalInertedNodes=[];
+  var kids=document.body.children;
+  for(var i=0;i<kids.length;i++){
+    var el=kids[i];
+    if(el===modal)continue;
+    if(el.hasAttribute&&el.hasAttribute('inert'))continue;
+    try{ el.setAttribute('inert',''); _chgModalInertedNodes.push(el); }catch(e){}
+  }
+  try{ document.addEventListener('keydown',_chgModalKeydown,true); }catch(e){}
+  var items=_chgModalFocusableIn(modal);
+  try{ if(items.length)items[0].focus(); }catch(e){}
+}
+
+// 閉じ口を1本にする（DOM から消すだけでは inert と keydown が残る）。
+//   何も開いていないときに呼んでも安全＝開く前の掃除にも使う。
+function closeChangePairingModal(){
+  try{ document.removeEventListener('keydown',_chgModalKeydown,true); }catch(e){}
+  if(_chgModalInertedNodes){
+    for(var i=0;i<_chgModalInertedNodes.length;i++){
+      try{ _chgModalInertedNodes[i].removeAttribute('inert'); }catch(e){}
+    }
+  }
+  _chgModalInertedNodes=null;
+  var modal=document.getElementById('chg-modal');
+  if(modal&&modal.parentNode)modal.parentNode.removeChild(modal);
+  var back=_chgModalFocusReturn;
+  _chgModalFocusReturn=null;
+  // 戻し先が消えている（resetAll で再描画された等）ときは何もしない＝例外にしない
+  try{ if(back&&document.body&&document.body.contains(back)&&back.focus)back.focus(); }catch(e){}
 }
 
 function bindChangePairingModalEvents(cls, idx){
@@ -10639,7 +10722,10 @@ function bindChangePairingModalEvents(cls, idx){
     //   confirm 後の共通後処理（modal 除去→renderTournament→save→SAVE-003b 保存検証）を _finishChangePairing に集約し、
     //   OK 経路のみで呼ぶ＝元の「confirm OK 後に後処理」の順序・分岐を厳密保持（取消/重複ロールバックは非実行＝confirm false で return と同値）。
     function _finishChangePairing(){
-      document.getElementById('chg-modal').remove();
+      // CHG-MODAL-FOCUS-TRAP-001 (#837): remove() から closeChangePairingModal() へ。
+      //   モーダル除去→renderTournament→save の順序は不変（#606 A2 の意図を保持）。
+      //   閉じるときに inert の解除・keydown の解除・フォーカス戻しも同時に行う。
+      closeChangePairingModal();
       renderTournament(cls);save();
       // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
       // false は「保存未確認」（保存失敗と断定しない）。対戦相手変更 / swap は rollback しない・運営は継続する。
@@ -10720,12 +10806,19 @@ function changePairing(cls,idx){
     alert('結果入力済みのため変更できません');
     return;
   }
+  // CHG-MODAL-FOCUS-TRAP-001 (#837): 戻し先は「開く前にフォーカスがあった要素」＝掃除より先に取る。
+  var opener=(document.activeElement&&document.activeElement!==document.body)?document.activeElement:null;
+  // 多重表示ガード: id 固定（chg-modal / chg-save）のため2枚重ねると listener が1枚目に積み、
+  //   手前に見える「変更を保存」が死ぬ。開く前に必ず1枚に戻す。
+  closeChangePairingModal();
+  _chgModalFocusReturn=opener;
   var candidates=state.players[cls];
   var html=buildChangePairingModalHtml(cls, idx, candidates, match);
   var div=document.createElement('div');
   div.innerHTML=html;
   document.body.appendChild(div.firstChild);
   bindChangePairingModalEvents(cls, idx);
+  openChangePairingModalFocus();
 }
 
 function submitRound(cls){
@@ -14783,6 +14876,9 @@ function resetTournamentProgressOnly(){
   });
   syncGlobalStartedFromClasses();
   // 開きっぱなしのモーダルを閉じる（resetAll と同設計、進行中操作の取りこぼし防止）
+  // CHG-MODAL-FOCUS-TRAP-001 (#837): chg-modal は DOM を消すだけでは inert と keydown が残るので
+  //   専用の閉じ口を先に通す（開いていなければ何もしない）。下の一括除去はそのまま残す。
+  closeChangePairingModal();
   ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
     var m=document.getElementById(mid);if(m)m.remove();
   });
@@ -14845,6 +14941,8 @@ function resetAll(){
     for(var i=0;i<LEGACY_STORAGE_KEYS.length;i++)localStorage.removeItem(LEGACY_STORAGE_KEYS[i]);
   }catch(e){}
   // 開きっぱなしのモーダルを閉じる
+  // CHG-MODAL-FOCUS-TRAP-001 (#837): chg-modal は inert / keydown / フォーカス戻しがあるので専用の閉じ口を先に通す。
+  closeChangePairingModal();
   ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
     var m=document.getElementById(mid);if(m)m.remove();
   });

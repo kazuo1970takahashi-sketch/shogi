@@ -15,7 +15,13 @@ function assert(c, m) { if (c) { pass++; } else { fail++; console.log('  FAIL: '
 
 // A. 共通後処理ヘルパへの集約
 assert(RAW.indexOf('function _finishChangePairing(){') >= 0, 'A1 共通後処理は _finishChangePairing に集約');
-assert(RAW.indexOf("document.getElementById('chg-modal').remove();\n      renderTournament(cls);save();") >= 0, 'A2 modal 除去→renderTournament→save の順序を helper 内に温存');
+// A2: CHG-MODAL-FOCUS-TRAP-001 (#837) で「モーダル除去」の実体が
+//   document.getElementById('chg-modal').remove() から closeChangePairingModal() へ移った
+//   （閉じるときに inert 解除・keydown 解除・フォーカス戻しも行うため、閉じ口を1本にした）。
+//   この pin の意図は「除去 → renderTournament → save の順序が helper 内に温存されていること」なので、
+//   順序はそのまま、除去の呼び出し形だけを追随させる。
+assert(RAW.indexOf("closeChangePairingModal();\n      renderTournament(cls);save();") >= 0, 'A2 modal 除去→renderTournament→save の順序を helper 内に温存');
+assert(/function closeChangePairingModal\(\)\{/.test(RAW), 'A2-2 除去の実体は closeChangePairingModal（#837）');
 assert(RAW.indexOf('SAVE-003b: bindChangePairingModalEvents の保存が確認できませんでした') >= 0, 'A3 SAVE-003b 保存検証(notifySaveWarning)を helper 内に温存');
 
 // B. 再戦保存 confirm → appConfirm（danger 無し）＋ OK 経路のみ確定→後処理
