@@ -14421,9 +14421,18 @@ function captureResetSnapshot(kind){
   //   **さらに前のリセット時点**まで巻き戻り、間に保存した変更が失われる。
   //   ★ 失敗したら古いスナップショットを消す。間違った巻き戻しを提示するより
   //     undo を提示しないほうが安全（呼び出し側は戻り値でバナーを出し分ける）。
+  //   ★ Codex 2巡目 P1: throw しない故障（受理するが値が残らない）は try/catch では捕まらない。
+  //     実測（実 Chromium・UNDO_KEY への setItem だけを silent 故障させた場合）:
+  //       戻り値 = true ／ localStorage に残るのは**前回**のスナップショット。
+  //       ＝呼び出し側は undo を提示し、押すと「直前」ではなく前回のリセット時点まで巻き戻る。
+  //       間に保存した参加者が消えるところまで再現した。
+  //     undoLastReset 側と同じく byte 照合し、書けていなければ陳腐化した値を消して false を返す。
   try{
-    localStorage.setItem(UNDO_KEY, JSON.stringify({kind:String(kind||''), savedAt:Date.now(), payload:JSON.stringify(state)}));
-    return true;
+    var _snap=JSON.stringify({kind:String(kind||''), savedAt:Date.now(), payload:JSON.stringify(state)});
+    localStorage.setItem(UNDO_KEY,_snap);
+    if(localStorage.getItem(UNDO_KEY)===_snap)return true;
+    try{ localStorage.removeItem(UNDO_KEY); }catch(e3){}
+    return false;
   }catch(e){
     try{ localStorage.removeItem(UNDO_KEY); }catch(e2){}
     return false;
@@ -14489,7 +14498,15 @@ function undoLastReset(){
     populateReportFields();
     renderRegList();
     renderPastParticipantsPanel();
-    if(state.started){ showTab(isTournamentDone()?'result':'tournament'); } else { showTab('reg'); }
+    // UNDO-SAVE-VERIFY-001 (#862 / Codex 2巡目 P1): 保存に失敗したときは受付タブに留める。
+    //   失敗バナーと「↩ 元に戻す」は #reg-msg（＝#pane-reg の中）にしか出せないが、
+    //   showTab('tournament'/'result') は #pane-reg を display:none にする。
+    //   実測（実 Chromium・state.started=true で undo・保存を silent 故障させた場合）:
+    //     表示中のペイン = tournament ／ pane-reg = none ／ ボタンは DOM に在るが**不可視**
+    //   ＝運営者は「保存できていない」ことに気づけないまま操作を続け、閉じた時点で失う。
+    //   成功時の遷移は従来どおり（作者裁定 2026-08-13「失敗時は受付タブに留める（最小）」）。
+    if(!_undoPersisted){ showTab('reg'); }
+    else if(state.started){ showTab(isTournamentDone()?'result':'tournament'); } else { showTab('reg'); }
     // UNDO-SAVE-VERIFY-001 (#862): 画面には戻っているが端末に保存できていない状態を、
     //   成功と同じ緑で伝えない。メモリ上の state は復元済みのまま（そのほうが利用者は
     //   バックアップを取れる）なので、「今の画面は正しいが、閉じると失われる」ことを言う。
@@ -14497,7 +14514,7 @@ function undoLastReset(){
       // ★ showMsg ではなく undo ボタン付きのバナーで伝える（Codex P1-1）。
       //   showMsg だと #reg-msg が置き換わって「もう一度押す」導線そのものが消え、
       //   残した UNDO_KEY にアプリから到達できなくなる（実測で確認済み）。
-      showResetUndoBanner('元に戻しましたが、この端末に保存できませんでした。閉じる前に「バックアップ」でデータを控えてください。容量を空けてから、もう一度この「↩ 元に戻す」を押せます','err');
+      showResetUndoBanner('元に戻しましたが、この端末に保存できませんでした。閉じる前に「バックアップ」でデータを控えてください。この「↩ 元に戻す」はもう一度押せます','err');
       return false;
     }
     showMsg('リセットを元に戻しました','ok');
@@ -14510,7 +14527,7 @@ function showResetUndoBanner(msg,kind){
   //   undo の保存が失敗したときに showMsg で伝えると、**押した #reset-undo-btn 自体が消える**
   //   （showMsg は #reg-msg.innerHTML を置き換える）。undoLastReset を呼ぶ UI はこのボタン
   //   だけなので、残した UNDO_KEY にアプリから到達できなくなっていた（実測で確認）。
-  //   失敗バナーにも undo ボタンを残し、容量を空けてから再試行できるようにする。
+  //   失敗バナーにも undo ボタンを残し、原因を取り除いてから再試行できるようにする。
   var _kind=(kind==='err'||kind==='warn')?kind:'ok';
   var el=document.getElementById('reg-msg'); if(!el){ showMsg(msg,_kind); return; }
   el.innerHTML='<div class="alert alert-'+_kind+'" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
@@ -14563,7 +14580,10 @@ function resetTournamentProgressOnly(){
   // ★ スナップショットを取れていないなら undo を提示しない（Codex P1-2）。
   //   提示すると、古い（陳腐化した）スナップショットで意図しない地点まで巻き戻る。
   if(_snapOk)showResetUndoBanner('大会進行データをリセットしました');
-  else showMsg('大会進行データをリセットしました（保存容量の都合で「元に戻す」は使えません）','warn');
+  //   ★ 原因は断定しない（Codex 2巡目 P2）。captureResetSnapshot は例外を種別で分けずに
+  //     boolean だけを返すので、容量不足とは限らない（SecurityError＝保存がブロックされている
+  //     端末でも同じ false になる。実測で確認）。確かめていない原因を言わない。
+  else showMsg('大会進行データをリセットしました（この端末に保存できなかったため「元に戻す」は使えません）','warn');
   },{danger:true});
 }
 
@@ -14644,7 +14664,8 @@ function resetAll(){
   showTab('reg');
   // ★ 同上（Codex P1-2）。
   if(_snapOk)showResetUndoBanner('大会データを全リセットしました');
-  else showMsg('大会データを全リセットしました（保存容量の都合で「元に戻す」は使えません）','warn');
+  //   ★ 同上（Codex 2巡目 P2）。原因は断定しない。
+  else showMsg('大会データを全リセットしました（この端末に保存できなかったため「元に戻す」は使えません）','warn');
   },{danger:true});
 }
 

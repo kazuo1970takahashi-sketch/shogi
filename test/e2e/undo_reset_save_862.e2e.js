@@ -190,6 +190,128 @@ async function run(browser, mode) {
       '[P1-2] ★上書きに失敗したら陳腐化した古いスナップショットを消す（誤った巻き戻しを提示しない）  [実測 残存=' + r.staleLeft + ']');
   }
 
+  // ---- Codex 2巡目 P1: captureResetSnapshot も byte 照合する ----
+  //   1巡目で塞いだのは「throw する故障」だけだった。throw しない故障（受理するが値が残らない）
+  //   では戻り値 true のまま**前回のスナップショットが残り**、呼び出し側は undo を提示する。
+  //   押すと前回のリセット時点まで巻き戻り、間に保存した参加者が消える（実測で再現）。
+  {
+    const pg = await browser.newPage();
+    pg.on('dialog', d => d.dismiss().catch(() => {}));
+    await pg.goto(TARGET, { waitUntil: 'domcontentloaded' });
+    const r = await pg.evaluate(() => {
+      state.classes = [{ id: 'A', name: 'Aクラス' }];
+      state.players = { A: [{ id: 'p1', name: '時点1のみ', entry_no: 1 }] };
+      save();
+      const cap1 = captureResetSnapshot('all');                     // ① 正常に取れる
+      state.players.A.push({ id: 'p2', name: '時点2で追加', entry_no: 2 });
+      save();                                                       // ② 間に保存した変更
+      const real = localStorage.setItem.bind(localStorage);
+      // ★ throw しない。値も変わらない（＝古いスナップショットが残る）。
+      localStorage.setItem = function (k, v) { if (k === 'shogi_undo_snapshot') return; return real(k, v); };
+      const cap2 = captureResetSnapshot('all');                     // ③ 上書きが silent に失敗
+      localStorage.setItem = real;
+      const raw = localStorage.getItem('shogi_undo_snapshot');
+      const staleNames = raw ? JSON.parse(JSON.parse(raw).payload).players.A.map(p => p.name) : [];
+      // ④ 陳腐化した値が残っていれば、それを押したとき「時点2で追加」が消える
+      undoLastReset();
+      return {
+        cap1: cap1, cap2: cap2,
+        staleLeft: raw !== null,
+        staleNames: staleNames.join('/'),
+        lost: (state.players.A || []).every(function (p) { return p.name !== '時点2で追加'; })
+      };
+    });
+    await pg.close();
+    ok(r.cap1 === true, '[R2-P1-A] 前提: 正常時は true（対照）');
+    ok(r.cap2 === false,
+      '[R2-P1-A] ★throw しない故障でも false を返す＝UNDO_KEY 側にも byte 照合がある  [実測 ' + r.cap2 + ']');
+    ok(r.staleLeft === false,
+      '[R2-P1-A] ★書けていないなら前回のスナップショットを残さない  [実測 残存=' + r.staleLeft + (r.staleNames ? '（' + r.staleNames + '）' : '') + ']');
+    ok(r.lost === false,
+      '[R2-P1-A] ★間に保存した変更が巻き戻しで消えない  [実測 消えた=' + r.lost + ']');
+  }
+
+  // ---- Codex 2巡目 P1: 保存失敗の警告が、実際に見える場所に出ること ----
+  //   undo が進行中/完了済みの大会を復元すると showTab('tournament'/'result') が
+  //   #pane-reg を display:none にする。バナーと「↩ 元に戻す」は #reg-msg にしか出せないため、
+  //   DOM には在るのに**画面には出ない**。運営者は保存できていないことに気づけない。
+  {
+    const seen = {};
+    for (const started of [false, true]) {
+      for (const mode of ['ok', 'silent']) {
+        const pg = await browser.newPage();
+        pg.on('dialog', d => d.dismiss().catch(() => {}));
+        await pg.goto(TARGET, { waitUntil: 'domcontentloaded' });
+        seen[started + '/' + mode] = await pg.evaluate(function (a) {
+          state.classes = [{ id: 'A', name: 'Aクラス' }];
+          state.players = { A: [{ id: 'p1', name: '選手1', entry_no: 1 }] };
+          state.started = a.started;
+          save(); captureResetSnapshot('all'); localStorage.removeItem('shogi_v4');
+          const real = localStorage.setItem.bind(localStorage);
+          if (a.mode === 'silent') localStorage.setItem = function (k, v) { if (k === 'shogi_v4') return; return real(k, v); };
+          undoLastReset();
+          localStorage.setItem = real;
+          const btn = document.getElementById('reset-undo-btn');
+          const rect = btn ? btn.getBoundingClientRect() : null;
+          return {
+            pane: ['reg', 'tournament', 'result'].filter(function (t) {
+              const el = document.getElementById('pane-' + t);
+              return el && getComputedStyle(el).display !== 'none';
+            }).join(','),
+            btnInDom: !!btn,
+            // ★ DOM に在るかではなく、実際に見えるかを見る
+            btnVisible: !!(btn && btn.offsetParent !== null && rect && rect.width > 0 && rect.height > 0)
+          };
+        }, { started: started, mode: mode });
+        await pg.close();
+      }
+    }
+    ok(seen['true/silent'].btnInDom === true, '[R2-P1-B] 前提: 進行中の大会でも失敗バナーは DOM に在る');
+    ok(seen['true/silent'].btnVisible === true,
+      '[R2-P1-B] ★進行中の大会を復元して保存に失敗しても、警告と「↩ 元に戻す」が実際に見える  [実測 見える=' +
+      seen['true/silent'].btnVisible + ' / 表示ペイン=' + seen['true/silent'].pane + ']');
+    ok(seen['false/silent'].btnVisible === true, '[R2-P1-B] 受付段階でも見える（従来どおり）');
+    ok(seen['true/ok'].pane === 'tournament',
+      '[R2-P1-B] ★対照: 保存に成功したときの遷移は従来どおり進行タブ  [実測 ' + seen['true/ok'].pane + ']');
+    ok(seen['false/ok'].pane === 'reg', '[R2-P1-B] 対照: 未開始なら受付タブ（従来どおり）');
+  }
+
+  // ---- Codex 2巡目 P2: 確かめていない原因を言わない ----
+  //   captureResetSnapshot は例外を種別で分けずに boolean だけを返すので、失敗＝容量不足とは限らない。
+  //   SecurityError（ブラウザの設定で保存がブロックされている端末）でも同じ false になる。
+  {
+    const pg = await browser.newPage();
+    pg.on('dialog', d => d.dismiss().catch(() => {}));
+    await pg.goto(TARGET, { waitUntil: 'domcontentloaded' });
+    const r = await pg.evaluate(() => {
+      state.classes = [{ id: 'A', name: 'Aクラス' }];
+      state.players = { A: [{ id: 'p1', name: '選手1', entry_no: 1 }] };
+      save();
+      const real = localStorage.setItem.bind(localStorage);
+      localStorage.setItem = function (k, v) {
+        if (k === 'shogi_undo_snapshot') { const e = new Error('The operation is insecure.'); e.name = 'SecurityError'; throw e; }
+        return real(k, v);
+      };
+      const cap = captureResetSnapshot('all');
+      localStorage.setItem = real;
+      return { cap: cap };
+    });
+    await pg.close();
+    ok(r.cap === false, '[R2-P2] 前提: 容量とは無関係な SecurityError でも false になる（原因を区別していない）');
+  }
+
+  // ---- 実装側の文言に「容量」の断定が残っていないこと（2箇所とも）----
+  //   ★ コメントを実装と誤認しないよう、行コメントを落としてから見る。
+  {
+    const fs = require('fs');
+    const src = fs.readFileSync(path.resolve(__dirname, '..', '..', 'shogi_v4.html'), 'utf8');
+    const body = src.replace(/^\s*\/\/.*$/gm, '');
+    ok(!/保存容量の都合で/.test(body) && !/容量を空けてから/.test(body),
+      '[R2-P2] ★実装の文言から原因の断定が消えている');
+    ok(/この端末に保存できなかったため「元に戻す」は使えません/.test(body),
+      '[R2-P2] リセット側の代替文言が実装に入っている');
+  }
+
   const allErr = [].concat(okc.errors, q.errors, s.errors);
   ok(allErr.length === 0, '未捕捉例外なし' + (allErr.length ? '（実際: ' + allErr[0] + '）' : ''));
 
