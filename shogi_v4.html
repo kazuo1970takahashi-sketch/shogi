@@ -13771,6 +13771,14 @@ function importTournamentBackupFromText(text){
       //     「無い」に丸めないため appConfirm より前で控えてある。
       var prevStateJson=null;
       try{prevStateJson=JSON.stringify(state);}catch(e){prevStateJson=null;}
+      // ★Codex 4巡目 P1 (r3774130515): メモリ側の巻き戻し元と生バイト側の巻き戻し元を
+      //   **同じスナップショット**に揃える。確認中に別タブが書いていると、再読取で
+      //   prevStateRaw は最新になるのに prevStateJson はこのタブの古いメモリのままで、
+      //   巻き戻したあと画面と保存値が食い違う。その状態で利用者が操作して save() が走ると、
+      //   別タブの最新を古いメモリで上書きしてしまう。
+      if(typeof prevStateRaw==='string'&&prevStateRaw){
+        try{ JSON.parse(prevStateRaw); prevStateJson=prevStateRaw; }catch(e){}
+      }
       var cpRestored=false;
       if(res.club_profile){
         cpRestored=saveClubProfile(res.club_profile);

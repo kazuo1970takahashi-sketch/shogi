@@ -718,7 +718,7 @@ const BACKUP_LEGACY=makeBackupText(false);       // 旧バックアップ（club
   env._ls.setItem(env.STORAGE_KEY,JSON.stringify(env._getState()));
 
   // 確認モーダルが出ている「間」に、別タブが既定と大会データを書き換える
-  let otherTabProfileBytes=null;
+  let otherTabProfileBytes=null, otherTabStateBytes=null;
   env.__setAppModalTestResolver(function(type,message){
     env._modals.push({type:type,message:String(message==null?'':message)});
     if(type==='confirm'){
@@ -727,8 +727,11 @@ const BACKUP_LEGACY=makeBackupText(false);       // 旧バックアップ（club
       other._getState().report.title='別タブが書いた既定';
       other.saveClubProfile(other.buildClubProfileFromState());
       otherTabProfileBytes=other._store[other.CLUB_PROFILE_KEY];
+      const otherState=other._getState();
+      otherState.report.title='別タブが書いた大会';
+      otherTabStateBytes=JSON.stringify(otherState);
       store[env.CLUB_PROFILE_KEY]=otherTabProfileBytes;
-      store[env.STORAGE_KEY]='別タブが書いた大会データ';
+      store[env.STORAGE_KEY]=otherTabStateBytes;
     }
     return true;
   });
@@ -738,8 +741,12 @@ const BACKUP_LEGACY=makeBackupText(false);       // 旧バックアップ（club
   assert(otherTabProfileBytes!==null, 'P19-G0 前提: 確認中に別タブが書き込んだ');
   assert(store[env.CLUB_PROFILE_KEY]===otherTabProfileBytes,
     'P19-G1 ★巻き戻しが別タブの最新の既定を古い値で踏み潰さない');
-  assert(store[env.STORAGE_KEY]==='別タブが書いた大会データ',
+  assert(store[env.STORAGE_KEY]===otherTabStateBytes,
     'P19-G2 ★大会データ側も別タブの最新のまま');
+  // ★Codex 4巡目 P1 (r3774130515): 生バイトだけ見ていると、メモリ（画面）が古いままの
+  //   食い違いを見逃す。その状態で利用者が操作して save() が走ると別タブの最新を踏み潰す。
+  assert(env._getState().report.title==='別タブが書いた大会',
+    'P19-G3 ★メモリ上の state も同じスナップショット（画面と保存値が食い違わない）  [実測 '+env._getState().report.title+']');
 }
 
 console.log('\n  CLUB-PROFILE-001 テスト: PASS '+pass+'件 / FAIL '+fail+'件');
