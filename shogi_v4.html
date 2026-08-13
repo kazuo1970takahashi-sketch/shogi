@@ -58,8 +58,6 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .btn-success{background:#27500A;color:#fff;border-color:#27500A}
 .btn-danger{background:#A32D2D;color:#fff;border-color:#A32D2D}
 .btn-sm{padding:6px 12px;font-size:13px}
-/* RESET-UNDO バナーのボタン（STYLE-GUIDE §2.2 class 指定 / §10.3 44px 必須）。 */
-.reset-banner-btn{min-height:44px;min-width:44px;padding:0 14px;font-size:13px;font-family:inherit;cursor:pointer;background:#fff;border:1px solid #1F3864;color:#1F3864;border-radius:8px}
 .btn-outline-primary{background:#fff;color:#1F3864;border:1.5px solid #1F3864} /* CLUB-PROFILE-001 (Codex P2): 新規ボタンの色・枠は class 系で定義（§1-2）。inline は layout のみ */
 /* CLUB-PROFILE-001 (Codex 2巡目 P2×2): disclosure の色は class 側（§1）、タップ目標は 44px 以上（§10.3）。 */
 .club-profile-summary{font-size:12px;color:#666;cursor:pointer;min-height:44px;display:flex;align-items:center;padding:4px 2px}
@@ -1904,9 +1902,6 @@ function formatSaveStatusTime(ms){
 function save(){
   try{
     localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
-    // ★Codex 4巡目 P1 / 2巡目 P1: リセット後に初めて保存できた時点で undo を失効させる。
-    //   ここを過ぎたら「リセット直前へ戻す」は、間に保存した変更を捨てる操作になる。
-    expireResetUndoSnapshot();
     // SAVE-STATUS-BAR-001: 自動保存成功（setItem が throw しなかった）時刻を記録（分単位スロットル・fail-soft）。
     //   iOS プライベート等「書けたのに残らない」ケースは検知対象外（既存の ⚠ピル/storage-warn が担当）。
     markAutosaveStatus();
@@ -14418,20 +14413,6 @@ function downloadReport(){
 //   一段（1回分）のみ。次のリセットで上書き、元に戻すと消去。保存形式は state と同一（save() 互換）。
 // ============================================================
 var UNDO_KEY='shogi_undo_snapshot';
-// ★Codex 4巡目 P1 (r3774130823) / 2巡目 P1 (r3772664290): スナップショットの寿命を1本の規則にする。
-//   規則: **リセット後、最初に save() が成功した時点で失効する。**
-//   - resetAll / resetTournamentProgressOnly は STORAGE_KEY を消すだけで save() を呼ばない
-//     （実測で確認）。つまり「UNDO_KEY がある ＝ リセット後まだ何も保存していない」が成り立つ。
-//   - だから**起動時に UNDO_KEY があれば安全に戻せる**。一時領域のバナーが他の操作で
-//     消えても、閉じて開き直せば拾い直せる（未保存のまま失う経路を塞ぐ）。
-//   - 逆に何か保存したあとは失効するので「古い snapshot まで巻き戻る」経路自体が消える。
-//   localStorage を毎回触らないよう、生きているかはメモリ側のフラグで持つ。
-var _undoSnapshotLive=false;
-function expireResetUndoSnapshot(){
-  if(!_undoSnapshotLive)return;
-  _undoSnapshotLive=false;
-  try{ localStorage.removeItem(UNDO_KEY); }catch(e){}
-}
 function captureResetSnapshot(kind){
   // UNDO-SAVE-VERIFY-001 (#862 / Codex P1-2): 成否を返す。
   //   旧実装は失敗を握りつぶして何も返さず、しかも**古いスナップショットを残した**。
@@ -14449,12 +14430,10 @@ function captureResetSnapshot(kind){
   try{
     var _snap=JSON.stringify({kind:String(kind||''), savedAt:Date.now(), payload:JSON.stringify(state)});
     localStorage.setItem(UNDO_KEY,_snap);
-    if(localStorage.getItem(UNDO_KEY)===_snap){ _undoSnapshotLive=true; return true; }
-    _undoSnapshotLive=false;
+    if(localStorage.getItem(UNDO_KEY)===_snap)return true;
     try{ localStorage.removeItem(UNDO_KEY); }catch(e3){}
     return false;
   }catch(e){
-    _undoSnapshotLive=false;
     try{ localStorage.removeItem(UNDO_KEY); }catch(e2){}
     return false;
   }
@@ -14511,7 +14490,7 @@ function undoLastReset(){
       _undoPersisted=(localStorage.getItem(STORAGE_KEY)===_expect);
     }catch(e){ _undoPersisted=false; }
     // ★ 書けていないときは UNDO_KEY を消さない。消すとやり直しの手段が無くなる。
-    if(_undoPersisted){ _undoSnapshotLive=false; try{ localStorage.removeItem(UNDO_KEY); }catch(e){} }
+    if(_undoPersisted){ try{ localStorage.removeItem(UNDO_KEY); }catch(e){} }
     _pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
     // CLUB-PROFILE-001（実装パネル指摘）: 「集合が増える resetAll（profile に C）→ undo（A/B へ復元）」で
     //   reset が生やした C の受付 section が幽霊として残る。復元後の classes 基準で差分掃除する。
@@ -14558,13 +14537,11 @@ function showResetUndoBanner(msg,kind,action){
   var _kind=(kind==='err'||kind==='warn')?kind:'ok';
   var _retry=(action==='retry');
   var _id=_retry?'reset-save-retry-btn':'reset-undo-btn';
-  // ★Codex 4巡目 P2 (r3774130829): STYLE-GUIDE §4.1 は localStorage への保存を「自動保存」と
-  //   呼ぶと定めており、「保存」単独は禁止（バックアップ保存との取り違えを避けるため）。
-  var _label=_retry?'↩ 自動保存を再試行':'↩ 元に戻す';
+  var _label=_retry?'💾 もう一度保存する':'↩ 元に戻す';
   var el=document.getElementById('reg-msg'); if(!el){ showMsg(msg,_kind); return; }
   el.innerHTML='<div class="alert alert-'+_kind+'" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
     +'<span>'+escapeHtml(String(msg||''))+'</span>'
-    +'<button type="button" id="'+_id+'" class="reset-banner-btn">'+_label+'</button></div>';
+    +'<button type="button" id="'+_id+'" class="btn-sm" style="min-height:36px;background:#fff;border:1px solid #1F3864;color:#1F3864">'+_label+'</button></div>';
   var b=document.getElementById(_id);
   if(b)b.addEventListener('click',_retry?function(){ retrySaveRestoredState(); }:function(){ undoLastReset(); });
 }
@@ -14586,7 +14563,6 @@ function retrySaveRestoredState(){
     return false;
   }
   // 保存できた時点で undo は完了している。陳腐化した snapshot を残さない。
-  _undoSnapshotLive=false;
   try{ localStorage.removeItem(UNDO_KEY); }catch(e){}
   showMsg('この端末に保存しました','ok');
   return true;
@@ -15461,15 +15437,6 @@ function initApp(){
   renderRegList();
   renderPastParticipantsPanel();
   bindPastParticipantsToggle();
-  // ★Codex 4巡目 P1 (r3774130823): 未保存のまま閉じた復元内容を、次に開いたときに拾い直す。
-  //   バナーは #reg-msg（一時領域）にあるので、undo の保存が失敗したあと showMsg を伴う
-  //   別の操作をすると導線ごと消える。そのまま閉じるとメモリ上だけの復元内容を失っていた。
-  //   UNDO_KEY が残っている ＝ リセット後まだ一度も保存できていない（save() 成功で失効する）
-  //   ので、ここで出す undo は「間に保存した変更を捨てる」ことがない。
-  if(hasResetUndoSnapshot()){
-    _undoSnapshotLive=true;
-    showResetUndoBanner('前回のリセットは、まだ元に戻せます（リセットのあと、この端末にはまだ保存されていません）');
-  }
   if(state.started){
     if(isTournamentDone()){
       showTab('result');

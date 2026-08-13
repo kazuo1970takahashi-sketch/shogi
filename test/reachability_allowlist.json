@@ -50,6 +50,7 @@
     "",
     "**このリストの関数を消す・直すのは Issue #798 側の別判断。この検査では触らない。**"
   ],
+
   "baseline": {
     "issue": "#798",
     "source": "ai-requests/2026-08-01_claude-code_cleanup-deadcode-001_RESULT.md",
@@ -59,44 +60,8 @@
     "revision_note": "走査の穴を塞ぐたびに取り直した実測値。001b で (a) 文字列リテラル内の識別子 (b) 連結セレクタ、001c で (c) HTML マークアップ (d) 起動経路 (e) 死んだ領域の終端 を修正した。#798 に記録された 静的 26 / 合計 35 は過小。001d で単一の面レクサへ全面移行して取り直したが、実測値は 001c と同一。",
     "migration_oracle": "001d の面レクサ vs 001c の lexBlock: JS 面の文字分類 791,664 文字で不一致 0 ／「参照として数えるか」の判定は全 859,767 文字で不一致 0 ／解析結果（scriptBlocks・関数数・root・静的/実行時到達不能・死んだ結線・死んだ領域・全 580 関数の参照内訳）も全一致。面の完全性は未分類 0・総延長 = ファイル長 859,767。",
     "target_commit": "5bbf60c0ffab79190f485e0d15f188c993b64c80",
-    "static_unreachable": 29,
+    "static_unreachable": 30,
     "static_unreachable_revisions": [
-      {
-        "value": 29,
-        "names": [
-          "validatePhase2ImportData",
-          "convertPhase2ParticipantsToMembers",
-          "applyPhase2Import",
-          "buildPhase2ImportModalHtml",
-          "openPhase2ImportModal",
-          "bindPhase2ImportModalEvents",
-          "buildPastParticipantsPanelHtml",
-          "_ppCompareAllRow",
-          "_partitionPpMembersByRegistration",
-          "masterSheetCycleMember",
-          "masterSheetCycleGrade",
-          "onClickAddOneTable",
-          "saveDataAsFile",
-          "openLoadModal",
-          "startTournament",
-          "collectStartCandidates",
-          "showStartValidationErrors",
-          "resolveNoCandidateMessage",
-          "__setAppModalTestResolver",
-          "__resolveAppModal",
-          "_resetSaveWarningAggregationState",
-          "__setAuthClientTestFactory",
-          "isBulkEntryFullscreenOpen",
-          "addSelectedPastParticipants",
-          "finalizeAddPastParticipants",
-          "openYomiInputDialog",
-          "applyYomiInputsToMaster",
-          "buildYomiInputModalHtml",
-          "bindYomiInputModalEvents"
-        ],
-        "reason": "hasResetUndoSnapshot が到達可能へ化けたので取り直した（30→29・2026-08-13）。PR #869 [UNDO-SAVE-VERIFY-001] の Codex 4巡目 P1 対応で initApp が起動時に呼ぶようになった＝「未保存のまま閉じた復元内容を次の起動で拾い直す」導線の述語として生き返ったため。#798 の判断保留（用途不明・要判断）はこれで解消。掃除ではなく再利用による減少なので、この 1 件以外の名前集合は据え置き。",
-        "date": "2026-08-13"
-      },
       {
         "value": 30,
         "names": [
@@ -123,6 +88,7 @@
           "_resetSaveWarningAggregationState",
           "__setAuthClientTestFactory",
           "isBulkEntryFullscreenOpen",
+          "hasResetUndoSnapshot",
           "addSelectedPastParticipants",
           "finalizeAddPastParticipants",
           "openYomiInputDialog",
@@ -168,6 +134,7 @@
       }
     ]
   },
+
   "_limits_about": [
     "A5（allowlist の肥大検査）の目安上限。baseline は「そのとき測った事実」の記録なので、",
     "運用上の上限とは分けて持つ（PHASE1-REACH-001c・#799 レビュー指摘⑤）。",
@@ -182,11 +149,13 @@
     "R4（1 件ごとの理由必須・error）と、テスト出力に毎回出る baseline との差分が担う。",
     "ここを上げるときは reason を書き換えること（＝引き上げ自体がレビュー対象になる）。"
   ],
+
   "limits": {
     "allowlist_max": 48,
     "headroom": 8,
     "reason": "PHASE1-REACH-001c/001d 時点の実測 40 件（静的 30 ＋ 実行時 10）＋ 運用余裕 8 件。意図的な温存が増えても allowlist への追記だけで緑にできる幅を確保する。001d 以降この超過は warn（CI は落とさない）。"
   },
+
   "static": [
     {
       "name": "validatePhase2ImportData",
@@ -258,6 +227,7 @@
       "category": "temporarily-preserved",
       "reason": "温存マーカーあり: L437「loadFile input は温存（loadData の受け皿・import_routing 資産）。openLoadModal/loadData/loadFromPaste は温存。」test_restore_consolidation.js が参照している。"
     },
+
     {
       "name": "startTournament",
       "category": "temporarily-preserved",
@@ -278,6 +248,7 @@
       "category": "temporarily-preserved",
       "reason": "Issue #798 で判断保留（2026年9月大会後）。PHASE1-REACH-001b で新規検出。ROUND-CLASS-START-004 の skip 内訳→文言 pure helper。呼び出し元は collectStartCandidates のみで、そこから先は legacy な startTournament へ繋がる。"
     },
+
     {
       "name": "__setAppModalTestResolver",
       "category": "test-only-hook",
@@ -298,11 +269,18 @@
       "category": "test-only-hook",
       "reason": "テスト専用フック（L11732「テスト容易性: __setAuthClientTestFactory で mock client を注入（実 createClient を経由しない）」）。依存テスト: test_in_app_auth_001.js / test_in_app_auth_002_login.js。"
     },
+
     {
       "name": "isBulkEntryFullscreenOpen",
       "category": "leftover-helper",
       "reason": "用途不明・要判断。開閉判定の述語だが呼び出し元ゼロ（開閉自体は openBulkEntryFullscreen / closeBulkEntryFullscreen が担当）。参照テストも無い。Issue #798 で「実害なし」と判定済みだが扱いは未決。"
     },
+    {
+      "name": "hasResetUndoSnapshot",
+      "category": "leftover-helper",
+      "reason": "Issue #798 で判断保留（2026年9月大会後）。用途不明・要判断。undoLastReset は生きているが、「↩ 元に戻す」ボタンはリセット成功直後に showResetUndoBanner が無条件で出す設計のためこの述語は使われない。test_reset_undo.js が単体で参照している。"
+    },
+
     {
       "name": "addSelectedPastParticipants",
       "category": "functional-loss-pending",
@@ -334,6 +312,7 @@
       "reason": "Issue #798 で判断保留（2026年9月大会後）。ふりがな入力ダイアログの bind。呼び出し元は openYomiInputDialog のみ。"
     }
   ],
+
   "runtime": [
     {
       "name": "openMigrationWizard",
@@ -386,6 +365,7 @@
       "reason": "PHASE1-REACH-001c で新規検出（起動経路なし）。L14123 で #loadFile の change に結線されるが、その input は L438 で display:none・<label for> も無く、唯一の起動経路 L12996 の .click() は到達不能な openLoadModal の中にしかない。L437 に「loadFile input は温存（loadData の受け皿・import_routing 資産）。openLoadModal/loadData/loadFromPaste は温存。」と明記あり。"
     }
   ],
+
   "bindings": [
     {
       "selector": "#masterMigrateBtn",
