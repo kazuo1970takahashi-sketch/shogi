@@ -14454,8 +14454,23 @@ function undoLastReset(){
     var snap=JSON.parse(raw);
     if(!snap||typeof snap.payload!=='string'){ showMsg('元に戻せる直前のデータがありません','warn'); return false; }
     state=normalizeState(JSON.parse(snap.payload));   // load() と同じ復元経路
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
-    try{ localStorage.removeItem(UNDO_KEY); }catch(e){}
+    // UNDO-SAVE-VERIFY-001 (#862): 書き込みの成否を見てから「戻しました」と言う。
+    //   旧実装は `try{ setItem(...) }catch(e){}` で失敗を完全に握りつぶし、そのうえで
+    //   **無条件に**「リセットを元に戻しました」を出し、さらに UNDO_KEY を消していた。
+    //   実測（実 Chromium・setItem を quota で失敗させた場合）:
+    //     戻り値 true ／ 画面「リセットを元に戻しました」／ localStorage.shogi_v4 = null
+    //     ／ undo スナップショット = 消えている
+    //   ＝書けていないのに「戻した」と言い、唯一のやり直し材料まで消していた。リロードで全部失われる。
+    //   ★ throw しない故障（iOS プライベート等「setItem は通るが値が残らない」）も捕まえるため
+    //     byte 照合まで行う（saveClubProfile が #845 Codex P1 で同じ理由で採っている方法）。
+    var _undoPersisted=false;
+    try{
+      var _expect=JSON.stringify(state);
+      localStorage.setItem(STORAGE_KEY,_expect);
+      _undoPersisted=(localStorage.getItem(STORAGE_KEY)===_expect);
+    }catch(e){ _undoPersisted=false; }
+    // ★ 書けていないときは UNDO_KEY を消さない。消すとやり直しの手段が無くなる。
+    if(_undoPersisted){ try{ localStorage.removeItem(UNDO_KEY); }catch(e){} }
     _pendingNewYomi={};_yomiAutoBuffer='';_yomiManuallyEdited=false;
     // CLUB-PROFILE-001（実装パネル指摘）: 「集合が増える resetAll（profile に C）→ undo（A/B へ復元）」で
     //   reset が生やした C の受付 section が幽霊として残る。復元後の classes 基準で差分掃除する。
@@ -14464,6 +14479,13 @@ function undoLastReset(){
     renderRegList();
     renderPastParticipantsPanel();
     if(state.started){ showTab(isTournamentDone()?'result':'tournament'); } else { showTab('reg'); }
+    // UNDO-SAVE-VERIFY-001 (#862): 画面には戻っているが端末に保存できていない状態を、
+    //   成功と同じ緑で伝えない。メモリ上の state は復元済みのまま（そのほうが利用者は
+    //   バックアップを取れる）なので、「今の画面は正しいが、閉じると失われる」ことを言う。
+    if(!_undoPersisted){
+      showMsg('元に戻しましたが、この端末に保存できませんでした。閉じる前に「バックアップ」でデータを控えてください（もう一度「元に戻す」を押すこともできます）','err');
+      return false;
+    }
     showMsg('リセットを元に戻しました','ok');
     return true;
   }catch(e){ showMsg('元に戻すのに失敗しました','err'); return false; }
