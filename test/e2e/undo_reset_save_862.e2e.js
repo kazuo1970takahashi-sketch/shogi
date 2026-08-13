@@ -124,6 +124,72 @@ async function run(browser, mode) {
   ok(okc.r.ret !== q.r.ret && okc.r.undoLeft !== q.r.undoLeft,
     '★対照と故障時で結果が違う（3ケースが同じ答えなら何も検査していない）');
 
+  // ---- Codex P1-1: 失敗を伝えたあとも「↩ 元に戻す」が残っていること ----
+  //   旧版は showMsg で伝えていたため #reg-msg が置き換わり、**押したボタン自体が消えて**
+  //   残した UNDO_KEY にアプリから到達できなくなっていた（undoLastReset を呼ぶ UI は
+  //   #reset-undo-btn だけ）。「もう一度押せます」という文言が嘘になっていた。
+  {
+    const pg = await browser.newPage();
+    pg.on('dialog', d => d.dismiss().catch(() => {}));
+    await pg.goto(TARGET, { waitUntil: 'domcontentloaded' });
+    const r = await pg.evaluate(() => {
+      state.classes = [{ id: 'A', name: 'Aクラス' }];
+      state.players = { A: [{ id: 'p1', name: '選手1', entry_no: 1 }] };
+      save(); captureResetSnapshot('all'); localStorage.removeItem('shogi_v4');
+      showResetUndoBanner('大会データを全リセットしました');       // resetAll と同じ導線
+      const before = !!document.getElementById('reset-undo-btn');
+      const real = localStorage.setItem.bind(localStorage);
+      localStorage.setItem = function (k, v) {
+        if (k === 'shogi_v4') { const e = new Error('q'); e.name = 'QuotaExceededError'; throw e; }
+        return real(k, v);
+      };
+      document.getElementById('reset-undo-btn').click();           // 実クリック
+      const after = !!document.getElementById('reset-undo-btn');
+      // 容量が空いた想定で、残っているボタンからやり直せるか
+      localStorage.setItem = real;
+      let retried = false, storedAfterRetry = false;
+      const b2 = document.getElementById('reset-undo-btn');
+      if (b2) { b2.click(); retried = true; storedAfterRetry = localStorage.getItem('shogi_v4') !== null; }
+      return { before, after, retried, storedAfterRetry, undoLeft: localStorage.getItem('shogi_undo_snapshot') !== null };
+    });
+    await pg.close();
+    ok(r.before === true, '[P1-1] 前提: リセット直後は「↩ 元に戻す」がある');
+    ok(r.after === true,
+      '[P1-1] ★保存に失敗したあとも「↩ 元に戻す」が残っている（残した UNDO_KEY に到達できる）  [実測 ' + r.after + ']');
+    ok(r.retried && r.storedAfterRetry === true,
+      '[P1-1] ★容量が空いたあと、残ったボタンから実際にやり直せて保存される  [実測 保存=' + r.storedAfterRetry + ']');
+    ok(r.undoLeft === false, '[P1-1] やり直しに成功したら UNDO_KEY は消える');
+  }
+
+  // ---- Codex P1-2: スナップショットを取れなかったら undo を提示しない ----
+  //   旧版は失敗を握りつぶし、**古いスナップショットを残したまま**バナーを出していた。
+  //   押すと「直前」ではなく**さらに前のリセット時点**まで巻き戻り、間の変更が失われる。
+  {
+    const pg = await browser.newPage();
+    pg.on('dialog', d => d.dismiss().catch(() => {}));
+    await pg.goto(TARGET, { waitUntil: 'domcontentloaded' });
+    const r = await pg.evaluate(() => {
+      state.classes = [{ id: 'A', name: 'Aクラス' }];
+      state.players = { A: [{ id: 'p1', name: '古い時点', entry_no: 1 }] };
+      save();
+      captureResetSnapshot('all');                                  // ① 古いスナップショット
+      const oldSnap = localStorage.getItem('shogi_undo_snapshot');
+      const real = localStorage.setItem.bind(localStorage);
+      localStorage.setItem = function (k, v) {
+        if (k === 'shogi_undo_snapshot') { const e = new Error('q'); e.name = 'QuotaExceededError'; throw e; }
+        return real(k, v);
+      };
+      const ret = captureResetSnapshot('all');                      // ② 上書きに失敗
+      localStorage.setItem = real;
+      return { ret, hadOld: oldSnap !== null, staleLeft: localStorage.getItem('shogi_undo_snapshot') !== null };
+    });
+    await pg.close();
+    ok(r.hadOld === true, '[P1-2] 前提: 先に古いスナップショットがある');
+    ok(r.ret === false, '[P1-2] ★captureResetSnapshot が失敗を戻り値で伝える  [実測 ' + r.ret + ']');
+    ok(r.staleLeft === false,
+      '[P1-2] ★上書きに失敗したら陳腐化した古いスナップショットを消す（誤った巻き戻しを提示しない）  [実測 残存=' + r.staleLeft + ']');
+  }
+
   const allErr = [].concat(okc.errors, q.errors, s.errors);
   ok(allErr.length === 0, '未捕捉例外なし' + (allErr.length ? '（実際: ' + allErr[0] + '）' : ''));
 

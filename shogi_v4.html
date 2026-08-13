@@ -14414,9 +14414,20 @@ function downloadReport(){
 // ============================================================
 var UNDO_KEY='shogi_undo_snapshot';
 function captureResetSnapshot(kind){
+  // UNDO-SAVE-VERIFY-001 (#862 / Codex P1-2): 成否を返す。
+  //   旧実装は失敗を握りつぶして何も返さず、しかも**古いスナップショットを残した**。
+  //   実測: setItem を失敗させても古い値がそのまま残る／戻り値は undefined。
+  //   その状態でリセットの undo バナーが従来どおり出るので、押すと「直前」ではなく
+  //   **さらに前のリセット時点**まで巻き戻り、間に保存した変更が失われる。
+  //   ★ 失敗したら古いスナップショットを消す。間違った巻き戻しを提示するより
+  //     undo を提示しないほうが安全（呼び出し側は戻り値でバナーを出し分ける）。
   try{
     localStorage.setItem(UNDO_KEY, JSON.stringify({kind:String(kind||''), savedAt:Date.now(), payload:JSON.stringify(state)}));
-  }catch(e){ /* quota 等は握りつぶす＝リセット自体は続行（安全網は best-effort） */ }
+    return true;
+  }catch(e){
+    try{ localStorage.removeItem(UNDO_KEY); }catch(e2){}
+    return false;
+  }
 }
 function hasResetUndoSnapshot(){
   try{ return !!localStorage.getItem(UNDO_KEY); }catch(e){ return false; }
@@ -14483,7 +14494,10 @@ function undoLastReset(){
     //   成功と同じ緑で伝えない。メモリ上の state は復元済みのまま（そのほうが利用者は
     //   バックアップを取れる）なので、「今の画面は正しいが、閉じると失われる」ことを言う。
     if(!_undoPersisted){
-      showMsg('元に戻しましたが、この端末に保存できませんでした。閉じる前に「バックアップ」でデータを控えてください（もう一度「元に戻す」を押すこともできます）','err');
+      // ★ showMsg ではなく undo ボタン付きのバナーで伝える（Codex P1-1）。
+      //   showMsg だと #reg-msg が置き換わって「もう一度押す」導線そのものが消え、
+      //   残した UNDO_KEY にアプリから到達できなくなる（実測で確認済み）。
+      showResetUndoBanner('元に戻しましたが、この端末に保存できませんでした。閉じる前に「バックアップ」でデータを控えてください。容量を空けてから、もう一度この「↩ 元に戻す」を押せます','err');
       return false;
     }
     showMsg('リセットを元に戻しました','ok');
@@ -14491,9 +14505,15 @@ function undoLastReset(){
   }catch(e){ showMsg('元に戻すのに失敗しました','err'); return false; }
 }
 // リセット成功＋「元に戻す」ボタンを #reg-msg に表示（showMsg と同じ場所・次のメッセージで自然に消える＝一時的提示）。
-function showResetUndoBanner(msg){
-  var el=document.getElementById('reg-msg'); if(!el){ showMsg(msg,'ok'); return; }
-  el.innerHTML='<div class="alert alert-ok" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+function showResetUndoBanner(msg,kind){
+  // UNDO-SAVE-VERIFY-001 (#862 / Codex P1-1): 種別を受け取れるようにした。
+  //   undo の保存が失敗したときに showMsg で伝えると、**押した #reset-undo-btn 自体が消える**
+  //   （showMsg は #reg-msg.innerHTML を置き換える）。undoLastReset を呼ぶ UI はこのボタン
+  //   だけなので、残した UNDO_KEY にアプリから到達できなくなっていた（実測で確認）。
+  //   失敗バナーにも undo ボタンを残し、容量を空けてから再試行できるようにする。
+  var _kind=(kind==='err'||kind==='warn')?kind:'ok';
+  var el=document.getElementById('reg-msg'); if(!el){ showMsg(msg,_kind); return; }
+  el.innerHTML='<div class="alert alert-'+_kind+'" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
     +'<span>'+escapeHtml(String(msg||''))+'</span>'
     +'<button type="button" id="reset-undo-btn" class="btn-sm" style="min-height:36px;background:#fff;border:1px solid #1F3864;color:#1F3864">↩ 元に戻す</button></div>';
   var b=document.getElementById('reset-undo-btn');
@@ -14504,7 +14524,7 @@ function resetTournamentProgressOnly(){
   // IN-APP-MODAL-001 (#606): native confirm→appConfirm（挙動同値）。破壊操作ゆえ danger:true（既定キャンセル）。
   appConfirm('参加者一覧は残したまま、現在の組み合わせ・勝敗結果を削除します。\nよろしいですか？',function(_ok){
   if(!_ok)return;
-  captureResetSnapshot('progress');
+  var _snapOk=captureResetSnapshot('progress');
   // B. 大会進行データ（局単位）のみ初期化
   // ROUND-CLASS-START-004b (spec §12.2):
   //   state.classes 駆動で全クラス一括リセット。A/B 固定 literal を廃止し、
@@ -14540,7 +14560,10 @@ function resetTournamentProgressOnly(){
   var _ppSearchReset=document.getElementById('pp-search');
   if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel(_ppSearchReset?_ppSearchReset.value:'');
   showTab('reg');
-  showResetUndoBanner('大会進行データをリセットしました');
+  // ★ スナップショットを取れていないなら undo を提示しない（Codex P1-2）。
+  //   提示すると、古い（陳腐化した）スナップショットで意図しない地点まで巻き戻る。
+  if(_snapOk)showResetUndoBanner('大会進行データをリセットしました');
+  else showMsg('大会進行データをリセットしました（保存容量の都合で「元に戻す」は使えません）','warn');
   },{danger:true});
 }
 
@@ -14548,7 +14571,7 @@ function resetAll(){
   // IN-APP-MODAL-001 (#606): native confirm→appConfirm（挙動同値）。破壊操作ゆえ danger:true（既定キャンセル）。
   appConfirm('参加者一覧・組み合わせ・勝敗結果を含む大会データをすべてリセットします。\n支部マスタとクラブ既定（大会名・会場・クラス構成など）は保持されます。',function(_ok){
   if(!_ok)return;
-  captureResetSnapshot('all');
+  var _snapOk=captureResetSnapshot('all');
   // CLUB-PROFILE-001: 実行時に localStorage から profile を読み直す（read-at-use）。
   //   起動時の1回読みだけだと「保存→即・全リセット」で古い既定が使われ、2タブ運用では
   //   恒常的に stale になる（反証パネル指摘）。resetAll は毎月1回の低頻度操作＝再読込コスト無視可。
@@ -14619,7 +14642,9 @@ function resetAll(){
   var _ppSearchReset=document.getElementById('pp-search');
   if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel(_ppSearchReset?_ppSearchReset.value:'');
   showTab('reg');
-  showResetUndoBanner('大会データを全リセットしました');
+  // ★ 同上（Codex P1-2）。
+  if(_snapOk)showResetUndoBanner('大会データを全リセットしました');
+  else showMsg('大会データを全リセットしました（保存容量の都合で「元に戻す」は使えません）','warn');
   },{danger:true});
 }
 
