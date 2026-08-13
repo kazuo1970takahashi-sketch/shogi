@@ -60,18 +60,47 @@ function makeCtx(){
 }
 
 // store: {key: string} を共有できる localStorage mock（P7 の「再起動」用に外から渡す）
-function makeStorage(store){
+//
+// ★P19（Codex P2 r3771873284 の拡張）: キー単位の故障注入に対応する。
+//   実端末の故障は「throw する」だけではない。**受理したのに残らない**故障が2種あり、
+//   区別しないと修正の有無をテストが見分けられない（反証パネル実測）:
+//     throwOnGet : 読めない（SecurityError 等）→ 旧実装は null に丸めて「無い」と誤認した
+//     throwOnSet : 書けない（Quota 等）
+//     dropOnSet  : setItem は通るが**旧値がそのまま残る** → 既定が無傷なので S2 の有無を区別できない
+//     evictOnSet : setItem は通るが**キーごと消える** → ここで初めて #839 の穴が露出する
+//   times を付けると n 回だけ故障する（一過性の故障＝巻き戻しが効く状況を作れる）。
+function makeStorage(store,faults){
+  faults=faults||{};
+  function take(k,kind){
+    const f=faults[k];
+    if(!f)return false;
+    const mode=(typeof f==='string')?f:f.mode;
+    if(mode!==kind)return false;
+    if(typeof f==='object'&&typeof f.times==='number'){
+      if(f.times<=0)return false;
+      f.times--;
+    }
+    return true;
+  }
   return {
-    getItem:function(k){ return Object.prototype.hasOwnProperty.call(store,k)?store[k]:null; },
-    setItem:function(k,v){ store[k]=String(v); },
+    getItem:function(k){
+      if(take(k,'throwOnGet'))throw new Error('SecurityError(mock)');
+      return Object.prototype.hasOwnProperty.call(store,k)?store[k]:null;
+    },
+    setItem:function(k,v){
+      if(take(k,'throwOnSet')){ const e=new Error('QuotaExceededError(mock)'); e.name='QuotaExceededError'; throw e; }
+      if(take(k,'dropOnSet'))return;                        // 受理して無視（旧値が残る）
+      if(take(k,'evictOnSet')){ delete store[k]; return; }  // 受理してキーごと消える
+      store[k]=String(v);
+    },
     removeItem:function(k){ delete store[k]; },
     clear:function(){ for(const k in store)delete store[k]; }
   };
 }
 
-function loadEnv(store){
+function loadEnv(store,faults){
   const ctx=makeCtx();
-  const ls=makeStorage(store||{});
+  const ls=makeStorage(store||{},faults);
   const js=extractScripts(RAW);
   const winMock={ innerWidth:1024, addEventListener:function(){}, removeEventListener:function(){}, location:{href:'',search:'',hash:'',protocol:'https:'} };
   const fn=new Function(
@@ -86,6 +115,8 @@ function loadEnv(store){
        verifyWholeStatePersisted:verifyWholeStatePersisted,
        restoreClubProfileRaw:restoreClubProfileRaw, restoreTournamentRaw:restoreTournamentRaw,
        buildTournamentBackupObject:buildTournamentBackupObject, serializeTournamentBackup:serializeTournamentBackup,
+       parseTournamentBackup:parseTournamentBackup, importTournamentBackupFromText:importTournamentBackupFromText,
+       STORAGE_KEY:STORAGE_KEY,
        __setAppModalTestResolver:(typeof __setAppModalTestResolver!=='undefined'?__setAppModalTestResolver:undefined),
        _setState:function(s){state=s;}, _getState:function(){return state;},
        _getClubProfileVar:function(){return clubProfile;}
@@ -100,7 +131,13 @@ function loadEnv(store){
   if(typeof api.__setAppModalTestResolver==='function'){
     api.__setAppModalTestResolver(function(){ return true; });
   }
-  api._ls=ls; api._store=store;
+  api._ls=ls; api._store=store; api._faults=faults;
+  // ★P19: モーダル（appConfirm / appAlert）の本文を捕まえる。確認は「はい」で通す。
+  api._modals=[];
+  if(typeof api.__setAppModalTestResolver==='function'){
+    api.__setAppModalTestResolver(function(type,message){ api._modals.push({type:type,message:String(message==null?'':message)}); return true; });
+  }
+  api._alerts=function(){ return api._modals.filter(function(m){ return m.type==='alert'; }).map(function(m){ return m.message; }); };
   return api;
 }
 
@@ -336,9 +373,11 @@ function makeMatsumotoState(env){
   const bBody=bm?bm[0]:'';
   assert(/club_profile\s*:/.test(bBody), 'P14-1 バックアップ JSON にクラブ既定を同梱する');
   assert(bBody.indexOf('BACKUP_SCHEMA_VERSION')>=0&&!/BACKUP_SCHEMA_VERSION\s*=\s*2/.test(RAW), 'P14-2 BACKUP_SCHEMA_VERSION は上げない（制約4）');
-  const pm=RAW.match(/function parseTournamentBackup\([\s\S]*?\n\}/);
-  const pBody=pm?pm[0]:'';
-  assert(/club_profile/.test(pBody), 'P14-3 復元側が club_profile を読む（無ければ null＝旧バックアップ互換）');
+  // ★P14-3 は削除した（Codex P2 r3771873284）。
+  //   `/club_profile/.test(parseTournamentBackup の本体)` は**直前のコメント行だけでも通る**。
+  //   実際に `var cp=` と `club_profile:cp` を消しても 122件が全 PASS だった＝復元側が既定を
+  //   永久に受け渡さなくなる退行を、この番人は1件も検出できない。「嘘の安心」を再生産するので
+  //   残さない。代替は P19 の往復機能テスト（ソース文字列を見ず、生バイトと画面の結果で見る）。
   const im=RAW.match(/function importTournamentBackupFromText\([\s\S]*?\n\}/);
   const iBody=im?im[0]:'';
   assert(/saveClubProfile\s*\(\s*res\.club_profile\s*\)/.test(iBody), 'P14-4 復元時にクラブ既定も書き戻す');
@@ -531,6 +570,139 @@ function makeMatsumotoState(env){
   const um=RAW.match(/function undoLastReset\(\)[\s\S]*?\n\}\n/);
   const ubody=um?um[0]:'';
   assert(ubody.indexOf('cleanupStaleClassDom')>=0, 'P9-4 undoLastReset にも DOM 差分掃除がある（増える reset→undo の幽霊防止）');
+}
+
+// ============================================================================
+// P19: バックアップ復元の往復を「機能」で見る（Codex P2 r3771873284 の代替番人）
+//
+//   ★ソース文字列は一切見ない。判定は次の4点だけ:
+//       (1) store の生バイト  (2) メモリ上の clubProfile
+//       (3) resetAll() 後の大会名（＝利用者が最終的に目にする既定）  (4) 出た alert の本文
+//   ★否定 pin（「この文言が出ない」）は必ず成功経路の肯定 pin と対で置く。
+//     実装を丸ごと return false にすると否定 pin だけでは素通りするため。
+// ============================================================================
+
+// 松本の既定つきバックアップ本文を1つ作る（export と同じ経路＝serializeTournamentBackup）
+function makeBackupText(withProfile){
+  const env=loadEnv({});
+  makeMatsumotoState(env);
+  env.saveClubProfile(env.buildClubProfileFromState());
+  const st=env._getState();
+  st.report.title='松本支部月例将棋大会';
+  return env.serializeTournamentBackup(st,'2026-08-13T00:00:00.000Z',withProfile?env.readClubProfileRaw():null);
+}
+const BACKUP_WITH_PROFILE=makeBackupText(true);
+const BACKUP_LEGACY=makeBackupText(false);       // 旧バックアップ（club_profile なし）
+
+// ---- P19-A 対照: 正常な端末では既定まで往復する（肯定 pin。ここが緑でないと以降は読めない） ----
+{
+  const store={};
+  const env=loadEnv(store);
+  assert(env._getState().report.title==='沼津支部月例将棋大会', 'P19-A0 前提: 取り込む前は沼津 factory');
+  env.importTournamentBackupFromText(BACKUP_WITH_PROFILE);
+  assert(!!store[env.CLUB_PROFILE_KEY], 'P19-A1 store にクラブ既定の生バイトが書かれる');
+  assert(!!env._getClubProfileVar()&&env._getClubProfileVar().report.title==='松本支部月例将棋大会', 'P19-A2 メモリ上の clubProfile も松本になる');
+  env.resetAll();
+  assert(env._getState().report.title==='松本支部月例将棋大会', 'P19-A3 ★全リセット後の大会名が松本＝既定が本当に渡っている');
+  assert(env._alerts().length===0, 'P19-A4 成功経路では失敗 alert が出ない（否定 pin の対）');
+}
+
+// ---- P19-B ★S2: クラブ既定の保存が一過性に失敗しても、元の既定を失わない ----
+//   evictOnSet（受理してキー消失）で1回だけ壊す。dropOnSet では既定が無傷のままなので
+//   修正の有無を区別できない（パネル実測: 修正前後とも全 PASS）。
+{
+  const store={};
+  const faults={};
+  const env=loadEnv(store,faults);
+  makeMatsumotoState(env);
+  env._getState().report.title='元からある松本の既定';
+  assert(env.saveClubProfile(env.buildClubProfileFromState())===true, 'P19-B0 前提: 既定を保存できている');
+  const prevBytes=store[env.CLUB_PROFILE_KEY];
+  faults[env.CLUB_PROFILE_KEY]={mode:'evictOnSet',times:1};   // 取り込みの1回だけ壊す
+  env.importTournamentBackupFromText(BACKUP_WITH_PROFILE);
+  assert(store[env.CLUB_PROFILE_KEY]===prevBytes, 'P19-B1 ★書き込み前の生バイトへ戻っている（無傷の既定を消さない）');
+  env.resetAll();
+  assert(env._getState().report.title==='元からある松本の既定', 'P19-B2 ★全リセット後の大会名が factory に戻らない（#839 の穴）');
+  const a=env._alerts().join('\n');
+  assert(a.indexOf('大会データもクラブ既定も変更していません')>=0, 'P19-B3 戻せたときは「どちらも変更していない」と伝える');
+  assert(a.indexOf('クラブ既定を元に戻すこともできませんでした')<0, 'P19-B4 戻せたのに「戻せなかった」とは言わない');
+}
+
+// ---- P19-C S2 の裏: 恒常的な保存故障では戻せない。そのときは正直に言う ----
+{
+  const store={};
+  const faults={};
+  const env=loadEnv(store,faults);
+  makeMatsumotoState(env);
+  env.saveClubProfile(env.buildClubProfileFromState());
+  faults[env.CLUB_PROFILE_KEY]='evictOnSet';                  // ずっと壊れている
+  env.importTournamentBackupFromText(BACKUP_WITH_PROFILE);
+  const a=env._alerts().join('\n');
+  assert(a.indexOf('クラブ既定を元に戻すこともできませんでした')>=0, 'P19-C1 ★戻せなかったことを正直に伝える（データは戻らない）');
+  assert(a.indexOf('大会データもクラブ既定も変更していません')<0, 'P19-C2 戻せていないのに「変更していない」とは言わない');
+}
+
+// ---- P19-D ★S1: 読取が失敗する端末では、1バイトも書かずに中止する（受け入れ基準3） ----
+{
+  for(const key of ['CLUB_PROFILE_KEY','STORAGE_KEY']){
+    const store={};
+    const faults={};
+    const env=loadEnv(store,faults);
+    makeMatsumotoState(env);
+    env.saveClubProfile(env.buildClubProfileFromState());
+    env._ls.setItem(env.STORAGE_KEY,JSON.stringify(env._getState()));
+    const before=JSON.stringify(store);
+    faults[env[key]]='throwOnGet';
+    const ret=env.importTournamentBackupFromText(BACKUP_WITH_PROFILE);
+    faults[env[key]]=null;
+    assert(ret===false, 'P19-D1('+key+') 読めない端末では復元に進まない');
+    assert(JSON.stringify(store)===before, 'P19-D2('+key+') ★store が1バイトも変わらない（無い扱いで消さない）');
+    const a=env._alerts().join('\n');
+    assert(a.indexOf('読み取れませんでした')>=0&&a.indexOf('もう一度お試しください')>=0, 'P19-D3('+key+') 中止の理由と再試行の案内を出す');
+    assert(env._modals.filter(m=>m.type==='confirm').length===0, 'P19-D4('+key+') ★「上書きしますか?」と聞いてから断らない（confirm より前で中止）');
+  }
+}
+
+// ---- P19-E S3: 失敗通知が 4通りとも到達する（cpRestored × rolledBack の 2×2） ----
+{
+  // 大会データの保存だけを壊す。dropOnSet=旧値が残る→巻き戻しは「既に同じ」で成功（rolledBack=true）。
+  //   evictOnSet=キーが消える→書き戻しも同じ故障で失敗（rolledBack=false）。
+  function runImport(text,stateFault){
+    const store={};
+    const faults={};
+    const env=loadEnv(store,faults);
+    makeMatsumotoState(env);
+    env.saveClubProfile(env.buildClubProfileFromState());
+    env._ls.setItem(env.STORAGE_KEY,JSON.stringify(env._getState()));
+    faults[env.STORAGE_KEY]=stateFault;
+    env.importTournamentBackupFromText(text);
+    return env._alerts().join('\n');
+  }
+  const m11=runImport(BACKUP_WITH_PROFILE,'dropOnSet');    // cpRestored=true  rolledBack=true
+  const m01=runImport(BACKUP_LEGACY,'dropOnSet');          // cpRestored=false rolledBack=true
+  const m10=runImport(BACKUP_WITH_PROFILE,'evictOnSet');   // cpRestored=true  rolledBack=false
+  const m00=runImport(BACKUP_LEGACY,'evictOnSet');         // cpRestored=false rolledBack=false
+  assert(m11.indexOf('クラブ既定も元に戻したので、この端末は復元前のままです')>=0, 'P19-E1 (既定あり×戻せた) 既定も戻したと伝える');
+  assert(m01.indexOf('このバックアップにクラブ既定は含まれていないため、この端末の既定は変更していません')>=0,
+    'P19-E2 ★(既定なし×戻せた) 触れていない既定を「戻した」と言わない');
+  assert(m10.indexOf('クラブ既定と大会データが食い違っている')>=0, 'P19-E3 (既定あり×戻せない) 食い違いの可能性を伝える');
+  assert(m00.indexOf('クラブ既定と大会データが食い違っている')<0&&m00.indexOf('大会データだけが中途半端な状態')>=0,
+    'P19-E4 ★(既定なし×戻せない) 触れていない既定との「食い違い」を言わない');
+  assert(new Set([m11,m01,m10,m00]).size===4, 'P19-E5 ★4通りが実際に別々の文言（2×2 が全部到達可能）');
+}
+
+// ---- P19-F 旧バックアップ（club_profile なし）はこの端末の既定を触らない ----
+{
+  const store={};
+  const env=loadEnv(store);
+  makeMatsumotoState(env);
+  env._getState().report.title='この端末の既定';
+  env.saveClubProfile(env.buildClubProfileFromState());
+  const prevBytes=store[env.CLUB_PROFILE_KEY];
+  env.importTournamentBackupFromText(BACKUP_LEGACY);
+  assert(store[env.CLUB_PROFILE_KEY]===prevBytes, 'P19-F1 旧バックアップの復元で既定の生バイトが変わらない');
+  env.resetAll();
+  assert(env._getState().report.title==='この端末の既定', 'P19-F2 全リセット後もこの端末の既定のまま');
 }
 
 console.log('\n  CLUB-PROFILE-001 テスト: PASS '+pass+'件 / FAIL '+fail+'件');

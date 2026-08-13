@@ -13722,6 +13722,21 @@ function exportTournamentBackup(){
 function importTournamentBackupFromText(text){
   var res=parseTournamentBackup(text);
   if(!res.ok){ alert(res.message); return false; }
+  // ★Codex P1（PR #864 1巡目 r3771873282 / 2巡目 r3772666767）: 復元前の姿を控える getItem が
+  //   **例外を投げた**とき、旧実装は catch で null に丸めていた。null は「元からキーが無い」と
+  //   同じ値なので、巻き戻しが removeItem に落ちて **無傷だったクラブ既定・大会データを削除**する。
+  //   （反証パネル3体が独立に再現。全リセット後の大会名が沼津 factory に戻るところまで実測。）
+  //   ★ 値と「読めたか」を分けて持ち、どちらか読めなければ **1バイトも書く前に中止**する。
+  //   ★ 判定は appConfirm より前に置く（「上書きしますか?」と聞いてから断る流れにしない）。
+  //   ★ 一過性の読取失敗を救うため、中止の文言には再試行の案内を必ず入れる。
+  var prevProfileRaw=null,prevProfileReadOk=true;
+  try{prevProfileRaw=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){prevProfileReadOk=false;}
+  var prevStateRaw=null,prevStateReadOk=true;
+  try{prevStateRaw=localStorage.getItem(STORAGE_KEY);}catch(e){prevStateReadOk=false;}
+  if(!prevProfileReadOk||!prevStateReadOk){
+    appAlert('復元を中止しました。\n\nこの端末に今保存されているデータを読み取れませんでした。このまま復元すると、途中で失敗したときに元へ戻せません。\n\nデータは何も変更していません。ブラウザを開き直してから、もう一度お試しください。');
+    return false;
+  }
   // ★Codex P1（PR #847）: バックアップにクラブ既定が含まれる場合、復元は「今の大会データ」だけでなく
   //   **この端末の恒久的な既定（全リセット後の初期値）も置き換える**。確認文でそれを明示する。
   var confirmMsg=res.club_profile
@@ -13739,19 +13754,24 @@ function importTournamentBackupFromText(text){
       //   書けなかったら**大会の取り込みに進まず中止**し、理由を明示する（部分適用を作らない）。
       // ★Codex 3巡目 P1（PR #847）: ②が失敗したときに①を巻き戻せるよう、書く前の姿を控える。
       //   prevProfileRaw は生バイト（既定が無ければ null）、prevStateJson は復元前の大会データ。
-      var prevProfileRaw=null;
-      try{prevProfileRaw=localStorage.getItem(CLUB_PROFILE_KEY);}catch(e){prevProfileRaw=null;}
+      //   ★ prevProfileRaw / prevStateRaw（＝巻き戻しの照合対象は「メモリの JSON」ではなく
+      //     **localStorage の生バイト**。両者は日付補完などで元々ずれ得る）は、読取失敗を
+      //     「無い」に丸めないため appConfirm より前で控えてある。
       var prevStateJson=null;
       try{prevStateJson=JSON.stringify(state);}catch(e){prevStateJson=null;}
-      // ★Codex 4巡目 P1: 巻き戻しの照合対象は「メモリの JSON」ではなく **localStorage の生バイト**。
-      //   両者は日付補完などで元々ずれ得るので、生バイトを控えないと戻せたか判定できない。
-      var prevStateRaw=null;
-      try{prevStateRaw=localStorage.getItem(STORAGE_KEY);}catch(e){prevStateRaw=null;}
       var cpRestored=false;
       if(res.club_profile){
         cpRestored=saveClubProfile(res.club_profile);
         if(!cpRestored){
-          appAlert('復元を中止しました。\n\nこのバックアップに含まれるクラブ既定を、この端末に保存できませんでした（ブラウザの保存領域の制限が原因の可能性があります）。\n\n大会データは変更していません。通常のウィンドウで開き直してから、もう一度お試しください。');
+          // ★Codex P1（PR #864 r3771873278）: saveClubProfile は setItem が通ったあとの
+          //   読み戻し不一致でも false を返す。その時点でキーは切り詰められたり別の値に
+          //   なっている可能性があり、**大会データは無事なのにクラブ既定だけ失う**。
+          //   書き込み前の生バイトへ戻し、戻せたかで文言を分ける。
+          //   ※ 恒常的な保存故障では戻せない。得られるのは正直な文言だけ。
+          var cpKept=restoreClubProfileRaw(prevProfileRaw);
+          appAlert(cpKept
+            ? '復元を中止しました。\n\nこのバックアップに含まれるクラブ既定を、この端末に保存できませんでした（ブラウザの保存領域の制限が原因の可能性があります）。\n\n大会データもクラブ既定も変更していません。通常のウィンドウで開き直してから、もう一度お試しください。'
+            : '復元を中止しました。\n\nこのバックアップに含まれるクラブ既定を、この端末に保存できませんでした（ブラウザの保存領域の制限が原因の可能性があります）。\n\nクラブ既定を元に戻すこともできませんでした。大会データは変更していませんが、この端末のクラブ既定は失われている可能性があります。通常のウィンドウで開き直し、バックアップから復元し直してください。');
           return;
         }
       }
@@ -13774,9 +13794,22 @@ function importTournamentBackupFromText(text){
         if(prevStateJson){ try{applyLoadedJson(prevStateJson);}catch(e){} }
         var stRolledBack=restoreTournamentRaw(prevStateRaw);
         var rolledBack=cpRolledBack&&stRolledBack;
-        appAlert(rolledBack
-          ? '復元を中止しました。\n\n取り込んだ大会データをこの端末に保存できませんでした（ブラウザの保存領域の空きが不足している可能性があります）。\n\nクラブ既定も元に戻したので、この端末は復元前のままです。不要な大会データを整理するか、通常のウィンドウで開き直してから、もう一度お試しください。'
-          : '復元に失敗しました。\n\n大会データを保存できず、元の状態に戻すこともできませんでした。\n\nこの端末のデータは中途半端な状態になっている可能性があります（クラブ既定と大会データが食い違っているかもしれません）。このまま操作を続けず、通常のウィンドウで開き直してバックアップから復元し直してください。');
+        // ★Codex P2（PR #864 r3771873287）: 文言の軸は `cpRestored × rolledBack` の 2×2。
+        //   旧実装は rolledBack だけで割っていたため、**クラブ既定を含まない旧バックアップ**でも
+        //   「クラブ既定も元に戻した」「クラブ既定と大会データが食い違っている」と言っていた。
+        //   どちらもこの端末の既定に一度も触れていない経路で、事実として誤り。
+        //   cpRolledBack は独立軸にしない（cpRestored===false のとき true 固定＝死に枝を作らない）。
+        var failMsg;
+        if(rolledBack){
+          failMsg=cpRestored
+            ? '復元を中止しました。\n\n取り込んだ大会データをこの端末に保存できませんでした（ブラウザの保存領域の空きが不足している可能性があります）。\n\nクラブ既定も元に戻したので、この端末は復元前のままです。不要な大会データを整理するか、通常のウィンドウで開き直してから、もう一度お試しください。'
+            : '復元を中止しました。\n\n取り込んだ大会データをこの端末に保存できませんでした（ブラウザの保存領域の空きが不足している可能性があります）。\n\nこのバックアップにクラブ既定は含まれていないため、この端末の既定は変更していません。大会データも元に戻したので、この端末は復元前のままです。不要な大会データを整理するか、通常のウィンドウで開き直してから、もう一度お試しください。';
+        }else{
+          failMsg=cpRestored
+            ? '復元に失敗しました。\n\n大会データを保存できず、元の状態に戻すこともできませんでした。\n\nこの端末のデータは中途半端な状態になっている可能性があります（クラブ既定と大会データが食い違っているかもしれません）。このまま操作を続けず、通常のウィンドウで開き直してバックアップから復元し直してください。'
+            : '復元に失敗しました。\n\n大会データを保存できず、元の状態に戻すこともできませんでした。\n\nこのバックアップにクラブ既定は含まれていないため、この端末の既定は変更していません。大会データだけが中途半端な状態になっている可能性があります。このまま操作を続けず、通常のウィンドウで開き直してバックアップから復元し直してください。';
+        }
+        appAlert(failMsg);
         return;
       }
       // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ（失敗系 alert・復元前の confirm は維持）。
