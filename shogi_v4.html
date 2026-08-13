@@ -10165,6 +10165,13 @@ function resetClassForClass(classId){
   state.pairings[classId]=[];
   state.results[classId]=[];
   setClassStarted(classId,false);
+  // CHG-MODAL-FOCUS-TRAP-001 (#837 受け入れ基準4): 開きっぱなしの対戦相手変更モーダルを閉じる。
+  //   ここには後始末が無く、リセット後も残ったモーダルの「変更を保存」を押すと
+  //   state.pairings[cls][idx] が undefined になっていて
+  //   `Cannot read properties of undefined (reading 'p1')` が未捕捉で飛ぶ（実測）。
+  //   進行リセット・全リセットと同じ扱いにする（クラスを問わず閉じる＝どのクラスの卓を
+  //   開いていたかに関わらず、リセット後の tree では idx の意味が変わり得るため）。
+  closeChangePairingModal();
   // DOM クリア（classId ベース、A/B literal 不使用）
   var pane=document.getElementById('pane-'+classId);if(pane)pane.innerHTML='';
   var rslt=document.getElementById('result-'+classId);if(rslt)rslt.innerHTML='';

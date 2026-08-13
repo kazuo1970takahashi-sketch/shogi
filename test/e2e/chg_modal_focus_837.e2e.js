@@ -209,6 +209,27 @@ const SETUP = `state = { players: { A: [
   ok(afterReset.modalGone, '[H1] 進行リセットでモーダルが閉じる');
   ok(!afterReset.inertLeft, '[H2] ★ 進行リセット経由で閉じても inert が残らない（画面が操作不能にならない）');
 
+  // ---------------------------------------------------------------- 8b) クラス単位のリセットでも同じ（受け入れ基準4）
+  //   #837 本文の実測「resetClassForClass には後始末コードが存在しない → 残ったモーダルの
+  //   保存で Cannot read properties of undefined (reading 'p1') が未捕捉で飛ぶ」を塞ぐ。
+  await reset();
+  await page.evaluate(() => { changePairing('A', 0); });
+  await page.waitForTimeout(120);
+  await page.evaluate(() => { resetClassForClass('A'); });
+  await page.waitForTimeout(150);
+  const clsResetConfirm = await page.evaluate(() => !!document.querySelector('#app-modal .app-modal-ok'));
+  ok(clsResetConfirm, '[I0] クラスのリセットの確認モーダルが出る');
+  await page.evaluate(() => { const b = document.querySelector('#app-modal .app-modal-ok'); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const afterClsReset = await page.evaluate(() => ({
+    modalGone: !document.getElementById('chg-modal'),
+    inertLeft: Array.from(document.body.children).some(el => el.hasAttribute('inert')),
+    pairings: (state.pairings.A || []).length
+  }));
+  ok(afterClsReset.modalGone, '[I1] ★ クラスのリセットでもモーダルが閉じる（残ると保存で未捕捉例外）');
+  ok(!afterClsReset.inertLeft, '[I2] クラスのリセット経由でも inert が残らない');
+  ok(afterClsReset.pairings === 0, '[I3] 対照: リセット自体は従来どおり効いている');
+
   // ---------------------------------------------------------------- 9) 未捕捉例外なし
   ok(pageErrors.length === 0, '未捕捉例外なし  ' + (pageErrors.length ? '[' + pageErrors[0] + ']' : ''));
 
