@@ -297,6 +297,46 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
   ok(!afterSwap.appModal, '[W7-5] 入れ替え確認モーダルまで進まない');
   await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} });
 
+  // ---------------------------------------------------------------- W8 相手卓に棄権者がいる swap
+  //   Codex 3巡目 P1 (r3781349770)。修正前: 卓1「A×B」/ 卓2「X×W(棄権)」で卓1のAをXに替えると
+  //   卓1=X×B / 卓2=A×W となり、棄権者 W の対戦相手だけが黙って入れ替わっていた。
+  await page.evaluate(`(function(){
+    try{ closeChangePairingModal(); }catch(e){}
+    var players=[];
+    for(var i=1;i<=6;i++)players.push({id:'p'+i,name:'選手'+i,entry_no:i,member:'member',grade:'ippan'});
+    players[3].withdrawn=true;                       // W=p4 は卓2にいる
+    state={players:{A:players,B:[]},rounds:4,results:{A:[],B:[]},
+      pairings:{A:[{p1:'p1',p2:'p2',winner:null,lastModifiedBy:'auto'},
+                   {p1:'p3',p2:'p4',winner:null,lastModifiedBy:'auto'}],B:[]},
+      started:true,classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:false}],report:{}};
+    save(); showTab('tournament'); renderTournament('A');
+  })()`);
+  await page.waitForTimeout(150);
+  const beforePartner = await page.evaluate(() => state.pairings.A.map(m => m.p1 + 'v' + m.p2));
+  const partnerOpt = await page.evaluate(() => {
+    changePairing('A', 0);
+    const s1 = document.getElementById('chg-p1');
+    const o = Array.from(s1.options).find(x => x.value === 'p3');   // 相方が棄権者の現役
+    return o ? { disabled: o.disabled, reason: o.getAttribute('data-reason-id') } : null;
+  });
+  ok(partnerOpt && partnerOpt.disabled === true && partnerOpt.reason === 'R-withdrawn-partner',
+     '[W8-1] ★ 相手卓に棄権者がいる候補は塞がれる  [' + JSON.stringify(partnerOpt) + ']');
+  alerts.length = 0;
+  await page.evaluate(() => { document.getElementById('chg-p1').value = 'p3'; document.getElementById('chg-save').click(); });
+  await page.waitForTimeout(400);
+  const afterPartner = await page.evaluate(() => {
+    let s = null; try { s = JSON.parse(localStorage.getItem('shogi_v4') || 'null'); } catch (e) {}
+    return { pairs: state.pairings.A.map(m => m.p1 + 'v' + m.p2),
+             saved: s && s.pairings ? (s.pairings.A || []).map(m => m.p1 + 'v' + m.p2) : null,
+             appModal: !!document.getElementById('app-modal') };
+  });
+  ok(JSON.stringify(afterPartner.pairs) === JSON.stringify(beforePartner) &&
+     JSON.stringify(afterPartner.saved) === JSON.stringify(beforePartner),
+     '[W8-2] ★ 強制代入して保存しても棄権者の対戦相手は入れ替わらない  [' + afterPartner.pairs.join(', ') + ']');
+  ok(!afterPartner.appModal, '[W8-3] 入れ替え確認モーダルまで進まない（途中で止まっているのではなく弾いている）');
+  ok(alerts.some(a => /入れ替え先の卓に棄権した参加者/.test(a)), '[W8-4] 何をすればよいか分かる文言  [' + (alerts[0] || '(なし)').replace(/\n/g, ' ').slice(0, 30) + ']');
+  await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} });
+
   ok(pageErrors.length === 0, '未捕捉例外なし  ' + (pageErrors.length ? '[' + pageErrors[0] + ']' : ''));
 
   await browser.close();

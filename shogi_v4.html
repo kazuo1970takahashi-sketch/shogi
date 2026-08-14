@@ -1557,6 +1557,13 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
   var keepPlayer=(role==='p1')?match.p2:match.p1;
   var droppedFromTarget=(role==='p1')?match.p1:match.p2;
   var Y=(otherPair&&otherPair.p1===candidateId)?otherPair.p2:(otherPair?otherPair.p1:null);
+  // #836 Codex 3巡目 P1 (r3781349770・実測で再現): 相手卓に棄権者が居るときの swap も塞ぐ。
+  //   例: 卓1「A×B」（両方現役）／卓2「X×棄権者W」。卓1 の A を X に替えると
+  //   卓1=X×B / 卓2=A×W となり、**棄権者 W の対戦相手だけが黙って入れ替わる**（実測: p3vp2 / p1vp4）。
+  //   棄権者が居る卓は、まずその棄権者を未割当の参加者と入れ替えて解消してもらう。
+  if(Y&&isWithdrawnPlayer(cls,Y)){
+    return {status:'blocked',reasonId:'R-withdrawn-partner',reasonLabel:'相手の卓に棄権者'};
+  }
   if(pairHasRematch(cls,keepPlayer,candidateId)||(Y&&pairHasRematch(cls,droppedFromTarget,Y))){
     return {status:'blocked',reasonId:'R-rematch-swap',reasonLabel:'再戦になる'};
   }
@@ -10844,6 +10851,13 @@ function bindChangePairingModalEvents(cls, idx){
       }
       var Y=(otherPair.p1===X)?otherPair.p2:otherPair.p1;
       var droppedFromTarget=(keepPlayer===oldP1)?oldP2:oldP1;
+
+      // #836 Codex 3巡目 P1 (r3781349770): 相手卓に棄権者が残る swap も止める。
+      if(isWithdrawnPlayer(cls, Y)){
+        resetSelectsToOriginal();
+        alert('入れ替え先の卓に棄権した参加者がいます。\nその卓を先に直してください。\n選択を元に戻しました。');
+        return;
+      }
 
       if(pairHasRematch(cls, keepPlayer, X) || pairHasRematch(cls, droppedFromTarget, Y)){
         resetSelectsToOriginal();
