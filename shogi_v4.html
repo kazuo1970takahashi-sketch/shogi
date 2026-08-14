@@ -1546,6 +1546,13 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
   if(otherPair&&otherPair.winner){
     return {status:'blocked',reasonId:'R-winner-locked',reasonLabel:'結果入力済'};
   }
+  // #836 Codex 2巡目 P1 (r3781302898・実測で再現): swap では棄権者は消えず**相手卓へ移る**。
+  //   例: 卓1「棄権者 W × B」で W の役に別卓の現役 X を選ぶと、
+  //   卓1 = X×B / 卓2 = W×Y になり、W はこの回戦に残ったまま（実測: p3vp2 / p1vp4）。
+  //   ★ 棄権者を外せるのは**未割当の相手と入れ替える replace 経路だけ**（上の otherIdx===-1）。
+  if(isWithdrawnPlayer(cls,currentInRole)){
+    return {status:'blocked',reasonId:'R-withdrawn-swap',reasonLabel:'棄権者が別卓へ移る'};
+  }
   // swap 経路: 既存 hard block と同じ条件（keepPlayer-X / droppedFromTarget-Y の双方を判定）
   var keepPlayer=(role==='p1')?match.p2:match.p1;
   var droppedFromTarget=(role==='p1')?match.p1:match.p2;
@@ -10762,7 +10769,7 @@ function bindChangePairingModalEvents(cls, idx){
     //   ここで見るのは X（新規に入る側）だけ＝すでに卓に入っている棄権者を動かす操作は妨げない。
     if(isWithdrawnPlayer(cls, X)){
       resetSelectsToOriginal();
-      alert('この選手は棄権しています。\n棄権を取り消してから選び直してください。\n選択を元に戻しました。');
+      alert('この参加者は棄権しています。\n棄権を取り消してから選び直してください。\n選択を元に戻しました。');
       return;
     }
     // #836 Codex P1 (r3781236918): 棄権者を**卓に残したまま**相手だけ差し替える操作も止める。
@@ -10770,11 +10777,22 @@ function bindChangePairingModalEvents(cls, idx){
     //   許すのは棄権者自身の役を置き換える操作だけ（そのとき keepPlayer は現役）。
     if(isWithdrawnPlayer(cls, keepPlayer)){
       resetSelectsToOriginal();
-      alert('この対局には棄権した選手が残ります。\n先に棄権した選手のほうを入れ替えてください。\n選択を元に戻しました。');
+      alert('この対局には棄権した参加者が残ります。\n先に棄権した参加者のほうを入れ替えてください。\n選択を元に戻しました。');
       return;
     }
 
     var otherIdx=findPairContainingPlayer(cls, X, idx);
+
+    // #836 Codex 2巡目 P1 (r3781302898): swap では棄権者は消えず相手卓へ移る。
+    //   棄権者を外せるのは未割当の相手と入れ替える replace 経路（otherIdx===-1）だけ。
+    //   ★ droppedFromTarget は下の else 分岐でしか定義されないので、ここで同じ式から作る
+    //     （前版はここで未定義を参照しており、ガードが一度も発火していなかった＝W7-5 が検出）
+    var _droppedFromTarget=(keepPlayer===oldP1)?oldP2:oldP1;
+    if(otherIdx!==-1 && isWithdrawnPlayer(cls, _droppedFromTarget)){
+      resetSelectsToOriginal();
+      alert('この入れ替えでは、棄権した参加者が別の卓に移るだけです。\n対局に入っていない参加者と入れ替えてください。\n選択を元に戻しました。');
+      return;
+    }
 
     // IN-APP-MODAL-001 (#606): 対戦相手変更（再戦保存 / 入れ替え）の native confirm 2件を appConfirm へ挙動同値化。
     //   confirm 後の共通後処理（modal 除去→renderTournament→save→SAVE-003b 保存検証）を _finishChangePairing に集約し、
