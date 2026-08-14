@@ -1483,6 +1483,18 @@ function getDuplicatePlayersInPairings(cls){
   return dups;
 }
 
+// WITHDRAWN-CHANGE-PAIRING-001 (#836): 指定 id が棄権しているか。
+//   純関数寄り（state.players だけを読む・DOM もネットワークも触らない）。
+//   名簿に無い id・players が壊れている場合は false（＝従来どおり扱う。ここで新しい blocked を作らない）。
+function isWithdrawnPlayer(cls,playerId){
+  var list=state&&state.players&&state.players[cls];
+  if(Object.prototype.toString.call(list)!=='[object Array]')return false;
+  for(var i=0;i<list.length;i++){
+    if(list[i]&&list[i].id===playerId)return !!list[i].withdrawn;
+  }
+  return false;
+}
+
 // PAIRING-UX-MANUAL-CHANGE-CANDIDATE-FILTER-IMPL-LIGHT (PR #108 §9.1):
 //   手動変更モーダルの select 候補を「選択可能 / 選択不可」に事前分類する。
 //   事後判定（bindChangePairingModalEvents）と同じ helper（pairHasRematch /
@@ -1504,6 +1516,30 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
     // 反対側の現在値を同じ役にぶつけると保存時の「同じ選手」/「2 人同時入替」alert に至る。
     return {status:'blocked',reasonId:'R-self',reasonLabel:'同じ選手'};
   }
+  // WITHDRAWN-CHANGE-PAIRING-001 (#836): 棄権者は選べない。
+  //   ★ generatePairing は withdrawn を除外しているのに、このモーダルは
+  //     state.players[cls] をそのまま候補にしていた（実測: 4/4 の select で「選択可能」に出て、
+  //     選ぶと確認も出ずに卓へ入り localStorage まで保存された）。
+  //   ★ 候補から「消す」のではなく blocked にする理由（production で実測した事故）:
+  //     toggleWithdrawn は state.pairings から外さないので「棄権者が卓に入ったまま」は普通に起きる。
+  //     その状態で option を消すと select の現在値が先頭候補へすり替わり、
+  //     モーダルを開いただけで保存すると別人に差し替わる。
+  //   ★ 自分の役に入っている本人は上の「候補=その役の現在値」で先に ok を返すため、ここには来ない
+  //     ＝現在値は消えない。
+  if(isWithdrawnPlayer(cls,candidateId)){
+    return {status:'blocked',reasonId:'R-withdrawn',reasonLabel:'棄権'};
+  }
+  // #836 Codex P1 (r3781236918・実測で再現): 反対側の役に棄権者が**残る**変更も止める。
+  //   例: 卓が「棄権者 W × 選手B」のとき、B の役だけを未割当の現役 X に替えると
+  //   W はそのまま卓に残り、確認も出ずに {W, X} が保存される（修正前の実測: p1vp5）。
+  //   ★ 許すのは「棄権者自身の役を置き換える」操作だけ。反対側を触る操作は、
+  //     先に棄権者を外してもらう（そのときこの select は使わない）。
+  //   ★ Codex 4巡目 P1 (r3781450592): ただし**置き換えられる側も棄権**なら、この変更で卓の棄権者は
+  //     2人→1人に減る。両方が棄権した卓を段階的に直せなくなる（保存ボタンまで無効になる）ので許す。
+  //     ＝規則は「棄権者の数を減らす replace は許し、減らない変更は止める」。
+  if(isWithdrawnPlayer(cls,otherInRole)&&!isWithdrawnPlayer(cls,currentInRole)){
+    return {status:'blocked',reasonId:'R-withdrawn-stays',reasonLabel:'棄権者が残る'};
+  }
   var otherIdx=findPairContainingPlayer(cls,candidateId,idx);
   if(otherIdx===-1){
     // replace 経路: 候補が他ペアに属さない。再戦は既存 confirm に任せるため候補側では blocked にしない。
@@ -1513,10 +1549,24 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
   if(otherPair&&otherPair.winner){
     return {status:'blocked',reasonId:'R-winner-locked',reasonLabel:'結果入力済'};
   }
+  // #836 Codex 2巡目 P1 (r3781302898・実測で再現): swap では棄権者は消えず**相手卓へ移る**。
+  //   例: 卓1「棄権者 W × B」で W の役に別卓の現役 X を選ぶと、
+  //   卓1 = X×B / 卓2 = W×Y になり、W はこの回戦に残ったまま（実測: p3vp2 / p1vp4）。
+  //   ★ 棄権者を外せるのは**未割当の相手と入れ替える replace 経路だけ**（上の otherIdx===-1）。
+  if(isWithdrawnPlayer(cls,currentInRole)){
+    return {status:'blocked',reasonId:'R-withdrawn-swap',reasonLabel:'棄権者が別卓へ移る'};
+  }
   // swap 経路: 既存 hard block と同じ条件（keepPlayer-X / droppedFromTarget-Y の双方を判定）
   var keepPlayer=(role==='p1')?match.p2:match.p1;
   var droppedFromTarget=(role==='p1')?match.p1:match.p2;
   var Y=(otherPair&&otherPair.p1===candidateId)?otherPair.p2:(otherPair?otherPair.p1:null);
+  // #836 Codex 3巡目 P1 (r3781349770・実測で再現): 相手卓に棄権者が居るときの swap も塞ぐ。
+  //   例: 卓1「A×B」（両方現役）／卓2「X×棄権者W」。卓1 の A を X に替えると
+  //   卓1=X×B / 卓2=A×W となり、**棄権者 W の対戦相手だけが黙って入れ替わる**（実測: p3vp2 / p1vp4）。
+  //   棄権者が居る卓は、まずその棄権者を未割当の参加者と入れ替えて解消してもらう。
+  if(Y&&isWithdrawnPlayer(cls,Y)){
+    return {status:'blocked',reasonId:'R-withdrawn-partner',reasonLabel:'相手の卓に棄権者'};
+  }
   if(pairHasRematch(cls,keepPlayer,candidateId)||(Y&&pairHasRematch(cls,droppedFromTarget,Y))){
     return {status:'blocked',reasonId:'R-rematch-swap',reasonLabel:'再戦になる'};
   }
@@ -10723,8 +10773,30 @@ function bindChangePairingModalEvents(cls, idx){
       return;
     }
 
+    // WITHDRAWN-CHANGE-PAIRING-001 (#836): 新しく卓に入れようとする選手（X）が棄権していたら止める。
+    //   候補 select では選べなくなっているが、**境界でも弾く**（#869 / #864 で学んだ形）。
+    //   古い state・外部入力・将来の UI 変更で到達し得るため、UI だけに頼らない。
+    //   ここで見るのは X（新規に入る側）だけ＝すでに卓に入っている棄権者を動かす操作は妨げない。
+    if(isWithdrawnPlayer(cls, X)){
+      resetSelectsToOriginal();
+      alert('この参加者は棄権しています。\n棄権を取り消してから選び直してください。\n選択を元に戻しました。');
+      return;
+    }
+    // #836 Codex P1 (r3781236918): 棄権者を**卓に残したまま**相手だけ差し替える操作も止める。
+    //   keepPlayer = この変更で卓に残る側。ここが棄権者なら、変更後の卓は「棄権者 × 現役」になる。
+    //   許すのは棄権者自身の役を置き換える操作だけ（そのとき keepPlayer は現役）。
+    //   ★ Codex 4巡目 P1: 置き換えられる側も棄権なら棄権者は減るので許す（classify と同じ規則）
+    var _dropped=(keepPlayer===oldP1)?oldP2:oldP1;
+    if(isWithdrawnPlayer(cls, keepPlayer) && !isWithdrawnPlayer(cls, _dropped)){
+      resetSelectsToOriginal();
+      alert('この対局には棄権した参加者が残ります。\n先に棄権した参加者のほうを入れ替えてください。\n選択を元に戻しました。');
+      return;
+    }
+
     var otherIdx=findPairContainingPlayer(cls, X, idx);
 
+    // #836 Codex 2巡目 P1 (r3781302898): swap では棄権者は消えず相手卓へ移る。
+    //   棄権者を外せるのは未割当の相手と入れ替える replace 経路（otherIdx===-1）だけ。
     // IN-APP-MODAL-001 (#606): 対戦相手変更（再戦保存 / 入れ替え）の native confirm 2件を appConfirm へ挙動同値化。
     //   confirm 後の共通後処理（modal 除去→renderTournament→save→SAVE-003b 保存検証）を _finishChangePairing に集約し、
     //   OK 経路のみで呼ぶ＝元の「confirm OK 後に後処理」の順序・分岐を厳密保持（取消/重複ロールバックは非実行＝confirm false で return と同値）。
@@ -10775,6 +10847,23 @@ function bindChangePairingModalEvents(cls, idx){
       }
       var Y=(otherPair.p1===X)?otherPair.p2:otherPair.p1;
       var droppedFromTarget=(keepPlayer===oldP1)?oldP2:oldP1;
+
+      // #836 Codex 2巡目 P1 (r3781302898): swap では棄権者は消えず相手卓へ移るだけ。
+      //   ★ Codex 4巡目 P2 (r3781450589): 判定順を classify に揃える（winner 判定の**後**）。
+      //     前版はこれを otherIdx 直後に置いていたため、結果入力済みの卓が絡むと
+      //     候補には「結果入力済」と出るのに保存側は「棄権者が別の卓に移る」で止めていた。
+      if(isWithdrawnPlayer(cls, droppedFromTarget)){
+        resetSelectsToOriginal();
+        alert('この入れ替えでは、棄権した参加者が別の卓に移るだけです。\n対局に入っていない参加者と入れ替えてください。\n選択を元に戻しました。');
+        return;
+      }
+
+      // #836 Codex 3巡目 P1 (r3781349770): 相手卓に棄権者が残る swap も止める。
+      if(isWithdrawnPlayer(cls, Y)){
+        resetSelectsToOriginal();
+        alert('入れ替え先の卓に棄権した参加者がいます。\nその卓を先に直してください。\n選択を元に戻しました。');
+        return;
+      }
 
       if(pairHasRematch(cls, keepPlayer, X) || pairHasRematch(cls, droppedFromTarget, Y)){
         resetSelectsToOriginal();
