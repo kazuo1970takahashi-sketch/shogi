@@ -1534,7 +1534,10 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
   //   W はそのまま卓に残り、確認も出ずに {W, X} が保存される（修正前の実測: p1vp5）。
   //   ★ 許すのは「棄権者自身の役を置き換える」操作だけ。反対側を触る操作は、
   //     先に棄権者を外してもらう（そのときこの select は使わない）。
-  if(isWithdrawnPlayer(cls,otherInRole)){
+  //   ★ Codex 4巡目 P1 (r3781450592): ただし**置き換えられる側も棄権**なら、この変更で卓の棄権者は
+  //     2人→1人に減る。両方が棄権した卓を段階的に直せなくなる（保存ボタンまで無効になる）ので許す。
+  //     ＝規則は「棄権者の数を減らす replace は許し、減らない変更は止める」。
+  if(isWithdrawnPlayer(cls,otherInRole)&&!isWithdrawnPlayer(cls,currentInRole)){
     return {status:'blocked',reasonId:'R-withdrawn-stays',reasonLabel:'棄権者が残る'};
   }
   var otherIdx=findPairContainingPlayer(cls,candidateId,idx);
@@ -10782,7 +10785,9 @@ function bindChangePairingModalEvents(cls, idx){
     // #836 Codex P1 (r3781236918): 棄権者を**卓に残したまま**相手だけ差し替える操作も止める。
     //   keepPlayer = この変更で卓に残る側。ここが棄権者なら、変更後の卓は「棄権者 × 現役」になる。
     //   許すのは棄権者自身の役を置き換える操作だけ（そのとき keepPlayer は現役）。
-    if(isWithdrawnPlayer(cls, keepPlayer)){
+    //   ★ Codex 4巡目 P1: 置き換えられる側も棄権なら棄権者は減るので許す（classify と同じ規則）
+    var _dropped=(keepPlayer===oldP1)?oldP2:oldP1;
+    if(isWithdrawnPlayer(cls, keepPlayer) && !isWithdrawnPlayer(cls, _dropped)){
       resetSelectsToOriginal();
       alert('この対局には棄権した参加者が残ります。\n先に棄権した参加者のほうを入れ替えてください。\n選択を元に戻しました。');
       return;
@@ -10792,15 +10797,6 @@ function bindChangePairingModalEvents(cls, idx){
 
     // #836 Codex 2巡目 P1 (r3781302898): swap では棄権者は消えず相手卓へ移る。
     //   棄権者を外せるのは未割当の相手と入れ替える replace 経路（otherIdx===-1）だけ。
-    //   ★ droppedFromTarget は下の else 分岐でしか定義されないので、ここで同じ式から作る
-    //     （前版はここで未定義を参照しており、ガードが一度も発火していなかった＝W7-5 が検出）
-    var _droppedFromTarget=(keepPlayer===oldP1)?oldP2:oldP1;
-    if(otherIdx!==-1 && isWithdrawnPlayer(cls, _droppedFromTarget)){
-      resetSelectsToOriginal();
-      alert('この入れ替えでは、棄権した参加者が別の卓に移るだけです。\n対局に入っていない参加者と入れ替えてください。\n選択を元に戻しました。');
-      return;
-    }
-
     // IN-APP-MODAL-001 (#606): 対戦相手変更（再戦保存 / 入れ替え）の native confirm 2件を appConfirm へ挙動同値化。
     //   confirm 後の共通後処理（modal 除去→renderTournament→save→SAVE-003b 保存検証）を _finishChangePairing に集約し、
     //   OK 経路のみで呼ぶ＝元の「confirm OK 後に後処理」の順序・分岐を厳密保持（取消/重複ロールバックは非実行＝confirm false で return と同値）。
@@ -10851,6 +10847,16 @@ function bindChangePairingModalEvents(cls, idx){
       }
       var Y=(otherPair.p1===X)?otherPair.p2:otherPair.p1;
       var droppedFromTarget=(keepPlayer===oldP1)?oldP2:oldP1;
+
+      // #836 Codex 2巡目 P1 (r3781302898): swap では棄権者は消えず相手卓へ移るだけ。
+      //   ★ Codex 4巡目 P2 (r3781450589): 判定順を classify に揃える（winner 判定の**後**）。
+      //     前版はこれを otherIdx 直後に置いていたため、結果入力済みの卓が絡むと
+      //     候補には「結果入力済」と出るのに保存側は「棄権者が別の卓に移る」で止めていた。
+      if(isWithdrawnPlayer(cls, droppedFromTarget)){
+        resetSelectsToOriginal();
+        alert('この入れ替えでは、棄権した参加者が別の卓に移るだけです。\n対局に入っていない参加者と入れ替えてください。\n選択を元に戻しました。');
+        return;
+      }
 
       // #836 Codex 3巡目 P1 (r3781349770): 相手卓に棄権者が残る swap も止める。
       if(isWithdrawnPlayer(cls, Y)){

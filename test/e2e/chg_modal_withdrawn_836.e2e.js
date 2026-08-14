@@ -337,6 +337,73 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
   ok(alerts.some(a => /入れ替え先の卓に棄権した参加者/.test(a)), '[W8-4] 何をすればよいか分かる文言  [' + (alerts[0] || '(なし)').replace(/\n/g, ' ').slice(0, 30) + ']');
   await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} });
 
+  // ---------------------------------------------------------------- W9 両方棄権した卓を段階的に直せる
+  //   Codex 4巡目 P1 (r3781450592)。塞ぎすぎると「棄権を一時取り消す or 進行リセット」しか
+  //   直す手が無くなる。規則は「棄権者の数を減らす replace は許す」。
+  await page.evaluate(`(function(){
+    try{ closeChangePairingModal(); }catch(e){}
+    var players=[];
+    for(var i=1;i<=6;i++)players.push({id:'p'+i,name:'選手'+i,entry_no:i,member:'member',grade:'ippan'});
+    players[0].withdrawn=true; players[1].withdrawn=true;   // 卓1 は W1×W2（両方棄権）
+    state={players:{A:players,B:[]},rounds:4,results:{A:[],B:[]},
+      pairings:{A:[{p1:'p1',p2:'p2',winner:null,lastModifiedBy:'auto'}],B:[]},
+      started:true,classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:false}],report:{}};
+    save(); showTab('tournament'); renderTournament('A');
+  })()`);
+  await page.waitForTimeout(150);
+  const bothW = await page.evaluate(() => {
+    changePairing('A', 0);
+    const s1 = document.getElementById('chg-p1');
+    const o = Array.from(s1.options).find(x => x.value === 'p5');   // 未割当の現役
+    return { candDisabled: o ? o.disabled : null, reason: o ? o.getAttribute('data-reason-id') : null,
+             saveDisabled: document.getElementById('chg-save').disabled };
+  });
+  ok(bothW.candDisabled === false, '[W9-1] ★ 両方棄権の卓でも、未割当の現役は選べる（段階的に直せる）  [' + JSON.stringify(bothW) + ']');
+  ok(bothW.saveDisabled === false, '[W9-2] ★ 保存ボタンが無効にならない（出口が塞がっていない）');
+  await page.evaluate(() => { document.getElementById('chg-p1').value = 'p5'; document.getElementById('chg-save').click(); });
+  await page.waitForTimeout(400);
+  const step1 = await page.evaluate(() => state.pairings.A.map(m => m.p1 + 'v' + m.p2));
+  ok(step1[0] === 'p5vp2', '[W9-3] ★ 1回目の replace が通り、棄権者が2人→1人に減る  [' + step1.join(', ') + ']');
+  await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} changePairing('A', 0); document.getElementById('chg-p2').value = 'p6'; document.getElementById('chg-save').click(); });
+  await page.waitForTimeout(400);
+  const step2 = await page.evaluate(() => {
+    let s = null; try { s = JSON.parse(localStorage.getItem('shogi_v4') || 'null'); } catch (e) {}
+    return { pairs: state.pairings.A.map(m => m.p1 + 'v' + m.p2),
+             saved: s && s.pairings ? (s.pairings.A || []).map(m => m.p1 + 'v' + m.p2) : null };
+  });
+  ok(step2.pairs[0] === 'p5vp6' && step2.saved && step2.saved[0] === 'p5vp6',
+     '[W9-4] ★ 2回目で棄権者ゼロの卓に直せる（保存まで）  [' + step2.pairs.join(', ') + ']');
+  await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} });
+
+  // ---------------------------------------------------------------- W10 分類と保存の阻止理由が一致する
+  //   Codex 4巡目 P2 (r3781450589)。複数ガードが同時成立しても、表示された理由で止まること。
+  await page.evaluate(`(function(){
+    try{ closeChangePairingModal(); }catch(e){}
+    var players=[];
+    for(var i=1;i<=6;i++)players.push({id:'p'+i,name:'選手'+i,entry_no:i,member:'member',grade:'ippan'});
+    players[0].withdrawn=true;                       // 変更元(卓1の先手)が棄権
+    state={players:{A:players,B:[]},rounds:4,results:{A:[],B:[]},
+      pairings:{A:[{p1:'p1',p2:'p2',winner:null,lastModifiedBy:'auto'},
+                   {p1:'p3',p2:'p4',winner:'p3',lastModifiedBy:'auto'}],B:[]},  // 卓2 は結果入力済
+      started:true,classes:[{id:'A',name:'Aクラス',started:true},{id:'B',name:'Bクラス',started:false}],report:{}};
+    save(); showTab('tournament'); renderTournament('A');
+  })()`);
+  await page.waitForTimeout(150);
+  const shown = await page.evaluate(() => {
+    changePairing('A', 0);
+    const s1 = document.getElementById('chg-p1');
+    const o = Array.from(s1.options).find(x => x.value === 'p3');   // 結果入力済みの卓にいる
+    return o ? o.getAttribute('data-reason-id') : null;
+  });
+  alerts.length = 0;
+  await page.evaluate(() => { document.getElementById('chg-p1').value = 'p3'; document.getElementById('chg-save').click(); });
+  await page.waitForTimeout(350);
+  const blockedBy = alerts.length ? alerts[0] : null;
+  ok(shown === 'R-winner-locked', '[W10-1] 候補に出る理由は「結果入力済」  [' + shown + ']');
+  ok(!!blockedBy && /結果入力済/.test(blockedBy),
+     '[W10-2] ★ 保存側も同じ理由で止める（表示と実際の阻止理由が一致）  [' + (blockedBy || '(なし)').replace(/\n/g, ' ').slice(0, 30) + ']');
+  await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} });
+
   ok(pageErrors.length === 0, '未捕捉例外なし  ' + (pageErrors.length ? '[' + pageErrors[0] + ']' : ''));
 
   await browser.close();
