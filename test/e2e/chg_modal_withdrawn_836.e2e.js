@@ -214,6 +214,47 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
   ok(many.bad === 0, '[W5-1] ★ 全 ' + many.checked + ' 件が期待どおり（棄権=R-withdrawn / 現在値=ok / 反対側=R-self）  [不一致 ' +
      many.bad + '件' + (many.badDetail ? ' 例:' + JSON.stringify(many.badDetail) : '') + ']');
 
+  // ---------------------------------------------------------------- W6 棄権者を「残したまま」相手だけ替える経路
+  //   Codex P1 (r3781236918)。修正前は確認も警告も出ずに {棄権者, 現役} が保存された（実測 p1vp5）。
+  await page.evaluate(setup(['p1']));      // p1 は卓1に入ったまま棄権
+  await page.waitForTimeout(150);
+  const beforeStay = await page.evaluate(() => state.pairings.A.map(m => m.p1 + 'v' + m.p2));
+  const stayOpt = await page.evaluate(() => {
+    changePairing('A', 0);
+    const s2 = document.getElementById('chg-p2');
+    const o = Array.from(s2.options).find(x => x.value === 'p5');   // 未割当の現役
+    return o ? { disabled: o.disabled, group: o.parentElement && o.parentElement.label, reason: o.getAttribute('data-reason-id') } : null;
+  });
+  ok(stayOpt && stayOpt.disabled === true && stayOpt.reason === 'R-withdrawn-stays',
+     '[W6-1] ★ 棄権者が残る側の変更は候補の時点で塞がれる  [' + JSON.stringify(stayOpt) + ']');
+  alerts.length = 0;
+  await page.evaluate(() => { document.getElementById('chg-p2').value = 'p5'; document.getElementById('chg-save').click(); });
+  await page.waitForTimeout(400);
+  const afterStay = await page.evaluate(() => {
+    let s = null; try { s = JSON.parse(localStorage.getItem('shogi_v4') || 'null'); } catch (e) {}
+    return { pairs: state.pairings.A.map(m => m.p1 + 'v' + m.p2),
+             saved: s && s.pairings ? (s.pairings.A || []).map(m => m.p1 + 'v' + m.p2) : null,
+             appModal: !!document.getElementById('app-modal') };
+  });
+  ok(JSON.stringify(afterStay.pairs) === JSON.stringify(beforeStay) &&
+     JSON.stringify(afterStay.saved) === JSON.stringify(beforeStay),
+     '[W6-2] ★ 強制代入して保存しても「棄権者 × 現役」の卓は作れない  [' + afterStay.pairs.join(', ') + ']');
+  ok(alerts.some(a => /棄権した選手が残ります/.test(a)),
+     '[W6-3] 何をすればよいか分かる文言が出る  [' + (alerts[0] || '(なし)').replace(/\n/g, ' ').slice(0, 34) + ']');
+  ok(!afterStay.appModal, '[W6-4] 確認モーダルまで進まない');
+  // 対照: 棄権者自身の役を置き換える操作は通る（棄権者を卓から外す運用を妨げない）
+  await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} });
+  await page.evaluate(() => { changePairing('A', 0); document.getElementById('chg-p1').value = 'p5'; document.getElementById('chg-save').click(); });
+  await page.waitForTimeout(400);
+  const replaced = await page.evaluate(() => {
+    let s = null; try { s = JSON.parse(localStorage.getItem('shogi_v4') || 'null'); } catch (e) {}
+    return { pairs: state.pairings.A.map(m => m.p1 + 'v' + m.p2),
+             saved: s && s.pairings ? (s.pairings.A || []).map(m => m.p1 + 'v' + m.p2) : null };
+  });
+  ok(replaced.pairs[0] === 'p5vp2' && replaced.saved && replaced.saved[0] === 'p5vp2',
+     '[W6-5] ★ 対照: 棄権者自身を現役と入れ替える操作は従来どおり通る  [' + replaced.pairs.join(', ') + ']');
+  await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} });
+
   ok(pageErrors.length === 0, '未捕捉例外なし  ' + (pageErrors.length ? '[' + pageErrors[0] + ']' : ''));
 
   await browser.close();

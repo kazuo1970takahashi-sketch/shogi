@@ -1529,6 +1529,14 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
   if(isWithdrawnPlayer(cls,candidateId)){
     return {status:'blocked',reasonId:'R-withdrawn',reasonLabel:'棄権'};
   }
+  // #836 Codex P1 (r3781236918・実測で再現): 反対側の役に棄権者が**残る**変更も止める。
+  //   例: 卓が「棄権者 W × 選手B」のとき、B の役だけを未割当の現役 X に替えると
+  //   W はそのまま卓に残り、確認も出ずに {W, X} が保存される（修正前の実測: p1vp5）。
+  //   ★ 許すのは「棄権者自身の役を置き換える」操作だけ。反対側を触る操作は、
+  //     先に棄権者を外してもらう（そのときこの select は使わない）。
+  if(isWithdrawnPlayer(cls,otherInRole)){
+    return {status:'blocked',reasonId:'R-withdrawn-stays',reasonLabel:'棄権者が残る'};
+  }
   var otherIdx=findPairContainingPlayer(cls,candidateId,idx);
   if(otherIdx===-1){
     // replace 経路: 候補が他ペアに属さない。再戦は既存 confirm に任せるため候補側では blocked にしない。
@@ -10755,6 +10763,14 @@ function bindChangePairingModalEvents(cls, idx){
     if(isWithdrawnPlayer(cls, X)){
       resetSelectsToOriginal();
       alert('この選手は棄権しています。\n棄権を取り消してから選び直してください。\n選択を元に戻しました。');
+      return;
+    }
+    // #836 Codex P1 (r3781236918): 棄権者を**卓に残したまま**相手だけ差し替える操作も止める。
+    //   keepPlayer = この変更で卓に残る側。ここが棄権者なら、変更後の卓は「棄権者 × 現役」になる。
+    //   許すのは棄権者自身の役を置き換える操作だけ（そのとき keepPlayer は現役）。
+    if(isWithdrawnPlayer(cls, keepPlayer)){
+      resetSelectsToOriginal();
+      alert('この対局には棄権した選手が残ります。\n先に棄権した選手のほうを入れ替えてください。\n選択を元に戻しました。');
       return;
     }
 
