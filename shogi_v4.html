@@ -1483,6 +1483,18 @@ function getDuplicatePlayersInPairings(cls){
   return dups;
 }
 
+// WITHDRAWN-CHANGE-PAIRING-001 (#836): 指定 id が棄権しているか。
+//   純関数寄り（state.players だけを読む・DOM もネットワークも触らない）。
+//   名簿に無い id・players が壊れている場合は false（＝従来どおり扱う。ここで新しい blocked を作らない）。
+function isWithdrawnPlayer(cls,playerId){
+  var list=state&&state.players&&state.players[cls];
+  if(Object.prototype.toString.call(list)!=='[object Array]')return false;
+  for(var i=0;i<list.length;i++){
+    if(list[i]&&list[i].id===playerId)return !!list[i].withdrawn;
+  }
+  return false;
+}
+
 // PAIRING-UX-MANUAL-CHANGE-CANDIDATE-FILTER-IMPL-LIGHT (PR #108 §9.1):
 //   手動変更モーダルの select 候補を「選択可能 / 選択不可」に事前分類する。
 //   事後判定（bindChangePairingModalEvents）と同じ helper（pairHasRematch /
@@ -1503,6 +1515,19 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
   if(candidateId===otherInRole){
     // 反対側の現在値を同じ役にぶつけると保存時の「同じ選手」/「2 人同時入替」alert に至る。
     return {status:'blocked',reasonId:'R-self',reasonLabel:'同じ選手'};
+  }
+  // WITHDRAWN-CHANGE-PAIRING-001 (#836): 棄権者は選べない。
+  //   ★ generatePairing は withdrawn を除外しているのに、このモーダルは
+  //     state.players[cls] をそのまま候補にしていた（実測: 4/4 の select で「選択可能」に出て、
+  //     選ぶと確認も出ずに卓へ入り localStorage まで保存された）。
+  //   ★ 候補から「消す」のではなく blocked にする理由（production で実測した事故）:
+  //     toggleWithdrawn は state.pairings から外さないので「棄権者が卓に入ったまま」は普通に起きる。
+  //     その状態で option を消すと select の現在値が先頭候補へすり替わり、
+  //     モーダルを開いただけで保存すると別人に差し替わる。
+  //   ★ 自分の役に入っている本人は上の「候補=その役の現在値」で先に ok を返すため、ここには来ない
+  //     ＝現在値は消えない。
+  if(isWithdrawnPlayer(cls,candidateId)){
+    return {status:'blocked',reasonId:'R-withdrawn',reasonLabel:'棄権'};
   }
   var otherIdx=findPairContainingPlayer(cls,candidateId,idx);
   if(otherIdx===-1){
@@ -10720,6 +10745,16 @@ function bindChangePairingModalEvents(cls, idx){
     else {
       resetSelectsToOriginal();
       alert('この変更では、2人を同時に入れ替える必要があります。\n現在は1人ずつの変更に対応しています。\n選択を元に戻しました。もう一度、変更したい選手を1人だけ選んでください。');
+      return;
+    }
+
+    // WITHDRAWN-CHANGE-PAIRING-001 (#836): 新しく卓に入れようとする選手（X）が棄権していたら止める。
+    //   候補 select では選べなくなっているが、**境界でも弾く**（#869 / #864 で学んだ形）。
+    //   古い state・外部入力・将来の UI 変更で到達し得るため、UI だけに頼らない。
+    //   ここで見るのは X（新規に入る側）だけ＝すでに卓に入っている棄権者を動かす操作は妨げない。
+    if(isWithdrawnPlayer(cls, X)){
+      resetSelectsToOriginal();
+      alert('この選手は棄権しています。\n棄権を取り消してから選び直してください。\n選択を元に戻しました。');
       return;
     }
 
