@@ -10810,7 +10810,7 @@ function bindChangePairingModalEvents(cls, idx){
     else if(newP2===oldP2 && newP1!==oldP1){ keepPlayer=oldP2; X=newP1; }
     else {
       resetSelectsToOriginal();
-      showChangePairingError('この変更では、2人を同時に入れ替える必要があります。\n現在は1人ずつの変更に対応しています。\n選択を元に戻しました。もう一度、変更したい選手を1人だけ選んでください。');
+      showChangePairingError('この変更では、2人を同時に入れ替える必要があります。\n現在は1人ずつの変更に対応しています。\n選択を元に戻しました。もう一度、変更したい参加者を1人だけ選んでください。');
       return;
     }
 
@@ -10908,7 +10908,7 @@ function bindChangePairingModalEvents(cls, idx){
 
       if(pairHasRematch(cls, keepPlayer, X) || pairHasRematch(cls, droppedFromTarget, Y)){
         resetSelectsToOriginal();
-        showChangePairingError('この変更を行うと、再戦になる組み合わせが発生します。\n選択を元に戻しました。別の選手を選び直してください。');
+        showChangePairingError('この変更を行うと、再戦になる組み合わせが発生します。\n選択を元に戻しました。別の参加者を選び直してください。');
         return;
       }
 

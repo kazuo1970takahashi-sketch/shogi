@@ -83,7 +83,10 @@ anditem(){ case "$1" in
   P8a) grep -qE "function showChangePairingError" "$2";;
   P8b) grep -qE "function clearChangePairingError" "$2";;
 esac; }
-# ③ 変異 → 赤になるべき pin（"-" は「pin ではなく動的基準が担当」）
+# 動的検査が担当する変異（静的 pin では殺せない）。実証は下記スクリプト。
+DYN_OWNED="M1 M2 M2b M4 M5 M8 N4 X6 R1 R2 R3 R4 R5 R6 R7 R8 R9"
+MUTCHK="test/tools/chg_inline_error_881_mutation_check.sh"
+# ③ 変異 → 赤になるべき pin（"-" は「pin ではなく動的検査が担当」）
 mut_expect(){ case "$1" in
   X1)  echo P1;;   X2)  echo P2;;   X3)  echo P3;;  X3r) echo P3;;
   X4)  echo P4;;   X4h) echo P4;;   X5)  echo P1;;  X7)  echo P5;;
@@ -146,7 +149,17 @@ if [ -n "$MUT_DIR" ] && [ -d "$MUT_DIR" ]; then
     found=$((found+1))
     name="$(basename "$f" .html)"; name="${name#mut_}"
     want="$(mut_expect "$name")"
-    if [ "$want" = "-" ]; then ok "$name  pin 対象外（動的基準が担当）"; continue; fi
+    # ★ Codex P2 (r3790501526): 動的担当を「無条件 PASS」にしない。
+    #   ここでは判定せず（＝件数に数えず）、動的検査が本当に殺せることは
+    #   test/tools/chg_inline_error_881_mutation_check.sh が実 e2e で確かめる。
+    #   ただし「どちらの担当でもない変異」は取りこぼしなので FAIL にする。
+    if [ "$want" = "-" ]; then
+      hit=0
+      for k in $DYN_OWNED; do [ "$k" = "$name" ] && hit=1; done
+      if [ "$hit" -eq 1 ]; then echo "  --   $name  動的担当（$MUTCHK で実証）"
+      else ng "$name  担当が無い（静的 pin にも動的検査にも入っていない）"; fi
+      continue
+    fi
     if $want "$f"; then ng "$name  $want が緑のまま ＝ この変異を殺せていない"; else ok "$name → $want 赤"; fi
   done
   [ "$found" -eq 0 ] && ng "変異ファイルが1つも無い（MUT_DIR=$MUT_DIR）"

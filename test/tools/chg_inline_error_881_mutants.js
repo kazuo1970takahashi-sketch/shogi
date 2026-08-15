@@ -75,5 +75,32 @@ tweak('X6', "+'<h3 style=\"margin-bottom:12px;font-size:16px;color:#1F3864\">対
             "+'<h3 style=\"margin-bottom:12px;font-size:16px;color:#1F3864\">対戦相手の変更</h3>'\n"
             + "    +'" + SLOT + HEAD + '<span class="chg-err-body"></span></div>\'\n');
 
+
+// --- ★ Codex P2 (r3790501526): 9件の `return` を1つずつ落とす変異 -------------
+//   「警告を出したまま処理が続行する」を殺せるのは動的検査だけ（appConfirm が非同期なので
+//   state と modal の不変では殺せない）。R1〜R9 は e2e が赤になることで実証する。
+const MSGS = [
+  ['R1', "同じ参加者を先手・後手の両方には選べません。"],
+  ['R2', "変更がありません。"],
+  ['R3', "この変更では、2人を同時に入れ替える必要があります。"],
+  ['R4', "この参加者は棄権しています。"],
+  ['R5', "この対局には棄権した参加者が残ります。"],
+  ['R6', "相手ペアが結果入力済みのため、入れ替えできません。"],
+  ['R7', "この入れ替えでは、棄権した参加者が別の卓に移るだけです。"],
+  ['R8', "入れ替え先の卓に棄権した参加者がいます。"],
+  ['R9', "この変更を行うと、再戦になる組み合わせが発生します。"]
+];
+MSGS.forEach(function (m) {
+  const name = m[0], head = m[1];
+  const i = base.indexOf("showChangePairingError('" + head);
+  if (i < 0) { console.error('!! ' + name + ' 呼び出しが見つからない'); bad++; return; }
+  // この呼び出しの直後にある最初の `return;` を落とす（同じ文字列が2回出ないことは上で担保）
+  const j = base.indexOf('return;', i);
+  if (j < 0 || j - i > 400) { console.error('!! ' + name + ' 直後の return; が見つからない'); bad++; return; }
+  fs.writeFileSync(path.join(outDir, 'mut_' + name + '.html'),
+    base.slice(0, j) + '/*R*/' + base.slice(j + 'return;'.length), 'utf8');
+  made++;
+});
+
 if (bad) { console.error('変異生成に失敗: ' + bad + ' 件'); process.exit(1); }
 console.log('変異 ' + made + ' 本を生成: ' + outDir);
