@@ -33,6 +33,12 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
   const alerts = [];
   page.on('pageerror', e => pageErrors.push(String(e && e.message || e)));
   page.on('dialog', d => { alerts.push(d.message()); d.accept().catch(() => {}); });
+  // CHG-MODAL-INLINE-ERROR-001 (#881): 入力エラーは native alert から画面内スロット（#chg-err）へ移った。
+  //   判定の意図は変えない（「棄権だと分かる文言が出る」→ 出る先が変わっただけ）。
+  const errText = () => page.evaluate(() => {
+    const b = document.querySelector('#chg-err .chg-err-body');
+    return b ? b.textContent : '';
+  });
 
   await page.goto(TARGET, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof changePairing === 'function', null, { timeout: 15000 });
@@ -151,7 +157,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
   ok(JSON.stringify(afterSave.pairs) === JSON.stringify(beforeSave),
      '[W3-1] ★ 強制代入して保存しても棄権者は卓に入らない  [' + afterSave.pairs.join(', ') + ']');
   ok(JSON.stringify(afterSave.saved) === JSON.stringify(beforeSave), '[W3-2] localStorage も変わらない');
-  ok(alerts.some(a => /棄権/.test(a)), '[W3-3] 棄権だと分かる文言が出る  [' + (alerts[0] || '(なし)').replace(/\n/g, ' ').slice(0, 40) + ']');
+  const w3txt = await errText();
+  ok(/棄権/.test(w3txt) && alerts.length === 0,
+     '[W3-3] 棄権だと分かる文言が画面内に出る（alert は出さない）  [' + (w3txt || '(なし)').replace(/\n/g, ' ').slice(0, 40) + ' / alert=' + alerts.length + ']');
   ok(afterSave.selectValue === 'p1', '[W3-4] 選択が元に戻る（失敗した選択が残らない）  [' + afterSave.selectValue + ']');
   ok(!afterSave.appModal, '[W3-5] 確認モーダルまで進まない（1バイトも書く前に止まる）');
   await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} });
@@ -239,8 +247,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
   ok(JSON.stringify(afterStay.pairs) === JSON.stringify(beforeStay) &&
      JSON.stringify(afterStay.saved) === JSON.stringify(beforeStay),
      '[W6-2] ★ 強制代入して保存しても「棄権者 × 現役」の卓は作れない  [' + afterStay.pairs.join(', ') + ']');
-  ok(alerts.some(a => /棄権した参加者が残ります/.test(a)),
-     '[W6-3] 何をすればよいか分かる文言が出る  [' + (alerts[0] || '(なし)').replace(/\n/g, ' ').slice(0, 34) + ']');
+  const w6txt = await errText();
+  ok(/棄権した参加者が残ります/.test(w6txt) && alerts.length === 0,
+     '[W6-3] 何をすればよいか分かる文言が画面内に出る  [' + (w6txt || '(なし)').replace(/\n/g, ' ').slice(0, 34) + ' / alert=' + alerts.length + ']');
   ok(!afterStay.appModal, '[W6-4] 確認モーダルまで進まない');
   // 対照: 棄権者自身の役を置き換える操作は通る（棄権者を卓から外す運用を妨げない）
   await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} });
@@ -293,7 +302,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
      JSON.stringify(afterSwap.saved) === JSON.stringify(beforeSwap),
      '[W7-2] ★ 強制代入して保存しても swap は起きない（棄権者が別卓へ移らない）  [' + afterSwap.pairs.join(', ') + ']');
   ok(afterSwap.棄権者の居場所.join(',') === '卓1', '[W7-3] 棄権者は元の卓のまま  [' + afterSwap.棄権者の居場所.join(',') + ']');
-  ok(alerts.some(a => /別の卓に移るだけ/.test(a)), '[W7-4] 何をすればよいか分かる文言  [' + (alerts[0] || '(なし)').replace(/\n/g, ' ').slice(0, 34) + ']');
+  const w7txt = await errText();
+  ok(/別の卓に移るだけ/.test(w7txt) && alerts.length === 0,
+     '[W7-4] 何をすればよいか分かる文言が画面内に出る  [' + (w7txt || '(なし)').replace(/\n/g, ' ').slice(0, 34) + ' / alert=' + alerts.length + ']');
   ok(!afterSwap.appModal, '[W7-5] 入れ替え確認モーダルまで進まない');
   await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} });
 
@@ -334,7 +345,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
      JSON.stringify(afterPartner.saved) === JSON.stringify(beforePartner),
      '[W8-2] ★ 強制代入して保存しても棄権者の対戦相手は入れ替わらない  [' + afterPartner.pairs.join(', ') + ']');
   ok(!afterPartner.appModal, '[W8-3] 入れ替え確認モーダルまで進まない（途中で止まっているのではなく弾いている）');
-  ok(alerts.some(a => /入れ替え先の卓に棄権した参加者/.test(a)), '[W8-4] 何をすればよいか分かる文言  [' + (alerts[0] || '(なし)').replace(/\n/g, ' ').slice(0, 30) + ']');
+  const w8txt = await errText();
+  ok(/入れ替え先の卓に棄権した参加者/.test(w8txt) && alerts.length === 0,
+     '[W8-4] 何をすればよいか分かる文言が画面内に出る  [' + (w8txt || '(なし)').replace(/\n/g, ' ').slice(0, 30) + ' / alert=' + alerts.length + ']');
   await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} });
 
   // ---------------------------------------------------------------- W9 両方棄権した卓を段階的に直せる
@@ -398,11 +411,15 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
   alerts.length = 0;
   await page.evaluate(() => { document.getElementById('chg-p1').value = 'p3'; document.getElementById('chg-save').click(); });
   await page.waitForTimeout(350);
-  const blockedBy = alerts.length ? alerts[0] : null;
+  // ★ この fixture が踏むのは 10845『相手ペアが結果入力済みのため、入れ替えできません。』（#881 で画面内へ）
+  const blockedBy = await errText();
   ok(shown === 'R-winner-locked', '[W10-1] 候補に出る理由は「結果入力済」  [' + shown + ']');
-  ok(!!blockedBy && /結果入力済/.test(blockedBy),
-     '[W10-2] ★ 保存側も同じ理由で止める（表示と実際の阻止理由が一致）  [' + (blockedBy || '(なし)').replace(/\n/g, ' ').slice(0, 30) + ']');
+  ok(!!blockedBy && /結果入力済/.test(blockedBy) && alerts.length === 0,
+     '[W10-2] ★ 保存側も同じ理由で画面内に止める  [' + (blockedBy || '(なし)').replace(/\n/g, ' ').slice(0, 30) + ' / alert=' + alerts.length + ']');
   await page.evaluate(() => { try { closeChangePairingModal(); } catch (e) {} });
+
+  // CHG-MODAL-INLINE-ERROR-001 (#881): このスイートが踏む入力エラーはすべて画面内表示へ移った
+  ok(alerts.length === 0, '[W11] ★ スイート全体で native alert が1件も出ない  [' + JSON.stringify(alerts.slice(0, 2)) + ']');
 
   ok(pageErrors.length === 0, '未捕捉例外なし  ' + (pageErrors.length ? '[' + pageErrors[0] + ']' : ''));
 

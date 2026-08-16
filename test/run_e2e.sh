@@ -89,6 +89,33 @@ for f in $SUITES; do
   echo
 done
 
+# ★ CHG-MODAL-INLINE-ERROR-001 (#881) / Codex P2 (r3790541881):
+#   変異チェッカーを「手動実行用」に置くだけだと、17本の動的変異が生き残っても
+#   必須チェックは緑のままになる。ここ（必須の E2E 経路）から呼ぶ。
+#   ★ 対象を明示された実行（TARGET 指定）では回さない — 変異は repo の
+#     shogi_v4.html を前提に作られるため。
+#   ★ Codex P2 (r3790588017): `[ -f ]` で任意扱いにすると、改名・削除で**静かに省略**され
+#     通常 E2E だけで緑になる。**既定実行でチェッカーが無ければ失敗**させる。
+#     TARGET 指定による意図的な除外とは分ける。
+MUTCHK="$SCRIPT_DIR/tools/chg_inline_error_881_mutation_check.sh"
+if [ -z "$TARGET" ]; then
+  echo "------------------------------------------"
+  echo "【動的変異チェック（#881）】"
+  COUNT=$((COUNT+1))
+  if [ ! -f "$MUTCHK" ]; then
+    echo "$MUTCHK が無い（改名・削除された？）。任意扱いにはしない。" >&2
+    FAILED="$FAILED chg_inline_error_881_mutation_check.sh(missing)"
+  elif bash "$MUTCHK"; then
+    OKC=$((OKC+1))
+  else
+    FAILED="$FAILED chg_inline_error_881_mutation_check.sh"
+  fi
+  echo
+else
+  echo "（TARGET 指定のため #881 動的変異チェックは回さない: 変異は repo の shogi_v4.html が前提）"
+  echo
+fi
+
 echo "=========================================="
 if [ -n "$FAILED" ]; then
   echo "  E2E 結果: ${OKC}/${COUNT} スイート PASS"

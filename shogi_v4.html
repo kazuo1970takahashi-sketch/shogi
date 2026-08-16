@@ -65,6 +65,13 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .alert-err{background:#fcebeb;color:#A32D2D;border:1px solid #f09595}
 .alert-ok{background:#eaf3de;color:#27500A;border:1px solid #97c459}
 .alert-warn{background:#faeeda;color:#633806;border:1px solid #EF9F27}
+/* CHG-MODAL-INLINE-ERROR-001 (#881): N5=操作を止めた理由の提示（STYLE-GUIDE v1.2 §3）。danger の面色（§1）。 */
+.chg-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:13px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}
+.chg-err[hidden]{display:none}
+.chg-err-head{display:block;margin-bottom:2px}
+.chg-err-body{white-space:pre-line}
+/* SCALE-MODAL-001 (#767) に揃える。★エラー表示中だけ＝出していないときは v140 と1pxも変えない。 */
+[data-chg-card="1"][data-chg-err="1"]{max-height:85vh;overflow-y:auto}
 .save-warn-pill{flex:0 0 auto;align-self:center;padding:4px 10px;border-radius:12px;background:#faeeda;color:#633806;border:1px solid #EF9F27;font-size:12px;font-weight:500}
 .auth-status-bar{align-items:center;gap:8px;flex-wrap:wrap;background:#f4f6f9;border-bottom:1px solid #d3dbe5;color:#555;padding:4px 14px;font-size:12px}
 .auth-chip-in{color:#27500A;font-weight:600}
@@ -10642,7 +10649,7 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
     ?'padding:8px 16px;border-radius:8px;border:none;background:#1F3864;color:#fff;font-size:14px;cursor:pointer'
     :'padding:8px 16px;border-radius:8px;border:none;background:#bbb;color:#fff;font-size:14px;cursor:not-allowed';
   return '<div style="background:rgba(0,0,0,0.5);position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;display:flex;align-items:center;justify-content:center;" id="chg-modal">'
-    +'<div style="background:#fff;border-radius:12px;padding:24px;width:320px;">'
+    +'<div data-chg-card="1" style="background:#fff;border-radius:12px;padding:24px;width:320px;">'
     +'<h3 style="margin-bottom:12px;font-size:16px;color:#1F3864">対戦相手の変更</h3>'
     +'<div data-chg-current="1" style="margin-bottom:16px;padding:8px 10px;background:#f5f7fa;border-radius:6px;font-size:13px;color:#333">'
     +'<div style="font-size:11px;color:#888;margin-bottom:4px">現在の対局</div>'
@@ -10655,6 +10662,8 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
     +'<select id="chg-p1" style="width:100%;min-height:44px;border:1px solid #ccc;border-radius:8px;font-size:16px">'+sel1.html+'</select></div>'
     +'<div style="margin-bottom:20px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">後手</label>'
     +'<select id="chg-p2" style="width:100%;min-height:44px;border:1px solid #ccc;border-radius:8px;font-size:16px">'+sel2.html+'</select></div>'
+    // CHG-MODAL-INLINE-ERROR-001 (#881): 押した結果の返事はボタンの隣に出す（STYLE-GUIDE v1.2 §3.2）
+    +'<div id="chg-err" class="chg-err" role="alert" aria-live="assertive" hidden><strong class="chg-err-head">⚠ 変更を保存しませんでした</strong><span class="chg-err-body"></span></div>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end">'
     // CHG-MODAL-FOCUS-TRAP-001 (#837): 閉じ口を closeChangePairingModal に一本化（inert / keydown / フォーカス戻しを取りこぼさない）
     +'<button onclick="closeChangePairingModal()" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
@@ -10744,7 +10753,39 @@ function closeChangePairingModal(){
   try{ if(back&&document.body&&document.body.contains(back)&&back.focus)back.focus(); }catch(e){}
 }
 
+// CHG-MODAL-INLINE-ERROR-001 (#881): 入力エラーを native alert から画面内スロットへ。
+//   STYLE-GUIDE v1.2 §3 N5（操作を止めた理由の提示）。文言は変えず出し方だけを変える。
+//   ★ 器が無ければ従来どおり alert に落とす（表示先を失って黙って続行するのが最悪）。
+function showChangePairingError(text){
+  var el=document.getElementById('chg-err');
+  if(!el){ alert(text); return; }
+  var body=el.querySelector('.chg-err-body');
+  if(!body){ alert(text); return; }
+  body.textContent=text;
+  el.hidden=false;
+  var card=document.querySelector('[data-chg-card="1"]');
+  if(card){
+    card.setAttribute('data-chg-err','1');
+    // ★ 送り先は「警告」ではなく「ボタン行」。警告に送るとカード下端に着地して保存ボタンが折り返しの下に落ちる（実測）。
+    try{ card.lastElementChild.scrollIntoView({block:'nearest'}); }catch(e){}
+  }
+}
+function clearChangePairingError(){
+  var el=document.getElementById('chg-err');
+  if(!el)return;
+  var body=el.querySelector('.chg-err-body');
+  if(body)body.textContent='';
+  el.hidden=true;
+  var card=document.querySelector('[data-chg-card="1"]');
+  if(card)card.removeAttribute('data-chg-err');
+}
+
 function bindChangePairingModalEvents(cls, idx){
+  // 選び直したら前のエラーは消す（先手・後手の両方）
+  var _chgSel1=document.getElementById('chg-p1');
+  if(_chgSel1)_chgSel1.addEventListener('change',function(){ clearChangePairingError(); });
+  var _chgSel2=document.getElementById('chg-p2');
+  if(_chgSel2)_chgSel2.addEventListener('change',function(){ clearChangePairingError(); });
   document.getElementById('chg-save').addEventListener('click',function(){
     var newP1=document.getElementById('chg-p1').value;
     var newP2=document.getElementById('chg-p2').value;
@@ -10761,15 +10802,15 @@ function bindChangePairingModalEvents(cls, idx){
       if(s2)s2.value=oldP2;
     }
 
-    if(newP1===newP2){alert('同じ選手を先手・後手両方に選べません');return;}
-    if(newP1===oldP1 && newP2===oldP2){alert('変更がありません');return;}
+    if(newP1===newP2){showChangePairingError('同じ参加者を先手・後手の両方には選べません。\nどちらか一方を別の参加者に選び直してください。');return;}
+    if(newP1===oldP1 && newP2===oldP2){showChangePairingError('変更がありません。\n先手か後手を選び直してください。');return;}
 
     var keepPlayer, X;
     if(newP1===oldP1 && newP2!==oldP2){ keepPlayer=oldP1; X=newP2; }
     else if(newP2===oldP2 && newP1!==oldP1){ keepPlayer=oldP2; X=newP1; }
     else {
       resetSelectsToOriginal();
-      alert('この変更では、2人を同時に入れ替える必要があります。\n現在は1人ずつの変更に対応しています。\n選択を元に戻しました。もう一度、変更したい選手を1人だけ選んでください。');
+      showChangePairingError('この変更では、2人を同時に入れ替える必要があります。\n現在は1人ずつの変更に対応しています。\n選択を元に戻しました。もう一度、変更したい参加者を1人だけ選んでください。');
       return;
     }
 
@@ -10779,7 +10820,7 @@ function bindChangePairingModalEvents(cls, idx){
     //   ここで見るのは X（新規に入る側）だけ＝すでに卓に入っている棄権者を動かす操作は妨げない。
     if(isWithdrawnPlayer(cls, X)){
       resetSelectsToOriginal();
-      alert('この参加者は棄権しています。\n棄権を取り消してから選び直してください。\n選択を元に戻しました。');
+      showChangePairingError('この参加者は棄権しています。\n棄権を取り消してから選び直してください。\n選択を元に戻しました。');
       return;
     }
     // #836 Codex P1 (r3781236918): 棄権者を**卓に残したまま**相手だけ差し替える操作も止める。
@@ -10789,7 +10830,7 @@ function bindChangePairingModalEvents(cls, idx){
     var _dropped=(keepPlayer===oldP1)?oldP2:oldP1;
     if(isWithdrawnPlayer(cls, keepPlayer) && !isWithdrawnPlayer(cls, _dropped)){
       resetSelectsToOriginal();
-      alert('この対局には棄権した参加者が残ります。\n先に棄権した参加者のほうを入れ替えてください。\n選択を元に戻しました。');
+      showChangePairingError('この対局には棄権した参加者が残ります。\n先に棄権した参加者のほうを入れ替えてください。\n選択を元に戻しました。');
       return;
     }
 
@@ -10842,7 +10883,7 @@ function bindChangePairingModalEvents(cls, idx){
     } else {
       var otherPair=state.pairings[cls][otherIdx];
       if(otherPair.winner){
-        alert('相手ペアが結果入力済みのため、入れ替えできません');
+        showChangePairingError('相手ペアが結果入力済みのため、入れ替えできません。\n結果が入っていない別の対局の参加者を選んでください。');
         return;
       }
       var Y=(otherPair.p1===X)?otherPair.p2:otherPair.p1;
@@ -10854,20 +10895,20 @@ function bindChangePairingModalEvents(cls, idx){
       //     候補には「結果入力済」と出るのに保存側は「棄権者が別の卓に移る」で止めていた。
       if(isWithdrawnPlayer(cls, droppedFromTarget)){
         resetSelectsToOriginal();
-        alert('この入れ替えでは、棄権した参加者が別の卓に移るだけです。\n対局に入っていない参加者と入れ替えてください。\n選択を元に戻しました。');
+        showChangePairingError('この入れ替えでは、棄権した参加者が別の卓に移るだけです。\n対局に入っていない参加者と入れ替えてください。\n選択を元に戻しました。');
         return;
       }
 
       // #836 Codex 3巡目 P1 (r3781349770): 相手卓に棄権者が残る swap も止める。
       if(isWithdrawnPlayer(cls, Y)){
         resetSelectsToOriginal();
-        alert('入れ替え先の卓に棄権した参加者がいます。\nその卓を先に直してください。\n選択を元に戻しました。');
+        showChangePairingError('入れ替え先の卓に棄権した参加者がいます。\nその卓を先に直してください。\n選択を元に戻しました。');
         return;
       }
 
       if(pairHasRematch(cls, keepPlayer, X) || pairHasRematch(cls, droppedFromTarget, Y)){
         resetSelectsToOriginal();
-        alert('この変更を行うと、再戦になる組み合わせが発生します。\n選択を元に戻しました。別の選手を選び直してください。');
+        showChangePairingError('この変更を行うと、再戦になる組み合わせが発生します。\n選択を元に戻しました。別の参加者を選び直してください。');
         return;
       }
 
