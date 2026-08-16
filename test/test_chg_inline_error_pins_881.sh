@@ -164,7 +164,7 @@ if [ -n "$MUT_DIR" ] && [ -d "$MUT_DIR" ]; then
     fi
     if $want "$f"; then ng "$name  $want が緑のまま ＝ この変異を殺せていない"; else ok "$name → $want 赤"; fi
   done
-  [ "$found" -eq 0 ] && ng "変異ファイルが1つも無い（MUT_DIR=$MUT_DIR）"
+  [ "$found" -eq 0 ] && ng "変異ファイルが1つも無い（MUT_DIR=${MUT_DIR}）"
   # ★ Codex P2 (r3790588019): 生成物だけを列挙すると「期待した変異が消えた」を検出できない
   #   （実測: mut_X1.html を消しても FAIL=0 で通った）。**期待する全集合の存在**を見る。
   for k in $STATIC_OWNED $DYN_OWNED; do

@@ -387,7 +387,7 @@ _merge_line=$(grep -n 'gh pr merge' "$WF_EFF" | head -1 | cut -d: -f1)
 if [ -n "$_recheck_line" ] && [ -n "$_merge_line" ] && [ "$_recheck_line" -lt "$_merge_line" ]; then
   ok "P1-5: 再検証は merge コマンドより前に置かれている"
 else
-  ng "P1-5: 再検証の位置が merge より後（recheck=$_recheck_line merge=$_merge_line）"
+  ng "P1-5: 再検証の位置が merge より後（recheck=$_recheck_line merge=${_merge_line}）"
 fi
 
 # P2-7 / P2-8

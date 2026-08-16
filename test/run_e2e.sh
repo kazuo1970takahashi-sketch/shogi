@@ -14,9 +14,18 @@
 #   ★「走っているつもりで走っていない」を繰り返さないため、対象が 0 件なら**失敗**にする。
 #     緑と「何も検査していない」を区別できない状態を作らない。
 #
+# 並列実行 [E2E-PARALLEL-001]:
+#   スイートと変異チェッカーを既定4並列で走らせる（E2E_JOBS で変更・E2E_JOBS=1 で従来の直列）。
+#   - 並列で安全な根拠: 全スイートはポート/サーバを使わず（grep で実測0件・各自が
+#     browser を起動して file/URL を開くだけ）、変異チェッカーは mktemp -d の専用
+#     ディレクトリに生成する＝ジョブ間の共有資源が無い。
+#   - 各ジョブの出力はジョブ別ログに貯め、**終了後に起動した順序どおり**まとめて表示する
+#     （交互に混ざった出力を出さない。各見出しに実測秒数を添える）。
+#
 # 使い方:
 #   bash test/run_e2e.sh                 # 既定は同じリポジトリの shogi_v4.html
 #   bash test/run_e2e.sh <html-or-url>   # 対象を明示（各スイートの第1引数へ渡す）
+#   E2E_JOBS=1 bash test/run_e2e.sh      # 直列（従来どおり）
 #
 # 終了コード: 0=全スイート PASS / 1=1つでも失敗 / 2=対象0件・環境不備
 # 依存: bash 3.2+（macOS 既定）/ node / playwright。network 不使用。
@@ -24,9 +33,20 @@
 
 set -uo pipefail
 
+# ★ cloud/CI の POSIX locale では Ruby 等が US-ASCII 扱いになり偽 FAIL する（2026-08-16 実測）。
+#   UTF-8 でない時だけ上書きする（作者機 macOS の UTF-8 環境には触らない）。
+case "$(locale charmap 2>/dev/null)" in
+  UTF-8) : ;;
+  *) export LC_ALL=C.UTF-8 LANG=C.UTF-8 ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 E2E_DIR="$SCRIPT_DIR/e2e"
 TARGET="${1:-}"
+
+JOBS="${E2E_JOBS:-4}"
+case "$JOBS" in ''|*[!0-9]*) JOBS=4 ;; esac
+[ "$JOBS" -lt 1 ] && JOBS=1
 
 if ! command -v node >/dev/null 2>&1; then
   echo "node が無い → E2E を実行できない" >&2
@@ -38,7 +58,7 @@ if [ ! -d "$E2E_DIR" ]; then
 fi
 
 echo "=========================================="
-echo "  E2E（実ブラウザ）"
+echo "  E2E（実ブラウザ・${JOBS}並列）"
 echo "=========================================="
 
 SUITES=""
@@ -69,25 +89,38 @@ if ! node -e "require('playwright')" >/dev/null 2>&1; then
   exit 2
 fi
 
+LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/e2erun.XXXXXX")"
+trap 'rm -rf "$LOGDIR"' EXIT
+
+# 空きスロットが出るまで待つ（bash 3.2 には wait -n が無いためポーリングで代用）
+throttle() {
+  while [ "$(jobs -rp | wc -l | tr -d ' ')" -ge "$JOBS" ]; do sleep 0.2; done
+}
+
+# launch <表示名> <コマンド...> — 背景で実行し、出力と終了コード・秒数をジョブ別ファイルへ
+IDX=0
+ORDER=""
+launch() {
+  _name="$1"; shift
+  _idx="$IDX"; IDX=$((IDX+1))
+  ORDER="$ORDER $_idx"
+  echo "$_name" > "$LOGDIR/$_idx.name"
+  throttle
+  (
+    _s="$(date +%s)"
+    "$@" > "$LOGDIR/$_idx.log" 2>&1
+    _rc=$?
+    _e="$(date +%s)"
+    echo "$_rc $((_e - _s))" > "$LOGDIR/$_idx.rc"
+  ) &
+}
+
+for f in $SUITES; do
+  launch "$(basename "$f")" node "$f" ${TARGET:+"$TARGET"}
+done
+
 FAILED=""
 OKC=0
-for f in $SUITES; do
-  name="$(basename "$f")"
-  echo "------------------------------------------"
-  echo "【$name】"
-  if [ -n "$TARGET" ]; then
-    node "$f" "$TARGET"
-  else
-    node "$f"
-  fi
-  rc=$?
-  if [ $rc -eq 0 ]; then
-    OKC=$((OKC+1))
-  else
-    FAILED="$FAILED $name(exit=$rc)"
-  fi
-  echo
-done
 
 # ★ CHG-MODAL-INLINE-ERROR-001 (#881) / Codex P2 (r3790541881):
 #   変異チェッカーを「手動実行用」に置くだけだと、17本の動的変異が生き残っても
@@ -99,43 +132,50 @@ done
 #     TARGET 指定による意図的な除外とは分ける。
 MUTCHK="$SCRIPT_DIR/tools/chg_inline_error_881_mutation_check.sh"
 if [ -z "$TARGET" ]; then
-  echo "------------------------------------------"
-  echo "【動的変異チェック（#881）】"
   COUNT=$((COUNT+1))
   if [ ! -f "$MUTCHK" ]; then
     echo "$MUTCHK が無い（改名・削除された？）。任意扱いにはしない。" >&2
     FAILED="$FAILED chg_inline_error_881_mutation_check.sh(missing)"
-  elif bash "$MUTCHK"; then
-    OKC=$((OKC+1))
   else
-    FAILED="$FAILED chg_inline_error_881_mutation_check.sh"
+    launch "動的変異チェック（#881）" bash "$MUTCHK"
   fi
-  echo
-else
-  echo "（TARGET 指定のため #881 動的変異チェックは回さない: 変異は repo の shogi_v4.html が前提）"
-  echo
 fi
 
 # BULK-EDIT-INLINE-ERROR-001 (#887): 同型の動的変異チェック。
 #   #881 と同じ規律（既定実行で欠落なら FAIL・TARGET 指定時は変異の前提が崩れるので回さない）。
 MUTCHK887="$SCRIPT_DIR/tools/bulk_inline_error_887_mutation_check.sh"
 if [ -z "$TARGET" ]; then
-  echo "------------------------------------------"
-  echo "【動的変異チェック（#887）】"
   COUNT=$((COUNT+1))
   if [ ! -f "$MUTCHK887" ]; then
     echo "$MUTCHK887 が無い（改名・削除された？）。任意扱いにはしない。" >&2
     FAILED="$FAILED bulk_inline_error_887_mutation_check.sh(missing)"
-  elif bash "$MUTCHK887"; then
-    OKC=$((OKC+1))
   else
-    FAILED="$FAILED bulk_inline_error_887_mutation_check.sh"
+    launch "動的変異チェック（#887）" bash "$MUTCHK887"
   fi
-  echo
 else
-  echo "（TARGET 指定のため #887 動的変異チェックは回さない: 変異は repo の shogi_v4.html が前提）"
+  echo "（TARGET 指定のため #881 / #887 動的変異チェックは回さない: 変異は repo の shogi_v4.html が前提）"
   echo
 fi
+
+wait
+
+# 全ジョブの出力を、起動した順に表示（並列でも読み順は従来どおり）
+for idx in $ORDER; do
+  name="$(cat "$LOGDIR/$idx.name" 2>/dev/null || echo "job-$idx")"
+  rc=1; secs="?"
+  if [ -f "$LOGDIR/$idx.rc" ]; then
+    read -r rc secs < "$LOGDIR/$idx.rc"
+  fi
+  echo "------------------------------------------"
+  echo "【${name}】(${secs}秒)"
+  cat "$LOGDIR/$idx.log" 2>/dev/null
+  if [ "$rc" -eq 0 ]; then
+    OKC=$((OKC+1))
+  else
+    FAILED="$FAILED ${name}(exit=$rc)"
+  fi
+  echo
+done
 
 echo "=========================================="
 if [ -n "$FAILED" ]; then

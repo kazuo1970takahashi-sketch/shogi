@@ -4,6 +4,14 @@
 # 例: bash test/run_tests.sh shogi_v4.html archive/shogi_stage1_before.html
 
 # set -e は使わない(grep が空ヒットで非ゼロを返すため、各テストで判定する)
+
+# ★ cloud/CI の POSIX locale では Ruby 等が US-ASCII 扱いになり偽 FAIL する（2026-08-16 実測:
+#   test_supabase_keepalive_workflow.sh が「invalid multibyte char」で赤）。UTF-8 でない時だけ
+#   上書きする（作者機 macOS の UTF-8 環境には触らない）。
+case "$(locale charmap 2>/dev/null)" in
+  UTF-8) : ;;
+  *) export LC_ALL=C.UTF-8 LANG=C.UTF-8 ;;
+esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="${1:-shogi_v4.html}"
 COMPARE="${2:-}"
@@ -438,4 +446,4 @@ echo ""
 echo "=========================================="
 echo "  結果: PASS=$PASS, FAIL=$FAIL, WARN=$WARN"
 echo "=========================================="
-[ $FAIL -eq 0 ] && echo "  ✓ 全テスト合格(警告: $WARN件)" && exit 0 || echo "  ✗ 失敗あり(要対応)" && exit 1
+[ $FAIL -eq 0 ] && echo "  ✓ 全テスト合格(警告: ${WARN}件)" && exit 0 || echo "  ✗ 失敗あり(要対応)" && exit 1
