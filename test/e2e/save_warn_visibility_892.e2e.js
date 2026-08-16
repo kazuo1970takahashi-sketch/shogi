@@ -68,7 +68,7 @@ const toastState = `(function(){
       return {msgTop:+r.top.toFixed(0),cls:t.className,text:t.textContent};
     })()`);
     ok(g.msgTop < 0, '[V0] 前提: warn の表示先 #reg-msg が視界外（top=' + g.msgTop + '）');
-    ok(g.cls === 'app-toast show err' && /保存が確認できませんでした/.test(g.text),
+    ok(g.cls === 'app-toast show warn' && /保存が確認できませんでした/.test(g.text),
       '[V1] ★視界外なら err トーストで同文が出る: cls=' + g.cls);
     await page.waitForTimeout(3300);
     const gone = await page.evaluate(toastState);
@@ -99,7 +99,7 @@ const toastState = `(function(){
     await page.evaluate(() => notifySaveWarning({ message: 'V3の保存が確認できませんでした', consoleTag: '[E2E-V3]', callsiteId: 'e2e-v3', kind: 'save-verify', aggregateKey: 'e2e-v3', severity: 'warn' }));
     await page.waitForTimeout(250);
     const g = await page.evaluate(toastState);
-    ok(g.cls === 'app-toast show err' && /保存が確認できませんでした/.test(g.text),
+    ok(g.cls === 'app-toast show warn' && /保存が確認できませんでした/.test(g.text),
       '[V3] 別タブ（#reg-msg 0×0）でもトーストが出る: cls=' + g.cls);
     await page.close();
   }
@@ -122,7 +122,7 @@ const toastState = `(function(){
     await page.evaluate(() => { confirmBulkEntry(); });
     await page.waitForTimeout(300);
     const g = await page.evaluate(toastState);
-    ok(g.cls === 'app-toast show err' && /保存が確認できませんでした/.test(g.text) && /（スキップ/.test(g.text),
+    ok(g.cls === 'app-toast show warn' && /保存が確認できませんでした/.test(g.text) && /（スキップ/.test(g.text),
       '[V4] ★一括登録の保存未確認: warn が最終表示＋スキップ内訳を含む: text=' + (g.text || '').slice(0, 48));
     await page.close();
   }
@@ -146,7 +146,7 @@ const toastState = `(function(){
       var t=document.getElementById('app-toast');
       return {top:+r.top.toFixed(0),bottom:+r.bottom.toFixed(0),cls:t.className};
     })()`);
-    ok(g.bottom <= 200 && g.cls === 'app-toast show err',
+    ok(g.bottom <= 200 && g.cls === 'app-toast show warn',
       '[V5] layout 上は画面内でも vv 可視域[200,600]の外（bottom=' + g.bottom + '）ならトーストが出る: cls=' + g.cls);
     await page.close();
   }
@@ -167,7 +167,7 @@ const toastState = `(function(){
       var visible=r.height>0&&r.bottom>0&&r.top<vh;
       return {visible:visible,top:+r.top.toFixed(0),cls:t?t.className:null,text:t?t.textContent:''};
     })()`);
-    ok(g.visible || (g.cls === 'app-toast show err' && g.text.length > 0),
+    ok(g.visible || (g.cls === 'app-toast show warn' && g.text.length > 0),
       '[V6] 起動時 load の warn: #reg-msg 可視（top=' + g.top + '）またはトーストが出ている: cls=' + g.cls);
     await page.close();
   }
@@ -184,7 +184,7 @@ const toastState = `(function(){
     await page.evaluate(() => notifySaveWarning({ message: 'V7の保存が確認できませんでした', consoleTag: '[E2E-V7]', callsiteId: 'e2e-v7', kind: 'save-verify', aggregateKey: 'e2e-v7', severity: 'warn' }));
     await page.waitForTimeout(250);
     const g7 = await page.evaluate(toastState);
-    ok(g7.cls === 'app-toast show err' && /V7/.test(g7.text),
+    ok(g7.cls === 'app-toast show warn' && /V7/.test(g7.text),
       '[V7] 一括登録オーバーレイを開いたまま＝幾何的に可視でも遮蔽＝トーストが出る: cls=' + g7.cls);
     await page.close();
   }
@@ -200,7 +200,7 @@ const toastState = `(function(){
     await page.evaluate(() => notifySaveWarning({ message: 'V8の保存が確認できませんでした', consoleTag: '[E2E-V8]', callsiteId: 'e2e-v8', kind: 'save-verify', aggregateKey: 'e2e-v8', severity: 'warn' }));
     await page.waitForTimeout(250);
     const g8 = await page.evaluate(toastState);
-    ok(pre8.open && g8.cls === 'app-toast show err' && /V8/.test(g8.text),
+    ok(pre8.open && g8.cls === 'app-toast show warn' && /V8/.test(g8.text),
       '[V8] 過去参加者オーバーレイを開いたまま＝遮蔽＝トーストが出る: open=' + pre8.open + ' cls=' + g8.cls);
     await page.close();
   }
@@ -226,7 +226,7 @@ const toastState = `(function(){
       var t=document.getElementById('app-toast');
       return {top:+r.top.toFixed(0),bottom:+r.bottom.toFixed(0),barBottom:+b.bottom.toFixed(0),cls:t.className};
     })()`);
-    ok(g9.top >= 0 && g9.bottom <= g9.barBottom && g9.cls === 'app-toast show err',
+    ok(g9.top >= 0 && g9.bottom <= g9.barBottom && g9.cls === 'app-toast show warn',
       '[V9] ★sticky バーの裏（rect ' + g9.top + '..' + g9.bottom + ' vs バー下端' + g9.barBottom + '）は不可視＝トーストが出る: cls=' + g9.cls);
     await page.close();
   }
@@ -244,7 +244,7 @@ const toastState = `(function(){
     await page.evaluate(() => { saveData(); });
     await page.waitForTimeout(300);
     const g10 = await page.evaluate(toastState);
-    ok(g10.cls === 'app-toast show err' && /名簿への自動反映をスキップ/.test(g10.text),
+    ok(g10.cls === 'app-toast show warn' && /名簿への自動反映をスキップ/.test(g10.text),
       '[V10] ★破損スキップの warn が成功系トーストに上書きされず最終表示: text=' + (g10.text || '').slice(0, 28));
     await page.close();
   }
@@ -278,7 +278,7 @@ const toastState = `(function(){
       return {vis:+(barTop-r.top).toFixed(0),cls:t.className};
     })()`);
     const g11t = await page.evaluate(`document.getElementById('app-toast').textContent`);
-    ok(g11.vis > 0 && g11.vis < 24 && g11.cls === 'app-toast show err' && /V11/.test(g11t),
+    ok(g11.vis > 0 && g11.vis < 24 && g11.cls === 'app-toast show warn' && /V11/.test(g11t),
       '[V11] ★部分可視 ' + g11.vis + 'px（1〜23px）は読めない扱い＝トーストが出る: cls=' + g11.cls);
     await page.close();
   }
@@ -305,7 +305,7 @@ const toastState = `(function(){
       var t=document.getElementById('app-toast');
       return {top:+r.top.toFixed(0),bottom:+r.bottom.toFixed(0),barTop:+b.top.toFixed(0),cls:t.className};
     })()`);
-    ok(g12.bottom > g12.barTop && (g12.barTop - Math.max(g12.top, 0)) < 24 && g12.cls === 'app-toast show err',
+    ok(g12.bottom > g12.barTop && (g12.barTop - Math.max(g12.top, 0)) < 24 && g12.cls === 'app-toast show warn',
       '[V12] ★下部バーの裏（rect ' + g12.top + '..' + g12.bottom + ' vs バー上端' + g12.barTop + '）は不可視＝トーストが出る: cls=' + g12.cls);
     await page.close();
   }

@@ -110,6 +110,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .app-toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);max-width:90%;background:#27500A;color:#fff;padding:10px 18px;border-radius:10px;font-size:15px;font-weight:500;z-index:10000;box-shadow:0 2px 10px rgba(0,0,0,.3);opacity:0;transition:opacity .2s;pointer-events:none;text-align:center}
 .app-toast.show{opacity:1}
 .app-toast.err{background:#A32D2D}
+.app-toast.warn{background:#faeeda;color:#633806;border:1px solid #EF9F27}
 .app-modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
 .app-modal-box{background:#fff;border-radius:12px;max-width:420px;width:100%;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,0.28);max-height:85vh;overflow-y:auto}/* SCALE-MODAL-001 (#767): 長文でも OK/キャンセルへ到達できるよう箱内スクロール（個別モーダル群の 85vh+scroll と同値） */
 .app-modal-msg{font-size:14px;color:#222;line-height:1.65;white-space:pre-wrap;word-break:break-word}
@@ -7102,10 +7103,14 @@ function showToast(text,opts){
     var el=document.getElementById('app-toast');
     if(!el)return;
     var isErr=!!(opts&&opts.kind==='err');
+    // SAVE-WARN-VISIBILITY-001 (#892) / Codex P2 (r3791933163): fail-soft の保存警告（N3）に
+    //   danger 色（.err）は STYLE-GUIDE §3 違反＝warn 面色（.alert-warn と同 palette）の変種を追加。
+    //   err・既定の挙動は不変。
+    var isWarn=!!(opts&&opts.kind==='warn');
     el.textContent=String(text==null?'':text);
-    el.className=isErr?'app-toast show err':'app-toast show';
+    el.className=isErr?'app-toast show err':(isWarn?'app-toast show warn':'app-toast show');
     if(_toastTimer)clearTimeout(_toastTimer);
-    _toastTimer=setTimeout(function(){ var e2=document.getElementById('app-toast'); if(e2)e2.className='app-toast'; },isErr?3000:1800);
+    _toastTimer=setTimeout(function(){ var e2=document.getElementById('app-toast'); if(e2)e2.className='app-toast'; },(isErr||isWarn)?3000:1800);
   }catch(e){}
 }
 // REG-ALERT-TOAST-001 (#740) ⑤d: 登録/受付系の軽度エラー通知（blocking alert の置換先・STYLE-GUIDE §3 N3）。
@@ -7369,7 +7374,8 @@ function notifySaveWarning(options){
             var visiblePx=Math.min(wr.bottom,bottomBound)-Math.max(wr.top,topBound);
             seen=wr.height>0&&visiblePx>=Math.min(24,wr.height);
           }
-          if(!seen&&typeof showToast==='function')showToast(displayMessage,{kind:'err'});
+          // ★ Codex P2 (r3791933163): この経路は N3（fail-soft）＝danger でなく warn 面色で出す
+          if(!seen&&typeof showToast==='function')showToast(displayMessage,{kind:'warn'});
         }catch(e2){}
       },0);
     }catch(e){}
