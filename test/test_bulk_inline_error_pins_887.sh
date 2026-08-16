@@ -122,7 +122,7 @@ anditem(){ case "$1" in
 esac; }
 
 # 動的検査が担当する変異（静的 pin では殺せない）
-DYN_OWNED="D1 D3 D4 R1 R2 S12 S18"
+DYN_OWNED="D1 D3 D4 D6 R1 R2 S12 S18"
 STATIC_OWNED="S1 S2 S3 S3a S3r S4 S4b S4h S4hh S4hh2 S4x S4y S5 S6 S6b S8 S9 S9b S10 S10b S11 S11b S12b S12c S15 S21 S22 D2 D5"
 MUTCHK="test/tools/bulk_inline_error_887_mutation_check.sh"
 mut_expect(){ case "$1" in

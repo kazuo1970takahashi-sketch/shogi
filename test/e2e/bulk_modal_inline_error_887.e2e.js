@@ -352,6 +352,37 @@ async function triggerDup(page) {
     await page.close();
   }
 
+  // ---- I. ★ Codex P2 (r3791051326): 極小可視域でフォーカス欄が隠れない -------
+  //   375×440 + キーボード300px ＝ 可視域140px。Enter で保存を押した直後、
+  //   ボタン行への scroll が「直したい欄」を視界の外へ追い出していた（実測 -11..33）。
+  //   §10.4「フォーカスした入力欄はキーボードに隠れないこと」。
+  {
+    const page = await browser.newPage({ viewport: { width: 375, height: 440 } });
+    const alerts = [];
+    page.on('dialog', async d => { alerts.push(d.message()); await d.dismiss(); });
+    await openModal(page, 16, 0, { h: 140, top: 0 });
+    // 実ユーザの流れ: 最後の欄を空にし、その欄で Enter（keypress ハンドラが bulk-save.click()）
+    await setNames(page, "function(is){ var last=is[is.length-1]; last.value=''; last.focus(); }");
+    await page.keyboard.press('Enter'); await page.waitForTimeout(150);
+    const r = await page.evaluate(`(function(){
+      var ae=document.activeElement; if(!ae||!ae.getBoundingClientRect)return {なし:true};
+      var ar=ae.getBoundingClientRect();
+      var slot=document.getElementById('bulk-err'); if(!slot)return {なし:true};
+      var sr=slot.getBoundingClientRect();
+      return {activeId:ae.id||null,
+        active:{t:+ar.top.toFixed(1),b:+ar.bottom.toFixed(1)},
+        slot:{t:+sr.top.toFixed(1),b:+sr.bottom.toFixed(1)},
+        欄が見える: ar.top>=-0.5&&ar.bottom<=140.5,
+        スロット頭が見える: sr.top>=-0.5&&sr.top<=116};
+    })()`);
+    ok(!r.なし && (r.activeId || '').indexOf('bulk-name-') === 0 && r.欄が見える,
+      '[I1] ★可視域140pxでもフォーカスされた入力欄が見える: ' + JSON.stringify(r.active) + ' id=' + r.activeId);
+    ok(!r.なし && r.スロット頭が見える,
+      '[I2] エラーの見出しも同時に見える: ' + JSON.stringify(r.slot));
+    ok(alerts.length === 0, '[I3] native alert は出ない');
+    await page.close();
+  }
+
   // ---- SELF. 落とし穴6の画素検査そのものを検査する ---------------------------
   //   ★ 375×667 / 375×440 では #rotate-overlay が発火しないので、画素検査は「死に検査」になり得る。
   //     発火するセル（幅 > 高さ かつ 幅 ≤ 900）で、**覆いを画素で検出できる**ことを確かめる。

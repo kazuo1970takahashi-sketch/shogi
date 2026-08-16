@@ -8551,6 +8551,14 @@ function showBulkEditError(msg){
   if(cardEl){
     fitBulkCardToViewport();
     try{ cardEl.lastElementChild.scrollIntoView({block:'nearest'}); }catch(e){}
+    // ★ Codex P2 (r3791051326): 可視域が極端に狭いとき（例 140px）、ボタン行への scroll が
+    //   「直したい欄」（フォーカスされたままの入力欄）を視界の外へ追い出す（実測: 欄が -11..33 で上に切れた）。
+    //   §10.4「フォーカスした入力欄はキーボードに隠れないこと」を守るため、フォーカスが bulk の
+    //   入力欄にあるなら最後に nearest で戻す。十分広い画面では no-op（すでに視界内なら動かない）。
+    try{
+      var ae=document.activeElement;
+      if(isBulkKbdActive()&&ae&&ae.id&&ae.id.indexOf('bulk-name-')===0)ae.scrollIntoView({block:'nearest'});
+    }catch(e){}
   }
 }
 

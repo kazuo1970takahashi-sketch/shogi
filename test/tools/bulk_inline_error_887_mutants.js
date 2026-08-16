@@ -31,7 +31,9 @@ function mut(name, old, neu) {
   made++;
 }
 
-const SCROLL_SHOW = "  var cardEl=slot.parentNode;\n  if(cardEl){\n    fitBulkCardToViewport();\n    try{ cardEl.lastElementChild.scrollIntoView({block:'nearest'}); }catch(e){}\n  }\n";
+// ★ 行単位のアンカー（if ブロック全体だと Codex P2 の追記で count=0 になった）。
+//   onBulkViewportChange 側は `if(cardEl){ try{` の1行書きなので、4空白+try 始まりのこの行は一意。
+const SCROLL_SHOW = "    try{ cardEl.lastElementChild.scrollIntoView({block:'nearest'}); }catch(e){}\n";
 const SLOT = '<div id="bulk-err" class="bulk-err" role="alert" aria-live="assertive" hidden>';
 const CSS_ERR = '.bulk-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:13px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}';
 const CSS_BODY = '.bulk-err-body{white-space:pre-line;overflow-wrap:anywhere}';
@@ -43,8 +45,8 @@ const MSG2 = "showBulkEditError('\"'+newName+'\"が重複しています。\\n�
 const KBD_RESET = "    if(!isBulkKbdActive()){ cardEl.style.alignSelf=''; cardEl.style.marginTop=''; cardEl.style.maxHeight=''; return; }\n";
 
 // --- 静的 pin が殺すべきもの -------------------------------------------------
-mut('S1', SCROLL_SHOW, "  var cardEl=slot.parentNode;\n  if(cardEl){\n    fitBulkCardToViewport();\n  }\n");           // 送り先ごと消す
-mut('S6', SCROLL_SHOW, "  var cardEl=slot.parentNode;\n  if(cardEl){\n    fitBulkCardToViewport();\n    try{ cardEl.firstElementChild.scrollIntoView({block:'nearest'}); }catch(e){}\n  }\n"); // 送り先をカード先頭へ
+mut('S1', SCROLL_SHOW, "");           // 送り先ごと消す
+mut('S6', SCROLL_SHOW, "    try{ cardEl.firstElementChild.scrollIntoView({block:'nearest'}); }catch(e){}\n"); // 送り先をカード先頭へ
 mut('S2', CSS_ERR, CSS_ERR.replace('#fdecea', '#fff7e6').replace('#a50e0e', '#7a4a00').replace('#d93025', '#f5d490'));
 mut('S3', SLOT, '<div id="bulk-err" class="bulk-err" hidden>');                              // role も aria-live も消す
 mut('S3r', SLOT, '<div id="bulk-err" class="bulk-err" aria-live="assertive" hidden>');       // role だけ消す
@@ -103,8 +105,11 @@ mut('S4hh2', "      inp.addEventListener('input',function(){ clearBulkEditError(
              "      inp.addEventListener('input',function(){ clearBulkEditError(); document.querySelector('.bulk-err-head').innerHTML=inp.value; });\n");
 //   S6b: scrollIntoView の値 nearest→center。値を守る kill 証拠が無く、center はスクロール位置が
 //        毎回ジャンプする UX 劣化なのに e2e も 51/0 素通りだった。
-mut('S6b', "cardEl.lastElementChild.scrollIntoView({block:'nearest'}); }catch(e){}\n  }\n}\n\nfunction clearBulkEditError",
-           "cardEl.lastElementChild.scrollIntoView({block:'center'}); }catch(e){}\n  }\n}\n\nfunction clearBulkEditError");
+mut('S6b', SCROLL_SHOW, "    try{ cardEl.lastElementChild.scrollIntoView({block:'center'}); }catch(e){}\n");
+
+// ★ Codex P2 (r3791051326) の直しを守る変異: フォーカス欄への nearest 戻しを消す。
+//   可視域140pxの場面でしか差が出ないので動的担当（e2e [I1] が殺す）。
+mut('D6', "      if(isBulkKbdActive()&&ae&&ae.id&&ae.id.indexOf('bulk-name-')===0)ae.scrollIntoView({block:'nearest'});\n", "\n");
 
 if (bad) { console.error('変異生成に失敗: ' + bad + ' 件'); process.exit(1); }
 console.log('変異 ' + made + ' 本を生成: ' + outDir);
