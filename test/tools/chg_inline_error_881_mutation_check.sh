@@ -65,9 +65,27 @@ command -v node >/dev/null 2>&1 || { echo "  NG   node が無い"; exit 1; }
 MUT="$(mktemp -d "${TMPDIR:-/tmp}/chgmut881dyn.XXXXXX")"
 node "$GEN" "$TARGET" "$MUT" || { echo "  NG   変異の生成に失敗"; rm -rf "$MUT"; exit 1; }
 
+# ★ [E2E-PARALLEL-001] 対照＋kill 実行は互いに独立（それぞれが別ファイルを読み取り専用で
+#   開くだけ・書き込みは自分の out/rc ファイルのみ）なので並列に走らせ、判定は従来の順序で
+#   行う。MUT_JOBS=1 で従来どおりの直列。
+MJOBS="${MUT_JOBS:-3}"
+case "$MJOBS" in ''|*[!0-9]*) MJOBS=3 ;; esac
+[ "$MJOBS" -lt 1 ] && MJOBS=1
+_throttle(){ while [ "$(jobs -rp | wc -l | tr -d ' ')" -ge "$MJOBS" ]; do sleep 0.2; done; }
+
+_throttle
+( node "$SUITE" "$TARGET" > "$MUT/out_control.txt" 2>&1; echo $? > "$MUT/rc_control" ) &
+for m in $DYN; do
+  f="$MUT/mut_$m.html"
+  [ -f "$f" ] || continue
+  _throttle
+  ( node "$SUITE" "$f" > "$MUT/out_$m.txt" 2>&1; echo $? > "$MUT/rc_$m" ) &
+done
+wait
+
 echo ""
 echo "0) 対照: 未変異の $TARGET では e2e が緑であること"
-if node "$SUITE" "$TARGET" >/dev/null 2>&1; then ok "未変異は緑（＝この検査が空回りしていない）"
+if [ "$(cat "$MUT/rc_control" 2>/dev/null || echo 1)" -eq 0 ]; then ok "未変異は緑（＝この検査が空回りしていない）"
 else ng "未変異なのに e2e が赤（先にそちらを直すこと）"; fi
 
 echo ""
@@ -76,8 +94,7 @@ for m in $DYN; do
   f="$MUT/mut_$m.html"
   if [ ! -f "$f" ]; then ng "$m の変異ファイルが生成されていない"; continue; fi
   out="$MUT/out_$m.txt"
-  node "$SUITE" "$f" > "$out" 2>&1
-  rc=$?
+  rc="$(cat "$MUT/rc_$m" 2>/dev/null || echo 1)"
   want="$(want_ids "$m")"
   if [ -z "$want" ]; then ng "$m  落ちるべきアサーション ID が未定義"; continue; fi
   # ★ ハーネスエラー／未捕捉例外は kill ではなく検査失敗
