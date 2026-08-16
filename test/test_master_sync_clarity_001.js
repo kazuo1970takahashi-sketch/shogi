@@ -155,8 +155,9 @@ const META = { tournament_id: 't-0001', tournament_date: '2026-07-27' };
 // ============================================================
 {
   const sync = extractFn(RAW, 'syncBranchMasterOnSave') || '';
-  assert(/function _done\(\)\{ if\(typeof onDone==='function'\)onDone\(_counts\); \}/.test(sync),
-    'D1 完了通知は onDone(counts)（引数追加のみ＝呼び出し回数・経路は不変）');
+  // SAVE-WARN-VISIBILITY-001 (#892): _done(r) 形（印つき呼びを通す・裸呼びは _counts）に追随。
+  assert(/function _done\(r\)\{ if\(typeof onDone==='function'\)onDone\(arguments\.length>0\?r:_counts\); \}/.test(sync),
+    'D1 完了通知は onDone(counts)（引数追加のみ＝呼び出し回数・経路は不変・#892 で印つき対応）');
   assert(sync.indexOf('_counts=readMasterSyncCounts(updateBranchMasterFromTournament(') >= 0,
     'D2 counts は純関数の戻り値から読む（マージ呼び出しの引数は不変）');
   assert(sync.indexOf('if(masterSaved===false)_counts=null;') >= 0,

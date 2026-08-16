@@ -110,6 +110,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .app-toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);max-width:90%;background:#27500A;color:#fff;padding:10px 18px;border-radius:10px;font-size:15px;font-weight:500;z-index:10000;box-shadow:0 2px 10px rgba(0,0,0,.3);opacity:0;transition:opacity .2s;pointer-events:none;text-align:center}
 .app-toast.show{opacity:1}
 .app-toast.err{background:#A32D2D}
+.app-toast.warn{background:#faeeda;color:#633806;border:1px solid #EF9F27}
 .app-modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
 .app-modal-box{background:#fff;border-radius:12px;max-width:420px;width:100%;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,0.28);max-height:85vh;overflow-y:auto}/* SCALE-MODAL-001 (#767): 長文でも OK/キャンセルへ到達できるよう箱内スクロール（個別モーダル群の 85vh+scroll と同値） */
 .app-modal-msg{font-size:14px;color:#222;line-height:1.65;white-space:pre-wrap;word-break:break-word}
@@ -4580,6 +4581,8 @@ function closePpFullscreen(){
   var el=document.getElementById('pp-fullscreen');
   if(!el)return;
   el.style.display='none';
+  // ★ SAVE-WARN-VISIBILITY-001 (#892): オーバーレイ表示中に保留した保存警告トーストを再判定して出す
+  if(typeof flushPendingSaveWarnToast==='function')flushPendingSaveWarnToast();
   if(el.setAttribute)el.setAttribute('aria-hidden','true');
   try{document.body.style.overflow='';}catch(e){}
   // INPUT-KBD-COEXIST-004 (#734): 閉時はオーバーレイ由来の inline style を確実に解除（再オープン時の残留防止）。
@@ -4882,6 +4885,8 @@ function closeBulkEntryFullscreen(){
   el.style.display='none';
   if(el.setAttribute)el.setAttribute('aria-hidden','true');
   try{document.body.style.overflow='';}catch(e){}
+  // ★ SAVE-WARN-VISIBILITY-001 (#892): オーバーレイ表示中に保留した保存警告トーストを再判定して出す
+  if(typeof flushPendingSaveWarnToast==='function')flushPendingSaveWarnToast();
 }
 
 // 確定＝検証をやり直してから一括追加（プレビュー表示後に受付状況が変わっても古い判定のまま登録しない）。
@@ -4908,8 +4913,16 @@ function confirmBulkEntry(){
     if(!verifyPlayerPersistedById(t.id,t.cls,t.name))unverified++;
   }
   if(unverified>0){
+    // ★ Codex P2 (r3791745685): 成功トーストを抑止すると result.skipped の内訳（同名・空の氏名等）が
+    //   利用者に届かなくなる。既存文言の「（スキップ N行: …）」部分をそのまま warn に継ぐ（表示のみ）。
+    var skippedNote='';
+    try{
+      var fullNote=formatBulkEntryResultToast(result);
+      var mNote=fullNote&&fullNote.match(/（スキップ[^）]*）/);
+      if(mNote)skippedNote=mNote[0];
+    }catch(eNote){}
     notifySaveWarning({
-      message:result.added+'人を登録しましたが、'+unverified+'人分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      message:result.added+'人を登録しましたが、'+unverified+'人分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください'+skippedNote,
       consoleTag:'SAVE-003b: bulkAddPlayers の保存が確認できませんでした ('+unverified+'/'+result.players.length+' 件未確認)',
       callsiteId:'SAVE-003b-bulkAddPlayers',
       kind:'save-verify',
@@ -4922,7 +4935,11 @@ function confirmBulkEntry(){
   updateBulkEntryPreview();
   closeBulkEntryFullscreen();
   // MASTER-SYNC-CLARITY-001 (#757) の結果報告型: 純関数で文言を組み立て showToast（textContent）で通知。
-  showToast(formatBulkEntryResultToast(result));
+  // ★ SAVE-WARN-VISIBILITY-001 (#892): 保存未確認があるときは成功トーストを出さない。
+  //   #app-toast は1枚しか無く、直前の warn トーストを実測 214ms で上書きして
+  //   「保存未確認」がトースト経路から消えていた（反証パネルの実測）。success 抑止は
+  //   callsite 責務（notifySaveWarning 側コメントの既存設計）に従う。
+  if(unverified===0)showToast(formatBulkEntryResultToast(result));
 }
 
 // BULK-ENTRY-001 (#761): 導線の結線（bindRegistrationEvents から1回・build/bind 分離）。
@@ -7090,10 +7107,14 @@ function showToast(text,opts){
     var el=document.getElementById('app-toast');
     if(!el)return;
     var isErr=!!(opts&&opts.kind==='err');
+    // SAVE-WARN-VISIBILITY-001 (#892) / Codex P2 (r3791933163): fail-soft の保存警告（N3）に
+    //   danger 色（.err）は STYLE-GUIDE §3 違反＝warn 面色（.alert-warn と同 palette）の変種を追加。
+    //   err・既定の挙動は不変。
+    var isWarn=!!(opts&&opts.kind==='warn');
     el.textContent=String(text==null?'':text);
-    el.className=isErr?'app-toast show err':'app-toast show';
+    el.className=isErr?'app-toast show err':(isWarn?'app-toast show warn':'app-toast show');
     if(_toastTimer)clearTimeout(_toastTimer);
-    _toastTimer=setTimeout(function(){ var e2=document.getElementById('app-toast'); if(e2)e2.className='app-toast'; },isErr?3000:1800);
+    _toastTimer=setTimeout(function(){ var e2=document.getElementById('app-toast'); if(e2)e2.className='app-toast'; },(isErr||isWarn)?3000:1800);
   }catch(e){}
 }
 // REG-ALERT-TOAST-001 (#740) ⑤d: 登録/受付系の軽度エラー通知（blocking alert の置換先・STYLE-GUIDE §3 N3）。
@@ -7310,7 +7331,23 @@ function notifySaveWarning(options){
     saveWarningAggregationState.lastTimestampByKey[aggregateKey]=nowTs;
   }
   if(typeof showMsg==='function'){
-    showMsg(displayMessage,'warn');
+    // ★ Codex P1 (r3791745682): #reg-msg が無いと showMsg 自体が throw して console.warn /
+    //   indicator / トーストまで全部飛ぶ（「器なし」こそフォールバックが要る場面）。捕捉して続行。
+    try{ showMsg(displayMessage,'warn'); }catch(eMsg){}
+    // ★ SAVE-WARN-VISIBILITY-001 (#892): showMsg の出力先 #reg-msg は受付ペイン先頭に在り、
+    //   一括編集後の深いスクロール（実測 top=-112〜-4000級）・別タブ表示中（0×0・#869 と同型）・
+    //   全画面オーバーレイの下では読めない。**見えない時だけ**既存の err トースト（#740 の器）で
+    //   同文を出す。#reg-msg の持続表示・console.warn・indicator count は不変＝出し方の追加のみ。
+    //   反証パネル1巡の実測3件を反映:
+    //   - 判定はレイアウト確定後（setTimeout 0）。起動時 load 経路は同期判定だと再描画の押し下げ前に
+    //     「可視」と誤る（実測 top=491→確定後703）
+    //   - visualViewport の offsetTop を考慮し「可視高 24px 以上」を要求（キーボード表示中の
+    //     誤判定が2方向とも実測で出た）
+    //   - 全画面オーバーレイ（名簿一括登録 z=9500・過去参加者）表示中は遮蔽＝不可視扱い
+    //   - 器 #reg-msg 自体が無いときは「表示先なし」＝トーストを出す側に倒す
+    try{
+      setTimeout(function(){ _maybeToastSaveWarning(displayMessage); },0);
+    }catch(e){}
   }
   if(typeof console!=='undefined'&&console.warn){
     var warnMeta={callsiteId:callsiteId,fields:fields};
@@ -7327,6 +7364,56 @@ function notifySaveWarning(options){
   if(aggregateKey!==undefined)indicatorPayload.aggregateKey=aggregateKey;
   if(severity!==undefined)indicatorPayload.severity=severity;
   recordSaveWarningForIndicator(indicatorPayload);
+}
+
+// ★ SAVE-WARN-VISIBILITY-001 (#892) / Codex P2 (r3792739797): 全画面オーバーレイ表示中は
+//   §3 の規律（メッセージは同じ面に出す・showToast はモーダル/オーバーレイ表示中に使わない）に
+//   従いトーストを**保留**し、オーバーレイの close で再判定してから出す（最新の1件のみ保持）。
+var _pendingSaveWarnToast=null;
+function flushPendingSaveWarnToast(){
+  try{
+    if(_pendingSaveWarnToast==null)return;
+    var pendingMsg=_pendingSaveWarnToast;
+    _pendingSaveWarnToast=null;
+    setTimeout(function(){ _maybeToastSaveWarning(pendingMsg); },0);
+  }catch(e){}
+}
+function _maybeToastSaveWarning(displayMessage){
+        try{
+          var covered=(typeof isBulkEntryFullscreenOpen==='function'&&isBulkEntryFullscreenOpen())||
+                      (typeof isPpFullscreenOpen==='function'&&isPpFullscreenOpen());
+          if(covered){ _pendingSaveWarnToast=displayMessage; return; }
+          var seen=false;
+          var warnSlot=document.getElementById('reg-msg');
+          if(warnSlot){
+            var wr=warnSlot.getBoundingClientRect();
+            var wvv=window.visualViewport;
+            var wvvTop=(wvv&&wvv.offsetTop)||0;
+            var wvvH=(wvv&&wvv.height)||window.innerHeight;
+            // ★ Codex P1 (r3791745683): sticky の .tab-bar（top:0/z-40）の裏に完全に入っても
+            //   rect だけの計算は「可視」と数えていた（実測: scrollIntoView 直後 top=0/h=40 vs バー下端44）。
+            //   バーの下端を可視域の上端に繰り上げる。
+            // ★ Codex P1 (r3791854242): 下部にも固定バーが実在した（#regActionBar :747・fixed/bottom:0/z-50。
+            //   1巡目の「存在せず」は私の走査漏れ）。バーの上端を可視域の下端に繰り下げる。
+            //   pane-reg 非表示時はバーも隠れる（rect 0）ので影響しない。
+            var topBound=wvvTop;
+            var chromeBar=document.querySelector('.tab-bar');
+            if(chromeBar){
+              var cbr=chromeBar.getBoundingClientRect();
+              if(cbr.height>0&&cbr.bottom>topBound)topBound=cbr.bottom;
+            }
+            var bottomBound=wvvTop+wvvH;
+            var regBar=document.getElementById('regActionBar');
+            if(regBar){
+              var rbr=regBar.getBoundingClientRect();
+              if(rbr.height>0&&rbr.top<bottomBound)bottomBound=rbr.top;
+            }
+            var visiblePx=Math.min(wr.bottom,bottomBound)-Math.max(wr.top,topBound);
+            seen=wr.height>0&&visiblePx>=Math.min(24,wr.height);
+          }
+          // ★ Codex P2 (r3791933163): この経路は N3（fail-soft）＝danger でなく warn 面色で出す
+          if(!seen&&typeof showToast==='function')showToast(displayMessage,{kind:'warn'});
+        }catch(e2){}
 }
 
 // ROUNDS-PER-CLASS-001: そのクラスに適用する回戦数を返す。クラス別上書き(state.classes[i].rounds)が
@@ -13625,7 +13712,10 @@ function syncBranchMasterOnSave(onDone){
   //   counts が null のままの経路（ゲスト no-op／マスタ破損スキップ／保存失敗／例外）は「内訳不明」＝
   //   呼び出し元が数字を出さない中立文言へフォールバックする（名簿に残っていない数字を報告しない）。
   var _counts=null;
-  function _done(){ if(typeof onDone==='function')onDone(_counts); }
+  // ★ Codex P1 (r3791745680): 初版 #892 は _done({_saveWarned:true}) を渡したが、この helper は
+  //   引数を捨てて常に _counts を送っていた＝印が届かず抑止が一度も効いていなかった。
+  //   引数があるときだけそれを通す（既存の裸呼び _done() は従来どおり _counts）。
+  function _done(r){ if(typeof onDone==='function')onDone(arguments.length>0?r:_counts); }
   // GUEST-TOURNAMENT-MODE-001 (#760・fail-safe の要): ゲスト大会は名簿（支部マスタ）へ一切書き込まない。
   //   本関数は大会→名簿同期の choke point（呼び出し2経路＝📋saveBtn の saveData／☁送信の未連携ガード
   //   「①名簿に反映して送信」CLOUD-SEND-UNLINKED-GUARD-001）であり、関数冒頭の no-op（_done() のみ）で
@@ -13650,7 +13740,9 @@ function syncBranchMasterOnSave(onDone){
         severity:'warn'
       });
       save();
-      _done();
+      // ★ SAVE-WARN-VISIBILITY-001 (#892): warn トーストの 1.7ms 後に saveData の成功系トーストが
+      //   同一 #app-toast を上書きしていた（反証パネルの実測）。印を渡して呼び元に抑止させる。
+      _done({_saveWarned:true});
       return;
     }
     var date=getTournamentDateFromReport(state.report);
@@ -13766,6 +13858,8 @@ function saveData(){
   // IN-APP-MODAL-001 (#606): syncBranchMasterOnSave は YOMI 上書き確認が appConfirm（非同期）化したため、
   //   完了通知 showToast を onDone 継続で受ける＝旧「同期反映後に通知」の順序を保持（差分なし/確認キャンセル/OK いずれも反映完了後に1回）。
   syncBranchMasterOnSave(function(counts){
+    // ★ SAVE-WARN-VISIBILITY-001 (#892): 破損スキップ経路は warn トースト側が説明済み＝成功系で上書きしない。
+    if(counts&&counts._saveWarned)return;
     // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は blocking alert をやめ toast へ（OK タップ不要）。
     //   旧 alert にあった「控えはバックアップ」案内は backup-nudge＋save-warning ヘルプがカバー
     //   （SAVE-STATUS-BAR-REMOVE-001: 旧・保存状態バー＋save-systems ヘルプは撤去済み）。
