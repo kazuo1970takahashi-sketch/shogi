@@ -51,6 +51,10 @@ mut('X5', SCROLL, "    try{ el.scrollIntoView({block:'nearest'}); }catch(e){}\n"
 mut('X2', CSS_ERR, CSS_ERR.replace('#fdecea', '#fff7e6').replace('#a50e0e', '#7a4a00').replace('#d93025', '#f5d490'));
 mut('X3', SLOT, '<div id="chg-err" class="chg-err" hidden>');        // role も aria-live も消す
 mut('X3r', SLOT, '<div id="chg-err" class="chg-err" aria-live="assertive" hidden>'); // role だけ消す
+//   ★ Codex P2 (r3790647891): X3・X3r はどちらも role を消すので、P3 から aria-live の grep を
+//     取り除いても両方 role 条件で赤くなり、自己検査が気づけない（Codex が実測）。
+//     → **role を残して aria-live だけを落とす**独立変異を足す。
+mut('X3a', SLOT, '<div id="chg-err" class="chg-err" role="alert" hidden>'); // aria-live だけ消す
 mut('X4', '  body.textContent=text;\n', '  body.innerHTML=text;\n');
 mut('X4h', '  body.textContent=text;\n', "  el.querySelector('.chg-err-head').innerHTML='\\u26a0 '+text;\n  body.textContent='';\n");
 mut('X7', "  if(card)card.removeAttribute('data-chg-err');\n", '');  // 属性を消さない

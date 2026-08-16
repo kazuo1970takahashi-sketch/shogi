@@ -107,7 +107,7 @@ done
 #   → **期待する全集合と生成物が完全一致**することを両方向で見る。
 echo ""
 echo "2) 期待する変異の集合と生成物が完全一致すること（欠落も余剰も落とす）"
-STATIC="X1 X2 X3 X3r X4 X4h X5 X7 M3b M3c M7"
+STATIC="X1 X2 X3 X3r X3a X4 X4h X5 X7 M3b M3c M7"
 EXPECTED="$DYN $STATIC"
 # (a) 期待した名前に対応するファイルが必ず1本ある
 for k in $EXPECTED; do

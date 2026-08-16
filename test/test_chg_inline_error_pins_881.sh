@@ -85,11 +85,12 @@ anditem(){ case "$1" in
 esac; }
 # 動的検査が担当する変異（静的 pin では殺せない）。実証は下記スクリプト。
 DYN_OWNED="M1 M2 M2b M4 M5 M8 N4 X6 R1 R2 R3 R4 R5 R6 R7 R8 R9"
-STATIC_OWNED="X1 X2 X3 X3r X4 X4h X5 X7 M3b M3c M7"
+STATIC_OWNED="X1 X2 X3 X3r X3a X4 X4h X5 X7 M3b M3c M7"
 MUTCHK="test/tools/chg_inline_error_881_mutation_check.sh"
 # ③ 変異 → 赤になるべき pin（"-" は「pin ではなく動的検査が担当」）
 mut_expect(){ case "$1" in
   X1)  echo P1;;   X2)  echo P2;;   X3)  echo P3;;  X3r) echo P3;;
+  X3a) echo P3;;
   X4)  echo P4;;   X4h) echo P4;;   X5)  echo P1;;  X7)  echo P5;;
   M3b) echo P7;;   M3c) echo P7;;   M7)  echo P6;;
   *)   echo "-";;
