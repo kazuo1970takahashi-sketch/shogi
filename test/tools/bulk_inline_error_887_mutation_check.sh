@@ -24,13 +24,16 @@ GEN="$HERE/bulk_inline_error_887_mutants.js"
 SUITE="$HERE/../e2e/bulk_modal_inline_error_887.e2e.js"
 
 # 動的検査が担当する変異（静的 pin では殺せないもの）
-DYN="D1 D3 D4 D6 R1 R2 S12 S18"
+DYN="D1 D3 D4 D6 D7 D8 R1 R2 S12 S18"
 # ★ 変異ごとに「落ちるべきアサーション ID」。**その場面自身の検査**に限る。
 want_ids(){ case "$1" in
   D1)  echo "A3";;         # el.hidden=false を消す → 出てこない
   D3)  echo "H1";;         # 器が無いときの alert フォールバックを消す
-  D4)  echo "C1 C2";;      # 表示直後の fit を消す → キーボード活性セルで隠れる
+  D4)  echo "C5";;         # 表示時の fit を消す → イベント無しで縮んだ vv でスロットが隠れる
+                           #   ★ D8（開いた直後の fit）追加で C1/C2 では殺せなくなった（実測）
   D6)  echo "I1";;         # フォーカス欄への nearest 戻しを消す → 140px でフォーカス欄が切れる
+  D7)  echo "I4";;         # 追従ハンドラ側の戻しを消す → vv イベント後に欄が再び切れる
+  D8)  echo "J1 J2";;      # 開いた時点の fit を消す → キーボード既出のままではカードが 80vh 中央
   R1)  echo "A3 A4";;      # B1 のガードが止めなくなる → 保存が通ってモーダルが消える
   R2)  echo "B4";;         # B2 のガードが止めなくなる
   S12) echo "E1";;         # キーボード判定が常に true → 非活性でも inline style を足す

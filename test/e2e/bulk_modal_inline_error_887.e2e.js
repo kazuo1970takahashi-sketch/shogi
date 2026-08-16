@@ -274,6 +274,24 @@ async function triggerDup(page) {
       '[C4] ボタン行が隠れるのは可視域140pxの1族のみ（実測 ' + btnNG + '件 / ' + JSON.stringify(Object.keys(btnNGCells)) + '）');
   }
 
+  // ---- C5. 表示時の fit が唯一の救いになる場面 --------------------------------
+  //   ★ D8（開いた直後の fit）を足したら D4（表示時の fit を消す変異）が生き残った。
+  //     表示時 fit が要る場面は「開いた後に、イベント無しで vv が縮んでいた」＝
+  //     イベントを取りこぼす環境への防御。ここで単独の kill 証拠を持つ。
+  {
+    const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
+    await page.goto(TARGET);
+    await page.waitForFunction(() => typeof save === 'function');
+    await page.evaluate(mk(16, 0));
+    await page.evaluate(() => bulkEditNames('A'));   // ★ vv 無しで開く（開いた直後の fit は素通り）
+    await page.waitForTimeout(60);
+    await page.evaluate(stubVV(451, 0));             // ★ イベントを発火させずに vv だけ縮める
+    await triggerEmpty(page);                        // → 表示時の fit だけがカードを収められる
+    const r = await page.evaluate(probe);
+    ok(r.slot可視, '[C5] ★イベント無しで縮んだ vv でも表示時の fit がスロットを収める: slot=' + JSON.stringify(r.slot) + ' card=' + JSON.stringify(r.card));
+    await page.close();
+  }
+
   // ---- D. キーボードが「後から」出る/消える/スクロールする -------------------
   {
     for (const vp of [{ w: 375, h: 667 }, { w: 375, h: 440 }]) {
@@ -377,9 +395,54 @@ async function triggerDup(page) {
     })()`);
     ok(!r.なし && (r.activeId || '').indexOf('bulk-name-') === 0 && r.欄が見える,
       '[I1] ★可視域140pxでもフォーカスされた入力欄が見える: ' + JSON.stringify(r.active) + ' id=' + r.activeId);
-    ok(!r.なし && r.スロット頭が見える,
-      '[I2] エラーの見出しも同時に見える: ' + JSON.stringify(r.slot));
+    // ★ Codex P2 (r3791152829): slot.top<=116 では見出しが 140 を超えても緑になる
+    //   （8px padding ＋ 19.5px 行高で見出し下端は top+27.5）。見出し自身の rect を要求する。
+    const hr = await page.evaluate(`(function(){
+      var h=document.querySelector('.bulk-err-head'); if(!h)return null;
+      var b=h.getBoundingClientRect(); return {t:+b.top.toFixed(1),b:+b.bottom.toFixed(1)};
+    })()`);
+    ok(!!hr && hr.t >= -0.5 && hr.b <= 140.5,
+      '[I2] 見出しの rect 全体が可視域140px内: ' + JSON.stringify(hr));
     ok(alerts.length === 0, '[I3] native alert は出ない');
+    // ★ Codex P2 (r3791152825): 追従イベントが来た後もフォーカス欄が見えること。
+    //   ハンドラ側に戻しが無いと、vv の scroll 1発で -11..33 が再発する。
+    await page.evaluate(setVV(140, 8, 'scroll'));
+    await page.waitForTimeout(120);
+    const r4 = await page.evaluate(`(function(){
+      var ae=document.activeElement; if(!ae||!ae.getBoundingClientRect)return null;
+      var b=ae.getBoundingClientRect();
+      return {id:ae.id||null,t:+b.top.toFixed(1),b:+b.bottom.toFixed(1)};
+    })()`);
+    ok(!!r4 && (r4.id || '').indexOf('bulk-name-') === 0 && r4.t >= 7.5 && r4.b <= 148.5,
+      '[I4] ★vv イベント後もフォーカス欄が可視域(8-148)内: ' + JSON.stringify(r4));
+    await page.close();
+  }
+
+  // ---- J. ★ Codex P2 (r3791152831): 開いた時点でキーボードが既に出ている ------
+  //   登録タブの入力中にモーダルを開くと、vv は既に縮んでいて resize は**新たに発火しない**
+  //   （focus 移動は同期）。listener だけでは fit が一度も走らず、カードが 80vh 中央のまま
+  //   下の行と保存ボタンがキーボードの裏に残る。表示直後に1回 fit を回すことを検査する。
+  {
+    const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
+    await page.goto(TARGET);
+    await page.waitForFunction(() => typeof save === 'function');
+    await page.evaluate(mk(16, 0));
+    await page.evaluate(stubVV(451, 0));       // キーボード216px が既に出ている
+    await page.evaluate(() => bulkEditNames('A'));
+    await page.waitForTimeout(120);            // ★ イベントは一切発火させない
+    const r = await page.evaluate(`(function(){
+      var m=document.getElementById('bulk-edit-modal'); if(!m)return null;
+      var cardEl=m.firstElementChild; var cr=cardEl.getBoundingClientRect();
+      var first=document.getElementById('bulk-name-p1');
+      var fr=first?first.getBoundingClientRect():null;
+      return {card:{t:+cr.top.toFixed(1),b:+cr.bottom.toFixed(1)},
+        inline:{alignSelf:cardEl.style.alignSelf,maxHeight:cardEl.style.maxHeight},
+        first:fr?{t:+fr.top.toFixed(1),b:+fr.bottom.toFixed(1)}:null};
+    })()`);
+    ok(!!r && r.card.t >= -0.5 && r.card.b <= 451.5,
+      '[J1] ★イベント無しでもカードが可視域451px内に収まる（開いた直後の fit）: ' + JSON.stringify(r && r.card));
+    ok(!!r && !!r.first && r.first.t >= -0.5 && r.first.b <= 451.5,
+      '[J2] フォーカスされた1番目の欄が見える: ' + JSON.stringify(r && r.first));
     await page.close();
   }
 

@@ -8505,6 +8505,15 @@ function fitBulkCardToViewport(){
   }catch(e){}
 }
 
+// ★ Codex P2 (r3791152825): フォーカス戻しは show と追従ハンドラの**両方**に要る。
+//   show 側だけだと、キーボードのアニメーションや vv スクロールが後から来た瞬間に
+//   ボタン行への scroll が欄を再び追い出す（1回目の直しの1段外側）。helper に集約する。
+function restoreBulkFocusedInput(){
+  try{
+    var ae=document.activeElement;
+    if(isBulkKbdActive()&&ae&&ae.id&&ae.id.indexOf('bulk-name-')===0)ae.scrollIntoView({block:'nearest'});
+  }catch(e){}
+}
 // ★ fit だけでは足りない。maxHeight/marginTop は追従してもカード内の scrollTop が古いままで
 //   スロットが可視域から外れる（実測）。表示中なら送り先へ scroll し直す。
 function onBulkViewportChange(){
@@ -8514,6 +8523,7 @@ function onBulkViewportChange(){
     if(!slot||slot.hidden)return;
     var cardEl=slot.parentNode;
     if(cardEl){ try{ cardEl.lastElementChild.scrollIntoView({block:'nearest'}); }catch(e){} }
+    restoreBulkFocusedInput();
   }catch(e){}
 }
 function _bulkVvHandler(){
@@ -8553,12 +8563,8 @@ function showBulkEditError(msg){
     try{ cardEl.lastElementChild.scrollIntoView({block:'nearest'}); }catch(e){}
     // ★ Codex P2 (r3791051326): 可視域が極端に狭いとき（例 140px）、ボタン行への scroll が
     //   「直したい欄」（フォーカスされたままの入力欄）を視界の外へ追い出す（実測: 欄が -11..33 で上に切れた）。
-    //   §10.4「フォーカスした入力欄はキーボードに隠れないこと」を守るため、フォーカスが bulk の
-    //   入力欄にあるなら最後に nearest で戻す。十分広い画面では no-op（すでに視界内なら動かない）。
-    try{
-      var ae=document.activeElement;
-      if(isBulkKbdActive()&&ae&&ae.id&&ae.id.indexOf('bulk-name-')===0)ae.scrollIntoView({block:'nearest'});
-    }catch(e){}
+    //   §10.4 を守るため、フォーカスが bulk の入力欄にあるなら最後に nearest で戻す（広い画面では no-op）。
+    restoreBulkFocusedInput();
   }
 }
 
@@ -8575,6 +8581,10 @@ function bindBulkEditModalEvents(cls, players){
   // 最初のinputにフォーカス
   var firstInput=document.getElementById('bulk-name-'+players[0].id);
   if(firstInput)firstInput.focus();
+  // ★ Codex P2 (r3791152831): 登録タブの入力中など、**開いた時点でキーボードが既に出ている**と
+  //   vv の resize は新たに発火しない（focus の移動は同期）ので、listener だけでは fit が一度も走らず
+  //   カードが 80vh 中央のまま下の行と保存ボタンがキーボードの裏に残る。表示直後に1回自分で回す。
+  fitBulkCardToViewport();
 
   // Enterで次のフィールドに移動
   for(var i=0;i<players.length;i++){

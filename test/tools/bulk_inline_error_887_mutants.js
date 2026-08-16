@@ -109,7 +109,13 @@ mut('S6b', SCROLL_SHOW, "    try{ cardEl.lastElementChild.scrollIntoView({block:
 
 // ★ Codex P2 (r3791051326) の直しを守る変異: フォーカス欄への nearest 戻しを消す。
 //   可視域140pxの場面でしか差が出ないので動的担当（e2e [I1] が殺す）。
-mut('D6', "      if(isBulkKbdActive()&&ae&&ae.id&&ae.id.indexOf('bulk-name-')===0)ae.scrollIntoView({block:'nearest'});\n", "\n");
+mut('D6', "    if(isBulkKbdActive()&&ae&&ae.id&&ae.id.indexOf('bulk-name-')===0)ae.scrollIntoView({block:'nearest'});\n", "\n");
+// ★ Codex 2巡目 P2 (r3791152825): 追従ハンドラ側のフォーカス戻しを消す（vv イベントで -11..33 が再発）
+mut('D7', "    restoreBulkFocusedInput();\n  }catch(e){}\n}\nfunction _bulkVvHandler", "  }catch(e){}\n}\nfunction _bulkVvHandler");
+// ★ Codex 2巡目 P2 (r3791152831): 開いた時点でキーボードが既に出ている場合の fit を消す
+// ★ 最初の D8 は**コメントだけ書き換えて呼び出しを残す**「変異になっていない変異」で、
+//   e2e 57/0 素通りだった（このチェック自体が捕まえた）。呼び出しの行を消す形に直した。
+mut('D8', "。表示直後に1回自分で回す。\n  fitBulkCardToViewport();\n", "。表示直後に1回自分で回す。\n");
 
 if (bad) { console.error('変異生成に失敗: ' + bad + ' 件'); process.exit(1); }
 console.log('変異 ' + made + ' 本を生成: ' + outDir);
