@@ -74,8 +74,9 @@ const toastState = `(function(){
     const gone = await page.evaluate(toastState);
     ok(gone.cls === 'app-toast', '[V1b] トーストは3秒で消える（持続表示は #reg-msg 側の契約のまま）');
 
-    // V2: #reg-msg を視界内に入れて warn（直呼び＝表示ヘルパ自体の検査）→ トーストは出ない
-    await page.evaluate(() => { document.getElementById('reg-msg').scrollIntoView(); });
+    // V2: #reg-msg を「sticky バーより下の」視界内に入れて warn（直呼び）→ トーストは出ない
+    //   ★ scrollIntoView() 素の形は要素がバー（下端44px）の裏に入り「遮蔽＝不可視」扱いになる（V9 が担当）
+    await page.evaluate(() => { document.getElementById('reg-msg').scrollIntoView({ block: 'center' }); });
     await page.evaluate(() => notifySaveWarning({ message: 'V2の保存が確認できませんでした', consoleTag: '[E2E-V2]', callsiteId: 'e2e-v2', kind: 'save-verify', aggregateKey: 'e2e-v2', severity: 'warn' }));
     await page.waitForTimeout(250);
     const g2 = await page.evaluate(`(function(){
@@ -136,7 +137,7 @@ const toastState = `(function(){
       var fake={height:400,offsetTop:200,scale:1,addEventListener:function(){},removeEventListener:function(){}};
       Object.defineProperty(window,'visualViewport',{get:function(){return fake;},configurable:true});
     })();`);
-    await page.evaluate(() => { document.getElementById('reg-msg').scrollIntoView(); });
+    await page.evaluate(() => { document.getElementById('reg-msg').scrollIntoView({ block: 'start' }); });
     await page.evaluate(() => notifySaveWarning({ message: 'V5の保存が確認できませんでした', consoleTag: '[E2E-V5]', callsiteId: 'e2e-v5', kind: 'save-verify', aggregateKey: 'e2e-v5', severity: 'warn' }));
     await page.waitForTimeout(250);
     const g = await page.evaluate(`(function(){
@@ -167,6 +168,83 @@ const toastState = `(function(){
     })()`);
     ok(g.visible || (g.cls === 'app-toast show err' && g.text.length > 0),
       '[V6] 起動時 load の warn: #reg-msg 可視（top=' + g.top + '）またはトーストが出ている: cls=' + g.cls);
+    await page.close();
+  }
+
+  // ---- V7/V8: オーバーレイ2種を「開いたまま」遮蔽判定を通す（Codex P2 r3791745684） ----
+  //   どちらかの述語を covered から消すと該当セルが赤くなる（削除耐性）。
+  {
+    const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
+    await page.goto(TARGET);
+    await page.waitForFunction(() => typeof save === 'function');
+    await page.evaluate(seed(2));
+    await page.evaluate(() => { document.getElementById('reg-msg').scrollIntoView({ block: 'center' }); });
+    await page.evaluate(() => { openBulkEntryFullscreen(); });
+    await page.evaluate(() => notifySaveWarning({ message: 'V7の保存が確認できませんでした', consoleTag: '[E2E-V7]', callsiteId: 'e2e-v7', kind: 'save-verify', aggregateKey: 'e2e-v7', severity: 'warn' }));
+    await page.waitForTimeout(250);
+    const g7 = await page.evaluate(toastState);
+    ok(g7.cls === 'app-toast show err' && /V7/.test(g7.text),
+      '[V7] 一括登録オーバーレイを開いたまま＝幾何的に可視でも遮蔽＝トーストが出る: cls=' + g7.cls);
+    await page.close();
+  }
+  {
+    const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
+    await page.goto(TARGET);
+    await page.waitForFunction(() => typeof save === 'function');
+    await page.evaluate(seed(2));
+    await page.evaluate(() => { document.getElementById('reg-msg').scrollIntoView({ block: 'center' }); });
+    await page.evaluate(() => { if (typeof openPpFullscreen === 'function') { openPpFullscreen(); } else { document.getElementById('pp-fullscreen').style.display = 'block'; } });
+    await page.waitForTimeout(80);
+    const pre8 = await page.evaluate(() => ({ open: typeof isPpFullscreenOpen === 'function' && isPpFullscreenOpen() }));
+    await page.evaluate(() => notifySaveWarning({ message: 'V8の保存が確認できませんでした', consoleTag: '[E2E-V8]', callsiteId: 'e2e-v8', kind: 'save-verify', aggregateKey: 'e2e-v8', severity: 'warn' }));
+    await page.waitForTimeout(250);
+    const g8 = await page.evaluate(toastState);
+    ok(pre8.open && g8.cls === 'app-toast show err' && /V8/.test(g8.text),
+      '[V8] 過去参加者オーバーレイを開いたまま＝遮蔽＝トーストが出る: open=' + pre8.open + ' cls=' + g8.cls);
+    await page.close();
+  }
+
+  // ---- V9: sticky .tab-bar の裏（top=0）＝遮蔽扱いでトーストが出る（Codex P1 r3791745683） ----
+  {
+    const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
+    await page.goto(TARGET);
+    await page.waitForFunction(() => typeof save === 'function');
+    await page.evaluate(seed(2));
+    // ★ 素の scrollIntoView は要素が画面外（top<0）に行き「ただの視界外」になって遮蔽コードを
+    //   消しても緑のまま＝空回り（初版で実測 -46..-6）。バーの裏（top≈20・rect全体がバー下端より上）に正確に置く。
+    await page.evaluate(() => {
+      var el = document.getElementById('reg-msg');
+      var r = el.getBoundingClientRect();
+      window.scrollTo(0, window.scrollY + r.top - 20);
+    });
+    await page.evaluate(() => notifySaveWarning({ message: 'V9の保存が確認できませんでした', consoleTag: '[E2E-V9]', callsiteId: 'e2e-v9', kind: 'save-verify', aggregateKey: 'e2e-v9', severity: 'warn' }));
+    await page.waitForTimeout(250);
+    const g9 = await page.evaluate(`(function(){
+      var r=document.getElementById('reg-msg').getBoundingClientRect();
+      var b=document.querySelector('.tab-bar').getBoundingClientRect();
+      var t=document.getElementById('app-toast');
+      return {top:+r.top.toFixed(0),bottom:+r.bottom.toFixed(0),barBottom:+b.bottom.toFixed(0),cls:t.className};
+    })()`);
+    ok(g9.top >= 0 && g9.bottom <= g9.barBottom && g9.cls === 'app-toast show err',
+      '[V9] ★sticky バーの裏（rect ' + g9.top + '..' + g9.bottom + ' vs バー下端' + g9.barBottom + '）は不可視＝トーストが出る: cls=' + g9.cls);
+    await page.close();
+  }
+
+  // ---- V10: 名簿反映の破損スキップ経路＝成功系トーストに上書きされない（Codex P1 r3791745680） ----
+  //   初版 #892 は _done が引数を捨てていて印が届かず、この経路の抑止が一度も効いていなかった。
+  //   実路（saveData→syncBranchMasterOnSave→corruption skip）を通しで測る。
+  {
+    const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
+    await page.goto(TARGET);
+    await page.waitForFunction(() => typeof save === 'function');
+    await page.evaluate(seed(2));
+    await page.evaluate(() => { localStorage.setItem('shogi_branch_master', '{broken-master'); });
+    await page.evaluate(() => showTab('tournament'));
+    await page.evaluate(() => { saveData(); });
+    await page.waitForTimeout(300);
+    const g10 = await page.evaluate(toastState);
+    ok(g10.cls === 'app-toast show err' && /名簿への自動反映をスキップ/.test(g10.text),
+      '[V10] ★破損スキップの warn が成功系トーストに上書きされず最終表示: text=' + (g10.text || '').slice(0, 28));
     await page.close();
   }
 

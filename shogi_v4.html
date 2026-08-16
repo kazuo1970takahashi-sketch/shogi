@@ -4908,8 +4908,16 @@ function confirmBulkEntry(){
     if(!verifyPlayerPersistedById(t.id,t.cls,t.name))unverified++;
   }
   if(unverified>0){
+    // ★ Codex P2 (r3791745685): 成功トーストを抑止すると result.skipped の内訳（同名・空の氏名等）が
+    //   利用者に届かなくなる。既存文言の「（スキップ N行: …）」部分をそのまま warn に継ぐ（表示のみ）。
+    var skippedNote='';
+    try{
+      var fullNote=formatBulkEntryResultToast(result);
+      var mNote=fullNote&&fullNote.match(/（スキップ[^）]*）/);
+      if(mNote)skippedNote=mNote[0];
+    }catch(eNote){}
     notifySaveWarning({
-      message:result.added+'人を登録しましたが、'+unverified+'人分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください',
+      message:result.added+'人を登録しましたが、'+unverified+'人分の保存が確認できませんでした。ブラウザを閉じる前にバックアップしてください'+skippedNote,
       consoleTag:'SAVE-003b: bulkAddPlayers の保存が確認できませんでした ('+unverified+'/'+result.players.length+' 件未確認)',
       callsiteId:'SAVE-003b-bulkAddPlayers',
       kind:'save-verify',
@@ -7314,7 +7322,9 @@ function notifySaveWarning(options){
     saveWarningAggregationState.lastTimestampByKey[aggregateKey]=nowTs;
   }
   if(typeof showMsg==='function'){
-    showMsg(displayMessage,'warn');
+    // ★ Codex P1 (r3791745682): #reg-msg が無いと showMsg 自体が throw して console.warn /
+    //   indicator / トーストまで全部飛ぶ（「器なし」こそフォールバックが要る場面）。捕捉して続行。
+    try{ showMsg(displayMessage,'warn'); }catch(eMsg){}
     // ★ SAVE-WARN-VISIBILITY-001 (#892): showMsg の出力先 #reg-msg は受付ペイン先頭に在り、
     //   一括編集後の深いスクロール（実測 top=-112〜-4000級）・別タブ表示中（0×0・#869 と同型）・
     //   全画面オーバーレイの下では読めない。**見えない時だけ**既存の err トースト（#740 の器）で
@@ -7338,7 +7348,17 @@ function notifySaveWarning(options){
             var wvv=window.visualViewport;
             var wvvTop=(wvv&&wvv.offsetTop)||0;
             var wvvH=(wvv&&wvv.height)||window.innerHeight;
-            var visiblePx=Math.min(wr.bottom,wvvTop+wvvH)-Math.max(wr.top,wvvTop);
+            // ★ Codex P1 (r3791745683): sticky の .tab-bar（top:0/z-40）の裏に完全に入っても
+            //   rect だけの計算は「可視」と数えていた（実測: scrollIntoView 直後 top=0/h=40 vs バー下端44）。
+            //   バーの下端を可視域の上端に繰り上げる。下部の固定バーは実測で存在しない
+            //   （position:fixed の常設チェームは .app-toast 等のみ）ため上端だけ扱う。
+            var topBound=wvvTop;
+            var chromeBar=document.querySelector('.tab-bar');
+            if(chromeBar){
+              var cbr=chromeBar.getBoundingClientRect();
+              if(cbr.height>0&&cbr.bottom>topBound)topBound=cbr.bottom;
+            }
+            var visiblePx=Math.min(wr.bottom,wvvTop+wvvH)-Math.max(wr.top,topBound);
             seen=wr.height>0&&visiblePx>=Math.min(24,wr.height);
           }
           if(!seen&&typeof showToast==='function')showToast(displayMessage,{kind:'err'});
@@ -13659,7 +13679,10 @@ function syncBranchMasterOnSave(onDone){
   //   counts が null のままの経路（ゲスト no-op／マスタ破損スキップ／保存失敗／例外）は「内訳不明」＝
   //   呼び出し元が数字を出さない中立文言へフォールバックする（名簿に残っていない数字を報告しない）。
   var _counts=null;
-  function _done(){ if(typeof onDone==='function')onDone(_counts); }
+  // ★ Codex P1 (r3791745680): 初版 #892 は _done({_saveWarned:true}) を渡したが、この helper は
+  //   引数を捨てて常に _counts を送っていた＝印が届かず抑止が一度も効いていなかった。
+  //   引数があるときだけそれを通す（既存の裸呼び _done() は従来どおり _counts）。
+  function _done(r){ if(typeof onDone==='function')onDone(arguments.length>0?r:_counts); }
   // GUEST-TOURNAMENT-MODE-001 (#760・fail-safe の要): ゲスト大会は名簿（支部マスタ）へ一切書き込まない。
   //   本関数は大会→名簿同期の choke point（呼び出し2経路＝📋saveBtn の saveData／☁送信の未連携ガード
   //   「①名簿に反映して送信」CLOUD-SEND-UNLINKED-GUARD-001）であり、関数冒頭の no-op（_done() のみ）で
