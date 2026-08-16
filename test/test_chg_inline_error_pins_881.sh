@@ -85,6 +85,7 @@ anditem(){ case "$1" in
 esac; }
 # 動的検査が担当する変異（静的 pin では殺せない）。実証は下記スクリプト。
 DYN_OWNED="M1 M2 M2b M4 M5 M8 N4 X6 R1 R2 R3 R4 R5 R6 R7 R8 R9"
+STATIC_OWNED="X1 X2 X3 X3r X4 X4h X5 X7 M3b M3c M7"
 MUTCHK="test/tools/chg_inline_error_881_mutation_check.sh"
 # ③ 変異 → 赤になるべき pin（"-" は「pin ではなく動的検査が担当」）
 mut_expect(){ case "$1" in
@@ -163,6 +164,11 @@ if [ -n "$MUT_DIR" ] && [ -d "$MUT_DIR" ]; then
     if $want "$f"; then ng "$name  $want が緑のまま ＝ この変異を殺せていない"; else ok "$name → $want 赤"; fi
   done
   [ "$found" -eq 0 ] && ng "変異ファイルが1つも無い（MUT_DIR=$MUT_DIR）"
+  # ★ Codex P2 (r3790588019): 生成物だけを列挙すると「期待した変異が消えた」を検出できない
+  #   （実測: mut_X1.html を消しても FAIL=0 で通った）。**期待する全集合の存在**を見る。
+  for k in $STATIC_OWNED $DYN_OWNED; do
+    [ -f "$MUT_DIR/mut_$k.html" ] || ng "$k  期待した変異が生成されていない（generator から消えた？）"
+  done
 else
   ng "MUT_DIR が未指定/不在 ＝ ③ を実行できない（変異が無ければ FAIL）"
 fi

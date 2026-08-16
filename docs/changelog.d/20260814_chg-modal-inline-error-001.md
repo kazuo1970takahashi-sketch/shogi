@@ -75,7 +75,8 @@ Issue #881。STYLE-GUIDE **v1.2 §3 N5**（操作を止めた理由の提示）�
 
 - `bash test/run_tests.sh shogi_v4.html` → **PASS=252 FAIL=0 WARN=0**（ベース 251・**FAIL 増ゼロ／件数不減**）
   - `run_tests.sh:109 / :110 / :111` の grep pin は**無改変で緑**
-  - `test_chg_inline_error_pins_881.sh` は自動発見され **44/44 PASS**
+  - `test_chg_inline_error_pins_881.sh` は自動発見され **PASS=36 FAIL=0**
+    （動的担当の変異を `--` として件数に数えなくしたため。旧 44 は数え方が違う）
 - `bash test/run_e2e.sh` → **11/11 スイート PASS**（変異チェックを結線したので +1）
   - `chg_modal_inline_error_881.e2e.js`（新設）**78/0**
 - 動的変異チェック → **46/0**（動的担当17本すべて**狙った検査 ID で**赤・担当漏れゼロ・未変異は緑）

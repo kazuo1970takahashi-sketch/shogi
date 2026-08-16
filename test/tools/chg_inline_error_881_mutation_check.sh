@@ -102,16 +102,25 @@ for m in $DYN; do
   fi
 done
 
-# ★ 生成された変異のうち、静的にも動的にも担当が無いものが無いか
+# ★ Codex P2 (r3790588019): 生成されたファイルだけを列挙すると、**期待する変異が消えても**
+#   気づけない（実測: mut_X1.html を消しても全部「担当あり」で通った）。
+#   → **期待する全集合と生成物が完全一致**することを両方向で見る。
 echo ""
-echo "2) 担当の無い変異が無いこと（静的 pin 側の一覧と足して全件を覆う）"
+echo "2) 期待する変異の集合と生成物が完全一致すること（欠落も余剰も落とす）"
 STATIC="X1 X2 X3 X3r X4 X4h X5 X7 M3b M3c M7"
+EXPECTED="$DYN $STATIC"
+# (a) 期待した名前に対応するファイルが必ず1本ある
+for k in $EXPECTED; do
+  if [ -f "$MUT/mut_$k.html" ]; then ok "$k  生成されている"
+  else ng "$k  期待した変異が生成されていない（generator から消えた？）"; fi
+done
+# (b) 生成物のうち期待に無いものが無い
 for f in "$MUT"/mut_*.html; do
   [ -e "$f" ] || continue
   n="$(basename "$f" .html)"; n="${n#mut_}"
   hit=0
-  for k in $DYN $STATIC; do [ "$k" = "$n" ] && hit=1; done
-  if [ "$hit" -eq 1 ]; then ok "$n  担当あり"; else ng "$n  担当が無い（静的 pin にも動的検査にも入っていない）"; fi
+  for k in $EXPECTED; do [ "$k" = "$n" ] && hit=1; done
+  [ "$hit" -eq 1 ] || ng "$n  担当が無い（静的 pin にも動的検査にも入っていない）"
 done
 
 rm -rf "$MUT"
