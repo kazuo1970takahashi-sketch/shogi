@@ -177,7 +177,8 @@ const mk = (players, tables, withdrawn, winners) => `
     ok(alerts.length === 0, '[' + c.id + '-1] native alert が出ない  [' + alerts.length + ']');
     ok(r.body === MSG[c.id], '[' + c.id + '-2] 文言が完全一致  [' + String(r.body).replace(/\n/g, '/').slice(0, 30) + ']');
     ok(r.err見える === true && r.本文が切れていない === true, '[' + c.id + '-3] 警告が見えて本文が切れていない');
-    ok(JSON.stringify(r.pairs) === JSON.stringify(before), '[' + c.id + '-4] state.pairings が変わらない  [' + r.pairs.join(',') + ']');
+    ok(JSON.stringify(r.pairs) === JSON.stringify(before),
+       '[' + c.id + '-4] state.pairings が変わらない  [' + (r.pairs ? r.pairs.join(',') : '(モーダルが消えた)') + ']');
     ok(r.appModal === false, '[' + c.id + '-6] ★ 確認モーダルが出ない');
   }
 
@@ -231,7 +232,8 @@ const mk = (players, tables, withdrawn, winners) => `
   ok(!e1.なし, '[E1] info の器が残っている（吸収していない）');
   ok(e1.bg === 'rgb(255, 247, 230)' && e1.fg === 'rgb(122, 74, 0)',
      '[E2] info の色が現行のまま（N5 の danger 面色とは別）  [' + e1.bg + ']');
-  ok(/1人だけ入れ替えできる候補がありません/.test(e1.文言), '[E3] info の文言が現行のまま  [' + e1.文言.slice(0, 26) + ']');
+  ok(!e1.なし && /1人だけ入れ替えできる候補がありません/.test(e1.文言 || ''),
+     '[E3] info の文言が現行のまま  [' + String(e1.文言 || '(なし)').slice(0, 26) + ']');
   ok(e1.saveDisabled === true, '[E4] 保存ボタンの活殺は変えていない');
   ok(e1.errHidden === true && e1.cardMaxH === 'none',
      '[E5] ★ エラーを出していないので N5 の器は隠れ、max-height も効かない（＝ふだんの見え方は現行と同じ）');

@@ -90,16 +90,27 @@ const MSGS = [
   ['R8', "入れ替え先の卓に棄権した参加者がいます。"],
   ['R9', "この変更を行うと、再戦になる組み合わせが発生します。"]
 ];
+//   ★ Codex P2 (r3790541886): 「最初に見つかった位置から400文字以内の最初の return;」は
+//     別 callback の return; を掴み得る。**呼び出し全体＋直後の return; を1つの文字列**にして
+//     `mut()` に通す（＝出現回数1を assert する）。
 MSGS.forEach(function (m) {
   const name = m[0], head = m[1];
   const i = base.indexOf("showChangePairingError('" + head);
   if (i < 0) { console.error('!! ' + name + ' 呼び出しが見つからない'); bad++; return; }
-  // この呼び出しの直後にある最初の `return;` を落とす（同じ文字列が2回出ないことは上で担保）
-  const j = base.indexOf('return;', i);
-  if (j < 0 || j - i > 400) { console.error('!! ' + name + ' 直後の return; が見つからない'); bad++; return; }
-  fs.writeFileSync(path.join(outDir, 'mut_' + name + '.html'),
-    base.slice(0, j) + '/*R*/' + base.slice(j + 'return;'.length), 'utf8');
-  made++;
+  // 呼び出しの終端（'); まで）を求める
+  const end = base.indexOf("');", i);
+  if (end < 0) { console.error('!! ' + name + ' 呼び出しの終端が見つからない'); bad++; return; }
+  const callEnd = end + 3;
+  // その直後の空白（改行・インデント）だけを跨いで return; が来ることを要求する
+  const rest = base.slice(callEnd);
+  const mm = rest.match(/^(\s*)return;/);
+  if (!mm) {
+    console.error('!! ' + name + ' 呼び出しの直後（空白のみ跨いだ位置）に return; が無い');
+    bad++; return;
+  }
+  const whole = base.slice(i, callEnd) + mm[1] + 'return;';
+  // ★ mut() が「この文字列が全体で1回だけ」を assert する
+  mut(name, whole, base.slice(i, callEnd) + mm[1] + '/*R*/');
 });
 
 if (bad) { console.error('変異生成に失敗: ' + bad + ' 件'); process.exit(1); }

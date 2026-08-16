@@ -89,6 +89,24 @@ for f in $SUITES; do
   echo
 done
 
+# ★ CHG-MODAL-INLINE-ERROR-001 (#881) / Codex P2 (r3790541881):
+#   変異チェッカーを「手動実行用」に置くだけだと、17本の動的変異が生き残っても
+#   必須チェックは緑のままになる。ここ（必須の E2E 経路）から呼ぶ。
+#   ★ 対象を明示された実行（TARGET 指定）では回さない — 変異は repo の
+#     shogi_v4.html を前提に作られるため。
+MUTCHK="$SCRIPT_DIR/tools/chg_inline_error_881_mutation_check.sh"
+if [ -z "$TARGET" ] && [ -f "$MUTCHK" ]; then
+  echo "------------------------------------------"
+  echo "【動的変異チェック（#881）】"
+  if bash "$MUTCHK"; then
+    OKC=$((OKC+1))
+  else
+    FAILED="$FAILED chg_inline_error_881_mutation_check.sh"
+  fi
+  COUNT=$((COUNT+1))
+  echo
+fi
+
 echo "=========================================="
 if [ -n "$FAILED" ]; then
   echo "  E2E 結果: ${OKC}/${COUNT} スイート PASS"
