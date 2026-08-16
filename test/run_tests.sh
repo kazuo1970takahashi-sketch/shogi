@@ -78,8 +78,13 @@ echo "【第2層】重点回帰テスト"
 
 # 2-1. エスケープが innerHTML 流入箇所で適用されているか
 #   除外: escapeHtml 適用済／native alert()・confirm()（textContent 相当のプレーン表示）／
-#         アプリ内モーダル appConfirm()・appAlert()・appPrompt()（showAppModal が msg.textContent で描画＝innerHTML 非流入で安全・native confirm/alert と同クラス。IN-APP-MODAL-001 #606）。
-unescaped=$(grep -nE "'\+name\+|'\+newName\+|'\+p\.name\+|'\+players\[.*\]\.name\+|'\+getName\(.*\)\+|'\+candidates\[.*\]\.name\+|'\+n1\+|'\+n2\+|'\+date\+|'\+place\+|'\+start\+|'\+end\+|'\+sei\+|'\+fuku\+|'\+note\+|'\+oppName\+|'\+pn1\+|'\+pn2\+|'\+pw\+|'\+text\+" "$TARGET" | grep -v "escapeHtml" | grep -v "alert(" | grep -v "confirm(" | grep -v "appConfirm(" | grep -v "appAlert(" | grep -v "appPrompt(" | wc -l)
+#         アプリ内モーダル appConfirm()・appAlert()・appPrompt()（showAppModal が msg.textContent で描画＝innerHTML 非流入で安全・native confirm/alert と同クラス。IN-APP-MODAL-001 #606）／
+#         showBulkEditError()（.bulk-err-body へ textContent で描画＝innerHTML 非流入。BULK-EDIT-INLINE-ERROR-001 #887）。
+#   ★ この除外は「安全だと主張する」だけでは足りない。裏づけは test_bulk_inline_error_pins_887.sh の Q4
+#     ＝ showBulkEditError/clearBulkEditError の中に innerHTML/outerHTML/insertAdjacentHTML が1つも無いこと、
+#        かつ .bulk-err-head / .bulk-err-body のどちらにも innerHTML 系を使わないこと。Q4 が赤なら除外の前提が崩れている。
+#   ★ 除外は**行単位**なので、showBulkEditError( と別の innerHTML 流入を同じ行に書かないこと。
+unescaped=$(grep -nE "'\+name\+|'\+newName\+|'\+p\.name\+|'\+players\[.*\]\.name\+|'\+getName\(.*\)\+|'\+candidates\[.*\]\.name\+|'\+n1\+|'\+n2\+|'\+date\+|'\+place\+|'\+start\+|'\+end\+|'\+sei\+|'\+fuku\+|'\+note\+|'\+oppName\+|'\+pn1\+|'\+pn2\+|'\+pw\+|'\+text\+" "$TARGET" | grep -v "escapeHtml" | grep -v "alert(" | grep -v "confirm(" | grep -v "appConfirm(" | grep -v "appAlert(" | grep -v "appPrompt(" | grep -v "showBulkEditError(" | wc -l)
 [ "$unescaped" -eq 0 ] && ok "未エスケープのユーザー入力: 0件" || ng "未エスケープ箇所: $unescaped 件 (危険)"
 
 # 2-2. showMsg内でescapeHtml使用

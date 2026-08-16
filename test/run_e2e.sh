@@ -116,6 +116,27 @@ else
   echo
 fi
 
+# BULK-EDIT-INLINE-ERROR-001 (#887): 同型の動的変異チェック。
+#   #881 と同じ規律（既定実行で欠落なら FAIL・TARGET 指定時は変異の前提が崩れるので回さない）。
+MUTCHK887="$SCRIPT_DIR/tools/bulk_inline_error_887_mutation_check.sh"
+if [ -z "$TARGET" ]; then
+  echo "------------------------------------------"
+  echo "【動的変異チェック（#887）】"
+  COUNT=$((COUNT+1))
+  if [ ! -f "$MUTCHK887" ]; then
+    echo "$MUTCHK887 が無い（改名・削除された？）。任意扱いにはしない。" >&2
+    FAILED="$FAILED bulk_inline_error_887_mutation_check.sh(missing)"
+  elif bash "$MUTCHK887"; then
+    OKC=$((OKC+1))
+  else
+    FAILED="$FAILED bulk_inline_error_887_mutation_check.sh"
+  fi
+  echo
+else
+  echo "（TARGET 指定のため #887 動的変異チェックは回さない: 変異は repo の shogi_v4.html が前提）"
+  echo
+fi
+
 echo "=========================================="
 if [ -n "$FAILED" ]; then
   echo "  E2E 結果: ${OKC}/${COUNT} スイート PASS"
