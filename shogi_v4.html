@@ -4922,7 +4922,11 @@ function confirmBulkEntry(){
   updateBulkEntryPreview();
   closeBulkEntryFullscreen();
   // MASTER-SYNC-CLARITY-001 (#757) の結果報告型: 純関数で文言を組み立て showToast（textContent）で通知。
-  showToast(formatBulkEntryResultToast(result));
+  // ★ SAVE-WARN-VISIBILITY-001 (#892): 保存未確認があるときは成功トーストを出さない。
+  //   #app-toast は1枚しか無く、直前の warn トーストを実測 214ms で上書きして
+  //   「保存未確認」がトースト経路から消えていた（反証パネルの実測）。success 抑止は
+  //   callsite 責務（notifySaveWarning 側コメントの既存設計）に従う。
+  if(unverified===0)showToast(formatBulkEntryResultToast(result));
 }
 
 // BULK-ENTRY-001 (#761): 導線の結線（bindRegistrationEvents から1回・build/bind 分離）。
@@ -7311,6 +7315,36 @@ function notifySaveWarning(options){
   }
   if(typeof showMsg==='function'){
     showMsg(displayMessage,'warn');
+    // ★ SAVE-WARN-VISIBILITY-001 (#892): showMsg の出力先 #reg-msg は受付ペイン先頭に在り、
+    //   一括編集後の深いスクロール（実測 top=-112〜-4000級）・別タブ表示中（0×0・#869 と同型）・
+    //   全画面オーバーレイの下では読めない。**見えない時だけ**既存の err トースト（#740 の器）で
+    //   同文を出す。#reg-msg の持続表示・console.warn・indicator count は不変＝出し方の追加のみ。
+    //   反証パネル1巡の実測3件を反映:
+    //   - 判定はレイアウト確定後（setTimeout 0）。起動時 load 経路は同期判定だと再描画の押し下げ前に
+    //     「可視」と誤る（実測 top=491→確定後703）
+    //   - visualViewport の offsetTop を考慮し「可視高 24px 以上」を要求（キーボード表示中の
+    //     誤判定が2方向とも実測で出た）
+    //   - 全画面オーバーレイ（名簿一括登録 z=9500・過去参加者）表示中は遮蔽＝不可視扱い
+    //   - 器 #reg-msg 自体が無いときは「表示先なし」＝トーストを出す側に倒す
+    try{
+      setTimeout(function(){
+        try{
+          var covered=(typeof isBulkEntryFullscreenOpen==='function'&&isBulkEntryFullscreenOpen())||
+                      (typeof isPpFullscreenOpen==='function'&&isPpFullscreenOpen());
+          var seen=false;
+          var warnSlot=document.getElementById('reg-msg');
+          if(warnSlot&&!covered){
+            var wr=warnSlot.getBoundingClientRect();
+            var wvv=window.visualViewport;
+            var wvvTop=(wvv&&wvv.offsetTop)||0;
+            var wvvH=(wvv&&wvv.height)||window.innerHeight;
+            var visiblePx=Math.min(wr.bottom,wvvTop+wvvH)-Math.max(wr.top,wvvTop);
+            seen=wr.height>0&&visiblePx>=Math.min(24,wr.height);
+          }
+          if(!seen&&typeof showToast==='function')showToast(displayMessage,{kind:'err'});
+        }catch(e2){}
+      },0);
+    }catch(e){}
   }
   if(typeof console!=='undefined'&&console.warn){
     var warnMeta={callsiteId:callsiteId,fields:fields};
@@ -13650,7 +13684,9 @@ function syncBranchMasterOnSave(onDone){
         severity:'warn'
       });
       save();
-      _done();
+      // ★ SAVE-WARN-VISIBILITY-001 (#892): warn トーストの 1.7ms 後に saveData の成功系トーストが
+      //   同一 #app-toast を上書きしていた（反証パネルの実測）。印を渡して呼び元に抑止させる。
+      _done({_saveWarned:true});
       return;
     }
     var date=getTournamentDateFromReport(state.report);
@@ -13766,6 +13802,8 @@ function saveData(){
   // IN-APP-MODAL-001 (#606): syncBranchMasterOnSave は YOMI 上書き確認が appConfirm（非同期）化したため、
   //   完了通知 showToast を onDone 継続で受ける＝旧「同期反映後に通知」の順序を保持（差分なし/確認キャンセル/OK いずれも反映完了後に1回）。
   syncBranchMasterOnSave(function(counts){
+    // ★ SAVE-WARN-VISIBILITY-001 (#892): 破損スキップ経路は warn トースト側が説明済み＝成功系で上書きしない。
+    if(counts&&counts._saveWarned)return;
     // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は blocking alert をやめ toast へ（OK タップ不要）。
     //   旧 alert にあった「控えはバックアップ」案内は backup-nudge＋save-warning ヘルプがカバー
     //   （SAVE-STATUS-BAR-REMOVE-001: 旧・保存状態バー＋save-systems ヘルプは撤去済み）。

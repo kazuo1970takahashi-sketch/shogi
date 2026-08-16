@@ -41,7 +41,10 @@ assert(/syncBranchMasterOnSave\(function\(counts\)\{[\s\S]{0,600}showToast\(form
 // E. 完了通知の全経路担保: _done ヘルパ＋corruption/例外経路
 // MASTER-SYNC-CLARITY-001 (#757): onDone は同期結果の内訳（_counts）を引数で受ける（呼び出し回数・経路は不変）。
 assert(/function _done\(\)\{ if\(typeof onDone===['"]function['"]\)onDone\(_counts\); \}/.test(RAW), 'E1 _done ヘルパ（onDone を安全に1回呼ぶ）');
-assert(RAW.indexOf('      save();\n      _done();\n      return;') >= 0, 'E2 corruption スキップ経路でも _done を呼ぶ（完了通知）');
+// SAVE-WARN-VISIBILITY-001 (#892): corruption スキップは warn トースト側が説明するため、
+// _done に {_saveWarned:true} を渡して呼び元 saveData の成功系トーストを抑止する形になった。
+// このピンの意図（スキップ経路でも完了通知 _done を必ず呼ぶ）は不変。
+assert(RAW.indexOf('      _done({_saveWarned:true});\n      return;') >= 0, 'E2 corruption スキップ経路でも _done を呼ぶ（完了通知・#892 で印つき）');
 
 // F. 関数構造: 単一定義
 assert(count(RAW, 'function syncBranchMasterOnSave(') === 1, 'F1 syncBranchMasterOnSave 単一定義');
