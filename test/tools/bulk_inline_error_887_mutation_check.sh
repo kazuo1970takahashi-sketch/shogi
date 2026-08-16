@@ -36,7 +36,7 @@ want_ids(){ case "$1" in
   S18) echo "A7 A3";;      # show を alert に戻す
 esac; }
 # 静的 pin が担当する変異（③ が実証する）
-STATIC="S1 S2 S3 S3a S3r S4 S4b S4h S4hh S4x S4y S5 S6 S8 S9 S9b S10 S10b S11 S11b S12b S12c S15 S21 S22 D2 D5"
+STATIC="S1 S2 S3 S3a S3r S4 S4b S4h S4hh S4hh2 S4x S4y S5 S6 S6b S8 S9 S9b S10 S10b S11 S11b S12b S12c S15 S21 S22 D2 D5"
 
 pass=0; fail=0
 ok(){ pass=$((pass+1)); echo "  ok   $1"; }
