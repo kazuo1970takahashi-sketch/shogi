@@ -208,7 +208,7 @@ if [ -n "$MUT_DIR" ] && [ -d "$MUT_DIR" ]; then
     if $want "$f"; then ng "$name  $want が緑のまま ＝ この変異を殺せていない"
     else ok "$name → $want 赤"; KILLED="$KILLED $want"; fi
   done
-  [ "$found" -eq 0 ] && ng "変異ファイルが1つも無い（MUT_DIR=$MUT_DIR）"
+  [ "$found" -eq 0 ] && ng "変異ファイルが1つも無い（MUT_DIR=${MUT_DIR}）"
   # ★ 期待する全集合の存在（欠落を落とす。#881 が Codex P2 で足した対策と同型）
   for k in $STATIC_OWNED $DYN_OWNED; do
     [ -f "$MUT_DIR/mut_$k.html" ] || ng "$k  期待した変異が生成されていない（generator から消えた？）"
@@ -239,6 +239,10 @@ for p in $PINS; do
   else ng "$p  担当変異ゼロ ＝ この pin は一度も試されていない"; fi
 done
 
+# ★ bash 3.2 互換: 変数展開の**直後に全角文字**を置くときは必ず ${var} で囲むこと。
+#   bash 3.2 は UTF-8 ロケールで高位バイトを変数名に取り込み、set -u で
+#   「未割り当ての変数」になる（実測: 作者機 macOS で `$EXPECT_PASS）` が落ちた。
+#   cloud の bash 5 では再現しない＝POSIX BRE と同類の「ここでしか見えない互換差」）。
 # --- ⑥ 台帳の整合（3巡目パネル C3-3） -----------------------------------------
 #   同じ情報が4つの台帳（PINS / AND_ITEMS / mut_expect+*_OWNED / mutation_check の DYN）に
 #   手書きで重複しており、**台帳から消す方向のドリフト**はどの段も検出しなかった（実測4変種:
@@ -248,13 +252,13 @@ echo ""
 echo "⑥ 台帳の整合"
 # (a) 期待 PASS 総数のメタ pin（PINS や AND_ITEMS の項が静かに消えると総数が減る）
 EXPECT_PASS=85
-if [ "$pass" -eq "$EXPECT_PASS" ]; then ok "PASS 総数が期待どおり（$EXPECT_PASS）"
-else ng "PASS 総数が $pass（期待 $EXPECT_PASS）＝ 台帳のどれかが痩せた/太った。意図した変更なら EXPECT_PASS を更新すること"; fi
+if [ "$pass" -eq "$EXPECT_PASS" ]; then ok "PASS 総数が期待どおり（${EXPECT_PASS}）"
+else ng "PASS 総数が ${pass}（期待 ${EXPECT_PASS}）＝ 台帳のどれかが痩せた/太った。意図した変更なら EXPECT_PASS を更新すること"; fi
 # (b) mutation_check の DYN= と自分の DYN_OWNED の突合（③の表示「動的担当（…で実証）」を虚偽にしない）
 if [ -f "$MUTCHK" ]; then
   CHK_DYN="$(grep '^DYN=' "$MUTCHK" | head -1 | sed 's/^DYN="//;s/"$//')"
   if [ "$CHK_DYN" = "$DYN_OWNED" ]; then ok "DYN_OWNED と mutation_check の DYN が一致"
-  else ng "DYN_OWNED（$DYN_OWNED）と mutation_check の DYN（$CHK_DYN）が食い違う ＝『動的担当（で実証）』が虚偽になる"; fi
+  else ng "DYN_OWNED（${DYN_OWNED}）と mutation_check の DYN（${CHK_DYN}）が食い違う ＝『動的担当（で実証）』が虚偽になる"; fi
 else
   ng "$MUTCHK が無い ＝ 動的担当の実証が消えている"
 fi
