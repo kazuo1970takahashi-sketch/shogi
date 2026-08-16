@@ -7350,15 +7350,23 @@ function notifySaveWarning(options){
             var wvvH=(wvv&&wvv.height)||window.innerHeight;
             // ★ Codex P1 (r3791745683): sticky の .tab-bar（top:0/z-40）の裏に完全に入っても
             //   rect だけの計算は「可視」と数えていた（実測: scrollIntoView 直後 top=0/h=40 vs バー下端44）。
-            //   バーの下端を可視域の上端に繰り上げる。下部の固定バーは実測で存在しない
-            //   （position:fixed の常設チェームは .app-toast 等のみ）ため上端だけ扱う。
+            //   バーの下端を可視域の上端に繰り上げる。
+            // ★ Codex P1 (r3791854242): 下部にも固定バーが実在した（#regActionBar :747・fixed/bottom:0/z-50。
+            //   1巡目の「存在せず」は私の走査漏れ）。バーの上端を可視域の下端に繰り下げる。
+            //   pane-reg 非表示時はバーも隠れる（rect 0）ので影響しない。
             var topBound=wvvTop;
             var chromeBar=document.querySelector('.tab-bar');
             if(chromeBar){
               var cbr=chromeBar.getBoundingClientRect();
               if(cbr.height>0&&cbr.bottom>topBound)topBound=cbr.bottom;
             }
-            var visiblePx=Math.min(wr.bottom,wvvTop+wvvH)-Math.max(wr.top,topBound);
+            var bottomBound=wvvTop+wvvH;
+            var regBar=document.getElementById('regActionBar');
+            if(regBar){
+              var rbr=regBar.getBoundingClientRect();
+              if(rbr.height>0&&rbr.top<bottomBound)bottomBound=rbr.top;
+            }
+            var visiblePx=Math.min(wr.bottom,bottomBound)-Math.max(wr.top,topBound);
             seen=wr.height>0&&visiblePx>=Math.min(24,wr.height);
           }
           if(!seen&&typeof showToast==='function')showToast(displayMessage,{kind:'err'});

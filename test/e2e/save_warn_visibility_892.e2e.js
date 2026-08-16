@@ -113,7 +113,8 @@ const toastState = `(function(){
     await page.evaluate(() => { openBulkEntryFullscreen(); });
     await page.waitForTimeout(80);
     await page.evaluate(() => {
-      document.getElementById('bulk-entry-text').value = '新規甲\n新規乙';
+      // ★ Codex P2 (r3791854245): skipped=0 だと正規表現の継ぎ足しを消しても緑＝重複1行を混ぜる
+      document.getElementById('bulk-entry-text').value = '新規甲\n新規甲\n新規乙';
       updateBulkEntryPreview();
       // 保存検証を全滅させる: verify が必ず false を返す形（表示だけの stub・判定ロジック非改変）
       window.verifyPlayerPersistedById = function () { return false; };
@@ -121,8 +122,8 @@ const toastState = `(function(){
     await page.evaluate(() => { confirmBulkEntry(); });
     await page.waitForTimeout(300);
     const g = await page.evaluate(toastState);
-    ok(g.cls === 'app-toast show err' && /保存が確認できませんでした/.test(g.text),
-      '[V4] ★一括登録の保存未確認: 成功トーストに上書きされず warn が最終表示: text=' + (g.text || '').slice(0, 30));
+    ok(g.cls === 'app-toast show err' && /保存が確認できませんでした/.test(g.text) && /（スキップ/.test(g.text),
+      '[V4] ★一括登録の保存未確認: warn が最終表示＋スキップ内訳を含む: text=' + (g.text || '').slice(0, 48));
     await page.close();
   }
 
@@ -245,6 +246,67 @@ const toastState = `(function(){
     const g10 = await page.evaluate(toastState);
     ok(g10.cls === 'app-toast show err' && /名簿への自動反映をスキップ/.test(g10.text),
       '[V10] ★破損スキップの warn が成功系トーストに上書きされず最終表示: text=' + (g10.text || '').slice(0, 28));
+    await page.close();
+  }
+
+  // ---- V11: 部分可視 1〜23px は「読めない」＝トーストが出る（Codex P2 r3791854240） ----
+  //   閾値 24px を 1px に緩める変異でこのセルが赤くなる。
+  {
+    const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
+    await page.goto(TARGET);
+    await page.waitForFunction(() => typeof save === 'function');
+    await page.evaluate(seed(32));
+    // ★ 位置決めの罠2つ（実測）: #reg-msg は中身が入るまで高さ0／初回の notifySaveWarning は
+    //   インジケータをスロットの上に挿入して +68px 押し下げる。→ ウォームアップ発火で
+    //   両方を先に確定させ、トーストが消えるのを待ってから位置決めする。
+    await page.evaluate(() => notifySaveWarning({ message: 'ウォームアップ', consoleTag: '[E2E-V11w]', callsiteId: 'e2e-v11w', kind: 'save-verify', aggregateKey: 'e2e-v11w', severity: 'warn' }));
+    await page.waitForTimeout(3400);
+    await page.evaluate(() => {
+      // 位置決めは**固定の下部バー #regActionBar**（top 一定）で: スロット上端をバー上端の
+      //   10px 上に＝見えるのは上の 10px だけ（1〜23px の部分可視・残りはバーの裏）。
+      var el = document.getElementById('reg-msg');
+      var barTop = document.getElementById('regActionBar').getBoundingClientRect().top;
+      var r = el.getBoundingClientRect();
+      window.scrollTo(0, window.scrollY + (r.top - (barTop - 10)));
+    });
+    await page.evaluate(() => notifySaveWarning({ message: 'V11の保存が確認できませんでした', consoleTag: '[E2E-V11]', callsiteId: 'e2e-v11', kind: 'save-verify', aggregateKey: 'e2e-v11', severity: 'warn' }));
+    await page.waitForTimeout(250);
+    const g11 = await page.evaluate(`(function(){
+      var r=document.getElementById('reg-msg').getBoundingClientRect();
+      var barTop=document.getElementById('regActionBar').getBoundingClientRect().top;
+      var t=document.getElementById('app-toast');
+      return {vis:+(barTop-r.top).toFixed(0),cls:t.className};
+    })()`);
+    const g11t = await page.evaluate(`document.getElementById('app-toast').textContent`);
+    ok(g11.vis > 0 && g11.vis < 24 && g11.cls === 'app-toast show err' && /V11/.test(g11t),
+      '[V11] ★部分可視 ' + g11.vis + 'px（1〜23px）は読めない扱い＝トーストが出る: cls=' + g11.cls);
+    await page.close();
+  }
+
+  // ---- V12: 下部固定バー #regActionBar の裏＝トーストが出る（Codex P1 r3791854242） ----
+  //   バーのクランプを消すと幾何的には24px以上「見える」計算になり、このセルが赤くなる。
+  {
+    const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
+    await page.goto(TARGET);
+    await page.waitForFunction(() => typeof save === 'function');
+    await page.evaluate(seed(2));
+    await page.evaluate(() => {
+      var el = document.getElementById('reg-msg');
+      var bar = document.getElementById('regActionBar').getBoundingClientRect();
+      var r = el.getBoundingClientRect();
+      // スロット上端をバー上端の10px上に＝バー無視なら40px中30px「見える」計算・実際はバーの裏
+      window.scrollTo(0, window.scrollY + (r.top - (bar.top - 10)));
+    });
+    await page.evaluate(() => notifySaveWarning({ message: 'V12の保存が確認できませんでした', consoleTag: '[E2E-V12]', callsiteId: 'e2e-v12', kind: 'save-verify', aggregateKey: 'e2e-v12', severity: 'warn' }));
+    await page.waitForTimeout(250);
+    const g12 = await page.evaluate(`(function(){
+      var r=document.getElementById('reg-msg').getBoundingClientRect();
+      var b=document.getElementById('regActionBar').getBoundingClientRect();
+      var t=document.getElementById('app-toast');
+      return {top:+r.top.toFixed(0),bottom:+r.bottom.toFixed(0),barTop:+b.top.toFixed(0),cls:t.className};
+    })()`);
+    ok(g12.bottom > g12.barTop && (g12.barTop - Math.max(g12.top, 0)) < 24 && g12.cls === 'app-toast show err',
+      '[V12] ★下部バーの裏（rect ' + g12.top + '..' + g12.bottom + ' vs バー上端' + g12.barTop + '）は不可視＝トーストが出る: cls=' + g12.cls);
     await page.close();
   }
 

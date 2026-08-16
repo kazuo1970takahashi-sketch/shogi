@@ -122,6 +122,7 @@
           "__resolveAppModal",
           "_resetSaveWarningAggregationState",
           "__setAuthClientTestFactory",
+          "isBulkEntryFullscreenOpen",
           "hasResetUndoSnapshot",
           "addSelectedPastParticipants",
           "finalizeAddPastParticipants",
