@@ -4581,6 +4581,8 @@ function closePpFullscreen(){
   var el=document.getElementById('pp-fullscreen');
   if(!el)return;
   el.style.display='none';
+  // ★ SAVE-WARN-VISIBILITY-001 (#892): オーバーレイ表示中に保留した保存警告トーストを再判定して出す
+  if(typeof flushPendingSaveWarnToast==='function')flushPendingSaveWarnToast();
   if(el.setAttribute)el.setAttribute('aria-hidden','true');
   try{document.body.style.overflow='';}catch(e){}
   // INPUT-KBD-COEXIST-004 (#734): 閉時はオーバーレイ由来の inline style を確実に解除（再オープン時の残留防止）。
@@ -4883,6 +4885,8 @@ function closeBulkEntryFullscreen(){
   el.style.display='none';
   if(el.setAttribute)el.setAttribute('aria-hidden','true');
   try{document.body.style.overflow='';}catch(e){}
+  // ★ SAVE-WARN-VISIBILITY-001 (#892): オーバーレイ表示中に保留した保存警告トーストを再判定して出す
+  if(typeof flushPendingSaveWarnToast==='function')flushPendingSaveWarnToast();
 }
 
 // 確定＝検証をやり直してから一括追加（プレビュー表示後に受付状況が変わっても古い判定のまま登録しない）。
@@ -7342,13 +7346,46 @@ function notifySaveWarning(options){
     //   - 全画面オーバーレイ（名簿一括登録 z=9500・過去参加者）表示中は遮蔽＝不可視扱い
     //   - 器 #reg-msg 自体が無いときは「表示先なし」＝トーストを出す側に倒す
     try{
-      setTimeout(function(){
+      setTimeout(function(){ _maybeToastSaveWarning(displayMessage); },0);
+    }catch(e){}
+  }
+  if(typeof console!=='undefined'&&console.warn){
+    var warnMeta={callsiteId:callsiteId,fields:fields};
+    if(kind!==undefined)warnMeta.kind=kind;
+    if(aggregateKey!==undefined)warnMeta.aggregateKey=aggregateKey;
+    if(severity!==undefined)warnMeta.severity=severity;
+    console.warn(consoleTag,warnMeta);
+  }
+  // SAVE-UX-STATUS-INDICATOR: helper 1 呼出 = indicator count +1（設計書 §7）。
+  //   fields.length 分は加算しない。callsite 不変。例外を投げない契約を維持。
+  //   SAVE-UX-WARN-AGGREGATION-IMPL: metadata は indicator 経路に渡すが count 集約には使わない。
+  var indicatorPayload={callsiteId:callsiteId,fields:fields};
+  if(kind!==undefined)indicatorPayload.kind=kind;
+  if(aggregateKey!==undefined)indicatorPayload.aggregateKey=aggregateKey;
+  if(severity!==undefined)indicatorPayload.severity=severity;
+  recordSaveWarningForIndicator(indicatorPayload);
+}
+
+// ★ SAVE-WARN-VISIBILITY-001 (#892) / Codex P2 (r3792739797): 全画面オーバーレイ表示中は
+//   §3 の規律（メッセージは同じ面に出す・showToast はモーダル/オーバーレイ表示中に使わない）に
+//   従いトーストを**保留**し、オーバーレイの close で再判定してから出す（最新の1件のみ保持）。
+var _pendingSaveWarnToast=null;
+function flushPendingSaveWarnToast(){
+  try{
+    if(_pendingSaveWarnToast==null)return;
+    var pendingMsg=_pendingSaveWarnToast;
+    _pendingSaveWarnToast=null;
+    setTimeout(function(){ _maybeToastSaveWarning(pendingMsg); },0);
+  }catch(e){}
+}
+function _maybeToastSaveWarning(displayMessage){
         try{
           var covered=(typeof isBulkEntryFullscreenOpen==='function'&&isBulkEntryFullscreenOpen())||
                       (typeof isPpFullscreenOpen==='function'&&isPpFullscreenOpen());
+          if(covered){ _pendingSaveWarnToast=displayMessage; return; }
           var seen=false;
           var warnSlot=document.getElementById('reg-msg');
-          if(warnSlot&&!covered){
+          if(warnSlot){
             var wr=warnSlot.getBoundingClientRect();
             var wvv=window.visualViewport;
             var wvvTop=(wvv&&wvv.offsetTop)||0;
@@ -7377,24 +7414,6 @@ function notifySaveWarning(options){
           // ★ Codex P2 (r3791933163): この経路は N3（fail-soft）＝danger でなく warn 面色で出す
           if(!seen&&typeof showToast==='function')showToast(displayMessage,{kind:'warn'});
         }catch(e2){}
-      },0);
-    }catch(e){}
-  }
-  if(typeof console!=='undefined'&&console.warn){
-    var warnMeta={callsiteId:callsiteId,fields:fields};
-    if(kind!==undefined)warnMeta.kind=kind;
-    if(aggregateKey!==undefined)warnMeta.aggregateKey=aggregateKey;
-    if(severity!==undefined)warnMeta.severity=severity;
-    console.warn(consoleTag,warnMeta);
-  }
-  // SAVE-UX-STATUS-INDICATOR: helper 1 呼出 = indicator count +1（設計書 §7）。
-  //   fields.length 分は加算しない。callsite 不変。例外を投げない契約を維持。
-  //   SAVE-UX-WARN-AGGREGATION-IMPL: metadata は indicator 経路に渡すが count 集約には使わない。
-  var indicatorPayload={callsiteId:callsiteId,fields:fields};
-  if(kind!==undefined)indicatorPayload.kind=kind;
-  if(aggregateKey!==undefined)indicatorPayload.aggregateKey=aggregateKey;
-  if(severity!==undefined)indicatorPayload.severity=severity;
-  recordSaveWarningForIndicator(indicatorPayload);
 }
 
 // ROUNDS-PER-CLASS-001: そのクラスに適用する回戦数を返す。クラス別上書き(state.classes[i].rounds)が

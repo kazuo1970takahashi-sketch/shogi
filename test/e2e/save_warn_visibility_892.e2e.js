@@ -2,7 +2,7 @@
 // Playwright E2E: SAVE-WARN-VISIBILITY-001（#892）
 //   notifySaveWarning の warn は #reg-msg（受付ペイン先頭）に出るが、一括編集後の深いスクロール・
 //   別タブ表示中・全画面オーバーレイの下では読めない（実測 top=-112 / 0×0 / 遮蔽）。
-//   「見えない時だけ err トーストでも同文を出す」フォールバックを実ブラウザで測る。
+//   「見えない時だけ warn 面色のトーストでも同文を出す」フォールバックを実ブラウザで測る。
 //   セルは反証パネル1巡（2026-08-16）の実測から採った。no-op 検証: [V1] は修正を消すと
 //   toast className='app-toast'・textContent='' になり赤くなることをパネルが両側で実測済み。
 //
@@ -69,7 +69,7 @@ const toastState = `(function(){
     })()`);
     ok(g.msgTop < 0, '[V0] 前提: warn の表示先 #reg-msg が視界外（top=' + g.msgTop + '）');
     ok(g.cls === 'app-toast show warn' && /保存が確認できませんでした/.test(g.text),
-      '[V1] ★視界外なら err トーストで同文が出る: cls=' + g.cls);
+      '[V1] ★視界外なら warn トーストで同文が出る: cls=' + g.cls);
     await page.waitForTimeout(3300);
     const gone = await page.evaluate(toastState);
     ok(gone.cls === 'app-toast', '[V1b] トーストは3秒で消える（持続表示は #reg-msg 側の契約のまま）');
@@ -178,30 +178,40 @@ const toastState = `(function(){
     const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
     await page.goto(TARGET);
     await page.waitForFunction(() => typeof save === 'function');
-    await page.evaluate(seed(2));
-    await page.evaluate(() => { document.getElementById('reg-msg').scrollIntoView({ block: 'center' }); });
+    await page.evaluate(seed(32));
+    // スロットは視界外（深スクロール）＝保留が無ければ表示中でもトーストが出てしまう状態を作る
+    await page.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); });
     await page.evaluate(() => { openBulkEntryFullscreen(); });
     await page.evaluate(() => notifySaveWarning({ message: 'V7の保存が確認できませんでした', consoleTag: '[E2E-V7]', callsiteId: 'e2e-v7', kind: 'save-verify', aggregateKey: 'e2e-v7', severity: 'warn' }));
     await page.waitForTimeout(250);
+    // ★ Codex P2 (r3792739797): §3「showToast はオーバーレイ表示中に使わない」＝表示中は保留
+    const g7a = await page.evaluate(toastState);
+    ok(g7a.cls === 'app-toast',
+      '[V7a] オーバーレイ表示中はトーストを出さない（§3・保留）: cls=' + g7a.cls);
+    await page.evaluate(() => { closeBulkEntryFullscreen(); });
+    await page.waitForTimeout(250);
     const g7 = await page.evaluate(toastState);
     ok(g7.cls === 'app-toast show warn' && /V7/.test(g7.text),
-      '[V7] 一括登録オーバーレイを開いたまま＝幾何的に可視でも遮蔽＝トーストが出る: cls=' + g7.cls);
+      '[V7] ★オーバーレイの close で保留分を再判定して出す: cls=' + g7.cls);
     await page.close();
   }
   {
     const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
     await page.goto(TARGET);
     await page.waitForFunction(() => typeof save === 'function');
-    await page.evaluate(seed(2));
-    await page.evaluate(() => { document.getElementById('reg-msg').scrollIntoView({ block: 'center' }); });
+    await page.evaluate(seed(32));
+    await page.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); });
     await page.evaluate(() => { if (typeof openPpFullscreen === 'function') { openPpFullscreen(); } else { document.getElementById('pp-fullscreen').style.display = 'block'; } });
     await page.waitForTimeout(80);
     const pre8 = await page.evaluate(() => ({ open: typeof isPpFullscreenOpen === 'function' && isPpFullscreenOpen() }));
     await page.evaluate(() => notifySaveWarning({ message: 'V8の保存が確認できませんでした', consoleTag: '[E2E-V8]', callsiteId: 'e2e-v8', kind: 'save-verify', aggregateKey: 'e2e-v8', severity: 'warn' }));
     await page.waitForTimeout(250);
+    const g8a = await page.evaluate(toastState);
+    await page.evaluate(() => { closePpFullscreen(); });
+    await page.waitForTimeout(250);
     const g8 = await page.evaluate(toastState);
-    ok(pre8.open && g8.cls === 'app-toast show warn' && /V8/.test(g8.text),
-      '[V8] 過去参加者オーバーレイを開いたまま＝遮蔽＝トーストが出る: open=' + pre8.open + ' cls=' + g8.cls);
+    ok(pre8.open && g8a.cls === 'app-toast' && g8.cls === 'app-toast show warn' && /V8/.test(g8.text),
+      '[V8] ★pp オーバーレイ: 表示中は保留（cls=' + g8a.cls + '）・close で出る: cls=' + g8.cls);
     await page.close();
   }
 
