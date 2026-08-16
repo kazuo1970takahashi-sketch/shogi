@@ -67,6 +67,19 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .alert-warn{background:#faeeda;color:#633806;border:1px solid #EF9F27}
 /* CHG-MODAL-INLINE-ERROR-001 (#881): N5=操作を止めた理由の提示（STYLE-GUIDE v1.2 §3）。danger の面色（§1）。 */
 .chg-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:13px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}
+/* BULK-EDIT-INLINE-ERROR-001 (#887): 名前一括編集モーダルの N5 スロット。
+   ★ .bulk-card は「見た目の変更」ではなく**リセットを厳密にするための移設**。
+     ビルダーが style 属性へ書くと、キーボード対応の card.style.maxHeight='' がビルダーの 80vh まで消す
+     （実測でカードが伸び内側スクロールが消えた）。本体の規律 INPUT-KBD-COEXIST-004 と同じ:
+     実行時に触ってよいのは『ビルダーが書いていないプロパティ』だけ。
+   ★ 80vh は #767 の標準（85vh・12箇所）と違うが、面の高さ変更は見た目スライスの領分なので据え置く。 */
+.bulk-card{max-height:80vh;overflow-y:auto}
+.bulk-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:13px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}
+.bulk-err[hidden]{display:none}
+.bulk-err-head{display:block;margin-bottom:2px}
+/* ★ overflow-wrap:anywhere は必須。本文に利用者入力（氏名）が入るため。
+   実測: 英字49文字で scrollWidth 380 > clientWidth 360 の横スクロールが生えた。 */
+.bulk-err-body{white-space:pre-line;overflow-wrap:anywhere}
 .chg-err[hidden]{display:none}
 .chg-err-head{display:block;margin-bottom:2px}
 .chg-err-body{white-space:pre-line}
@@ -8435,25 +8448,150 @@ function buildBulkEditModalHtml(cls, players){
       +'style="flex:1;height:44px;padding:0 10px;border:1px solid #ccc;border-radius:6px;font-size:16px;font-family:inherit">'
       +'</div>';
   }
-  return '<div style="background:#fff;border-radius:12px;padding:24px;width:360px;max-height:80vh;overflow-y:auto;">'
+  return '<div class="bulk-card" style="background:#fff;border-radius:12px;padding:24px;width:360px;">'
     +'<h3 style="margin-bottom:16px;font-size:16px;font-weight:500;color:#1F3864">'+cls+'クラス 名前の一括編集</h3>'
     +rows
+    +'<div id="bulk-err" class="bulk-err" role="alert" aria-live="assertive" hidden><strong class="bulk-err-head">\u26a0 変更を保存しませんでした</strong><span class="bulk-err-body"></span></div>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">'
     +'<button id="bulk-cancel" style="min-height:44px;padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
     +'<button id="bulk-save" style="min-height:44px;padding:8px 16px;border-radius:8px;border:none;background:#1F3864;color:#fff;font-size:14px;cursor:pointer">保存</button>'
     +'</div></div>';
 }
 
+// ============================================================
+// BULK-EDIT-INLINE-ERROR-001 (#887): 名前一括編集モーダルの入力エラーを
+//   native alert から画面内スロット（STYLE-GUIDE v1.2 §3 N5）へ移す。
+//
+//   ★ 変数名を #881 (showChangePairingError) と**わざと変えている**。
+//     #881 の変異生成器 chg_inline_error_881_mutants.js は mut() で出現回数1を assert するので、
+//     同型の実装を同じ文字列で書くと**先行便の変異生成が失敗する**（実測: 衝突6件・run_tests.sh が赤）。
+//     el→slot / body→slotBody / text→msg / card→cardEl。
+//     ★ card→cardEl は必須。bulkCard では "card.lastElementChild" に部分一致して
+//       #881 の P1（全文 grep）が X1 変異を殺せなくなる（実測）。
+//
+//   ★ キーボード共存は STYLE-GUIDE §10.4 / INPUT-KBD-COEXIST-004 (#734) と同型:
+//     「表示直後 ＋ visualViewport の resize/scroll（rAF 間引き）」。
+//     モーダルは開いた瞬間に firstInput.focus() するので**キーボードが出ているのが既定**。
+//     iOS はレイアウトビューポートが縮まないため scrollIntoView が1pxも動かず、
+//     スロットも保存ボタンもキーボードの下に入る（実測: 面色の画素が 0/16 点）。
+// ============================================================
+var BULK_ERR_FIT_MIN_PX=180;      // 可視域が狭くてもこの高さは確保する
+var BULK_ERR_FIT_MAX_PX=100000;   // 上限は掛けない（80vh は .bulk-card 側）
+var BULK_KBD_SHRINK_PX=100;       // キーボード検出閾値（PP_KBD_SHRINK_PX と同値）
+var _bulkVvRaf=0, _bulkVvBound=0;
+
+function isBulkKbdActive(){
+  try{
+    if(!document.getElementById('bulk-edit-modal'))return false;
+    var vv=window.visualViewport; if(!vv)return false;
+    // vv.height は CSS px。scale を掛けて layout px に戻す＝ピンチズームで誤検出しない（#734 と同型）
+    return (window.innerHeight-vv.height*(vv.scale||1))>BULK_KBD_SHRINK_PX;
+  }catch(e){return false;}
+}
+
+function fitBulkCardToViewport(){
+  try{
+    var m=document.getElementById('bulk-edit-modal'); if(!m)return;
+    var cardEl=m.firstElementChild; if(!cardEl||!cardEl.style)return;
+    // ★ 非活性時は「ビルダーが書いていない3プロパティ」だけを空へ戻す＝挙動不変（fail-soft）
+    if(!isBulkKbdActive()){ cardEl.style.alignSelf=''; cardEl.style.marginTop=''; cardEl.style.maxHeight=''; return; }
+    var vv=window.visualViewport;
+    // ★ 高さを縮めるだけでは直らない。カードは flex 中央寄せなので再センタリングで下端が可視域から出る。
+    //   可視域の上端へ寄せてから fit する。
+    cardEl.style.alignSelf='flex-start';
+    var topPx=Math.round(vv.offsetTop)+'px';
+    if(cardEl.style.marginTop!==topPx)cardEl.style.marginTop=topPx;   // 同値ガード（#731 の知見）
+    fitToVisualViewport(cardEl,BULK_ERR_FIT_MIN_PX,BULK_ERR_FIT_MAX_PX);
+  }catch(e){}
+}
+
+// ★ Codex P2 (r3791152825): フォーカス戻しは show と追従ハンドラの**両方**に要る。
+//   show 側だけだと、キーボードのアニメーションや vv スクロールが後から来た瞬間に
+//   ボタン行への scroll が欄を再び追い出す（1回目の直しの1段外側）。helper に集約する。
+function restoreBulkFocusedInput(){
+  try{
+    var ae=document.activeElement;
+    if(isBulkKbdActive()&&ae&&ae.id&&ae.id.indexOf('bulk-name-')===0)ae.scrollIntoView({block:'nearest'});
+  }catch(e){}
+}
+// ★ fit だけでは足りない。maxHeight/marginTop は追従してもカード内の scrollTop が古いままで
+//   スロットが可視域から外れる（実測）。表示中なら送り先へ scroll し直す。
+function onBulkViewportChange(){
+  try{
+    fitBulkCardToViewport();
+    var slot=document.getElementById('bulk-err');
+    if(!slot||slot.hidden)return;
+    var cardEl=slot.parentNode;
+    if(cardEl){ try{ cardEl.lastElementChild.scrollIntoView({block:'nearest'}); }catch(e){} }
+    restoreBulkFocusedInput();
+  }catch(e){}
+}
+function _bulkVvHandler(){
+  if(_bulkVvRaf)return;
+  _bulkVvRaf=1;
+  var run=function(){ _bulkVvRaf=0; onBulkViewportChange(); };
+  try{ if(window.requestAnimationFrame)window.requestAnimationFrame(run); else setTimeout(run,16); }
+  catch(e){ run(); }
+}
+function bindBulkViewportFollow(){
+  try{
+    var vv=window.visualViewport; if(!vv||!vv.addEventListener||_bulkVvBound)return;
+    vv.addEventListener('resize',_bulkVvHandler);
+    vv.addEventListener('scroll',_bulkVvHandler);
+    _bulkVvBound=1;
+  }catch(e){}
+}
+function unbindBulkViewportFollow(){
+  try{
+    var vv=window.visualViewport; if(!vv||!vv.removeEventListener||!_bulkVvBound)return;
+    vv.removeEventListener('resize',_bulkVvHandler);
+    vv.removeEventListener('scroll',_bulkVvHandler);
+    _bulkVvBound=0;
+  }catch(e){}
+}
+
+function showBulkEditError(msg){
+  var slot=document.getElementById('bulk-err');
+  if(!slot){ alert(msg); return; }
+  var slotBody=slot.querySelector('.bulk-err-body');
+  if(!slotBody){ alert(msg); return; }
+  slotBody.textContent=msg;          // ★ 本文は textContent のみ（氏名が入るので HTML 挿入系は使わない）
+  slot.hidden=false;
+  var cardEl=slot.parentNode;
+  if(cardEl){
+    fitBulkCardToViewport();
+    try{ cardEl.lastElementChild.scrollIntoView({block:'nearest'}); }catch(e){}
+    // ★ Codex P2 (r3791051326): 可視域が極端に狭いとき（例 140px）、ボタン行への scroll が
+    //   「直したい欄」（フォーカスされたままの入力欄）を視界の外へ追い出す（実測: 欄が -11..33 で上に切れた）。
+    //   §10.4 を守るため、フォーカスが bulk の入力欄にあるなら最後に nearest で戻す（広い画面では no-op）。
+    restoreBulkFocusedInput();
+  }
+}
+
+function clearBulkEditError(){
+  var slot=document.getElementById('bulk-err');
+  if(!slot)return;
+  var slotBody=slot.querySelector('.bulk-err-body');
+  if(slotBody)slotBody.textContent='';
+  slot.hidden=true;
+}
+
 function bindBulkEditModalEvents(cls, players){
+  bindBulkViewportFollow();   // ★ STYLE-GUIDE §10.4「表示直後＋visualViewport の resize/scroll」
   // 最初のinputにフォーカス
   var firstInput=document.getElementById('bulk-name-'+players[0].id);
   if(firstInput)firstInput.focus();
+  // ★ Codex P2 (r3791152831): 登録タブの入力中など、**開いた時点でキーボードが既に出ている**と
+  //   vv の resize は新たに発火しない（focus の移動は同期）ので、listener だけでは fit が一度も走らず
+  //   カードが 80vh 中央のまま下の行と保存ボタンがキーボードの裏に残る。表示直後に1回自分で回す。
+  fitBulkCardToViewport();
 
   // Enterで次のフィールドに移動
   for(var i=0;i<players.length;i++){
     (function(idx){
       var inp=document.getElementById('bulk-name-'+players[idx].id);
       if(!inp)return;
+      inp.addEventListener('input',function(){ clearBulkEditError(); });
       inp.addEventListener('keypress',function(e){
         if(e.key==='Enter'){
           var next=document.getElementById('bulk-name-'+(players[idx+1]?players[idx+1].id:''));
@@ -8465,6 +8603,7 @@ function bindBulkEditModalEvents(cls, players){
   }
 
   document.getElementById('bulk-cancel').addEventListener('click',function(){
+    unbindBulkViewportFollow();
     document.getElementById('bulk-edit-modal').remove();
   });
 
@@ -8477,7 +8616,7 @@ function bindBulkEditModalEvents(cls, players){
     for(var i=0;i<players.length;i++){
       var inp=document.getElementById('bulk-name-'+players[i].id);
       var newName=inp?inp.value.trim():'';
-      if(!newName){alert((i+1)+'番目の名前が空です');hasError=true;break;}
+      if(!newName){showBulkEditError(cls+entryNoOf(cls,players[i].id)+' の名前が空です。\n名前を入力してから保存してください。');hasError=true;break;}
       newNames[players[i].id]=newName;
     }
     if(hasError)return;
@@ -8489,7 +8628,7 @@ function bindBulkEditModalEvents(cls, players){
         if(all[j].id===players[i].id)continue;
         var otherName=newNames[all[j].id]||all[j].name;
         if(otherName===newName){
-          alert('"'+newName+'"が重複しています');hasError=true;break;
+          showBulkEditError('"'+newName+'"が重複しています。\n別の名前に直してください。');hasError=true;break;
         }
       }
       if(hasError)break;
@@ -8499,6 +8638,7 @@ function bindBulkEditModalEvents(cls, players){
     for(var i=0;i<players.length;i++){
       players[i].name=newNames[players[i].id];
     }
+    unbindBulkViewportFollow();
     document.getElementById('bulk-edit-modal').remove();
     renderRegList();save();
     // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
@@ -15016,6 +15156,7 @@ function resetTournamentProgressOnly(){
   // CHG-MODAL-FOCUS-TRAP-001 (#837): chg-modal は DOM を消すだけでは inert と keydown が残るので
   //   専用の閉じ口を先に通す（開いていなければ何もしない）。下の一括除去はそのまま残す。
   closeChangePairingModal();
+  unbindBulkViewportFollow();   // #887: 第3の閉じ口。listener を取り残さない（bound=0 なら no-op）
   ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
     var m=document.getElementById(mid);if(m)m.remove();
   });
@@ -15080,6 +15221,7 @@ function resetAll(){
   // 開きっぱなしのモーダルを閉じる
   // CHG-MODAL-FOCUS-TRAP-001 (#837): chg-modal は inert / keydown / フォーカス戻しがあるので専用の閉じ口を先に通す。
   closeChangePairingModal();
+  unbindBulkViewportFollow();   // #887: 第3の閉じ口。listener を取り残さない（bound=0 なら no-op）
   ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
     var m=document.getElementById(mid);if(m)m.remove();
   });
