@@ -123,14 +123,14 @@ esac; }
 
 # 動的検査が担当する変異（静的 pin では殺せない）
 DYN_OWNED="D1 D3 D4 R1 R2 S12 S18"
-STATIC_OWNED="S1 S2 S3 S3a S3r S4 S4b S4h S4hh S4x S4y S5 S6 S8 S9 S9b S10 S10b S11 S11b S12b S12c S15 S21 S22 D2 D5"
+STATIC_OWNED="S1 S2 S3 S3a S3r S4 S4b S4h S4hh S4hh2 S4x S4y S5 S6 S6b S8 S9 S9b S10 S10b S11 S11b S12b S12c S15 S21 S22 D2 D5"
 MUTCHK="test/tools/bulk_inline_error_887_mutation_check.sh"
 mut_expect(){ case "$1" in
-  S1)  echo Q1;;   S6)  echo Q1;;
+  S1)  echo Q1;;   S6)  echo Q1;;   S6b) echo Q1;;
   S2)  echo Q2;;
   S3)  echo Q3;;   S3r) echo Q3;;   S3a) echo Q3;;
   S4)  echo Q4;;   S4b) echo Q4;;   S4h) echo Q4;;   S4hh) echo Q4;;
-  S4x) echo Q4;;  S4y) echo Q4;;
+  S4x) echo Q4;;  S4y) echo Q4;;  S4hh2) echo Q4;;
   S5)  echo Q5;;
   S8)  echo Q6;;
   D2)  echo Q7;;
@@ -238,6 +238,26 @@ for p in $PINS; do
   if [ "$hit" -eq 1 ]; then ok "$p  ③で実際に赤にした変異がある"
   else ng "$p  担当変異ゼロ ＝ この pin は一度も試されていない"; fi
 done
+
+# --- ⑥ 台帳の整合（3巡目パネル C3-3） -----------------------------------------
+#   同じ情報が4つの台帳（PINS / AND_ITEMS / mut_expect+*_OWNED / mutation_check の DYN）に
+#   手書きで重複しており、**台帳から消す方向のドリフト**はどの段も検出しなかった（実測4変種:
+#   PINS から Q12 削除→80/0 緑・AND_ITEMS から Q13c 削除→82/0 緑・anditem を緩める→83/0 緑・
+#   mutation_check の DYN から D1 を外す→41/0 緑）。
+echo ""
+echo "⑥ 台帳の整合"
+# (a) 期待 PASS 総数のメタ pin（PINS や AND_ITEMS の項が静かに消えると総数が減る）
+EXPECT_PASS=85
+if [ "$pass" -eq "$EXPECT_PASS" ]; then ok "PASS 総数が期待どおり（$EXPECT_PASS）"
+else ng "PASS 総数が $pass（期待 $EXPECT_PASS）＝ 台帳のどれかが痩せた/太った。意図した変更なら EXPECT_PASS を更新すること"; fi
+# (b) mutation_check の DYN= と自分の DYN_OWNED の突合（③の表示「動的担当（…で実証）」を虚偽にしない）
+if [ -f "$MUTCHK" ]; then
+  CHK_DYN="$(grep '^DYN=' "$MUTCHK" | head -1 | sed 's/^DYN="//;s/"$//')"
+  if [ "$CHK_DYN" = "$DYN_OWNED" ]; then ok "DYN_OWNED と mutation_check の DYN が一致"
+  else ng "DYN_OWNED（$DYN_OWNED）と mutation_check の DYN（$CHK_DYN）が食い違う ＝『動的担当（で実証）』が虚偽になる"; fi
+else
+  ng "$MUTCHK が無い ＝ 動的担当の実証が消えている"
+fi
 
 [ -n "$TMPBASE" ] && rm -f "$TMPBASE"
 [ -n "$TMPMUT" ] && rm -rf "$TMPMUT"

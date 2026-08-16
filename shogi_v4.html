@@ -15138,6 +15138,7 @@ function resetTournamentProgressOnly(){
   // CHG-MODAL-FOCUS-TRAP-001 (#837): chg-modal は DOM を消すだけでは inert と keydown が残るので
   //   専用の閉じ口を先に通す（開いていなければ何もしない）。下の一括除去はそのまま残す。
   closeChangePairingModal();
+  unbindBulkViewportFollow();   // #887: 第3の閉じ口。listener を取り残さない（bound=0 なら no-op）
   ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
     var m=document.getElementById(mid);if(m)m.remove();
   });
@@ -15202,6 +15203,7 @@ function resetAll(){
   // 開きっぱなしのモーダルを閉じる
   // CHG-MODAL-FOCUS-TRAP-001 (#837): chg-modal は inert / keydown / フォーカス戻しがあるので専用の閉じ口を先に通す。
   closeChangePairingModal();
+  unbindBulkViewportFollow();   // #887: 第3の閉じ口。listener を取り残さない（bound=0 なら no-op）
   ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
     var m=document.getElementById(mid);if(m)m.remove();
   });

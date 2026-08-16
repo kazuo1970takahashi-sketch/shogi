@@ -52,10 +52,14 @@ const stubVV = (h, offsetTop) => `(function(){
   window.__vvFire=function(t){ (handlers[t]||[]).forEach(function(f){ try{f();}catch(e){} }); };
   Object.defineProperty(window,'visualViewport',{configurable:true,value:vv});
 })();`;
-const setVV = (h, offsetTop) => `(function(){
+// ★ ev を明示できる。既定は resize。
+//   3巡目パネルの実測: D3 が offsetTop 変更後も resize を発火していたため、
+//   **scroll リスナーを消しても 51/0 全緑**だった（scroll 結線の挙動検査がゼロ）。
+//   実ブラウザで offsetTop 変化が発火するのは scroll イベント。
+const setVV = (h, offsetTop, ev) => `(function(){
   var vv=window.visualViewport; if(!vv)return;
   vv.height=${h}; vv.offsetTop=${offsetTop || 0};
-  if(window.__vvFire)window.__vvFire('resize');
+  if(window.__vvFire)window.__vvFire(${JSON.stringify(ev || 'resize')});
 })();`;
 
 // 可視判定: rect ⊂ カードの可視 rect ＋ 幅高>0 ＋ visualViewport 内
@@ -283,7 +287,7 @@ async function triggerDup(page) {
         await page.waitForTimeout(120);
         const r1 = await page.evaluate(probe);
         ok(r1.slot可視, '[D2-' + vp.h + '-' + kb + '] ★後から出ても見える（resize 追従）: ' + JSON.stringify(r1.slot) + ' card=' + JSON.stringify(r1.card));
-        await page.evaluate(setVV(vp.h - kb, 60));           // ★ キーボード表示中にスクロール
+        await page.evaluate(setVV(vp.h - kb, 60, 'scroll')); // ★ キーボード表示中にスクロール（scroll イベントで）
         await page.waitForTimeout(120);
         const r2 = await page.evaluate(probe);
         ok(r2.slot可視, '[D3-' + vp.h + '-' + kb + '] ★スクロールしても見える（scroll 追従）');

@@ -95,5 +95,16 @@ mut('S4x', "      inp.addEventListener('input',function(){ clearBulkEditError();
 mut('S4y', "  slot.hidden=false;\n  var cardEl=slot.parentNode;",
            "  slot.hidden=false;\n  slot.innerHTML=slot.innerHTML;\n  var cardEl=slot.parentNode;");
 
+// ★ 3巡目パネルの実測で足した2本:
+//   S4hh2: S4hh は肯定項（slotBody.textContent=msg）でも死ぬため、Q4 の否定項 head 側の
+//          **単独の kill 証拠が無かった**。textContent を保持したまま API の外から head へ流す
+//          （input リスナー経由・実 XSS の形）。
+mut('S4hh2', "      inp.addEventListener('input',function(){ clearBulkEditError(); });\n",
+             "      inp.addEventListener('input',function(){ clearBulkEditError(); document.querySelector('.bulk-err-head').innerHTML=inp.value; });\n");
+//   S6b: scrollIntoView の値 nearest→center。値を守る kill 証拠が無く、center はスクロール位置が
+//        毎回ジャンプする UX 劣化なのに e2e も 51/0 素通りだった。
+mut('S6b', "cardEl.lastElementChild.scrollIntoView({block:'nearest'}); }catch(e){}\n  }\n}\n\nfunction clearBulkEditError",
+           "cardEl.lastElementChild.scrollIntoView({block:'center'}); }catch(e){}\n  }\n}\n\nfunction clearBulkEditError");
+
 if (bad) { console.error('変異生成に失敗: ' + bad + ' 件'); process.exit(1); }
 console.log('変異 ' + made + ' 本を生成: ' + outDir);
