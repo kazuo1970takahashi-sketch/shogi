@@ -71,110 +71,356 @@ ok(/他のクラブ・支部の方もお使いいただけます/.test(IDX),
 // 参加費表を自分たちのものと誤読するので、AA を満たす色でなければならない。
 const scopeNote = /ここから下は沼津支部の運営情報です[^<]*<\/p>/.test(IDX);
 ok(scopeNote, 'A9 沼津固有カードの前に適用範囲の注記がある');
+// ★ Codex P2 (r3796685726): 「#888 を禁止」では #999 や低 opacity が素通りする。
+//   実際の前景色と背景色を CSS から解決して **WCAG のコントラスト比を計算**する。
+function hex2rgb(h) {
+  h = h.replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+}
+function relLum(rgb) {
+  const c = rgb.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+function contrast(fg, bg) {
+  const [a, b] = [relLum(hex2rgb(fg)), relLum(hex2rgb(bg))].sort((x, y) => y - x);
+  return (a + 0.05) / (b + 0.05);
+}
 const scopeLine = (IDX.match(/<p[^>]*>ここから下は沼津支部の運営情報です/) || [''])[0];
-ok(scopeLine !== '' && !/#888/.test(scopeLine),
-   'A10 適用範囲の注記に #888（3.54:1・AA不合格）を使っていない（実測: ' + scopeLine.slice(0, 60) + '）');
+// 注記は .scope-note（class）で色を持つ。インライン color があればそちらが勝つので両方見る。
+const inlineColor = (scopeLine.match(/color\s*:\s*(#[0-9a-fA-F]{3,6})/) || [])[1];
+const ruleColor = (IDX.match(/\.scope-note\s*\{[^}]*color\s*:\s*(#[0-9a-fA-F]{3,6})/) || [])[1];
+const noteFg = inlineColor || ruleColor;
+// 背景は .card（#fff）。card の背景が変わったらここも赤くなるよう CSS から取る。
+const cardBg = (IDX.match(/\.card\s*\{[^}]*background\s*:\s*(#[0-9a-fA-F]{3,6})/) || [])[1];
+const noteRatio = (noteFg && cardBg) ? contrast(noteFg, cardBg) : 0;
+ok(noteFg !== undefined && cardBg !== undefined && noteRatio >= 4.5,
+   'A10 ★実測: 適用範囲の注記のコントラスト比が WCAG AA (4.5:1) 以上' +
+   '（前景 ' + noteFg + ' / 背景 ' + cardBg + ' = ' + noteRatio.toFixed(2) + ':1）');
+// 導線リンクも同じ計算で見る（class 化したので CSS から取れる）。
+const linkRule = (IDX.match(/\.onboard-link\s*\{([^}]*)\}/) || ['', ''])[1];
+const linkFg = (linkRule.match(/color\s*:\s*(#[0-9a-fA-F]{3,6})/) || [])[1];
+const linkBg = (linkRule.match(/background\s*:\s*(#[0-9a-fA-F]{3,6})/) || [])[1];
+const linkRatio = (linkFg && linkBg) ? contrast(linkFg, linkBg) : 0;
+ok(linkRatio >= 4.5,
+   'A11 ★実測: 導線リンクのコントラスト比が WCAG AA 以上' +
+   '（前景 ' + linkFg + ' / 背景 ' + linkBg + ' = ' + linkRatio.toFixed(2) + ':1）');
+
+// ★ Codex P2 (r3796685745): STYLE-GUIDE §1「色の指定は class で行う（インライン style での
+//   新規色指定は禁止）」・§2.2-4「インライン style は position/margin 等のみ」。
+//   本スライスが足した2要素に色・枠・フォントのインライン指定が無いこと。
+const onboardTag = (IDX.match(/<a[^>]*class="onboard-link"[^>]*>/) || [''])[0];
+const scopeTags = IDX.match(/<p[^>]*class="scope-note"[^>]*>/g) || [];
+const inlineOffenders = [onboardTag].concat(scopeTags)
+  .filter(t => /style="[^"]*(color|background|border|font)/.test(t));
+ok(inlineOffenders.length === 0,
+   'A12 本スライスが足した要素にインラインの色/枠/フォント指定が無い（STYLE-GUIDE §1・§2.2-4）' +
+   '（違反: ' + inlineOffenders.join(' / ') + '）');
+ok(/\.onboard-link\s*\{/.test(IDX) && /\.scope-note\s*\{/.test(IDX),
+   'A13 .onboard-link / .scope-note が class として定義されている');
 
 // ---- B. 各項目 ⇔ コード事実 --------------------------------------------------
-// ★ 各 B*b は「振る舞いの側」を見る。壊れたら＝サイトの文言が嘘になった合図。
+//
+// ★★ このセクションの書き方は2回作り直している（経緯を残す。3回目をやらないため）:
+//   第1版: `/function\s+resetAll\s*\(/` — **関数の存在**だけを見た。
+//          → 反証パネルが検出: 項目1（#845/#864 で解決済）・項目5（#835 で解決済）を
+//            PASS=36/FAIL=0 のまま素通しした。
+//   第2版: `APP.indexOf('クラブ既定…は保持されます')` — **確認ダイアログの文字列**を見た。
+//          → Codex が検出 (P1 r3796685716): `resetAll` を factoryClasses/factoryReport から
+//            組み直す変異、`submitRound` に旧ガードを戻す変異を独立に当てても **PASS=61 のまま**。
+//            文字列やコメント中の識別子は、振る舞いを変えても残るから。
+//   第3版（現在）: 次の3つを併用する。
+//          (1) **関数を切り出して実際に呼ぶ**（fixture を与えて戻り値を検査）
+//          (2) **関数本体の制御フロー**を見る（`resetAll` の state 構築が profile 由来か等）
+//          (3) 集合を丸ごと固定する（app/ が使う RPC 名の集合など。1本足されたら赤）
+//
+// 関数を1本だけ切り出す（brace matching）。DOM を要求しない純粋関数にだけ使う。
+function extractFn(src, name) {
+  const head = 'function ' + name + '(';
+  const at = src.indexOf(head);
+  if (at < 0) return null;
+  let i = src.indexOf('{', at), depth = 0;
+  for (let k = i; k < src.length; k++) {
+    if (src[k] === '{') depth++;
+    else if (src[k] === '}') { depth--; if (depth === 0) return src.slice(at, k + 1); }
+  }
+  return null;
+}
+function extractVar(src, name) {
+  const m = src.match(new RegExp('var\\s+' + name + '\\s*=\\s*[^;]+;'));
+  return m ? m[0] : null;
+}
 
-// B1 クラブ既定（#845/#864 CLUB-PROFILE-001/002）＝「今できること」側
+// --- B1 クラブ既定（#845/#864 CLUB-PROFILE-001/002）＝「今できること」側 -------
+
 ok(/クラブの既定/.test(CAN) && /💾 この設定をクラブの既定として保存/.test(CAN),
    'B1a 「今できること」にクラブ既定の保存が書かれている');
 ok(!/沼津支部の値に戻ります/.test(CANT),
-   'B1b 「今できないこと」に旧記述「沼津支部の値に戻ります」が残っていない' +
-   '（#845/#864 で保持されるよう直っている）');
-ok(APP.indexOf('クラブ既定（大会名・会場・クラス構成など）は保持されます') !== -1,
-   'B1c ★振る舞いのピン: resetAll の確認文が「クラブ既定は保持されます」と言っている' +
-   '（この文が消えたら＝保持しなくなったら、index.html の記述を書き直すこと）');
-ok(APP.indexOf('💾 この設定をクラブの既定として保存') !== -1,
-   'B1d ★振る舞いのピン: 保存ボタンが実在する（消えたら記述を書き直すこと）');
-ok(/function\s+profileClasses\s*\(/.test(APP) && /function\s+profileReport\s*\(/.test(APP),
-   'B1e ★振る舞いのピン: resetAll が既定を profile から構築する関数が健在');
+   'B1b 「今できないこと」に旧記述「沼津支部の値に戻ります」が残っていない');
 
-// B2 参加費は変えられない（getFee ハードコード・設定に載らない）
+// (1) 実際に呼ぶ: 保存済み profile があるとき、生成系が **factory ではなく profile** を返すこと。
+const profSrc = ['factoryReport', 'factoryClasses', 'profileReport', 'profileClasses', 'profileRounds']
+  .map(n => extractFn(APP, n));
+const profVars = ['FACTORY_ROUNDS', 'CLUB_PROFILE_REPORT_KEYS'].map(n => extractVar(APP, n));
+ok(profSrc.every(Boolean) && profVars.every(Boolean),
+   'B1c クラブ既定の生成系5関数と定数2本を切り出せる' +
+   '（欠けたら名前が変わった＝index.html の記述を見直すこと）');
+
+let profBehavior = null;
+if (profSrc.every(Boolean) && profVars.every(Boolean)) {
+  try {
+    const vm = require('vm');
+    const sandbox = {};
+    vm.createContext(sandbox);
+    vm.runInContext(profVars.join('\n') + '\n' + profSrc.join('\n') + '\n' +
+      'var clubProfile=null;' +
+      'function run(p){clubProfile=p;return {rep:profileReport(),cls:profileClasses(),rnd:profileRounds()};}',
+      sandbox);
+    const saved = {
+      report: { title: '架空クラブ月例戦', organizer: '架空将棋クラブ', place: '架空市民会館', prize: 3000 },
+      classes: [{ id: 'A', name: '上級' }, { id: 'B', name: '初級' }, { id: 'C', name: '入門' }],
+      rounds: 6,
+    };
+    profBehavior = { withProfile: sandbox.run(saved), withoutProfile: sandbox.run(null) };
+  } catch (e) { profBehavior = { err: String(e) }; }
+}
+
+ok(profBehavior && !profBehavior.err &&
+   profBehavior.withProfile.rep.title === '架空クラブ月例戦' &&
+   profBehavior.withProfile.rep.organizer === '架空将棋クラブ' &&
+   profBehavior.withProfile.rep.place === '架空市民会館' &&
+   profBehavior.withProfile.rep.prize === 3000,
+   'B1d ★振る舞い: 保存済み profile があると大会名・主催者・会場・賞金額が **その値** で返る' +
+   '（実測: ' + (profBehavior && !profBehavior.err
+     ? JSON.stringify({ t: profBehavior.withProfile.rep.title, o: profBehavior.withProfile.rep.organizer })
+     : (profBehavior && profBehavior.err)) + '）');
+
+ok(profBehavior && !profBehavior.err &&
+   profBehavior.withProfile.cls.length === 3 &&
+   profBehavior.withProfile.cls.map(c => c.id).join(',') === 'A,B,C' &&
+   profBehavior.withProfile.rnd === 6,
+   'B1e ★振る舞い: クラス構成（3クラス）と回戦数（6）も profile の値で返る＝**A・B へ戻らない**');
+
+ok(profBehavior && !profBehavior.err &&
+   profBehavior.withoutProfile.rep.title === '沼津支部月例将棋大会' &&
+   profBehavior.withoutProfile.cls.map(c => c.id).join(',') === 'A,B',
+   'B1f ★振る舞い: profile 未保存の端末は従来どおり沼津 factory（＝サイトの但し書きが要る側）');
+
+// (2) 制御フロー: resetAll が **その生成系から** state を組んでいること。
+//     Codex の変異（factoryClasses/factoryReport/FACTORY_ROUNDS へ差し替え）はここで赤になる。
+const resetSrc = extractFn(APP, 'resetAll');
+ok(resetSrc !== null, 'B1g resetAll を切り出せる');
+ok(resetSrc !== null && /rounds\s*:\s*profileRounds\(\)/.test(resetSrc) &&
+   /report\s*:\s*profileReport\(\)/.test(resetSrc) &&
+   /var\s+defaultClasses\s*=\s*profileClasses\(\)/.test(resetSrc),
+   'B1h ★制御フロー: resetAll の state 構築が profileRounds()/profileReport()/profileClasses() 由来');
+ok(resetSrc !== null && !/factoryClasses\(\)|factoryReport\(\)|FACTORY_ROUNDS/.test(resetSrc),
+   'B1i ★制御フロー: resetAll が factory 系を直接使っていない' +
+   '（使い出したら「翌月も残ります」が嘘になるので index.html を書き直すこと）');
+ok(resetSrc !== null && /clubProfile\s*=\s*readClubProfileRaw\(\)/.test(resetSrc),
+   'B1j ★制御フロー: resetAll が実行時に profile を読み直す（read-at-use）');
+
+// --- B2 参加費は変えられない ---------------------------------------------------
+
 ok(/参加費の金額は変えられません/.test(CANT), 'B2a 項目「参加費の金額は変えられません」がある');
-ok(/function\s+getFee\s*\(/.test(APP), 'B2b 根拠: getFee がある');
-const cprk = (APP.match(/var\s+CLUB_PROFILE_REPORT_KEYS\s*=\s*\[[^\]]*\]/) || [''])[0];
-ok(cprk !== '' && !/fee/i.test(cprk),
-   'B2c ★振る舞いのピン: クラブ既定の保存対象に参加費キーが無い' +
-   '（入ったら「変えられません」が嘘になる。実測: ' + cprk.slice(0, 80) + '）');
 
-// B3 クラウド系は現在この1クラブ専用（最重要）
+// (1) 実際に呼ぶ: getFee が固定額を返し、設定を参照していないこと。
+const feeSrc = extractFn(APP, 'getFee');
+ok(feeSrc !== null, 'B2b getFee を切り出せる');
+let fee = null;
+if (feeSrc) {
+  try {
+    const vm = require('vm');
+    const sb = {}; vm.createContext(sb);
+    // 実運用の呼び出し形（shogi_v4.html:1452 等）と同じく **文字列** を渡す。
+    vm.runInContext(feeSrc + '\nvar out={mi:getFee("member","ippan"),oi:getFee("other","ippan"),' +
+      'mc:getFee("member","chu"),oc:getFee("other","chu"),' +
+      'mj:getFee("member","josei"),oj:getFee("other","josei")};', sb);
+    fee = sb.out;
+  } catch (e) { fee = { err: String(e) }; }
+}
+ok(fee && !fee.err && fee.mi === 500 && fee.oi === 1000 && fee.mc === 0 && fee.oc === 500 &&
+   fee.mj === 0 && fee.oj === 500,
+   'B2c ★振る舞い: getFee が沼津の固定額を返す（支部員500/一般1000・中学生以下と女性は0/500）' +
+   '（実測: ' + JSON.stringify(fee) + '）');
+ok(feeSrc !== null && !/clubProfile|profileReport|localStorage|state\./.test(feeSrc),
+   'B2d ★制御フロー: getFee が設定・保存値を一切参照していない（参照し出したら記述を書き直すこと）');
+
+const cprk = extractVar(APP, 'CLUB_PROFILE_REPORT_KEYS');
+ok(cprk !== null && !/fee/i.test(cprk),
+   'B2e ★制御フロー: クラブ既定の保存対象に参加費キーが無い（実測: ' + String(cprk).slice(0, 90) + '）');
+
+// --- B3 クラウド系は現在この1クラブ専用（最重要）--------------------------------
+
 ok(/現在この1クラブ専用/.test(CANT), 'B3a 項目3が「現在この1クラブ専用」と書いている');
 ok(/アカウントを作る仕組みが、?\s*まだアプリにありません/.test(CANT),
    'B3b 項目3が「アカウントを作る仕組みがまだアプリにない」と書いている');
-// ログイン自体は通る＝「ログイン画面までしか進めない」とは書かない（実挙動は送信時に止まる）
-ok(/送信先クラブを一意に特定できません/.test(CANT),
-   'B3c 項目3が実挙動（送信時のメッセージ）を引用している');
+ok(/送信先クラブを一意に特定できません/.test(CANT), 'B3c 項目3が実挙動を引用している');
 ok(APP.indexOf('送信先クラブを一意に特定できません') !== -1,
-   'B3d ★振る舞いのピン: そのメッセージが shogi_v4.html に実在する');
+   'B3d そのメッセージが shogi_v4.html に実在する');
 
 const AUTH = readOrNull('app/auth.js');
 ok(AUTH !== null, 'B3e 根拠ファイル app/auth.js を読めること');
 ok(AUTH !== null && /幹事登録がありません/.test(AUTH),
-   'B3f ★振る舞いのピン: app/auth.js に未登録メールの行き止まり文がある' +
-   '（消えたら新規クラブの導線が入った可能性＝項目3を見直すこと）');
+   'B3f app/auth.js に未登録メールの行き止まり文がある');
+
+// (3) 集合ごと固定する。Codex 指摘 (P1 r3796685716):
+//     「既存のメッセージと seed を残したまま RPC でクラブ作成経路を足す」と、
+//     個別の文言ピンは全部通ってしまう。**app/ が呼ぶ RPC 名の集合そのもの**を固定すれば、
+//     1本でも足された時点で赤くなる。
+const rpcNames = AUTH === null ? null
+  : Array.from(new Set((AUTH.match(/\.rpc\(\s*['"]([a-zA-Z0-9_]+)['"]/g) || [])
+      .map(m => m.replace(/.*['"]([a-zA-Z0-9_]+)['"]/, '$1')))).sort();
+ok(rpcNames !== null && rpcNames.join(',') === 'app_hard_delete_members,claim_organizer_seat',
+   'B3g ★集合のピン: app/auth.js が呼ぶ RPC は既知の2本だけ' +
+   '（クラブ作成 RPC が足されたら赤＝項目3を書き直すこと。実測: ' + String(rpcNames) + '）');
 ok(AUTH !== null && AUTH.indexOf("from('clubs')") === -1 && AUTH.indexOf('from("clubs")') === -1,
-   'B3g ★振る舞いのピン: app/auth.js が clubs テーブルを直接触っていない');
+   'B3h ★制御フロー: app/auth.js が clubs テーブルを直接触っていない');
+
+// RLS 側も固定する（DB に insert 経路が生えたら赤）。
+const RLS = readOrNull('supabase/migrations/20260620130100_stagea_rls.sql');
+ok(RLS !== null, 'B3i stagea_rls.sql を読めること');
+ok(RLS !== null && !/create\s+policy[^;]*on\s+public\.clubs[^;]*for\s+insert/is.test(RLS),
+   'B3j ★制御フロー: clubs への insert ポリシーが存在しない（既定拒否のまま）');
 
 const SEED = readOrNull('supabase/seed.example.sql');
-ok(SEED !== null, 'B3h 根拠ファイル supabase/seed.example.sql を読めること');
 ok(SEED !== null && /insert\s+into\s+public\.clubs/i.test(SEED),
-   'B3i ★振る舞いのピン: clubs 行は seed の直接 SQL でしか作られない');
+   'B3k clubs 行は seed の直接 SQL でしか作られない');
 
-// 📱 スマホ星取表の但し書き（実体は「同じ端末の別タブ」＝参加者配信の代替ではない）
 ok(/スマホ星取表/.test(CANT) && /同じ端末の別タブ/.test(CANT) && /インターネット不要/.test(CANT),
-   'B3j 但し書きが「同じ端末の別タブ」と明記している（参加者向け配信の代替と誤読させない）');
-ok(/mobile-standings/.test(APP), 'B3k 根拠: mobile-standings 経路が実在する');
+   'B3l 但し書きが「同じ端末の別タブ」と明記している');
+ok(/mobile-standings/.test(APP), 'B3m mobile-standings 経路が実在する');
 
-// B4 「沼津支部」の表示が残る＋会員区分の語彙も固定
+// --- ★ B3n Codex P1 (r3796685734): 後半セクションとの整合 -----------------------
+//   「当日の流れ」「注意事項」はクラウド/ライブを但し書きなしで案内していた＝新しい読者を
+//   失敗する操作へ誘導していた。適用範囲の注記が**それらより前に**あることを要求する。
+const iFlow = IDX.indexOf('当日の流れ');
+const iCaution = IDX.indexOf('注意事項');
+const scopeNotes = [];
+let sIdx = -1;
+while ((sIdx = IDX.indexOf('沼津支部のアカウント', sIdx + 1)) !== -1) scopeNotes.push(sIdx);
+const iSwiss = IDX.indexOf('スイス式トーナメントのルール');   // ※「スイス式」単体は導入カード本文にも出る
+ok(iFlow > 0 && iSwiss > iFlow && scopeNotes.some(n => n > iFlow && n < iSwiss),
+   'B3n ★「当日の流れ」の中に、クラウド/ライブの適用範囲を断る注記がある');
+ok(iCaution > 0 && scopeNotes.some(n => n > iCaution),
+   'B3o ★「注意事項」の中に、クラウド/ライブの適用範囲を断る注記がある');
+ok(scopeNotes.some(n => n < iFlow),
+   'B3p ★機能バッジ（☁/📡）の直後にも適用範囲の注記がある');
+
+// --- B4 「沼津支部」の表示が残る＋会員区分の語彙も固定 ---------------------------
+
 ok(/画面の一部に「沼津支部」の表示が残ります/.test(CANT), 'B4a 項目4がある');
-ok(/支部員／支部員以外/.test(CANT), 'B4b 項目4が会員区分の語彙固定にも触れている');
-ok(APP.indexOf('沼津支部員') !== -1,
-   'B4c ★振る舞いのピン: memberKindLabelJa の「沼津支部員」が実在する' +
-   '（改名 UI が入って消えたら記述を見直すこと）');
+ok(/支部員／支部員以外/.test(CANT), 'B4b 会員区分の語彙固定にも触れている');
+const kindSrc = extractFn(APP, 'memberKindLabelJa');
+ok(kindSrc !== null && /沼津支部員/.test(kindSrc),
+   'B4c ★制御フロー: memberKindLabelJa が「沼津支部員」を返す（改名 UI が入ったら記述を見直す）');
 
-// B5 クラブ既定は端末ごと
+// --- B5 クラブ既定は端末ごと ---------------------------------------------------
+
 ok(/この端末のブラウザの中だけ/.test(CANT), 'B5a 「クラブ既定は端末ごと」の項目がある');
-ok(/shogi_club_profile/.test(APP),
-   'B5b ★振る舞いのピン: クラブ既定の保存先が localStorage キーである');
+const keySrc = extractVar(APP, 'CLUB_PROFILE_KEY');
+ok(keySrc !== null && /localStorage|shogi_club_profile/.test(keySrc + APP.slice(APP.indexOf('function readClubProfileRaw'), APP.indexOf('function readClubProfileRaw') + 600)),
+   'B5b ★制御フロー: クラブ既定の保存先が localStorage（端末ローカル）');
 
-// B6 A・Bクラスは削除できない
+// --- B6 A・Bクラスは削除できない -----------------------------------------------
+
 ok(/A・Bクラスは削除できません/.test(CANT), 'B6a 項目がある');
-ok(APP.indexOf('A・Bクラスはアプリの既定クラスのため削除できません。') !== -1,
-   'B6b ★振る舞いのピン: canDeleteClass の builtin ガード文言が実在する');
+const delSrc = extractFn(APP, 'canDeleteClass');
+ok(delSrc !== null, 'B6b canDeleteClass を切り出せる');
+let del = null;
+if (delSrc) {
+  try {
+    const vm = require('vm');
+    const sb = {}; vm.createContext(sb);
+    vm.runInContext(delSrc +
+      '\nfunction isClassStarted(){return false;}function classHasPlayers(){return false;}' +
+      '\nvar out={A:canDeleteClass("A"),B:canDeleteClass("B"),C:canDeleteClass("C")};', sb);
+    del = sb.out;
+  } catch (e) { del = { err: String(e) }; }
+}
+ok(del && !del.err && del.A.ok === false && del.A.reason === 'builtin' &&
+   del.B.ok === false && del.B.reason === 'builtin' && del.C.ok === true,
+   'B6c ★振る舞い: 空・未開始でも A/B は削除不可（reason=builtin）・C は可' +
+   '（実測: ' + JSON.stringify(del) + '）');
 
-// B7 空欄にすると既定が復活（空欄可は3キーだけ）
+// --- B7 空欄にすると既定が復活（空欄可は3キーだけ）------------------------------
+
 ok(/空欄のままにすると、沼津支部の既定値が入ります/.test(CANT), 'B7a 項目がある');
-const emptyable = (APP.match(/var\s+CLUB_PROFILE_EMPTYABLE_KEYS\s*=\s*\[[^\]]*\]/) || [''])[0];
-ok(/fax/.test(emptyable) && /officeName/.test(emptyable) && /accountingNote/.test(emptyable) &&
-   (emptyable.match(/'/g) || []).length === 6,
-   'B7b ★振る舞いのピン: 空欄可は fax / officeName / accountingNote の3キーだけ' +
-   '（増減したら記述を書き直すこと。実測: ' + emptyable + '）');
+const emptySrc = extractFn(APP, 'isClubProfileEmptyable');
+const emptyVar = extractVar(APP, 'CLUB_PROFILE_EMPTYABLE_KEYS');
+let emptyable = null;
+if (emptySrc && emptyVar) {
+  try {
+    const vm = require('vm');
+    const sb = {}; vm.createContext(sb);
+    vm.runInContext(emptyVar + '\n' + emptySrc +
+      '\nvar out={fax:isClubProfileEmptyable("fax"),office:isClubProfileEmptyable("officeName"),' +
+      'acc:isClubProfileEmptyable("accountingNote"),title:isClubProfileEmptyable("title"),' +
+      'place:isClubProfileEmptyable("place"),organizer:isClubProfileEmptyable("organizer"),' +
+      'prize:isClubProfileEmptyable("prize"),n:CLUB_PROFILE_EMPTYABLE_KEYS.length};', sb);
+    emptyable = sb.out;
+  } catch (e) { emptyable = { err: String(e) }; }
+}
+ok(emptyable && !emptyable.err && emptyable.n === 3 &&
+   emptyable.fax && emptyable.office && emptyable.acc &&
+   !emptyable.title && !emptyable.place && !emptyable.organizer && !emptyable.prize,
+   'B7b ★振る舞い: 空欄可は fax / officeName / accountingNote の3つだけ。' +
+   '大会名・会場・主催者・賞金額は空欄不可＝既定が入る（実測: ' + JSON.stringify(emptyable) + '）');
 
-// B8 奇数クラス＝「今できること」側（#835 FIRSTROUND-ODD-001）
+// --- B8 奇数クラス＝「今できること」側（#835 FIRSTROUND-ODD-001）----------------
+
 ok(/人数が奇数のクラスも、そのまま始められます/.test(CAN),
    'B8a 「今できること」に奇数クラスが書かれている');
 ok(!/1回戦を確定できなくなります/.test(CANT),
-   'B8b 「今できないこと」に旧記述「1回戦を確定できなくなります」が残っていない（#835 で解決済み）');
-ok(APP.indexOf('FIRSTROUND-ODD-001') !== -1,
-   'B8c ★振る舞いのピン: FIRSTROUND-ODD-001 の統一確定条件が健在' +
-   '（巻き戻ったら「今できること」から外すこと）');
-ok(/部分開始/.test(APP), 'B8d 根拠: 「部分開始」が実在する');
+   'B8b 「今できないこと」に旧記述が残っていない');
 
-// B9 回戦数は 3〜7
+// ★制御フロー: submitRound の確定ガードが「0卓のときだけ」であること。
+//   Codex の変異（1回戦に全員割当必須のガードを戻す）はここで赤になる。
+const submitSrc = extractFn(APP, 'submitRound');
+ok(submitSrc !== null, 'B8c submitRound を切り出せる');
+ok(submitSrc !== null &&
+   /state\.pairings\[cls\]\.length\s*===\s*0\s*&&\s*state\.players\[cls\]\.length\s*>=\s*1/.test(submitSrc),
+   'B8d ★制御フロー: 確定ガードは「参加者がいるのに0卓」だけ');
+// 未割当（待機者）を理由に確定を止める分岐が無いこと＝#835 の本体。
+// ★コメントを剥いでから見る。submitRound の本体コメントには #835 の経緯として
+//   「旧 missing 配列は…削除した」と *説明* が残っており、素の正規表現だと自分の説明に当たる。
+const submitCode = submitSrc === null ? '' :
+  submitSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+ok(submitSrc !== null && !/missing/.test(submitCode),
+   'B8e ★制御フロー: 実行コードに未割当者(missing)を数える分岐が無い' +
+   '（戻ったら「今できること」から外すこと。実測: ' +
+   (submitCode.match(/[^\n]*missing[^\n]*/) || ['なし'])[0].trim().slice(0, 70) + '）');
+ok(submitSrc !== null &&
+   !/results\[cls\]\.length\s*===\s*0[\s\S]{0,300}(未割当|全員|対局に登録されていません)/.test(submitCode),
+   'B8f ★制御フロー: 「1回戦だけ全員割当必須」の分岐が無い');
+ok(/部分開始/.test(APP), 'B8g 「部分開始」が実在する');
+
+// --- B9 回戦数は 3〜7 ----------------------------------------------------------
+
 ok(/3〜7/.test(CAN), 'B9a 「今できること」が回戦数の範囲 3〜7 を書いている');
 ok(/var\s+nums\s*=\s*\[3,\s*4,\s*5,\s*6,\s*7\]/.test(APP),
-   'B9b ★振る舞いのピン: 回戦数の選択肢が [3,4,5,6,7]（変わったら記述を書き直すこと）');
+   'B9b ★制御フロー: 回戦数の選択肢が [3,4,5,6,7]');
 
-// B10 📥 まとめて登録は会員名簿に書かない（同一ファイル内の自己矛盾を防ぐ）
+// --- B10 📥 まとめて登録は会員名簿に書かない ------------------------------------
+
 ok(/「📥 まとめて登録」だけでは会員名簿には入りません/.test(IDX),
-   'B10a 「試すときのおすすめ」が 📥 だけでは名簿に入らないと明記している');
+   'B10a 📥 だけでは名簿に入らないと明記している');
 ok(/📋 参加者を名簿に反映/.test(IDX), 'B10b 名簿へ入れる正しい経路を案内している');
 ok(APP.indexOf('ここで登録した参加者は名簿（会員名簿）には登録されません。') !== -1,
-   'B10c ★振る舞いのピン: アプリ側も「名簿には登録されません」と言っている');
-ok(APP.indexOf('📋 参加者を名簿に反映') !== -1, 'B10d 根拠: 反映ボタンが実在する');
+   'B10c アプリ側も「名簿には登録されません」と言っている');
+ok(APP.indexOf('📋 参加者を名簿に反映') !== -1, 'B10d 反映ボタンが実在する');
+
+// --- B11 オフライン利用には初回のオンライン起動が要る（Codex P1 r3796685708）-----
+
+ok(/初回だけは、大会前に一度オンラインで開いて/.test(CAN),
+   'B11a 「インターネットが無い会場でも動きます」に初回オンラインの前提が添えてある');
+const SW = readOrNull('sw.js');
+ok(SW !== null && /addEventListener\(\s*['"]install['"]/.test(SW) && /PRECACHE/.test(SW),
+   'B11b ★制御フロー: sw.js は install 時にだけ資産を precache する' +
+   '（＝一度オンラインで開かないとオフラインで起動できない）');
+const GUIDE = readOrNull('docs/install_guide.html');
+ok(GUIDE !== null && /一度インターネットにつないだ状態で/.test(GUIDE),
+   'B11c インストールガイドも同じ前提を書いている（案内先として整合）');
 
 // ---- C. 作者決定: 問い合わせ窓口は設けない -----------------------------------
 

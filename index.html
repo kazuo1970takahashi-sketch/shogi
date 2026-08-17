@@ -55,6 +55,12 @@ td{padding:8px 12px;border-bottom:1px solid #eee}
 th.cell-amt{text-align:right}
 .note{background:#faeeda;border-left:4px solid #EF9F27;padding:10px 14px;border-radius:0 8px 8px 0;font-size:13px;color:#633806;margin-bottom:12px}
 .footer{text-align:center;padding:24px;font-size:12px;color:#888}
+/* ONBOARD-001: 以下3クラスは STYLE-GUIDE §1「色の指定は class で行う（インライン style での
+   新規色指定は禁止）」・§2.2-4「インライン style は position/margin 等のみ」に従い class 化した。
+   配色はいずれも既存の意味色から流用（新色を作らない）: badge-blue の #e6f1fb/#0C447C ＋ 枠 #2E75B6。 */
+.onboard-link{display:block;background:#e6f1fb;color:#0C447C;border:1px solid #2E75B6;border-radius:8px;padding:10px 14px;font-size:13px;text-decoration:none}
+/* 適用範囲の注記。#888 は白地に 3.54:1 で WCAG AA 不合格なので使わない（#595959 = 7.00:1）。 */
+.scope-note{font-size:13px;color:#595959}
 </style>
 </head>
 <body>
@@ -73,7 +79,7 @@ th.cell-amt{text-align:right}
        第1画面導線なので、幅を問わず消さないこと。
        ★毎月使う役員の導線（下の「大会運営アプリを開く」）は 375px 幅で top 209→313 と
        104px 下がる（この行 66+16px ＋ 副題2行化で ヘッダ +22px）。第1画面内には残る（bottom=372<667）。 -->
-  <a href="#for-other-clubs" style="display:block;background:#e6f1fb;color:#0C447C;border:1px solid #2E75B6;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;text-decoration:none">
+  <a class="onboard-link" href="#for-other-clubs" style="margin-bottom:16px">
     他のクラブ・支部の方へ ── このアプリは、どの将棋クラブでもお使いいただけます　→
   </a>
 
@@ -101,6 +107,9 @@ th.cell-amt{text-align:right}
       <span class="badge badge-green">漢字・ふりがな・50音検索</span>
       <span class="badge badge-green">大会履歴</span>
     </div>
+    <!-- ONBOARD-001 (Codex P1 r3796685734): ☁/📡 は沼津支部のアカウントに紐づく＝他クラブでは現在使えない。
+         バッジは機能一覧なので消さず、適用範囲だけ注記する。 -->
+    <p class="scope-note">※ <strong>☁ クラウド送信・名簿共有</strong>と<strong>📡 参加者向けライブ配信</strong>は、沼津支部のアカウントに紐づいています。他のクラブ・支部の方は現在お使いいただけません（→ <a href="#for-other-clubs">はじめての方へ</a>）。それ以外はどのクラブでもそのまま使えます。</p>
   </div>
 
   <!-- ONBOARD-001: 他クラブ・他支部の幹事向け導入案内。
@@ -122,7 +131,7 @@ th.cell-amt{text-align:right}
       <li><strong>自分のクラブの設定を「既定」として覚えさせられます。</strong>「最終結果」タブの「⚙ クラブの既定（全リセット後の初期値）を保存する」→「💾 この設定をクラブの既定として保存」を一度押しておけば、翌月に「大会データを全リセット」しても、大会名・主催者・会場・持ち時間・賞金額・クラス構成・回戦数はそのまま残ります</li>
       <li>クラスは A・B・C… と追加・改名できます（回戦数はクラスごとに 3〜7 で設定できます）</li>
       <li><strong>人数が奇数のクラスも、そのまま始められます。</strong>「このクラスを部分開始」で来ている方から始めれば、組み合わせに入らなかった方は<strong>待機として画面に明示され</strong>（不戦勝にはなりません）、次の回戦で戻ります</li>
-      <li>データは<strong>端末のブラウザ内</strong>に保存されます。<strong>インターネットが無い会場でも動きます</strong></li>
+      <li>データは<strong>端末のブラウザ内</strong>に保存されます。<strong>インターネットが無い会場でも動きます</strong>（ただし<strong>初回だけは、大会前に一度オンラインで開いて10秒ほど待ってください</strong>。そのときにアプリ本体が端末へ保存され、以後オフラインで起動できるようになります。手順は上の「📱 ホーム画面に追加する方法」に載っています）</li>
     </ul>
 
     <h3>今できないこと（隠さずに書いています）</h3>
@@ -153,6 +162,9 @@ th.cell-amt{text-align:right}
   <!-- 当日の流れ -->
   <div class="card">
     <h2>当日の流れ</h2>
+    <!-- ONBOARD-001 (Codex P1 r3796685734): 以下は沼津支部の運営手順。☁ログイン・名簿取得・クラウド送信・
+         📡ライブ配信を但し書きなしで案内していたため、他クラブの読者を「失敗する操作」へ誘導していた。 -->
+    <p class="scope-note">※ ここから下は<strong>沼津支部の当日の運営手順</strong>です。進め方は他のクラブでもそのまま参考にしていただけますが、<strong>☁ ログイン・名簿の取得・クラウドへの送信・📡 ライブ配信は沼津支部のアカウントが必要</strong>で、他のクラブ・支部の方は現在お使いいただけません。その部分は読み飛ばしてください。</p>
 
     <div class="step">
       <div class="step-num">1</div>
@@ -286,6 +298,7 @@ th.cell-amt{text-align:right}
   <!-- 注意事項 -->
   <div class="card">
     <h2>注意事項</h2>
+    <p class="scope-note">※ <strong>☁ クラウド</strong>と<strong>📡 ライブ配信</strong>に触れている項目は、沼津支部のアカウントをお持ちの場合の説明です（他のクラブ・支部の方は現在お使いいただけません）。それ以外の項目はどのクラブにも当てはまります。</p>
     <ul>
       <li>データは入力のたびに端末のブラウザ内へ<strong>自動保存</strong>されます（操作は不要）。誤ってブラウザを閉じても消えません。</li>
       <li>ただし<strong>端末の故障・紛失には自動保存では備えられません</strong>。端末事故から復元できるのは ☰メニューの「バックアップ」（JSONファイルの保存／復元）だけです。節目で控えを取っておくと安心です。</li>
@@ -303,7 +316,7 @@ th.cell-amt{text-align:right}
     <h2>沼津支部 月例将棋大会について</h2>
     <!-- ONBOARD-001: 適用範囲の注記＝他クラブの方が読み飛ばしてはいけない行なので #888（3.54:1・AA不合格）
          ではなく #595959（7.0:1）を使う。実ブラウザ班の全数調査で新規追加分の唯一の不合格だった。 -->
-    <p style="font-size:13px;color:#595959">ここから下は沼津支部の運営情報です。他のクラブ・支部の方には当てはまりません。</p>
+    <p class="scope-note">ここから下は沼津支部の運営情報です。他のクラブ・支部の方には当てはまりません。</p>
 
     <h3>参加費</h3>
     <table>
