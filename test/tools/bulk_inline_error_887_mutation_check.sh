@@ -55,6 +55,15 @@ for f in "$GEN" "$SUITE"; do
 done
 command -v node >/dev/null 2>&1 || { echo "  NG   node が無い"; exit 1; }
 
+# ★ [E2E-MUT-SKIP-001] #881 と同じ規律（→ test/tools/mutation_input_key.js のヘッダ）。
+#   入力が前回 PASS 時と同一なら走らせない。CI と MUT_FULL=1 では必ずフル実行。
+. "$HERE/../lib/mutation_cache.sh"
+MUTKEY="$(mutcache_key "$TARGET" "$GEN" "$SUITE" "$0")" || MUTKEY=""
+if mutcache_hit "bulk_inline_error_887" "$MUTKEY"; then
+  echo "=========================================="
+  exit 0
+fi
+
 MUT="$(mktemp -d "${TMPDIR:-/tmp}/bulkmut887dyn.XXXXXX")"
 node "$GEN" "$TARGET" "$MUT" || { echo "  NG   変異の生成に失敗"; rm -rf "$MUT"; exit 1; }
 
@@ -131,5 +140,7 @@ echo "=========================================="
 echo "  結果: PASS=$pass, FAIL=$fail"
 echo "=========================================="
 [ "$fail" -eq 0 ] || exit 1
+# ★ FAIL=0 で完走したときだけ記録する
+mutcache_store "bulk_inline_error_887" "$MUTKEY"
 echo "  ✓ #887 動的変異チェック 全PASS"
 exit 0

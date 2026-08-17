@@ -34,3 +34,14 @@ playwright-report/
 # よう、先頭スラッシュ無し（任意の深さで照合）にしてある。
 .changelog_merge.lock/
 .changelog_merge.txn.*/
+
+# [E2E-MUT-SKIP-001] 変異チェックの「この入力は実測で緑だった」記録。
+# ★ 意図的に **コミットしない**: クリーン checkout（＝CI）には存在しない
+#   ＝ CI は必ずフル実行になる、という安全網をこの1行が支えている。
+.mutcache/
+
+# [LAND-BUNDLE-001] scripts/land.sh が push 済み bundle を退避する場所とログ。
+# bundle 自体も repo に入れない（1本 1MB 前後・受け渡しの一時物）。
+_landed/
+/*.bundle
+/*.bundle.force

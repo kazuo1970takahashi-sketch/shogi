@@ -62,6 +62,17 @@ for f in "$GEN" "$SUITE"; do
 done
 command -v node >/dev/null 2>&1 || { echo "  NG   node が無い"; exit 1; }
 
+# ★ [E2E-MUT-SKIP-001] 入力が前回 PASS 時と同一なら走らせない（既定・手元のみ）。
+#   何を「同一」と見なすか、畳めない残余リスク (5) をどう受けるかは
+#   **test/tools/mutation_input_key.js のヘッダに全部書いてある**。
+#   CI（$CI 非空）と MUT_FULL=1 では鍵を作らない＝必ずフル実行。
+. "$HERE/../lib/mutation_cache.sh"
+MUTKEY="$(mutcache_key "$TARGET" "$GEN" "$SUITE" "$0")" || MUTKEY=""
+if mutcache_hit "chg_inline_error_881" "$MUTKEY"; then
+  echo "=========================================="
+  exit 0
+fi
+
 MUT="$(mktemp -d "${TMPDIR:-/tmp}/chgmut881dyn.XXXXXX")"
 node "$GEN" "$TARGET" "$MUT" || { echo "  NG   変異の生成に失敗"; rm -rf "$MUT"; exit 1; }
 
@@ -146,5 +157,7 @@ echo "=========================================="
 echo "  結果: PASS=$pass, FAIL=$fail"
 echo "=========================================="
 [ "$fail" -eq 0 ] || exit 1
+# ★ FAIL=0 で完走したときだけ「この入力は実測で緑だった」と記録する
+mutcache_store "chg_inline_error_881" "$MUTKEY"
 echo "  ✓ #881 動的変異チェック 全PASS"
 exit 0
