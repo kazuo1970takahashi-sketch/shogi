@@ -177,12 +177,64 @@ else ng "★ 非 fast-forward が黙って通った"; fi
 [ -f "$A/tworw.bundle.failed" ] && ok ".failed に残る" || ng ".failed に残らない"
 case "$OUT" in *"--force"*) ok "復旧コマンドがそのまま出る" ;; *) ng "復旧コマンドが出ない" ;; esac
 
+#  ★ Codex P2 (r3794397154): 失敗した bundle の復旧手段が、後続処理で壊れないこと
+if git --git-dir="$A/.git" rev-parse --verify "refs/land/failed/tworw.bundle" >/dev/null 2>&1; then
+  ok "失敗した bundle の内容が bundle 名で一意な不変 ref に残る"
+else ng "失敗時に不変 ref を残していない（後続の同名枝処理で復旧できなくなる）"; fi
+FAILED_SHA="$(git --git-dir="$A/.git" rev-parse "refs/land/failed/tworw.bundle" 2>/dev/null)"
+case "$OUT" in *"$FAILED_SHA"*) ok "復旧コマンドが ref ではなく確定 SHA を指す" ;; *) ng "復旧コマンドが SHA を指していない" ;; esac
+case "$OUT" in *"--force-with-lease"*) ok "復旧コマンドも lease 付き（無条件 --force を案内しない）" ;; *) ng "無条件 --force を案内している" ;; esac
+
+#  ★ Codex P1 (r3794397144): 失敗時に .force マーカーを持ち越さない
+cp "$SB/two-rw.bundle" "$A/markertest.bundle"
+: > "$A/markertest.bundle.force"
+# 保護枝ではないが、壊れた bundle を装って失敗させる
+printf 'broken\n' > "$A/markertest.bundle"
+run_land --once --include-existing >/dev/null 2>&1
+if [ ! -f "$A/markertest.bundle.force" ] && [ -f "$A/markertest.bundle.force.failed" ]; then
+  ok "失敗時に .force マーカーも隔離される（次の同名 bundle に持ち越さない）"
+else ng "★ .force マーカーが元の名前で残っている（後の bundle が黙って強制上書きされる）"; fi
+rm -f "$A/markertest.bundle.failed" "$A/markertest.bundle.force.failed"
+
+#  bundle の無い .force マーカーは警告する
+: > "$A/orphan.bundle.force"
+OUT="$(run_land --once --include-existing)"
+case "$OUT" in *"bundle が無いのに残っている"*) ok "孤児の .force マーカーを警告する" ;; *) ng "孤児マーカーを黙認している" ;; esac
+rm -f "$A/orphan.bundle.force"
+
 cp "$SB/two-rw.bundle" "$A/tworw2.bundle"
 : > "$A/tworw2.bundle.force"
 OUT="$(run_land --once --include-existing)"
 if [ "$(remote_sha feat/two)" != "$OLD_TWO" ] && [ -n "$(remote_sha feat/two)" ]; then ok ".force を添えたときだけ上書きできる"
 else ng ".force を添えても上書きされない"; fi
 case "$OUT" in *"$OLD_TWO"*) ok "上書きされた旧 SHA をログに残す" ;; *) ng "旧 SHA を残していない" ;; esac
+case "$OUT" in *"--force-with-lease"*) ok "上書きは lease 付きで行う（観測した SHA を期待値にする）" ;; *) ng "無条件 --force を使っている" ;; esac
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "5b) ★ 観測と作用の間に枝が動いていたら上書きしない（--force-with-lease の実測）"
+#   Codex P1 (r3794397139) と同じクラス。land.sh が読んだ後に他者が枝を進めた状況を作る。
+#   land.sh の中で「読んだ直後に第三者が進む」タイミングを外から作るのは不可能なので、
+#   ①land.sh が**観測値を期待値として渡していること**（ログ）と
+#   ②この git で **期待値が古いと push が実際に弾かれること**（実測）
+#   の2点に分けて固定する。両方成り立てば、あいだで枝が動いても消せない。
+case "$OUT" in *"--force-with-lease: 観測した"*) ok "① land.sh は観測した SHA を期待値として渡す" ;; *) ng "① 期待値をログに出していない" ;; esac
+STALE="$(cd "$B" && git rev-parse origin/main)"      # 現在値ではない = 古い期待値の代わり
+CUR_TWO="$(remote_sha feat/two)"
+NEWTIP="$(
+  cd "$B" || exit 1
+  git checkout -q -B lease/probe "$CUR_TWO" >/dev/null 2>&1
+  echo "probe" > probe.txt
+  git add probe.txt >/dev/null 2>&1
+  git commit -q -m "probe" >/dev/null 2>&1
+  git rev-parse HEAD
+)"
+if ( cd "$B" && git push --force-with-lease="refs/heads/feat/two:$STALE" origin "$NEWTIP:refs/heads/feat/two" ) >/dev/null 2>&1; then
+  ng "★ 期待値が古くても push が通った（この git では lease が効いていない）"
+else
+  ok "② 期待値が古いと push が弾かれる（あいだで枝が動いても消せない）"
+fi
+[ "$(remote_sha feat/two)" = "$CUR_TWO" ] && ok "弾かれた側は枝を1バイトも動かしていない" || ng "弾かれたのに枝が動いた"
 
 # ---------------------------------------------------------------------------
 echo ""

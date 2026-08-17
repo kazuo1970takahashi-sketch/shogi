@@ -38,18 +38,32 @@ cloud から GitHub への push は全遮断なので、変更は必ず作者の
 ①素の e2e（対照）は常に走る ②CI は必ずフル実行 ③TTL の3つで受ける。
 詳細は `test/tools/mutation_input_key.js` のヘッダに全部書いてある。
 
+### Codex レビューで塞いだ4クラス（PR #899・1巡目 P1×4/P2×2）
+
+指摘された6件を**クラス単位**で潰し、同型2件も一緒に塞いだ。
+
+| クラス | 直し |
+|---|---|
+| A 実行環境の同一性 | 鍵に `platform/arch`・**実 Chromium のパス**（build revision 入り）・`TZ`・`LC_ALL/LANG` を追加。鍵の書式版 v1→v2。同じ checkout を別 OS で共有しても取り違えない |
+| B 観測と作用の間に変わる | force push を `--force-with-lease=<ref>:<観測値>` に。**verify → fetch の間に bundle が差し替わっていないか**（size＋mtime）も追加 |
+| C 残骸の持ち越し | 失敗時に `.force` を `.force.failed` へ隔離。**孤児マーカー**を警告。失敗ごとに `refs/land/failed/<bundle名>` の不変 ref を残し、**復旧コマンドは確定 SHA**を指す |
+| D 時計・数値の異常 | age が負（未来 mtime）／`date` 異常／**TTL が非数値**（`[ -ge ]` がエラーで偽を返し**ヒット側へ落ちていた**）を全部 fail closed |
+
 ### 実測（cloud 2コア・同一 tree）
 
 | | 所要 | 結果 |
 |---|---|---|
-| フル（キャッシュ無し） | **292秒** | 14/14 PASS |
+| フル（キャッシュ無し） | **301秒** | 14/14 PASS |
 | 変異と無関係な差分を入れて再実行 | **56秒** | 12/14 PASS ＋ スキップ2件 |
 
-**1巡あたり −236秒。**#853 と同じ4巡なら約16分の短縮。
+**1巡あたり −245秒。**#853 と同じ4巡なら約16分の短縮。
 変異が当たる領域を触ったときは鍵が変わってフル実行に戻ることを実ファイルで確認済み。
 
 ### テスト
 
-- `test/test_land_script_001.sh`（25件）— 使い捨て sandbox（bare repo を origin に見立てる・network 不使用）
-- `test/test_mutation_cache_001.sh`（24件）— 架空の HTML/ジェネレータ/スイートで鍵の性質を固定（実ブラウザ不使用・数秒）
+- `test/test_land_script_001.sh`（**34件**）— 使い捨て sandbox（bare repo を origin に見立てる・network 不使用）
+- `test/test_mutation_cache_001.sh`（**46件**）— 鍵の性質に加え、**結線そのものを動かす3層**:
+  ①架空チェッカーに本物の lib を source させて実行（初回=実行／2回目=skip／入力変更=再実行／失敗は記録しない／CI・`MUT_FULL=1` は必ず実行）
+  ②**本物のチェッカー2本**を鍵を先に記録した状態で起動し、数秒で `MUTCACHE-SKIP` を出すことを実測（結線が切れていれば時間切れで赤）
+  ③**`run_e2e.sh` そのもの**を sandbox で走らせ、合図あり／なしの両方向で集計を実測（`node` は PATH stub）
 - `bash test/run_tests.sh shogi_v4.html` = PASS=256 / FAIL=0 / WARN=0

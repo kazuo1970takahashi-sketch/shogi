@@ -128,6 +128,12 @@ fsize() {
   case "$_v" in ''|*[!0-9]*) _v="" ;; esac
   echo "$_v"
 }
+fmtime() {
+  _v="$(stat -c %Y "$1" 2>/dev/null)"
+  case "$_v" in ''|*[!0-9]*) _v="$(stat -f %m "$1" 2>/dev/null)" ;; esac
+  case "$_v" in ''|*[!0-9]*) _v="" ;; esac
+  echo "$_v"
+}
 
 # --- 起動時のスナップショット -------------------------------------------------
 PRE=0
@@ -162,6 +168,14 @@ fail_out() {
   _b="$1"; shift
   say "NG   $(basename "$_b") — $*"
   mv "$_b" "$_b.failed" 2>/dev/null && say "     → $(basename "$_b").failed へ改名（中身は残してある）"
+  # ★ Codex P1 (r3794397144): **失敗した bundle の残骸を次の bundle に持ち越さない**。
+  #   `.force` マーカーを元の名前のまま残すと、後で**同じ名前の修正版**を marker 無しで
+  #   置いたときに `_force=1` と判定され、意図せず強制上書きされる。
+  #   → bundle と一緒に隔離する（`.force.failed` は `*.bundle.force` に一致しない名前）。
+  if [ -f "$_b.force" ]; then
+    mv "$_b.force" "$_b.force.failed" 2>/dev/null \
+      && say "     → $(basename "$_b").force も .force.failed へ隔離（次の bundle に持ち越さない）"
+  fi
   mark_seen "$(basename "$_b")"
 }
 
@@ -180,6 +194,9 @@ process_one() {
   fi
 
   say "検出 $_name（${_s2} bytes）"
+  # ★ 観測と作用の間に対象が変わっていないかを後で照合するため、いまの姿を控える
+  #   （Codex P1 (r3794397139) と同じクラス＝TOCTOU。verify した中身と push する中身を一致させる）
+  _m1="$(fmtime "$_b")"
 
   # 2) bundle として妥当か（前提コミットが手元にあるかもここで分かる）
   if ! git bundle verify "$_b" >/dev/null 2>&1; then
@@ -213,18 +230,37 @@ process_one() {
       return 0
     fi
     _sha="$(git rev-parse "$_tmpref" 2>/dev/null)"
+
+    # ★ fetch した中身が、verify した中身と同一であること（bundle が差し替わっていない）
+    _m2="$(fmtime "$_b")"
+    _s3="$(fsize "$_b")"
+    if [ "$_m1" != "$_m2" ] || [ "$_s2" != "$_s3" ]; then
+      fail_out "$_b" "verify から fetch までの間に bundle が変わった（size $_s2→$_s3 / mtime $_m1→$_m2）"
+      return 0
+    fi
+
     _old="$(git ls-remote origin "$_ref" 2>/dev/null | awk '{print $1}')"
-    [ -n "$_old" ] || _old="(新規)"
+    _oldshow="$_old"
+    [ -n "$_oldshow" ] || _oldshow="(新規)"
 
     if [ "$DRY_RUN" -eq 1 ]; then
-      say "     dry-run: git push origin $_tmpref:$_ref  （$_old → $_sha）"
+      say "     dry-run: git push origin $_tmpref:$_ref  （$_oldshow → $_sha）"
       continue
     fi
 
     # 5) push
-    if [ "$_force" -eq 1 ]; then
+    # ★ Codex P1 (r3794397139): `ls-remote` で読んでから push するまでの間に他の誰かが
+    #   同じ枝を進めていると、無条件の `--force` はその新しいコミットまで消す。
+    #   しかもログに残るのは**実際に上書きした SHA ではなく古い `_old`** ＝監査記録も嘘になる。
+    #   → **観測した `_old` を期待値にした `--force-with-lease`** にする（原子的に弾ける）。
+    #     枝が存在しない（新規）ときは force 自体が不要なので通常 push で作る。
+    if [ "$_force" -eq 1 ] && [ -n "$_old" ]; then
       say "     ★ force 指定（$_name.force あり）: $_branch を $_old → $_sha で上書きする"
-      _out="$(git push --force origin "$_tmpref:$_ref" 2>&1)"; _rc=$?
+      say "       （--force-with-lease: 観測した $_old のままである場合にだけ通す）"
+      _out="$(git push --force-with-lease="$_ref:$_old" origin "$_tmpref:$_ref" 2>&1)"; _rc=$?
+    elif [ "$_force" -eq 1 ]; then
+      say "     ★ force 指定だが origin に $_branch が無い＝新規作成（force は不要）"
+      _out="$(git push origin "$_tmpref:$_ref" 2>&1)"; _rc=$?
     else
       _out="$(git push origin "$_tmpref:$_ref" 2>&1)"; _rc=$?
     fi
@@ -234,13 +270,26 @@ process_one() {
       say "NG   $_name — push 失敗（$_branch）"
       echo "$_out" | sed 's/^/       /'
       echo "$_out" | sed 's/^/       /' >> "$LOG" 2>/dev/null
+      # ★ Codex P2 (r3794397154): 復旧コマンドが `refs/land/<枝>` を指していると、
+      #   次に同じ枝の別 bundle を処理したとき `+` fetch で**中身が入れ替わる**か、
+      #   成功時の削除で**実行不能**になる。
+      #   → ① 失敗ごとに **bundle 名で一意な不変 ref** を残してオブジェクトを保持し、
+      #     ② 復旧コマンドは **ref ではなく確定した SHA** を直接指す。
+      _keepref="refs/land/failed/$_name"
+      git update-ref "$_keepref" "$_sha" 2>/dev/null
+      git update-ref -d "$_tmpref" 2>/dev/null
+      say "     この bundle の内容は $_keepref（$_sha）に保持した"
       say "     早戻り（fast-forward でない）なら、意図した上書きか確かめてから:"
-      say "       cd $REPO && git push --force origin $_tmpref:$_ref"
+      if [ -n "$_old" ]; then
+        say "       cd $REPO && git push --force-with-lease=$_ref:$_old origin $_sha:$_ref"
+      else
+        say "       cd $REPO && git push origin $_sha:$_ref"
+      fi
       say "     cowork 側からやるなら bundle と一緒に $_name.force を置くこと"
       fail_out "$_b" "push 失敗"
       return 0
     fi
-    say "OK   $_branch ← $_sha（前: $_old）"
+    say "OK   $_branch ← $_sha（前: $_oldshow）"
     # push できた時点で origin に載っているので、一時 ref は消す（.git を太らせない）。
     # 失敗時は残す — 上に出した復旧コマンドがこの ref を指しているため。
     git update-ref -d "$_tmpref" 2>/dev/null
@@ -255,6 +304,18 @@ process_one() {
 }
 
 scan_once() {
+  # ★ 残骸の持ち越し対策（Codex P1 (r3794397144) と同じクラス）の残り半分:
+  #   bundle の無い `.force` マーカーが転がっていると、後で**同じ名前の bundle** が来たときに
+  #   黙って強制上書きになる。見つけたら一度だけ知らせる（消しはしない＝意図的に置いた場合がある）。
+  for _fm in "$REPO"/*.bundle.force; do
+    [ -e "$_fm" ] || continue
+    _fb="${_fm%.force}"
+    [ -e "$_fb" ] && continue
+    is_seen "marker:$(basename "$_fm")" && continue
+    say "⚠ $(basename "$_fm") は bundle が無いのに残っている。同名の bundle が来たら**強制上書き**になる"
+    say "   意図が無ければ削除すること: rm '$_fm'"
+    mark_seen "marker:$(basename "$_fm")"
+  done
   for _b in "$REPO"/*.bundle; do
     [ -e "$_b" ] || continue
     is_seen "$(basename "$_b")" && continue

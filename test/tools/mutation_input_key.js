@@ -14,10 +14,18 @@
 //       (3) e2e スイート .js（アサーション ID と、その強さ）
 //       (4) 対象 HTML のうち **変異が当たる領域**（＋前後の文脈）
 //       (5) 対象 HTML の **それ以外の領域**（下記★の残余リスク）
-//       (6) 実行環境（node / playwright のバージョン）
+//       (6) 実行環境（node / playwright / **platform・arch・実 Chromium の実体** /
+//           locale・TZ）★Codex P1 (r3794397136) で (6) の列挙漏れを指摘され拡張した。
+//           同じ checkout を macOS と Linux で共有（bind mount）すると、レイアウト座標や
+//           画素を見る #887 の e2e は「macOS では殺せた変異が Linux では生き残る」のに
+//           鍵が同じになり、Linux 側だけ不当に skip できてしまう。
 //       (7) この鍵生成ツール自身と、呼び出す側の lib
 //       (8) TARGET の指定（既定 shogi_v4.html か、明示された別ファイルか）
 //     本ツールは (1)(2)(3)(4)(6)(7)(8) を1個の sha256 に畳む。
+//
+//   ★ (6) のうち **フォント・描画まわりだけは畳めない**（同一機械で fontconfig が
+//     変わる等）。platform/arch と Chromium の実体を入れたことで「別 OS で同じ鍵」は
+//     消えたので、残るのは同一機械の 24 時間以内の変化だけ ＝ 下の (5) と同じ受けに入れる。
 //
 //   ★ (5) は畳めない — が、次の3つで受ける（設計上の既知の残余リスク）:
 //       a. 変異チェックの「0) 対照」＝**素の e2e** は run_e2e.sh で常に走る。
@@ -53,12 +61,13 @@ function usage(msg) {
 }
 
 const args = process.argv.slice(2);
-let target = '', gen = '', suite = '';
+let target = '', gen = '', suite = '', dumpParts = false;
 const extras = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   const v = args[i + 1];
-  if (a === '--target') { if (!v) usage('--target に値が無い'); target = v; i++; }
+  if (a === '--dump-parts') { dumpParts = true; }
+  else if (a === '--target') { if (!v) usage('--target に値が無い'); target = v; i++; }
   else if (a === '--gen') { if (!v) usage('--gen に値が無い'); gen = v; i++; }
   else if (a === '--suite') { if (!v) usage('--suite に値が無い'); suite = v; i++; }
   else if (a === '--extra') { if (!v) usage('--extra に値が無い'); extras.push(v); i++; }
@@ -75,16 +84,33 @@ function fileHash(p) {
 
 // --- (1)(2)(3)(7)(8): ファイル群と実行環境 ----------------------------------
 const parts = [];
-parts.push('v1');                       // 鍵の書式版（この算法を変えたら上げる＝旧キャッシュは自動失効）
+parts.push('v2');                       // 鍵の書式版（この算法を変えたら上げる＝旧キャッシュは自動失効）
 parts.push('node=' + process.version);
+// ★ 機械そのもの。同じ checkout を別 OS / 別アーキで共有し得るので必ず含める。
+parts.push('platform=' + process.platform + '/' + process.arch);
+// ★ 日付と文字列比較に効く環境。e2e は大会日を表示・比較する。
+parts.push('tz=' + (process.env.TZ || ''));
+parts.push('locale=' + (process.env.LC_ALL || '') + '|' + (process.env.LANG || ''));
 // ★ playwright は **repo 直下の node_modules** から見る。process.cwd() から見ると
 //   呼び出し元のカレント次第で 'unknown' になったりして、鍵が理由なく揺れる。
 let pwVer = 'none';
-try { pwVer = require(path.join(__dirname, '../../node_modules/playwright/package.json')).version; }
-catch (e) {
-  try { pwVer = require('playwright/package.json').version; } catch (e2) { pwVer = 'unknown'; }
+let pwMod = null;
+try {
+  pwVer = require(path.join(__dirname, '../../node_modules/playwright/package.json')).version;
+  pwMod = require(path.join(__dirname, '../../node_modules/playwright'));
+} catch (e) {
+  try {
+    pwVer = require('playwright/package.json').version;
+    pwMod = require('playwright');
+  } catch (e2) { pwVer = 'unknown'; }
 }
 parts.push('playwright=' + pwVer);
+// ★ **実際に起動されるブラウザの実体**。パスに build revision（例 chromium-1194）が入るので、
+//   playwright の version が同じでもブラウザだけ差し替わった場合を捕まえられる。
+let pwExec = 'unknown';
+try { pwExec = (pwMod && pwMod.chromium && pwMod.chromium.executablePath()) || 'unknown'; }
+catch (e) { pwExec = 'unresolved'; }
+parts.push('chromium=' + pwExec);
 parts.push('target-arg=' + target);
 parts.push('gen=' + fileHash(gen));
 parts.push('suite=' + fileHash(suite));
@@ -129,5 +155,12 @@ try {
 }
 regions.sort();
 parts.push('regions=' + sha256(regions.join('\u0002')));
+
+// --dump-parts: 鍵そのものではなく**材料の一覧**を出す（何を同一と見なしているかを目で確かめる用）。
+// 鍵と取り違えないよう、この場合は 64桁 hex を出さない。
+if (dumpParts) {
+  process.stdout.write(parts.join('\n') + '\n');
+  process.exit(0);
+}
 
 process.stdout.write(sha256(parts.join('\n')) + '\n');

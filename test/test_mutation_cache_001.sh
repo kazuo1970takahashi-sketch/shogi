@@ -181,6 +181,22 @@ else ok "CI では鍵を作らない"; fi
 
 ( export MUT_FULL=1; . "$LIB"; mutcache_hit "t1" "$KK" >/dev/null 2>&1 ) && ng "★ MUT_FULL=1 でヒットした" || ok "MUT_FULL=1 ではヒットしない"
 
+# ★ Codex P1 (r3794397150) とその同型（＝「比較が素通りしてヒット側へ落ちる」クラス全部）
+echo ""
+echo "8b) 時刻・数値が異常なときは fail closed（フル実行へ落ちる）"
+CF1="$MUT_CACHE_DIR/t1.$KK"
+#  (a) mtime が未来（スナップショット復元・時刻補正）→ age が負
+touch -t 209901010000 "$CF1" 2>/dev/null || touch -d '2099-01-01' "$CF1" 2>/dev/null
+OUT8="$(mutcache_hit "t1" "$KK" 2>&1)"; RC8=$?
+[ "$RC8" -ne 0 ] && ok "記録の mtime が未来ならヒットしない" || ng "★ 未来 mtime でヒットした（TTL を無期限に回避できる）"
+case "$OUT8" in *"未来"*) ok "理由（時計が飛んでいる）を出す" ;; *) ng "理由が出ない: $OUT8" ;; esac
+mutcache_store "t1" "$KK"   # mtime を現在へ戻す
+mutcache_hit "t1" "$KK" >/dev/null 2>&1 && ok "戻せば再びヒットする" || ng "戻してもヒットしない"
+#  (b) TTL が非数値 → `[ ... -ge ... ]` がエラーで偽を返し、従来は**ヒット側**へ落ちていた
+OUT8B="$(MUT_CACHE_TTL=abc mutcache_hit "t1" "$KK" 2>&1)"; RC8B=$?
+[ "$RC8B" -ne 0 ] && ok "TTL が非数値ならヒットしない" || ng "★ 非数値 TTL でヒットした"
+case "$OUT8B" in *"数値でない"*) ok "理由（TTL が数値でない）を出す" ;; *) ng "理由が出ない: $OUT8B" ;; esac
+
 echo ""
 echo "9) 記録は入力ごと（別の鍵ではヒットしない）"
 echo "dummy checker v9" > "$SB/checker.sh"
@@ -193,15 +209,146 @@ if mutcache_hit "t1" "$KK" >/dev/null 2>&1; then ok "別入力を記録しても
 else ng "★ 別入力の記録が前の記録を消している"; fi
 
 echo ""
-echo "10) run_e2e.sh 側の契約（この語で集計している）"
-if grep -q 'MUTCACHE-SKIP' "$SCRIPT_DIR/run_e2e.sh"; then ok "run_e2e.sh が MUTCACHE-SKIP を見ている"
-else ng "run_e2e.sh 側の集計が MUTCACHE-SKIP を見ていない（契約が切れている）"; fi
-if grep -q 'MUT_FULL' "$SCRIPT_DIR/run_e2e.sh"; then ok "run_e2e.sh に MUT_FULL の案内がある"
-else ng "MUT_FULL の案内が無い"; fi
-for c in "$SCRIPT_DIR/tools/chg_inline_error_881_mutation_check.sh" "$SCRIPT_DIR/tools/bulk_inline_error_887_mutation_check.sh"; do
-  if grep -q 'mutcache_hit' "$c" && grep -q 'mutcache_store' "$c"; then ok "$(basename "$c") が lib を使っている"
-  else ng "$(basename "$c") が lib を使っていない"; fi
+echo "10) 実行環境が鍵に入っていること（★Codex P1 r3794397136）"
+#   同じ checkout を macOS と Linux で共有すると、レイアウト・画素を見る e2e は結果が変わりうる。
+#   platform/arch/実 Chromium/locale/TZ を鍵に入れたことを、環境変数で振って実測する。
+K_TZ_A="$(TZ=Asia/Tokyo key)"
+K_TZ_B="$(TZ=UTC key)"
+[ -n "$K_TZ_A" ] && [ "$K_TZ_A" != "$K_TZ_B" ] && ok "TZ が変われば鍵が変わる" || ng "TZ が鍵に入っていない"
+K_LC_A="$(LC_ALL=C.UTF-8 key)"
+K_LC_B="$(LC_ALL=C key)"
+[ "$K_LC_A" != "$K_LC_B" ] && ok "LC_ALL が変われば鍵が変わる" || ng "locale が鍵に入っていない"
+if node "$KEYTOOL" --target "$SB/target.html" --gen "$SB/gen.js" --suite "$SB/suite.js" --dump-parts 2>/dev/null | grep -q '^platform='; then
+  ok "platform/arch を鍵の材料に含めている"
+else
+  # --dump-parts が無い実装でも、材料に入っていることは上の TZ/LC で間接的に測れている。
+  # ここは「材料の列挙を目で確認できる」ことの pin なので、無ければ NG。
+  ng "鍵の材料を確認できない（--dump-parts が無い）"
+fi
+
+echo ""
+echo "11) ★ 結線そのものを動かす（★Codex P2 r3794397147 — grep では no-op 実装を見抜けない）"
+#   架空の「チェッカー」に本物の lib を source させ、初回=実行 / 2回目=skip /
+#   入力変更=再実行 / 失敗時=記録しない を**実際に走らせて**観測する。
+cat > "$SB/fakechecker.sh" <<'FCEOF'
+#!/usr/bin/env bash
+set -u
+HERE="$(cd "$(dirname "$0")" && pwd)"
+TARGET="$SBDIR/target.html"; GEN="$SBDIR/gen.js"; SUITE="$SBDIR/suite.js"
+. "$LIBPATH"
+MUTKEY="$(mutcache_key "$TARGET" "$GEN" "$SUITE" "$0")" || MUTKEY=""
+if mutcache_hit "fake" "$MUTKEY"; then exit 0; fi
+echo "RAN" >> "$SBDIR/ran.log"
+if [ "${FAKE_FAIL:-0}" = "1" ]; then echo "  結果: FAIL"; exit 1; fi
+mutcache_store "fake" "$MUTKEY"
+echo "  結果: PASS"
+exit 0
+FCEOF
+runs() { wc -l < "$SB/ran.log" 2>/dev/null | tr -d ' '; }
+: > "$SB/ran.log"
+export SBDIR="$SB" LIBPATH="$LIB"
+( unset CI; bash "$SB/fakechecker.sh" >/dev/null 2>&1 )
+[ "$(runs)" = "1" ] && ok "初回は実行される" || ng "初回に実行されない（runs=$(runs)）"
+OUT2="$( ( unset CI; bash "$SB/fakechecker.sh" 2>&1 ) )"
+[ "$(runs)" = "1" ] && ok "2回目は実行されない（キャッシュが効いた）" || ng "2回目も実行された＝結線されていない"
+case "$OUT2" in *MUTCACHE-SKIP*) ok "2回目は MUTCACHE-SKIP を出す" ;; *) ng "skip の合図が出ていない" ;; esac
+echo "dummy suite v11" > "$SB/suite.js"
+( unset CI; bash "$SB/fakechecker.sh" >/dev/null 2>&1 )
+[ "$(runs)" = "2" ] && ok "入力が変われば再実行される" || ng "入力を変えても再実行されない（★危険）"
+
+# 失敗した実行は記録してはいけない ＝ 同じ入力でも**毎回走り直す**。
+# 絶対値ではなく差分で測る（前段の設計を変えても壊れないように）。
+echo "dummy suite v12" > "$SB/suite.js"
+BEF="$(runs)"
+( unset CI; FAKE_FAIL=1 bash "$SB/fakechecker.sh" >/dev/null 2>&1 )
+( unset CI; FAKE_FAIL=1 bash "$SB/fakechecker.sh" >/dev/null 2>&1 )
+[ "$(( $(runs) - BEF ))" = "2" ] && ok "失敗した実行は記録されない（同じ入力でも走り直す）" \
+  || ng "失敗を記録している（差分=$(( $(runs) - BEF ))・期待2）"
+
+# その直後に成功させれば記録され、次は skip になる（＝記録は成功時だけ、を両方向で固定）
+BEF="$(runs)"
+( unset CI; bash "$SB/fakechecker.sh" >/dev/null 2>&1 )
+( unset CI; bash "$SB/fakechecker.sh" >/dev/null 2>&1 )
+[ "$(( $(runs) - BEF ))" = "1" ] && ok "成功した実行だけが記録される（次は skip）" \
+  || ng "成功しても記録されない（差分=$(( $(runs) - BEF ))・期待1）"
+
+BEF="$(runs)"
+( export CI=true; bash "$SB/fakechecker.sh" >/dev/null 2>&1 )
+[ "$(( $(runs) - BEF ))" = "1" ] && ok "CI では記録があっても必ず実行される" || ng "CI で skip された（★致命）"
+
+BEF="$(runs)"
+( unset CI; MUT_FULL=1 bash "$SB/fakechecker.sh" >/dev/null 2>&1 )
+[ "$(( $(runs) - BEF ))" = "1" ] && ok "MUT_FULL=1 でも必ず実行される" || ng "MUT_FULL=1 で skip された"
+
+echo ""
+echo "12) ★ 本物のチェッカー2本が実際に skip 経路へ入ること"
+#   鍵をこちらで作って**先に記録**しておき、本物のチェッカーを起動する。
+#   結線されていれば数秒で MUTCACHE-SKIP を出して終わる。されていなければ
+#   変異生成＋実ブラウザに入って戻ってこない（＝時間切れで NG）。
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+try_real() {
+  _label="$1"; _name="$2"; _gen="$3"; _suite="$4"; _chk="$5"
+  ( cd "$REPO_ROOT" || exit 1
+    unset CI
+    export MUT_CACHE_DIR="$SB/realcache"
+    . "$LIB"
+    K="$(mutcache_key shogi_v4.html "$_gen" "$_suite" "$_chk")" || K=""
+    [ -n "$K" ] || { echo "NOKEY"; exit 9; }
+    mutcache_store "$_name" "$K"
+    bash "$_chk" > "$SB/real_$_name.out" 2>&1 &
+    _pid=$!
+    _i=0
+    while [ $_i -lt 60 ]; do
+      kill -0 "$_pid" 2>/dev/null || break
+      sleep 1; _i=$((_i+1))
+    done
+    if kill -0 "$_pid" 2>/dev/null; then kill "$_pid" 2>/dev/null; wait "$_pid" 2>/dev/null; echo "TIMEOUT"; exit 8; fi
+    wait "$_pid"; exit $?
+  )
+}
+for spec in \
+  "chg_inline_error_881|test/tools/chg_inline_error_881_mutants.js|test/e2e/chg_modal_inline_error_881.e2e.js|test/tools/chg_inline_error_881_mutation_check.sh" \
+  "bulk_inline_error_887|test/tools/bulk_inline_error_887_mutants.js|test/e2e/bulk_modal_inline_error_887.e2e.js|test/tools/bulk_inline_error_887_mutation_check.sh" ; do
+  NAME="${spec%%|*}"; REST="${spec#*|}"
+  GENF="${REST%%|*}"; REST="${REST#*|}"
+  SUITEF="${REST%%|*}"; CHKF="${REST#*|}"
+  RES="$(try_real "$NAME" "$NAME" "$GENF" "$SUITEF" "$CHKF")"; RC=$?
+  if [ "$RC" -eq 0 ] && grep -q 'MUTCACHE-SKIP' "$SB/real_$NAME.out" 2>/dev/null; then
+    ok "$NAME が記録済みの鍵で skip 経路へ入った（本物の結線）"
+  else
+    ng "$NAME が skip しない（rc=$RC $RES）＝結線が切れているか鍵の作り方が食い違っている"
+  fi
 done
+
+echo ""
+echo "13) ★ run_e2e.sh の集計が MUTCACHE-SKIP で動くこと（本物のファイルを sandbox で走らせる）"
+#   実ブラウザも playwright も要らない形で、run_e2e.sh **そのもの**を走らせて出力を測る。
+#   node は PATH 先頭の stub に差し替える（test_pr_gate_scripts.sh と同じ手口）。
+mkdir -p "$SB/rt/test/e2e" "$SB/bin"
+cp "$SCRIPT_DIR/run_e2e.sh" "$SB/rt/test/run_e2e.sh"
+cat > "$SB/bin/node" <<'NODEEOF'
+#!/usr/bin/env bash
+# playwright の存在確認（node -e ...）だけ肯定し、それ以外は本物の node へ委ねる stub
+for a in "$@"; do [ "$a" = "-e" ] && exit 0; done
+exec "$REAL_NODE" "$@"
+NODEEOF
+chmod +x "$SB/bin/node"
+REAL_NODE="$(command -v node)"; export REAL_NODE
+echo 'console.log("ok suite");' > "$SB/rt/test/e2e/a_ok.e2e.js"
+echo 'console.log("MUTCACHE-SKIP fake"); console.log("  スキップ: 入力が同一");' > "$SB/rt/test/e2e/b_skip.e2e.js"
+OUT13="$(PATH="$SB/bin:$PATH" bash "$SB/rt/test/run_e2e.sh" dummy.html 2>&1)"; RC13=$?
+[ "$RC13" -eq 0 ] && ok "sandbox の run_e2e.sh が正常終了する" || ng "run_e2e.sh が異常終了（rc=$RC13）"
+case "$OUT13" in *"【SKIP】"*) ok "skip したジョブの見出しに【SKIP】が付く" ;; *) ng "【SKIP】が付かない" ;; esac
+case "$OUT13" in *"スキップ 1 件"*) ok "最終行で PASS と別に数えている" ;; *) ng "スキップが PASS に混ざっている（★危険）"; esac
+case "$OUT13" in *"1/2 スイート PASS"*) ok "PASS 数に skip を含めていない" ;; *) ng "PASS 数に skip が含まれている"; esac
+case "$OUT13" in *"MUT_FULL=1"*) ok "全部実測する方法を案内している" ;; *) ng "MUT_FULL の案内が出ない" ;; esac
+# 逆向き: 合図が無ければ従来どおり「2/2 PASS」で、スキップ行は出ない
+echo 'console.log("ok suite 2");' > "$SB/rt/test/e2e/b_skip.e2e.js"
+OUT13B="$(PATH="$SB/bin:$PATH" bash "$SB/rt/test/run_e2e.sh" dummy.html 2>&1)"
+case "$OUT13B" in
+  *"2/2 スイート PASS"*) case "$OUT13B" in *"スキップ"*) ng "合図が無いのにスキップ扱い" ;; *) ok "合図が無ければ従来どおり 2/2 PASS" ;; esac ;;
+  *) ng "合図が無いときの集計が壊れている" ;;
+esac
 
 echo ""
 echo "=========================================="

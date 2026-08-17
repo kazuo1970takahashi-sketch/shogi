@@ -76,11 +76,27 @@ mutcache_hit() {
   [ -n "$_mc_key" ] || return 1
   _mc_f="$(_mc_dir)/$_mc_name.$_mc_key"
   [ -f "$_mc_f" ] || return 1
+  # ★ Codex P1 (r3794397150) とその同型を **クラスごと**塞ぐ:
+  #   「時刻・数値が異常なときに、比較が素通りしてヒット側へ落ちる」経路を全部 fail closed にする。
+  #     - mtime が非数値（stat の互換崩れ）      → フル実行
+  #     - now が非数値（date の異常）             → フル実行
+  #     - **TTL が非数値**（`MUT_CACHE_TTL=abc`）→ `[ ... -ge ... ]` が **エラーで偽**を返し、
+  #       「TTL 超過ではない」＝**ヒット**に落ちていた。数値でなければフル実行にする
+  #     - **age が負**（スナップショット復元・時刻補正で mtime が未来）→ TTL を無期限に回避
+  #       できてしまうのでフル実行
   _mc_now="$(date +%s)"
   _mc_mt="$(_mc_mtime "$_mc_f")"
-  case "$_mc_mt" in ''|*[!0-9]*) return 1 ;; esac
-  _mc_age=$((_mc_now - _mc_mt))
   _mc_ttl_v="$(_mc_ttl)"
+  case "$_mc_now" in ''|*[!0-9]*) echo "  （現在時刻を取得できない → フル実行する）"; return 1 ;; esac
+  case "$_mc_mt"  in ''|*[!0-9]*) return 1 ;; esac
+  case "$_mc_ttl_v" in ''|*[!0-9]*)
+    echo "  （TTL が数値でない: '$_mc_ttl_v' → フル実行する）"; return 1 ;;
+  esac
+  _mc_age=$((_mc_now - _mc_mt))
+  if [ "$_mc_age" -lt 0 ]; then
+    echo "  （記録の時刻が未来（age=${_mc_age}秒）＝時計が飛んでいる → フル実行する）"
+    return 1
+  fi
   if [ "$_mc_age" -ge "$_mc_ttl_v" ]; then
     echo "  （前回 PASS の記録はあるが TTL 超過: ${_mc_age}秒 ≥ ${_mc_ttl_v}秒 → フル実行する）"
     return 1
@@ -107,6 +123,9 @@ mutcache_store() {
   #   毎回消し合って一度も当たらなくなる。鍵は入力そのものなので、複数残っていても誤ヒットしない。
   _mc_now2="$(date +%s)"
   _mc_ttl_v2="$(_mc_ttl)"
+  # 掃除も同じ規律。値が異常なら**何も消さない**（消しすぎより残すほうが安全側）
+  case "$_mc_now2"   in ''|*[!0-9]*) return 0 ;; esac
+  case "$_mc_ttl_v2" in ''|*[!0-9]*) return 0 ;; esac
   for _f in "$_mc_d/$_mc_name".*; do
     [ -e "$_f" ] || continue
     [ "$_f" = "$_mc_d/$_mc_name.$_mc_key" ] && continue
