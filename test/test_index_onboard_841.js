@@ -102,22 +102,32 @@ function styleProp(rule, inline, prop) {
   const mi = inline.match(re), mr = rule.match(re);
   return (mi ? mi[1] : (mr ? mr[1] : '')).trim();
 }
-const scopeLine = (IDX.match(/<p[^>]*class="scope-note"[^>]*>/) || [''])[0];
+// ★ Codex P2 (r3799468511): 最初の1タグだけ見ると、後続の注記に個別 opacity を付けられて素通りする。
+//   **全 .scope-note タグ**について、インライン指定を反映した実効比を出す。
 const scopeRule = (IDX.match(/\.scope-note\s*\{([^}]*)\}/) || ['', ''])[1];
-const noteFg = styleProp(scopeRule, scopeLine, 'color') || undefined;
-const noteOpacityRaw = styleProp(scopeRule, scopeLine, 'opacity');
-const noteOpacity = noteOpacityRaw === '' ? 1 : Number(noteOpacityRaw);
+const scopeTagsAll = IDX.match(/<p[^>]*class="scope-note"[^>]*>/g) || [];
 // 背景は .card（#fff）。card の背景が変わったらここも赤くなるよう CSS から取る。
 const cardBg = (IDX.match(/\.card\s*\{[^}]*background\s*:\s*(#[0-9a-fA-F]{3,6})/) || [])[1];
-const noteRatio = (noteFg && cardBg && isFinite(noteOpacity))
-  ? contrastRgb(composite(noteFg, cardBg, noteOpacity), hex2rgb(cardBg)) : 0;
-ok(noteFg !== undefined && cardBg !== undefined && noteRatio >= 4.5,
-   'A10 ★実測: 適用範囲の注記の**実効**コントラスト比が WCAG AA (4.5:1) 以上' +
-   '（前景 ' + noteFg + ' / 背景 ' + cardBg + ' / opacity ' + noteOpacity +
-   ' = ' + noteRatio.toFixed(2) + ':1）');
-// ★ Codex P2 (r3799347845): 新色を作らない。注記の色は shogi_v4.html に既存の値であること。
-ok(noteFg !== undefined && (readOrNull('shogi_v4.html') || '').indexOf(noteFg) !== -1,
-   'A10b 注記の色は既存値の流用（STYLE-GUIDE §1・新色を作らない）: ' + noteFg);
+const noteResults = scopeTagsAll.map((tag, n) => {
+  const fg = styleProp(scopeRule, tag, 'color');
+  const opRaw = styleProp(scopeRule, tag, 'opacity');
+  const op = opRaw === '' ? 1 : Number(opRaw);
+  const ratio = (fg && cardBg && isFinite(op))
+    ? contrastRgb(composite(fg, cardBg, op), hex2rgb(cardBg)) : 0;
+  return { n: n + 1, fg, op, ratio };
+});
+ok(scopeTagsAll.length >= 3, 'A9b 適用範囲の注記が3箇所以上ある（バッジ／当日の流れ／注意事項／沼津カード前）' +
+   '（実測 ' + scopeTagsAll.length + '箇所）');
+const noteBad = noteResults.filter(r => !(r.ratio >= 4.5));
+ok(cardBg !== undefined && noteResults.length > 0 && noteBad.length === 0,
+   'A10 ★実測: **全ての**適用範囲の注記が実効コントラスト 4.5:1 以上（opacity 合成後）' +
+   '（実測: ' + noteResults.map(r => '#' + r.n + ' ' + r.fg + '@' + r.op + '=' + r.ratio.toFixed(2)).join(' / ') + '）');
+// 新色を作らない（STYLE-GUIDE §1・Codex P2 r3799347845）。全注記の前景色が既存値であること。
+const appSrcForColor = readOrNull('shogi_v4.html') || '';
+const newColors = Array.from(new Set(noteResults.map(r => r.fg))).filter(c => c && appSrcForColor.indexOf(c) === -1);
+ok(newColors.length === 0,
+   'A10b 注記の色はすべて既存値の流用（新色を作らない）（新色: ' + (newColors.join(',') || 'なし') + '）');
+const noteFg = noteResults.length ? noteResults[0].fg : undefined;
 // 導線リンクも同じ計算で見る（class 化したので CSS から取れる）。
 const linkRule = (IDX.match(/\.onboard-link\s*\{([^}]*)\}/) || ['', ''])[1];
 const linkFg = (linkRule.match(/color\s*:\s*(#[0-9a-fA-F]{3,6})/) || [])[1];
@@ -136,12 +146,21 @@ ok(linkRatio >= 4.5,
 const onboardTag = (IDX.match(/<a[^>]*class="onboard-link"[^>]*>/) || [''])[0];
 const scopeTags = IDX.match(/<p[^>]*class="scope-note"[^>]*>/g) || [];
 const inlineOffenders = [onboardTag].concat(scopeTags)
-  .filter(t => /style="[^"]*(color|background|border|font)/.test(t));
+  .filter(t => /style="[^"]*(color|background|border|font|opacity)/.test(t));
 ok(inlineOffenders.length === 0,
-   'A12 本スライスが足した要素にインラインの色/枠/フォント指定が無い（STYLE-GUIDE §1・§2.2-4）' +
+   'A12 本スライスが足した要素にインラインの色/枠/フォント/opacity 指定が無い（STYLE-GUIDE §1・§2.2-4）' +
    '（違反: ' + inlineOffenders.join(' / ') + '）');
 ok(/\.onboard-link\s*\{/.test(IDX) && /\.scope-note\s*\{/.test(IDX),
    'A13 .onboard-link / .scope-note が class として定義されている');
+
+// ★ Codex P2 (r3799468521): 注記内のインラインリンクは実効高 約22px で STYLE-GUIDE §10.3（44×44px・
+//   現在は例外なし）に違反していた。直下がその「はじめての方へ」カードなのでリンクは冗長 → 文言だけにした。
+//   タップ標的になりうる要素を .scope-note の中に置かないことを pin する（実寸は実ブラウザ側で測る）。
+const scopeTappable = (IDX.match(/<p[^>]*class="scope-note"[^>]*>[\s\S]*?<\/p>/g) || [])
+  .filter(block => /<(a|button)\b/.test(block));
+ok(scopeTappable.length === 0,
+   'A14 適用範囲の注記の中にタップ標的（a / button）を置いていない（§10.3 の 44px を満たせないため）' +
+   '（実測: ' + (scopeTappable.length ? scopeTappable[0].slice(0, 80) : 'なし') + '）');
 
 // ---- B. 各項目 ⇔ コード事実 --------------------------------------------------
 //
@@ -173,8 +192,11 @@ function bootApp(clubProfile) {
   const app = loadApp(path.join(root, 'shogi_v4.html'));
   const ctx = app.ctx;
   if (clubProfile) ctx.localStorage.setItem('shogi_club_profile', JSON.stringify(clubProfile));
-  // 画面描画・保存は本筋でないので黙らせる（評価後 stub＝harness の作法）。
-  ['save', 'render', 'renderAll', 'saveBranchMaster', 'renderPairings', 'renderStandings']
+  // 画面描画は本筋でないので黙らせる（評価後 stub＝harness の作法）。
+  //   ★ Codex P1 (r3799468516): **save() は stub しない**。本番の submitRound は必ず save() を通るので、
+  //     stub すると「save() が state を壊す」変異を検出できない（実際にその変異で緑のままだった）。
+  //     save() は localStorage へ書くだけなので harness の mock でそのまま走る。
+  ['render', 'renderAll', 'saveBranchMaster', 'renderPairings', 'renderStandings']
     .forEach(n => { if (typeof ctx[n] === 'function') app.stub(n, function () {}); });
   app.stub('appConfirm', function (msg, cb) { cb(true); });   // 破壊操作の確認は「はい」
   return app;
@@ -409,23 +431,50 @@ ok(secDefSet.join(',') === SEC_DEF_EXPECTED,
    'B3k ★集合のピン: SECURITY DEFINER 関数は既知の12本だけ' +
    '（provisioning 用が足されたら赤。実測: ' + secDefSet.join(',') + '）');
 
-// clubs への insert は seed 以外のどこにも無いこと（全走査）。
-const insertHits = [];
-(migs || []).forEach(({ f, src }) => { if (/insert\s+into\s+(public\.)?clubs/i.test(src)) insertHits.push(f); });
-(appJs || []).forEach(({ f, src }) => { if (/insert\s+into\s+(public\.)?clubs/i.test(src) || /from\(\s*['"]clubs['"]\s*\)[\s\S]{0,80}\.insert\(/.test(src)) insertHits.push(f); });
-ok(insertHits.length === 0,
-   'B3l ★全走査: clubs への insert 経路が migration にも app/ にも無い（実測: ' +
-   (insertHits.join(',') || 'なし') + '）');
+// ★ Codex P1 (r3799468505): 「最初の RLS migration だけ読む」「.insert() だけ見る」では、
+//   後続 migration の `create policy ... on public.clubs for insert` ＋ `from('clubs').upsert(...)`
+//   の組で素通りした。→ (a) **全** migration の clubs 向け書込ポリシー (b) **行を作りうる全 API** を走査。
 
-// RLS 側も固定する（DB に insert 経路が生えたら赤）。
-const RLS = readOrNull('supabase/migrations/20260620130100_stagea_rls.sql');
-ok(RLS !== null, 'B3n stagea_rls.sql を読めること');
-ok(RLS !== null && !/create\s+policy[^;]*on\s+public\.clubs[^;]*for\s+insert/is.test(RLS),
-   'B3o ★clubs への insert ポリシーが存在しない（既定拒否のまま）');
+// (a) 全 migration を走査。clubs に対する insert / all / update の policy を集める。
+const clubsWritePolicies = [];
+(migs || []).forEach(({ f, src }) => {
+  const re = /create\s+policy\s+([^\s]+)[\s\S]{0,400}?on\s+(?:public\.)?clubs\b([\s\S]{0,200}?)(?:;|$)/gi;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const forClause = (m[2].match(/for\s+(insert|update|delete|all|select)/i) || [])[1] || 'select';
+    if (/^(insert|update|delete|all)$/i.test(forClause)) {
+      clubsWritePolicies.push(f + ': ' + m[1] + ' for ' + forClause.toLowerCase());
+    }
+  }
+});
+// 既知の書込ポリシーは「update（管理者による改名）」1本だけ。insert/delete/all が生えたら赤。
+const clubsCreatePolicies = clubsWritePolicies.filter(x => !/ for update$/.test(x));
+ok(clubsCreatePolicies.length === 0,
+   'B3l ★全 migration 走査: clubs に insert/delete/all の policy が無い' +
+   '（生えたら他クラブ作成が可能になる＝項目3を書き直すこと。実測 書込ポリシー: ' +
+   (clubsWritePolicies.join(' / ') || 'なし') + '）');
+
+// (b) 行を作りうるクライアント API を全部見る。insert だけでなく upsert も（PostgREST は upsert で行を作る）。
+const clubsRowWrites = [];
+(appJs || []).concat(APP ? [{ f: 'shogi_v4.html', src: APP }] : []).forEach(({ f, src }) => {
+  const re = /from\(\s*['"]clubs['"]\s*\)([\s\S]{0,200})/g;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const w = (m[1].match(/\.(insert|upsert|update|delete)\(/) || [])[1];
+    if (w) clubsRowWrites.push(f + ': .' + w + '()');
+  }
+  if (/insert\s+into\s+(public\.)?clubs/i.test(src)) clubsRowWrites.push(f + ': insert into clubs');
+});
+(migs || []).forEach(({ f, src }) => {
+  if (/insert\s+into\s+(public\.)?clubs/i.test(src)) clubsRowWrites.push(f + ': insert into clubs');
+});
+ok(clubsRowWrites.length === 0,
+   'B3m ★全走査: clubs へ行を作る呼び出しが app/ にも shogi_v4.html にも migration にも無い' +
+   '（insert / upsert / update / delete のいずれも。実測: ' + (clubsRowWrites.join(' / ') || 'なし') + '）');
 
 const SEED = readOrNull('supabase/seed.example.sql');
-ok(SEED !== null && /insert\s+into\s+public\.clubs/i.test(SEED),
-   'B3p clubs 行は seed の直接 SQL でしか作られない');
+ok(SEED !== null && /insert\s+into\s+(public\.)?clubs/i.test(SEED),
+   'B3n clubs 行は seed の直接 SQL でしか作られない（＝運用者の手作業）');
 
 ok(/スマホ星取表/.test(CANT) && /同じ端末の別タブ/.test(CANT) && /インターネット不要/.test(CANT),
    'B3q 但し書きが「同じ端末の別タブ」と明記している');
@@ -530,11 +579,24 @@ if (loadApp) {
     ctx.state.results = { A: [], B: [] };
     ctx.state.started = true;
     ctx.submitRound('A');
-    oddSubmit = { rounds: ctx.state.results.A.length, alerts: alerts };
+    // ★メモリ上の state と、save() が localStorage へ書いた state の**両方**を見る。
+    let persisted = null;
+    try {
+      const key = ctx.STORAGE_KEY;
+      const raw = ctx.localStorage.getItem(key);
+      persisted = raw ? JSON.parse(raw) : null;
+    } catch (e) { persisted = null; }
+    oddSubmit = {
+      rounds: ctx.state.results.A.length,
+      alerts: alerts,
+      persistedRounds: (persisted && persisted.results && persisted.results.A) ? persisted.results.A.length : -1,
+    };
   } catch (e) { oddSubmit = { err: String(e).slice(0, 200) }; }
 }
-ok(oddSubmit && !oddSubmit.err && oddSubmit.rounds === 1 && oddSubmit.alerts.length === 0,
-   'B8c ★実挙動: 奇数3名・未割当1名のまま submitRound() が1回戦を確定する（警告も出ない）' +
+ok(oddSubmit && !oddSubmit.err && oddSubmit.rounds === 1 && oddSubmit.alerts.length === 0 &&
+   oddSubmit.persistedRounds === 1,
+   'B8c ★実挙動: 奇数3名・未割当1名のまま submitRound() が1回戦を確定し、' +
+   '**save() 実行後の永続化状態にも残る**（警告も出ない）' +
    '（サイトの「奇数のクラスもそのまま始められます」の直接の裏付け・実測: ' +
    JSON.stringify(oddSubmit) + '）');
 
