@@ -206,8 +206,8 @@ function membersRow(cli,mid){ var u=cli._calls.filter(function(c){return c.table
   // ===== E: 配線と文言のピン（消しても緑にならないように）=====
   ok(/buildCloudSyncPayload\(master,\{clubId:clubId, classesFilter:opts\.classesFilter, cloudMembersById:opts\.cloudMembersById\}\)/.test(RAW),
     'E1 ★syncTournamentToCloud が cloudMembersById を buildCloudSyncPayload へ転送している（明示列挙・忘れると無音 no-op）');
-  ok(/var _idsBefore=_collectSendMemberIds\(state\);\s*\n\s*return _fetchCloudMemberAttrs\(client,clubId,_idsBefore\)\.then\(function\(_attrRes\)/.test(RAW),
-    'E2 ★_send がクラウド属性を読み取ってから送信している（取得に使った ID 一覧は照合用に保持）');
+  ok(/var _idsBefore=_collectSendMemberIds\(state\);[\s\S]{0,200}return _fetchCloudMemberAttrs\(client,clubId,_idsBefore\)\.then\(function\(_attrRes\)/.test(RAW),
+    'E2 ★_send がクラウド属性を読み取ってから送信している（取得用 ID と照合用の署名を待ち時間の前に固定）');
   ok(/cloudMembersById:\(_attrRes&&_attrRes\.byId\)\|\|null/.test(RAW),'E3 読み取り結果が送信 opts に渡っている');
   ok(RAW.indexOf('☁送信時にも同期されます）')<0,
     'E4 ★「☁送信時にも同期されます」の約束は残っていない（案E では既定値方向の訂正を拾えないため）');
@@ -262,8 +262,10 @@ function membersRow(cli,mid){ var u=cli._calls.filter(function(c){return c.table
   }
 
   // ===== H: Codex 2巡目 P1（待ち時間の参加者変更）=====
-  ok(/var _idsAfter=_collectSendMemberIds\(state\);[\s\S]{0,400}changed-after-confirm/.test(RAW),
+  ok(/_collectSendRosterSignature\(state\)!==_sigBefore[\s\S]{0,400}changed-after-confirm/.test(RAW),
     'H1 ★属性取得の待ち明けに参加者の集合も照合する（報告書だけでは足りない）');
+  ok(/function _collectSendRosterSignature/.test(RAW)&&!/_collectSendRosterSignature[\s\S]{0,300}typeof mid==='string'/.test(RAW),
+    'H1b ★署名は member_id の有無を問わず全参加者を含む（未連携の追加も捕まえる）');
   {
     // 実挙動: 取得の待ち時間に参加者を1人追加 → 送らずに中止・書き込み0件
     var cliH=makeClient({ players:{data:[{id:'p1',member_id:'m_h'}]}, tournaments:{data:[{id:'t-uuid'}]} });
@@ -285,6 +287,31 @@ function membersRow(cli,mid){ var u=cli._calls.filter(function(c){return c.table
     ok(cliH._calls.filter(function(c){return c.op==='upsert';}).length===0,
       'H3 その場合クラウドへの書き込みは1件も発生しない（既定値での上書きが起きない）');
     ok(msgH.join('\n').indexOf('参加者が変わった')>=0,'H4 中止の理由が利用者に伝わる');
+    ok(msgH.join('\n').indexOf('\u26a0')>=0,
+      'H4b ★中止メッセージは ⚠ 付き＝成功色（緑）で出ない（classifyCloudStatusKind が「〜しました」を ok と読むため）');
+  }
+  {
+    // ★ Codex P1 (r3793666281): **未連携（member_id 無し）**の参加者が待ち時間に増えた場合も中止する。
+    //   member_id 一覧の比較では素通りし、未連携ガードも既に走った後なので、その人は確認を経ずに
+    //   共有結果から黙って欠落する（優勝者でも）。
+    var cliU=makeClient({ players:{data:[{id:'p1',member_id:'m_h'}]}, tournaments:{data:[{id:'t-uuid'}]} });
+    var eU=loadEnv({ SHOGI_CLOUD_CONFIG:{url:'https://example.test',publishableKey:'pk_test'},
+      supabase:{ createClient:function(){ return cliU; } } });
+    var stU=mkState(); eU._setState(stU); eU.saveBranchMaster(mkLocalDefaults());
+    eU.__setAppModalTestResolver(function(){ return true; });
+    var origFromU=cliU.from;
+    cliU.from=function(t){ var o=origFromU(t);
+      if(t==='members'){ var os=o.select; o.select=function(c){
+        // member_id を持たない参加者を追加（＝未連携）
+        stU.players.A.push({id:'a9',name:'架空飛入',cls:'A',entry_no:9,member:'member',grade:'ippan'});
+        return os(c); }; }
+      return o; };
+    var msgU=[];
+    var rU=await eU.sendTournamentToCloud(function(m){ msgU.push(m); });
+    ok(rU&&rU.ok===false&&rU.step==='changed-after-confirm',
+      'H5 ★未連携の参加者が待ち時間に増えても送らずに中止する  [実測 step='+((rU&&rU.step)||'-')+']');
+    ok(cliU._calls.filter(function(c){return c.op==='upsert';}).length===0,
+      'H6 その場合も書き込みは1件も発生しない');
   }
 
   console.log('\nCLOUD-MEMBER-ATTR-MERGE-001: PASS='+pass+' FAIL='+fail);

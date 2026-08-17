@@ -13108,6 +13108,26 @@ function _collectSendMemberIds(st){
   }catch(e){}
   return ids;
 }
+// ★ Codex P1 (r3793666281・3巡目): _collectSendMemberIds は **member_id を持つ人しか集めない**ため、
+//   待ち時間に**未連携（member_id 無し）の参加者**が追加されても前後の比較を素通りする。
+//   その人は _guardThenSend（未連携ガード）の確認も経ておらず、buildCloudSyncPayload は
+//   member_id 無しを skip する＝**優勝者でも共有結果から黙って欠落する**。
+//   照合には「全参加者（連携の有無を問わない）」の署名を使う。
+function _collectSendRosterSignature(st){
+  var sig=[];
+  try{
+    var classes=(st&&Array.isArray(st.classes))?st.classes:[];
+    for(var ci=0;ci<classes.length;ci++){
+      var cls=classes[ci]&&classes[ci].id; if(!cls)continue;
+      var ps=(st.players&&Array.isArray(st.players[cls]))?st.players[cls]:[];
+      for(var pi=0;pi<ps.length;pi++){
+        var p=ps[pi]||{};
+        sig.push(cls+'\u0002'+(p.id||'')+'\u0002'+(p.member_id||''));
+      }
+    }
+  }catch(e){}
+  return sig.join('\u0001');
+}
 function _fetchCloudMemberAttrs(client, clubId, memberIds){
   try{
     if(!client||!client.from||!clubId)return Promise.resolve({byId:null,note:CLOUD_ATTR_UNREAD_NOTE});
@@ -13493,6 +13513,7 @@ function sendTournamentToCloud(setStatus){
             //   読み取り専用で取る（ローカル名簿は書き換えない）。失敗しても送信は止めない＝
             //   従来どおりローカル値で送り、結果に ⚠ 注記を出す（無音でバグ挙動に戻らないため）。
             var _idsBefore=_collectSendMemberIds(state);
+            var _sigBefore=_collectSendRosterSignature(state);
             return _fetchCloudMemberAttrs(client,clubId,_idsBefore).then(function(_attrRes){
             // ★ Codex P1 (r3793467613): 属性の取得は**非同期**＝この待ち時間に報告書タブを編集できる。
             //   直前の照合（_describeSendDrift）だけでは、待っている間の編集が未確認のまま送られる
@@ -13504,9 +13525,12 @@ function sendTournamentToCloud(setStatus){
             //   「クラウドに行が無い新規会員」と誤認され、ローカル既定値が既存のクラウド値を**静かに
             //   上書き**する（＝#853 の再発）。参加者の集合も照合し、変わっていたら送らない。
             //   送信は任意操作なので、中止して送り直してもらうほうが安全（当日運営は止まらない）。
-            var _idsAfter=_collectSendMemberIds(state);
-            if(_idsAfter.join('\u0001')!==_idsBefore.join('\u0001')){
-              setStatus('参加者が変わったため送信を中止しました（確認した時点と送る内容が違います）。もう一度「☁ クラウドに送信」を押してください');
+            //   ★ 3巡目 (r3793666281): 比較は member_id 一覧ではなく**全参加者の署名**で行う
+            //     （未連携の追加も捕まえる）。★ P2 (r3793666284): 先頭の ⚠ は装飾ではない。
+            //     classifyCloudStatusKind は「⚠」→warn より先に「〜しました」→ok を見ないため、
+            //     ⚠ が無いと**送れていない送信が成功色（緑）で出る**（_describeSendDrift と同じ理由）。
+            if(_collectSendRosterSignature(state)!==_sigBefore){
+              setStatus('⚠ 参加者が変わったため送信を中止しました（確認した時点と送る内容が違います）。もう一度「☁ クラウドに送信」を押してください');
               return {ok:false,step:'changed-after-confirm'};
             }
             var master=(typeof loadBranchMaster==='function')?loadBranchMaster():{members:[]};
