@@ -133,7 +133,7 @@ cp "$SB/prod.bundle" "$A/prod.bundle"
 OUT="$(run_land --once --include-existing)"
 if [ -z "$(remote_sha production)" ]; then ok "production は push されない"
 else ng "★ production が push されてしまった"; fi
-[ -f "$A/prod.bundle.failed" ] && ok ".failed に改名して残る" || ng ".failed に残らない"
+ls "$A/_landed/failed/prod.bundle."*.failed >/dev/null 2>&1 && ok "_landed/failed/ へ一意な名前で退避される" || ng "退避されない"
 case "$OUT" in *"保護枝"*) ok "拒否理由がログに出る" ;; *) ng "拒否理由がログに出ない" ;; esac
 
 # ---------------------------------------------------------------------------
@@ -141,7 +141,7 @@ echo ""
 echo "4) 壊れた bundle は verify で止まる"
 printf 'not a bundle at all\n' > "$A/broken.bundle"
 OUT="$(run_land --once --include-existing)"
-[ -f "$A/broken.bundle.failed" ] && ok "壊れた bundle は .failed へ" || ng "壊れた bundle が .failed にならない"
+ls "$A/_landed/failed/broken.bundle."*.failed >/dev/null 2>&1 && ok "壊れた bundle は _landed/failed/ へ" || ng "壊れた bundle が退避されない"
 case "$OUT" in *"verify"*) ok "verify で止まったと分かる" ;; *) ng "理由が分からない" ;; esac
 
 # ---------------------------------------------------------------------------
@@ -174,14 +174,14 @@ cp "$SB/two-rw.bundle" "$A/tworw.bundle"
 OUT="$(run_land --once --include-existing)"
 if [ "$(remote_sha feat/two)" = "$OLD_TWO" ]; then ok "非 fast-forward は push されない"
 else ng "★ 非 fast-forward が黙って通った"; fi
-[ -f "$A/tworw.bundle.failed" ] && ok ".failed に残る" || ng ".failed に残らない"
+ls "$A/_landed/failed/tworw.bundle."*.failed >/dev/null 2>&1 && ok "_landed/failed/ に残る" || ng "退避されない"
 case "$OUT" in *"--force"*) ok "復旧コマンドがそのまま出る" ;; *) ng "復旧コマンドが出ない" ;; esac
 
 #  ★ Codex P2 (r3794397154): 失敗した bundle の復旧手段が、後続処理で壊れないこと
-if git --git-dir="$A/.git" rev-parse --verify "refs/land/failed/tworw.bundle" >/dev/null 2>&1; then
-  ok "失敗した bundle の内容が bundle 名で一意な不変 ref に残る"
+FAILED_SHA="$(git --git-dir="$A/.git" for-each-ref --format='%(objectname)' refs/land/failed/ | head -1)"
+if [ -n "$FAILED_SHA" ] && git --git-dir="$A/.git" rev-parse --verify "refs/land/failed/$FAILED_SHA" >/dev/null 2>&1; then
+  ok "失敗した bundle の内容が**内容で一意な**不変 ref に残る（refs/land/failed/<sha>）"
 else ng "失敗時に不変 ref を残していない（後続の同名枝処理で復旧できなくなる）"; fi
-FAILED_SHA="$(git --git-dir="$A/.git" rev-parse "refs/land/failed/tworw.bundle" 2>/dev/null)"
 case "$OUT" in *"$FAILED_SHA"*) ok "復旧コマンドが ref ではなく確定 SHA を指す" ;; *) ng "復旧コマンドが SHA を指していない" ;; esac
 case "$OUT" in *"--force-with-lease"*) ok "復旧コマンドも lease 付き（無条件 --force を案内しない）" ;; *) ng "無条件 --force を案内している" ;; esac
 
@@ -191,10 +191,9 @@ cp "$SB/two-rw.bundle" "$A/markertest.bundle"
 # 保護枝ではないが、壊れた bundle を装って失敗させる
 printf 'broken\n' > "$A/markertest.bundle"
 run_land --once --include-existing >/dev/null 2>&1
-if [ ! -f "$A/markertest.bundle.force" ] && [ -f "$A/markertest.bundle.force.failed" ]; then
-  ok "失敗時に .force マーカーも隔離される（次の同名 bundle に持ち越さない）"
+if [ ! -f "$A/markertest.bundle.force" ] && ls "$A/_landed/failed/markertest.bundle."*.force >/dev/null 2>&1; then
+  ok "失敗時に .force マーカーも一緒に隔離される（次の同名 bundle に持ち越さない）"
 else ng "★ .force マーカーが元の名前で残っている（後の bundle が黙って強制上書きされる）"; fi
-rm -f "$A/markertest.bundle.failed" "$A/markertest.bundle.force.failed"
 
 #  bundle の無い .force マーカーは警告する
 : > "$A/orphan.bundle.force"
@@ -246,6 +245,55 @@ if [ -z "$(remote_sha feat/three)" ] && [ -f "$A/three.bundle" ]; then ok "push 
 else ng "dry-run なのに何かした"; fi
 case "$OUT" in *"dry-run"*) ok "dry-run と明示される" ;; *) ng "dry-run と分からない" ;; esac
 rm -f "$A/three.bundle"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "6b) ★ dry-run は ref を1本も作らない（Codex P2 r3794610442）"
+REFS_BEFORE="$(cd "$A" && git for-each-ref --format='%(refname)' refs/land/ | sort)"
+BND6="$(make_bundle "feat/dryrun" dry.txt "dry")"
+cp "$BND6" "$A/dryrun.bundle"
+run_land --once --include-existing --dry-run >/dev/null 2>&1
+REFS_AFTER="$(cd "$A" && git for-each-ref --format='%(refname)' refs/land/ | sort)"
+[ "$REFS_BEFORE" = "$REFS_AFTER" ] && ok "dry-run の前後で refs/land/ が増えない" || ng "★ dry-run が ref を残した"
+[ -z "$(remote_sha feat/dryrun)" ] && ok "枝も立たない" || ng "dry-run で枝が立った"
+rm -f "$A/dryrun.bundle"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "6c) ★ --once は失敗があれば非0で返す（Codex P2 r3794610437）"
+printf 'broken again\n' > "$A/broken2.bundle"
+( cd "$A" && bash "$LAND" --repo "$A" --once --include-existing ) >/dev/null 2>&1
+[ "$?" -ne 0 ] && ok "失敗があれば非0（--once を && でつないだ自動化が誤って進まない）" || ng "★ 失敗しても 0 を返す"
+BND6C="$(make_bundle "feat/okexit" ok.txt "okexit")"
+cp "$BND6C" "$A/okexit.bundle"
+( cd "$A" && bash "$LAND" --repo "$A" --once --include-existing ) >/dev/null 2>&1
+[ "$?" -eq 0 ] && ok "全部成功なら 0" || ng "成功しても非0"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "6d) ★ 同じ名前で置き直された修正版もちゃんと処理される（claim の効果）"
+#   処理済みの名前を「見た」として弾いてしまうと、修正版が黙って捨てられる。
+(
+  cd "$B" || exit 1
+  git checkout -q -B feat/redo redo.txt >/dev/null 2>&1 || git checkout -q -B feat/redo origin/main >/dev/null 2>&1
+  echo "v1" > redo.txt
+  git add redo.txt >/dev/null 2>&1
+  git commit -q -m "redo v1" >/dev/null 2>&1
+  git bundle create "$SB/redo1.bundle" feat/redo --not origin/main >/dev/null 2>&1
+  echo "v2" > redo.txt
+  git add redo.txt >/dev/null 2>&1
+  git commit -q -m "redo v2" >/dev/null 2>&1
+  git bundle create "$SB/redo2.bundle" feat/redo --not origin/main >/dev/null 2>&1
+)
+cp "$SB/redo1.bundle" "$A/redo.bundle"
+run_land --once --include-existing >/dev/null 2>&1
+SHA_V1="$(remote_sha feat/redo)"
+cp "$SB/redo2.bundle" "$A/redo.bundle"       # ← 同じ名前で置き直す
+run_land --once --include-existing >/dev/null 2>&1
+SHA_V2="$(remote_sha feat/redo)"
+if [ -n "$SHA_V1" ] && [ -n "$SHA_V2" ] && [ "$SHA_V1" != "$SHA_V2" ]; then
+  ok "同名で置き直した修正版も着地する（名前で弾いていない）"
+else ng "★ 同名の置き直しが処理されない（受け渡しが黙って失われる）"; fi
 
 # ---------------------------------------------------------------------------
 echo ""

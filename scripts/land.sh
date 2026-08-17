@@ -44,8 +44,13 @@
 # 安全:
 #   - 保護枝（production / 開発本流 / main / master）へは push しない（ALLOW_PROTECTED=1 で解除）
 #   - 書き込み途中の bundle を掴まないよう、サイズが2回続けて同じになるまで待つ
-#   - `git bundle verify` に通らないものは push しない（`.failed` へ改名して残す）
-#   - push に失敗したものも `.failed` へ改名し、**手で叩ける復旧コマンドをそのまま出す**
+#   - 処理する bundle は**専用名へ確保（claim）**してから触る。置き直された修正版を
+#     取り違えて未処理のまま退避することがない
+#   - `git bundle verify` に通らないものは push しない
+#   - 失敗した bundle は **試行ごとに一意な名前**で `_landed/failed/` へ退避し、
+#     内容は `refs/land/failed/<sha>` に保持。**手で叩ける復旧コマンド（確定 SHA 指定）**を出す
+#   - `--dry-run` は ref を1本も作らない。`--once` は失敗があれば非0で返す
+#   - Ctrl-C 後は新しい push を始めない
 #
 # 依存: bash 3.2+（macOS 既定）/ git。network は push のときだけ使う。
 # 終了コード: 0=正常終了 / 2=前提不備（repo でない・origin が無い等）
@@ -81,7 +86,9 @@ fi
 cd "$REPO" || exit 2
 
 git remote get-url origin >/dev/null 2>&1 || { echo "origin が無い: $REPO" >&2; exit 2; }
-ORIGIN_URL="$(git remote get-url origin 2>/dev/null)"
+# ★ Codex P2 (r3794610421): `https://user:token@github.com/...` を設定している端末では、
+#   URL をそのままログへ書くと **PAT が平文で残る**。userinfo をマスクして記録する。
+ORIGIN_URL="$(git remote get-url origin 2>/dev/null | sed -e 's#://[^/@]*@#://***@#')"
 
 LANDED="$REPO/_landed"
 LOG="$LANDED/land.log"
@@ -161,81 +168,112 @@ echo "  Ctrl-C で終了"
 echo "------------------------------------------"
 
 STOP=0
+FAILS=0
 trap 'STOP=1; echo; say "終了します"' INT TERM
 
 fail_out() {
-  # fail_out <bundle> <理由...>
-  _b="$1"; shift
-  say "NG   $(basename "$_b") — $*"
-  mv "$_b" "$_b.failed" 2>/dev/null && say "     → $(basename "$_b").failed へ改名（中身は残してある）"
-  # ★ Codex P1 (r3794397144): **失敗した bundle の残骸を次の bundle に持ち越さない**。
-  #   `.force` マーカーを元の名前のまま残すと、後で**同じ名前の修正版**を marker 無しで
-  #   置いたときに `_force=1` と判定され、意図せず強制上書きされる。
-  #   → bundle と一緒に隔離する（`.force.failed` は `*.bundle.force` に一致しない名前）。
+  # fail_out <作業中ファイル> <表示名> <理由...>
+  #   ★ Codex P1 (r3794610400): 同じ名前の修正版がまた失敗すると、隔離ファイルも ref も
+  #     前回を上書きして「不変」でなくなる。**試行ごとに一意な名前**へ退避する。
+  _b="$1"; _dispname="$2"; shift 2
+  say "NG   $_dispname — $*"
+  _stamp="$(date '+%Y%m%d-%H%M%S')-$$"
+  mkdir -p "$LANDED/failed" 2>/dev/null
+  mv "$_b" "$LANDED/failed/$_dispname.$_stamp.failed" 2>/dev/null \
+    && say "     → _landed/failed/$_dispname.$_stamp.failed へ退避（中身は残してある）"
+  # 残骸を次の bundle へ持ち越さない（Codex P1 r3794397144）
   if [ -f "$_b.force" ]; then
-    mv "$_b.force" "$_b.force.failed" 2>/dev/null \
-      && say "     → $(basename "$_b").force も .force.failed へ隔離（次の bundle に持ち越さない）"
+    mv "$_b.force" "$LANDED/failed/$_dispname.$_stamp.force" 2>/dev/null \
+      && say "     → force マーカーも同じ場所へ隔離（次の bundle に持ち越さない）"
   fi
-  mark_seen "$(basename "$_b")"
+  FAILS=$((FAILS+1))
 }
 
 process_one() {
-  _b="$1"
-  _name="$(basename "$_b")"
+  _src="$1"
+  _name="$(basename "$_src")"
 
   # 1) 書き込み途中を掴まない: サイズが2回続けて同じになるまで待つ
-  _s1="$(fsize "$_b")"
+  _s1="$(fsize "$_src")"
   sleep 1
-  _s2="$(fsize "$_b")"
+  _s2="$(fsize "$_src")"
   if [ "$_s1" != "$_s2" ] || [ -z "$_s2" ] || [ "$_s2" = "0" ]; then
     # まだ書き込み中。常駐なら次の巡で拾えるが、--once では**黙って落とさない**
     [ "$ONCE" -eq 1 ] && say "保留 $_name — まだ書き込み中に見える（size $_s1→$_s2）。--once なので今回は見送り"
     return 0
   fi
 
-  say "検出 $_name（${_s2} bytes）"
-  # ★ 観測と作用の間に対象が変わっていないかを後で照合するため、いまの姿を控える
-  #   （Codex P1 (r3794397139) と同じクラス＝TOCTOU。verify した中身と push する中身を一致させる）
-  _m1="$(fmtime "$_b")"
-
-  # 2) bundle として妥当か（前提コミットが手元にあるかもここで分かる）
-  if ! git bundle verify "$_b" >/dev/null 2>&1; then
-    _v="$(git bundle verify "$_b" 2>&1 | tr '\n' ' ')"
-    fail_out "$_b" "git bundle verify に通らない: $_v"
+  # ★ Codex P2 (r3794610456): Ctrl-C の後に**新しい remote 書き込みを始めない**。
+  #   trap は STOP を立てるだけなので、待ちから戻った所で必ず見る。
+  if [ "$STOP" -eq 1 ]; then
+    say "保留 $_name — 停止要求が出ているので着手しない"
     return 0
   fi
 
-  # 3) 中の refs/heads/* を列挙
+  # 2) ★ claim（Codex P1 r3794610391 とその同型をまとめて畳む）
+  #   処理対象を**専用の名前へ確保**してから触る。こうすると:
+  #     - push 中に producer が同名の修正版を atomic rename で置いても、退避するのは
+  #       いま検証・push した現物だけ（未処理の新版を黙って _landed/ へ持って行かない）
+  #     - verify → fetch → push の間に中身が差し替わることが原理的に起きない
+  #       （以前は size+mtime を再照合していたが、claim で不要になった）
+  #     - 置き直された修正版は次の巡で普通に処理される
+  #   `*.bundle.landing-<pid>` は監視対象の `*.bundle` に一致しない名前。
+  _b="$_src.landing-$$"
+  if ! mv "$_src" "$_b" 2>/dev/null; then
+    say "保留 $_name — 確保できなかった（消えた or 権限）"
+    return 0
+  fi
+  [ -f "$_src.force" ] && mv "$_src.force" "$_b.force" 2>/dev/null
+
+  say "検出 $_name（${_s2} bytes）"
+
+  # 3) bundle として妥当か（前提コミットが手元にあるかもここで分かる）
+  if ! git bundle verify "$_b" >/dev/null 2>&1; then
+    _v="$(git bundle verify "$_b" 2>&1 | tr '\n' ' ')"
+    fail_out "$_b" "$_name" "git bundle verify に通らない: $_v"
+    return 0
+  fi
+
+  # 4) 中の refs/heads/* を列挙
   _heads="$(git bundle list-heads "$_b" 2>/dev/null | awk '$2 ~ /^refs\/heads\// {print $2}')"
   if [ -z "$_heads" ]; then
-    fail_out "$_b" "refs/heads/* が入っていない（list-heads が空）"
+    fail_out "$_b" "$_name" "refs/heads/* が入っていない（list-heads が空）"
     return 0
   fi
 
   _force=0
   [ -f "$_b.force" ] && _force=1
 
-  _ok=1
   for _ref in $_heads; do
     _branch="${_ref#refs/heads/}"
     if is_protected "$_branch" && [ "${ALLOW_PROTECTED:-0}" != "1" ]; then
-      fail_out "$_b" "保護枝 '$_branch' への push は既定で拒否（PR 経由にすること・どうしてもなら ALLOW_PROTECTED=1）"
+      fail_out "$_b" "$_name" "保護枝 '$_branch' への push は既定で拒否（PR 経由にすること・どうしてもなら ALLOW_PROTECTED=1）"
       return 0
     fi
 
-    # 4) 一時 ref へ fetch（作業ツリーには触らない）
+    # ★ Codex P2 (r3794610442): dry-run では **ref を1本も作らない**。
+    #   以前は fetch してから continue していたので、確認だけのはずが
+    #   ローカル ref と到達可能なオブジェクトが恒久的に残っていた。
+    #   bundle の SHA は list-heads から読めるので fetch は要らない。
+    if [ "$DRY_RUN" -eq 1 ]; then
+      _sha="$(git bundle list-heads "$_b" 2>/dev/null | awk -v r="$_ref" '$2==r{print $1}')"
+      _old="$(git ls-remote origin "$_ref" 2>/dev/null | awk '{print $1}')"
+      _oldshow="$_old"; [ -n "$_oldshow" ] || _oldshow="(新規)"
+      say "     dry-run: $_branch を $_oldshow → $_sha にする（ref も push も作らない）"
+      continue
+    fi
+
+    # 5) 一時 ref へ fetch（作業ツリーには触らない）
     _tmpref="refs/land/$_branch"
     if ! git fetch "$_b" "+$_ref:$_tmpref" >/dev/null 2>&1; then
-      fail_out "$_b" "bundle からの fetch に失敗（$_ref）"
+      fail_out "$_b" "$_name" "bundle からの fetch に失敗（$_ref）"
       return 0
     fi
     _sha="$(git rev-parse "$_tmpref" 2>/dev/null)"
 
-    # ★ fetch した中身が、verify した中身と同一であること（bundle が差し替わっていない）
-    _m2="$(fmtime "$_b")"
-    _s3="$(fsize "$_b")"
-    if [ "$_m1" != "$_m2" ] || [ "$_s2" != "$_s3" ]; then
-      fail_out "$_b" "verify から fetch までの間に bundle が変わった（size $_s2→$_s3 / mtime $_m1→$_m2）"
+    if [ "$STOP" -eq 1 ]; then
+      git update-ref -d "$_tmpref" 2>/dev/null
+      fail_out "$_b" "$_name" "停止要求が出たので push しなかった（再度置けば着地する）"
       return 0
     fi
 
@@ -243,12 +281,7 @@ process_one() {
     _oldshow="$_old"
     [ -n "$_oldshow" ] || _oldshow="(新規)"
 
-    if [ "$DRY_RUN" -eq 1 ]; then
-      say "     dry-run: git push origin $_tmpref:$_ref  （$_oldshow → $_sha）"
-      continue
-    fi
-
-    # 5) push
+    # 6) push
     # ★ Codex P1 (r3794397139): `ls-remote` で読んでから push するまでの間に他の誰かが
     #   同じ枝を進めていると、無条件の `--force` はその新しいコミットまで消す。
     #   しかもログに残るのは**実際に上書きした SHA ではなく古い `_old`** ＝監査記録も嘘になる。
@@ -266,19 +299,16 @@ process_one() {
     fi
 
     if [ "$_rc" -ne 0 ]; then
-      _ok=0
       say "NG   $_name — push 失敗（$_branch）"
       echo "$_out" | sed 's/^/       /'
       echo "$_out" | sed 's/^/       /' >> "$LOG" 2>/dev/null
-      # ★ Codex P2 (r3794397154): 復旧コマンドが `refs/land/<枝>` を指していると、
-      #   次に同じ枝の別 bundle を処理したとき `+` fetch で**中身が入れ替わる**か、
-      #   成功時の削除で**実行不能**になる。
-      #   → ① 失敗ごとに **bundle 名で一意な不変 ref** を残してオブジェクトを保持し、
-      #     ② 復旧コマンドは **ref ではなく確定した SHA** を直接指す。
-      _keepref="refs/land/failed/$_name"
+      # ★ Codex P2 (r3794397154) / P1 (r3794610400): 復旧手段を後続処理で壊さない。
+      #   ① 内容そのもので一意な不変 ref（`refs/land/failed/<sha>`）に保持してオブジェクトを残す
+      #   ② 復旧コマンドは **ref ではなく確定した SHA** を直接指す
+      _keepref="refs/land/failed/$_sha"
       git update-ref "$_keepref" "$_sha" 2>/dev/null
       git update-ref -d "$_tmpref" 2>/dev/null
-      say "     この bundle の内容は $_keepref（$_sha）に保持した"
+      say "     この bundle の内容は $_keepref に保持した（$_sha）"
       say "     早戻り（fast-forward でない）なら、意図した上書きか確かめてから:"
       if [ -n "$_old" ]; then
         say "       cd $REPO && git push --force-with-lease=$_ref:$_old origin $_sha:$_ref"
@@ -286,25 +316,29 @@ process_one() {
         say "       cd $REPO && git push origin $_sha:$_ref"
       fi
       say "     cowork 側からやるなら bundle と一緒に $_name.force を置くこと"
-      fail_out "$_b" "push 失敗"
+      fail_out "$_b" "$_name" "push 失敗"
       return 0
     fi
     say "OK   $_branch ← $_sha（前: $_oldshow）"
-    # push できた時点で origin に載っているので、一時 ref は消す（.git を太らせない）。
-    # 失敗時は残す — 上に出した復旧コマンドがこの ref を指しているため。
+    # push できた時点で origin に載っているので、一時 ref は消す（.git を太らせない）
     git update-ref -d "$_tmpref" 2>/dev/null
   done
 
-  if [ "$_ok" -eq 1 ] && [ "$DRY_RUN" -eq 0 ]; then
-    mv "$_b" "$LANDED/$_name" 2>/dev/null && say "     → _landed/$_name へ退避"
-    [ -f "$_b.force" ] && mv "$_b.force" "$LANDED/$_name.force" 2>/dev/null
+  if [ "$DRY_RUN" -eq 1 ]; then
+    # 確認だけ。元の名前へ戻して、次の実行で普通に処理できるようにする
+    mv "$_b" "$_src" 2>/dev/null
+    [ -f "$_b.force" ] && mv "$_b.force" "$_src.force" 2>/dev/null
+    mark_seen "$_name"
+    return 0
   fi
-  mark_seen "$_name"
+
+  mv "$_b" "$LANDED/$_name" 2>/dev/null && say "     → _landed/$_name へ退避"
+  [ -f "$_b.force" ] && mv "$_b.force" "$LANDED/$_name.force" 2>/dev/null
   return 0
 }
 
 scan_once() {
-  # ★ 残骸の持ち越し対策（Codex P1 (r3794397144) と同じクラス）の残り半分:
+  # ★ 残骸の持ち越し対策（Codex P1 r3794397144）の残り半分:
   #   bundle の無い `.force` マーカーが転がっていると、後で**同じ名前の bundle** が来たときに
   #   黙って強制上書きになる。見つけたら一度だけ知らせる（消しはしない＝意図的に置いた場合がある）。
   for _fm in "$REPO"/*.bundle.force; do
@@ -325,6 +359,12 @@ scan_once() {
 
 if [ "$ONCE" -eq 1 ]; then
   scan_once
+  # ★ Codex P2 (r3794610437): `land.sh --once && 次の処理` のような自動化が、
+  #   1本も着地していないのに先へ進んでいた。**失敗があれば非0で返す。**
+  if [ "$FAILS" -gt 0 ]; then
+    say "--once: 1巡して終了（失敗 ${FAILS} 件）"
+    exit 1
+  fi
   say "--once: 1巡して終了"
   exit 0
 fi
@@ -334,4 +374,6 @@ while [ "$STOP" -eq 0 ]; do
   [ "$STOP" -eq 1 ] && break
   sleep "$POLL"
 done
+# 常駐モードは「止めた」ことが成功。失敗の有無はログと _landed/failed/ を見る
+[ "$FAILS" -gt 0 ] && say "この常駐中に失敗した bundle: ${FAILS} 件（_landed/failed/ を見ること）"
 exit 0

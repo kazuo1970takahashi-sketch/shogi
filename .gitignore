@@ -45,3 +45,8 @@ playwright-report/
 _landed/
 /*.bundle
 /*.bundle.force
+# ★ Codex P2 (r3794610410): 隔離後・処理中の名前も ignore に含める。
+#   1本 1MB 前後の受け渡しデータが untracked で現れ、素の `git add` で誤ってコミットできてしまう。
+/*.bundle.failed
+/*.bundle.force.failed
+/*.bundle.landing-*

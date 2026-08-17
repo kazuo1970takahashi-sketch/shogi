@@ -120,18 +120,22 @@ extras.forEach(function (f) { parts.push('extra:' + path.basename(f) + '=' + fil
 const base = fs.readFileSync(target, 'utf8');
 const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mutkey.'));
 let regions = [];
+// ★ Codex P2 (r3794610429): `try` の中から `process.exit()` を直接呼ぶと Node は同期的に
+//   終了して `finally` を実行しない ＝ 失敗のたびに tmp の mutkey.* が残る。
+//   アンカーが壊れている間はこの fail-closed 経路を何度も通るので、必ず掃除してから落ちる。
+let bailCode = 0, bailMsg = '';
 try {
   const r = spawnSync(process.execPath, [gen, target, outDir], { encoding: 'utf8' });
   if (r.status !== 0) {
     // 生成できない＝アンカーが一意でない等。ここで「鍵が出せない」ことを伝え、
     // 呼び出し側にフル実行させる（その方が失敗が本来の形で報告される）。
-    console.error('変異の生成に失敗（鍵を出せない → フル実行すべき）: ' + ((r.stderr || '') + (r.stdout || '')).trim());
-    process.exit(3);
+    bailMsg = '変異の生成に失敗（鍵を出せない → フル実行すべき）: ' + ((r.stderr || '') + (r.stdout || '')).trim();
+    bailCode = 3;
   }
-  const files = fs.readdirSync(outDir).filter(function (f) { return /^mut_.*\.html$/.test(f); }).sort();
-  if (files.length === 0) {
-    console.error('変異が1本も生成されなかった → フル実行すべき');
-    process.exit(3);
+  const files = bailCode ? [] : fs.readdirSync(outDir).filter(function (f) { return /^mut_.*\.html$/.test(f); }).sort();
+  if (!bailCode && files.length === 0) {
+    bailMsg = '変異が1本も生成されなかった → フル実行すべき';
+    bailCode = 3;
   }
   files.forEach(function (f) {
     const name = f.replace(/^mut_/, '').replace(/\.html$/, '');
@@ -153,6 +157,7 @@ try {
 } finally {
   try { fs.rmSync(outDir, { recursive: true, force: true }); } catch (e) { /* 消せなくても鍵には影響しない */ }
 }
+if (bailCode) { console.error(bailMsg); process.exit(bailCode); }
 regions.sort();
 parts.push('regions=' + sha256(regions.join('\u0002')));
 

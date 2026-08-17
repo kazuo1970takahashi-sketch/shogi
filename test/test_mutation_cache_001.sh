@@ -15,7 +15,7 @@
 #     - 記録が無ければヒットしない。記録した後だけヒットする
 #     - **CI（$CI 非空）と MUT_FULL=1 では鍵を作らない・ヒットしない**（＝必ずフル実行）
 #     - TTL を過ぎた記録はヒットしない
-#     - ヒットしても記録の mtime を更新しない（TTL が無限に延びない）
+#     - TTL は**記録の中身の成功時刻**で測る（cp で復元しても延びない）・ヒットで書き換えない
 #     - ヒット時は `MUTCACHE-SKIP` を必ず出す（run_e2e.sh がこの語で「緑」と区別する）
 #
 # 使い方: bash test/test_mutation_cache_001.sh
@@ -159,16 +159,14 @@ case "$HITOUT" in *MUTCACHE-SKIP*) ok "MUTCACHE-SKIP を出す（run_e2e.sh が�
 case "$HITOUT" in *"再検証していないもの"*) ok "何を再検証していないかを明示する" ;; *) ng "残余リスクの表示が無い" ;; esac
 
 echo ""
-echo "7) ヒットしても記録の mtime を延ばさない（TTL が無限に延びない）"
+echo "7) ヒットしても記録の成功時刻を書き換えない（TTL が無限に延びない）"
 CF="$MUT_CACHE_DIR/t1.$KK"
-# ★ この repo と cloud/CI の両方で走るので、mtime 取得は**数字であること**まで見る
-#   （GNU stat の -f は --file-system で、BSD 用の書式を先に試すと嘘の値を掴む）。
-MT1="$(_mc_mtime "$CF")"
-case "$MT1" in ''|*[!0-9]*) ng "mtime が数字で取れない（stat の互換で落ちている: '$MT1'）" ;; *) ok "mtime が数字で取れる" ;; esac
+BODY1="$(cat "$CF")"
 sleep 1
 mutcache_hit "t1" "$KK" >/dev/null 2>&1
-MT2="$(_mc_mtime "$CF")"
-[ "$MT1" = "$MT2" ] && ok "mtime が変わらない" || ng "★ ヒットのたびに TTL が延びている"
+BODY2="$(cat "$CF")"
+[ "$BODY1" = "$BODY2" ] && ok "記録の中身が変わらない" || ng "★ ヒットのたびに TTL が延びている"
+case "$BODY1" in [0-9]*) ok "記録の1行目が epoch で始まる（TTL の基準）" ;; *) ng "記録に epoch が無い: $BODY1" ;; esac
 
 echo ""
 echo "8) TTL / CI / MUT_FULL"
@@ -185,12 +183,12 @@ else ok "CI では鍵を作らない"; fi
 echo ""
 echo "8b) 時刻・数値が異常なときは fail closed（フル実行へ落ちる）"
 CF1="$MUT_CACHE_DIR/t1.$KK"
-#  (a) mtime が未来（スナップショット復元・時刻補正）→ age が負
-touch -t 209901010000 "$CF1" 2>/dev/null || touch -d '2099-01-01' "$CF1" 2>/dev/null
+#  (a) 記録の成功時刻が未来（スナップショット復元・時刻補正）→ age が負
+printf '%s\t%s\n' "$(( $(date +%s) + 100000 ))" "future" > "$CF1"
 OUT8="$(mutcache_hit "t1" "$KK" 2>&1)"; RC8=$?
-[ "$RC8" -ne 0 ] && ok "記録の mtime が未来ならヒットしない" || ng "★ 未来 mtime でヒットした（TTL を無期限に回避できる）"
+[ "$RC8" -ne 0 ] && ok "記録の時刻が未来ならヒットしない" || ng "★ 未来の時刻でヒットした（TTL を無期限に回避できる）"
 case "$OUT8" in *"未来"*) ok "理由（時計が飛んでいる）を出す" ;; *) ng "理由が出ない: $OUT8" ;; esac
-mutcache_store "t1" "$KK"   # mtime を現在へ戻す
+mutcache_store "t1" "$KK"   # 正常な記録へ戻す
 mutcache_hit "t1" "$KK" >/dev/null 2>&1 && ok "戻せば再びヒットする" || ng "戻してもヒットしない"
 #  (b) TTL が非数値 → `[ ... -ge ... ]` がエラーで偽を返し、従来は**ヒット側**へ落ちていた
 OUT8B="$(MUT_CACHE_TTL=abc mutcache_hit "t1" "$KK" 2>&1)"; RC8B=$?
@@ -295,14 +293,25 @@ try_real() {
     K="$(mutcache_key shogi_v4.html "$_gen" "$_suite" "$_chk")" || K=""
     [ -n "$K" ] || { echo "NOKEY"; exit 9; }
     mutcache_store "$_name" "$K"
+    # ★ Codex P2 (r3794610449): 結線が壊れていた場合、このチェッカーは node/Chromium を
+    #   多数バックグラウンド起動する。親だけに TERM を送っても孤児が残り、後続テストの
+    #   CPU/メモリを奪う。**専用のプロセスグループ**を作り、時間切れ時はグループごと止める。
+    set -m
     bash "$_chk" > "$SB/real_$_name.out" 2>&1 &
     _pid=$!
+    set +m
     _i=0
     while [ $_i -lt 60 ]; do
       kill -0 "$_pid" 2>/dev/null || break
       sleep 1; _i=$((_i+1))
     done
-    if kill -0 "$_pid" 2>/dev/null; then kill "$_pid" 2>/dev/null; wait "$_pid" 2>/dev/null; echo "TIMEOUT"; exit 8; fi
+    if kill -0 "$_pid" 2>/dev/null; then
+      kill -TERM -"$_pid" 2>/dev/null || kill -TERM "$_pid" 2>/dev/null
+      sleep 1
+      kill -KILL -"$_pid" 2>/dev/null
+      wait "$_pid" 2>/dev/null
+      echo "TIMEOUT"; exit 8
+    fi
     wait "$_pid"; exit $?
   )
 }
@@ -319,6 +328,75 @@ for spec in \
     ng "$NAME が skip しない（rc=$RC $RES）＝結線が切れているか鍵の作り方が食い違っている"
   fi
 done
+
+echo ""
+echo "12b) ★ 記録の TTL は「中身の成功時刻」で測る（Codex P1 r3794610415）"
+#   .mutcache をバックアップから cp で戻すと mtime だけ新しくなる。mtime で測っていると
+#   古い記録がさらに24時間生き延びる。中身の epoch で測れば延びない。
+export MUT_CACHE_DIR="$SB/cache2"
+KE="$(mutcache_key "$SB/target.html" "$SB/gen.js" "$SB/suite.js")"
+mutcache_store "t2" "$KE"
+CF2="$MUT_CACHE_DIR/t2.$KE"
+OLDEP=$(( $(date +%s) - 100000 ))          # TTL(86400) より前
+printf '%s\t%s\n' "$OLDEP" "2026-01-01 00:00:00" > "$CF2"
+touch "$CF2"                                # ← 復元で mtime だけ新しくなった状態
+if mutcache_hit "t2" "$KE" >/dev/null 2>&1; then ng "★ mtime を新しくしただけで TTL が延びた"
+else ok "mtime を新しくしても中身が古ければヒットしない"; fi
+#   逆に中身が新しければヒットする（測る場所を間違えていない）
+printf '%s\t%s\n' "$(date +%s)" "now" > "$CF2"
+mutcache_hit "t2" "$KE" >/dev/null 2>&1 && ok "中身が新しければヒットする" || ng "中身が新しくてもヒットしない"
+#   旧書式（epoch 行が無い）は読めない＝フル実行
+echo "2026-08-17 00:00:00" > "$CF2"
+mutcache_hit "t2" "$KE" >/dev/null 2>&1 && ng "★ 旧書式の記録でヒットした" || ok "旧書式の記録はヒットしない（fail closed）"
+
+echo ""
+echo "12c) ★ TTL の桁あふれ（Codex P1 r3794610386）"
+mutcache_store "t2" "$KE"
+OUT12C="$(MUT_CACHE_TTL=999999999999999999999 mutcache_hit "t2" "$KE" 2>&1)"; RC12C=$?
+[ "$RC12C" -ne 0 ] && ok "桁が大きすぎる TTL はヒットしない" || ng "★ 桁あふれ TTL で skip へ進んだ"
+case "$OUT12C" in *"桁が大きすぎる"*) ok "理由を出す" ;; *) ng "理由が出ない: $OUT12C" ;; esac
+
+echo ""
+echo "12d) ★ パスに空白があってもキャッシュが機能する（Codex P2 r3794610404）"
+SPACE_DIR="$SB/dir with space"
+mkdir -p "$SPACE_DIR"
+cp "$SB/target.html" "$SB/gen.js" "$SB/suite.js" "$SPACE_DIR/" 2>/dev/null
+echo "checker with space" > "$SPACE_DIR/checker.sh"
+KSP="$(mutcache_key "$SPACE_DIR/target.html" "$SPACE_DIR/gen.js" "$SPACE_DIR/suite.js" "$SPACE_DIR/checker.sh")"
+if [ -n "$KSP" ]; then ok "空白入りのパスでも鍵が取れる（1要素=1引数で渡している）"
+else ng "★ 空白入りのパスで鍵が取れない＝その端末でキャッシュが一度も効かない"; fi
+
+echo ""
+echo "12e) ★ 保存の直前に鍵を作り直す（Codex P1 r3794610379）"
+#   検査中に入力が変わったら、開始時の鍵に PASS を保存してはいけない。
+cat > "$SB/fakechecker2.sh" <<'FC2EOF'
+#!/usr/bin/env bash
+set -u
+TARGET="$SBDIR/t2.html"; GEN="$SBDIR/gen.js"; SUITE="$SBDIR/suite2.js"
+. "$LIBPATH"
+MUTKEY="$(mutcache_key "$TARGET" "$GEN" "$SUITE" "$0")" || MUTKEY=""
+if mutcache_hit "fake2" "$MUTKEY"; then exit 0; fi
+echo "RAN" >> "$SBDIR/ran2.log"
+# ← 「検査中に入力が変わった」を再現
+[ "${MUTATE_MID:-0}" = "1" ] && echo "changed mid-run" >> "$SUITE"
+MUTKEY2="$(mutcache_key "$TARGET" "$GEN" "$SUITE" "$0")" || MUTKEY2=""
+if [ -n "$MUTKEY" ] && [ "$MUTKEY" = "$MUTKEY2" ]; then
+  mutcache_store "fake2" "$MUTKEY"
+elif [ -n "$MUTKEY" ]; then
+  echo "  （検査中に入力が変わったため記録しない）"
+fi
+exit 0
+FC2EOF
+cp "$SB/target.html" "$SB/t2.html"
+echo "suite2 v1" > "$SB/suite2.js"
+: > "$SB/ran2.log"
+runs2() { wc -l < "$SB/ran2.log" 2>/dev/null | tr -d ' '; }
+( unset CI; MUTATE_MID=1 bash "$SB/fakechecker2.sh" >/dev/null 2>&1 )
+( unset CI; MUTATE_MID=0 bash "$SB/fakechecker2.sh" >/dev/null 2>&1 )
+[ "$(runs2)" = "2" ] && ok "検査中に入力が変わった実行は記録されない（次も走る）" \
+  || ng "★ 開始時の鍵に PASS が保存された（検査していない版がヒットする）"
+( unset CI; MUTATE_MID=0 bash "$SB/fakechecker2.sh" >/dev/null 2>&1 )
+[ "$(runs2)" = "2" ] && ok "変わらなければ記録され、次は skip" || ng "変わらなくても記録されない"
 
 echo ""
 echo "13) ★ run_e2e.sh の集計が MUTCACHE-SKIP で動くこと（本物のファイルを sandbox で走らせる）"
