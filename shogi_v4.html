@@ -13492,12 +13492,23 @@ function sendTournamentToCloud(setStatus){
             // ★ CLOUD-MEMBER-ATTR-MERGE-001 (#853): 送信行の会員属性を組む前に、クラウドの現在値を
             //   読み取り専用で取る（ローカル名簿は書き換えない）。失敗しても送信は止めない＝
             //   従来どおりローカル値で送り、結果に ⚠ 注記を出す（無音でバグ挙動に戻らないため）。
-            return _fetchCloudMemberAttrs(client,clubId,_collectSendMemberIds(state)).then(function(_attrRes){
+            var _idsBefore=_collectSendMemberIds(state);
+            return _fetchCloudMemberAttrs(client,clubId,_idsBefore).then(function(_attrRes){
             // ★ Codex P1 (r3793467613): 属性の取得は**非同期**＝この待ち時間に報告書タブを編集できる。
             //   直前の照合（_describeSendDrift）だけでは、待っている間の編集が未確認のまま送られる
             //   ＝ #857 で塞いだ確認レースの再オープン。待ち明けにもう一度照合する。
             var _drift2=_describeSendDrift();
             if(_drift2){ setStatus(_drift2); return {ok:false,step:'changed-after-confirm'}; }
+            // ★ Codex P1 (r3793610663・2巡目): 上の照合は**報告書（大会名・実施日）しか見ない**。
+            //   待ち時間に参加者が増える／名簿に紐付くと、その member_id は取得済みの byId に無いため
+            //   「クラウドに行が無い新規会員」と誤認され、ローカル既定値が既存のクラウド値を**静かに
+            //   上書き**する（＝#853 の再発）。参加者の集合も照合し、変わっていたら送らない。
+            //   送信は任意操作なので、中止して送り直してもらうほうが安全（当日運営は止まらない）。
+            var _idsAfter=_collectSendMemberIds(state);
+            if(_idsAfter.join('\u0001')!==_idsBefore.join('\u0001')){
+              setStatus('参加者が変わったため送信を中止しました（確認した時点と送る内容が違います）。もう一度「☁ クラウドに送信」を押してください');
+              return {ok:false,step:'changed-after-confirm'};
+            }
             var master=(typeof loadBranchMaster==='function')?loadBranchMaster():{members:[]};
             try{ if(typeof ensureTournamentId==='function')ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report)); }catch(e){}
             // ★Codex P2（PR #857 3巡目）: 照合を通した state の**写し**を星取表スナップショット用に固定する。
