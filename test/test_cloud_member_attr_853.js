@@ -47,9 +47,12 @@ function makeClient(cfg){
     b.then=function(res,rej){ calls.push({op:'upsert',table:table,rows:rows,onConflict:opts&&opts.onConflict});
       var t=cfg[table]||{}; return Promise.resolve({data:(t.data!==undefined?t.data:null),error:(t.error||null)}).then(res,rej); };
     return b; }
-  function selectBuilder(table,cols){ var b={_eq:[]};
+  function selectBuilder(table,cols){ var b={_eq:[],_in:[]};
     b.eq=function(k,v){ this._eq.push([k,v]); return this; };
-    b.then=function(res,rej){ calls.push({op:'select',table:table,cols:cols,eq:b._eq});
+    // CLOUD-MEMBER-ATTR-MERGE-001 (#853・Codex P1 r3793467620): 取得は参加者の member_id を
+    //   100件チャンクの in() で引く形になったため mock も in() を持つ。
+    b.in=function(k,arr){ this._in.push([k,(arr||[]).slice()]); return this; };
+    b.then=function(res,rej){ calls.push({op:'select',table:table,cols:cols,eq:b._eq,inq:b._in});
       var t=cfg['select:'+table]||cfg[table]||{};
       if(t.reject)return Promise.reject(new Error('network')).then(res,rej);
       return Promise.resolve({data:(t.data!==undefined?t.data:null),error:(t.error||null)}).then(res,rej); };
@@ -137,22 +140,30 @@ function membersRow(cli,mid){ var u=cli._calls.filter(function(c){return c.table
   // ===== C: 読み取り専用フェッチャ（成功・失敗・0件の区別）=====
   {
     var cliOk=makeClient({ 'select:members':{data:CLOUD_ROWS} });
-    var a1=await env._fetchCloudMemberAttrs(cliOk,'club-1');
+    var a1=await env._fetchCloudMemberAttrs(cliOk,'club-1',['m_h','m_j']);
     ok(a1&&a1.byId&&a1.byId.m_h&&a1.byId.m_h.grade==='josei'&&a1.note==='','C1 取得成功: byId が引ける・注記なし');
     var sel=cliOk._calls.filter(function(c){return c.op==='select'&&c.table==='members';})[0];
-    ok(sel&&JSON.stringify(sel.eq)===JSON.stringify([['club_id','club-1']]),'C2 club_id で絞って読む');
+    ok(sel&&JSON.stringify(sel.eq)===JSON.stringify([['club_id','club-1']])
+       &&JSON.stringify(sel.inq)===JSON.stringify([['member_id',['m_h','m_j']]]),
+      'C2 club_id で絞り、参加者の member_id を in() で明示指定して読む  [実測 '+JSON.stringify(sel&&sel.inq)+']');
     ok(cliOk._calls.filter(function(c){return c.op==='upsert';}).length===0,'C3 ★読み取りだけ（書き込みゼロ）');
 
     var cliErr=makeClient({ 'select:members':{error:{message:'boom'}} });
-    var a2=await env._fetchCloudMemberAttrs(cliErr,'club-1');
+    var a2=await env._fetchCloudMemberAttrs(cliErr,'club-1',['m_h']);
     ok(a2&&a2.byId===null&&a2.note.indexOf('⚠')>=0,'C4 ★取得失敗は byId=null ＋ ⚠注記（無音でバグ挙動に戻らない）');
 
     var cliEmpty=makeClient({ 'select:members':{data:[]} });
-    var a3=await env._fetchCloudMemberAttrs(cliEmpty,'club-1');
+    var a3=await env._fetchCloudMemberAttrs(cliEmpty,'club-1',['m_h']);
     ok(a3&&a3.byId&&Object.keys(a3.byId).length===0&&a3.note==='','C5 ★取得0件は「読めた」＝注記なし（失敗と区別する）');
 
+    var cliNone=makeClient({ 'select:members':{data:CLOUD_ROWS} });
+    var a0=await env._fetchCloudMemberAttrs(cliNone,'club-1',[]);
+    ok(a0&&a0.byId&&Object.keys(a0.byId).length===0&&a0.note===''
+       &&cliNone._calls.filter(function(c){return c.op==='select';}).length===0,
+      'C7 参加者0人なら読みに行かない（対象なし＝注記も出さない）');
+
     var cliRej=makeClient({ 'select:members':{reject:true} });
-    var a4=await env._fetchCloudMemberAttrs(cliRej,'club-1');
+    var a4=await env._fetchCloudMemberAttrs(cliRej,'club-1',['m_h']);
     ok(a4&&a4.byId===null&&a4.note.indexOf('⚠')>=0,'C6 例外（通信断）でも throw せず注記に落とす');
   }
 
@@ -195,7 +206,7 @@ function membersRow(cli,mid){ var u=cli._calls.filter(function(c){return c.table
   // ===== E: 配線と文言のピン（消しても緑にならないように）=====
   ok(/buildCloudSyncPayload\(master,\{clubId:clubId, classesFilter:opts\.classesFilter, cloudMembersById:opts\.cloudMembersById\}\)/.test(RAW),
     'E1 ★syncTournamentToCloud が cloudMembersById を buildCloudSyncPayload へ転送している（明示列挙・忘れると無音 no-op）');
-  ok(/_fetchCloudMemberAttrs\(client,clubId\)\.then\(function\(_attrRes\)/.test(RAW),
+  ok(/_fetchCloudMemberAttrs\(client,clubId,_collectSendMemberIds\(state\)\)\.then\(function\(_attrRes\)/.test(RAW),
     'E2 ★_send がクラウド属性を読み取ってから送信している');
   ok(/cloudMembersById:\(_attrRes&&_attrRes\.byId\)\|\|null/.test(RAW),'E3 読み取り結果が送信 opts に渡っている');
   ok(RAW.indexOf('☁送信時にも同期されます）')<0,
@@ -203,10 +214,51 @@ function membersRow(cli,mid){ var u=cli._calls.filter(function(c){return c.table
   ok((RAW.match(/名簿タブの「☁ 名簿全体をクラウドへ一括送信」で反映できます/g)||[]).length===3,
     'E5 代わりに確実に届く経路（一括送信＝常にローカル優先）を3箇所すべてで案内している');
   {
-    // 送信経路が pullMembersFromCloud を呼んでいない（＝ローカルを巻き戻さない）ことをソースで固定
-    var sendSrc=RAW.slice(RAW.indexOf('function sendTournamentToCloud'), RAW.indexOf('function sendTournamentToCloud')+9000);
+    // 送信経路が pullMembersFromCloud を呼んでいない（＝ローカルを巻き戻さない）ことをソースで固定。
+    // ★ Codex P2 (r3793467622): 固定長 9000 字の窓では関数の後ろ（実測 約11,230 字）が検査から外れ、
+    //   末尾に pullMembersFromCloud を足しても緑のままだった。**関数全体**を切り出す
+    //   （test_save_status_bar.js K4pre と同じ手法＝切り出し失敗自体も検査する）。
+    var sendSrc=(RAW.match(/function sendTournamentToCloud\([\s\S]*?\n\}/)||[''])[0];
+    ok(sendSrc!==''&&sendSrc.indexOf('function _send()')>=0,
+      'E6pre sendTournamentToCloud 全体を切り出せた（切り出し失敗による誤 PASS を防ぐ）');
+    ok(sendSrc.length>9000,
+      'E6len 切り出しが固定窓 9000 字より長い＝窓方式では末尾が検査外だったことの証拠  [実測 '+sendSrc.length+' 字]');
     ok(sendSrc.indexOf('pullMembersFromCloud')<0,
       'E6 ★送信経路で pullMembersFromCloud を呼ばない（あれは saveBranchMaster で訂正を巻き戻す）');
+  }
+
+  // ===== G: Codex 1巡目 P1×3 の直しを固定 =====
+  ok(/_fetchCloudMemberAttrs\(client,clubId,_collectSendMemberIds\(state\)\)/.test(RAW),
+    'G1 ★参加者の member_id だけを渡して取得する（全件 select の1レスポンス上限を踏まない）');
+  ok(/\.in\('member_id',c\)/.test(RAW)&&/var CHUNK=100/.test(RAW.slice(RAW.indexOf('function _fetchCloudMemberAttrs'))),
+    'G2 ★100件チャンクの in() で取る（返らない＝クラウドに行が無い、と確定できる形）');
+  {
+    var fetchSrc=RAW.slice(RAW.indexOf('function _fetchCloudMemberAttrs'));
+    fetchSrc=fetchSrc.slice(0,fetchSrc.indexOf('\n}\n')+3);
+    ok(fetchSrc.indexOf("select('*')")>=0&&fetchSrc.indexOf('upsert')<0,'G3 取得は読み取りのみ（書き込み命令を持たない）');
+  }
+  ok(/var _drift2=_describeSendDrift\(\);[\s\S]{0,200}changed-after-confirm/.test(RAW),
+    'G4 ★属性取得の待ち明けに確認内容を再照合する（#857 の確認レースを再オープンしない）');
+  ok(/送信に失敗しました：[\s\S]{0,120}_attrRes&&_attrRes\.note/.test(RAW),
+    'G5 ★失敗メッセージにも属性未読の注記を付ける（名簿が既に上書きされ得ることを伝える）');
+  {
+    // G4 の実挙動: 取得の待ち時間に報告書を編集したら送信されないこと（mock の select で編集を差し込む）
+    var cliG=makeClient({ players:{data:[{id:'p1',member_id:'m_h'}]}, tournaments:{data:[{id:'t-uuid'}]} });
+    var eG=loadEnv({ SHOGI_CLOUD_CONFIG:{url:'https://example.test',publishableKey:'pk_test'},
+      supabase:{ createClient:function(){ return cliG; } } });
+    var stG=mkState(); eG._setState(stG); eG.saveBranchMaster(mkLocalDefaults());
+    eG.__setAppModalTestResolver(function(){ return true; });
+    // members の select が呼ばれた瞬間＝待ち時間の最中に大会名を書き換える
+    var origFrom=cliG.from;
+    cliG.from=function(t){ var o=origFrom(t);
+      if(t==='members'){ var os=o.select; o.select=function(c){ stG.report.title='待ち時間に変えた名前'; return os(c); }; }
+      return o; };
+    var stG2=[];
+    var rG=await eG.sendTournamentToCloud(function(m){ stG2.push(m); });
+    ok(rG&&rG.ok===false&&rG.step==='changed-after-confirm',
+      'G6 ★取得の待ち時間に報告書を編集したら送らずに中止する  [実測 step='+((rG&&rG.step)||'-')+']');
+    ok(cliG._calls.filter(function(c){return c.op==='upsert';}).length===0,
+      'G7 その場合クラウドへの書き込みは1件も発生しない');
   }
 
   console.log('\nCLOUD-MEMBER-ATTR-MERGE-001: PASS='+pass+' FAIL='+fail);

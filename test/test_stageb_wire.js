@@ -42,9 +42,10 @@ function makeClient(cfg){
     //   成功メッセージの分類が ok から warn に変わって D5b が落ちる＝mock の追随漏れ）。
     from:function(table){ return {
       upsert:function(rows,opts){ return builder(table,rows,opts); },
-      select:function(cols){ var sb={_eq:[]};
+      select:function(cols){ var sb={_eq:[],_in:[]};
         sb.eq=function(k,v){ this._eq.push([k,v]); return this; };
-        sb.then=function(res,rej){ calls.push({op:'select',table:table,cols:cols,eq:sb._eq});
+        sb.in=function(k,arr){ this._in.push([k,(arr||[]).slice()]); return this; };
+        sb.then=function(res,rej){ calls.push({op:'select',table:table,cols:cols,eq:sb._eq,inq:sb._in});
           var t=cfg.tables&&cfg.tables[table]||{};
           return Promise.resolve({data:(t.selectData!==undefined?t.selectData:[]),error:(t.selectError||null)}).then(res,rej); };
         return sb; } }; } };

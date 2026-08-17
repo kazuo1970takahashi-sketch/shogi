@@ -13088,19 +13088,49 @@ function composeCloudMemberFieldCols(m, cloudRow){
 //   戻り: {byId:{member_id→row}|null, note:''|⚠注記}。**取得0件（byId={}）と取得失敗（byId=null）は
 //   区別する**（前者は初回送信＝従来どおりローカル値・後者は無音でバグ挙動に戻るので注記を出す）。
 var CLOUD_ATTR_UNREAD_NOTE='　⚠ 会員の区分・市町村はこの端末の値で送りました（クラウドの名簿を読めなかったため、区分が上書きされている可能性があります）';
-function _fetchCloudMemberAttrs(client, clubId){
+//   ★ Codex P1 (r3793467620): 全件 select は API の1レスポンス上限（PostgREST 既定 1000 行）に当たると
+//     **prefix しか返らないのに成功扱い**になり、欠けた会員が既定値で上書きされてバグが再発する。
+//     送信に必要なのは**参加者の分だけ**なので、member_id を 100 件チャンクの in() で明示取得する
+//     （_fetchCloudEntriesChunked と同型）。1チャンク100 < 上限なので「返ってこない＝クラウドに行が無い
+//     ＝新規会員」と確定でき、欠け検出そのものが不要になる。
+function _collectSendMemberIds(st){
+  var ids=[],seen={};
+  try{
+    var classes=(st&&Array.isArray(st.classes))?st.classes:[];
+    for(var ci=0;ci<classes.length;ci++){
+      var cls=classes[ci]&&classes[ci].id; if(!cls)continue;
+      var ps=(st.players&&Array.isArray(st.players[cls]))?st.players[cls]:[];
+      for(var pi=0;pi<ps.length;pi++){
+        var mid=ps[pi]&&ps[pi].member_id;
+        if(typeof mid==='string'&&mid&&!seen[mid]){ seen[mid]=true; ids.push(mid); }
+      }
+    }
+  }catch(e){}
+  return ids;
+}
+function _fetchCloudMemberAttrs(client, clubId, memberIds){
   try{
     if(!client||!client.from||!clubId)return Promise.resolve({byId:null,note:CLOUD_ATTR_UNREAD_NOTE});
-    return client.from('members').select('*').eq('club_id',clubId).then(function(r){
-      if(r&&r.error)return {byId:null,note:CLOUD_ATTR_UNREAD_NOTE};
-      var rows=(r&&Array.isArray(r.data))?r.data:[];
-      var byId={};
-      for(var i=0;i<rows.length;i++){
-        var x=rows[i];
-        if(x&&typeof x.member_id==='string'&&x.member_id)byId[x.member_id]=x;
-      }
-      return {byId:byId,note:''};
-    }).catch(function(){ return {byId:null,note:CLOUD_ATTR_UNREAD_NOTE}; });
+    var ids=Array.isArray(memberIds)?memberIds:[];
+    // 参加者が0人（＝送る会員が無い）なら読む必要も無い＝「読めた・対象なし」を返す。
+    if(!ids.length)return Promise.resolve({byId:{},note:''});
+    var CHUNK=100, chunks=[];
+    for(var i=0;i<ids.length;i+=CHUNK)chunks.push(ids.slice(i,i+CHUNK));
+    var byId={}, idx=0;
+    function next(){
+      if(idx>=chunks.length)return Promise.resolve({byId:byId,note:''});
+      var c=chunks[idx++];
+      return client.from('members').select('*').eq('club_id',clubId).in('member_id',c).then(function(r){
+        if(r&&r.error)return {byId:null,note:CLOUD_ATTR_UNREAD_NOTE};
+        var rows=(r&&Array.isArray(r.data))?r.data:[];
+        for(var j=0;j<rows.length;j++){
+          var x=rows[j];
+          if(x&&typeof x.member_id==='string'&&x.member_id)byId[x.member_id]=x;
+        }
+        return next();
+      });
+    }
+    return next().catch(function(){ return {byId:null,note:CLOUD_ATTR_UNREAD_NOTE}; });
   }catch(e){ return Promise.resolve({byId:null,note:CLOUD_ATTR_UNREAD_NOTE}); }
 }
 
@@ -13462,7 +13492,12 @@ function sendTournamentToCloud(setStatus){
             // ★ CLOUD-MEMBER-ATTR-MERGE-001 (#853): 送信行の会員属性を組む前に、クラウドの現在値を
             //   読み取り専用で取る（ローカル名簿は書き換えない）。失敗しても送信は止めない＝
             //   従来どおりローカル値で送り、結果に ⚠ 注記を出す（無音でバグ挙動に戻らないため）。
-            return _fetchCloudMemberAttrs(client,clubId).then(function(_attrRes){
+            return _fetchCloudMemberAttrs(client,clubId,_collectSendMemberIds(state)).then(function(_attrRes){
+            // ★ Codex P1 (r3793467613): 属性の取得は**非同期**＝この待ち時間に報告書タブを編集できる。
+            //   直前の照合（_describeSendDrift）だけでは、待っている間の編集が未確認のまま送られる
+            //   ＝ #857 で塞いだ確認レースの再オープン。待ち明けにもう一度照合する。
+            var _drift2=_describeSendDrift();
+            if(_drift2){ setStatus(_drift2); return {ok:false,step:'changed-after-confirm'}; }
             var master=(typeof loadBranchMaster==='function')?loadBranchMaster():{members:[]};
             try{ if(typeof ensureTournamentId==='function')ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report)); }catch(e){}
             // ★Codex P2（PR #857 3巡目）: 照合を通した state の**写し**を星取表スナップショット用に固定する。
@@ -13493,7 +13528,13 @@ function sendTournamentToCloud(setStatus){
                 // OPS-SHARED-KEY Phase C (#585): この端末が送信した大会IDを記録（キー張り替え時の明示確認 opsRekeyNeedsConfirm に使う・fail-soft）。
                 try{ if(typeof state!=='undefined'&&state&&state.tournament_id){ state.cloud_sent_tid=state.tournament_id; if(typeof saveData==='function')saveData(); } }catch(eS){}
               }
-              else { setStatus('送信に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再送できます）'); }
+              else {
+                // ★ Codex P1 (r3793467616): members の upsert は成功していて後段（players/tournament/
+                //   entries）で失敗する経路がある。属性を読めていなかった場合、名簿は**既に既定値で
+                //   上書きされている可能性がある**のに失敗メッセージがそれを伝えず、しかも再送すると
+                //   その既定値を「クラウドの真値」として読んでしまう。失敗時こそ明示する。
+                setStatus('送信に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再送できます）'+((_attrRes&&_attrRes.note)||''));
+              }
               return res;
             });
             });
