@@ -12215,7 +12215,12 @@ function buildCloudSyncPayload(master, opts){
         // CLOUD-MEMBER-FIELDS-001: 区分・市町村も同乗（クラウドが会員の真の属性を全て持つ）。
         // CITY-UNIFY-001: branch は送らない（ローカルマスタに branch は無く常に null 送信＝クラウド値を消す実害
         //   ＝L3 申し送りの既存バグ修正。市町村は city 列に一本化・migration 20260703 で旧 branch 値は city へ移行済み）。
-        var fc2=_cloudMemberFieldCols(mm2);
+        // CLOUD-MEMBER-ATTR-MERGE-001 (#853): opts.cloudMembersById（送信直前に読み取り専用で取得した
+        //   クラウド members）があればフィールド単位で合成する。**渡されないときは従来どおり**
+        //   （＝既存の呼び出し・テストは1バイトも挙動が変わらない・取得失敗時の fail-soft 経路でもある）。
+        var _cloudRow=(opts.cloudMembersById&&Object.prototype.hasOwnProperty.call(opts.cloudMembersById,mid))
+          ?opts.cloudMembersById[mid]:null;
+        var fc2=_cloudRow?composeCloudMemberFieldCols(mm2,_cloudRow):_cloudMemberFieldCols(mm2);
         membersOut[mid]=stamp({ member_id:mid, name:(mm2.name||p.name||''), yomi:(mm2.yomi||p.yomi||''), member_kind:fc2.member_kind, grade:fc2.grade, city:fc2.city });
         playersOut[mid]=stamp({ member_id:mid });
       }
@@ -12330,7 +12335,10 @@ function syncTournamentToCloud(client, master, opts){
   var clubId=opts.clubId;
   if(!client||!client.from)return Promise.resolve({ok:false,step:'init',message:'クラウドに接続していません'});
   if(!clubId)return Promise.resolve({ok:false,step:'club',message:'送信先クラブが特定できません（ログインを確認してください）'});
-  var payload=buildCloudSyncPayload(master,{clubId:clubId, classesFilter:opts.classesFilter});
+  // ★ CLOUD-MEMBER-ATTR-MERGE-001 (#853): ここは**明示列挙**なので、新しい opts を足したら
+  //   必ずこの行にも書くこと。書き忘れると合成が一切効かないまま ok:true で送信が完了し、
+  //   既存テストも全部緑のまま通る（反証パネルが実測した無音 no-op）。
+  var payload=buildCloudSyncPayload(master,{clubId:clubId, classesFilter:opts.classesFilter, cloudMembersById:opts.cloudMembersById});
   if(!payload.tournament.app_tournament_id)return Promise.resolve({ok:false,step:'tournament',message:'大会IDが未設定です'});
   var counts={members:payload.members.length,players:payload.players.length,entries:payload.entries.length,skipped:payload.skipped.length,unresolved:0};
   function fail(step,res){ return {ok:false,step:step,counts:counts,message:((res&&res.error&&res.error.message)||'クラウド送信に失敗しました')+'（'+step+'）'}; }
@@ -13045,6 +13053,107 @@ function _cloudMemberFieldCols(m){
   };
 }
 
+// CLOUD-MEMBER-ATTR-MERGE-001 (#853・作者裁定 2026-08-17「案E」): ☁送信の会員属性を
+//   **フィールド単位で合成**する純関数。
+//   なぜ要るか: ローカル名簿は「未設定」と「既定値」を区別できない（normalize が member/ippan に
+//   確定する）。そのため送信のたびに既定値がクラウドの実値（女性/中学生/非支部員/市町村）を
+//   上書きし、翌大会の参加費が誤徴収になっていた（#853・実測 500円/人）。
+//   規則: **非既定値だけが「人が明示的に入れた情報」と確実に言える**ので、それは常にローカルを
+//   優先し、既定値の欄は情報が無いものとしてクラウド値を尊重する。
+//     member_kind : local==='other' → local ／ 'member'(既定) → cloud があれば cloud
+//     grade       : local が 'chu'|'josei' → local ／ 'ippan'(既定) → cloud があれば cloud
+//     city        : local 非空 → local ／ 空 → cloud
+//   ★ cloudRow が無い/欠損/不正語彙のときは _cloudMemberFieldCols と同値（＝従来どおり）。
+//   ★ 既知の穴（作者了承）: 「josei→ippan」「other→member」「市町村を空に」という**既定値方向の
+//     訂正**は☁送信では届かない。届け先は名簿タブ「☁ 名簿全体をクラウドへ一括送信」
+//     （pushAllMembersToCloud＝常にローカル優先）。この非対称は編集失敗時の文言にも書いてある。
+function composeCloudMemberFieldCols(m, cloudRow){
+  var base=_cloudMemberFieldCols(m);
+  if(!cloudRow||typeof cloudRow!=='object')return base;
+  var out={member_kind:base.member_kind,grade:base.grade,city:base.city};
+  var cKind=(cloudRow.member_kind==='member'||cloudRow.member_kind==='other')?cloudRow.member_kind:null;
+  var cGrade=(cloudRow.grade==='ippan'||cloudRow.grade==='chu'||cloudRow.grade==='josei')?cloudRow.grade:null;
+  var cCity=(typeof cloudRow.city==='string'&&cloudRow.city)?cloudRow.city:null;
+  // ローカルが既定値（＝情報を持っていない）欄だけクラウド値を採用する。
+  if(base.member_kind!=='other'&&cKind)out.member_kind=cKind;
+  if(base.grade==='ippan'&&cGrade)out.grade=cGrade;
+  if(!base.city&&cCity)out.city=cCity;
+  return out;
+}
+
+// CLOUD-MEMBER-ATTR-MERGE-001 (#853): ☁送信の直前にクラウド members を**読み取り専用**で取得する。
+//   ★ pullMembersFromCloud は使わない。あれは mergeCloudMembersIntoMaster ＋ saveBranchMaster を伴い、
+//     クラウドの非空値でローカルを上書きする＝**編集 push が失敗した直後の訂正を巻き戻す**（実測）。
+//     ここが欲しいのは「送信行を組むための参照値」だけなので、ローカル名簿には一切触れない。
+//   戻り: {byId:{member_id→row}|null, note:''|⚠注記}。**取得0件（byId={}）と取得失敗（byId=null）は
+//   区別する**（前者は初回送信＝従来どおりローカル値・後者は無音でバグ挙動に戻るので注記を出す）。
+var CLOUD_ATTR_UNREAD_NOTE='　⚠ 会員の区分・市町村はこの端末の値で送りました（クラウドの名簿を読めなかったため、区分が上書きされている可能性があります）';
+//   ★ Codex P1 (r3793467620): 全件 select は API の1レスポンス上限（PostgREST 既定 1000 行）に当たると
+//     **prefix しか返らないのに成功扱い**になり、欠けた会員が既定値で上書きされてバグが再発する。
+//     送信に必要なのは**参加者の分だけ**なので、member_id を 100 件チャンクの in() で明示取得する
+//     （_fetchCloudEntriesChunked と同型）。1チャンク100 < 上限なので「返ってこない＝クラウドに行が無い
+//     ＝新規会員」と確定でき、欠け検出そのものが不要になる。
+function _collectSendMemberIds(st){
+  var ids=[],seen={};
+  try{
+    var classes=(st&&Array.isArray(st.classes))?st.classes:[];
+    for(var ci=0;ci<classes.length;ci++){
+      var cls=classes[ci]&&classes[ci].id; if(!cls)continue;
+      var ps=(st.players&&Array.isArray(st.players[cls]))?st.players[cls]:[];
+      for(var pi=0;pi<ps.length;pi++){
+        var mid=ps[pi]&&ps[pi].member_id;
+        if(typeof mid==='string'&&mid&&!seen[mid]){ seen[mid]=true; ids.push(mid); }
+      }
+    }
+  }catch(e){}
+  return ids;
+}
+// ★ Codex P1 (r3793666281・3巡目): _collectSendMemberIds は **member_id を持つ人しか集めない**ため、
+//   待ち時間に**未連携（member_id 無し）の参加者**が追加されても前後の比較を素通りする。
+//   その人は _guardThenSend（未連携ガード）の確認も経ておらず、buildCloudSyncPayload は
+//   member_id 無しを skip する＝**優勝者でも共有結果から黙って欠落する**。
+//   照合には「全参加者（連携の有無を問わない）」の署名を使う。
+function _collectSendRosterSignature(st){
+  var sig=[];
+  try{
+    var classes=(st&&Array.isArray(st.classes))?st.classes:[];
+    for(var ci=0;ci<classes.length;ci++){
+      var cls=classes[ci]&&classes[ci].id; if(!cls)continue;
+      var ps=(st.players&&Array.isArray(st.players[cls]))?st.players[cls]:[];
+      for(var pi=0;pi<ps.length;pi++){
+        var p=ps[pi]||{};
+        sig.push(cls+'\u0002'+(p.id||'')+'\u0002'+(p.member_id||''));
+      }
+    }
+  }catch(e){}
+  return sig.join('\u0001');
+}
+function _fetchCloudMemberAttrs(client, clubId, memberIds){
+  try{
+    if(!client||!client.from||!clubId)return Promise.resolve({byId:null,note:CLOUD_ATTR_UNREAD_NOTE});
+    var ids=Array.isArray(memberIds)?memberIds:[];
+    // 参加者が0人（＝送る会員が無い）なら読む必要も無い＝「読めた・対象なし」を返す。
+    if(!ids.length)return Promise.resolve({byId:{},note:''});
+    var CHUNK=100, chunks=[];
+    for(var i=0;i<ids.length;i+=CHUNK)chunks.push(ids.slice(i,i+CHUNK));
+    var byId={}, idx=0;
+    function next(){
+      if(idx>=chunks.length)return Promise.resolve({byId:byId,note:''});
+      var c=chunks[idx++];
+      return client.from('members').select('*').eq('club_id',clubId).in('member_id',c).then(function(r){
+        if(r&&r.error)return {byId:null,note:CLOUD_ATTR_UNREAD_NOTE};
+        var rows=(r&&Array.isArray(r.data))?r.data:[];
+        for(var j=0;j<rows.length;j++){
+          var x=rows[j];
+          if(x&&typeof x.member_id==='string'&&x.member_id)byId[x.member_id]=x;
+        }
+        return next();
+      });
+    }
+    return next().catch(function(){ return {byId:null,note:CLOUD_ATTR_UNREAD_NOTE}; });
+  }catch(e){ return Promise.resolve({byId:null,note:CLOUD_ATTR_UNREAD_NOTE}); }
+}
+
 // MEMBER-ATTR-SNAPSHOT-001 (#607): entries の会員属性スナップショット純関数。
 //   _cloudMemberFieldCols(=master 現在値) と対称だが入力は当日 player レコード（登録時点値＝当時値）。
 //   member_kind/grade は常に非 null（旧行 null と区別可）。city は normalizeCity で正規化（空は ''）。副作用なし。
@@ -13091,7 +13200,10 @@ function pushMemberEditToCloud(member,setStatus){
   if(!member||!member.id)return Promise.resolve({ok:false,step:'input'});
   setStatus('クラウドへ反映中…');
   return loadCloudDeps().then(function(dep){
-    if(dep.offline){ setStatus('クラウド未反映（オフライン・端末には保存済み。☁送信時にも同期されます）'); return {ok:false,step:'offline'}; }
+    // ★ CLOUD-MEMBER-ATTR-MERGE-001 (#853): 旧文言は「☁送信時にも同期されます」と約束していたが、
+    //   ☁送信は会員属性をフィールド単位で合成する（既定値方向の訂正はクラウド値が勝つ）ため
+    //   **拾えない場合がある**。確実に届く経路（名簿タブの一括送信＝常にローカル優先）を案内する。
+    if(dep.offline){ setStatus('クラウド未反映（オフライン・端末には保存済み。名簿タブの「☁ 名簿全体をクラウドへ一括送信」で反映できます）'); return {ok:false,step:'offline'}; }
     if(!dep.cfg){ setStatus('クラウド未反映（クラウド設定なし・端末には保存済み）'); return {ok:false,step:'config'}; }
     if(!dep.sb){ setStatus('クラウド未反映（接続不可・端末には保存済み）'); return {ok:false,step:'network'}; }
     var client=window.supabase.createClient(window.SHOGI_CLOUD_CONFIG.url,window.SHOGI_CLOUD_CONFIG.publishableKey);
@@ -13106,7 +13218,7 @@ function pushMemberEditToCloud(member,setStatus){
         var fc=_cloudMemberFieldCols(member);
         var row={member_id:member.id,name:member.name||'',yomi:member.yomi||'',member_kind:fc.member_kind,grade:fc.grade,city:fc.city,club_id:clubId};
         return client.from('members').upsert([row],{onConflict:'club_id,member_id'}).select().then(function(res){
-          if(res&&res.error){ setStatus('クラウドへの反映に失敗しました：'+((res.error&&res.error.message)||'不明')+'（端末には保存済み・☁送信時にも同期されます）'); return {ok:false,step:'upsert'}; }
+          if(res&&res.error){ setStatus('クラウドへの反映に失敗しました：'+((res.error&&res.error.message)||'不明')+'（端末には保存済み・名簿タブの「☁ 名簿全体をクラウドへ一括送信」で反映できます）'); return {ok:false,step:'upsert'}; }
           // L3 P3-4 (CLOUD-MEMBER-FIELDS-001): 区分・市町村も同乗するようになったため文言を汎化。
           setStatus('会員情報（氏名・ふりがな・区分）をクラウドにも反映しました');
           return {ok:true};
@@ -13115,7 +13227,7 @@ function pushMemberEditToCloud(member,setStatus){
     });
   }).catch(function(e){
     if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 名簿編集の反映例外:',(e&&e.message)||e);
-    setStatus('クラウドへの反映に失敗しました（端末には保存済み・☁送信時にも同期されます）');
+    setStatus('クラウドへの反映に失敗しました（端末には保存済み・名簿タブの「☁ 名簿全体をクラウドへ一括送信」で反映できます）');
     return {ok:false,step:'exception'};
   });
 }
@@ -13397,6 +13509,30 @@ function sendTournamentToCloud(setStatus){
             //   現在の state を読み直すため、ここが「確認した内容 = 送る内容」を保証できる最後の場所。
             var _drift=_describeSendDrift();
             if(_drift){ setStatus(_drift); return {ok:false,step:'changed-after-confirm'}; }
+            // ★ CLOUD-MEMBER-ATTR-MERGE-001 (#853): 送信行の会員属性を組む前に、クラウドの現在値を
+            //   読み取り専用で取る（ローカル名簿は書き換えない）。失敗しても送信は止めない＝
+            //   従来どおりローカル値で送り、結果に ⚠ 注記を出す（無音でバグ挙動に戻らないため）。
+            var _idsBefore=_collectSendMemberIds(state);
+            var _sigBefore=_collectSendRosterSignature(state);
+            return _fetchCloudMemberAttrs(client,clubId,_idsBefore).then(function(_attrRes){
+            // ★ Codex P1 (r3793467613): 属性の取得は**非同期**＝この待ち時間に報告書タブを編集できる。
+            //   直前の照合（_describeSendDrift）だけでは、待っている間の編集が未確認のまま送られる
+            //   ＝ #857 で塞いだ確認レースの再オープン。待ち明けにもう一度照合する。
+            var _drift2=_describeSendDrift();
+            if(_drift2){ setStatus(_drift2); return {ok:false,step:'changed-after-confirm'}; }
+            // ★ Codex P1 (r3793610663・2巡目): 上の照合は**報告書（大会名・実施日）しか見ない**。
+            //   待ち時間に参加者が増える／名簿に紐付くと、その member_id は取得済みの byId に無いため
+            //   「クラウドに行が無い新規会員」と誤認され、ローカル既定値が既存のクラウド値を**静かに
+            //   上書き**する（＝#853 の再発）。参加者の集合も照合し、変わっていたら送らない。
+            //   送信は任意操作なので、中止して送り直してもらうほうが安全（当日運営は止まらない）。
+            //   ★ 3巡目 (r3793666281): 比較は member_id 一覧ではなく**全参加者の署名**で行う
+            //     （未連携の追加も捕まえる）。★ P2 (r3793666284): 先頭の ⚠ は装飾ではない。
+            //     classifyCloudStatusKind は「⚠」→warn より先に「〜しました」→ok を見ないため、
+            //     ⚠ が無いと**送れていない送信が成功色（緑）で出る**（_describeSendDrift と同じ理由）。
+            if(_collectSendRosterSignature(state)!==_sigBefore){
+              setStatus('⚠ 参加者が変わったため送信を中止しました（確認した時点と送る内容が違います）。もう一度「☁ クラウドに送信」を押してください');
+              return {ok:false,step:'changed-after-confirm'};
+            }
             var master=(typeof loadBranchMaster==='function')?loadBranchMaster():{members:[]};
             try{ if(typeof ensureTournamentId==='function')ensureTournamentId(state,master,getTournamentDateFromReport(state&&state.report)); }catch(e){}
             // ★Codex P2（PR #857 3巡目）: 照合を通した state の**写し**を星取表スナップショット用に固定する。
@@ -13409,7 +13545,7 @@ function sendTournamentToCloud(setStatus){
             //   写しが作れない場合は undefined＝従来どおり global state（fail-soft・送信は止めない）。
             var _snapSrc;
             try{ _snapSrc=JSON.parse(JSON.stringify(state)); }catch(eC){ _snapSrc=undefined; }
-            return syncTournamentToCloud(client,master,{clubId:clubId,snapshotSource:_snapSrc}).then(function(res){
+            return syncTournamentToCloud(client,master,{clubId:clubId,snapshotSource:_snapSrc,cloudMembersById:(_attrRes&&_attrRes.byId)||null}).then(function(res){
               if(res&&res.ok){
                 // A-2 (SYSTEM-REVIEW #377 follow): 未解決 entry を黙って成功扱いにしない。
                 //   unresolved>0 は ⚠ 警告（U-1 で橙）＝集計欠落に気づける。skipped(マスタ未連携)は当初「対象外の中立注記」
@@ -13419,6 +13555,7 @@ function sendTournamentToCloud(setStatus){
                 var base='送信しました（名簿 '+(c.members||0)+' 名・結果 '+(c.entries||0)+' 件）';
                 // CLOUD-SEND-UNLINKED-GUARD-001 (C): 未連携者は共有結果に未反映＝中立注記ではなく⚠で最上位者と直し方を明示。
                 if(c.skipped)base+=_unlinkedSkippedNote(c.skipped);
+                if(_attrRes&&_attrRes.note)base+=_attrRes.note;   // #853: 属性を読めなかった送信は黙らない
                 if(res.warn){ base='⚠ 一部の結果を送信できませんでした：未解決 '+(c.unresolved||0)+' 名。'+base+' 支部マスタへ紐付けてから再送してください（冪等・運営は続行できます）'; }
                 setStatus(base);
                 // SAVE-STATUS-BAR-001: クラウド送信成功（res.ok・warn 含む＝送信自体は実行済み）の時刻を記録（fail-soft）。
@@ -13426,8 +13563,15 @@ function sendTournamentToCloud(setStatus){
                 // OPS-SHARED-KEY Phase C (#585): この端末が送信した大会IDを記録（キー張り替え時の明示確認 opsRekeyNeedsConfirm に使う・fail-soft）。
                 try{ if(typeof state!=='undefined'&&state&&state.tournament_id){ state.cloud_sent_tid=state.tournament_id; if(typeof saveData==='function')saveData(); } }catch(eS){}
               }
-              else { setStatus('送信に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再送できます）'); }
+              else {
+                // ★ Codex P1 (r3793467616): members の upsert は成功していて後段（players/tournament/
+                //   entries）で失敗する経路がある。属性を読めていなかった場合、名簿は**既に既定値で
+                //   上書きされている可能性がある**のに失敗メッセージがそれを伝えず、しかも再送すると
+                //   その既定値を「クラウドの真値」として読んでしまう。失敗時こそ明示する。
+                setStatus('送信に失敗しました：'+((res&&res.message)||'不明')+'（運営は続行できます・再送できます）'+((_attrRes&&_attrRes.note)||''));
+              }
               return res;
+            });
             });
           });
         });
