@@ -162,7 +162,11 @@ assert(expSrc.indexOf("markSaveStatus('backup')")>=0&&expSrc.indexOf("markSaveSt
 //   「落ちる」だけでなく「何も見ていないのに通る」状態も作りうるため、数字を増やす対処を打ち切る。
 const cloudSrc=(RAW.match(/function sendTournamentToCloud\([\s\S]*?\n\}/)||[''])[0];
 assert(cloudSrc!==''&&cloudSrc.indexOf('function _send()')>=0, 'K4pre sendTournamentToCloud 全体を切り出せた（切り出し失敗による誤 PASS を防ぐ）');
-assert(/res&&res\.ok[\s\S]{0,900}markSaveStatus\('cloud'\)/.test(cloudSrc), 'K4 送信 res.ok 時に cloud 記録（温存）');
+// CLOUD-MEMBER-ATTR-MERGE-001 (#853): 窓を 900→1200 に。この pin の意図は「res.ok の**近く**で
+//   cloud 記録が残る」ことで、距離そのものではない。HEAD 時点の実測が 882/900 ＝ 残り 18 文字しかなく、
+//   成功メッセージに1行足すだけで**正しい変更が落ちる**状態だった（#853 は ⚠注記を1つ足した＝実測 974）。
+//   意図は不変のまま余裕を持たせる。※ 距離を無制限にはしない（離れた場所への移動は引き続き落とす）。
+assert(/res&&res\.ok[\s\S]{0,1200}markSaveStatus\('cloud'\)/.test(cloudSrc), 'K4 送信 res.ok 時に cloud 記録（温存）');
 
 // B バックアップ modal 冒頭の「最終バックアップ」表示（backup 時刻の移設先）
 const eb = loadEnv();

@@ -37,7 +37,17 @@ function makeClient(cfg){
     // NUMAZU-BEHAVIOR-001 (#840・Codex P2 PR #857 2巡目): 確認 → payload 生成の間の**非同期区間**を
     //   再現するためのフック。この区間はモーダルが閉じており、報告書タブは編集できる。
     rpc:function(name){ if(typeof cfg.onRpc==='function'){ try{ cfg.onRpc(); }catch(e){} } return Promise.resolve({data:(cfg.memberships!==undefined?cfg.memberships:[]),error:null}); },
-    from:function(table){ return { upsert:function(rows,opts){ return builder(table,rows,opts); } }; } };
+    // CLOUD-MEMBER-ATTR-MERGE-001 (#853): 送信は upsert の前に members を**読む**ようになったため、
+    //   mock も select().eq() を持つ実クライアント同型にする（無いと read が例外→⚠注記が付き、
+    //   成功メッセージの分類が ok から warn に変わって D5b が落ちる＝mock の追随漏れ）。
+    from:function(table){ return {
+      upsert:function(rows,opts){ return builder(table,rows,opts); },
+      select:function(cols){ var sb={_eq:[]};
+        sb.eq=function(k,v){ this._eq.push([k,v]); return this; };
+        sb.then=function(res,rej){ calls.push({op:'select',table:table,cols:cols,eq:sb._eq});
+          var t=cfg.tables&&cfg.tables[table]||{};
+          return Promise.resolve({data:(t.selectData!==undefined?t.selectData:[]),error:(t.selectError||null)}).then(res,rej); };
+        return sb; } }; } };
 }
 let pass=0,fail=0;function ok(c,m){if(c)pass++;else{fail++;console.log('  FAIL: '+m);}}
 function mkState(){return{tournament_id:'t-b2',rounds:1,classes:[{id:'A',name:'A'},{id:'B',name:'B'}],players:{A:[{id:'a1',name:'甲',cls:'A',member_id:'m_a1'}],B:[]},results:{A:[[{p1:'a1',p2:'a2',winner:'a1'}]],B:[]},report:{date:'2026-06-14',title:'六月例会'}};}
