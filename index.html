@@ -59,8 +59,10 @@ th.cell-amt{text-align:right}
    新規色指定は禁止）」・§2.2-4「インライン style は position/margin 等のみ」に従い class 化した。
    配色はいずれも既存の意味色から流用（新色を作らない）: badge-blue の #e6f1fb/#0C447C ＋ 枠 #2E75B6。 */
 .onboard-link{display:block;background:#e6f1fb;color:#0C447C;border:1px solid #2E75B6;border-radius:8px;padding:10px 14px;font-size:13px;text-decoration:none}
-/* 適用範囲の注記。#888 は白地に 3.54:1 で WCAG AA 不合格なので使わない（#595959 = 7.00:1）。 */
-.scope-note{font-size:13px;color:#595959}
+/* 適用範囲の注記。#888 は白地に 3.54:1 で WCAG AA 不合格なので使わない。
+   ★新色を作らず既存のグレーを流用する（STYLE-GUIDE §1・Codex P2 r3799347845）:
+   #666 は shogi_v4.html に33箇所ある既存値で、白地に 5.74:1＝AA 合格。 */
+.scope-note{font-size:13px;color:#666}
 </style>
 </head>
 <body>
@@ -145,7 +147,7 @@ th.cell-amt{text-align:right}
     </ul>
 
     <h3>保証していないこと</h3>
-    <p>沼津支部の有志が作って公開しているものです。<strong>動作の保証、データの保持、大会当日のサポートはできません。</strong>データは各自の端末のブラウザ内にあります。端末の故障・紛失に備えるには、☰メニューの「バックアップ」でJSONファイルの控えを取ってください（端末ごと失ったときに全部を戻せる手段はこれだけです）。</p>
+    <p>沼津支部の有志が作って公開しているものです。<strong>動作の保証、データの保持、大会当日のサポートはできません。</strong>データは各自の端末のブラウザ内にあります。端末の故障・紛失に備えるには、☰メニューの「バックアップ」でJSONファイルの控えを取ってください。<strong>ただし、保存先は既定でその端末のダウンロードフォルダです。</strong>端末ごと失うと控えも一緒に失われるので、<strong>取ったJSONを別の端末・USBメモリ・クラウドストレージ（メール添付でも可）へコピーしてはじめて備えになります。</strong></p>
 
     <h3>試すときのおすすめ</h3>
     <ol>
