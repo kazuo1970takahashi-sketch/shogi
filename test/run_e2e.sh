@@ -26,6 +26,15 @@
 #   bash test/run_e2e.sh                 # 既定は同じリポジトリの shogi_v4.html
 #   bash test/run_e2e.sh <html-or-url>   # 対象を明示（各スイートの第1引数へ渡す）
 #   E2E_JOBS=1 bash test/run_e2e.sh      # 直列（従来どおり）
+#   MUT_FULL=1 bash test/run_e2e.sh      # 変異チェックのキャッシュを使わず必ずフル実行
+#
+# 変異チェックの条件付き実行 [E2E-MUT-SKIP-001]:
+#   #881/#887 の動的変異チェックは総仕事量の 70%（484/687秒）を占めるが、
+#   その検査の結果を決める入力（チェッカー／ジェネレータ／e2e スイート／変異が当たる
+#   HTML 領域）が前回 PASS 時と byte 単位で同一なら走らせない。
+#   **CI は毎回クリーン checkout ＝ キャッシュ不在 ＝ 必ずフル実行**。手元で強制するなら MUT_FULL=1。
+#   スキップは PASS と別に数え、見出しに【SKIP】を付けて最終行にも出す。
+#   詳細と残余リスクの受け方 → test/tools/mutation_input_key.js のヘッダ
 #
 # 終了コード: 0=全スイート PASS / 1=1つでも失敗 / 2=対象0件・環境不備
 # 依存: bash 3.2+（macOS 既定）/ node / playwright。network 不使用。
@@ -121,6 +130,11 @@ done
 
 FAILED=""
 OKC=0
+# ★ [E2E-MUT-SKIP-001] 「緑」と「走らせていない」を同じ数字にしない。
+#   変異チェックがキャッシュで skip したとき（ログに MUTCACHE-SKIP）は PASS とは別に数え、
+#   見出しにも最終行にも出す。exit code は 0 のまま（skip は失敗ではない）。
+SKIPC=0
+SKIPPED=""
 
 # ★ CHG-MODAL-INLINE-ERROR-001 (#881) / Codex P2 (r3790541881):
 #   変異チェッカーを「手動実行用」に置くだけだと、17本の動的変異が生き残っても
@@ -166,11 +180,20 @@ for idx in $ORDER; do
   if [ -f "$LOGDIR/$idx.rc" ]; then
     read -r rc secs < "$LOGDIR/$idx.rc"
   fi
+  mark=""
+  if [ "$rc" -eq 0 ] && grep -q 'MUTCACHE-SKIP' "$LOGDIR/$idx.log" 2>/dev/null; then
+    mark="【SKIP】"
+  fi
   echo "------------------------------------------"
-  echo "【${name}】(${secs}秒)"
+  echo "${mark}【${name}】(${secs}秒)"
   cat "$LOGDIR/$idx.log" 2>/dev/null
   if [ "$rc" -eq 0 ]; then
-    OKC=$((OKC+1))
+    if [ -n "$mark" ]; then
+      SKIPC=$((SKIPC+1))
+      SKIPPED="$SKIPPED ${name}"
+    else
+      OKC=$((OKC+1))
+    fi
   else
     FAILED="$FAILED ${name}(exit=$rc)"
   fi
@@ -180,10 +203,18 @@ done
 echo "=========================================="
 if [ -n "$FAILED" ]; then
   echo "  E2E 結果: ${OKC}/${COUNT} スイート PASS"
+  [ "$SKIPC" -gt 0 ] && echo "  スキップ ${SKIPC} 件:${SKIPPED}"
   echo "  失敗:${FAILED}"
   echo "=========================================="
   exit 1
 fi
-echo "  E2E 結果: ${COUNT}/${COUNT} スイート PASS"
+if [ "$SKIPC" -gt 0 ]; then
+  # ★ 実行していないものを PASS の数に混ぜない。全部実測したいときは MUT_FULL=1。
+  echo "  E2E 結果: ${OKC}/${COUNT} スイート PASS ＋ スキップ ${SKIPC} 件"
+  echo "  スキップ（入力が前回 PASS 時と同一）:${SKIPPED}"
+  echo "  → 全部実測する: MUT_FULL=1 bash test/run_e2e.sh"
+else
+  echo "  E2E 結果: ${COUNT}/${COUNT} スイート PASS"
+fi
 echo "=========================================="
 exit 0

@@ -55,6 +55,15 @@ for f in "$GEN" "$SUITE"; do
 done
 command -v node >/dev/null 2>&1 || { echo "  NG   node が無い"; exit 1; }
 
+# ★ [E2E-MUT-SKIP-001] #881 と同じ規律（→ test/tools/mutation_input_key.js のヘッダ）。
+#   入力が前回 PASS 時と同一なら走らせない。CI と MUT_FULL=1 では必ずフル実行。
+. "$HERE/../lib/mutation_cache.sh"
+MUTKEY="$(mutcache_key "$TARGET" "$GEN" "$SUITE" "$0")" || MUTKEY=""
+if mutcache_hit "bulk_inline_error_887" "$MUTKEY"; then
+  echo "=========================================="
+  exit 0
+fi
+
 MUT="$(mktemp -d "${TMPDIR:-/tmp}/bulkmut887dyn.XXXXXX")"
 node "$GEN" "$TARGET" "$MUT" || { echo "  NG   変異の生成に失敗"; rm -rf "$MUT"; exit 1; }
 
@@ -131,5 +140,16 @@ echo "=========================================="
 echo "  結果: PASS=$pass, FAIL=$fail"
 echo "=========================================="
 [ "$fail" -eq 0 ] || exit 1
+# ★ FAIL=0 で完走したときだけ「この入力は実測で緑だった」と記録する。
+#   Codex P1 (r3794610379): 検査には数分かかる。開始時に鍵を作った後で枝を切り替えたり
+#   ファイルを編集すると、**実際に検査した入力とは違う「開始時の鍵」に PASS が保存される**。
+#   後でその版へ戻ると、検査していないのにヒットしてしまう。
+#   → **保存の直前にもう一度鍵を作り、開始時と一致したときだけ記録する。**
+MUTKEY2="$(mutcache_key "$TARGET" "$GEN" "$SUITE" "$0")" || MUTKEY2=""
+if [ -n "$MUTKEY" ] && [ "$MUTKEY" = "$MUTKEY2" ]; then
+  mutcache_store "bulk_inline_error_887" "$MUTKEY"
+elif [ -n "$MUTKEY" ]; then
+  echo "  （検査中に入力が変わったため記録しない: 開始時と終了時の鍵が違う）"
+fi
 echo "  ✓ #887 動的変異チェック 全PASS"
 exit 0
