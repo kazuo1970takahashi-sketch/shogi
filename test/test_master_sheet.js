@@ -211,7 +211,8 @@ assert(bmeBody.indexOf("querySelectorAll('.master-cell-name')")>=0&&bmeBody.inde
 assert(h.indexOf('master-sheet-row" data-mid="')>=0||/master-sheet-row[^"]*" data-mid="/.test(h), 'F1 行 tr に data-mid（追跡フック）');
 const flashSrc=RAW.slice(RAW.indexOf('function masterSheetFlashRow'),RAW.indexOf('function masterSheetFlashRow')+800);
 assert(flashSrc.indexOf('scrollIntoView')>=0&&flashSrc.indexOf('backgroundColor')>=0&&flashSrc.indexOf('setTimeout')>=0, 'F2 更新行へスクロール＋一時ハイライト（自動解除）');
-const commitSrc0=RAW.slice(RAW.indexOf('function masterSheetCommitNameEdit'),RAW.indexOf('function masterSheetCommitNameEdit')+2000);
+// #901: 固定オフセット窓は本文が伸びると assertion が黙って窓の外に出る（実際に外れた）。次の関数定義までを見る。
+const commitSrc0=RAW.slice(RAW.indexOf('function masterSheetCommitNameEdit'),RAW.indexOf('function masterSheetCancelNameEdit'));
 assert(/renderMasterTab\(\);[\s\S]{0,200}masterSheetFlashRow\(mid\)/.test(commitSrc0), 'F3 commit 成功→再描画直後に追跡を呼ぶ');
 
 // I: MASTER-SHEET-004（IME 変換ガード＝変換確定の Enter で更新しない）
@@ -224,7 +225,8 @@ assert(startSrc4.indexOf("getElementById('ms-edit-save')")>=0&&startSrc4.indexOf
 // P: MASTER-CLOUD-PUSH-001（氏名・ふりがな編集のクラウド即時反映・fail-soft）
 const commitSrc=RAW.slice(RAW.indexOf('function masterSheetCommitNameEdit'),RAW.indexOf('function masterSheetCancelNameEdit'));
 assert(commitSrc.indexOf('pushMemberEditToCloud')>=0, 'P1 commit 成功パスからクラウド push を呼ぶ');
-const pushSrc=RAW.slice(RAW.indexOf('function pushMemberEditToCloud'),RAW.indexOf('function pushMemberEditToCloud')+3000);
+// #901: 同上。pushMemberEditToCloud の次に定義される関数までを窓にする。
+const pushSrc=RAW.slice(RAW.indexOf('function pushMemberEditToCloud'),RAW.indexOf('function pushMemberDeleteStateToCloud'));
 assert(pushSrc.indexOf("onConflict:'club_id,member_id'")>=0, 'P2 upsert は club_id,member_id で冪等（既存 sync と同一）');
 assert(!/branch\s*:/.test(pushSrc), 'P3 branch 列を送らない（クラウド側の値を保全）');
 assert(pushSrc.indexOf('未反映')>=0, 'P4 未反映は status で明示（黙って巻き戻りリスクを残さない）');
@@ -232,11 +234,17 @@ assert(pushSrc.indexOf('未反映')>=0, 'P4 未反映は status で明示（黙�
 const pOk=(function(){
   const e=envWithFix();
   let upserted=null;
+  let cloudRead=0;
   e._ctx.window.SHOGI_CLOUD_CONFIG={url:'https://kakuu.example',publishableKey:'pk_kakuu'};
   e._ctx.window.supabase={createClient:function(){return {
     auth:{getSession:function(){return Promise.resolve({data:{session:{user:{}}}});}},
     rpc:function(){return Promise.resolve({data:[{club_id:'club-kakuu',status:'active'}]});},
-    from:function(){return {upsert:function(rows){upserted=rows;return {select:function(){return Promise.resolve({data:rows,error:null});}};}};}
+    // #901: 編集 push は送信前に members を読む。select が無い mock だと TypeError を catch が握り潰して
+    //   「クラウドを読めなかった」縮退パスで緑になるため、読み取りも mock する（cloudRead で回数を数える）。
+    from:function(){return {
+      select:function(){return {eq:function(){return {in:function(){cloudRead++;return Promise.resolve({data:[],error:null});}};}};},
+      upsert:function(rows){upserted=rows;return {select:function(){return Promise.resolve({data:rows,error:null});}};}
+    };}
   };}};
   const msgs=[];
   return e.pushMemberEditToCloud({id:'m-ka',name:'架空改名',yomi:'かくうかいめい'},function(m){msgs.push(String(m));}).then(function(res){
@@ -244,6 +252,9 @@ const pOk=(function(){
     assert(upserted&&upserted[0].member_id==='m-ka'&&upserted[0].name==='架空改名'&&upserted[0].yomi==='かくうかいめい'&&upserted[0].club_id==='club-kakuu', 'P6 upsert 行＝member_id/name/yomi/club_id');
     assert(!('branch' in (upserted[0]||{})), 'P7 行に branch を含まない');
     assert(msgs.some(m=>m.indexOf('反映しました')>=0), 'P8 成功 status を通知');
+    // #901: 読み取りが成功している成功パスであることを固定する（⚠ 付き＝縮退パスで緑になっていない）。
+    assert(cloudRead===1, 'P8a 送信前にクラウドの現在値を1回読む');
+    assert(!msgs.some(m=>m.indexOf('\u26a0')>=0), 'P8b 読めた成功パスでは ⚠ 注記を出さない（縮退パスで緑になっていない証拠）');
   });
 })();
 const pAuth=(function(){
@@ -253,7 +264,7 @@ const pAuth=(function(){
   e._ctx.window.supabase={createClient:function(){return {
     auth:{getSession:function(){return Promise.resolve({data:{session:null}});}},
     rpc:function(){return Promise.resolve({data:[]});},
-    from:function(){upsertCalled=true;return {upsert:function(){return {select:function(){return Promise.resolve({data:[],error:null});}};}};}
+    from:function(){upsertCalled=true;return {select:function(){return {eq:function(){return {in:function(){return Promise.resolve({data:[],error:null});}};}};},upsert:function(){return {select:function(){return Promise.resolve({data:[],error:null});}};}};}
   };}};
   const msgs=[];
   return e.pushMemberEditToCloud({id:'m-ka',name:'x',yomi:''},function(m){msgs.push(String(m));}).then(function(res){
@@ -273,11 +284,18 @@ assert(!/branch\s*:/.test(pdSrc), 'Q4 branch 列を送らない（クラウド�
 
 function mockCloudEnv(e,capture){
   capture.calls=capture.calls||[];
+  capture.reads=0;
+  capture.cloudRows=capture.cloudRows||[];
   e._ctx.window.SHOGI_CLOUD_CONFIG={url:'https://kakuu.example',publishableKey:'pk_kakuu'};
   e._ctx.window.supabase={createClient:function(){return {
     auth:{getSession:function(){return Promise.resolve({data:{session:{user:{}}}});}},
     rpc:function(){return Promise.resolve({data:[{club_id:'club-kakuu',status:'active'}]});},
-    from:function(){return {upsert:function(rows){capture.rows=rows;capture.calls.push(rows);return {select:function(){return Promise.resolve({data:rows,error:null});}};}};}
+    // #901: 編集 push は送信前に members を読む。select を持たない mock だと TypeError を catch が握り潰し、
+    //   「クラウドを読めなかった」縮退パスで緑になる（＝成功パスを一度も通らない）。読み取りも mock する。
+    from:function(){return {
+      select:function(){return {eq:function(){return {in:function(){capture.reads++;return Promise.resolve({data:capture.cloudRows,error:null});}};}};},
+      upsert:function(rows){capture.rows=rows;capture.calls.push(rows);return {select:function(){return Promise.resolve({data:rows,error:null});}};}
+    };}
   };}};
 }
 const qDel=(function(){
@@ -289,6 +307,12 @@ const qDel=(function(){
   return new Promise(function(r){setTimeout(r,0);}).then(function(){
     assert(cap.rows&&cap.rows.length===2, 'Q5 削除2名分をまとめて upsert');
     assert(cap.rows.every(r=>typeof r.deleted_at==='string'&&r.deleted_at.length>0&&typeof r.name==='string'&&r.name.length>0), 'Q6 各行に deleted_at（時刻）と name（未存在会員の INSERT 対策）');
+    // #901: 削除/復元でローカル値を無条件に同乗させると、☁取り込み前の端末で誤って削除→復元
+    //   しただけでクラウドの区分・級・市町村が既定値と NULL で潰れる（誤徴収の再発）。
+    //   送信前にクラウドの現在値を読み、composeCloudMemberFieldCols で合成する
+    //   （既存行はクラウドの実値を残し、行が無い会員はローカル値で完全な行を INSERT する）。
+    assert(cap.reads===1, 'Q6a 削除 push も送信前にクラウドの現在値を読む');
+    assert(cap.rows.every(r=>('member_kind' in r)&&('grade' in r)&&('city' in r)), 'Q6b 読めたときは合成後の属性を載せる（行が無い会員の INSERT を完全な行にする）');
   });
 })();
 const qRes=(function(){
@@ -357,6 +381,7 @@ const sEdit=(function(){
   mockCloudEnv(e,cap);
   return e.pushMemberEditToCloud({id:'m-ka',name:'架空太郎',yomi:'かくう',member:'other',grade:'chu',city:'沼津市'},function(){}).then(function(){
     assert(cap.rows&&cap.rows[0].member_kind==='other'&&cap.rows[0].grade==='chu'&&cap.rows[0].city==='沼津市', 'S15 編集 push にも区分・市町村が同乗');
+    assert(cap.reads===1, 'S15a 編集 push は送信前にクラウドの現在値を1回読む（#901・読めた成功パスを通っている）');
   });
 })();
 
