@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>沼津支部 月例将棋大会 運営サイト</title>
+<title>将棋大会 運営ツール — 沼津支部 月例将棋大会 運営サイト</title>
 <!-- PWA Slice1 (#... ): ホーム画面インストール用。manifest＋テーマ色＋iOS用メタ/アイコン。
      Service Worker（オフライン/キャッシュ）は別スライス。挙動非接触（head への追加のみ）。 -->
 <link rel="manifest" href="manifest.webmanifest">
@@ -25,9 +25,13 @@ if(typeof navigator!=="undefined" && "serviceWorker" in navigator){
 body{font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:15px;color:#222;background:#f5f5f0;line-height:1.7}
 .header{background:#1F3864;color:#fff;padding:20px 24px;text-align:center}
 .header h1{font-size:22px;font-weight:500;margin-bottom:4px}
-.header p{font-size:13px;opacity:0.75}
+/* ONBOARD-001: 副題の色を明示。汎用 p{color:#333} が .header の継承色 #fff を上書きしており、
+   紺地(#1F3864)に濃灰(#333)＝コントラスト比 約1.1:1 でほぼ読めない状態だった（実測・従来からの不具合）。 */
+.header p{font-size:13px;opacity:0.9;color:#fff}
 .container{max-width:800px;margin:0 auto;padding:24px 16px}
 .card{background:#fff;border-radius:12px;padding:24px;margin-bottom:20px;border:1px solid #e0e0e0}
+/* ONBOARD-001: 他クラブ向けの導入案内カード。既存カードと区別がつくよう枠のみ強調（配色は既存 #2E75B6 を流用）。 */
+.card-intro{border:2px solid #2E75B6}
 h2{font-size:18px;font-weight:500;color:#1F3864;border-left:4px solid #1F3864;padding-left:12px;margin-bottom:16px}
 h3{font-size:15px;font-weight:500;color:#1F3864;margin:16px 0 8px}
 p{margin-bottom:10px;color:#333}
@@ -51,21 +55,40 @@ td{padding:8px 12px;border-bottom:1px solid #eee}
 th.cell-amt{text-align:right}
 .note{background:#faeeda;border-left:4px solid #EF9F27;padding:10px 14px;border-radius:0 8px 8px 0;font-size:13px;color:#633806;margin-bottom:12px}
 .footer{text-align:center;padding:24px;font-size:12px;color:#888}
+/* ONBOARD-001: 以下3クラスは STYLE-GUIDE §1「色の指定は class で行う（インライン style での
+   新規色指定は禁止）」・§2.2-4「インライン style は position/margin 等のみ」に従い class 化した。
+   配色はいずれも既存の意味色から流用（新色を作らない）: badge-blue の #e6f1fb/#0C447C ＋ 枠 #2E75B6。 */
+.onboard-link{display:block;background:#e6f1fb;color:#0C447C;border:1px solid #2E75B6;border-radius:8px;padding:10px 14px;font-size:13px;text-decoration:none}
+/* 適用範囲の注記。#888 は白地に 3.54:1 で WCAG AA 不合格なので使わない。
+   ★新色を作らず既存のグレーを流用する（STYLE-GUIDE §1・Codex P2 r3799347845）:
+   #666 は shogi_v4.html に33箇所ある既存値で、白地に 5.74:1＝AA 合格。 */
+.scope-note{font-size:13px;color:#666}
 </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>沼津支部 月例将棋大会</h1>
-  <p>運営サイト - 役員向け</p>
+  <h1>将棋大会 運営ツール</h1>
+  <p>沼津支部 月例将棋大会 運営サイト　／　他のクラブ・支部の方もお使いいただけます</p>
 </div>
 
 <div class="container">
 
+  <!-- ONBOARD-001: 導入案内カード（#for-other-clubs）は**どの画面幅でも1画面目に入らない**。
+       実ブラウザ班の実測（2026-08-17・カード top=719、スマホ幅では top=1028）:
+         375×667 → 0% ／ 1440×900 → 16% ／ 1366×657（1366×768ノートの実 innerHeight）→ 0%
+       当初「PC幅なら入るのでこの導線は補助」と書いていたが**反証された**。PC でもここが唯一の
+       第1画面導線なので、幅を問わず消さないこと。
+       ★毎月使う役員の導線（下の「大会運営アプリを開く」）は 375px 幅で top 209→313 と
+       104px 下がる（この行 66+16px ＋ 副題2行化で ヘッダ +22px）。第1画面内には残る（bottom=372<667）。 -->
+  <a class="onboard-link" href="#for-other-clubs" style="margin-bottom:16px">
+    他のクラブ・支部の方へ ── このアプリは、どの将棋クラブでもお使いいただけます　→
+  </a>
+
   <!-- アプリリンク -->
   <div class="card">
     <h2>運営ツール</h2>
-    <a class="app-link" href="shogi_v4.html?v=143">大会運営アプリを開く</a>
+    <a class="app-link" href="shogi_v4.html?v=144">大会運営アプリを開く</a>
     <p style="font-size:13px;color:#888;text-align:center">スマートフォンのブラウザで開いてください</p>
     <a class="app-link" href="docs/install_guide.html" target="_blank" rel="noopener noreferrer" style="background:#2E75B6">📱 ホーム画面に追加する方法（かんたん手順）</a>
     <!-- 運営マニュアル導線（事前リファレンス・別タブ起動 / #316 MANUAL-LINK-001） -->
@@ -86,11 +109,64 @@ th.cell-amt{text-align:right}
       <span class="badge badge-green">漢字・ふりがな・50音検索</span>
       <span class="badge badge-green">大会履歴</span>
     </div>
+    <!-- ONBOARD-001 (Codex P1 r3796685734): ☁/📡 は沼津支部のアカウントに紐づく＝他クラブでは現在使えない。
+         バッジは機能一覧なので消さず、適用範囲だけ注記する。 -->
+    <p class="scope-note">※ <strong>☁ クラウド送信・名簿共有</strong>と<strong>📡 参加者向けライブ配信</strong>は、沼津支部のアカウントに紐づいています。他のクラブ・支部の方は現在お使いいただけません（すぐ下の「はじめての方へ」をご覧ください）。それ以外の機能は、<strong>すぐ下の「はじめての方へ」に挙げた制限（参加費の金額は沼津支部で固定＝会費計算は参考値・画面の一部に「沼津支部」が残る など）を除いて</strong>、どのクラブでもお使いいただけます。</p>
+  </div>
+
+  <!-- ONBOARD-001: 他クラブ・他支部の幹事向け導入案内。
+       本サイトは沼津支部の運営サイトであると同時に、アプリの配布面でもある。
+       初見の方が「自分たちも使ってよいのか」「どこまで使えるのか」を最初の1画面で判断できるようにする。
+       できないことを隠さず書くのが方針（不便を承知で選んでもらう）。 -->
+  <!-- ONBOARD-001: tabindex="-1" は「アンカーで飛んだ先にフォーカスとスクリーンリーダーのカーソルを
+       移す」ため（実ブラウザ班の対照実験・2026-08-17）。これが無いと activeElement が BODY のままになる。
+       ★このカードより後ろにフォーカス可能な要素は1つも無い（ページのタブストップは5個で全部これより上・実測）。
+         そのため飛んだ後の次の Tab はページ先頭へ回り込むが、これは行き先が無いための正常動作であって
+         不具合ではない。カードの後ろにリンクを足したときは、この前提が変わるので測り直すこと。 -->
+  <div class="card card-intro" id="for-other-clubs" tabindex="-1">
+    <h2>はじめての方へ（他のクラブ・支部の方）</h2>
+    <p>このアプリは、沼津支部が自分たちの月例会のために作り、<strong>毎月の運営で実際に使っている</strong>ものです。<strong>他のクラブ・支部の方も、そのまま自由にお使いいただけます。</strong>登録も費用も要りません。上の「大会運営アプリを開く」からすぐ試せます。</p>
+
+    <h3>今できること</h3>
+    <ul>
+      <li><strong>大会名・主催者・会場・持ち時間・賞金額</strong>を自分のクラブのものに変えて、受付 → 組み合わせ（スイス式）→ 勝敗入力 → 順位 → 対戦成績・大会報告書の印刷 / PDF保存まで、一通り運営できます</li>
+      <li><strong>自分のクラブの設定を「既定」として覚えさせられます。</strong>「最終結果」タブの「⚙ クラブの既定（全リセット後の初期値）を保存する」→「💾 この設定をクラブの既定として保存」を一度押しておけば、翌月に「大会データを全リセット」しても、大会名・主催者・会場・持ち時間・賞金額・クラス構成・回戦数はそのまま残ります</li>
+      <li>クラスは A・B・C… と追加・改名できます（回戦数はクラスごとに 3〜7 で設定できます）</li>
+      <li><strong>人数が奇数のクラスも、そのまま始められます。</strong>「このクラスを部分開始」で来ている方から始めれば、組み合わせに入らなかった方は<strong>待機として画面に明示され</strong>（不戦勝にはなりません）、次の回戦で戻ります</li>
+      <li>データは<strong>端末のブラウザ内</strong>に保存されます。<strong>インターネットが無い会場でも動きます</strong>（ただし<strong>初回だけは、大会前に一度オンラインで開いて10秒ほど待ってください</strong>。そのときにアプリ本体が端末へ保存され、以後オフラインで起動できるようになります。手順は上の「📱 ホーム画面に追加する方法」に載っています。<strong>保存に失敗しても画面上はふつうに開けてしまう</strong>ので、大会前に<strong>機内モード（またはWi-Fiとモバイル通信を切った状態）で一度アプリを開いて、いつもの画面が出ることを必ず確かめてください</strong>。出なければ、オンラインに戻してもう一度開き直します）</li>
+    </ul>
+
+    <h3>今できないこと（隠さずに書いています）</h3>
+    <ul>
+      <li><strong>参加費の金額は変えられません。</strong>沼津支部の金額で固定です。金額が異なるクラブでは、集金額の自動計算は参考値としてお使いください</li>
+      <li><strong>クラウド送信・名簿共有・📡 参加者向けライブ配信は、現在この1クラブ専用です。</strong>ほかのクラブのアカウントを作る仕組みが、まだアプリにありません（沼津支部のアカウントに紐づいています。ログイン自体はできますが、送信・取得・配信は「送信先クラブを一意に特定できません」等で止まります）。<strong>端末内での運営と、印刷・PDF出力までが使える範囲</strong>とお考えください。なお <strong>📱 スマホ星取表（同じ端末の別タブに全画面表示・会場のサブ画面向け）はインターネット不要</strong>ですので、どのクラブでもそのままお使いいただけます</li>
+      <li><strong>画面の一部に「沼津支部」の表示が残ります</strong>（画面上部の見出し、会員名簿タブ、成績表・報告書の会員区分など）。<strong>会員区分の呼び名（支部員／支部員以外）も変えられません</strong></li>
+      <li><strong>クラブの既定に保存できるのは、この端末のブラウザの中だけです。</strong>端末を替えると設定し直しになります（☰メニューの「バックアップ」で取ったJSONに同梱されるので、それを新しい端末で読み込む方法もあります）</li>
+      <li><strong>A・Bクラスは削除できません。</strong>アプリの既定クラスのため、1クラスだけで運営したい場合も空の B が残ります（改名はできます）</li>
+      <li><strong>大会名・主催者・会場・賞金額を空欄のままにすると、沼津支部の既定値が入ります。</strong>必ず自分のクラブの値を入れてください（FAX・事務局名・会計提出文の3つだけは空欄のまま使えます）</li>
+    </ul>
+
+    <h3>保証していないこと</h3>
+    <p>沼津支部の有志が作って公開しているものです。<strong>動作の保証、データの保持、大会当日のサポートはできません。</strong>データは各自の端末のブラウザ内にあります。端末の故障・紛失に備えるには、☰メニューの「バックアップ」でJSONファイルの控えを取ってください。<strong>ただし、保存先は既定でその端末のダウンロードフォルダです。</strong>端末ごと失うと控えも一緒に失われるので、<strong>取ったJSONを別の端末・USBメモリ・クラウドストレージ（メール添付でも可）へコピーしてはじめて備えになります。</strong></p>
+
+    <h3>試すときのおすすめ</h3>
+    <ol>
+      <li><strong>本番の前に一度、練習で通してみてください。</strong>架空の名前を10人ほど入れて、受付から報告書の出力までやってみると、当日の見通しが立ちます</li>
+      <li>会員名簿を Excel などでお持ちなら、「📥 まとめて登録（エクセルから貼り付け）」で参加者としてまとめて受付 → 「📋 参加者を名簿に反映」で会員名簿に登録、が最短です（<strong>「📥 まとめて登録」だけでは会員名簿には入りません</strong>）</li>
+      <li>大会名・会場などを自分のクラブのものに入れ終えたら、「最終結果」タブの「💾 この設定をクラブの既定として保存」を一度押しておいてください。翌月からの入れ直しが要らなくなります</li>
+      <li>練習が済んだら、☰メニューの「大会データを全リセット」でまっさらにしてから本番に臨んでください</li>
+    </ol>
+    <!-- ONBOARD-001: 問い合わせ窓口は今回は設けない（作者判断 2026-08-09）。
+         窓口を用意する場合はこの位置に .note で1行足す。専用メールアドレスの新設を推奨
+         （公開ページへの直記載は収集ロボットに拾われるため、普段使いのアドレスは載せない）。 -->
   </div>
 
   <!-- 当日の流れ -->
   <div class="card">
     <h2>当日の流れ</h2>
+    <!-- ONBOARD-001 (Codex P1 r3796685734): 以下は沼津支部の運営手順。☁ログイン・名簿取得・クラウド送信・
+         📡ライブ配信を但し書きなしで案内していたため、他クラブの読者を「失敗する操作」へ誘導していた。 -->
+    <p class="scope-note">※ ここから下は<strong>沼津支部の当日の運営手順</strong>です。進め方は他のクラブでもそのまま参考にしていただけますが、<strong>☁ ログイン・名簿の取得・クラウドへの送信・📡 ライブ配信は沼津支部のアカウントが必要</strong>で、他のクラブ・支部の方は現在お使いいただけません。その部分は読み飛ばしてください。</p>
 
     <div class="step">
       <div class="step-num">1</div>
@@ -169,34 +245,6 @@ th.cell-amt{text-align:right}
     <div class="note"><strong>ライブ配信はインターネット公開です。</strong>掲示物には「氏名・成績を公開する」旨を必ず明記する。フルネーム表示は告知・同意の運用を決めた場合のみ。</div>
   </div>
 
-  <!-- 参加費 -->
-  <div class="card">
-    <h2>参加費</h2>
-    <table>
-      <colgroup><col style="width:28%"><col style="width:24%"><col style="width:24%"><col style="width:24%"></colgroup>
-      <thead><tr><th>区分</th><th class="cell-amt">一般</th><th class="cell-amt">中学生以下</th><th class="cell-amt">女性</th></tr></thead>
-      <tbody>
-        <tr><td class="cell-rank">支部員</td><td class="cell-amt">500円</td><td class="cell-amt">無料</td><td class="cell-amt">無料</td></tr>
-        <tr><td class="cell-rank">支部員以外</td><td class="cell-amt">1,000円</td><td class="cell-amt">500円</td><td class="cell-amt">500円</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- 賞品 -->
-  <div class="card">
-    <h2>賞品</h2>
-    <table>
-      <colgroup><col style="width:20%"><col style="width:50%"><col style="width:30%"></colgroup>
-      <thead><tr><th>順位</th><th class="cell-amt">一般</th><th class="cell-amt">こども</th></tr></thead>
-      <tbody>
-        <tr><td class="cell-rank">優勝</td><td class="cell-amt">図書券または商品券<br>2,000円</td><td class="cell-amt">1,000円</td></tr>
-        <tr><td class="cell-rank">準優勝</td><td class="cell-amt">1,000円</td><td class="cell-amt">500円</td></tr>
-        <tr><td class="cell-rank">3位</td><td class="cell-amt">500円</td><td class="cell-amt">500円</td></tr>
-      </tbody>
-    </table>
-    <p style="font-size:13px;color:#888">※A級・B級それぞれに賞品を用意（合計7,000円）</p>
-  </div>
-
   <!-- スイス式ルール -->
   <div class="card">
     <h2>スイス式トーナメントのルール</h2>
@@ -252,6 +300,7 @@ th.cell-amt{text-align:right}
   <!-- 注意事項 -->
   <div class="card">
     <h2>注意事項</h2>
+    <p class="scope-note">※ <strong>☁ クラウド</strong>と<strong>📡 ライブ配信</strong>に触れている項目は、沼津支部のアカウントをお持ちの場合の説明です（他のクラブ・支部の方は現在お使いいただけません）。それ以外の項目はどのクラブにも当てはまります。</p>
     <ul>
       <li>データは入力のたびに端末のブラウザ内へ<strong>自動保存</strong>されます（操作は不要）。誤ってブラウザを閉じても消えません。</li>
       <li>ただし<strong>端末の故障・紛失には自動保存では備えられません</strong>。端末事故から復元できるのは ☰メニューの「バックアップ」（JSONファイルの保存／復元）だけです。節目で控えを取っておくと安心です。</li>
@@ -259,6 +308,42 @@ th.cell-amt{text-align:right}
       <li><strong>会員名簿（過去参加者の氏名・参加履歴）も同じ端末内に保存されます。「会員名簿」タブで確認でき、「☁ クラウドから取得」で共有名簿を取り込めます。</strong></li>
       <li><strong>📡 ライブ配信は氏名・成績のインターネット公開です。</strong>表示名は既定で「姓＋番号のみ」。掲示物に公開する旨を明記してください。</li>
       <li><strong>名簿にない参加者が大半の別大会（オープン大会など）は「🎪 ゲスト大会」で運営できます。</strong>参加者登録タブの「⚙ 大会の設定」→「大会の種類」で選ぶと、その大会の参加者・結果は会員名簿に記録されません（名簿からの受付・ライブ配信・報告書はそのまま使えます・開始後は変更不可）。</li>
+    </ul>
+  </div>
+
+  <!-- ONBOARD-001: 沼津支部固有の運営情報（参加費・賞品・提出先）をこのカードに集約した。
+       他クラブの方には当てはまらない情報であることを見出しで明示する。
+       内容は従来の「参加費」「賞品」カードおよび注意事項の最終行から移設（文言の変更なし）。 -->
+  <div class="card">
+    <h2>沼津支部 月例将棋大会について</h2>
+    <!-- ONBOARD-001: 適用範囲の注記＝他クラブの方が読み飛ばしてはいけない行なので #888（3.54:1・AA不合格）
+         ではなく #595959（7.0:1）を使う。実ブラウザ班の全数調査で新規追加分の唯一の不合格だった。 -->
+    <p class="scope-note">ここから下は沼津支部の運営情報です。他のクラブ・支部の方には当てはまりません。</p>
+
+    <h3>参加費</h3>
+    <table>
+      <colgroup><col style="width:28%"><col style="width:24%"><col style="width:24%"><col style="width:24%"></colgroup>
+      <thead><tr><th>区分</th><th class="cell-amt">一般</th><th class="cell-amt">中学生以下</th><th class="cell-amt">女性</th></tr></thead>
+      <tbody>
+        <tr><td class="cell-rank">支部員</td><td class="cell-amt">500円</td><td class="cell-amt">無料</td><td class="cell-amt">無料</td></tr>
+        <tr><td class="cell-rank">支部員以外</td><td class="cell-amt">1,000円</td><td class="cell-amt">500円</td><td class="cell-amt">500円</td></tr>
+      </tbody>
+    </table>
+
+    <h3>賞品</h3>
+    <table>
+      <colgroup><col style="width:20%"><col style="width:50%"><col style="width:30%"></colgroup>
+      <thead><tr><th>順位</th><th class="cell-amt">一般</th><th class="cell-amt">こども</th></tr></thead>
+      <tbody>
+        <tr><td class="cell-rank">優勝</td><td class="cell-amt">図書券または商品券<br>2,000円</td><td class="cell-amt">1,000円</td></tr>
+        <tr><td class="cell-rank">準優勝</td><td class="cell-amt">1,000円</td><td class="cell-amt">500円</td></tr>
+        <tr><td class="cell-rank">3位</td><td class="cell-amt">500円</td><td class="cell-amt">500円</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:#888">※A級・B級それぞれに賞品を用意（合計7,000円）</p>
+
+    <h3>結果の提出</h3>
+    <ul>
       <li>大会結果はHP掲載のため、当日夜までメールにて沼津支部事務局へ送付してください。</li>
     </ul>
   </div>
@@ -266,7 +351,7 @@ th.cell-amt{text-align:right}
 </div>
 
 <div class="footer">
-  沼津支部 月例将棋大会 運営サイト
+  将棋大会 運営ツール　／　沼津支部 月例将棋大会 運営サイト
 </div>
 
 </body>
