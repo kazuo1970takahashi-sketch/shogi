@@ -307,10 +307,12 @@ const qDel=(function(){
   return new Promise(function(r){setTimeout(r,0);}).then(function(){
     assert(cap.rows&&cap.rows.length===2, 'Q5 削除2名分をまとめて upsert');
     assert(cap.rows.every(r=>typeof r.deleted_at==='string'&&r.deleted_at.length>0&&typeof r.name==='string'&&r.name.length>0), 'Q6 各行に deleted_at（時刻）と name（未存在会員の INSERT 対策）');
-    // #901: 削除/復元は削除状態だけを書く。属性を同乗させると、☁取り込み前の端末で誤って削除→復元
-    //   しただけでクラウドの区分・級・市町村がローカル既定値と NULL で潰れる（誤徴収の再発）。
-    assert(cap.rows.every(r=>!('member_kind' in r)&&!('grade' in r)&&!('city' in r)), 'Q6a 削除行に会員属性（区分・級・市町村）を同乗させない（クラウド値を潰さない）');
-    assert(cap.reads===0, 'Q6b 削除 push はクラウドを読まない（属性を送らないので参照値が要らない）');
+    // #901: 削除/復元でローカル値を無条件に同乗させると、☁取り込み前の端末で誤って削除→復元
+    //   しただけでクラウドの区分・級・市町村が既定値と NULL で潰れる（誤徴収の再発）。
+    //   送信前にクラウドの現在値を読み、composeCloudMemberFieldCols で合成する
+    //   （既存行はクラウドの実値を残し、行が無い会員はローカル値で完全な行を INSERT する）。
+    assert(cap.reads===1, 'Q6a 削除 push も送信前にクラウドの現在値を読む');
+    assert(cap.rows.every(r=>('member_kind' in r)&&('grade' in r)&&('city' in r)), 'Q6b 読めたときは合成後の属性を載せる（行が無い会員の INSERT を完全な行にする）');
   });
 })();
 const qRes=(function(){

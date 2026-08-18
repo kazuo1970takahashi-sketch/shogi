@@ -6374,7 +6374,10 @@ function renderMasterTab(){
       var _niInit=_ne.getAttribute?_ne.getAttribute('data-init'):null;
       var _yiInit=(_ye&&_ye.getAttribute)?_ye.getAttribute('data-init'):null;
       var _segM2=_msSegState('ms-edit-member'); var _segG2=_msSegState('ms-edit-grade');
-      var _segDirty=(_segM2&&_segM2.sel&&_segM2.sel!==_segM2.init)||(_segG2&&_segG2.sel&&_segG2.sel!==_segG2.init);
+      // MEMBER-EDIT-TOUCHED-COLS-001 (#901・Codex P1 r3801845091): dirty も **touched**（＝押したか）で見る。
+      //   sel!==init だけだと「現在値を押し直してクラウドを訂正する」操作が差分ゼロ扱いになり、
+      //   並び替え・行チェック等の外部再描画が入った瞬間に commit されずに黙って消える（実測）。
+      var _segDirty=(_segM2&&_segM2.touched)||(_segG2&&_segG2.touched);
       var _dirty=( String(_ne.value)!==String(_niInit==null?'':_niInit) || (_ye? normalizeYomi(_ye.value)!==normalizeYomi(_yiInit==null?'':_yiInit) : false) || !!_segDirty );
       if(_dirty){
         _masterEditFlushing=true;
@@ -13143,6 +13146,8 @@ function _editAttrKeptNote(labels){
 }
 // 会場の詰まった回線では select が返らないことがある。読み取りが返らないだけで **upsert が一度も
 //   発行されない** のは当日運営で致命的なので、待ちに上限を設けて従来経路（ローカル値＋⚠）へ倒す。
+// 削除/復元でクラウドの現在値を読めなかったときの注記（属性列を送らずに済ませたことを黙らせない）。
+var DELETE_ATTR_UNREAD_NOTE='　⚠ 会員の区分・級・市町村はクラウドの名簿を読めなかったため触れていません（削除状態だけ反映しました）';
 var EDIT_ATTR_READ_TIMEOUT_MS=6000;
 function _withReadTimeout(p,ms,fallback){
   return new Promise(function(resolve){
@@ -13302,7 +13307,21 @@ function pushMemberEditToCloud(member,setStatus,touched){
           if(fc.member_kind!==lc.member_kind)kept.push('支部員区分');
           if(fc.grade!==lc.grade)kept.push('級');
           if(fc.city!==lc.city)kept.push('市町村');
-          var row={member_id:member.id,name:member.name||'',yomi:member.yomi||'',member_kind:fc.member_kind,grade:fc.grade,city:fc.city,club_id:clubId};
+          var row={member_id:member.id,name:member.name||'',yomi:member.yomi||'',club_id:clubId};
+          // ★ Codex P1 (r3801845108): 読めなかったときに compose は base（＝ローカル値）へ落ちる。
+          //   そのまま送ると、まさにこの修正が防ごうとしている「既定値でクラウドの実値を潰す」が
+          //   混雑回線のたびに再発する。⚠ を出しても消えたデータは戻らない。
+          //   したがって **書く値が分かっている欄だけ列に載せる**:
+          //     読めた   … 3欄とも合成結果を載せる
+          //     読めない … 利用者が操作した欄だけ載せ、未操作欄は列ごと送らない（UPDATE 対象外＝クラウド値保全）
+          //   未操作欄を落とした結果、クラウドに行が無い会員の初回 push では該当列が NULL（＝未設定）になるが、
+          //   下り merge も compose も NULL は「値なし」として扱うのでローカルは壊れない。
+          if(!unread){ row.member_kind=fc.member_kind; row.grade=fc.grade; row.city=fc.city; }
+          else{
+            if(_touched.member)row.member_kind=lc.member_kind;
+            if(_touched.grade)row.grade=lc.grade;
+            if(_touched.city)row.city=lc.city;
+          }
           return client.from('members').upsert([row],{onConflict:'club_id,member_id'}).select().then(function(res){
             if(res&&res.error){ setStatus('クラウドへの反映に失敗しました：'+((res.error&&res.error.message)||'不明')+'（端末には保存済み・名簿タブの「☁ 名簿全体をクラウドへ一括送信」で反映できます）'); return {ok:false,step:'upsert'}; }
             // #901: 「何を送ったか」は保存ごとに変わる（操作した欄だけローカル優先）。列名を固定で名乗ると
@@ -13343,24 +13362,38 @@ function pushMemberDeleteStateToCloud(mids,master,deleted,setStatus){
         var clubId=pickActiveClubId((rc&&rc.data)||[]);
         if(!clubId){ setStatus('クラウド未反映（送信先クラブを特定できません・この端末では'+actLabel+'済み）'); return {ok:false,step:'club'}; }
         var nowIso=new Date().toISOString();
+        // MEMBER-EDIT-TOUCHED-COLS-001 (#901): 削除/復元は **削除状態だけ** を書く操作。従来はローカル値を
+        //   無条件に同乗させていたため、☁取り込み前の端末で誤って削除→復元しただけでクラウドの
+        //   「その他・女性・沼津市」が既定値と NULL で潰れた（＝#853 と同じ誤徴収が削除経路に残っていた）。
+        //   ★ Codex P1 (r3801845099): かといって属性列を一律で落とすと、**クラウドにまだ行が無い会員**を
+        //     削除したときの INSERT が全部 NULL になり、以後どこからも属性が補われないまま別端末が取り込んで
+        //     既定値化する。そこで編集 push と同じく現在値を読み、composeCloudMemberFieldCols で合成する:
+        //       既存行あり … クラウドの実値が残る（潰さない）
+        //       行が無い   … ローカル値がそのまま INSERT される（完全な行になる）
+        //     読めなかったときは属性列を送らない（既存行を潰さない側に倒す・新規行は NULL＝未設定）。
+        return _withReadTimeout(_fetchCloudMemberAttrs(client,clubId,mids),
+                                EDIT_ATTR_READ_TIMEOUT_MS,{byId:null,note:CLOUD_ATTR_UNREAD_NOTE}).then(function(fa){
+        var attrById=(fa&&fa.byId)||null;
+        var attrUnread=!attrById;
         var rows=[];
         for(var i=0;i<mids.length;i++){
           var m=_masterSheetFindMember(mids[i],master);
           if(!m)continue;
-          // CLOUD-MEMBER-FIELDS-001: 区分・市町村も同乗（未存在会員の INSERT を完全な行にする）。
-          // MEMBER-EDIT-TOUCHED-COLS-001 (#901): 削除/復元は **削除状態だけ** を書く操作なので、会員属性
-          //   （区分・級・市町村）は送らない。従来はローカル値を無条件に同乗させていたため、☁取り込み前の
-          //   端末で誤って削除→復元しただけでクラウドの「その他・女性・沼津市」が既定値と NULL で潰れた
-          //   （＝#853 と同じ誤徴収が削除経路に残っていた・反証パネル実測）。列を送らなければ既存行の
-          //   その3列は UPDATE 対象外＝クラウド値がそのまま残る（新規行は NULL＝「未設定」で下りも壊さない）。
-          rows.push({member_id:mids[i],name:m.name||'',yomi:m.yomi||'',club_id:clubId,deleted_at:deleted?nowIso:null});
+          var r={member_id:mids[i],name:m.name||'',yomi:m.yomi||'',club_id:clubId,deleted_at:deleted?nowIso:null};
+          if(!attrUnread){
+            var fcD=composeCloudMemberFieldCols(m,attrById[mids[i]]||null);
+            r.member_kind=fcD.member_kind; r.grade=fcD.grade; r.city=fcD.city;
+          }
+          rows.push(r);
         }
         if(!rows.length){ setStatus('クラウド未反映（対象が見つかりません）'); return {ok:false,step:'input'}; }
         return client.from('members').upsert(rows,{onConflict:'club_id,member_id'}).select().then(function(res){
           if(res&&res.error){ setStatus('クラウドへの'+actLabel+'反映に失敗しました：'+((res.error&&res.error.message)||'不明')+'（この端末では'+actLabel+'済み）'); return {ok:false,step:'upsert'}; }
           // L3 P1-1: 「全端末に反映」は削除方向のみ（復元は削除取り込み済み端末に自動では戻らない）。
-          setStatus(deleted?('クラウドの名簿からも削除しました（'+rows.length+'名・全端末に反映）'):('クラウドの名簿でも復元しました（'+rows.length+'名）'));
-          return {ok:true,count:rows.length};
+          setStatus((deleted?('クラウドの名簿からも削除しました（'+rows.length+'名・全端末に反映）'):('クラウドの名簿でも復元しました（'+rows.length+'名）'))
+                    +(attrUnread?DELETE_ATTR_UNREAD_NOTE:''));
+          return {ok:true,count:rows.length,unread:attrUnread};
+        });
         });
       });
     });

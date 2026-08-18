@@ -79,7 +79,12 @@ async function openMasterTab(page) {
     ok(await page.locator('#ms-edit-name').count() === 1, 'A2 氏名セルのタップで編集パネルが実際に開く（氏名入力が出る）');
     ok(await page.locator('#ms-edit-member').count() === 1 && await page.locator('#ms-edit-grade').count() === 1,
        'A3 支部員区分・級のセグメントが出る');
-    ok(await page.locator('#ms-edit-city').count() === 0, 'A4 市町村の欄はこのパネルに無い（＝常に「操作していない」欄）');
+    // ★ Codex P2 (r3801845101): 「市町村欄が無いこと」を assert すると、#906 で正しく足したときに
+    //   赤くなる change detector になる。ここでは氏名/ふりがなの欄が実在することだけを見て、
+    //   市町村の有無は記録に留める（欄と touched の対応は単体テストの R6 が見る）。
+    ok(await page.locator('#ms-edit-yomi').count() === 1, 'A4 ふりがなの入力欄が実在する');
+    const hasCity = await page.locator('#ms-edit-city').count() > 0;
+    console.log('  ・（記録）このパネルの市町村欄: ' + (hasCity ? 'あり' : 'なし（#906）'));
 
     // ふりがなの誤字だけ直す。区分・級には触らない。
     await page.fill('#ms-edit-yomi', 'かくうたろう');

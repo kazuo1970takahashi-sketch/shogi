@@ -29,7 +29,7 @@ const path = require('path');
 const { loadApp, readHtml } = require(path.join(__dirname, 'lib', 'app_harness.js'));
 
 const TARGET = process.argv[2] || 'shogi_v4.html';
-const EXPECTED_CHECKS = 58;   // ★ 実行本数の下限。ハング等で assertion が走らないまま緑になるのを防ぐ
+const EXPECTED_CHECKS = 67;   // ★ 実行本数の下限。ハング等で assertion が走らないまま緑になるのを防ぐ
 
 let pass = 0, fail = 0;
 function assert(cond, msg) {
@@ -85,11 +85,15 @@ for (const src of [bindPanelSrc, commitSrc]) {
     if (/^ms-edit-/.test(id) && wantedIds.indexOf(id) < 0) wantedIds.push(id);
   }
 }
+// ★ Codex P2 (r3801845101): 「6 個ちょうど」で pin すると、#906 で市町村欄を正しく足したときに赤くなる
+//   change detector になる。既知 6 個は**必須**、それ以外の追加は「生成 HTML に実在するなら」許容する。
 const EXPECTED_PANEL_IDS = ['ms-edit-yomi', 'ms-edit-name', 'ms-edit-save', 'ms-edit-cancel', 'ms-edit-member', 'ms-edit-grade'];
-assert(EXPECTED_PANEL_IDS.every((id) => wantedIds.indexOf(id) >= 0) && wantedIds.length === EXPECTED_PANEL_IDS.length,
-  'R3 ハンドラが引く ms-edit-* の id は既知の 6 個ちょうど（1 個だけ改名して黙って抜けられない）  [' + wantedIds.join(',') + ']');
+const missingKnown = EXPECTED_PANEL_IDS.filter((id) => wantedIds.indexOf(id) < 0);
+const extraIds = wantedIds.filter((id) => EXPECTED_PANEL_IDS.indexOf(id) < 0);
+assert(missingKnown.length === 0,
+  'R3 ハンドラが引く既知 6 個の id が 1 つも欠けていない（1 個だけ改名して黙って抜けられない）  [欠け: ' + (missingKnown.join(',') || 'なし') + ']');
 const missing = wantedIds.filter((id) => panelHtml.indexOf('id="' + id + '"') < 0);
-assert(missing.length === 0, 'R4 ハンドラが引く id はすべて編集パネルの生成 HTML に実在する（欠け: ' + (missing.join(',') || 'なし') + '）');
+assert(missing.length === 0, 'R4 ハンドラが引く id はすべて編集パネルの生成 HTML に実在する（欠け: ' + (missing.join(',') || 'なし') + '）  [追加 id: ' + (extraIds.join(',') || 'なし') + ']');
 assert(tabHtml.indexOf('id="masterCloudPullStatus"') >= 0,
   'R5 クラウド結果を出す status 行（N4）が名簿タブに実在する＝結果表示が幽霊ノード行きになっていない');
 
@@ -115,7 +119,9 @@ const MODAL_MARKERS = ['master-edit-btn', 'openMasterEditModal', 'master-edit-mo
 const leaked = MODAL_MARKERS.filter((k) => tabHtml.indexOf(k) >= 0);
 assert(leaked.length === 0,
   'R9 名簿タブの生成 HTML から退役モーダルへ到達する導線が一つも無い（漏れ: ' + (leaked.join(',') || 'なし') + '）＝#901 の修正対象ではない');
-console.log('  ・（記録）市町村を編集できる UI はアプリに存在しない（唯一の入力 me-city は #798 で退役した旧 F7 モーダル内）。別 issue 候補。');
+console.log(panelHtml.indexOf('id="ms-edit-city"') >= 0
+  ? '  ・（記録）編集パネルに市町村欄がある（#906 対応済み）。'
+  : '  ・（記録）市町村を編集できる UI はアプリに存在しない（唯一の入力 me-city は #798 で退役した旧 F7 モーダル内）。別 issue 候補 #906。');
 
 // ======================================================================== C: 純関数の真理値表
 
@@ -149,9 +155,13 @@ assert(JSON.stringify(cef(LOCAL_DEFAULT, CLOUD_ROW, {})) === JSON.stringify(rApp
 function boot(fix) {
   const app = loadApp(TARGET);
   app.localStorage.setItem(app.ctx.BRANCH_MASTER_KEY, JSON.stringify(fix));
-  ['renderMasterTab', 'renderPastParticipantsPanel', 'masterSheetFlashRow'].forEach((n) => app.stub(n, function () {}));
+  const restoreRender = app.stub('renderMasterTab', function () {});
+  ['renderPastParticipantsPanel', 'masterSheetFlashRow'].forEach((n) => app.stub(n, function () {}));
   if (app.has('__setAppModalTestResolver')) app.call('__setAppModalTestResolver', function () { return true; });
   app.stub('appConfirm', function (msg, cb) { cb(true); });
+  // 実 renderMasterTab を通したいケース用（DOM mock で描画自体は空振りするが、
+  // 先頭の「未保存なら commit してから畳む」判定は本物を通す）。
+  app.stubRenderRestore = function () { restoreRender(); };
   const toasts = [];
   app.stub('showToast', function (m) { toasts.push(String(m)); });
   app._toasts = toasts;
@@ -283,6 +293,9 @@ const caseP4 = (async function () {
   assert(/⚠/.test(s) && /読めなかった/.test(s), 'P24 ★読めなかったときは注記を出す（操作していない欄も端末値で送った可能性を黙らせない）');
   const row = ((cap.upserts[0] || {}).rows || [{}])[0];
   assert(row.name === '架空次郎' && row.yomi === 'かくうじろう', 'P25 読めなくても編集内容そのものは正しく届く');
+  // ★ Codex P1 (r3801845108): 読めないときにローカル値で埋めると、まさにこの修正が防ぐ潰しが再発する。
+  assert(!('member_kind' in row) && !('grade' in row) && !('city' in row),
+    'P25a ★読めなかったときは未操作の属性列を送らない（UPDATE 対象外＝クラウドの実値を潰さない）  [' + Object.keys(row).sort().join(',') + ']');
 })();
 
 // P-E: 読み取りが返ってこない（詰まった回線）—— 上限で打ち切って必ず送る
@@ -339,9 +352,42 @@ const caseP8 = (async function () {
   assert(storedName(app) === '架空六郎', 'P38 オフラインでも端末への保存は成功したまま');
 })();
 
-// ======================================================================== D: 削除/復元 push は属性を送らない
+// P-I: 読めなくても「操作した欄」は載る（訂正が握り潰されない）
+const caseP9 = (async function () {
+  const app = boot(fixture({ member: 'other', grade: 'josei' }));
+  const cap = mockCloud(app, { readFails: true });
+  openPanel(app, { nameInit: '架空太郎', name: '架空太郎', yomiInit: 'かくうたろ', yomi: 'かくうたろ',
+    memberInit: 'other', member: 'member', memberClicked: true,
+    gradeInit: 'josei', grade: 'ippan', gradeClicked: true });
+  app.call('masterSheetCommitNameEdit');
+  await settle();
+  const row = ((cap.upserts[0] || {}).rows || [{}])[0];
+  assert(row.member_kind === 'member' && row.grade === 'ippan',
+    'P39 読めなくても利用者が操作した欄は載る（訂正まで握り潰さない）');
+  assert(!('city' in row), 'P40 同じ行で未操作の市町村は列ごと送らない（欄ごとに独立）');
+})();
 
-const caseD = (async function () {
+// P-J: パネルを開いたまま外部再描画が入っても「押し直し」が消えない
+const caseP10 = (async function () {
+  const app = boot(fixture());
+  const cap = mockCloud(app, { cloudRow: CLOUD_ROW });
+  openPanel(app, { nameInit: '架空太郎', name: '架空太郎', yomiInit: 'かくうたろ', yomi: 'かくうたろ',
+    memberInit: 'member', member: 'member', memberClicked: true,
+    gradeInit: 'ippan', grade: 'ippan', gradeClicked: true });
+  // 並び替え・行チェック・☁取得などの外部経路はすべて renderMasterTab を呼ぶ。
+  app.stubRenderRestore();
+  app.call('renderMasterTab');
+  await settle();
+  assert(cap.upserts.length === 1,
+    'P41 ★再描画前に押し直しが commit される（差分ゼロの touched を dirty 判定が捨てると黙って消える・Codex P1）');
+  const row = ((cap.upserts[0] || {}).rows || [{}])[0];
+  assert(row.member_kind === 'member' && row.grade === 'ippan', 'P42 その commit で訂正がクラウドへ届く');
+})();
+
+// ======================================================================== D: 削除/復元 push の属性の扱い
+
+// D-1: クラウドに実値がある会員を、既定値のままの端末から削除しても潰さない
+const caseD1 = (async function () {
   const app = boot(fixture({ member: 'member', grade: 'ippan', city: '' }));
   const cap = mockCloud(app, { cloudRow: CLOUD_ROW });
   app.ctx._masterSelected[MEMBER_ID] = true;
@@ -350,14 +396,41 @@ const caseD = (async function () {
   assert(cap.upserts.length === 1, 'D1 削除はクラウドへ 1 回 upsert する（従来どおり）');
   const row = ((cap.upserts[0] || {}).rows || [{}])[0];
   assert(typeof row.deleted_at === 'string' && row.deleted_at.length > 0, 'D2 削除行は deleted_at を持つ');
+  assert(cap.selects === 1, 'D3 削除 push も送信前にクラウドの現在値を読む');
+  assert(row.member_kind === 'other' && row.grade === 'josei' && row.city === '沼津市',
+    'D4 ★削除でクラウドの区分・級・市町村を潰さない（従来はローカル既定値と NULL で上書きしていた）');
+})();
+
+// D-2: クラウドにまだ行が無い会員は、削除の INSERT でローカル属性が入る（Codex P1）
+const caseD2 = (async function () {
+  const app = boot(fixture({ member: 'other', grade: 'josei', city: '沼津市' }));
+  const cap = mockCloud(app, { cloudRow: null });
+  app.ctx._masterSelected[MEMBER_ID] = true;
+  app.call('masterSheetDeleteSelected');
+  await settle();
+  const row = ((cap.upserts[0] || {}).rows || [{}])[0];
+  assert(row.member_kind === 'other' && row.grade === 'josei' && row.city === '沼津市',
+    'D5 ★クラウドに行が無い会員の削除は完全な行として INSERT される（属性を落とすと以後どこからも補われない・Codex P1）');
+})();
+
+// D-3: 読めなかったときは属性列を送らず、黙らない
+const caseD3 = (async function () {
+  const app = boot(fixture({ member: 'other', grade: 'josei', city: '沼津市' }));
+  const cap = mockCloud(app, { readFails: true });
+  app.ctx._masterSelected[MEMBER_ID] = true;
+  app.call('masterSheetDeleteSelected');
+  await settle();
+  const row = ((cap.upserts[0] || {}).rows || [{}])[0];
+  assert(cap.upserts.length === 1 && typeof row.deleted_at === 'string',
+    'D6 読めなくても削除そのものは反映する（fail-soft）');
   assert(!('member_kind' in row) && !('grade' in row) && !('city' in row),
-    'D3 ★削除行に会員属性を同乗させない（☁取り込み前の端末で誤って削除→復元しただけでクラウドの区分・級・市町村が潰れていた）');
-  assert(cap.selects === 0, 'D4 削除 push はクラウドを読まない（属性を送らないので参照値が要らない）');
+    'D7 読めなかったときは属性列を送らない（既存行を潰さない側に倒す）');
+  assert(/⚠/.test(statusText(app)) && /読めなかった/.test(statusText(app)), 'D8 その旨を status 行で明示する');
 })();
 
 // ======================================================================== 実行
 
-const all = Promise.all([caseP1, caseP2, caseP3, caseP4, caseP5, caseP6, caseP7, caseP8, caseD]);
+const all = Promise.all([caseP1, caseP2, caseP3, caseP4, caseP5, caseP6, caseP7, caseP8, caseP9, caseP10, caseD1, caseD2, caseD3]);
 // ★ どれかがハングすると then が走らず、Node は既定の exit 0 で終了する＝run_tests.sh が「全PASS」と表示する。
 //   実測でそれが起きたため、待ちに上限を置いて必ず結果を出す。
 const guard = new Promise(function (res) { setTimeout(function () { res('TIMEOUT'); }, 20000).unref && setTimeout(function () {}, 0); });
