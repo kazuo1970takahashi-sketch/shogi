@@ -13135,8 +13135,9 @@ function composeEditPushFieldCols(m, cloudRow, touched){
 //   戻り: {byId:{member_id→row}|null, note:''|⚠注記}。**取得0件（byId={}）と取得失敗（byId=null）は
 //   区別する**（前者は初回送信＝従来どおりローカル値・後者は無音でバグ挙動に戻るので注記を出す）。
 // MEMBER-EDIT-TOUCHED-COLS-001 (#901): 編集 push でクラウドの現在値を読めなかったときの注記。
-//   読めないと「操作していない欄」も端末の値（＝既定値のことがある）で送るため、黙らせない。
-var EDIT_ATTR_UNREAD_NOTE='　⚠ 操作していない区分・級・市町村もこの端末の値で送りました（クラウドの名簿を読めなかったため、上書きされている可能性があります）';
+//   Codex P1 (r3801845108) 反映後は**未操作の欄を送らない**ので「上書きした可能性」ではなく
+//   「触れていない」が事実。文言を挙動に合わせる（旧文言のまま残すと逆の誤解を与える）。
+var EDIT_ATTR_UNREAD_NOTE='　⚠ 操作していない区分・級・市町村は変更していません（クラウドの名簿を読めなかったため、この端末の値は送っていません）';
 // 逆に「読めたのでクラウドの値を保った」欄がある場合の注記。ここを黙ると、端末の表示（一般）と
 //   クラウドの実値（女性）が食い違ったまま、成功表示だけが出て利用者が気づけない。
 //   端末の値で上書きしたいときの出口（名簿タブの一括送信＝常にローカル優先）まで書く。
@@ -13297,16 +13298,18 @@ function pushMemberEditToCloud(member,setStatus,touched){
         return _withReadTimeout(_fetchCloudMemberAttrs(client,clubId,[member.id]),
                                 EDIT_ATTR_READ_TIMEOUT_MS,{byId:null,note:CLOUD_ATTR_UNREAD_NOTE}).then(function(fa){
           var cloudRow=(fa&&fa.byId&&fa.byId[member.id])||null;
-          // byId===null は「読めなかった」。この場合 compose は base（＝ローカル値）に落ちるので、
-          // 操作していない欄まで端末の値で送った可能性を黙らせない（#853 と同じ扱い）。
+          // byId===null は「読めなかった」。取得0件（＝クラウドにまだ行が無い新規会員）とは区別する。
           var unread=!!(fa&&fa.byId===null);
           var fc=composeEditPushFieldCols(member,cloudRow,_touched);
           // 保全した欄（＝端末の表示と違う値をクラウドに残した欄）を控える。黙ると成功表示だけが出て
-          // 「直したのに直っていない」ことに気づけない（反証パネル P1）。
+          // 「直したのに直っていない」ことに気づけない（反証パネル P1）。unread のときは
+          // そもそも列を送らないので、この一覧は読めた場合にだけ使う。
           var lc=_cloudMemberFieldCols(member), kept=[];
-          if(fc.member_kind!==lc.member_kind)kept.push('支部員区分');
-          if(fc.grade!==lc.grade)kept.push('級');
-          if(fc.city!==lc.city)kept.push('市町村');
+          if(!unread){
+            if(fc.member_kind!==lc.member_kind)kept.push('支部員区分');
+            if(fc.grade!==lc.grade)kept.push('級');
+            if(fc.city!==lc.city)kept.push('市町村');
+          }
           var row={member_id:member.id,name:member.name||'',yomi:member.yomi||'',club_id:clubId};
           // ★ Codex P1 (r3801845108): 読めなかったときに compose は base（＝ローカル値）へ落ちる。
           //   そのまま送ると、まさにこの修正が防ごうとしている「既定値でクラウドの実値を潰す」が

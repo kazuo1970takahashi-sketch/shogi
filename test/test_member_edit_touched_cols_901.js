@@ -29,7 +29,7 @@ const path = require('path');
 const { loadApp, readHtml } = require(path.join(__dirname, 'lib', 'app_harness.js'));
 
 const TARGET = process.argv[2] || 'shogi_v4.html';
-const EXPECTED_CHECKS = 67;   // ★ 実行本数の下限。ハング等で assertion が走らないまま緑になるのを防ぐ
+const EXPECTED_CHECKS = 68;   // ★ 実行本数の下限。ハング等で assertion が走らないまま緑になるのを防ぐ
 
 let pass = 0, fail = 0;
 function assert(cond, msg) {
@@ -296,6 +296,11 @@ const caseP4 = (async function () {
   // ★ Codex P1 (r3801845108): 読めないときにローカル値で埋めると、まさにこの修正が防ぐ潰しが再発する。
   assert(!('member_kind' in row) && !('grade' in row) && !('city' in row),
     'P25a ★読めなかったときは未操作の属性列を送らない（UPDATE 対象外＝クラウドの実値を潰さない）  [' + Object.keys(row).sort().join(',') + ']');
+  // 文言が挙動から遅れないようにする。列を送っていないのに ⚠ が「送りました／上書き」と言うと、
+  // 利用者は「潰れたかもしれない」と誤解して不要な復旧作業をする（実際に旧文言が残っていた）。
+  const omitted = ['member_kind', 'grade', 'city'].filter((k) => !(k in row));
+  assert(omitted.length === 0 || (!/送りました/.test(s) && !/上書き/.test(s)),
+    'P25b 送っていない列があるとき ⚠ は「送った／上書きした」と言わない（文言と挙動の一致）  [' + s.slice(0, 80) + ']');
 })();
 
 // P-E: 読み取りが返ってこない（詰まった回線）—— 上限で打ち切って必ず送る
