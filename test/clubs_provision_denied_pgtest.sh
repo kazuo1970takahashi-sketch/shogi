@@ -144,14 +144,53 @@ for pair in $ROLES; do
 done
 
 # ---- 特権 RPC を実際に呼んで、clubs が増えないことを見る --------------------
-#   関数名の集合ではなく**実挙動**を見る（4巡目の指摘: 既存 RPC を CREATE OR REPLACE すれば名前は不変）。
-echo "  --- SECURITY DEFINER RPC の実挙動 ---"
-for pair in "authenticated:$U_STRANGER" "authenticated:$U_ORG" "authenticated:$U_OWNER" "anon:"; do
-  role="${pair%%:*}"; sub="${pair#*:}"
-  label="$role${sub:+/${sub##*-}}"
-  d=$(try_count "$role" "$sub" "select public.claim_organizer_seat()")
-  assert_eq "$d" "0" "$label: claim_organizer_seat() を呼んでも clubs は増えない"
-done
+#   ★ Codex P1 (r3800308119): claim_organizer_seat だけ呼んでいては、たとえば
+#     start_live_session() を CREATE OR REPLACE して MERGE INTO clubs する変異が素通りする。
+#     → **クライアントから到達可能な SECURITY DEFINER 関数を pg_proc から列挙して全部呼ぶ**。
+#     関数名を台帳に持たないので、新しい RPC が足された瞬間から自動で網に入る。
+echo "  --- クライアント到達可能な SECURITY DEFINER RPC の実挙動（全数）---"
+RPC_LIST=$(psql -X -A -t -d "$DB" -c "
+  select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.prosecdef
+     and (has_function_privilege('anon', p.oid, 'EXECUTE')
+       or has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+   order by 1" 2>/dev/null)
+RPC_COUNT=$(echo "$RPC_LIST" | grep -c . )
+if [ "$RPC_COUNT" -lt 1 ]; then
+  ng "SECURITY DEFINER RPC を1本も列挙できない（列挙が壊れている＝検査が空回りしている）"
+else
+  ok "クライアント到達可能な SECURITY DEFINER RPC を ${RPC_COUNT} 本列挙"
+fi
+
+# 引数はすべて NULL で呼ぶ（本題は「clubs が増えるか」で、戻り値や成否は問わない）。
+call_rpc(){ # $1=fnsig
+  local sig="$1" fname args nulls
+  fname="${sig%%(*}"; args="${sig#*(}"; args="${args%)}"
+  if [ -z "$args" ]; then nulls=""; else
+    nulls=$(echo "$args" | awk -F',' '{for(i=1;i<=NF;i++){printf (i>1?",null":"null")}}'); fi
+  echo "select public.$fname($nulls)"
+}
+echo "$RPC_LIST" | while IFS= read -r sig; do
+  [ -z "$sig" ] && continue
+  for pair in "authenticated:$U_STRANGER" "authenticated:$U_ORG" "authenticated:$U_OWNER" "anon:"; do
+    role="${pair%%:*}"; sub="${pair#*:}"
+    d=$(try_count "$role" "$sub" "$(call_rpc "$sig")")
+    if [ "$d" = "0" ]; then
+      echo "PASS ${sig%%(*} / $role"
+    else
+      echo "FAIL ${sig%%(*} / $role で clubs が ${d} 件増えた"
+    fi
+  done
+done > /tmp/clubsprov_rpc.txt 2>&1
+RPC_OK=$(grep -c '^PASS' /tmp/clubsprov_rpc.txt)
+RPC_NG=$(grep -c '^FAIL' /tmp/clubsprov_rpc.txt)
+if [ "$RPC_NG" -eq 0 ]; then
+  ok "全 SECURITY DEFINER RPC × 4役割（${RPC_OK}通り）を実際に呼んでも clubs は増えない"
+else
+  ng "RPC 経由で clubs が増えた（${RPC_NG}件）:"; grep '^FAIL' /tmp/clubsprov_rpc.txt | sed 's/^/      /'
+fi
+[ -n "${VERBOSE:-}" ] && sed -n '1,200p' /tmp/clubsprov_rpc.txt | sed 's/^/      /'
 
 # ---- trigger 経由（他テーブルへの書き込みが clubs を作らない）---------------
 echo "  --- trigger 経由 ---"

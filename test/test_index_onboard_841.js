@@ -133,11 +133,17 @@ function hitsScopeNote(sel) {
   });
 }
 // scope-note の祖先に当たる規則（opacity は祖先ぶんも掛かる）
+// ★ Codex P2 (r3800308124): 完全一致だと `html body{opacity:.4}` のような結合子つきの規則を
+//   取りこぼす。祖先になりうるトークンを **含む** セレクタは全部「祖先に当たる」と見なす（保守側へ倒す）。
+//   ※ CSS の詳細度を正しく再実装するのは無理なので、ここは静的な粗い網。
+//     正本は test/e2e/index_onboard_841.e2e.js（実ブラウザの computed style で全数測定）。
+const ANCESTOR_TOKENS = ['html', 'body', '*', '.container', '.card', '.card-intro'];
 function hitsAncestor(sel) {
   return sel.split(',').some(one => {
     const t = one.trim();
-    return t === 'body' || t === 'html' || t === '*' || t === '.container' ||
-           t === '.card' || t === '.card-intro' || /\.card\s*$/.test(t);
+    if (/\.scope-note/.test(t)) return false;              // 自身に当たる規則は別勘定
+    return ANCESTOR_TOKENS.some(tok =>
+      t === tok || t.split(/[\s>+~]+/).some(part => part === tok));
   });
 }
 let ruleColor = null, ruleOpacity = 1, ancestorOpacity = 1;
@@ -202,11 +208,11 @@ ok(/\.onboard-link\s*\{/.test(IDX) && /\.scope-note\s*\{/.test(IDX),
 //   タップ標的になりうる要素を .scope-note の中に置かないことを pin する（実寸は実ブラウザ側で測る）。
 // ★ Codex P2 (r3799706708): a / button だけでは input・select・textarea・summary・
 //   tabindex/role 付き要素を見逃す。注記内の**対話要素を全部**列挙する。
-const INTERACTIVE = /<(a\b|button\b|input\b|select\b|textarea\b|summary\b|details\b|label\b)|(<[a-z]+[^>]*\s(?:tabindex|role|onclick)\s*=)/i;
+const INTERACTIVE = /<(a\b|button\b|input\b|select\b|textarea\b|summary\b|details\b|label\b|audio\b|video\b|iframe\b|embed\b|object\b)|(<[a-z]+[^>]*\s(?:tabindex|role|onclick|contenteditable|controls|draggable)\b)/i;
 const scopeTappable = (IDX.match(/<p[^>]*class="scope-note"[^>]*>[\s\S]*?<\/p>/g) || [])
   .filter(block => INTERACTIVE.test(block));
 ok(scopeTappable.length === 0,
-   'A14 適用範囲の注記の中に対話要素（a/button/input/select/textarea/summary/tabindex/role）を置いていない（§10.3 の 44px を満たせないため）' +
+   'A14 適用範囲の注記の中に対話要素を置いていない（a/button/input/select/textarea/summary/label/audio/video/iframe/tabindex/role/onclick/contenteditable/controls・§10.3 の 44px を満たせないため）' +
    '（実測: ' + (scopeTappable.length ? scopeTappable[0].slice(0, 80) : 'なし') + '）');
 
 // ---- B. 各項目 ⇔ コード事実 --------------------------------------------------
@@ -682,8 +688,11 @@ if (loadApp) {
     ctx.state.pairings = { A: [{ p1: 'p1', p2: 'p2', winner: 'p1', lastModifiedBy: null }], B: [] };
     ctx.state.results = { A: [], B: [] };
     ctx.state.started = true;
-    ctx.submitRound('A');                 // 1回戦確定（p3 は待機）
-    ctx.generatePairing('A');             // 2回戦の組み合わせを生成
+    // ★ Codex P1 (r3800308122): ここで generatePairing() を**もう一度呼んではいけない**。
+    //   submitRound() は本番経路で次回戦の生成と保存まで済ませる（実測: 直後の pairings.A =
+    //   [{p1:'p1',p2:'p3',lastModifiedBy:'auto'}]）。追加で呼ぶと coordinator 側の退行を
+    //   こちらが上書きしてしまい、実ボタン経路で p3 が戻らなくても緑になる。
+    ctx.submitRound('A');                 // 1回戦確定 → 次回戦の生成・保存まで本番どおり
     const ids = (ctx.state.pairings.A || []).reduce((acc, m) => acc.concat([m.p1, m.p2]), []);
     let persistedIds = [];
     try {
