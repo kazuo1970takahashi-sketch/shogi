@@ -95,6 +95,8 @@ ok "架空シード投入（club 1件・幹事4種・第三者1名）"
 
 BASE_COUNT=$(psql -X -A -t -d "$DB" -c "select count(*) from public.clubs" 2>/dev/null | tail -n1)
 assert_eq "$BASE_COUNT" "1" "初期状態の clubs は1件"
+BASE_ORG=$(psql -X -A -t -d "$DB" -c "select count(*) from public.organizers" 2>/dev/null | tail -n1)
+assert_eq "$BASE_ORG" "4" "初期状態の organizers は4件（owner/admin/organizer/viewer）"
 
 # try ROLE SUB "SQL" → "OK"（成功＝作れてしまった）/ "ERR"（拒否）
 try(){
@@ -104,14 +106,29 @@ try(){
       -c "begin; $sets set local role $role; $sql; rollback;" >/dev/null 2>&1; then
     echo "OK"; else echo "ERR"; fi
 }
-# try_count ROLE SUB "SQL" → 文が通ったとして、commit 後に clubs が増えたか（増分を返す）
-try_count(){
+# ★ Codex P1 (r3800929832): clubs の件数だけでは「行を増やさず既存クラブへの所属だけ付与する」
+#   provisioning を見逃す（その利用者はクラウド機能を使えてしまい、本文の「送信・取得・配信は
+#   止まります」が嘘になる）。**organizers の所属集合**も併せて固定する。
+snapshot(){ psql -X -A -t -d "$DB" -c "
+  select (select count(*) from public.clubs) || '|' ||
+         coalesce((select string_agg(club_id::text||':'||user_id::text||':'||role||':'||status, ',' order by club_id::text||user_id::text)
+                     from public.organizers), '')" 2>/dev/null | tail -n1; }
+
+# try_delta ROLE SUB "SQL" → "same"（clubs も organizers も不変）/ 変化の中身
+try_delta(){
   local role="$1" sub="$2" sql="$3" sets="" before after
   [ -n "$sub" ] && sets="set request.jwt.claim.sub = '$sub';"
-  before=$(psql -X -A -t -d "$DB" -c "select count(*) from public.clubs" 2>/dev/null | tail -n1)
+  before="$(snapshot)"
   psql -X -A -t -d "$DB" -c "$sets set local role $role; $sql" >/dev/null 2>&1
-  after=$(psql -X -A -t -d "$DB" -c "select count(*) from public.clubs" 2>/dev/null | tail -n1)
-  echo $((after - before))
+  after="$(snapshot)"
+  if [ "$before" = "$after" ]; then echo "same"; else echo "CHANGED"; fi
+}
+# try_err ROLE SUB "SQL" → "OK"（例外なく完了）/ "ERR"
+try_err(){
+  local role="$1" sub="$2" sql="$3" sets=""
+  [ -n "$sub" ] && sets="set request.jwt.claim.sub = '$sub';"
+  if psql -X -A -t -v ON_ERROR_STOP=1 -d "$DB" -c "$sets set local role $role; $sql" >/dev/null 2>&1; then
+    echo "OK"; else echo "ERR"; fi
 }
 
 echo "  --- clubs 作成の試行（実 PostgreSQL・全役割 × 全書き方）---"
@@ -143,12 +160,14 @@ for pair in $ROLES; do
     "$label: COPY で clubs を作れない"
 done
 
-# ---- 特権 RPC を実際に呼んで、clubs が増えないことを見る --------------------
-#   ★ Codex P1 (r3800308119): claim_organizer_seat だけ呼んでいては、たとえば
-#     start_live_session() を CREATE OR REPLACE して MERGE INTO clubs する変異が素通りする。
-#     → **クライアントから到達可能な SECURITY DEFINER 関数を pg_proc から列挙して全部呼ぶ**。
-#     関数名を台帳に持たないので、新しい RPC が足された瞬間から自動で網に入る。
-echo "  --- クライアント到達可能な SECURITY DEFINER RPC の実挙動（全数）---"
+# ---- 特権 RPC を実際に呼んで、clubs も organizers も変わらないことを見る -------
+#   ★ Codex P1 (r3800308119): 1本だけ呼んでいては、別の RPC を差し替える変異が素通りする。
+#     → pg_proc から**クライアント到達可能な SECURITY DEFINER 関数を列挙して全部呼ぶ**。
+#   ★ Codex P1 (r3800929815): 役割も全部使う（viewer 固有の分岐から作れる実装を見逃さない）。
+#   ★ Codex P1 (r3800929810): 全 NULL 引数だと本体の成功分岐へ届かず例外で終わる RPC がある。
+#     → 引数を要する live 系は **有効な slug を先に作ってから**呼び、成功経路を通す。
+#       さらに「何本が例外なく完了したか」を数え、0 本なら検査が空回りとして FAIL にする。
+echo "  --- クライアント到達可能な SECURITY DEFINER RPC の実挙動（全数 × 全役割）---"
 RPC_LIST=$(psql -X -A -t -d "$DB" -c "
   select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -156,48 +175,98 @@ RPC_LIST=$(psql -X -A -t -d "$DB" -c "
      and (has_function_privilege('anon', p.oid, 'EXECUTE')
        or has_function_privilege('authenticated', p.oid, 'EXECUTE'))
    order by 1" 2>/dev/null)
-RPC_COUNT=$(echo "$RPC_LIST" | grep -c . )
+RPC_COUNT=$(echo "$RPC_LIST" | grep -c .)
 if [ "$RPC_COUNT" -lt 1 ]; then
-  ng "SECURITY DEFINER RPC を1本も列挙できない（列挙が壊れている＝検査が空回りしている）"
+  ng "SECURITY DEFINER RPC を1本も列挙できない（列挙が壊れている＝検査が空回り）"
 else
   ok "クライアント到達可能な SECURITY DEFINER RPC を ${RPC_COUNT} 本列挙"
 fi
 
-# 引数はすべて NULL で呼ぶ（本題は「clubs が増えるか」で、戻り値や成否は問わない）。
-call_rpc(){ # $1=fnsig
+# 全役割（anon + 5種）
+ALL_ROLES="anon: authenticated:$U_OWNER authenticated:$U_ADMIN authenticated:$U_ORG authenticated:$U_VIEWER authenticated:$U_STRANGER"
+
+call_rpc(){ # $1=fnsig → NULL 引数の呼び出し文
   local sig="$1" fname args nulls
   fname="${sig%%(*}"; args="${sig#*(}"; args="${args%)}"
   if [ -z "$args" ]; then nulls=""; else
     nulls=$(echo "$args" | awk -F',' '{for(i=1;i<=NF;i++){printf (i>1?",null":"null")}}'); fi
   echo "select public.$fname($nulls)"
 }
+
+: > /tmp/clubsprov_rpc.txt
+RPC_RAN=0
 echo "$RPC_LIST" | while IFS= read -r sig; do
   [ -z "$sig" ] && continue
-  for pair in "authenticated:$U_STRANGER" "authenticated:$U_ORG" "authenticated:$U_OWNER" "anon:"; do
+  for pair in $ALL_ROLES; do
     role="${pair%%:*}"; sub="${pair#*:}"
-    d=$(try_count "$role" "$sub" "$(call_rpc "$sig")")
-    if [ "$d" = "0" ]; then
-      echo "PASS ${sig%%(*} / $role"
-    else
-      echo "FAIL ${sig%%(*} / $role で clubs が ${d} 件増えた"
-    fi
+    d=$(try_delta "$role" "$sub" "$(call_rpc "$sig")")
+    e=$(try_err   "$role" "$sub" "$(call_rpc "$sig")")
+    if [ "$d" = "same" ]; then echo "PASS ${sig%%(*} / $role/${sub##*-} exec=$e"
+    else echo "FAIL ${sig%%(*} / $role/${sub##*-} で clubs か organizers が変化した"; fi
   done
-done > /tmp/clubsprov_rpc.txt 2>&1
+done >> /tmp/clubsprov_rpc.txt 2>&1
+
+# ★ 成功経路を通す: organizer として live セッションを作り、有効な slug で引数つき RPC を呼ぶ。
+SLUG=$(psql -X -A -t -d "$DB" -c "
+  set request.jwt.claim.sub = '$U_ORG'; set local role authenticated;
+  select public.start_live_session()" 2>/dev/null | tail -n1)
+if [ -n "$SLUG" ]; then
+  ok "有効な live slug を organizer として払い出せた（引数つき RPC の成功経路を通す準備）: $SLUG"
+  for pair in $ALL_ROLES; do
+    role="${pair%%:*}"; sub="${pair#*:}"
+    for stmt in \
+      "select public.publish_live_snapshot('$SLUG', '{\"k\":1}'::jsonb)" \
+      "select public.get_live_snapshot('$SLUG')" \
+      "select public.live_slug_is_public('$SLUG')" \
+      "select public.stop_live_session('$SLUG')"; do
+      d=$(try_delta "$role" "$sub" "$stmt")
+      e=$(try_err   "$role" "$sub" "$stmt")
+      if [ "$d" = "same" ]; then echo "PASS(valid-args) ${stmt:15:28} / $role exec=$e"
+      else echo "FAIL(valid-args) ${stmt:15:28} / $role で clubs か organizers が変化した"; fi
+    done
+  done >> /tmp/clubsprov_rpc.txt 2>&1
+else
+  ng "live slug を払い出せない（引数つき RPC の成功経路を通せていない＝検査が空回りしている疑い）"
+fi
+
 RPC_OK=$(grep -c '^PASS' /tmp/clubsprov_rpc.txt)
 RPC_NG=$(grep -c '^FAIL' /tmp/clubsprov_rpc.txt)
+RPC_EXEC_OK=$(grep -c 'exec=OK' /tmp/clubsprov_rpc.txt)
 if [ "$RPC_NG" -eq 0 ]; then
-  ok "全 SECURITY DEFINER RPC × 4役割（${RPC_OK}通り）を実際に呼んでも clubs は増えない"
+  ok "全 SECURITY DEFINER RPC × 全役割（${RPC_OK}通り）で clubs も organizers も変化しない"
 else
-  ng "RPC 経由で clubs が増えた（${RPC_NG}件）:"; grep '^FAIL' /tmp/clubsprov_rpc.txt | sed 's/^/      /'
+  ng "RPC 経由で clubs か organizers が変化した（${RPC_NG}件）:"; grep '^FAIL' /tmp/clubsprov_rpc.txt | sed 's/^/      /'
 fi
-[ -n "${VERBOSE:-}" ] && sed -n '1,200p' /tmp/clubsprov_rpc.txt | sed 's/^/      /'
+# ★ 空回り検出: 1本も例外なく完了していないなら、本体に到達できていない＝この節は無意味。
+if [ "$RPC_EXEC_OK" -ge 1 ]; then
+  ok "うち ${RPC_EXEC_OK} 通りは例外なく本体まで実行できている（成功経路に到達している証拠）"
+else
+  ng "例外なく完了した呼び出しが0通り＝本体に到達していない（検査が空回りしている）"
+fi
+[ -n "${VERBOSE:-}" ] && sed -n '1,300p' /tmp/clubsprov_rpc.txt | sed 's/^/      /'
 
-# ---- trigger 経由（他テーブルへの書き込みが clubs を作らない）---------------
-echo "  --- trigger 経由 ---"
-d=$(try_count authenticated "$U_ORG" "insert into public.members(member_id,club_id,name,yomi) values ('m9','$CA','架空九郎','きくうくろう')")
-assert_eq "$d" "0" "organizer: members に書いても clubs は増えない"
-d=$(try_count authenticated "$U_ORG" "insert into public.tournaments(club_id,name,date,season) values ('$CA','架空月例X','2026-06-02','2026')")
-assert_eq "$d" "0" "organizer: tournaments に書いても clubs は増えない"
+# ---- trigger 経由（実在の trigger を実際に発火させる）------------------------
+#   ★ Codex P1 (r3800929838): members / tournaments の updated_at trigger は **BEFORE UPDATE** なので、
+#     INSERT だけでは既存 trigger が1本も発火しない＝この節は何も検査していなかった。
+#     → アプリが実際に行う **UPDATE**（organizers の更新・members/tournaments の upsert の UPDATE 分岐）
+#       を実行してから、clubs と organizers の集合が不変であることを見る。
+echo "  --- trigger 経由（実在の BEFORE UPDATE を発火させる）---"
+TRG_BEFORE=$(psql -X -A -t -d "$DB" -c "
+  select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid
+   join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='public' and not t.tgisinternal" 2>/dev/null | tail -n1)
+ok "public スキーマの trigger を ${TRG_BEFORE} 本認識"
+
+d=$(try_delta authenticated "$U_ORG" "update public.members set name='架空太郎(改)' where member_id='m1' and club_id='$CA'")
+assert_eq "$d" "same" "organizer: members を UPDATE（updated_at trigger 発火）しても clubs/organizers は不変"
+d=$(try_delta authenticated "$U_ORG" "update public.tournaments set name='架空月例A(改)' where club_id='$CA'")
+assert_eq "$d" "same" "organizer: tournaments を UPDATE しても clubs/organizers は不変"
+d=$(try_delta authenticated "$U_ADMIN" "update public.organizers set display_name='架空幹事(改)' where club_id='$CA' and user_id='$U_ORG'")
+assert_eq "$d" "same" "admin: organizers を UPDATE（prevent_last_admin_removal 系を通す）しても集合は不変"
+d=$(try_delta authenticated "$U_ORG" "insert into public.members(member_id,club_id,name,yomi) values ('m1','$CA','架空太郎(upsert)','きくうたろう') on conflict (club_id,member_id) do update set name=excluded.name")
+assert_eq "$d" "same" "organizer: members の upsert（UPDATE 分岐）でも clubs/organizers は不変"
+d=$(try_delta authenticated "$U_ORG" "insert into public.members(member_id,club_id,name,yomi) values ('m77','$CA','架空七郎','きくうしちろう')")
+assert_eq "$d" "same" "organizer: members を INSERT しても clubs/organizers は不変"
 
 # ---- policy の実態（insert/delete/all が無いこと）---------------------------
 echo "  --- clubs の policy 実態 ---"
@@ -207,6 +276,8 @@ assert_eq "$CMDS" "SELECT,UPDATE" "clubs の policy は SELECT と UPDATE だけ
 # ---- 最終確認: clubs は増えていない -----------------------------------------
 FINAL=$(psql -X -A -t -d "$DB" -c "select count(*) from public.clubs" 2>/dev/null | tail -n1)
 assert_eq "$FINAL" "$BASE_COUNT" "全試行のあとも clubs は増えていない"
+FINAL_ORG=$(psql -X -A -t -d "$DB" -c "select count(*) from public.organizers" 2>/dev/null | tail -n1)
+assert_eq "$FINAL_ORG" "$BASE_ORG" "全試行のあとも organizers の所属は増えていない"
 
 echo "=========================================="
 echo "CLUBS-PROVISION-DENIED: PASS=$pass FAIL=$fail"
