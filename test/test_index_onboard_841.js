@@ -102,32 +102,76 @@ function styleProp(rule, inline, prop) {
   const mi = inline.match(re), mr = rule.match(re);
   return (mi ? mi[1] : (mr ? mr[1] : '')).trim();
 }
-// ★ Codex P2 (r3799468511): 最初の1タグだけ見ると、後続の注記に個別 opacity を付けられて素通りする。
-//   **全 .scope-note タグ**について、インライン指定を反映した実効比を出す。
-const scopeRule = (IDX.match(/\.scope-note\s*\{([^}]*)\}/) || ['', ''])[1];
+// ★ Codex P2 (r3799468511 / r3799706698): 最初の1タグ・最初の1規則だけ見ると、
+//   後続タグの個別 opacity や、より詳細度の高い規則（`.card .scope-note{opacity:.4}`）、
+//   祖先の opacity が素通りする。
+//   → (1) `<style>` 内の**全規則**を走査し、`.scope-note` に当たる規則を**ソース順で畳む**
+//     (2) 祖先（body / .container / .card / p / *）の opacity を**掛け合わせる**
+//     (3) 各タグのインライン指定を最後に重ねる
+//   （静的解決なので厳密な詳細度計算ではない。「後に書いた宣言が勝つ」＝実運用の書き方に対して
+//     保守的に効く。実ブラウザでの computed style は check スクリプト側で別途全数測定している。）
+const STYLE_BLOCK = (IDX.match(/<style>([\s\S]*?)<\/style>/) || ['', ''])[1];
+function cssRules(css) {
+  const out = [];
+  const re = /([^{}]+)\{([^}]*)\}/g;
+  let m;
+  while ((m = re.exec(css)) !== null) {
+    out.push({ sel: m[1].replace(/\/\*[\s\S]*?\*\//g, '').trim(), body: m[2] });
+  }
+  return out;
+}
+const RULES = cssRules(STYLE_BLOCK.replace(/\/\*[\s\S]*?\*\//g, ''));
+function declOf(body, prop) {
+  const m = body.match(new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)'));
+  return m ? m[1].trim() : null;
+}
+// scope-note 自身に当たる規則（末尾が .scope-note のセレクタ、または裸の p）
+function hitsScopeNote(sel) {
+  return sel.split(',').some(one => {
+    const t = one.trim();
+    return /\.scope-note\s*$/.test(t) || t === 'p' || t === '*';
+  });
+}
+// scope-note の祖先に当たる規則（opacity は祖先ぶんも掛かる）
+function hitsAncestor(sel) {
+  return sel.split(',').some(one => {
+    const t = one.trim();
+    return t === 'body' || t === 'html' || t === '*' || t === '.container' ||
+           t === '.card' || t === '.card-intro' || /\.card\s*$/.test(t);
+  });
+}
+let ruleColor = null, ruleOpacity = 1, ancestorOpacity = 1;
+RULES.forEach(r => {
+  if (hitsScopeNote(r.sel)) {
+    const c = declOf(r.body, 'color'); if (c) ruleColor = c;              // 後に書いた方が勝つ
+    const o = declOf(r.body, 'opacity'); if (o) ruleOpacity = Number(o);
+  }
+  if (hitsAncestor(r.sel)) {
+    const o = declOf(r.body, 'opacity'); if (o) ancestorOpacity *= Number(o);
+  }
+});
 const scopeTagsAll = IDX.match(/<p[^>]*class="scope-note"[^>]*>/g) || [];
-// 背景は .card（#fff）。card の背景が変わったらここも赤くなるよう CSS から取る。
 const cardBg = (IDX.match(/\.card\s*\{[^}]*background\s*:\s*(#[0-9a-fA-F]{3,6})/) || [])[1];
 const noteResults = scopeTagsAll.map((tag, n) => {
-  const fg = styleProp(scopeRule, tag, 'color');
-  const opRaw = styleProp(scopeRule, tag, 'opacity');
-  const op = opRaw === '' ? 1 : Number(opRaw);
+  const inlineC = (tag.match(/color\s*:\s*(#[0-9a-fA-F]{3,6})/) || [])[1];
+  const inlineO = (tag.match(/opacity\s*:\s*([0-9.]+)/) || [])[1];
+  const fg = inlineC || ruleColor;
+  const op = (inlineO !== undefined ? Number(inlineO) : ruleOpacity) * ancestorOpacity;
   const ratio = (fg && cardBg && isFinite(op))
     ? contrastRgb(composite(fg, cardBg, op), hex2rgb(cardBg)) : 0;
   return { n: n + 1, fg, op, ratio };
 });
-ok(scopeTagsAll.length >= 3, 'A9b 適用範囲の注記が3箇所以上ある（バッジ／当日の流れ／注意事項／沼津カード前）' +
-   '（実測 ' + scopeTagsAll.length + '箇所）');
+ok(scopeTagsAll.length >= 3, 'A9b 適用範囲の注記が3箇所以上ある（実測 ' + scopeTagsAll.length + '箇所）');
 const noteBad = noteResults.filter(r => !(r.ratio >= 4.5));
 ok(cardBg !== undefined && noteResults.length > 0 && noteBad.length === 0,
-   'A10 ★実測: **全ての**適用範囲の注記が実効コントラスト 4.5:1 以上（opacity 合成後）' +
-   '（実測: ' + noteResults.map(r => '#' + r.n + ' ' + r.fg + '@' + r.op + '=' + r.ratio.toFixed(2)).join(' / ') + '）');
-// 新色を作らない（STYLE-GUIDE §1・Codex P2 r3799347845）。全注記の前景色が既存値であること。
+   'A10 ★実測: **全ての**注記が実効コントラスト 4.5:1 以上（全 CSS 規則＋祖先 opacity＋インライン込み）' +
+   '（実測: ' + noteResults.map(r => '#' + r.n + ' ' + r.fg + '@' + r.op.toFixed(2) + '=' + r.ratio.toFixed(2)).join(' / ') + '）');
 const appSrcForColor = readOrNull('shogi_v4.html') || '';
 const newColors = Array.from(new Set(noteResults.map(r => r.fg))).filter(c => c && appSrcForColor.indexOf(c) === -1);
 ok(newColors.length === 0,
-   'A10b 注記の色はすべて既存値の流用（新色を作らない）（新色: ' + (newColors.join(',') || 'なし') + '）');
+   'A10b 注記の色はすべて既存値の流用（新色: ' + (newColors.join(',') || 'なし') + '）');
 const noteFg = noteResults.length ? noteResults[0].fg : undefined;
+
 // 導線リンクも同じ計算で見る（class 化したので CSS から取れる）。
 const linkRule = (IDX.match(/\.onboard-link\s*\{([^}]*)\}/) || ['', ''])[1];
 const linkFg = (linkRule.match(/color\s*:\s*(#[0-9a-fA-F]{3,6})/) || [])[1];
@@ -156,10 +200,13 @@ ok(/\.onboard-link\s*\{/.test(IDX) && /\.scope-note\s*\{/.test(IDX),
 // ★ Codex P2 (r3799468521): 注記内のインラインリンクは実効高 約22px で STYLE-GUIDE §10.3（44×44px・
 //   現在は例外なし）に違反していた。直下がその「はじめての方へ」カードなのでリンクは冗長 → 文言だけにした。
 //   タップ標的になりうる要素を .scope-note の中に置かないことを pin する（実寸は実ブラウザ側で測る）。
+// ★ Codex P2 (r3799706708): a / button だけでは input・select・textarea・summary・
+//   tabindex/role 付き要素を見逃す。注記内の**対話要素を全部**列挙する。
+const INTERACTIVE = /<(a\b|button\b|input\b|select\b|textarea\b|summary\b|details\b|label\b)|(<[a-z]+[^>]*\s(?:tabindex|role|onclick)\s*=)/i;
 const scopeTappable = (IDX.match(/<p[^>]*class="scope-note"[^>]*>[\s\S]*?<\/p>/g) || [])
-  .filter(block => /<(a|button)\b/.test(block));
+  .filter(block => INTERACTIVE.test(block));
 ok(scopeTappable.length === 0,
-   'A14 適用範囲の注記の中にタップ標的（a / button）を置いていない（§10.3 の 44px を満たせないため）' +
+   'A14 適用範囲の注記の中に対話要素（a/button/input/select/textarea/summary/tabindex/role）を置いていない（§10.3 の 44px を満たせないため）' +
    '（実測: ' + (scopeTappable.length ? scopeTappable[0].slice(0, 80) : 'なし') + '）');
 
 // ---- B. 各項目 ⇔ コード事実 --------------------------------------------------
@@ -621,7 +668,48 @@ ok(emptyGuard && !emptyGuard.err && emptyGuard.rounds === 0 && emptyGuard.alerts
    'B8d ★実挙動: 参加者がいるのに0卓のときは確定せず警告（#272 の保護が健在）' +
    '（実測: ' + JSON.stringify(emptyGuard) + '）');
 
-ok(/部分開始/.test(APP), 'B8e 「部分開始」が実在する');
+// ★ Codex P1 (r3799706701): 「待機者は次の回戦で戻ります」を検査していなかった（配列長だけ見ていた）。
+//   1回戦で未割当だった p3 が、**次の回戦の組み合わせに実際に入る**ことを、メモリと永続化の両方で見る。
+let leftoverBack = null;
+if (loadApp) {
+  try {
+    const a = bootApp(null);
+    const ctx = a.ctx;
+    const alerts = [];
+    ctx.alert = function (m) { alerts.push(String(m)); };
+    ctx.state.classes = [{ id: 'A', name: 'Aクラス', started: true }, { id: 'B', name: 'Bクラス', started: false }];
+    ctx.state.players = { A: [{ id: 'p1', name: '架空太郎' }, { id: 'p2', name: '架空次郎' }, { id: 'p3', name: '架空三郎' }], B: [] };
+    ctx.state.pairings = { A: [{ p1: 'p1', p2: 'p2', winner: 'p1', lastModifiedBy: null }], B: [] };
+    ctx.state.results = { A: [], B: [] };
+    ctx.state.started = true;
+    ctx.submitRound('A');                 // 1回戦確定（p3 は待機）
+    ctx.generatePairing('A');             // 2回戦の組み合わせを生成
+    const ids = (ctx.state.pairings.A || []).reduce((acc, m) => acc.concat([m.p1, m.p2]), []);
+    let persistedIds = [];
+    try {
+      const raw = ctx.localStorage.getItem(ctx.STORAGE_KEY);
+      const st = raw ? JSON.parse(raw) : null;
+      persistedIds = ((st && st.pairings && st.pairings.A) || [])
+        .reduce((acc, m) => acc.concat([m.p1, m.p2]), []);
+    } catch (e) { persistedIds = []; }
+    leftoverBack = {
+      inMemory: ids.indexOf('p3') !== -1,
+      inPersisted: persistedIds.indexOf('p3') !== -1,
+      tables: (ctx.state.pairings.A || []).length,
+      ids: ids.join(','),
+      persisted: persistedIds.join(','),
+    };
+  } catch (e) { leftoverBack = { err: String(e).slice(0, 200) }; }
+}
+ok(leftoverBack && !leftoverBack.err && leftoverBack.inMemory === true,
+   'B8f ★実挙動: 1回戦で待機だった p3 が **次の回戦の組み合わせに入る**' +
+   '（サイトの「次の回戦で戻ります」の直接の裏付け・実測: ' +
+   (leftoverBack && !leftoverBack.err ? leftoverBack.ids : (leftoverBack && leftoverBack.err)) + '）');
+ok(leftoverBack && !leftoverBack.err && leftoverBack.inPersisted === true,
+   'B8g ★実挙動: 次の回戦の組み合わせは **永続化された state にも** p3 を含む' +
+   '（実測: ' + (leftoverBack && !leftoverBack.err ? leftoverBack.persisted : 'n/a') + '）');
+
+ok(/部分開始/.test(APP), 'B8h 「部分開始」が実在する');
 
 // --- B9 回戦数は 3〜7 ----------------------------------------------------------
 
@@ -642,6 +730,16 @@ ok(APP.indexOf('📋 参加者を名簿に反映') !== -1, 'B10d 反映ボタン
 
 ok(/初回だけは、大会前に一度オンラインで開いて/.test(CAN),
    'B11a 「インターネットが無い会場でも動きます」に初回オンラインの前提が添えてある');
+// ★ Codex P1 (r3799706714): sw.js の install は c.add() の失敗を握り潰して正常完了するので、
+//   「10秒待つ」だけでは shogi_v4.html が未キャッシュのまま成功したように見える。
+//   → **機内モードでの起動確認**まで案内していることを要求する。
+ok(/機内モード/.test(CAN) && /確か/.test(CAN),
+   'B11a2 オフラインの案内に「機内モードで一度開いて確かめる」まで書いてある');
+const SW_FOR_FAILSOFT = readOrNull('sw.js') || '';
+ok(/c\.add\(u\)\.catch\(/.test(SW_FOR_FAILSOFT.replace(/\s+/g, '')) ||
+   /add\([^)]*\)\.catch\(/.test(SW_FOR_FAILSOFT),
+   'B11a3 ★根拠: sw.js の precache は個別失敗を握り潰す（fail-soft）＝成功表示を信用できない' +
+   '（この fail-soft が無くなったら機内モード確認の案内を見直してよい）');
 const SW = readOrNull('sw.js');
 ok(SW !== null && /addEventListener\(\s*['"]install['"]/.test(SW) && /PRECACHE/.test(SW),
    'B11b ★制御フロー: sw.js は install 時にだけ資産を precache する' +
