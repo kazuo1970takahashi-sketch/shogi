@@ -6111,8 +6111,13 @@ function masterSheetCommitNameEdit(){
   // MASTER-EDIT-FORM-001 (Fable P1-3): 初期値から変わったグループのみ options に載せる（未変更は「変更しない」＝
   //   開いたまま☁取得等で更新された区分/級を古い表示値で巻き戻さない）。値は whitelist で二重検証。
   var opts={};
-  var _segM=_msSegState('ms-edit-member'); if(_segM&&_segM.sel&&_segM.sel!==_segM.init&&(_segM.sel==='member'||_segM.sel==='other'))opts.member=_segM.sel;
-  var _segG=_msSegState('ms-edit-grade'); if(_segG&&_segG.sel&&_segG.sel!==_segG.init&&(_segG.sel==='ippan'||_segG.sel==='chu'||_segG.sel==='josei'))opts.grade=_segG.sel;
+  // MEMBER-EDIT-TOUCHED-COLS-001 (#901・Codex P1 r3802131321): 適用条件も **touched**（＝操作したか）にする。
+  //   sel!==init だけだと、押し直した直後に☁取得が着地してローカルが other になった場合、opts が空のまま
+  //   flush commit が走り、**利用者が押した「支部員」ではなく pull 後の other が「ローカル優先」として再送**
+  //   される（成功表示のまま訂正が消える・実測）。操作した欄は選択値そのものを commit まで持ち回る。
+  //   操作していない欄は従来どおり載せない＝開いたまま☁取得された値を古い表示値で巻き戻さない。
+  var _segM=_msSegState('ms-edit-member'); if(_segM&&_segM.touched&&(_segM.sel==='member'||_segM.sel==='other'))opts.member=_segM.sel;
+  var _segG=_msSegState('ms-edit-grade'); if(_segG&&_segG.touched&&(_segG.sel==='ippan'||_segG.sel==='chu'||_segG.sel==='josei'))opts.grade=_segG.sel;
   // MEMBER-EDIT-TOUCHED-COLS-001 (#901): クラウドへ「ローカル優先で送ってよい欄」の判定は opts（＝ローカル
   //   マスタへの適用対象）ではなく **利用者が操作したか** を使う。ローカルが既に正しくクラウドだけ古い場合、
   //   opts は空（差分ゼロ）になるが、利用者は「一般」を押し直して訂正を送れる必要がある。

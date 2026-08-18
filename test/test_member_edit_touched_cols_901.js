@@ -29,7 +29,7 @@ const path = require('path');
 const { loadApp, readHtml } = require(path.join(__dirname, 'lib', 'app_harness.js'));
 
 const TARGET = process.argv[2] || 'shogi_v4.html';
-const EXPECTED_CHECKS = 68;   // ★ 実行本数の下限。ハング等で assertion が走らないまま緑になるのを防ぐ
+const EXPECTED_CHECKS = 72;   // ★ 実行本数の下限。ハング等で assertion が走らないまま緑になるのを防ぐ
 
 let pass = 0, fail = 0;
 function assert(cond, msg) {
@@ -210,7 +210,8 @@ function openPanel(app, form) {
   seg('ms-edit-grade', form.gradeInit, form.grade, form.gradeClicked);
 }
 function statusText(app) { return String(app.document.getElementById('masterCloudPullStatus').textContent || ''); }
-function storedName(app) { return JSON.parse(app.localStorage.getItem(app.ctx.BRANCH_MASTER_KEY)).members[0].name; }
+function storedName(app) { return storedMember(app).name; }
+function storedMember(app) { return JSON.parse(app.localStorage.getItem(app.ctx.BRANCH_MASTER_KEY)).members[0]; }
 function tick() { return new Promise(function (res) { setImmediate(res); }); }
 async function settle(n) { for (let i = 0; i < (n || 5); i++) await tick(); }
 
@@ -389,6 +390,43 @@ const caseP10 = (async function () {
   assert(row.member_kind === 'member' && row.grade === 'ippan', 'P42 その commit で訂正がクラウドへ届く');
 })();
 
+// P-K: 押し直した直後に☁取得が着地しても、押した値が commit/push まで生き残る（Codex P1 r3802131321）
+const caseP11 = (async function () {
+  const app = boot(fixture());
+  const cap = mockCloud(app, { cloudRow: CLOUD_ROW });
+  openPanel(app, { nameInit: '架空太郎', name: '架空太郎', yomiInit: 'かくうたろ', yomi: 'かくうたろ',
+    memberInit: 'member', member: 'member', memberClicked: true,
+    gradeInit: 'ippan', grade: 'ippan', gradeClicked: true });
+  // 保存前に☁取得が着地してローカルマスタがクラウド値（その他・女性）へ更新される。
+  const master = app.call('loadBranchMaster');
+  app.call('mergeCloudMembersIntoMaster', master, [{ member_id: MEMBER_ID, name: '架空太郎', yomi: 'かくうたろ',
+    member_kind: 'other', grade: 'josei', city: '沼津市' }]);
+  app.call('saveBranchMaster', master);
+  assert(master.members[0].member === 'other' && master.members[0].grade === 'josei',
+    'P43 前提: ☁取得でローカルがクラウド値に更新される');
+  // pull の後は renderMasterTab が走り、未保存の変更を flush commit する。
+  app.stubRenderRestore();
+  app.call('renderMasterTab');
+  await settle();
+  const row = ((cap.upserts[0] || {}).rows || [{}])[0];
+  assert(row.member_kind === 'member' && row.grade === 'ippan',
+    'P44 ★押した値が pull 後の値に上書きされずクラウドへ届く（成功表示のまま訂正が消えるのを防ぐ）');
+  assert(storedMember(app).member === 'member' && storedMember(app).grade === 'ippan',
+    'P45 端末側にも押した値が残る（画面とクラウドが食い違わない）');
+})();
+
+// P-L: 操作していない欄は、開いたまま☁取得された値を古い表示値で巻き戻さない（既存性質の回帰）
+const caseP12 = (async function () {
+  const app = boot(fixture({ member: 'other', grade: 'josei' }));
+  mockCloud(app, { cloudRow: CLOUD_ROW });
+  // data-init は開いた当時の member/ippan。いまローカルは other/josei。区分・級は一度も押していない。
+  openPanel(app, Object.assign({ nameInit: '架空太郎', name: '架空次郎', yomiInit: 'かくうたろ', yomi: 'かくうたろ' }, NO_TOUCH));
+  app.call('masterSheetCommitNameEdit');
+  await settle();
+  assert(storedMember(app).member === 'other' && storedMember(app).grade === 'josei',
+    'P46 操作していない欄は☁取得後の値のまま（古い表示値で巻き戻さない・MASTER-EDIT-FORM-001 の回帰）');
+})();
+
 // ======================================================================== D: 削除/復元 push の属性の扱い
 
 // D-1: クラウドに実値がある会員を、既定値のままの端末から削除しても潰さない
@@ -435,7 +473,7 @@ const caseD3 = (async function () {
 
 // ======================================================================== 実行
 
-const all = Promise.all([caseP1, caseP2, caseP3, caseP4, caseP5, caseP6, caseP7, caseP8, caseP9, caseP10, caseD1, caseD2, caseD3]);
+const all = Promise.all([caseP1, caseP2, caseP3, caseP4, caseP5, caseP6, caseP7, caseP8, caseP9, caseP10, caseP11, caseP12, caseD1, caseD2, caseD3]);
 // ★ どれかがハングすると then が走らず、Node は既定の exit 0 で終了する＝run_tests.sh が「全PASS」と表示する。
 //   実測でそれが起きたため、待ちに上限を置いて必ず結果を出す。
 const guard = new Promise(function (res) { setTimeout(function () { res('TIMEOUT'); }, 20000).unref && setTimeout(function () {}, 0); });
