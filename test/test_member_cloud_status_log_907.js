@@ -23,7 +23,7 @@ const path = require('path');
 const { loadApp } = require(path.join(__dirname, 'lib', 'app_harness.js'));
 
 const TARGET = process.argv[2] || 'shogi_v4.html';
-const EXPECTED_CHECKS = 44;
+const EXPECTED_CHECKS = 55;
 
 let pass = 0, fail = 0;
 function assert(cond, msg) {
@@ -152,6 +152,20 @@ function statusClass(app) { return String(app.document.getElementById('masterClo
     'L19 ★落ちた操作の遅い続報は履歴に戻らない（新しい失敗行を押し出さない）  [' + statusText(app) + ']');
   assert(/cloud-status-err/.test(statusClass(app)),
     'L19b 丙の失敗が残っているのでブロックは失敗色のまま');
+}
+
+// 退役の記憶は時間が経っても消えない（#907 Codex 2巡目 P1: 上限付きの表だと忘れる）
+{
+  const app = bootLog();
+  const a = app.call('_masterCloudStatusFn', '甲');
+  a('クラウドへ反映中…');
+  for (let i = 0; i < 250; i++) app.call('_masterCloudStatusFn', 'x' + i)('クラウドへ反映中…');
+  app.call('_masterCloudStatusFn', '丙')('クラウドへの反映に失敗しました');
+  const before = statusText(app);
+  assert(before.indexOf('甲') < 0, 'L20a 前提: 甲はとうに落ちている');
+  a('会員情報をクラウドにも反映しました');       // ← 250行ぶん経ってから返ってきた
+  assert(statusText(app) === before,
+    'L20 ★何行流れても、落ちた操作の続報は戻らない（退役の記憶を上限で捨てない）  [' + statusText(app) + ']');
 }
 
 // ======================================================================== N: 会員名が実経路で付くか
@@ -307,19 +321,46 @@ const caseG3 = (async function () {
 })();
 
 const caseG4 = (async function () {
-  // 削除/復元も同じ
+  // 削除/復元。#907 Codex 2巡目 P1: キーに向き（削除/復元）を含めると、削除が飛行中の復元が
+  //   **同時に飛び**、その後の削除だけが重複として捨てられる。着順次第でクラウドが「復元」で終わり、
+  //   端末の「削除」と食い違う。向きを外して直列化し、最後に要求された状態だけを送る。
   const app = bootLog();
   const cap = mockCloud(app, { hang: true });
   const master = JSON.parse(app.localStorage.getItem(app.ctx.BRANCH_MASTER_KEY));
   const p1 = app.call('pushMemberDeleteStateToCloud', [MID], master, true, function () {});
   const p2 = app.call('pushMemberDeleteStateToCloud', [MID], master, true, function () {});
   await settle();
-  assert((await p2).step === 'inflight', 'G9 削除 push も2本目は in-flight で弾かれる');
-  app.call('pushMemberDeleteStateToCloud', [MID], master, false, function () {});
+  assert((await p2).step === 'inflight', 'G9 同じ状態の2本目は捨てる（文字どおりの重複）');
+  const p3 = app.call('pushMemberDeleteStateToCloud', [MID], master, false, function () {});
   await settle();
-  assert(cap.named('app_upsert_member_edits_bulk').length === 2,
-    'G10 同じ会員でも「削除」と「復元」は別の操作として通る  [' + cap.named('app_upsert_member_edits_bulk').length + ']');
-  void p1;
+  assert(cap.named('app_upsert_member_edits_bulk').length === 1,
+    'G10 ★削除が飛行中の復元は同時に飛ばない（着順で最終状態が決まらない）  [' + cap.named('app_upsert_member_edits_bulk').length + ']');
+  cap.release(); await settle(10);
+  const sent = cap.named('app_upsert_member_edits_bulk');
+  assert(sent.length === 2, 'G10a ★復元は捨てずに、削除が終わってから飛ぶ  [' + sent.length + ']');
+  assert(sent[1] && sent[1].args.p_rows[0].deleted_at === null,
+    'G10b 2本目は復元（deleted_at=null）  [' + (sent[1] && sent[1].args.p_rows[0].deleted_at) + ']');
+  cap.release(); await settle(10);
+  assert((await p1).ok === true && (await p3).ok === true, 'G10c 削除も復元も成功で解決する');
+})();
+
+const caseG4b = (async function () {
+  // 削除 → 復元 → 削除 と押した場合、最後に残るのは削除（端末の最終状態と一致する）
+  const app = bootLog();
+  const cap = mockCloud(app, { hang: true });
+  const master = JSON.parse(app.localStorage.getItem(app.ctx.BRANCH_MASTER_KEY));
+  app.call('pushMemberDeleteStateToCloud', [MID], master, true, function () {});
+  const pr = app.call('pushMemberDeleteStateToCloud', [MID], master, false, function () {});
+  app.call('pushMemberDeleteStateToCloud', [MID], master, true, function () {});
+  await settle();
+  cap.release(); await settle(10);
+  const sent = cap.named('app_upsert_member_edits_bulk');
+  assert(sent.length === 1,
+    'G12 ★削除→復元→削除は、飛行中の削除と同じ状態に戻るので追加の往復を出さない  [' + sent.length + ']');
+  assert(sent[0].args.p_rows[0].deleted_at !== null,
+    'G12a ★クラウドに残るのは削除（端末の最終状態と一致する）');
+  assert((await pr).step === 'superseded',
+    'G12b 追い越された復元は superseded で解決する（黙って握り潰さない）  [' + (await pr).step + ']');
 })();
 
 const caseG5 = (async function () {
@@ -339,10 +380,33 @@ const caseG5 = (async function () {
     'G11 ★id にカンマが入っても別々の削除として扱う（片方が黙って消えない）  [' + cap.named('app_upsert_member_edits_bulk').length + ']');
 })();
 
+const caseG6 = (async function () {
+  // #907 Codex 2巡目 P2: 待ち行列で合流すると、送る中身は3本目なのに行のラベルが2本目の会員名のまま
+  //   ＝せっかく付けた「どの会員か」が、いちばん紛らわしい場面（連打）で嘘になる。
+  const app = bootLog();
+  const cap = mockCloud(app, { hang: true });
+  const m = fixture().members[0];
+  app.call('pushMemberEditToCloud', m, app.call('_masterCloudStatusFn', '架空太郎'), {});
+  app.call('pushMemberEditToCloud', Object.assign({}, m, { name: '改名その1' }),
+    app.call('_masterCloudStatusFn', '改名その1'), {});
+  app.call('pushMemberEditToCloud', Object.assign({}, m, { name: '改名その2' }),
+    app.call('_masterCloudStatusFn', '改名その2'), {});
+  await settle();
+  const lines = statusText(app).split('\n');
+  assert(lines.length === 2, 'G13a 前提: 行は2本（合流で増えない）  [' + lines.length + ']');
+  assert(lines[0].indexOf('改名その2：') === 0,
+    'G13 ★合流したら行のラベルも最新の会員名になる（送る中身と表示がずれない）  [' + lines[0] + ']');
+  cap.release(); await settle(10);
+  cap.release(); await settle(10);
+  const sent = cap.named('app_upsert_member_edit');
+  assert(sent.length === 2 && sent[1].args.p_name === '改名その2',
+    'G13b 実際に飛ぶのも「改名その2」  [' + (sent[1] && sent[1].args.p_name) + ']');
+})();
+
 // ======================================================================== 実行
 // ★ どれかがハングすると then が走らず、node は既定の exit 0 で終わる＝run_tests.sh が
 //   「全PASS」と表示する（#901 で実際に踏んだ）。待ちに上限を置いて必ず結果を出す。
-const all = Promise.all([caseN, caseN2, caseG, caseG2, caseG3, caseG4, caseG5]);
+const all = Promise.all([caseN, caseN2, caseG, caseG2, caseG3, caseG4, caseG4b, caseG5, caseG6]);
 // ★ この timer は **unref してはいけない**。unref すると、アプリ側の Promise がハングしたとき
 //   node がイベントループ空と判断して**先に exit 0 で終わり、番人が鳴らない**（実測でこれを踏んだ）。
 const guard = new Promise(function (res) { setTimeout(function () { res('TIMEOUT'); }, 20000); });

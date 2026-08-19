@@ -5969,13 +5969,13 @@ var _masterCloudLogSeq=0;
 // #907 Codex P1: 3行を溢れて落ちた操作の**続報**（例: 遅れて返ってきた「反映しました」）は捨てる。
 //   捨てないと、その続報が「見たことのない token」として先頭に積まれ、いま出ている新しい行
 //   （失敗かもしれない）を1つ押し出す＝この履歴が防ぎたかった上書きが復活する。
-//   token は無限に増えるので、退役表は 200 件で捨てて張り直す（直近の窓だけ分かればよい）。
-var _masterCloudLogGone={};
-var _masterCloudLogGoneN=0;
+// ★ Codex 2巡目 P1: 退役 token を**表**で覚えると、上限を付けた瞬間に「まだ飛んでいる古い操作」を
+//   忘れうる（忘れた頃に返ってきて、また新しい失敗行を押し出す）。表をやめて**水位線**にする。
+//   落ちるのは常に「いま出ている中でいちばん古い行」なので、token <= 水位線 ＝「すでに履歴から
+//   落ちた世代」と判定できる。定数メモリで、どれだけ時間が経っても忘れない。
+var _masterCloudLogGoneMax=0;
 function _masterCloudLogRetire(token){
-  if(_masterCloudLogGone[token])return;
-  if(_masterCloudLogGoneN>=200){_masterCloudLogGone={};_masterCloudLogGoneN=0;}
-  _masterCloudLogGone[token]=true;_masterCloudLogGoneN++;
+  if(token>_masterCloudLogGoneMax)_masterCloudLogGoneMax=token;
 }
 // 表示の重さの順。1行にまとめて色を付けるので、**いちばん重い行の色**をブロック全体に使う
 //   （失敗が1行でも残っていれば、ブロックは失敗の色で見える）。
@@ -6014,7 +6014,7 @@ function pushMasterCloudLine(token,label,msg){
   if(line){ line.text=text; if(label)line.label=label; }
   else{
     // #907 Codex P1: 一度落ちた操作の続報は、新しい行を押し出してまで復活させない。
-    if(_masterCloudLogGone[token])return;
+    if(token<=_masterCloudLogGoneMax)return;
     _masterCloudLog.unshift({token:token,label:label||'',text:text});
     while(_masterCloudLog.length>MASTER_CLOUD_LOG_MAX){
       var gone=_masterCloudLog.pop();
@@ -6027,7 +6027,12 @@ function pushMasterCloudLine(token,label,msg){
 //   **1回の操作につき1回だけ呼ぶ**（返した関数が1行を所有する）。label は会員名（無ければ空）。
 function _masterCloudStatusFn(label){
   var token=++_masterCloudLogSeq;
-  return function(msg){ pushMasterCloudLine(token,label||'',msg); };
+  // ★ Codex 2巡目 P2: 第2引数でラベルだけ差し替えられる（待ち行列で新しい保存に合流したとき、
+  //   行を増やさずに会員名だけ最新にする）。渡さなければ従来どおり。
+  return function(msg,relabel){
+    if(relabel!=null&&relabel!=='')label=relabel;
+    pushMasterCloudLine(token,label||'',msg);
+  };
 }
 function _masterSheetFindMember(mid,master){
   var members=(master&&master.members)||[];
@@ -13370,6 +13375,9 @@ function pushMemberEditToCloud(member,setStatus,touched){
     if(_slot.pending){
       _slot.pending.member=member;                                                   // 新しい方で置き換え
       _slot.pending.touched=_mergeTouchedFlags(_slot.pending.touched,touched);       // 触った欄は足し合わせる
+      // Codex 2巡目 P2: 送る中身が新しい方に替わったので、行のラベル（会員名）も新しい方に合わせる。
+      //   行は増やさない（同じ token を持ち続ける）。
+      if(_slot.pending.setStatus)_slot.pending.setStatus('前の反映の完了を待機中…',(member&&member.name)||'');
       return _slot.pending.promise;                                                  // 行は最初の待ち手が持つ
     }
     var _res=null;
@@ -13466,9 +13474,24 @@ function pushMemberDeleteStateToCloud(mids,master,deleted,setStatus){
   // #907-2: 同じ会員集合に対する2本目を出さない（編集 push と同じ理由）。
   // #907 Codex P1: id は「空でない文字列」しか要求していない（外部マスタ取り込み経路でカンマも入る）。
   //   join(',') だと ['a,b','c'] と ['a','b,c'] が同じキーになり、別の削除が in-flight と誤判定されて黙って消える。
-  var _flightKey=JSON.stringify(mids.slice().sort())+'|'+(deleted?'d':'r');
-  if(_memberDeletePushInFlight[_flightKey])return Promise.resolve({ok:false,step:'inflight'});
-  _memberDeletePushInFlight[_flightKey]=true;
+  // ★ Codex 2巡目 P1: キーに**向き（削除/復元）を含めてはいけない**。含めると「削除が飛行中に復元」が
+  //   別キーとして**同時に飛び**、さらにその後の削除だけが重複として捨てられる。着順次第で
+  //   クラウドの最終状態が「復元」になり、端末の「削除」と食い違う（黙って戻る）。
+  //   向きを外して**会員集合ごとに直列化**し、待ち行列には**最後に要求された状態だけ**を残す。
+  var _flightKey=JSON.stringify(mids.slice().sort());
+  var _dslot=_memberDeletePushInFlight[_flightKey];
+  if(_dslot){
+    if(_dslot.pending&&_dslot.pending.resolve)_dslot.pending.resolve({ok:false,step:'superseded'});
+    _dslot.pending=null;
+    // 飛行中と同じ状態を頼まれた＝文字どおりの重複。飛行中の1本が同じ結果を届ける。
+    if(!!deleted===_dslot.state)return Promise.resolve({ok:false,step:'inflight'});
+    var _dres=null;
+    var _dpr=new Promise(function(r){ _dres=r; });
+    _dslot.pending={master:master,deleted:!!deleted,setStatus:setStatus,resolve:_dres,promise:_dpr};
+    setStatus('前の反映の完了を待機中…');
+    return _dpr;
+  }
+  _memberDeletePushInFlight[_flightKey]={state:!!deleted,pending:null};
   var actLabel=deleted?'削除':'復元';
   setStatus('クラウドの名簿にも'+actLabel+'を反映中…');
   return loadCloudDeps().then(function(dep){
@@ -13532,7 +13555,16 @@ function pushMemberDeleteStateToCloud(mids,master,deleted,setStatus){
     if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 削除/復元の反映例外:',(e&&e.message)||e);
     setStatus('クラウドへの'+actLabel+'反映に失敗しました（この端末では'+actLabel+'済み）');
     return {ok:false,step:'exception'};
-  }).then(function(r){ delete _memberDeletePushInFlight[_flightKey]; return r; });
+  }).then(function(r){
+    var sD=_memberDeletePushInFlight[_flightKey];
+    delete _memberDeletePushInFlight[_flightKey];
+    var nxD=sD&&sD.pending;
+    if(nxD){
+      var qD=pushMemberDeleteStateToCloud(mids,nxD.master,nxD.deleted,nxD.setStatus);
+      if(nxD.resolve)qD.then(nxD.resolve,nxD.resolve);
+    }
+    return r;
+  });
 }
 
 // MASTER-BULK-PUSH-001: ローカル名簿の全会員をクラウド members へ一括 upsert（初期同期・冪等）。

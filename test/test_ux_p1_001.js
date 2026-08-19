@@ -64,7 +64,7 @@ ok(RAW.indexOf('sendTournamentToCloud(function(msg){ applyCloudStatus(st,msg); }
 //   履歴そのものの振る舞いは test/test_member_cloud_status_log_907.js が実際に動かして見る。
 ok(/pullMembersToMasterUI\(_masterCloudStatusFn\(/.test(RAW),'U1i 取得 wire→_masterCloudStatusFn（色分けレンダラ経由）');
 ok(RAW.indexOf("_masterCloudStatusFn('')('クラウドから自動取得しました")>=0,'U1j auto-pull→_masterCloudStatusFn');
-ok(/function _masterCloudStatusFn\(label\)\{[\s\S]{0,200}?pushMasterCloudLine\(/.test(RAW),'U1i2 _masterCloudStatusFn は pushMasterCloudLine へ流す');
+ok(/function _masterCloudStatusFn\(label\)\{[\s\S]{0,600}?pushMasterCloudLine\(/.test(RAW),'U1i2 _masterCloudStatusFn は pushMasterCloudLine へ流す');
 ok(/el\.className='cloud-status cloud-status-'\+_masterCloudLogKind\(\)/.test(RAW),'U1i3 履歴の描画が色クラスを付ける（textContent 直書きで色を失わない）');
 
 console.log('=== U-2 保存確認ピルの説明/解消導線 ===');
