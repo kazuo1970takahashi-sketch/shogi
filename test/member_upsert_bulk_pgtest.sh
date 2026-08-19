@@ -112,7 +112,7 @@ RES_A="$(probe authenticated "$U_ORG" "select public.app_upsert_member_edits_bul
 assert_eq "$(probe authenticated "$U_ORG" "$ALLSIG")" "other/josei/沼津市/tomb , other/chu/三島市/tomb , member/ippan/裾野市/tomb" \
   "B1 ★3名を1回で削除でき、属性は3名とも1バイトも変わらない"
 echo "$RES_A" | grep -q '"count" *: *3' && ok "B2 返り値 count=3" || ng "B2 count 期待外: $RES_A"
-echo "$RES_A" | grep -q '"member_id" *: *"b2"' && ok "B3 返り値 rows に各会員の結果が入る" || ng "B3 rows 期待外: $RES_A"
+echo "$RES_A" | grep -q '"inserted" *: *0' && ok "B3 返り値 inserted=0（3名とも既存行）" || ng "B3 inserted 期待外: $RES_A"
 
 # まとめて復元
 ROWS_RES='[{"member_id":"b1","name":"架空一郎","yomi":"かくういちろう","touch_deleted_at":true},{"member_id":"b2","name":"架空二郎","yomi":"かくうじろう","touch_deleted_at":true},{"member_id":"b3","name":"架空三郎","yomi":"かくうさぶろう","touch_deleted_at":true}]'
@@ -142,6 +142,9 @@ ROWS_NEW='[{"member_id":"b_n1","name":"架空四郎","yomi":"かくうしろう"
 probe authenticated "$U_ORG" "select public.app_upsert_member_edits_bulk('$CA','$ROWS_NEW'::jsonb)" >/dev/null
 assert_eq "$(probe authenticated "$U_ORG" "$SIG'b_n1'")" "other|josei|長泉町|live" "B9 新規行1は完全な行で入る（set_* 未指定でも）"
 assert_eq "$(probe authenticated "$U_ORG" "$SIG'b_n2'")" "member|chu|清水町|live" "B10 新規行2も完全な行で入る"
+RES_NEW="$(probe authenticated "$U_ORG" "select public.app_upsert_member_edits_bulk('$CA','[{\"member_id\":\"b_n3\",\"name\":\"架空六郎\",\"yomi\":\"かくうろくろう\",\"member_kind\":\"member\",\"grade\":\"ippan\"},{\"member_id\":\"b_n1\",\"name\":\"架空四郎\",\"yomi\":\"かくうしろう\"}]'::jsonb)")"
+echo "$RES_NEW" | grep -q '"inserted" *: *1' && ok "B10b 返り値 inserted=1（新規1・既存1の便）" || ng "B10b inserted 期待外: $RES_NEW"
+echo "$RES_NEW" | grep -q '"count" *: *2' && ok "B10c 返り値 count=2" || ng "B10c count 期待外: $RES_NEW"
 
 # 既存行 × set_* を立てた欄だけ更新（単数形と同じ）
 ROWS_MIX='[{"member_id":"b_n1","name":"架空四郎","yomi":"かくうしろう","member_kind":"member","grade":"ippan","city":null,"set_grade":true}]'
@@ -202,6 +205,57 @@ assert_eq "$(probe authenticated "$U_ORG" "$ALLSIG")" "$BEFORE_P" "B23 権限テ
 assert_eq "$(probe authenticated "$U_ORG" "select has_function_privilege('anon','public.app_upsert_member_edits_bulk(uuid,jsonb)','execute')")" "f" "B24 anon に EXECUTE が付与されていない（catalog）"
 assert_eq "$(probe authenticated "$U_ORG" "select has_function_privilege('authenticated','public.app_upsert_member_edits_bulk(uuid,jsonb)','execute')")" "t" "B25 authenticated には EXECUTE が付与されている"
 assert_eq "$(probe authenticated "$U_ORG" "select (not p.prosecdef) from pg_proc p where p.oid='public.app_upsert_member_edits_bulk(uuid,jsonb)'::regprocedure")" "t" "B26 SECURITY INVOKER（prosecdef=false）"
+
+# =============================================================================
+# F. 未知キーの拒否（Codex P1 r3809573508）
+#    綴り違いを黙って「未指定＝false」にすると、**削除が1件も適用されていないのに成功が返る**。
+# =============================================================================
+BEFORE_K="$(probe authenticated "$U_ORG" "$ALLSIG")"
+E_BADKEY="$(probe_errmsg authenticated "$U_ORG" "select public.app_upsert_member_edits_bulk('$CA','[{\"member_id\":\"b1\",\"name\":\"架空一郎\",\"yomi\":\"かくういちろう\",\"touch_delete_at\":true}]'::jsonb)")"
+case "$E_BADKEY" in
+  *"未知のキーがあります"*) ok "B27 ★綴り違いのキー（touch_delete_at）は raise（黙って無視しない）" ;;
+  "") ng "B27 綴り違いのキーが成功してしまった（＝削除が適用されないまま成功が返る）" ;;
+  *)  ng "B27 raise はするが未知キー検査由来ではない: $E_BADKEY" ;;
+esac
+assert_eq "$(run_commit authenticated "$U_ORG" "select public.app_upsert_member_edits_bulk('$CA','[{\"member_id\":\"b1\",\"name\":\"変更\",\"yomi\":\"へんこう\"},{\"member_id\":\"b2\",\"name\":\"架空二郎\",\"yomi\":\"かくうじろう\",\"grado\":\"ippan\"}]'::jsonb)")" "ERR" \
+  "B28 未知キーが1行でもあれば文全体が失敗する"
+assert_eq "$(probe authenticated "$U_ORG" "$ALLSIG")" "$BEFORE_K" "B29 未知キーで失敗したとき行が1つも変わっていない"
+assert_eq "$(probe authenticated "$U_ORG" "select name from public.members where club_id='$CA' and member_id='b1'")" "架空一郎" "B29b 同じ便の正しい行も適用されていない"
+# 許可リストが厳しすぎないこと（既知キーを全部入れた行が通る）
+ALLKEYS='[{"member_id":"b_all","name":"架空全","yomi":"かくうぜん","member_kind":"other","grade":"chu","city":"函南町","set_member_kind":true,"set_grade":true,"set_city":true,"deleted_at":null,"touch_deleted_at":false}]'
+assert_eq "$(probe_err authenticated "$U_ORG" "select public.app_upsert_member_edits_bulk('$CA','$ALLKEYS'::jsonb)")" "OK" "B30 既知キーを全部含む行は通る（許可リストが厳しすぎない）"
+
+# =============================================================================
+# G. ★2セッション並行：ロックを取る順が **入力順に依存しない**（Codex P1 r3809573504）
+#    受付席と本部席が重なる会員を逆順で一括操作するとデッドロックしうる。
+#    全員が同じ順（member_id 昇順）で取れば起きない。
+#
+#    測り方: 別セッション A に z_a を掴ませたまま、bulk を **[z_b, z_a] の順**で投げる。
+#      ・canonical 順なら z_a を先に取りに行って**そこで待つ**＝z_b はまだ空いている
+#      ・入力順のままなら z_b を先に掴んでから z_a で待つ＝z_b は塞がっている
+#    → z_b に FOR UPDATE NOWAIT をかけて、通るかどうかで処理順を**外から観測する**。
+# =============================================================================
+psql -X -q -d "$DB" -c "insert into public.members(club_id,member_id,name,yomi,member_kind,grade,city) values ('$CA','z_a','架空Ａ','えー','member','ippan','沼津市'),('$CA','z_b','架空Ｂ','びー','member','ippan','沼津市') on conflict do nothing" >/dev/null 2>&1
+
+# セッション A: z_a を掴んで 8 秒保持
+psql -X -q -d "$DB" -c "begin; select 1 from public.members where club_id='$CA' and member_id='z_a' for update; select pg_sleep(8); rollback;" >/dev/null 2>&1 &
+LOCK_PID=$!
+sleep 2
+# セッション B: 入力順は [z_b, z_a]（＝canonical 順の逆）
+psql -X -q -d "$DB" -c "select public.app_upsert_member_edits_bulk('$CA','[{\"member_id\":\"z_b\",\"name\":\"架空Ｂ\",\"yomi\":\"びー\"},{\"member_id\":\"z_a\",\"name\":\"架空Ａ\",\"yomi\":\"えー\"}]'::jsonb)" >/dev/null 2>&1 &
+BULK_PID=$!
+sleep 3
+# ★ tail -1 は使わない（psql は最後に ROLLBACK を出すので、成否がその行に現れない）。
+#   出力全体を見て「ロックが取れなかった」エラーの有無で判定する。
+ZB_OUT="$(psql -X -A -t -d "$DB" -c "begin; select 1 from public.members where club_id='$CA' and member_id='z_b' for update nowait; rollback;" 2>&1)"
+if echo "$ZB_OUT" | grep -qi "could not obtain lock"; then
+  ng "B31 z_b が既にロックされている＝入力順でロックしている（逆順の同時操作でデッドロックしうる）"
+elif echo "$ZB_OUT" | grep -q "^1$"; then
+  ok "B31 ★入力が [z_b, z_a] でも z_b はまだ空いている＝member_id 昇順でロックしている（デッドロック回避）"
+else
+  ng "B31 判定不能（z_b の NOWAIT 取得が想定外の結果）: $(echo "$ZB_OUT" | tr '\n' ' ')"
+fi
+wait $LOCK_PID 2>/dev/null; wait $BULK_PID 2>/dev/null
 
 echo "  結果: PASS=$pass FAIL=$fail"
 [ $fail -eq 0 ] && exit 0 || exit 1
