@@ -13109,29 +13109,6 @@ function composeCloudMemberFieldCols(m, cloudRow){
   return out;
 }
 
-// MEMBER-EDIT-TOUCHED-COLS-001 (#901): **名簿編集 push** の会員属性を組む純関数。
-//   なぜ composeCloudMemberFieldCols だけでは足りないか:
-//     ・編集 push は今まで _cloudMemberFieldCols（＝ローカル無条件上書き）を使っていた。そのため
-//       ☁取り込み前の端末で**ふりがなの誤字を直しただけ**でも、送信行に既定値と city:null が乗り、
-//       クラウドの「その他／女性／沼津市」が潰れる（実測）。#853 と同じ誤徴収が編集経路で残っていた。
-//     ・かといって全欄を composeCloudMemberFieldCols に寄せると、利用者が編集パネルで
-//       **明示的に既定値方向へ直した**（女性→一般・その他→支部員）訂正までクラウド値に負ける（#901 の本題）。
-//   したがって「**その保存で利用者が実際に触った欄か**」で分ける:
-//     ・触った欄  … ローカルが無条件に勝つ（既定値方向の訂正もそのまま届く）
-//     ・触らない欄… composeCloudMemberFieldCols に委ねる（＝☁送信と同一規則でクラウドの実値を保全）
-//   touched は編集パネルが持つ「初期値から変わったグループ」（MASTER-EDIT-FORM-001）をそのまま渡す。
-//   既定は「何も触っていない」＝保全側に倒す（呼び出し側が touched を渡し忘れてもクラウドを壊さない）。
-//   純関数・副作用なし。
-function composeEditPushFieldCols(m, cloudRow, touched){
-  var local=_cloudMemberFieldCols(m);
-  var kept=composeCloudMemberFieldCols(m, cloudRow);
-  var t=touched||{};
-  return {
-    member_kind:t.member?local.member_kind:kept.member_kind,
-    grade:t.grade?local.grade:kept.grade,
-    city:t.city?local.city:kept.city
-  };
-}
 
 // CLOUD-MEMBER-ATTR-MERGE-001 (#853): ☁送信の直前にクラウド members を**読み取り専用**で取得する。
 //   ★ pullMembersFromCloud は使わない。あれは mergeCloudMembersIntoMaster ＋ saveBranchMaster を伴い、
@@ -13139,10 +13116,6 @@ function composeEditPushFieldCols(m, cloudRow, touched){
 //     ここが欲しいのは「送信行を組むための参照値」だけなので、ローカル名簿には一切触れない。
 //   戻り: {byId:{member_id→row}|null, note:''|⚠注記}。**取得0件（byId={}）と取得失敗（byId=null）は
 //   区別する**（前者は初回送信＝従来どおりローカル値・後者は無音でバグ挙動に戻るので注記を出す）。
-// MEMBER-EDIT-TOUCHED-COLS-001 (#901): 編集 push でクラウドの現在値を読めなかったときの注記。
-//   Codex P1 (r3801845108) 反映後は**未操作の欄を送らない**ので「上書きした可能性」ではなく
-//   「触れていない」が事実。文言を挙動に合わせる（旧文言のまま残すと逆の誤解を与える）。
-var EDIT_ATTR_UNREAD_NOTE='　⚠ 操作していない区分・級・市町村は変更していません（クラウドの名簿を読めなかったため、この端末の値は送っていません）';
 // 逆に「読めたのでクラウドの値を保った」欄がある場合の注記。ここを黙ると、端末の表示（一般）と
 //   クラウドの実値（女性）が食い違ったまま、成功表示だけが出て利用者が気づけない。
 //   端末の値で上書きしたいときの出口（名簿タブの一括送信＝常にローカル優先）まで書く。
@@ -13150,19 +13123,47 @@ function _editAttrKeptNote(labels){
   if(!labels||!labels.length)return '';
   return '　⚠ '+labels.join('・')+' はクラウドの値のままにしました（この端末の表示と違います。端末の値で上書きするには名簿タブの「☁ 名簿全体をクラウドへ一括送信」）';
 }
-// 会場の詰まった回線では select が返らないことがある。読み取りが返らないだけで **upsert が一度も
-//   発行されない** のは当日運営で致命的なので、待ちに上限を設けて従来経路（ローカル値＋⚠）へ倒す。
-// 削除/復元でクラウドの現在値を読めなかったときの注記（属性列を送らずに済ませたことを黙らせない）。
-var DELETE_ATTR_UNREAD_NOTE='　⚠ 会員の区分・級・市町村はクラウドの名簿を読めなかったため触れていません（削除状態だけ反映しました）';
-var EDIT_ATTR_READ_TIMEOUT_MS=6000;
-function _withReadTimeout(p,ms,fallback){
-  return new Promise(function(resolve){
-    var done=false;
-    function settle(v){ if(done)return; done=true; resolve(v); }
-    var t=setTimeout(function(){ settle(fallback); },ms);
-    function clear(){ try{ clearTimeout(t); }catch(e){} }
-    p.then(function(v){ clear(); settle(v); },function(){ clear(); settle(fallback); });
-  });
+// MEMBER-UPSERT-RPC-001 (#909) / Codex P1 (r3810188007): RPC へ渡す `p_set_*`（＝その列を
+//   更新するか）を決める純関数。**「この端末がその欄について情報を持っているか」**で決まる:
+//     ・利用者がその保存で操作した          → 持っている（既定値方向の訂正もここで届く）
+//     ・操作していないがローカルが非既定値  → 持っている（#853 案E＝「非既定値だけが人が
+//                                             明示的に入れた情報だと確実に言える」）
+//     ・操作しておらずローカルも既定値      → **持っていない**（既定値は「未設定」と区別できない）
+//   これは #901 の composeEditPushFieldCols / #853 の composeCloudMemberFieldCols と同じ規則を
+//   `p_set_*` の言葉で書き直したもの。判定の実行場所が SQL 側へ移っただけで、規則は変えない。
+//   ★ なぜ「操作した欄だけ true」ではいけないか（Codex P1・実害）:
+//     クラウドの旧行が grade=NULL（属性列を持つ前に作られた行）で、端末には明示的な josei が
+//     ある状態で氏名だけ直すと、その列を送らない＝NULL のまま成功表示だけが出る。別の端末が
+//     その行を取ると mergeCloudMembersIntoMaster は NULL を読み飛ばし、normalizeBranchMaster が
+//     ippan へ確定する＝**会費の誤徴収が別経路で復活する**。#901 はここをローカル値で埋めていた。
+//   ★ 逆に既定値は絶対に送らない。既定値で NULL を埋めると「未設定」が「既定値だと主張した」に
+//     変わり、その後の下り merge で別端末の実値（other/josei）を上書きしうる（#853 の本題）。
+//   純関数・副作用なし。
+function _editPushSetFlags(local, touched){
+  var t=touched||{}, lc=local||{};
+  return {
+    member_kind:!!t.member||lc.member_kind==='other',
+    grade:!!t.grade||(lc.grade==='chu'||lc.grade==='josei'),
+    city:!!t.city||!!lc.city
+  };
+}
+// MEMBER-UPSERT-RPC-001 (#909): 上の注記に載せる欄名を **RPC が返した実値** から決める純関数。
+//   #901 までは「送信行を組むときに使った合成結果」と端末値の差で推測していたが、RPC は
+//   `returning` で **実際にクラウドへ残った値** を返す。推測ではなく実測で名指しできる。
+//   saved … app_upsert_member_edit の戻り（{inserted,member_kind,grade,city,deleted_at}）
+//   local … _cloudMemberFieldCols(member)（＝端末の表示に対応する値）
+//   ★ 残った値が NULL/空（＝クラウドに未設定）の欄は名指ししない。NULL は下り merge の非空ガードで
+//     読み飛ばされる＝他端末へ誤った値が伝播しない。ここを鳴らすと属性列を持たない古い行を
+//     編集するたびに ⚠ が出て、本当に食い違っている欄（女性/その他/市町村）が埋もれる。
+//   純関数・副作用なし。
+function _editAttrKeptLabels(saved, local){
+  var out=[];
+  if(!saved||typeof saved!=='object'||!local)return out;
+  function differs(a,b){ return a!=null&&a!==''&&String(a)!==String(b==null?'':b); }
+  if(differs(saved.member_kind,local.member_kind))out.push('支部員区分');
+  if(differs(saved.grade,local.grade))out.push('級');
+  if(differs(saved.city,local.city))out.push('市町村');
+  return out;
 }
 var CLOUD_ATTR_UNREAD_NOTE='　⚠ 会員の区分・市町村はこの端末の値で送りました（クラウドの名簿を読めなかったため、区分が上書きされている可能性があります）';
 //   ★ Codex P1 (r3793467620): 全件 select は API の1レスポンス上限（PostgREST 既定 1000 行）に当たると
@@ -13295,48 +13296,43 @@ function pushMemberEditToCloud(member,setStatus,touched){
         var clubId=pickActiveClubId((rc&&rc.data)||[]);
         if(!clubId){ setStatus('クラウド未反映（送信先クラブを特定できません・端末には保存済み）'); return {ok:false,step:'club'}; }
         // CLOUD-MEMBER-FIELDS-001: 区分・市町村も同乗（クラウドが全項目を持つ・スキーマは migration 20260702150000）。
-        // MEMBER-EDIT-TOUCHED-COLS-001 (#901): 操作していない欄はクラウドの実値を保全するため、送信前に
-        //   その1件だけ読み取り専用で引く（_fetchCloudMemberAttrs＝ローカル名簿には一切触れない）。
-        //   ★ 読み取りは常に行う。「3欄すべて操作したなら読まない」最適化は、city の欄が編集パネルに
-        //     無い＝実運用では一度も成立しない分岐になり、テストだけがその死んだ枝を守ることになる。
-        //   ★ 読み取りが返らないだけで upsert が発行されないのは当日運営で致命的なので待ちに上限を置く。
-        return _withReadTimeout(_fetchCloudMemberAttrs(client,clubId,[member.id]),
-                                EDIT_ATTR_READ_TIMEOUT_MS,{byId:null,note:CLOUD_ATTR_UNREAD_NOTE}).then(function(fa){
-          var cloudRow=(fa&&fa.byId&&fa.byId[member.id])||null;
-          // byId===null は「読めなかった」。取得0件（＝クラウドにまだ行が無い新規会員）とは区別する。
-          var unread=!!(fa&&fa.byId===null);
-          var fc=composeEditPushFieldCols(member,cloudRow,_touched);
-          // 保全した欄（＝端末の表示と違う値をクラウドに残した欄）を控える。黙ると成功表示だけが出て
-          // 「直したのに直っていない」ことに気づけない（反証パネル P1）。unread のときは
-          // そもそも列を送らないので、この一覧は読めた場合にだけ使う。
-          var lc=_cloudMemberFieldCols(member), kept=[];
-          if(!unread){
-            if(fc.member_kind!==lc.member_kind)kept.push('支部員区分');
-            if(fc.grade!==lc.grade)kept.push('級');
-            if(fc.city!==lc.city)kept.push('市町村');
-          }
-          var row={member_id:member.id,name:member.name||'',yomi:member.yomi||'',club_id:clubId};
-          // ★ Codex P1 (r3801845108): 読めなかったときに compose は base（＝ローカル値）へ落ちる。
-          //   そのまま送ると、まさにこの修正が防ごうとしている「既定値でクラウドの実値を潰す」が
-          //   混雑回線のたびに再発する。⚠ を出しても消えたデータは戻らない。
-          //   したがって **書く値が分かっている欄だけ列に載せる**:
-          //     読めた   … 3欄とも合成結果を載せる
-          //     読めない … 利用者が操作した欄だけ載せ、未操作欄は列ごと送らない（UPDATE 対象外＝クラウド値保全）
-          //   未操作欄を落とした結果、クラウドに行が無い会員の初回 push では該当列が NULL（＝未設定）になるが、
-          //   下り merge も compose も NULL は「値なし」として扱うのでローカルは壊れない。
-          if(!unread){ row.member_kind=fc.member_kind; row.grade=fc.grade; row.city=fc.city; }
-          else{
-            if(_touched.member)row.member_kind=lc.member_kind;
-            if(_touched.grade)row.grade=lc.grade;
-            if(_touched.city)row.city=lc.city;
-          }
-          return client.from('members').upsert([row],{onConflict:'club_id,member_id'}).select().then(function(res){
-            if(res&&res.error){ setStatus('クラウドへの反映に失敗しました：'+((res.error&&res.error.message)||'不明')+'（端末には保存済み・名簿タブの「☁ 名簿全体をクラウドへ一括送信」で反映できます）'); return {ok:false,step:'upsert'}; }
-            // #901: 「何を送ったか」は保存ごとに変わる（操作した欄だけローカル優先）。列名を固定で名乗ると
-            //   送っていない欄まで反映したと誤解させるため、名乗らずに ⚠ で差分だけを具体的に伝える。
-            setStatus('会員情報をクラウドにも反映しました'+(unread?EDIT_ATTR_UNREAD_NOTE:_editAttrKeptNote(kept)));
-            return {ok:true,unread:unread,kept:kept};
-          });
+        // MEMBER-UPSERT-RPC-001 (#909): ここは **送信前に members を読まない**。
+        //   #901 は「読む → 未操作の欄はクラウド値を採用して upsert」で誤徴収を塞いだが、
+        //   「読んでから書く」構造そのものに由来する穴が2つ残っていた:
+        //     ① 読めなかった会員の初回 push が属性 NULL の行を作る（他端末が既定値化して誤徴収）
+        //     ② select→upsert の窓で、その間の他端末の更新を巻き戻す（受付席と本部席の同時操作）
+        //   `insert ... on conflict do update set` は **set 句に挙げた列だけ**を更新するので、
+        //   「新規行は完全な行・既存行は操作した欄だけ」が **1文・1トランザクション**で成立する。
+        //   ＝読み取りが要らない＝読み取り失敗・タイムアウト・競合窓が**原理的に生じない**。
+        //   規則（語彙の whitelist・保全・deleted_at の扱い）は SQL 側1箇所にある
+        //   （supabase/migrations/20260818120000_member_edit_upsert_preserving_attrs.sql）。
+        //   ★ p_set_* の決め方は _editPushSetFlags（操作した欄 OR ローカルが非既定値）。
+        //     省略時 false ＝ 渡し忘れてもクラウドを壊さない側に倒れる。
+        //   ★ p_deleted_at / p_touch_deleted_at は渡さない（既定 false）＝編集 push が
+        //     tombstone を復活させない（従来 deleted_at 列を送っていなかったのと同じ性質）。
+        var lc=_cloudMemberFieldCols(member);
+        var sf=_editPushSetFlags(lc,_touched);
+        return client.rpc('app_upsert_member_edit',{
+          p_club:clubId,
+          p_member_id:member.id,
+          p_name:member.name||'',
+          p_yomi:member.yomi||'',
+          p_member_kind:lc.member_kind,
+          p_grade:lc.grade,
+          p_city:lc.city,
+          p_set_member_kind:sf.member_kind,
+          p_set_grade:sf.grade,
+          p_set_city:sf.city
+        }).then(function(res){
+          if(res&&res.error){ setStatus('クラウドへの反映に失敗しました：'+((res.error&&res.error.message)||'不明')+'（端末には保存済み・名簿タブの「☁ 名簿全体をクラウドへ一括送信」で反映できます）'); return {ok:false,step:'upsert'}; }
+          // RPC は「実際にクラウドへ残った値」を返す。端末の表示と違う欄を ⚠ で名指しする。
+          //   黙ると成功表示だけが出て「直したのに直っていない」ことに気づけない（#901 反証パネル P1）。
+          var saved=(res&&res.data)||null;
+          var kept=_editAttrKeptLabels(saved,lc);
+          // #901: 「何を送ったか」は保存ごとに変わる（操作した欄だけローカル優先）。列名を固定で名乗ると
+          //   送っていない欄まで反映したと誤解させるため、名乗らずに ⚠ で差分だけを具体的に伝える。
+          setStatus('会員情報をクラウドにも反映しました'+_editAttrKeptNote(kept));
+          return {ok:true,kept:kept,inserted:!!(saved&&saved.inserted)};
         });
       });
     });
@@ -13370,38 +13366,47 @@ function pushMemberDeleteStateToCloud(mids,master,deleted,setStatus){
         var clubId=pickActiveClubId((rc&&rc.data)||[]);
         if(!clubId){ setStatus('クラウド未反映（送信先クラブを特定できません・この端末では'+actLabel+'済み）'); return {ok:false,step:'club'}; }
         var nowIso=new Date().toISOString();
-        // MEMBER-EDIT-TOUCHED-COLS-001 (#901): 削除/復元は **削除状態だけ** を書く操作。従来はローカル値を
-        //   無条件に同乗させていたため、☁取り込み前の端末で誤って削除→復元しただけでクラウドの
-        //   「その他・女性・沼津市」が既定値と NULL で潰れた（＝#853 と同じ誤徴収が削除経路に残っていた）。
-        //   ★ Codex P1 (r3801845099): かといって属性列を一律で落とすと、**クラウドにまだ行が無い会員**を
-        //     削除したときの INSERT が全部 NULL になり、以後どこからも属性が補われないまま別端末が取り込んで
-        //     既定値化する。そこで編集 push と同じく現在値を読み、composeCloudMemberFieldCols で合成する:
-        //       既存行あり … クラウドの実値が残る（潰さない）
-        //       行が無い   … ローカル値がそのまま INSERT される（完全な行になる）
-        //     読めなかったときは属性列を送らない（既存行を潰さない側に倒す・新規行は NULL＝未設定）。
-        return _withReadTimeout(_fetchCloudMemberAttrs(client,clubId,mids),
-                                EDIT_ATTR_READ_TIMEOUT_MS,{byId:null,note:CLOUD_ATTR_UNREAD_NOTE}).then(function(fa){
-        var attrById=(fa&&fa.byId)||null;
-        var attrUnread=!attrById;
+        // MEMBER-UPSERT-RPC-001 (#909): 削除/復元は **削除状態だけ** を書く操作。ここも読まない。
+        //   #901 は「送信前にクラウドの現在値を読んで合成する」ことで、☁取り込み前の端末で
+        //   削除→復元しただけでクラウドの「その他・女性・沼津市」が潰れる事故を塞いだが、
+        //   読み取り失敗・タイムアウト・競合窓という代償が付いていた。一括版 RPC は
+        //   **set_* を _editPushSetFlags で決める**ことで同じ結果を読まずに得る（削除経路に
+        //   「操作した欄」は無いので、実質「ローカルが非既定値の欄だけ true」になる）:
+        //     既存行あり … 既定値の欄は1バイトも触らない（潰さない）。非既定値の欄だけ届く
+        //                  （#901 の composeCloudMemberFieldCols と同じ規則・Codex P1 r3810188007）
+        //     行が無い   … 端末のローカル値がそのまま INSERT される（完全な行になる）
+        //   ★ N 名を **1リクエスト・1トランザクション**で送る。単数形を N 回呼ぶと会場の
+        //     詰まった回線で N 往復になり、途中で失敗すると中途半端な状態が残る。
+        //   ★ 未知のキーは RPC 側が raise する（綴り違いが「未指定＝false」に落ちて、
+        //     削除が適用されていないのに成功が返る事故を防ぐ）。既知キー以外を積まない。
         var rows=[];
         for(var i=0;i<mids.length;i++){
           var m=_masterSheetFindMember(mids[i],master);
           if(!m)continue;
-          var r={member_id:mids[i],name:m.name||'',yomi:m.yomi||'',club_id:clubId,deleted_at:deleted?nowIso:null};
-          if(!attrUnread){
-            var fcD=composeCloudMemberFieldCols(m,attrById[mids[i]]||null);
-            r.member_kind=fcD.member_kind; r.grade=fcD.grade; r.city=fcD.city;
-          }
-          rows.push(r);
+          var lcD=_cloudMemberFieldCols(m);
+          var sfD=_editPushSetFlags(lcD,null);
+          rows.push({
+            member_id:mids[i],
+            name:m.name||'',
+            yomi:m.yomi||'',
+            member_kind:lcD.member_kind,
+            grade:lcD.grade,
+            city:lcD.city,
+            set_member_kind:sfD.member_kind,
+            set_grade:sfD.grade,
+            set_city:sfD.city,
+            deleted_at:deleted?nowIso:null,
+            touch_deleted_at:true
+          });
         }
         if(!rows.length){ setStatus('クラウド未反映（対象が見つかりません）'); return {ok:false,step:'input'}; }
-        return client.from('members').upsert(rows,{onConflict:'club_id,member_id'}).select().then(function(res){
+        return client.rpc('app_upsert_member_edits_bulk',{p_club:clubId,p_rows:rows}).then(function(res){
           if(res&&res.error){ setStatus('クラウドへの'+actLabel+'反映に失敗しました：'+((res.error&&res.error.message)||'不明')+'（この端末では'+actLabel+'済み）'); return {ok:false,step:'upsert'}; }
+          // 件数はサーバが数えた値を使う（送った件数と一致する。RPC が処理した実数を名乗る）。
+          var n=(res&&res.data&&typeof res.data.count==='number')?res.data.count:rows.length;
           // L3 P1-1: 「全端末に反映」は削除方向のみ（復元は削除取り込み済み端末に自動では戻らない）。
-          setStatus((deleted?('クラウドの名簿からも削除しました（'+rows.length+'名・全端末に反映）'):('クラウドの名簿でも復元しました（'+rows.length+'名）'))
-                    +(attrUnread?DELETE_ATTR_UNREAD_NOTE:''));
-          return {ok:true,count:rows.length,unread:attrUnread};
-        });
+          setStatus(deleted?('クラウドの名簿からも削除しました（'+n+'名・全端末に反映）'):('クラウドの名簿でも復元しました（'+n+'名）'));
+          return {ok:true,count:n};
         });
       });
     });
