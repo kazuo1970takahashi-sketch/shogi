@@ -78,13 +78,21 @@ const EXEMPT = /\s#\s*mb-ok:\s*\S[^\n]*$/;
 //   そこで **2段構え**にする。引用状態は相変わらず見ない:
 //     ① **物理行ごと**に検査する。免除は**その物理行自身の行末マーカー**でしか効かない
 //        → 別の行のマーカーが漏れてくることが原理的に起きない
-//     ② **継続の境界をまたぐ形**だけを追加で検査する（結合してはじめて現れる hazard）。
-//        免除は継続先の行末マーカー。3行以上の連鎖は累積して境界ごとに見る
+//     ② **継続の境界をまたぐ形**だけを追加で検査する。
+//        免除は継続先の行末マーカー。3行以上の連鎖は累積して境界ごとに見る。
+//        ★ Codex P2 (r3811132507): 当初は「`prev` に hazard が無いこと」を条件にしていたが、
+//          これだと**免除済みのコメントが `\\` で終わる**だけで後続の境界検査が死ぬ（見逃し）。
+//          境界の判定は**その継ぎ目だけ**を見る：`prev` が `$name` で終わり、次の片が
+//          非 ASCII で始まるか。他の行の hazard と互いに干渉しない
 //   ①だけでも②だけでも穴が残る。両方あって初めて塞がる。
 function endsWithContinuation(line) {
   const m = /(\\+)$/.exec(line);
   return !!m && (m[1].length % 2 === 1);
 }
+
+// 境界の継ぎ目だけを見る（`$name` で終わる + 非 ASCII で始まる）。
+const ENDS_NAME = /\$[A-Za-z_][A-Za-z0-9_]*$/;
+const STARTS_NONASCII = /^[^\x00-\x7F]/;
 
 function scan(src) {
   const phys = src.split('\n');
@@ -106,7 +114,7 @@ function scan(src) {
     const piece = cont ? phys[i].slice(0, -1) : phys[i];
     const prev = acc;
     acc = prev + piece;
-    if (prev !== '' && HAZARD.test(acc) && !HAZARD.test(prev) && !HAZARD.test(piece)) {
+    if (prev !== '' && ENDS_NAME.test(prev) && STARTS_NONASCII.test(piece)) {
       if (EXEMPT.test(phys[i])) exempted++;
       else hits.push({ line: accStart + 1, text: acc.trim() });
     }
@@ -165,6 +173,10 @@ const CASES = [
    'V=1\necho "' + V + FW + '"\nprintf \'a\\\n' + V + FW + "' # mb-ok: これはリテラル", true],
   ['★継続境界にできる違反は継続先のマーカーで免除できる',
    'V=1\necho "' + V + '\\\n' + FW + '"  # mb-ok: 継続の先で閉じるリテラル', false],
+  // ★ Codex P2 (r3811132507): 免除済みのコメントが `\\` で終わると、その hazard が `prev` に残り、
+  //   旧判定（`!HAZARD.test(prev)`）だと**後続の本物の境界 hazard を捨てていた**。
+  ['★免除行が継続しても後続の境界違反を見逃さない',
+   '# ' + V + FW + ' # mb-ok: 説明 \\\necho "' + V + '\\\n' + FW + '"', true],
 ];
 for (const [label, src, want] of CASES) {
   const got = scan(src).hits.length > 0;
