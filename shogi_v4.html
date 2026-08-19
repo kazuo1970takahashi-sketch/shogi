@@ -6061,7 +6061,10 @@ function _msInputState(id){
   if(typeof document==='undefined'||!document.getElementById)return null;
   var el=document.getElementById(id); if(!el)return null;
   var init=el.getAttribute?el.getAttribute('data-init'):null;
-  return {el:el, init:(init==null?'':init), val:(typeof el.value==='string')?el.value:''};
+  // MEMBER-CITY-EDIT-001 (#906): セグメントと同じ「利用者がこの欄を操作したか」の印（input で立てる）。
+  //   打って戻した場合も印は残る＝ローカルが既に正しくクラウドだけ古いときに訂正を送れる（#901 と同型）。
+  var tch=(el.getAttribute&&el.getAttribute('data-touched')==='1');
+  return {el:el, init:(init==null?'':init), val:(typeof el.value==='string')?el.value:'', touched:!!tch};
 }
 // MASTER-EDIT-FORM-001: 以下2関数はセル結線を外し未使用（編集はフォームに集約）。互換のため残置。
 function masterSheetCycleMember(mid){
@@ -6092,7 +6095,23 @@ function masterSheetCycleGrade(mid){
 // MASTER-EDIT-UX-001: 氏名/ふりがな編集を、狭いセル内ではなく「行直下の全幅パネル」で行う。
 //   保存/取消は既存 masterSheetCommitNameEdit / masterSheetCancelNameEdit（#ms-edit-name/#ms-edit-yomi を
 //   ID で読む）をそのまま再利用＝データ層 applyMasterMemberEdit は不変。会員/級は従来どおりセルの tap 切替。
-function buildMasterEditPanelHtml(m){
+// MEMBER-CITY-EDIT-001 (#906): 名簿に実在する市町村を候補として列挙する（重複なし・空は除く・文字列順）。
+//   ★ 自由入力は残す。候補は「この支部でこれまで使われた表記」を見せて **表記ゆれ**（沼津市／沼津）を
+//     減らすためのもので、入力できる値を候補に**制限しない**（新しい市町村が入れられなくなるため）。
+//   ★ 削除済みの会員も対象に含める。候補は「過去に使われた表記」であって「いま誰かが住んでいる市町村」
+//     ではない。除くと、最後の1名を削除した瞬間にその表記だけ候補から消えて揺れが復活する。
+function masterCityCandidates(master){
+  var out=[],seen={};
+  var ms=(master&&Array.isArray(master.members))?master.members:[];
+  for(var i=0;i<ms.length;i++){
+    var c=normalizeCity(ms[i]&&ms[i].city);
+    if(!c||seen[c])continue;
+    seen[c]=true; out.push(c);
+  }
+  out.sort();
+  return out;
+}
+function buildMasterEditPanelHtml(m,cities){
   // MASTER-EDIT-FORM-001: 氏名/ふりがな/支部員区分/級 を1枚のフォームで明示編集（表のセルは表示専用化）。
   //   区分・級はタップ循環をやめ、押した状態が見えるセグメント選択に。commit で applyMasterMemberEdit の
   //   options.member/grade に渡す（apply は既に両者を検証付きで受理・データ層不変）。
@@ -6100,6 +6119,11 @@ function buildMasterEditPanelHtml(m){
   var n=escapeHtml((m&&m.name)||'');
   var mem=(m&&m.member==='other')?'other':'member';
   var grd=(m&&(m.grade==='chu'||m.grade==='josei'))?m.grade:'ippan';
+  // MEMBER-CITY-EDIT-001 (#906): 市町村（任意・自由入力・maxlength は normalizeCity の 20 と揃える）。
+  var ct=escapeHtml(normalizeCity(m&&m.city));
+  var ctOpts='';
+  var _cl=(cities&&cities.length)?cities:[];
+  for(var ci=0;ci<_cl.length;ci++)ctOpts+='<option value="'+escapeHtml(_cl[ci])+'"></option>';
   function segBtn(v,label,cur){
     var on=(v===cur)?' mep-seg-on':'';
     return '<button type="button" data-val="'+v+'" class="mep-seg-btn'+on+'" aria-pressed="'+(v===cur?'true':'false')+'">'+label+'</button>';
@@ -6109,6 +6133,9 @@ function buildMasterEditPanelHtml(m){
     +'<input type="text" id="ms-edit-yomi" inputmode="kana" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" value="'+y+'" data-init="'+y+'" placeholder="ふりがな"></div>'
     +'<div class="mep-fld"><label for="ms-edit-name">氏名</label>'
     +'<input type="text" id="ms-edit-name" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" value="'+n+'" data-init="'+n+'" placeholder="氏名"></div>'
+    +'<div class="mep-fld"><label for="ms-edit-city">市町村</label>'
+    +'<input type="text" id="ms-edit-city" list="ms-edit-city-list" maxlength="20" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" value="'+ct+'" data-init="'+ct+'" placeholder="市町村（任意）">'
+    +'<datalist id="ms-edit-city-list">'+ctOpts+'</datalist></div>'
     +'<div class="mep-fld"><label>支部員区分</label>'
     +'<div class="mep-seg" id="ms-edit-member" data-init="'+mem+'" role="group" aria-label="支部員区分">'+segBtn('member','支部員',mem)+segBtn('other','その他',mem)+'</div></div>'
     +'<div class="mep-fld"><label>級（会費区分）</label>'
@@ -6126,11 +6153,14 @@ function bindMasterEditPanel(){
     if(k==='Enter'||k===13){ if(e&&e.preventDefault)e.preventDefault(); masterSheetCommitNameEdit(); }
     else if(k==='Escape'||k===27){ masterSheetCancelNameEdit(); }
   };
-  var ids=['ms-edit-yomi','ms-edit-name'];
+  var ids=['ms-edit-yomi','ms-edit-name','ms-edit-city'];
   for(var i=0;i<ids.length;i++){
     var el=document.getElementById(ids[i]);
     if(el){ el.addEventListener('compositionstart',onComp(true)); el.addEventListener('compositionend',onComp(false)); el.addEventListener('keydown',onKey); }
   }
+  // MEMBER-CITY-EDIT-001 (#906): 市町村欄を触ったら印を付ける（セグメントの data-touched と同じ役目）。
+  var ctEl=document.getElementById('ms-edit-city');
+  if(ctEl)ctEl.addEventListener('input',function(){ if(ctEl.setAttribute)ctEl.setAttribute('data-touched','1'); });
   // MASTER-EDIT-FORM-001: 区分/級セグメントの単一選択トグル（グループ内で1つだけ mep-seg-on）。
   if(document.querySelectorAll){
     var segGroups=document.querySelectorAll('.master-edit-panel .mep-seg');
@@ -6172,7 +6202,7 @@ function masterSheetStartNameEdit(mid){
   var td=document.createElement('td');
   td.colSpan=(row.cells&&row.cells.length)?row.cells.length:4;
   td.className='master-edit-cell';
-  td.innerHTML=buildMasterEditPanelHtml(m);
+  td.innerHTML=buildMasterEditPanelHtml(m,masterCityCandidates(master));
   tr.appendChild(td);
   if(row.parentNode)row.parentNode.insertBefore(tr,row.nextSibling);
   bindMasterEditPanel();
@@ -6199,10 +6229,17 @@ function masterSheetCommitNameEdit(){
   // MEMBER-EDIT-TOUCHED-COLS-001 (#901): クラウドへ「ローカル優先で送ってよい欄」の判定は opts（＝ローカル
   //   マスタへの適用対象）ではなく **利用者が操作したか** を使う。ローカルが既に正しくクラウドだけ古い場合、
   //   opts は空（差分ゼロ）になるが、利用者は「一般」を押し直して訂正を送れる必要がある。
+  // MEMBER-CITY-EDIT-001 (#906): 市町村欄が生えたので、区分/級と同じ規則で配線する。
+  //   触った（input を打った or 値が変わった）なら、その入力を **ローカルにも適用し、クラウドへも送る**。
+  //   触っていなければ opts に載せない＝パネルを開いたまま☁取得された市町村を古い表示値で巻き戻さない。
+  var _ctSt=_msInputState('ms-edit-city');
+  var _cityChanged=!!_ctSt && normalizeCity(_ctSt.val)!==normalizeCity(_ctSt.init);
+  var _cityTouched=!!(_ctSt&&(_ctSt.touched||_cityChanged));
+  if(_cityTouched)opts.city=_ctSt.val;
   var _pushTouched={
     member:!!(_segM&&_segM.touched),
     grade:!!(_segG&&_segG.touched),
-    city:false   // 編集パネルに市町村の欄は無い＝常に「触っていない」（R6/R9 で固定）
+    city:_cityTouched
   };
   // MASTER-EDIT-FORM-001 (Codex P1/4849): 氏名/ふりがなも「初期値(data-init)から変わったフィールドだけ」適用。
   //   未編集のフィールドは現在のマスタ値を使い、パネルを開いたまま☁取得された値を古い表示値で巻き戻さない。

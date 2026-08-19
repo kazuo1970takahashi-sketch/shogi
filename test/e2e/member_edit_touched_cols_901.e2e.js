@@ -176,7 +176,7 @@ async function openMasterTab(page) {
        'B1a 押した欄は set_* が true で渡る（touched がそのまま写る）');
     ok(cap2.cloud.member_kind === 'member' && cap2.cloud.grade === 'ippan',
        '★B2 押し直した区分・級は既定値方向でもクラウドへ届く（#901 の本題）');
-    ok(cap2.cloud.city === '沼津市', 'B3 同じ保存でも欄の無い市町村はクラウドの実値のまま（欄ごとに独立）');
+    ok(cap2.cloud.city === '沼津市', 'B3 同じ保存でも触っていない市町村はクラウドの実値のまま（欄ごとに独立・#906 で欄が生えた後も）');
     await page.close();
   }
 
