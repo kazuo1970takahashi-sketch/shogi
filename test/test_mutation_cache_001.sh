@@ -90,7 +90,7 @@ echo "1) 鍵の同一性"
 K1="$(key)"
 K2="$(key)"
 if [ -n "$K1" ] && [ "$K1" = "$K2" ]; then ok "同じ入力なら同じ鍵（$(echo "$K1" | cut -c1-8)…）"
-else ng "同じ入力で鍵が揺れる（$K1 / $K2）"; fi
+else ng "同じ入力で鍵が揺れる（$K1 / ${K2}）"; fi
 
 echo ""
 echo "2) 変異が当たらない領域の変更では鍵が変わらない（＝短縮の源）"
@@ -325,7 +325,7 @@ for spec in \
   if [ "$RC" -eq 0 ] && grep -q 'MUTCACHE-SKIP' "$SB/real_$NAME.out" 2>/dev/null; then
     ok "$NAME が記録済みの鍵で skip 経路へ入った（本物の結線）"
   else
-    ng "$NAME が skip しない（rc=$RC $RES）＝結線が切れているか鍵の作り方が食い違っている"
+    ng "$NAME が skip しない（rc=$RC ${RES}）＝結線が切れているか鍵の作り方が食い違っている"
   fi
 done
 
@@ -415,7 +415,7 @@ REAL_NODE="$(command -v node)"; export REAL_NODE
 echo 'console.log("ok suite");' > "$SB/rt/test/e2e/a_ok.e2e.js"
 echo 'console.log("MUTCACHE-SKIP fake"); console.log("  スキップ: 入力が同一");' > "$SB/rt/test/e2e/b_skip.e2e.js"
 OUT13="$(PATH="$SB/bin:$PATH" bash "$SB/rt/test/run_e2e.sh" dummy.html 2>&1)"; RC13=$?
-[ "$RC13" -eq 0 ] && ok "sandbox の run_e2e.sh が正常終了する" || ng "run_e2e.sh が異常終了（rc=$RC13）"
+[ "$RC13" -eq 0 ] && ok "sandbox の run_e2e.sh が正常終了する" || ng "run_e2e.sh が異常終了（rc=${RC13}）"
 case "$OUT13" in *"【SKIP】"*) ok "skip したジョブの見出しに【SKIP】が付く" ;; *) ng "【SKIP】が付かない" ;; esac
 case "$OUT13" in *"スキップ 1 件"*) ok "最終行で PASS と別に数えている" ;; *) ng "スキップが PASS に混ざっている（★危険）"; esac
 case "$OUT13" in *"1/2 スイート PASS"*) ok "PASS 数に skip を含めていない" ;; *) ng "PASS 数に skip が含まれている"; esac
