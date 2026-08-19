@@ -81,7 +81,7 @@ U15 新規行でも不正な語彙は拒否（INSERT に載るため）／U25 an
 | M10 city を `coalesce(excluded, m)` に | 赤（U7・U31） |
 | **M12 `revoke ... from anon` を消す** | **素通り（35/0 のまま緑）** |
 
-M12 が素通りするのは、効いているのが `from public` の revoke だけで、anon には明示 grade が
+M12 が素通りするのは、効いているのが `from public` の revoke だけで、anon には明示 grant が
 無いため **`from anon` の行が今日は no-op** だから。既存 `app_hard_delete_members` と読み比べ
 やすいよう行自体は残したが、**「anon を締めている根拠」はこの行ではなく U25/U27**（実際に呼んで
 permission denied を確認）であることを SQL のコメントにも書いた。
