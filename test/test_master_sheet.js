@@ -274,7 +274,7 @@ assert(delSrc.indexOf('クラウドの名簿からも削除され、全端末に
 // 窓は「次のトップレベル関数の直前まで」。固定オフセットだと本文が伸びたとき assertion が黙って窓の外へ出る。
 const pdSrc=RAW.slice(RAW.indexOf('function pushMemberDeleteStateToCloud'),RAW.indexOf('function pushAllMembersToCloud'));
 assert(pdSrc.indexOf("client.rpc('app_upsert_member_edits_bulk'")>=0&&pdSrc.indexOf('deleted_at:deleted?nowIso:null')>=0, 'Q3 deleted_at＝削除は現在時刻・復元は null（一括版 RPC・1トランザクション）');
-assert(pdSrc.indexOf('touch_deleted_at:true')>=0&&!/set_member_kind|set_grade|set_city/.test(pdSrc), 'Q3a 削除/復元は deleted_at だけ触る（set_* を渡さない＝既存行の区分・級・市町村を1バイトも変えない）');
+assert(pdSrc.indexOf('touch_deleted_at:true')>=0&&pdSrc.indexOf('_editPushSetFlags(lcD,null)')>=0, 'Q3a 削除/復元も set_* は _editPushSetFlags で決める（削除経路に「操作した欄」は無いので実質「ローカルが非既定値の欄だけ」・Codex P1 r3810188007）');
 assert(pdSrc.indexOf('.from(')<0, 'Q3b 削除/復元 push も members を直接読み書きしない（送信前 select が無い）');
 assert(!/branch\s*:/.test(pdSrc), 'Q4 branch 列を送らない（クラウド値保全）');
 
@@ -327,8 +327,13 @@ const qDel=(function(){
     //   行が無い会員だけローカル値で完全な行が INSERT される。送信前の読み取りは要らなくなった。
     assert(cap.reads===0, 'Q6a 削除 push は送信前に members を読まない（読み取り失敗・競合窓が原理的に生じない）');
     assert(cap.bulkRows.every(r=>('member_kind' in r)&&('grade' in r)&&('city' in r)), 'Q6b 各行にローカル属性を載せる（行が無い会員の INSERT を完全な行にする）');
-    assert(cap.bulkRows.every(r=>r.touch_deleted_at===true&&!('set_member_kind' in r)&&!('set_grade' in r)&&!('set_city' in r)), 'Q6c 触るのは deleted_at だけ（set_* を渡さない＝既存行の区分・級・市町村を潰さない）');
-    assert(cap.bulkRows.every(r=>Object.keys(r).every(k=>['member_id','name','yomi','member_kind','grade','city','deleted_at','touch_deleted_at'].indexOf(k)>=0)), 'Q6d 送るキーは RPC の既知キーだけ（未知キーは RPC が raise する＝綴り違いで黙って無反映にならない）');
+    assert(cap.bulkRows.every(r=>r.touch_deleted_at===true), 'Q6c 全行が deleted_at を明示的に触る（touch_deleted_at=true）');
+    // #909 Codex P1: set_* は「ローカルが非既定値か」で欄ごとに決まる。
+    //   m-ka=member/ippan/市町村なし（全欄既定値）→ 全部 false ／ m-an=other/chu（区分・級が非既定）→ その2つだけ true
+    const rKa=cap.bulkRows.filter(r=>r.member_id==='m-ka')[0], rAn=cap.bulkRows.filter(r=>r.member_id==='m-an')[0];
+    assert(rKa&&rKa.set_member_kind===false&&rKa.set_grade===false&&rKa.set_city===false, 'Q6c1 全欄が既定値の会員は set_* を1つも立てない（既定値でクラウドを潰さない）');
+    assert(rAn&&rAn.set_member_kind===true&&rAn.set_grade===true&&rAn.set_city===false, 'Q6c2 ★非既定値の欄だけ立つ（NULL の旧行に実値が届く・市町村は空なので立たない）');
+    assert(cap.bulkRows.every(r=>Object.keys(r).every(k=>['member_id','name','yomi','member_kind','grade','city','set_member_kind','set_grade','set_city','deleted_at','touch_deleted_at'].indexOf(k)>=0)), 'Q6d 送るキーは RPC の既知キーだけ（未知キーは RPC が raise する＝綴り違いで黙って無反映にならない）');
   });
 })();
 const qRes=(function(){
@@ -398,7 +403,7 @@ const sEdit=(function(){
   return e.pushMemberEditToCloud({id:'m-ka',name:'架空太郎',yomi:'かくう',member:'other',grade:'chu',city:'沼津市'},function(){}).then(function(){
     const c=rpcArgs(cap,'app_upsert_member_edit');
     assert(c&&c.p_member_kind==='other'&&c.p_grade==='chu'&&c.p_city==='沼津市', 'S15 編集 push にも区分・市町村が同乗（新規行を完全な行にする）');
-    assert(c.p_set_member_kind===false&&c.p_set_grade===false&&c.p_set_city===false, 'S15a touched 省略時は set_* が全部 false＝既存行の属性を1バイトも変えない（渡し忘れてもクラウドを壊さない）');
+    assert(c.p_set_member_kind===true&&c.p_set_grade===true&&c.p_set_city===true, 'S15a touched 省略でもローカルが非既定値（other/chu/沼津市）なら set_* が立つ＝NULL の旧行に実値が届く（Codex P1 r3810188007）');
     assert(cap.reads===0, 'S15b 編集 push は送信前に members を読まない（#909）');
   });
 })();

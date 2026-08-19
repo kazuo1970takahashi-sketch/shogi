@@ -13123,6 +13123,30 @@ function _editAttrKeptNote(labels){
   if(!labels||!labels.length)return '';
   return '　⚠ '+labels.join('・')+' はクラウドの値のままにしました（この端末の表示と違います。端末の値で上書きするには名簿タブの「☁ 名簿全体をクラウドへ一括送信」）';
 }
+// MEMBER-UPSERT-RPC-001 (#909) / Codex P1 (r3810188007): RPC へ渡す `p_set_*`（＝その列を
+//   更新するか）を決める純関数。**「この端末がその欄について情報を持っているか」**で決まる:
+//     ・利用者がその保存で操作した          → 持っている（既定値方向の訂正もここで届く）
+//     ・操作していないがローカルが非既定値  → 持っている（#853 案E＝「非既定値だけが人が
+//                                             明示的に入れた情報だと確実に言える」）
+//     ・操作しておらずローカルも既定値      → **持っていない**（既定値は「未設定」と区別できない）
+//   これは #901 の composeEditPushFieldCols / #853 の composeCloudMemberFieldCols と同じ規則を
+//   `p_set_*` の言葉で書き直したもの。判定の実行場所が SQL 側へ移っただけで、規則は変えない。
+//   ★ なぜ「操作した欄だけ true」ではいけないか（Codex P1・実害）:
+//     クラウドの旧行が grade=NULL（属性列を持つ前に作られた行）で、端末には明示的な josei が
+//     ある状態で氏名だけ直すと、その列を送らない＝NULL のまま成功表示だけが出る。別の端末が
+//     その行を取ると mergeCloudMembersIntoMaster は NULL を読み飛ばし、normalizeBranchMaster が
+//     ippan へ確定する＝**会費の誤徴収が別経路で復活する**。#901 はここをローカル値で埋めていた。
+//   ★ 逆に既定値は絶対に送らない。既定値で NULL を埋めると「未設定」が「既定値だと主張した」に
+//     変わり、その後の下り merge で別端末の実値（other/josei）を上書きしうる（#853 の本題）。
+//   純関数・副作用なし。
+function _editPushSetFlags(local, touched){
+  var t=touched||{}, lc=local||{};
+  return {
+    member_kind:!!t.member||lc.member_kind==='other',
+    grade:!!t.grade||(lc.grade==='chu'||lc.grade==='josei'),
+    city:!!t.city||!!lc.city
+  };
+}
 // MEMBER-UPSERT-RPC-001 (#909): 上の注記に載せる欄名を **RPC が返した実値** から決める純関数。
 //   #901 までは「送信行を組むときに使った合成結果」と端末値の差で推測していたが、RPC は
 //   `returning` で **実際にクラウドへ残った値** を返す。推測ではなく実測で名指しできる。
@@ -13282,11 +13306,12 @@ function pushMemberEditToCloud(member,setStatus,touched){
         //   ＝読み取りが要らない＝読み取り失敗・タイムアウト・競合窓が**原理的に生じない**。
         //   規則（語彙の whitelist・保全・deleted_at の扱い）は SQL 側1箇所にある
         //   （supabase/migrations/20260818120000_member_edit_upsert_preserving_attrs.sql）。
-        //   ★ p_set_* は「利用者がその欄を**操作したか**」。省略時 false ＝ 渡し忘れても
-        //     クラウドを壊さない側に倒れる。city はこのパネルに欄が無い＝常に false。
+        //   ★ p_set_* の決め方は _editPushSetFlags（操作した欄 OR ローカルが非既定値）。
+        //     省略時 false ＝ 渡し忘れてもクラウドを壊さない側に倒れる。
         //   ★ p_deleted_at / p_touch_deleted_at は渡さない（既定 false）＝編集 push が
         //     tombstone を復活させない（従来 deleted_at 列を送っていなかったのと同じ性質）。
         var lc=_cloudMemberFieldCols(member);
+        var sf=_editPushSetFlags(lc,_touched);
         return client.rpc('app_upsert_member_edit',{
           p_club:clubId,
           p_member_id:member.id,
@@ -13295,9 +13320,9 @@ function pushMemberEditToCloud(member,setStatus,touched){
           p_member_kind:lc.member_kind,
           p_grade:lc.grade,
           p_city:lc.city,
-          p_set_member_kind:!!_touched.member,
-          p_set_grade:!!_touched.grade,
-          p_set_city:!!_touched.city
+          p_set_member_kind:sf.member_kind,
+          p_set_grade:sf.grade,
+          p_set_city:sf.city
         }).then(function(res){
           if(res&&res.error){ setStatus('クラウドへの反映に失敗しました：'+((res.error&&res.error.message)||'不明')+'（端末には保存済み・名簿タブの「☁ 名簿全体をクラウドへ一括送信」で反映できます）'); return {ok:false,step:'upsert'}; }
           // RPC は「実際にクラウドへ残った値」を返す。端末の表示と違う欄を ⚠ で名指しする。
@@ -13345,8 +13370,10 @@ function pushMemberDeleteStateToCloud(mids,master,deleted,setStatus){
         //   #901 は「送信前にクラウドの現在値を読んで合成する」ことで、☁取り込み前の端末で
         //   削除→復元しただけでクラウドの「その他・女性・沼津市」が潰れる事故を塞いだが、
         //   読み取り失敗・タイムアウト・競合窓という代償が付いていた。一括版 RPC は
-        //   **set_* を渡さない（＝すべて false）** ことで同じ結果を読まずに得る:
-        //     既存行あり … name/yomi/deleted_at だけ更新。属性列は1バイトも触らない（潰さない）
+        //   **set_* を _editPushSetFlags で決める**ことで同じ結果を読まずに得る（削除経路に
+        //   「操作した欄」は無いので、実質「ローカルが非既定値の欄だけ true」になる）:
+        //     既存行あり … 既定値の欄は1バイトも触らない（潰さない）。非既定値の欄だけ届く
+        //                  （#901 の composeCloudMemberFieldCols と同じ規則・Codex P1 r3810188007）
         //     行が無い   … 端末のローカル値がそのまま INSERT される（完全な行になる）
         //   ★ N 名を **1リクエスト・1トランザクション**で送る。単数形を N 回呼ぶと会場の
         //     詰まった回線で N 往復になり、途中で失敗すると中途半端な状態が残る。
@@ -13357,6 +13384,7 @@ function pushMemberDeleteStateToCloud(mids,master,deleted,setStatus){
           var m=_masterSheetFindMember(mids[i],master);
           if(!m)continue;
           var lcD=_cloudMemberFieldCols(m);
+          var sfD=_editPushSetFlags(lcD,null);
           rows.push({
             member_id:mids[i],
             name:m.name||'',
@@ -13364,6 +13392,9 @@ function pushMemberDeleteStateToCloud(mids,master,deleted,setStatus){
             member_kind:lcD.member_kind,
             grade:lcD.grade,
             city:lcD.city,
+            set_member_kind:sfD.member_kind,
+            set_grade:sfD.grade,
+            set_city:sfD.city,
             deleted_at:deleted?nowIso:null,
             touch_deleted_at:true
           });

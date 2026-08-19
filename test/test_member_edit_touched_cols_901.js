@@ -39,7 +39,7 @@ const path = require('path');
 const { loadApp, readHtml } = require(path.join(__dirname, 'lib', 'app_harness.js'));
 
 const TARGET = process.argv[2] || 'shogi_v4.html';
-const EXPECTED_CHECKS = 75;   // ★ 実行本数の下限。ハング等で assertion が走らないまま緑になるのを防ぐ
+const EXPECTED_CHECKS = 94;   // ★ 実行本数の下限。ハング等で assertion が走らないまま緑になるのを防ぐ
 
 let pass = 0, fail = 0;
 function assert(cond, msg) {
@@ -158,6 +158,46 @@ assert(JSON.stringify(kept(null, LOCAL_DEFAULT_COLS)) === '[]' && JSON.stringify
   'C6 戻りが無い/引数が欠けても例外にしない（成功表示を壊さない・純関数）');
 assert(JSON.stringify(kept({ member_kind: 'member', grade: 'ippan', city: '沼津市' }, { member_kind: 'member', grade: 'ippan', city: '' })) === JSON.stringify(['市町村']),
   'C7 端末の市町村が空でクラウドに実値があるときは名指しする（空 vs 実値は「違う」）');
+
+// ★ Codex P1 (r3810188007): p_set_* を「操作した欄だけ」にすると、クラウドの旧行が NULL で
+//   端末に実値がある会員の属性が永久に届かず、別端末が既定値へ確定して誤徴収が復活する。
+//   規則は「この端末がその欄について情報を持っているか」＝操作した OR ローカルが非既定値。
+const flags = rApp.fn('_editPushSetFlags');
+const DEF_COLS = { member_kind: 'member', grade: 'ippan', city: null };
+const REAL_COLS = { member_kind: 'other', grade: 'josei', city: '三島市' };
+
+let f = flags(DEF_COLS, {});
+assert(f.member_kind === false && f.grade === false && f.city === false,
+  'C8 ★既定値のまま未操作なら送らない（既定値で NULL を埋めると「未設定」が「既定値だと主張した」に変わる＝#853 の本題）');
+f = flags(REAL_COLS, {});
+assert(f.member_kind === true && f.grade === true && f.city === true,
+  'C9 ★未操作でもローカルが非既定値なら送る（#853 案E・#901 と同一規則。これが無いと NULL の旧行に実値が永久に届かない）');
+f = flags(DEF_COLS, { member: true, grade: true, city: true });
+assert(f.member_kind === true && f.grade === true && f.city === true,
+  'C10 操作した欄は既定値でも送る（「その他→支部員」「女性→一般」の訂正が届く＝#901 の本題）');
+f = flags({ member_kind: 'member', grade: 'chu', city: '' }, {});
+assert(f.member_kind === false && f.grade === true && f.city === false,
+  'C11 欄ごとに独立して決まる（中学生以下も非既定値）');
+f = flags(null, null);
+assert(f.member_kind === false && f.grade === false && f.city === false,
+  'C12 引数が欠けても例外にせず保全側（false）に倒れる');
+// 規則が #853 の合成規則と一致していることを、真理値表の重複ではなく **等価性**で見る。
+//   set が false なら「クラウド値を採る」＝composeCloudMemberFieldCols の結果と一致するはず。
+const cccOf = (m, cloud) => rApp.call('composeCloudMemberFieldCols', m, cloud);
+const M_REAL = { member: 'other', grade: 'josei', city: '三島市' };
+const M_DEF = { member: 'member', grade: 'ippan', city: '' };
+for (const [label, m] of [['非既定', M_REAL], ['既定', M_DEF]]) {
+  const lc = rApp.call('_cloudMemberFieldCols', m);
+  const fl = flags(lc, {});
+  const merged = cccOf(m, CLOUD_ROW);
+  const viaFlags = {
+    member_kind: fl.member_kind ? lc.member_kind : CLOUD_ROW.member_kind,
+    grade: fl.grade ? lc.grade : CLOUD_ROW.grade,
+    city: fl.city ? lc.city : CLOUD_ROW.city,
+  };
+  assert(JSON.stringify(merged) === JSON.stringify(viaFlags),
+    'C13 未操作時の p_set_* は #853 の合成規則と等価（' + label + '）＝規則を二重化していない  [' + JSON.stringify(viaFlags) + ']');
+}
 
 // ======================================================================== P: 実コーディネータ経由の push
 
@@ -431,11 +471,50 @@ const caseP9 = (async function () {
   app.call('masterSheetCommitNameEdit');
   await settle();
   const a = cap.args('app_upsert_member_edit') || {};
-  assert(a.p_set_member_kind === true && a.p_set_grade === false && a.p_set_city === false,
-    'P39 押した欄だけ set が立つ（touched がそのまま p_set_* に写る）');
+  assert(a.p_set_member_kind === true && a.p_set_city === false,
+    'P39 押した欄は set が立ち、ローカルが既定値で未操作の欄（市町村＝空）は立たない');
+  assert(a.p_set_grade === true,
+    'P39a 級は押していないが**ローカルが josei（非既定値）**なので送る（NULL の旧行に実値が届く・Codex P1）');
   const after = cap.cloudRow();
   assert(after.member_kind === 'member' && after.grade === 'josei',
-    'P40 ★押した欄だけクラウドが変わり、押していない欄はクラウドの実値のまま（欄ごとに独立）');
+    'P40 ★押した「その他→支部員」が届き、級は端末の josei のまま（欄ごとに独立）');
+  assert(after.city === '沼津市', 'P40a 未操作かつローカルが空の市町村はクラウドの実値のまま');
+})();
+
+// P-M: ★Codex P1 (r3810188007) — クラウドの旧行が NULL、端末に実値。氏名だけ直しても実値が届く
+const caseP13 = (async function () {
+  const app = boot(fixture({ member: 'other', grade: 'josei', city: '三島市' }));
+  // 属性列を持つ前に作られた行（member_kind / grade / city が NULL）
+  const OLD_ROW = { member_id: MEMBER_ID, name: '架空太郎', yomi: 'かくうたろ', member_kind: null, grade: null, city: null };
+  const cap = mockCloud(app, { cloudRow: OLD_ROW });
+  openPanel(app, Object.assign({ nameInit: '架空太郎', name: '架空太郎', yomiInit: 'かくうたろ', yomi: 'かくうたろう' },
+    { memberInit: 'other', member: 'other', gradeInit: 'josei', grade: 'josei' }));
+  app.call('masterSheetCommitNameEdit');
+  await settle();
+  const a = cap.args('app_upsert_member_edit') || {};
+  assert(a.p_set_member_kind === true && a.p_set_grade === true && a.p_set_city === true,
+    'P47 ★一欄も操作していなくても、ローカルが非既定値なら送る');
+  const after = cap.cloudRow();
+  assert(after.member_kind === 'other' && after.grade === 'josei' && after.city === '三島市',
+    'P48 ★★NULL の旧行に端末の実値が実際に入る（ここを落とすと別端末が ippan へ確定して誤徴収が復活する）');
+  assert(!/⚠/.test(statusText(app)), 'P49 届いたのだから ⚠ は出ない（残った値＝端末の値）');
+})();
+
+// P-N: 端末が既定値なら NULL の旧行を既定値で埋めない（#853 の本題を壊さない）
+const caseP14 = (async function () {
+  const app = boot(fixture({ member: 'member', grade: 'ippan', city: '' }));
+  const OLD_ROW = { member_id: MEMBER_ID, name: '架空太郎', yomi: 'かくうたろ', member_kind: null, grade: null, city: null };
+  const cap = mockCloud(app, { cloudRow: OLD_ROW });
+  openPanel(app, Object.assign({ nameInit: '架空太郎', name: '架空太郎', yomiInit: 'かくうたろ', yomi: 'かくうたろう' }, NO_TOUCH));
+  app.call('masterSheetCommitNameEdit');
+  await settle();
+  const a = cap.args('app_upsert_member_edit') || {};
+  assert(a.p_set_member_kind === false && a.p_set_grade === false && a.p_set_city === false,
+    'P50 ★端末も既定値なら送らない（既定値で NULL を埋めると「未設定」が「既定値だと主張した」に変わり、下り merge で別端末の実値を上書きしうる）');
+  const after = cap.cloudRow();
+  assert(after.member_kind === null && after.grade === null && after.city === null,
+    'P51 クラウドは NULL のまま（下り merge の非空ガードが読み飛ばす＝どの端末も壊れない）');
+  assert(!/⚠/.test(statusText(app)), 'P52 この場合も ⚠ は出さない（端末の表示と食い違っていない）');
 })();
 
 // P-J: パネルを開いたまま外部再描画が入っても「押し直し」が消えない
@@ -494,7 +573,8 @@ const caseP12 = (async function () {
 
 // ======================================================================== D: 削除/復元 push の属性の扱い
 
-const BULK_KEYS = ['city', 'deleted_at', 'grade', 'member_id', 'member_kind', 'name', 'touch_deleted_at', 'yomi'];
+const BULK_KEYS = ['city', 'deleted_at', 'grade', 'member_id', 'member_kind', 'name',
+                   'set_city', 'set_grade', 'set_member_kind', 'touch_deleted_at', 'yomi'];
 
 // D-1: クラウドに実値がある会員を、既定値のままの端末から削除しても潰さない
 const caseD1 = (async function () {
@@ -511,7 +591,9 @@ const caseD1 = (async function () {
   assert(cap.selects === 0 && cap.upserts.length === 0,
     'D3 ★削除 push も送信前に members を読まない（読めるかどうかに結果が依存しない）');
   assert(JSON.stringify(Object.keys(rows[0]).sort()) === JSON.stringify(BULK_KEYS),
-    'D3a 送るキーは RPC の既知キーだけ・set_* は渡さない（未知キーは RPC が raise する＝綴り違いで黙って無反映にならない）  [' + Object.keys(rows[0]).sort().join(',') + ']');
+    'D3a 送るキーは RPC の既知キーだけ（未知キーは RPC が raise する＝綴り違いで黙って無反映にならない）  [' + Object.keys(rows[0]).sort().join(',') + ']');
+  assert(rows[0].set_member_kind === false && rows[0].set_grade === false && rows[0].set_city === false,
+    'D3b この会員はローカルが全欄既定値なので set_* は立たない（既定値でクラウドを潰さない）');
   const after = cap.cloudRow();
   assert(after.member_kind === 'other' && after.grade === 'josei' && after.city === '沼津市',
     'D4 ★削除でクラウドの区分・級・市町村を潰さない（従来はローカル既定値と NULL で上書きしていた）');
@@ -548,9 +630,26 @@ const caseD3 = (async function () {
     'D8 復元でもクラウドの区分・級・市町村を潰さない');
 })();
 
+// D-4: ★Codex P1 — クラウドの旧行が NULL、端末に実値。削除でも実値が届く
+const caseD4 = (async function () {
+  const app = boot(fixture({ member: 'other', grade: 'josei', city: '三島市' }));
+  const OLD_ROW = { member_id: MEMBER_ID, name: '架空太郎', yomi: 'かくうたろ', member_kind: null, grade: null, city: null };
+  const cap = mockCloud(app, { cloudRow: OLD_ROW });
+  app.ctx._masterSelected[MEMBER_ID] = true;
+  app.call('masterSheetDeleteSelected');
+  await settle();
+  const rows = (cap.args('app_upsert_member_edits_bulk') || {}).p_rows || [];
+  assert(rows.length === 1 && rows[0].set_member_kind === true && rows[0].set_grade === true && rows[0].set_city === true,
+    'D9 ★削除 push もローカルが非既定値の欄は送る（削除経路に「操作した欄」は無いので、この規則だけが実値を届ける）');
+  const after = cap.cloudRow();
+  assert(after.member_kind === 'other' && after.grade === 'josei' && after.city === '三島市',
+    'D10 ★★NULL の旧行に端末の実値が実際に入る（#901 の composeCloudMemberFieldCols と同じ結果）');
+  assert(typeof after.deleted_at === 'string' && after.deleted_at.length > 0, 'D11 同じ1文で削除も反映される');
+})();
+
 // ======================================================================== 実行
 
-const all = Promise.all([caseP1, caseP2, caseP3, caseP4, caseP5, caseP6, caseP7, caseP8, caseP9, caseP10, caseP11, caseP12, caseD1, caseD2, caseD3]);
+const all = Promise.all([caseP1, caseP2, caseP3, caseP4, caseP5, caseP6, caseP7, caseP8, caseP9, caseP10, caseP11, caseP12, caseP13, caseP14, caseD1, caseD2, caseD3, caseD4]);
 // ★ どれかがハングすると then が走らず、Node は既定の exit 0 で終了する＝run_tests.sh が「全PASS」と表示する。
 //   実測でそれが起きたため、待ちに上限を置いて必ず結果を出す。
 const guard = new Promise(function (res) { setTimeout(function () { res('TIMEOUT'); }, 20000).unref && setTimeout(function () {}, 0); });
