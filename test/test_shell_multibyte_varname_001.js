@@ -30,23 +30,16 @@
 //     3. 免除した件数は**pin する**（増えたら赤・最終行にも載せる）
 //
 //   ★ ただし「解析しないから見逃しはゼロ」と最初に書いたのは**言い過ぎだった**。
-//     3版目にも Codex が見逃しを2つ見つけた（3巡目 P2）:
-//       ・**バックスラッシュ改行**（`echo "$V\` ＋次行 `（"`）は行ごとに見ると
-//         どちらの行にも一致しない。bash は引用解析の**前に**これを除去するので実質 `$V（`
-//         → 継続行を結合した「論理行」で検査する（`logicalLines`）
-//       ・免除マーカーを行内のどこでも認めると、`printf 'mb-ok: reason' "$V（"` のように
-//         **マーカーの説明を含むだけの行**が丸ごと免除され、普通のメッセージを足すだけで
-//         ゲートに穴を空けられる → **行末の `#` コメント**として置かれた形だけを認める
-//     見逃しゼロは「解析をやめれば自動的に手に入る」ものではなく、**入力の正規化**
-//     （行の結合）と**免除の厳密化**まで含めて初めて成り立つ。
-//
-//   2026-08-19 時点で追跡下の *.sh 30 本に対し、免除が要る行は **1 行だけ**
-//   （この不具合そのものを説明しているコメント）。過検出のコストは実測でこの程度。
-//
-//   ★ この方針は「網羅的な正しさ」を捨てている。`printf '%s' '$var（'` のような
-//     **展開されないリテラルも赤くなる**。それは仕様であって不具合ではない。
-//     直し方は `${var}` に変える（展開される文脈では出力が変わらない）か、
-//     リテラルを変えたくないなら `mb-ok:` を書く。
+//     3版目・4版目にも Codex が見逃しを見つけた（3巡目 P2×2・4巡目 P2×1）:
+//       ・**バックスラッシュ改行**は行ごとに見るとどちらの行にも一致しない。
+//         bash は引用解析の**前に**これを除去するので実質つながっている
+//       ・免除マーカーを行内のどこでも認めると、**マーカーの説明を含むだけの行**が丸ごと免除される
+//       ・かといって**単純に結合すると**、単一引用符の中のバックスラッシュ（継続としては働かない）
+//         まで繋いでしまい、**後ろの行のマーカーが前の行の本物の違反を免除する**
+//     → 物理行ごとの検査（免除はその行自身のマーカーのみ）と、継続境界をまたぐ形だけの
+//        追加検査、の**2段構え**にした。詳しくは `scan` の直前のコメント。
+//     見逃しゼロは「解析をやめれば自動的に手に入る」ものではなく、**入力の扱い方**と
+//     **免除の厳密化**まで含めて初めて成り立つ。
 //
 // 使い方: node test/test_shell_multibyte_varname_001.js
 // 終了コード: 0=違反なし / 1=違反あり
@@ -76,33 +69,48 @@ const HAZARD = /\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]/;
 //     ここを塞ぐにはシェルの引用解析が要り、それをやめたのがこの版の主旨なので受け入れる。
 const EXEMPT = /\s#\s*mb-ok:\s*\S[^\n]*$/;
 
-// ★ Codex P2 (r3810651486): bash は**引用解析の前に**バックスラッシュ改行を除去するので、
-//   `echo "$V\` の次行が `（"` なら実質 `$V（` になる。行ごとに見ると**どちらの行にも
-//   一致せず見逃す**。そこで継続行を結合した「論理行」にしてから検査する。
-//   行末のバックスラッシュが**奇数個**のときだけ継続（`\\` はエスケープ済みの backslash）。
-function logicalLines(src) {
-  const phys = src.split('\n');
-  const out = [];
-  let buf = null, start = 0;
-  for (let i = 0; i < phys.length; i++) {
-    const line = phys[i];
-    const m = /(\\+)$/.exec(line);
-    const cont = !!m && (m[1].length % 2 === 1);
-    if (buf === null) { buf = ''; start = i; }
-    buf += cont ? line.slice(0, -1) : line;
-    if (!cont) { out.push({ line: start + 1, text: buf }); buf = null; }
-  }
-  if (buf !== null) out.push({ line: start + 1, text: buf });
-  return out;
+// ★ Codex P2 (r3810651486 / r3810831853): bash は**引用解析の前に**バックスラッシュ改行を
+//   除去するので、行末の `\\` の先の行と実質つながる。行ごとに見ると
+//   **どちらの行にも一致せず見逃す**。かといって単純に結合すると別の穴が開く（4巡目）:
+//   単一引用符の中のバックスラッシュは**継続として働かない**のに結合してしまい、
+//   **後ろの物理行にある免除マーカーが、前の物理行の本物の違反まで免除する**。
+//
+//   そこで **2段構え**にする。引用状態は相変わらず見ない:
+//     ① **物理行ごと**に検査する。免除は**その物理行自身の行末マーカー**でしか効かない
+//        → 別の行のマーカーが漏れてくることが原理的に起きない
+//     ② **継続の境界をまたぐ形**だけを追加で検査する（結合してはじめて現れる hazard）。
+//        免除は継続先の行末マーカー。3行以上の連鎖は累積して境界ごとに見る
+//   ①だけでも②だけでも穴が残る。両方あって初めて塞がる。
+function endsWithContinuation(line) {
+  const m = /(\\+)$/.exec(line);
+  return !!m && (m[1].length % 2 === 1);
 }
 
 function scan(src) {
+  const phys = src.split('\n');
   const hits = [];
   let exempted = 0;
-  for (const L of logicalLines(src)) {
-    if (!HAZARD.test(L.text)) continue;
-    if (EXEMPT.test(L.text)) { exempted++; continue; }
-    hits.push({ line: L.line, text: L.text.trim() });
+
+  // ① 物理行ごと（免除はその行自身のマーカーだけ）
+  phys.forEach((line, i) => {
+    if (!HAZARD.test(line)) return;
+    if (EXEMPT.test(line)) { exempted++; return; }
+    hits.push({ line: i + 1, text: line.trim() });
+  });
+
+  // ② 継続の境界をまたぐ形（結合してはじめて現れるものだけ）
+  let acc = null, accStart = 0;
+  for (let i = 0; i < phys.length; i++) {
+    const cont = endsWithContinuation(phys[i]);
+    if (acc === null) { acc = ''; accStart = i; }
+    const piece = cont ? phys[i].slice(0, -1) : phys[i];
+    const prev = acc;
+    acc = prev + piece;
+    if (prev !== '' && HAZARD.test(acc) && !HAZARD.test(prev) && !HAZARD.test(piece)) {
+      if (EXEMPT.test(phys[i])) exempted++;
+      else hits.push({ line: accStart + 1, text: acc.trim() });
+    }
+    if (!cont) acc = null;
   }
   return { hits: hits, exempted: exempted };
 }
@@ -151,6 +159,12 @@ const CASES = [
   ['★バックスラッシュ改行で分断されても違反',        'V=1\necho "検出 ' + V + '\\\n' + FW + 'bytes"', true],
   ['★マーカー文字列が行内にあるだけでは免除しない',  "V=1\nprintf 'mb-ok: reason' \"" + V + FW + '"', true],
   ['行末の # コメントに置いたマーカーなら免除',      'V=1\necho "' + V + FW + '"   # mb-ok: 展開されないリテラル', false],
+  // ★ Codex P2 (r3810831853): 単一引用符の中の `\` は継続として働かないのに結合すると、
+  //   後ろの行の免除マーカーが前の行の本物の違反まで免除してしまう。物理行ごとの検査で塞ぐ。
+  ['★後ろの行のマーカーは前の行の違反を免除しない',
+   'V=1\necho "' + V + FW + '"\nprintf \'a\\\n' + V + FW + "' # mb-ok: これはリテラル", true],
+  ['★継続境界にできる違反は継続先のマーカーで免除できる',
+   'V=1\necho "' + V + '\\\n' + FW + '"  # mb-ok: 継続の先で閉じるリテラル', false],
 ];
 for (const [label, src, want] of CASES) {
   const got = scan(src).hits.length > 0;
