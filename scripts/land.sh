@@ -199,7 +199,7 @@ process_one() {
   _s2="$(fsize "$_src")"
   if [ "$_s1" != "$_s2" ] || [ -z "$_s2" ] || [ "$_s2" = "0" ]; then
     # まだ書き込み中。常駐なら次の巡で拾えるが、--once では**黙って落とさない**
-    [ "$ONCE" -eq 1 ] && say "保留 $_name — まだ書き込み中に見える（size $_s1→$_s2）。--once なので今回は見送り"
+    [ "$ONCE" -eq 1 ] && say "保留 $_name — まだ書き込み中に見える（size ${_s1}→${_s2}）。--once なので今回は見送り"
     return 0
   fi
 
@@ -225,7 +225,7 @@ process_one() {
   fi
   [ -f "$_src.force" ] && mv "$_src.force" "$_b.force" 2>/dev/null
 
-  say "検出 $_name（${_s2} bytes）"
+  say "検出 ${_name}（${_s2} bytes）"
 
   # 3) bundle として妥当か（前提コミットが手元にあるかもここで分かる）
   if ! git bundle verify "$_b" >/dev/null 2>&1; then
@@ -266,7 +266,7 @@ process_one() {
     # 5) 一時 ref へ fetch（作業ツリーには触らない）
     _tmpref="refs/land/$_branch"
     if ! git fetch "$_b" "+$_ref:$_tmpref" >/dev/null 2>&1; then
-      fail_out "$_b" "$_name" "bundle からの fetch に失敗（$_ref）"
+      fail_out "$_b" "$_name" "bundle からの fetch に失敗（${_ref}）"
       return 0
     fi
     _sha="$(git rev-parse "$_tmpref" 2>/dev/null)"
@@ -299,7 +299,7 @@ process_one() {
     fi
 
     if [ "$_rc" -ne 0 ]; then
-      say "NG   $_name — push 失敗（$_branch）"
+      say "NG   $_name — push 失敗（${_branch}）"
       echo "$_out" | sed 's/^/       /'
       echo "$_out" | sed 's/^/       /' >> "$LOG" 2>/dev/null
       # ★ Codex P2 (r3794397154) / P1 (r3794610400): 復旧手段を後続処理で壊さない。
@@ -308,7 +308,7 @@ process_one() {
       _keepref="refs/land/failed/$_sha"
       git update-ref "$_keepref" "$_sha" 2>/dev/null
       git update-ref -d "$_tmpref" 2>/dev/null
-      say "     この bundle の内容は $_keepref に保持した（$_sha）"
+      say "     この bundle の内容は $_keepref に保持した（${_sha}）"
       say "     早戻り（fast-forward でない）なら、意図した上書きか確かめてから:"
       if [ -n "$_old" ]; then
         say "       cd $REPO && git push --force-with-lease=$_ref:$_old origin $_sha:$_ref"
@@ -319,7 +319,7 @@ process_one() {
       fail_out "$_b" "$_name" "push 失敗"
       return 0
     fi
-    say "OK   $_branch ← $_sha（前: $_oldshow）"
+    say "OK   $_branch ← ${_sha}（前: ${_oldshow}）"
     # push できた時点で origin に載っているので、一時 ref は消す（.git を太らせない）
     git update-ref -d "$_tmpref" 2>/dev/null
   done

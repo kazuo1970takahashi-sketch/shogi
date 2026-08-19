@@ -114,7 +114,7 @@ AFTER_HEAD="$(cd "$A" && git rev-parse HEAD)"
 AFTER_BR="$(cd "$A" && git rev-parse --abbrev-ref HEAD)"
 AFTER_TREE="$(cd "$A" && git status --porcelain | grep -v '_landed' | grep -v '\.bundle' | sort)"
 [ "$BEFORE_HEAD" = "$AFTER_HEAD" ] && ok "HEAD が動かない" || ng "HEAD が動いた"
-[ "$BEFORE_BR" = "$AFTER_BR" ] && ok "居る枝が変わらない" || ng "枝が変わった（$BEFORE_BR → $AFTER_BR）"
+[ "$BEFORE_BR" = "$AFTER_BR" ] && ok "居る枝が変わらない" || ng "枝が変わった（$BEFORE_BR → ${AFTER_BR}）"
 [ "$BEFORE_TREE" = "$AFTER_TREE" ] && ok "作業ツリーの状態が変わらない" || ng "作業ツリーが変わった"
 [ -n "$(remote_sha feat/two)" ] && ok "それでも枝は origin に立つ" || ng "枝が立たなかった"
 
