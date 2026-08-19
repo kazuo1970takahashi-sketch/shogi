@@ -23,7 +23,7 @@ const path = require('path');
 const { loadApp } = require(path.join(__dirname, 'lib', 'app_harness.js'));
 
 const TARGET = process.argv[2] || 'shogi_v4.html';
-const EXPECTED_CHECKS = 30;
+const EXPECTED_CHECKS = 44;
 
 let pass = 0, fail = 0;
 function assert(cond, msg) {
@@ -112,7 +112,46 @@ function statusClass(app) { return String(app.document.getElementById('masterClo
   const html = app.call('buildMasterTabHtml', fixture());
   assert(/id="masterCloudPullStatus"[^>]*white-space:pre-line/.test(html),
     'L14 status 要素が改行を表示できる（white-space:pre-line）＝3行が1行に潰れない');
-  assert(/id="masterCloudPullStatus"[^>]*aria-live="polite"/.test(html), 'L15 aria-live は従来どおり');
+  // #907 Codex P2: role="status" は aria-atomic が既定 true。3行ブロックを読み上げ領域のままにすると、
+  //   1行変えるたびに3行**すべて**が読み直される。読み上げは「今変わった1行」だけの別要素に分ける。
+  const visible = (html.match(/<div id="masterCloudPullStatus"[^>]*>/) || [''])[0];
+  assert(visible !== '' && visible.indexOf('aria-live') < 0 && visible.indexOf('role="status"') < 0,
+    'L15 ★見える3行ブロックは読み上げ領域ではない（1行の変化で3行が読み直されない）  [' + visible + ']');
+  const live = (html.match(/<div id="masterCloudPullStatusLive"[^>]*>/) || [''])[0];
+  assert(/role="status"/.test(live) && /aria-live="polite"/.test(live),
+    'L16 読み上げ専用の要素がある（role=status / aria-live=polite）  [' + live + ']');
+}
+
+// 読み上げには「今変わった1行」だけが入る（#907 Codex P2）
+{
+  const app = bootLog();
+  app.call('_masterCloudStatusFn', '甲')('クラウドへ反映中…');
+  app.call('_masterCloudStatusFn', '乙')('クラウドへ反映中…');
+  const live = app.document.getElementById('masterCloudPullStatusLive');
+  assert(String(live.textContent || '') === '乙：クラウドへ反映中…',
+    'L17 ★読み上げは今変わった1行だけ（履歴3行ぶんを読み直さない）  [' + live.textContent + ']');
+  assert(statusText(app).split('\n').length === 2, 'L17a 前提: 見える方は2行ある');
+  live.textContent = '';
+  app.call('renderMasterCloudLog');
+  assert(String(live.textContent || '') === '',
+    'L18 ★ただの再描画では読み上げない（タブを開き直すたびに全部読み上げられない）');
+}
+
+// 3行から溢れて落ちた操作の**遅い続報**は履歴に戻らない（#907 Codex P1）
+{
+  const app = bootLog();
+  const a = app.call('_masterCloudStatusFn', '甲');
+  a('クラウドへ反映中…');
+  app.call('_masterCloudStatusFn', '乙')('会員情報をクラウドにも反映しました');
+  app.call('_masterCloudStatusFn', '丙')('クラウドへの反映に失敗しました');
+  app.call('_masterCloudStatusFn', '丁')('会員情報をクラウドにも反映しました');
+  const before = statusText(app);
+  assert(before.indexOf('甲') < 0, 'L19a 前提: 4件目が入った時点で甲の行は溢れて落ちている');
+  a('会員情報をクラウドにも反映しました');       // ← 落ちたあとに遅れて返ってきた続報
+  assert(statusText(app) === before,
+    'L19 ★落ちた操作の遅い続報は履歴に戻らない（新しい失敗行を押し出さない）  [' + statusText(app) + ']');
+  assert(/cloud-status-err/.test(statusClass(app)),
+    'L19b 丙の失敗が残っているのでブロックは失敗色のまま');
 }
 
 // ======================================================================== N: 会員名が実経路で付くか
@@ -168,7 +207,11 @@ const caseN2 = (async function () {
 // ======================================================================== G: in-flight ガード
 function mockCloud(app, opt) {
   opt = opt || {};
-  const cap = { rpcs: [] };
+  const cap = { rpcs: [], _held: [] };
+  // hang したい RPC は「保留」にしておき、cap.release() で解放する。
+  //   （待たせた保存が**あとで実際に飛ぶ**ところまで見るには、飛行中を終わらせられる必要がある）
+  cap.release = function () { const h = cap._held; cap._held = []; h.forEach(function (f) { f(); }); };
+  function held(payload) { return new Promise(function (res) { cap._held.push(function () { res(payload); }); }); }
   app.ctx.window.SHOGI_CLOUD_CONFIG = { url: 'https://kakuu.example', publishableKey: 'pk_kakuu' };
   app.ctx.window.supabase = { createClient: function () { return {
     auth: { getSession: function () { return Promise.resolve({ data: { session: { user: {} } } }); } },
@@ -176,12 +219,12 @@ function mockCloud(app, opt) {
       cap.rpcs.push({ name: String(name), args: args });
       if (name === 'claim_organizer_seat') return Promise.resolve({ data: [{ club_id: CLUB_ID, status: 'active' }] });
       if (name === 'app_upsert_member_edit') {
-        if (opt.hang) return new Promise(function () {});
-        return Promise.resolve({ data: { inserted: true, member_kind: args.p_member_kind, grade: args.p_grade, city: args.p_city, deleted_at: null }, error: null });
+        const okPayload = { data: { inserted: true, member_kind: args.p_member_kind, grade: args.p_grade, city: args.p_city, deleted_at: null }, error: null };
+        return opt.hang ? held(okPayload) : Promise.resolve(okPayload);
       }
       if (name === 'app_upsert_member_edits_bulk') {
-        if (opt.hang) return new Promise(function () {});
-        return Promise.resolve({ data: { count: (args.p_rows || []).length, inserted: 0 }, error: null });
+        const okBulk = { data: { count: (args.p_rows || []).length, inserted: 0 }, error: null };
+        return opt.hang ? held(okBulk) : Promise.resolve(okBulk);
       }
       return Promise.resolve({ data: null, error: { message: '想定外の RPC: ' + name } });
     },
@@ -195,27 +238,48 @@ function tick() { return new Promise(function (res) { setImmediate(res); }); }
 async function settle(n) { for (let i = 0; i < (n || 6); i++) await tick(); }
 
 const caseG = (async function () {
-  // 連打（1本目が飛行中）
+  // 連打（1本目が飛行中）。#907 Codex P1: 2本目以降は**捨てない**。直列化して、待ち行列には
+  //   いちばん新しいスナップショット1件だけを残す（＝最後に保存した内容が必ずクラウドへ届く）。
   const app = bootLog();
   const cap = mockCloud(app, { hang: true });
   const m = fixture().members[0];
-  const r1 = app.call('pushMemberEditToCloud', m, function () {}, {});
-  const r2 = app.call('pushMemberEditToCloud', m, function () {}, {});
-  const r3 = app.call('pushMemberEditToCloud', m, function () {}, {});
+  const st2 = [], st3 = [];
+  const m2 = Object.assign({}, m, { name: '架空太郎2', city: '沼津市' });
+  // ★ m3 の市町村は既定値のまま。こうしておくと G6 は「2本目が市町村を触った」という touched が
+  //   合流で残ったときだけ true になる（スナップショット側の値では緑にならない＝ピンが空振りしない）。
+  const m3 = Object.assign({}, m, { name: '架空太郎3' });
+  const r1 = app.call('pushMemberEditToCloud', m, function () {}, { grade: true });
+  const r2 = app.call('pushMemberEditToCloud', m2, function (x) { st2.push(String(x)); }, { city: true });
+  const r3 = app.call('pushMemberEditToCloud', m3, function (x) { st3.push(String(x)); }, { member: true });
   await settle();
-  assert((await r2).step === 'inflight' && (await r3).step === 'inflight',
-    'G1 ★同じ会員への2本目以降は in-flight で弾かれる（連打しても往復が増えない）');
-  assert(cap.named('claim_organizer_seat').length === 1, 'G2 claim_organizer_seat も1回だけ  [' + cap.named('claim_organizer_seat').length + ']');
+  assert(cap.named('app_upsert_member_edit').length === 1,
+    'G1 ★飛行中は往復を増やさない（RPC は1本目だけ）  [' + cap.named('app_upsert_member_edit').length + ']');
+  assert(cap.named('claim_organizer_seat').length === 1, 'G2 claim_organizer_seat も1回だけ');
+  assert(st2.join('|').indexOf('待機中') >= 0,
+    'G3 待たされる保存は「待機中…」と出る（押しても無反応に見えない）  [' + st2.join('|') + ']');
+  assert(st3.length === 0, 'G3a 3本目は2本目の行に合流する（連打で行が増えない）');
 
-  // 別の会員は止めない。★ hang する push を await してはいけない（Promise.all が永久に settle せず、
-  //   node が既定の exit 0 で終わる＝**黙って緑になる**）。RPC が実際に出たかで見る。
+  cap.release(); await settle(10);
+  const sent = cap.named('app_upsert_member_edit');
+  assert(sent.length === 2,
+    'G4 ★待たせた分は捨てずに飛ぶ（連打しても最後の保存がクラウドに届く）  [' + sent.length + ']');
+  assert(sent[1] && sent[1].args.p_name === '架空太郎3',
+    'G5 ★飛ぶのはいちばん新しいスナップショット  [' + (sent[1] && sent[1].args.p_name) + ']');
+  assert(sent[1] && sent[1].args.p_set_city === true,
+    'G6 ★合流した分の touched は論理和（2本目が触った市町村が3本目に飲まれない＝誤徴収に戻らない）  [' + (sent[1] && sent[1].args.p_set_city) + ']');
+
+  cap.release(); await settle(10);
+  const res1 = await r1, res2 = await r2, res3 = await r3;
+  assert(res1.ok === true, 'G7 1本目は成功で解決する');
+  assert(res2.ok === true && res3.ok === true,
+    'G7a ★待たせた呼び出しも成功で解決する（呼び出し元が「捨てられた」と誤解しない）  [' + res2.step + '/' + res3.step + ']');
+
+  // 別の会員は止めない（会員ごとの待ち行列）
   const other = fixture().members[1];
   app.call('pushMemberEditToCloud', other, function () {}, {});
   await settle();
   const ids = cap.named('app_upsert_member_edit').map(function (r) { return r.args.p_member_id; });
-  assert(ids.indexOf(MID2) >= 0, 'G3 別の会員の保存は止めない（会員ごとのガード）  [' + ids.join(',') + ']');
-  assert(ids.filter(function (x) { return x === MID; }).length === 1, 'G3a 連打した会員の RPC は1回だけ');
-  void r1;
+  assert(ids.indexOf(MID2) >= 0, 'G8 別の会員の保存は止めない（会員ごとのガード）  [' + ids.join(',') + ']');
 })();
 
 const caseG2 = (async function () {
@@ -258,10 +322,27 @@ const caseG4 = (async function () {
   void p1;
 })();
 
+const caseG5 = (async function () {
+  // #907 Codex P1: 会員 id は「空でない文字列」しか要求していない（外部マスタ取り込み経路）。
+  //   キーを join(',') で作ると ['a,b','c'] と ['a','b,c'] が同じになり、別の削除が in-flight と
+  //   誤判定されて**黙って消える**（端末では削除済みなのでズレに気付けない）。
+  const app = bootLog();
+  const cap = mockCloud(app, { hang: true });
+  const master = { members: [
+    { id: 'a,b', name: '架空甲', yomi: 'かくうこう' }, { id: 'c', name: '架空乙', yomi: 'かくうおつ' },
+    { id: 'a', name: '架空丙', yomi: 'かくうへい' }, { id: 'b,c', name: '架空丁', yomi: 'かくうてい' },
+  ] };
+  app.call('pushMemberDeleteStateToCloud', ['a,b', 'c'], master, true, function () {});
+  app.call('pushMemberDeleteStateToCloud', ['a', 'b,c'], master, true, function () {});
+  await settle();
+  assert(cap.named('app_upsert_member_edits_bulk').length === 2,
+    'G11 ★id にカンマが入っても別々の削除として扱う（片方が黙って消えない）  [' + cap.named('app_upsert_member_edits_bulk').length + ']');
+})();
+
 // ======================================================================== 実行
 // ★ どれかがハングすると then が走らず、node は既定の exit 0 で終わる＝run_tests.sh が
 //   「全PASS」と表示する（#901 で実際に踏んだ）。待ちに上限を置いて必ず結果を出す。
-const all = Promise.all([caseN, caseN2, caseG, caseG2, caseG3, caseG4]);
+const all = Promise.all([caseN, caseN2, caseG, caseG2, caseG3, caseG4, caseG5]);
 // ★ この timer は **unref してはいけない**。unref すると、アプリ側の Promise がハングしたとき
 //   node がイベントループ空と判断して**先に exit 0 で終わり、番人が鳴らない**（実測でこれを踏んだ）。
 const guard = new Promise(function (res) { setTimeout(function () { res('TIMEOUT'); }, 20000); });
