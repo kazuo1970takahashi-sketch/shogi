@@ -25,9 +25,20 @@
 //   非対称なので、**見逃しゼロを構造で保証する**側に倒す:
 //
 //     1. `$name` の直後が非 ASCII なら、**文脈を問わず**違反にする（解析なし＝壊れる余地なし）
-//     2. 展開されない場所（単一引用符の中など）で本当に必要なら、その行に
-//        **`mb-ok: <理由>` を書いて明示的に免除する**（人が1行ぶん責任を取る）
-//     3. 免除した行数は**必ず表示する**（黙って落とさない）
+//     2. 展開されない場所（単一引用符の中など）で本当に必要なら、その行の**行末に
+//        `# mb-ok: <理由>`** を書いて明示的に免除する（人が1行ぶん責任を取る）
+//     3. 免除した件数は**pin する**（増えたら赤・最終行にも載せる）
+//
+//   ★ ただし「解析しないから見逃しはゼロ」と最初に書いたのは**言い過ぎだった**。
+//     3版目にも Codex が見逃しを2つ見つけた（3巡目 P2）:
+//       ・**バックスラッシュ改行**（`echo "$V\` ＋次行 `（"`）は行ごとに見ると
+//         どちらの行にも一致しない。bash は引用解析の**前に**これを除去するので実質 `$V（`
+//         → 継続行を結合した「論理行」で検査する（`logicalLines`）
+//       ・免除マーカーを行内のどこでも認めると、`printf 'mb-ok: reason' "$V（"` のように
+//         **マーカーの説明を含むだけの行**が丸ごと免除され、普通のメッセージを足すだけで
+//         ゲートに穴を空けられる → **行末の `#` コメント**として置かれた形だけを認める
+//     見逃しゼロは「解析をやめれば自動的に手に入る」ものではなく、**入力の正規化**
+//     （行の結合）と**免除の厳密化**まで含めて初めて成り立つ。
 //
 //   2026-08-19 時点で追跡下の *.sh 30 本に対し、免除が要る行は **1 行だけ**
 //   （この不具合そのものを説明しているコメント）。過検出のコストは実測でこの程度。
@@ -56,17 +67,43 @@ const assert = (c, m) => (c ? ok(m) : ng(m));
 // 変数名は [A-Za-z_][A-Za-z0-9_]* のみ。`$1（` `$@（` のような特殊パラメータは
 // 名前が1文字で確定するため後続バイトを食わない＝この不具合の対象外。
 const HAZARD = /\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]/;
-// 免除マーカー。**理由を書かないと免除にならない**（黙って無効化させない）。
-const EXEMPT = /mb-ok:\s*\S/;
+// 免除マーカー。★ Codex P2 (r3810651493): 行内のどこでもよい形にすると
+//   `printf 'mb-ok: reason' "$V（"` のように**マーカーの説明や出力データを含むだけの行**が
+//   丸ごと免除され、普通のメッセージを足すだけでゲートに見逃しを作れてしまう。
+//   そこで「**行末の `#` コメントとして置かれた**マーカー」だけを免除にする。
+//   ★ 残る限界（承知のうえ）: `echo "$V（ # mb-ok: x"` のように**二重引用符の中で
+//     行末までその形を書く**と免除に化ける。これは偶然では起きず、意図的に書く必要がある。
+//     ここを塞ぐにはシェルの引用解析が要り、それをやめたのがこの版の主旨なので受け入れる。
+const EXEMPT = /\s#\s*mb-ok:\s*\S[^\n]*$/;
+
+// ★ Codex P2 (r3810651486): bash は**引用解析の前に**バックスラッシュ改行を除去するので、
+//   `echo "$V\` の次行が `（"` なら実質 `$V（` になる。行ごとに見ると**どちらの行にも
+//   一致せず見逃す**。そこで継続行を結合した「論理行」にしてから検査する。
+//   行末のバックスラッシュが**奇数個**のときだけ継続（`\\` はエスケープ済みの backslash）。
+function logicalLines(src) {
+  const phys = src.split('\n');
+  const out = [];
+  let buf = null, start = 0;
+  for (let i = 0; i < phys.length; i++) {
+    const line = phys[i];
+    const m = /(\\+)$/.exec(line);
+    const cont = !!m && (m[1].length % 2 === 1);
+    if (buf === null) { buf = ''; start = i; }
+    buf += cont ? line.slice(0, -1) : line;
+    if (!cont) { out.push({ line: start + 1, text: buf }); buf = null; }
+  }
+  if (buf !== null) out.push({ line: start + 1, text: buf });
+  return out;
+}
 
 function scan(src) {
   const hits = [];
   let exempted = 0;
-  src.split('\n').forEach((line, i) => {
-    if (!HAZARD.test(line)) return;
-    if (EXEMPT.test(line)) { exempted++; return; }
-    hits.push({ line: i + 1, text: line.trim() });
-  });
+  for (const L of logicalLines(src)) {
+    if (!HAZARD.test(L.text)) continue;
+    if (EXEMPT.test(L.text)) { exempted++; continue; }
+    hits.push({ line: L.line, text: L.text.trim() });
+  }
   return { hits: hits, exempted: exempted };
 }
 
@@ -89,8 +126,14 @@ for (const f of files) {
   if (r.exempted) { exempted += r.exempted; exemptLines.push(f + ' ×' + r.exempted); }
 }
 if (viol === 0) ok('追跡下の *.sh ' + files.length + ' 本に違反なし（$var の直後は必ず ASCII か ${var}）');
-// ★ 免除は黙って落とさない。件数と場所を毎回出す（silent cap を作らない）。
-console.log('  ・免除（mb-ok: 付き）: ' + exempted + ' 行' + (exemptLines.length ? '  [' + exemptLines.join(' / ') + ']' : ''));
+// ★ 免除は黙って落とさない。件数と場所を出す。
+console.log('  ・免除（# mb-ok: 付き）: ' + exempted + ' 行' + (exemptLines.length ? '  [' + exemptLines.join(' / ') + ']' : ''));
+// ★ Codex P2 (r3810651500): run_tests.sh の run_suite は**成功時の出力を一時ログへ捨てて最終行だけ**
+//   表示する。途中の console.log は自動発見経路のログに現れない＝「毎回表示する」が機能しない。
+//   そこで (a) 件数そのものを **pin** し（増えたら赤）、(b) **最終行にも載せる**。
+const EXPECT_EXEMPT = 1;   // 2026-08-19 時点で、この不具合を説明しているコメント 1 行だけ
+assert(exempted === EXPECT_EXEMPT,
+  '免除の件数が期待どおり（' + EXPECT_EXEMPT + ' 行）＝免除が静かに増えていない。意図した追加なら EXPECT_EXEMPT を更新すること  [実際 ' + exempted + ']');
 
 // ---- ② 検出装置そのものへの自己検査（毎回その場で当てる） -------------------
 const FW = '（';          // 全角の開き括弧
@@ -105,6 +148,9 @@ const CASES = [
   ['${var} と囲めば違反ではない',                   'V=1\necho "検出 ${V}' + FW + 'bytes"', false],
   ['$var の直後が ASCII なら違反ではない',           'V=1\necho "検出 ' + V + ' bytes"', false],
   ['特殊パラメータは対象外（$1 は1文字で確定）',      'echo "検出 $1' + FW + 'bytes"', false],
+  ['★バックスラッシュ改行で分断されても違反',        'V=1\necho "検出 ' + V + '\\\n' + FW + 'bytes"', true],
+  ['★マーカー文字列が行内にあるだけでは免除しない',  "V=1\nprintf 'mb-ok: reason' \"" + V + FW + '"', true],
+  ['行末の # コメントに置いたマーカーなら免除',      'V=1\necho "' + V + FW + '"   # mb-ok: 展開されないリテラル', false],
 ];
 for (const [label, src, want] of CASES) {
   const got = scan(src).hits.length > 0;
@@ -117,5 +163,6 @@ assert(exr.hits.length === 0 && exr.exempted === 1, '自己検査: 免除した�
 assert(scan('_name=x\nsay "検出 $_name' + FW + '${_s2} bytes' + '）"').hits.length === 1,
   '自己検査: land.sh 228 行の形（受け渡しを止めた実物）を検出できる');
 
-console.log('\n  SHELL-MB-VARNAME-001: PASS=' + pass + ' FAIL=' + fail);
+// 最終行に免除件数まで載せる（run_tests.sh はこの行しか表示しない）。
+console.log('\n  SHELL-MB-VARNAME-001: PASS=' + pass + ' FAIL=' + fail + ' 免除=' + exempted + '/' + EXPECT_EXEMPT);
 process.exit(fail === 0 ? 0 : 1);
