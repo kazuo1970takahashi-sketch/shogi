@@ -58,8 +58,14 @@ ok(/\.cloud-status-err\{color:#A32D2D/.test(RAW),'U1f err 赤(AA) CSS');
 ok(/\.cloud-status-warn\{color:#7a4a00/.test(RAW),'U1g warn 橙(AA) CSS');
 // wire サイトが applyCloudStatus を使う
 ok(RAW.indexOf('sendTournamentToCloud(function(msg){ applyCloudStatus(st,msg); })')>=0,'U1h 送信 wire→applyCloudStatus');
-ok(RAW.indexOf("applyCloudStatus(document.getElementById('masterCloudPullStatus'),msg)")>=0,'U1i 取得 wire→applyCloudStatus');
-ok(RAW.indexOf("applyCloudStatus(el,'クラウドから自動取得しました")>=0,'U1j auto-pull→applyCloudStatus');
+// MEMBER-CLOUD-STATUS-LOG-001 (#907): 名簿タブの status 行は **最大3行の履歴** になり、
+//   書き込み口が `_masterCloudStatusFn` 1本に集約された（色クラスは renderMasterCloudLog が付ける）。
+//   ここは「wire が色分けレンダラを通っていること」を見る静的 pin なので、経路名だけ追随させる。
+//   履歴そのものの振る舞いは test/test_member_cloud_status_log_907.js が実際に動かして見る。
+ok(/pullMembersToMasterUI\(_masterCloudStatusFn\(/.test(RAW),'U1i 取得 wire→_masterCloudStatusFn（色分けレンダラ経由）');
+ok(RAW.indexOf("_masterCloudStatusFn('')('クラウドから自動取得しました")>=0,'U1j auto-pull→_masterCloudStatusFn');
+ok(/function _masterCloudStatusFn\(label\)\{[\s\S]{0,600}?pushMasterCloudLine\(/.test(RAW),'U1i2 _masterCloudStatusFn は pushMasterCloudLine へ流す');
+ok(/el\.className='cloud-status cloud-status-'\+_masterCloudLogKind\(\)/.test(RAW),'U1i3 履歴の描画が色クラスを付ける（textContent 直書きで色を失わない）');
 
 console.log('=== U-2 保存確認ピルの説明/解消導線 ===');
 ok(env.HELP_TEXTS&&env.HELP_TEXTS['save-warning'],'U2a HELP_TEXTS に save-warning topic');
