@@ -227,34 +227,27 @@ const commitSrc=RAW.slice(RAW.indexOf('function masterSheetCommitNameEdit'),RAW.
 assert(commitSrc.indexOf('pushMemberEditToCloud')>=0, 'P1 commit 成功パスからクラウド push を呼ぶ');
 // #901: 同上。pushMemberEditToCloud の次に定義される関数までを窓にする。
 const pushSrc=RAW.slice(RAW.indexOf('function pushMemberEditToCloud'),RAW.indexOf('function pushMemberDeleteStateToCloud'));
-assert(pushSrc.indexOf("onConflict:'club_id,member_id'")>=0, 'P2 upsert は club_id,member_id で冪等（既存 sync と同一）');
+// #909: 編集 push は PostgREST の upsert ではなく RPC を呼ぶ（列の保全規則は SQL 側1箇所）。
+assert(pushSrc.indexOf("client.rpc('app_upsert_member_edit'")>=0, 'P2 編集 push は app_upsert_member_edit RPC を呼ぶ（冪等な upsert は SQL 側の on conflict）');
+assert(pushSrc.indexOf('.from(')<0, 'P2a 編集 push は members を直接読み書きしない（送信前 select が無い＝競合窓が無い）');
 assert(!/branch\s*:/.test(pushSrc), 'P3 branch 列を送らない（クラウド側の値を保全）');
 assert(pushSrc.indexOf('未反映')>=0, 'P4 未反映は status で明示（黙って巻き戻りリスクを残さない）');
 
 const pOk=(function(){
   const e=envWithFix();
-  let upserted=null;
-  let cloudRead=0;
-  e._ctx.window.SHOGI_CLOUD_CONFIG={url:'https://kakuu.example',publishableKey:'pk_kakuu'};
-  e._ctx.window.supabase={createClient:function(){return {
-    auth:{getSession:function(){return Promise.resolve({data:{session:{user:{}}}});}},
-    rpc:function(){return Promise.resolve({data:[{club_id:'club-kakuu',status:'active'}]});},
-    // #901: 編集 push は送信前に members を読む。select が無い mock だと TypeError を catch が握り潰して
-    //   「クラウドを読めなかった」縮退パスで緑になるため、読み取りも mock する（cloudRead で回数を数える）。
-    from:function(){return {
-      select:function(){return {eq:function(){return {in:function(){cloudRead++;return Promise.resolve({data:[],error:null});}};}};},
-      upsert:function(rows){upserted=rows;return {select:function(){return Promise.resolve({data:rows,error:null});}};}
-    };}
-  };}};
+  const cap={};
+  mockCloudEnv(e,cap);
   const msgs=[];
   return e.pushMemberEditToCloud({id:'m-ka',name:'架空改名',yomi:'かくうかいめい'},function(m){msgs.push(String(m));}).then(function(res){
     assert(res&&res.ok===true, 'P5 ログイン中は push 成功');
-    assert(upserted&&upserted[0].member_id==='m-ka'&&upserted[0].name==='架空改名'&&upserted[0].yomi==='かくうかいめい'&&upserted[0].club_id==='club-kakuu', 'P6 upsert 行＝member_id/name/yomi/club_id');
-    assert(!('branch' in (upserted[0]||{})), 'P7 行に branch を含まない');
+    const c=rpcArgs(cap,'app_upsert_member_edit');
+    assert(c&&c.p_member_id==='m-ka'&&c.p_name==='架空改名'&&c.p_yomi==='かくうかいめい'&&c.p_club==='club-kakuu', 'P6 RPC 引数＝member_id/name/yomi/club');
+    assert(!('branch' in (c||{}))&&!('p_branch' in (c||{})), 'P7 branch は送らない');
     assert(msgs.some(m=>m.indexOf('反映しました')>=0), 'P8 成功 status を通知');
-    // #901: 読み取りが成功している成功パスであることを固定する（⚠ 付き＝縮退パスで緑になっていない）。
-    assert(cloudRead===1, 'P8a 送信前にクラウドの現在値を1回読む');
-    assert(!msgs.some(m=>m.indexOf('\u26a0')>=0), 'P8b 読めた成功パスでは ⚠ 注記を出さない（縮退パスで緑になっていない証拠）');
+    // #909: 送信前の select が無くなった（＝読み取り失敗・タイムアウト・競合窓が原理的に生じない）。
+    assert(cap.reads===0, 'P8a 送信前に members を読まない（RPC 1往復で済む）');
+    assert(rpcNames(cap).filter(n=>n==='app_upsert_member_edit').length===1, 'P8a2 会員 upsert の RPC はちょうど1回');
+    assert(!msgs.some(m=>m.indexOf('\u26a0')>=0), 'P8b クラウドに残った値が端末と同じなら ⚠ 注記を出さない（縮退パスで緑になっていない証拠）');
   });
 })();
 const pAuth=(function(){
@@ -269,7 +262,7 @@ const pAuth=(function(){
   const msgs=[];
   return e.pushMemberEditToCloud({id:'m-ka',name:'x',yomi:''},function(m){msgs.push(String(m));}).then(function(res){
     assert(res&&res.ok===false&&res.step==='auth', 'P9 未ログインは fail-soft skip（例外なし）');
-    assert(upsertCalled===false, 'P10 未ログインでは upsert を呼ばない');
+    assert(upsertCalled===false, 'P10 未ログインでは members に触れない（upsert も select も呼ばない）');
     assert(msgs.some(m=>m.indexOf('未反映')>=0&&m.indexOf('保存済み')>=0), 'P11 「未反映・端末には保存済み」を明示');
   });
 })();
@@ -278,26 +271,48 @@ const pAuth=(function(){
 const delSrc=RAW.slice(RAW.indexOf('function masterSheetDeleteSelected'),RAW.indexOf('function _masterCloudStatusFn'));
 assert(delSrc.indexOf('pushMemberDeleteStateToCloud(doneMids,master,true')>=0&&delSrc.indexOf('pushMemberDeleteStateToCloud(doneMids,master,false')>=0, 'Q1 削除/復元とも成功分をクラウドへ push');
 assert(delSrc.indexOf('クラウドの名簿からも削除され、全端末に反映')>=0&&delSrc.indexOf('クラウドの名簿でも復元され')>=0, 'Q2 confirm にクラウド波及を明示（N1）');
-const pdSrc=RAW.slice(RAW.indexOf('function pushMemberDeleteStateToCloud'),RAW.indexOf('function pushMemberDeleteStateToCloud')+3600);
-assert(pdSrc.indexOf("onConflict:'club_id,member_id'")>=0&&pdSrc.indexOf('deleted_at:deleted?nowIso:null')>=0, 'Q3 deleted_at＝削除は現在時刻・復元は null（冪等 upsert）');
+// 窓は「次のトップレベル関数の直前まで」。固定オフセットだと本文が伸びたとき assertion が黙って窓の外へ出る。
+const pdSrc=RAW.slice(RAW.indexOf('function pushMemberDeleteStateToCloud'),RAW.indexOf('function pushAllMembersToCloud'));
+assert(pdSrc.indexOf("client.rpc('app_upsert_member_edits_bulk'")>=0&&pdSrc.indexOf('deleted_at:deleted?nowIso:null')>=0, 'Q3 deleted_at＝削除は現在時刻・復元は null（一括版 RPC・1トランザクション）');
+assert(pdSrc.indexOf('touch_deleted_at:true')>=0&&!/set_member_kind|set_grade|set_city/.test(pdSrc), 'Q3a 削除/復元は deleted_at だけ触る（set_* を渡さない＝既存行の区分・級・市町村を1バイトも変えない）');
+assert(pdSrc.indexOf('.from(')<0, 'Q3b 削除/復元 push も members を直接読み書きしない（送信前 select が無い）');
 assert(!/branch\s*:/.test(pdSrc), 'Q4 branch 列を送らない（クラウド値保全）');
 
+// #909: 会員 upsert は RPC になった。rpc を「名前で分岐する mock」にする。
+//   ★ 名前を見ずに常に club 行を返す mock だと、会員 upsert の戻りまで club 行になり、
+//     _editAttrKeptLabels が黙って何も名指ししない縮退パスで緑になる。
+//   ★ from() の select/upsert も残す（pushAllMembersToCloud は今も PostgREST の一括 upsert）。
+//     capture.reads は「編集/削除 push が送信前に読んでいないこと」を測るために数え続ける。
 function mockCloudEnv(e,capture){
   capture.calls=capture.calls||[];
   capture.reads=0;
+  capture.rpcs=[];
   capture.cloudRows=capture.cloudRows||[];
   e._ctx.window.SHOGI_CLOUD_CONFIG={url:'https://kakuu.example',publishableKey:'pk_kakuu'};
   e._ctx.window.supabase={createClient:function(){return {
     auth:{getSession:function(){return Promise.resolve({data:{session:{user:{}}}});}},
-    rpc:function(){return Promise.resolve({data:[{club_id:'club-kakuu',status:'active'}]});},
-    // #901: 編集 push は送信前に members を読む。select を持たない mock だと TypeError を catch が握り潰し、
-    //   「クラウドを読めなかった」縮退パスで緑になる（＝成功パスを一度も通らない）。読み取りも mock する。
+    rpc:function(name,args){
+      capture.rpcs.push({name:String(name),args:args});
+      if(name==='claim_organizer_seat')return Promise.resolve({data:[{club_id:'club-kakuu',status:'active'}],error:null});
+      if(name==='app_upsert_member_edit'){
+        // 既定は「クラウドにその会員の行が無い」＝送った値がそのまま残る（inserted）。
+        // 既存行がある場合は capture.savedRow で差し替える。
+        return Promise.resolve({data:capture.savedRow||{inserted:true,member_kind:args.p_member_kind,grade:args.p_grade,city:args.p_city,deleted_at:null},error:null});
+      }
+      if(name==='app_upsert_member_edits_bulk'){
+        capture.bulkRows=(args&&args.p_rows)||[];
+        return Promise.resolve({data:{count:capture.bulkRows.length,inserted:0},error:null});
+      }
+      return Promise.resolve({data:null,error:{message:'想定外の RPC: '+name}});
+    },
     from:function(){return {
       select:function(){return {eq:function(){return {in:function(){capture.reads++;return Promise.resolve({data:capture.cloudRows,error:null});}};}};},
       upsert:function(rows){capture.rows=rows;capture.calls.push(rows);return {select:function(){return Promise.resolve({data:rows,error:null});}};}
     };}
   };}};
 }
+function rpcNames(cap){ return (cap.rpcs||[]).map(function(r){return r.name;}); }
+function rpcArgs(cap,name){ const h=(cap.rpcs||[]).filter(function(r){return r.name===name;}); return h.length?h[h.length-1].args:null; }
 const qDel=(function(){
   const e=envWithFix();
   const cap={rows:null};
@@ -305,14 +320,15 @@ const qDel=(function(){
   e._select('m-ka');e._select('m-an');
   e.masterSheetDeleteSelected();
   return new Promise(function(r){setTimeout(r,0);}).then(function(){
-    assert(cap.rows&&cap.rows.length===2, 'Q5 削除2名分をまとめて upsert');
-    assert(cap.rows.every(r=>typeof r.deleted_at==='string'&&r.deleted_at.length>0&&typeof r.name==='string'&&r.name.length>0), 'Q6 各行に deleted_at（時刻）と name（未存在会員の INSERT 対策）');
-    // #901: 削除/復元でローカル値を無条件に同乗させると、☁取り込み前の端末で誤って削除→復元
-    //   しただけでクラウドの区分・級・市町村が既定値と NULL で潰れる（誤徴収の再発）。
-    //   送信前にクラウドの現在値を読み、composeCloudMemberFieldCols で合成する
-    //   （既存行はクラウドの実値を残し、行が無い会員はローカル値で完全な行を INSERT する）。
-    assert(cap.reads===1, 'Q6a 削除 push も送信前にクラウドの現在値を読む');
-    assert(cap.rows.every(r=>('member_kind' in r)&&('grade' in r)&&('city' in r)), 'Q6b 読めたときは合成後の属性を載せる（行が無い会員の INSERT を完全な行にする）');
+    assert(cap.bulkRows&&cap.bulkRows.length===2, 'Q5 削除2名分を **1リクエスト**でまとめて送る（N 往復にしない）');
+    assert(rpcNames(cap).filter(n=>n==='app_upsert_member_edits_bulk').length===1, 'Q5a 一括版 RPC の呼び出しはちょうど1回（1トランザクション＝部分適用が残らない）');
+    assert(cap.bulkRows.every(r=>typeof r.deleted_at==='string'&&r.deleted_at.length>0&&typeof r.name==='string'&&r.name.length>0), 'Q6 各行に deleted_at（時刻）と name（未存在会員の INSERT 対策）');
+    // #909: 削除/復元は「削除状態だけ」を書く操作。set_* を渡さない＝既存行の属性は触られず、
+    //   行が無い会員だけローカル値で完全な行が INSERT される。送信前の読み取りは要らなくなった。
+    assert(cap.reads===0, 'Q6a 削除 push は送信前に members を読まない（読み取り失敗・競合窓が原理的に生じない）');
+    assert(cap.bulkRows.every(r=>('member_kind' in r)&&('grade' in r)&&('city' in r)), 'Q6b 各行にローカル属性を載せる（行が無い会員の INSERT を完全な行にする）');
+    assert(cap.bulkRows.every(r=>r.touch_deleted_at===true&&!('set_member_kind' in r)&&!('set_grade' in r)&&!('set_city' in r)), 'Q6c 触るのは deleted_at だけ（set_* を渡さない＝既存行の区分・級・市町村を潰さない）');
+    assert(cap.bulkRows.every(r=>Object.keys(r).every(k=>['member_id','name','yomi','member_kind','grade','city','deleted_at','touch_deleted_at'].indexOf(k)>=0)), 'Q6d 送るキーは RPC の既知キーだけ（未知キーは RPC が raise する＝綴り違いで黙って無反映にならない）');
   });
 })();
 const qRes=(function(){
@@ -323,7 +339,7 @@ const qRes=(function(){
   e._select('m-dl');
   e.masterSheetRestoreSelected();
   return new Promise(function(r){setTimeout(r,0);}).then(function(){
-    assert(cap.rows&&cap.rows.length===1&&cap.rows[0].member_id==='m-dl'&&cap.rows[0].deleted_at===null, 'Q7 復元は deleted_at=null を upsert');
+    assert(cap.bulkRows&&cap.bulkRows.length===1&&cap.bulkRows[0].member_id==='m-dl'&&cap.bulkRows[0].deleted_at===null&&cap.bulkRows[0].touch_deleted_at===true, 'Q7 復元は deleted_at=null を送る（touch_deleted_at=true＝明示的に null へ戻す）');
   });
 })();
 const qAuth=(function(){
@@ -380,8 +396,10 @@ const sEdit=(function(){
   const cap={};
   mockCloudEnv(e,cap);
   return e.pushMemberEditToCloud({id:'m-ka',name:'架空太郎',yomi:'かくう',member:'other',grade:'chu',city:'沼津市'},function(){}).then(function(){
-    assert(cap.rows&&cap.rows[0].member_kind==='other'&&cap.rows[0].grade==='chu'&&cap.rows[0].city==='沼津市', 'S15 編集 push にも区分・市町村が同乗');
-    assert(cap.reads===1, 'S15a 編集 push は送信前にクラウドの現在値を1回読む（#901・読めた成功パスを通っている）');
+    const c=rpcArgs(cap,'app_upsert_member_edit');
+    assert(c&&c.p_member_kind==='other'&&c.p_grade==='chu'&&c.p_city==='沼津市', 'S15 編集 push にも区分・市町村が同乗（新規行を完全な行にする）');
+    assert(c.p_set_member_kind===false&&c.p_set_grade===false&&c.p_set_city===false, 'S15a touched 省略時は set_* が全部 false＝既存行の属性を1バイトも変えない（渡し忘れてもクラウドを壊さない）');
+    assert(cap.reads===0, 'S15b 編集 push は送信前に members を読まない（#909）');
   });
 })();
 
