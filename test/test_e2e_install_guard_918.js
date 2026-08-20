@@ -32,7 +32,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const WF = path.join(__dirname, '..', '.github', 'workflows', 'e2e.yml');
-const EXPECTED_CHECKS = 23;
+const EXPECTED_CHECKS = 32;
 // 予備＝ブラウザ導入以外に必要な時間。実測（job 96369763890）は checkout 1 + Setup Node 7 +
 //   npm ci 1 + E2E スイート 234 = 243 秒。遅いランナーを見込んで倍以上を取る。
 const RESERVE_SECONDS = 600;
@@ -64,10 +64,12 @@ const mEnvLimit   = one(/^\s+PW_INSTALL_TIMEOUT:\s*'(\d+)'\s*$/m, 'env の PW_IN
 const mEnvTries   = one(/^\s+PW_INSTALL_TRIES:\s*'(\d+)'\s*$/m, 'env の PW_INSTALL_TRIES');
 const mShLimit    = one(/\$\{PW_INSTALL_TIMEOUT:-(\d+)\}/, 'シェル側の PW_INSTALL_TIMEOUT 既定値');
 const mShTries    = one(/\$\{PW_INSTALL_TRIES:-(\d+)\}/, 'シェル側の PW_INSTALL_TRIES 既定値');
+const mEnvKill    = one(/^\s+PW_INSTALL_KILL_AFTER:\s*'(\d+)'\s*$/m, 'env の PW_INSTALL_KILL_AFTER');
+const mShKill     = one(/\$\{PW_INSTALL_KILL_AFTER:-(\d+)\}/, 'シェル側の PW_INSTALL_KILL_AFTER 既定値');
 
 const jobTimeoutMin = Number(mJobTimeout[1]);
-const envLimit = Number(mEnvLimit[1]), envTries = Number(mEnvTries[1]);
-const shLimit = Number(mShLimit[1]), shTries = Number(mShTries[1]);
+const envLimit = Number(mEnvLimit[1]), envTries = Number(mEnvTries[1]), envKill = Number(mEnvKill[1]);
+const shLimit = Number(mShLimit[1]), shTries = Number(mShTries[1]), shKill = Number(mShKill[1]);
 
 // Install Chromium ステップの run ブロックを取り出す
 const stepAt = JOB.indexOf('      - name: Install Chromium\n');
@@ -86,8 +88,8 @@ const SCRIPT = lines.join('\n').replace(/\s+$/, '') + '\n';
 if (!SCRIPT.trim()) die('run ブロックが空');
 
 // ---------------------------------------------------------------- A: 数字の整合
-assert(/\btimeout\b\s+"\$_limit"/.test(SCRIPT),
-  'A1 ★ブラウザ導入が timeout で括られている（外部作業に上限がある）');
+assert(/\btimeout\b\s+--kill-after="\$_kill"\s+"\$_limit"/.test(SCRIPT),
+  'A1 ★ブラウザ導入が timeout で括られ、--kill-after の硬い締め切りが付いている（TERM を無視する子でも必ず終わる）');
 assert(/while\s+\[\s*"\$_i"\s+-le\s+"\$_tries"\s*\]/.test(SCRIPT),
   'A2 ★再試行のループがある（1回きりで諦めない）');
 assert(/exit 1/.test(SCRIPT) && /::error::/.test(SCRIPT),
@@ -96,6 +98,14 @@ assert(/E2E は実行していない/.test(SCRIPT),
   'A4 ★失敗メッセージが「テストの赤ではない」と明示する（読む人が最初に迷うところ）');
 assert(/_rc.*-eq 124/.test(SCRIPT.replace(/\n/g, ' ')),
   'A5 打ち切り(124)とそれ以外の失敗を区別してログに出す');
+assert(/_rc.*-eq 137/.test(SCRIPT.replace(/\n/g, ' ')),
+  'A5a ★KILL まで行った場合(137)も時間切れとして扱う（--kill-after を付けたら 124 だけでは足りない）');
+// ★ Codex 1巡目 P1: GitHub の run は既定で `bash -e`。errexit を切らないと、timeout が非0を
+//   返した瞬間にステップが終わり、再試行も診断も1行も走らない。
+assert(/^\s*set \+e\s*$/m.test(SCRIPT),
+  'A5b ★errexit を明示的に切っている（GitHub の run は bash -e ＝ そのままだと再試行が死ぬ）');
+assert(/^      - name: Install Chromium\n        shell: bash\n/m.test(JOB),
+  'A5c ★shell を明示している（このテストが本番と同じフラグで走らせられる）');
 
 assert(envLimit === shLimit,
   'A6 ★env とシェル既定値の秒数が一致する（片方だけ直して食い違わない）  [env ' + envLimit + ' / sh ' + shLimit + ']');
@@ -104,10 +114,14 @@ assert(envTries === shTries,
 assert(envTries >= 2, 'A8 再試行は2回以上（1回では「たまたま詰まった」を吸収できない）  [' + envTries + ']');
 assert(envLimit >= 60, 'A9 上限は60秒以上（実測21秒に対して十分な余裕）  [' + envLimit + ']');
 
-const worst = envTries * envLimit + RESERVE_SECONDS;
+assert(envKill === shKill,
+  'A9a ★env とシェル既定値の kill-after が一致する  [env ' + envKill + ' / sh ' + shKill + ']');
+assert(envKill >= 5, 'A9b kill-after は5秒以上（後始末の猶予）  [' + envKill + ']');
+// ★ 1回ぶんの最悪は limit ＋ kill-after（TERM を無視する子が KILL まで粘る分）。
+const worst = envTries * (envLimit + envKill) + RESERVE_SECONDS;
 assert(worst <= jobTimeoutMin * 60,
-  'A10 ★最悪ケースがジョブ上限に収まる（' + envTries + '回×' + envLimit + '秒＋予備' + RESERVE_SECONDS
-  + '秒＝' + worst + '秒 ≤ ' + (jobTimeoutMin * 60) + '秒）  ＝ 回数や秒数だけ増やして枠を超えるのを防ぐ');
+  'A10 ★最悪ケースがジョブ上限に収まる（' + envTries + '回×(' + envLimit + '＋' + envKill + ')秒＋予備'
+  + RESERVE_SECONDS + '秒＝' + worst + '秒 ≤ ' + (jobTimeoutMin * 60) + '秒）  ＝ 回数や秒数だけ増やして枠を超えるのを防ぐ');
 assert(jobTimeoutMin * 60 - worst <= 900,
   'A11 逆に上限が過剰でもない（無限ループを 15 分以内に検出できる余地を残す）  [余り ' + (jobTimeoutMin * 60 - worst) + '秒]');
 
@@ -119,12 +133,21 @@ process.on('exit', () => { try { fs.rmSync(TMP, { recursive: true, force: true }
 //   「守っているつもりで何も検査していない」になるので、**どの機械でも**これを使う。
 const SHIM = path.join(TMP, 'bin');
 fs.mkdirSync(SHIM);
+// ★ Codex 1巡目 P2: 無条件に SIGKILL する shim は GNU timeout より**優しくない**ので、
+//   「TERM を無視する子が上限を越えて生き延びる」という本物の穴を見逃す。
+//   GNU の順序（上限で TERM → --kill-after 後に KILL）を再現し、終了コードも合わせる
+//   （時間切れ 124 / KILL まで行ったら 137）。
 fs.writeFileSync(path.join(SHIM, 'timeout'), [
   '#!/usr/bin/env node',
-  'const a=process.argv.slice(2); const secs=Number(a[0]);',
-  'const cp=require("child_process").spawn(a[1],a.slice(2),{stdio:"inherit"});',
-  'const t=setTimeout(()=>{try{cp.kill("SIGKILL")}catch(e){} process.exit(124);},secs*1000);',
-  'cp.on("exit",c=>{clearTimeout(t);process.exit(c==null?1:c);});',
+  'const a=process.argv.slice(2); let killAfter=null;',
+  'while(a.length&&/^--/.test(a[0])){const m=/^--kill-after=(\\d+)$/.exec(a[0]); if(m)killAfter=Number(m[1]); a.shift();}',
+  'const secs=Number(a.shift());',
+  'const cp=require("child_process").spawn(a[0],a.slice(1),{stdio:"inherit"});',
+  'let timedOut=false, hardKilled=false;',
+  'const t=setTimeout(()=>{timedOut=true; try{cp.kill("SIGTERM")}catch(e){}',
+  '  if(killAfter!=null)setTimeout(()=>{hardKilled=true; try{cp.kill("SIGKILL")}catch(e){}},killAfter*1000);',
+  '},secs*1000);',
+  'cp.on("exit",c=>{clearTimeout(t); if(timedOut)process.exit(hardKilled?137:124); process.exit(c==null?1:c);});',
   '',
 ].join('\n'), { mode: 0o755 });
 
@@ -135,7 +158,10 @@ function runScript(env) {
   const sh = path.join(TMP, 'step.sh');
   fs.writeFileSync(sh, SCRIPT);
   const t0 = Date.now();
-  const r = spawnSync('bash', [sh], {
+  // ★ Codex 1巡目 P1: 本番は `shell: bash` ＝ `bash --noprofile --norc -eo pipefail {0}`。
+  //   ここを素の `bash script.sh` で走らせると errexit が無く、**再試行が死んでいても緑になる**
+  //   （実際そうなっていた）。ランナーと同じフラグで走らせる。
+  const r = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', sh], {
     encoding: 'utf8',
     env: Object.assign({}, process.env, { PATH: SHIM + path.delimiter + process.env.PATH }, env),
   });
@@ -148,7 +174,7 @@ function runScript(env) {
   //   timeout が sh を殺しても sleep が継承した stdout を掴んだままになり、
   //   呼び出し側が EOF を待って 60 秒ぶら下がる（実測）。測りたいのはそこではない。
   fakeNpx(['exec sleep 60']);
-  const r = runScript({ PW_INSTALL_TIMEOUT: '1', PW_INSTALL_TRIES: '2' });
+  const r = runScript({ PW_INSTALL_TIMEOUT: '1', PW_INSTALL_TRIES: '2', PW_INSTALL_KILL_AFTER: '1' });
   const warns = (r.out.match(/::warning::/g) || []).length;
   assert(r.code === 1, 'B1 ★ぶら下がったら失敗で終わる（沈黙のまま枠を食いつぶさない）  [exit ' + r.code + ']');
   assert(r.ms < 15000, 'B2 ★上限どおりに打ち切る（1秒×2回で終わる）  [' + r.ms + 'ms]');
@@ -160,7 +186,7 @@ function runScript(env) {
 // B-2 成功する npx → 1回で抜ける（余計な往復をしない）
 {
   fakeNpx(['exit 0']);
-  const r = runScript({ PW_INSTALL_TIMEOUT: '5', PW_INSTALL_TRIES: '2' });
+  const r = runScript({ PW_INSTALL_TIMEOUT: '5', PW_INSTALL_TRIES: '2', PW_INSTALL_KILL_AFTER: '1' });
   const warns = (r.out.match(/::warning::/g) || []).length;
   assert(r.code === 0, 'B5 成功したら 0 で抜ける  [exit ' + r.code + ']');
   assert(warns === 0, 'B6 成功時に警告を出さない  [' + warns + ']');
@@ -170,7 +196,7 @@ function runScript(env) {
 // B-3 即失敗する npx（apt のエラー等）→ 打ち切りではなく終了コードを名指しして再試行
 {
   fakeNpx(['exit 100']);
-  const r = runScript({ PW_INSTALL_TIMEOUT: '5', PW_INSTALL_TRIES: '2' });
+  const r = runScript({ PW_INSTALL_TIMEOUT: '5', PW_INSTALL_TRIES: '2', PW_INSTALL_KILL_AFTER: '1' });
   assert(r.code === 1, 'B8 失敗し続けたら 1 で落ちる  [exit ' + r.code + ']');
   assert(/終了コード 100/.test(r.out),
     'B9 ★時間切れでない失敗は終了コードを名指しする（「240秒で終わらなかった」と嘘をつかない）');
@@ -181,10 +207,24 @@ function runScript(env) {
 {
   const flag = path.join(TMP, 'tried');
   fakeNpx(['if [ -f "' + flag + '" ]; then exit 0; fi', 'touch "' + flag + '"', 'exit 1']);
-  const r = runScript({ PW_INSTALL_TIMEOUT: '5', PW_INSTALL_TRIES: '2' });
+  const r = runScript({ PW_INSTALL_TIMEOUT: '5', PW_INSTALL_TRIES: '2', PW_INSTALL_KILL_AFTER: '1' });
   const warns = (r.out.match(/::warning::/g) || []).length;
   assert(r.code === 0, 'B10 ★1回目が失敗しても2回目で成功すれば緑（これが再試行を入れた目的）  [exit ' + r.code + ']');
   assert(warns === 1, 'B11 警告は失敗した1回ぶんだけ  [' + warns + ']');
+}
+
+// B-5 TERM を無視する npx → 硬い締め切り（--kill-after）で必ず終わり、再試行にも入る
+//   ★ Codex 1巡目 P2 の本体。`timeout` は TERM を送るだけなので、これが無いと上限を過ぎても戻ってこない。
+{
+  // `trap '' TERM` のあと `exec` すると、**無視の設定は exec を越えて引き継がれる**。
+  //   sh を残して子で sleep すると、KILL 後に孤児が stdout を掴んで別の理由でぶら下がる。
+  fakeNpx(["trap '' TERM", 'exec sleep 60']);
+  const r = runScript({ PW_INSTALL_TIMEOUT: '1', PW_INSTALL_TRIES: '2', PW_INSTALL_KILL_AFTER: '1' });
+  const warns = (r.out.match(/::warning::/g) || []).length;
+  assert(r.code === 1, 'B12 ★TERM を無視する子でも失敗で終わる  [exit ' + r.code + ']');
+  assert(r.ms < 20000, 'B13 ★硬い締め切りが効いて上限どおりに終わる（TERM 無視でジョブ枠まで粘らない）  [' + r.ms + 'ms]');
+  assert(warns === 2, 'B14 ★KILL まで行っても再試行に入る  [warning ' + warns + '回]');
+  assert(/終わらなかった/.test(r.out), 'B15 137 も時間切れとして扱う（「終了コード 137 で失敗」と誤報しない）');
 }
 
 const ran = pass + fail;
