@@ -89,7 +89,10 @@ jobs:
     #   実行対象を playwright test ランナーから test/run_e2e.sh へ変更している。
     needs: [unit-test, security-scan]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # E2E-INSTALL-GUARD-001 (#918): 15 → 20。ブラウザ導入に上限付きの再試行を入れたぶんの余地。
+    #   最悪ケース（PW_INSTALL_TIMEOUT × PW_INSTALL_TRIES ＋ 実測に基づく予備）がこの枠に
+    #   収まることは test/test_e2e_install_guard_918.js が**計算で**固定する。
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node
@@ -99,8 +102,52 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
+      # E2E-INSTALL-GUARD-001 (#918): このステップは**外部ネットワークと apt に依存する**のに、
+      #   これまで上限も再試行も無かった。実測（2026-08-19 job 96122380273）では、ここで
+      #   **15分05秒ぶら下がってジョブごと cancelled** になっている（E2E スイートは1秒も走っていない）。
+      #   同じ commit の再実行では **21秒**で終わった。つまり遅いのはテストではなく、この外部作業。
+      #   放置できない理由: `cancelled` は「赤」「遅い」「外部が詰まった」を区別できず、
+      #   AUTO-MERGE-GATE-001 は SUCCESS 以外を停止条件にする（P1-2）ので、
+      #   **自動マージが外部要因で黙って止まる**。
+      #   ★ 打ち切りと再試行をこのステップの中に閉じ込め、駄目なら**原因を名指しして**落とす。
+      #     15分の沈黙が「240秒で終わらなかった、やり直す」というログに変わる。
+      #   ★ 秒数と回数は env で与える（テストが読み取れる一箇所に置く）。
+      #   ★ Codex 1巡目 P1: GitHub の run は既定で **`bash -e`** で走る（`shell: bash` を明示しても
+      #     `-eo pipefail`）。`set -u` は errexit を解除しないので、そのままだと timeout が非0を返した
+      #     瞬間にステップが終わり、**`_rc=$?` も警告も2回目も最後の診断も1行も走らない**＝再試行が死ぬ。
+      #     `shell` を明示して、`set +e` で errexit を切ってから終了コードを見る。
+      #   ★ Codex 1巡目 P2: `timeout` はまず TERM を送るだけなので、TERM を無視する子が居ると
+      #     上限を過ぎても走り続ける（＝ジョブ上限まで戻ってこない）。`--kill-after` で
+      #     **硬い締め切り**を付ける。KILL まで行った場合の 137 も時間切れとして扱う。
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        shell: bash
+        env:
+          PW_INSTALL_TIMEOUT: '240'
+          PW_INSTALL_TRIES: '2'
+          PW_INSTALL_KILL_AFTER: '30'
+        run: |
+          set -u
+          set +e
+          _limit="${PW_INSTALL_TIMEOUT:-240}"
+          _tries="${PW_INSTALL_TRIES:-2}"
+          _kill="${PW_INSTALL_KILL_AFTER:-30}"
+          _i=1
+          while [ "$_i" -le "$_tries" ]; do
+            timeout --kill-after="$_kill" "$_limit" npx playwright install --with-deps chromium
+            _rc=$?
+            if [ "$_rc" -eq 0 ]; then
+              echo "playwright install 完了（試行 ${_i}/${_tries}）"
+              exit 0
+            fi
+            if [ "$_rc" -eq 124 ] || [ "$_rc" -eq 137 ]; then
+              echo "::warning::playwright install が ${_limit} 秒で終わらなかった（試行 ${_i}/${_tries}）。やり直す。"
+            else
+              echo "::warning::playwright install が失敗した（終了コード ${_rc}・試行 ${_i}/${_tries}）。やり直す。"
+            fi
+            _i=$((_i+1))
+          done
+          echo "::error::playwright install が ${_tries} 回とも成功しなかった（上限 ${_limit} 秒）。E2E は実行していない＝これはテストの赤ではなく、ブラウザ導入の失敗。"
+          exit 1
       # E2E-NOT-RUN-001 (#865): test/e2e/*.e2e.js を全部走らせる。
       #   対象が0件なら run_e2e.sh 自身が exit 2 で落ちる（「緑」と「何も検査していない」を
       #   区別できない状態を作らないため）。
