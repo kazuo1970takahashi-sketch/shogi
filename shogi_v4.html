@@ -1524,6 +1524,8 @@ function isWithdrawnPlayer(cls,playerId){
 //   role='p1' は先手 select、'p2' は後手 select。現 p1/p2 は status:'ok' 扱いで
 //   reasonId=null（PR #108 §7.1.1 確定）。
 //   戻り値: { status:'ok'|'blocked', reasonId, reasonLabel }
+//   CHG-MODAL-REPLACE-REMATCH-001 (#884): replace 経路が再戦になるときだけ warnId / warnLabel を
+//   追加で載せる（status は 'ok' のまま＝選べる状態は変えない・印だけ出す）。他の経路では未定義。
 function classifyChangePairingCandidate(cls, idx, candidateId, role){
   var pairings=state.pairings&&state.pairings[cls];
   var match=pairings&&pairings[idx];
@@ -1564,6 +1566,20 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
   var otherIdx=findPairContainingPlayer(cls,candidateId,idx);
   if(otherIdx===-1){
     // replace 経路: 候補が他ペアに属さない。再戦は既存 confirm に任せるため候補側では blocked にしない。
+    // CHG-MODAL-REPLACE-REMATCH-001 (#884): 塞がずに「選ぶ前に分かる」印だけ足す（作者裁定 2026-08-14 案2）。
+    //   ★ 塞がない理由（実測）: swap と同じく blocked にすると、回戦が進んだ盤面で
+    //     「その役では何も選べない」役が 2〜8件・卓ごと操作不能が 80卓中1卓 出た（#884 のコメント表）。
+    //     ＝ #883 の「満席で詰む」と同じ副作用を再戦側で作ることになる。
+    //   ★ status は 'ok'・reasonId も null のまま返す。増やすのは warnId / warnLabel の2キーだけで、
+    //     既存の status==='blocked' 判定・okCount・hasAlternative・保存ボタンの活殺は1つも変わらない。
+    //   ★ 判定は保存時 confirm と厳密に同じ1項 pairHasRematch(cls, keepPlayer, X)。
+    //     keepPlayer = 反対側の現在値（この replace で卓に残る人）＝ bindChangePairingModalEvents の
+    //     keepPlayer（変えなかった役の現在値）と同一。swap の第2項は replace には存在しない
+    //     ＝ **候補本人が必ず再戦の当事者**なので #838 の「主語」問題は起きない（#884 §3.2）。
+    var keepForReplace=(role==='p1')?match.p2:match.p1;
+    if(pairHasRematch(cls,keepForReplace,candidateId)){
+      return {status:'ok',reasonId:null,reasonLabel:'',warnId:'W-rematch-replace',warnLabel:'対戦済み'};
+    }
     return {status:'ok',reasonId:null,reasonLabel:''};
   }
   var otherPair=pairings[otherIdx];
@@ -11159,25 +11175,36 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
   //   現 p1 / p2 は status:'ok' + selected + 非 disabled + 理由ラベルなし（§7.1.1）。
   //   表示文字列は escapeHtml を通す（個人情報保護）。
   function buildSelectInner(role,selectedId){
-    var okHtml='',blockedHtml='',okCount=0,blockedCount=0;
+    var okHtml='',blockedHtml='',okCount=0,blockedCount=0,blockedReasons={};
     for(var i=0;i<candidates.length;i++){
       var c=candidates[i];
       var clf=classifyChangePairingCandidate(cls,idx,c.id,role);
       var baseLabel=entryNoOf(cls,c.id)+'｜'+c.name;
       var sel=(c.id===selectedId)?' selected':'';
       if(clf.status==='ok'){
-        okHtml+='<option value="'+c.id+'"'+sel+'>'+escapeHtml(baseLabel)+'</option>';
+        // CHG-MODAL-REPLACE-REMATCH-001 (#884): 選べるまま印を出す。
+        //   ★ blocked 側の「（再戦になる）」とは**別の語**（「（対戦済み）」）を使う。
+        //     同じ語だと「選べないほう」と見分けが付かない（#884 論点1・作者裁定 2026-08-21）。
+        //   ★ optgroup は「選択可能」のまま・okCount にも従来どおり数える
+        //     ＝ hasAlternative も保存ボタンの活殺も1ビットも変わらない。
+        var okLabel=clf.warnLabel?(baseLabel+'（'+clf.warnLabel+'）'):baseLabel;
+        var warnAttr=clf.warnId?(' data-warn-id="'+escapeHtml(clf.warnId)+'"'):'';
+        okHtml+='<option value="'+c.id+'"'+sel+warnAttr+'>'+escapeHtml(okLabel)+'</option>';
         okCount++;
       }else{
         var blockedLabel=clf.reasonLabel?(baseLabel+'（'+clf.reasonLabel+'）'):baseLabel;
         blockedHtml+='<option value="'+c.id+'"'+sel+' disabled data-reason-id="'+escapeHtml(clf.reasonId||'')+'">'+escapeHtml(blockedLabel)+'</option>';
         blockedCount++;
+        // CHG-MODAL-FULLHOUSE-HINT-001 (#883): 候補ゼロ案内を言い分けるための理由内訳。
+        //   ここで集計だけして、文言の判断は呼び出し側（chgEmptyNoticeIsWithdrawnOnly）に置く。
+        var _rid=clf.reasonId||'R-unknown';
+        blockedReasons[_rid]=(blockedReasons[_rid]||0)+1;
       }
     }
     var inner='';
     if(okHtml)inner+='<optgroup label="選択可能">'+okHtml+'</optgroup>';
     if(blockedHtml)inner+='<optgroup label="選択できない候補">'+blockedHtml+'</optgroup>';
-    return {html:inner,okCount:okCount,blockedCount:blockedCount};
+    return {html:inner,okCount:okCount,blockedCount:blockedCount,blockedReasons:blockedReasons};
   }
   var sel1=buildSelectInner('p1',match.p1);
   var sel2=buildSelectInner('p2',match.p2);
@@ -11195,9 +11222,60 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
   var currentP1Label=buildChgCurrentLabel(match.p1);
   var currentP2Label=buildChgCurrentLabel(match.p2);
   // 候補 0 人時の案内（PR #108 §8.2 推奨）と保存ボタン disabled
+  // CHG-MODAL-FULLHOUSE-HINT-001 (#883): 候補ゼロの**理由**を内訳で言い分ける。
+  //   ★ 「この案内が出ている＝棄権が原因」ではない。実測で、棄権ゼロでも候補ゼロになる盤面がある
+  //     （6名3卓・満席・棄権ゼロ・相手卓が結果入力済 → R-winner-locked だけで塞がる）。
+  //     無条件に棄権を名指しすると嘘になるので、**内訳がすべて棄権系のときだけ**差し替える。
+  //   ★ R-self（反対側の役の現在値）は盤面によらず必ず 1 件出るので判定から除く。除かないと
+  //     この分岐は永久に false になり、足した文言が一度も出ない（＝緑だが何も測っていない検査になる）。
+  //   ★ 導線（「組み合わせを再生成」ボタン）はモーダル内に置かない（作者裁定 2026-08-21）。
+  //     再生成は全卓を作り直す破壊操作で、既存の repairBtn_ 側に確認モーダルがある。
+  //   ★ 除外した理由 'R-withdrawn-partner'（棄権者が**相手の卓**に居る）は、この文と同時に成立しない。
+  //     partner に到達するのは currentInRole も otherInRole も棄権でないときだけ＝**この卓に棄権者が居ない**
+  //     （棄権していれば手前の R-withdrawn-stays / R-withdrawn-swap で先に返る）。入れておくと
+  //     「白紙票」＝外しても誰も赤にできないホワイトリスト項目になるので入れない。
+  var _withdrawnReasons={'R-withdrawn':1,'R-withdrawn-stays':1,'R-withdrawn-swap':1};
+  function chgEmptyNoticeIsWithdrawnOnly(sels){
+    var seen=0;
+    for(var i=0;i<sels.length;i++){
+      var m=sels[i].blockedReasons;
+      for(var k in m){
+        if(!Object.prototype.hasOwnProperty.call(m,k))continue;
+        if(k==='R-self')continue;
+        if(!Object.prototype.hasOwnProperty.call(_withdrawnReasons,k))return false;
+        seen+=m[k];
+      }
+    }
+    return seen>0;
+  }
+  //   ★★ **この卓に棄権者が座っていること**を別途要求する。理由の内訳だけでは足りない。
+  //     反例（実測・3名）: 卓「選手1 × 選手3」／選手2 が棄権して**待機**。先手の内訳は
+  //     R-self（選手3）と R-withdrawn（選手2）だけ＝「棄権系のみ」に見えるが、
+  //     **この卓に棄権者は1人も居ない**。ここで棄権を名指しすると、文の3節すべてが偽になり、
+  //     しかも「再生成」しても待機の棄権者は元から卓に入らない＝当日の幹事を破壊操作へ誤誘導する。
+  var _tableHasWithdrawn=isWithdrawnPlayer(cls,match.p1)||isWithdrawnPlayer(cls,match.p2);
+  //   ★★ Codex P1 (2026-08-21): **再生成が本当にその棄権者を外せるときだけ**この文言を出す。
+  //     `generatePairing` は棄権者を除いた人数が 2 未満だと `state.pairings[cls]` を**上書きせずに return** する
+  //     （`if(players.length<2)return;`）。つまり案内どおり「組み合わせを再生成」を押しても棄権者は卓に残る。
+  //     実測（3名・p1 が現役／p2 が棄権して着席／p3 が棄権して待機）: 再生成の前後とも卓は `p1 × p2` のまま。
+  //     ＝ 案内文の最後の1節が偽になる。出口が成立しない盤面では汎用文へ倒す（安全側）。
+  //   ★ 数え方は `generatePairing` の filter と**同じ述語**（`p.withdrawn`）を使う。
+  //     ここだけ別の窓口を通すと、片方が真でもう片方が偽という取り違えが起きうる。
+  var _activePlayers=(state.players&&state.players[cls])||[];
+  var _activeCount=0;
+  for(var _ai=0;_ai<_activePlayers.length;_ai++){
+    if(_activePlayers[_ai]&&!_activePlayers[_ai].withdrawn)_activeCount++;
+  }
+  var _regenCanRemove=(_activeCount>=2);
+  var emptyByWithdrawn=(!hasAlternative)&&_tableHasWithdrawn&&_regenCanRemove&&chgEmptyNoticeIsWithdrawnOnly([sel1,sel2]);
+  //   ★ 「全員が卓に入っているため」とは書かない。棄権者が待機に居ると偽になる（R-withdrawn が混じる形）。
+  //     hasAlternative===false が保証しているのは「代わりに入れられる候補が無い」ことだけなので、そう書く。
+  var emptyNoticeBody=emptyByWithdrawn
+    ?'この卓には棄権した参加者がいます。代わりに入れられる参加者がいないため、ここでは外せません。<br>「組み合わせを再生成」で外してください。'
+    :'現在の条件では、1人だけ入れ替えできる候補がありません。<br>別の対局を選ぶか、組み合わせ全体を見直してください。';
   var emptyNoticeHtml=hasAlternative?'':
-    '<div data-chg-empty-notice="1" style="margin-bottom:12px;padding:8px 10px;background:#fff7e6;border:1px solid #f5d490;border-radius:6px;font-size:12px;color:#7a4a00;line-height:1.5">'
-    +'現在の条件では、1人だけ入れ替えできる候補がありません。<br>別の対局を選ぶか、組み合わせ全体を見直してください。'
+    '<div data-chg-empty-notice="1" data-chg-empty-cause="'+(emptyByWithdrawn?'withdrawn':'generic')+'" style="margin-bottom:12px;padding:8px 10px;background:#fff7e6;border:1px solid #f5d490;border-radius:6px;font-size:12px;color:#7a4a00;line-height:1.5">'
+    +emptyNoticeBody
     +'</div>';
   var saveBtnAttr=hasAlternative?'':' disabled';
   var saveBtnStyle=hasAlternative
