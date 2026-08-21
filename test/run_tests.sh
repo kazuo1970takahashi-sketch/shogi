@@ -92,7 +92,12 @@ echo "【第2層】重点回帰テスト"
 #     ＝ showBulkEditError/clearBulkEditError の中に innerHTML/outerHTML/insertAdjacentHTML が1つも無いこと、
 #        かつ .bulk-err-head / .bulk-err-body のどちらにも innerHTML 系を使わないこと。Q4 が赤なら除外の前提が崩れている。
 #   ★ 除外は**行単位**なので、showBulkEditError( と別の innerHTML 流入を同じ行に書かないこと。
-unescaped=$(grep -nE "'\+name\+|'\+newName\+|'\+p\.name\+|'\+players\[.*\]\.name\+|'\+getName\(.*\)\+|'\+candidates\[.*\]\.name\+|'\+n1\+|'\+n2\+|'\+date\+|'\+place\+|'\+start\+|'\+end\+|'\+sei\+|'\+fuku\+|'\+note\+|'\+oppName\+|'\+pn1\+|'\+pn2\+|'\+pw\+|'\+text\+" "$TARGET" | grep -v "escapeHtml" | grep -v "alert(" | grep -v "confirm(" | grep -v "appConfirm(" | grep -v "appAlert(" | grep -v "appPrompt(" | grep -v "showBulkEditError(" | wc -l)
+#   除外に dupMsgs.push( を追加（BULK-EDIT-ALL-ERRORS-001 #889）。全件報告にしたことで、氏名を含む
+#   文面の**組み立て**が showBulkEditError( の行から離れ、この行単位の除外では見えなくなった。
+#   ★ 裏づけ（「安全だと主張するだけ」にしない）: test_bulk_all_errors_pins_889.sh の P8
+#     ＝ 保存ハンドラのスコープ内に innerHTML/outerHTML/insertAdjacentHTML が1つも無く、
+#        組み立てた文面の**唯一の行き先が showBulkEditError()** であること。P8 が赤なら除外の前提が崩れている。
+unescaped=$(grep -nE "'\+name\+|'\+newName\+|'\+p\.name\+|'\+players\[.*\]\.name\+|'\+getName\(.*\)\+|'\+candidates\[.*\]\.name\+|'\+n1\+|'\+n2\+|'\+date\+|'\+place\+|'\+start\+|'\+end\+|'\+sei\+|'\+fuku\+|'\+note\+|'\+oppName\+|'\+pn1\+|'\+pn2\+|'\+pw\+|'\+text\+" "$TARGET" | grep -v "escapeHtml" | grep -v "alert(" | grep -v "confirm(" | grep -v "appConfirm(" | grep -v "appAlert(" | grep -v "appPrompt(" | grep -v "showBulkEditError(" | grep -v "dupMsgs.push(" | wc -l)
 [ "$unescaped" -eq 0 ] && ok "未エスケープのユーザー入力: 0件" || ng "未エスケープ箇所: $unescaped 件 (危険)"
 
 # 2-2. showMsg内でescapeHtml使用

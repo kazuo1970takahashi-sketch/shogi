@@ -40,8 +40,12 @@ const CSS_BODY = '.bulk-err-body{white-space:pre-line;overflow-wrap:anywhere}';
 const CSS_CARD = '.bulk-card{max-height:80vh;overflow-y:auto}';
 const CARD_TAG = 'return \'<div class="bulk-card" style="background:#fff;border-radius:12px;padding:24px;width:360px;">\'';
 const HEAD = '<strong class="bulk-err-head">\\u26a0 変更を保存しませんでした</strong>';
-const MSG1 = "showBulkEditError(cls+entryNoOf(cls,players[i].id)+' の名前が空です。\\n名前を入力してから保存してください。')";
-const MSG2 = "showBulkEditError('\"'+newName+'\"が重複しています。\\n別の名前に直してください。')";
+// ★ #889 で報告が「全件を集めて1回で出す」に変わり、文言は組み立ての中へ移った。
+//   #887 の変異が見る性質（entry_no で名指し／次の行動／主文）は同じなので、錨だけ張り替える。
+const MSG1_NO = "        emptyNos.push(cls+entryNoOf(cls,players[i].id));";
+const MSG1_ACT = "emptyNos.join(' / ')+' の名前が空です。\\n名前を入力してから保存してください。'";
+const MSG2_ACT = "dupMsgs.join('\\n')+'\\n別の名前に直してください。'";
+const MSG2_HEAD = "dupMsgs.push(lo+' と '+hi+' の \"'+newName+'\" が重複しています。');";
 const KBD_RESET = "    if(!isBulkKbdActive()){ cardEl.style.alignSelf=''; cardEl.style.marginTop=''; cardEl.style.maxHeight=''; return; }\n";
 
 // --- 静的 pin が殺すべきもの -------------------------------------------------
@@ -58,10 +62,10 @@ mut('S4hh', '  slotBody.textContent=msg;', "  slot.querySelector('.bulk-err-head
 mut('S5', HEAD, '');                                                                          // 見出し語を消す
 mut('S8', 'function clearBulkEditError(){', 'function clearBulkEditError_removed(){');         // clear の定義を消す
 mut('S18', 'function showBulkEditError(msg){\n  var slot=', 'function showBulkEditError(msg){\n  alert(msg); return;\n  var slot=');  // show を alert に戻す
-mut('S9', MSG1, "showBulkEditError(cls+entryNoOf(cls,players[i].id)+' の名前が空です。')");     // 次の行動を消す
-mut('S9b', MSG1, "showBulkEditError((i+1)+'番目の名前が空です。\\n名前を入力してから保存してください。')"); // ★ entry_no を配列 index に戻す(=S13 相当)
-mut('S10', MSG2, "showBulkEditError('\"'+newName+'\"が重複しています。')");                    // 次の行動を消す
-mut('S10b', MSG2, "showBulkEditError('\"'+newName+'\"が重なっています。\\n別の名前に直してください。')"); // 主文を壊す
+mut('S9', MSG1_ACT, "emptyNos.join(' / ')+' の名前が空です。'");                  // 次の行動を消す
+mut('S9b', MSG1_NO, "        emptyNos.push((i+1)+'番目');");                      // ★ entry_no を配列 index に戻す(=S13 相当)
+mut('S10', MSG2_ACT, "dupMsgs.join('\\n')");                                     // 次の行動を消す
+mut('S10b', MSG2_HEAD, "dupMsgs.push(lo+' と '+hi+' の \"'+newName+'\" が重なっています。');"); // 主文を壊す
 mut('S11', CSS_CARD, '.bulk-card{overflow-y:auto}');                                          // クラスから max-height を消す
 mut('S11b', CARD_TAG, 'return \'<div class="bulk-card" style="background:#fff;border-radius:12px;padding:24px;width:360px;max-height:80vh;">\''); // inline へ書き戻す
 mut('S12b', KBD_RESET, '');                                                                   // 非活性時のリセットを消す
@@ -76,8 +80,11 @@ mut('D4', '    fitBulkCardToViewport();\n    try{ cardEl.lastElementChild', '   
 mut('D5', "  bindBulkViewportFollow();   // ★ STYLE-GUIDE §10.4「表示直後＋visualViewport の resize/scroll」\n", '');
 mut('S12', 'return (window.innerHeight-vv.height*(vv.scale||1))>BULK_KBD_SHRINK_PX;', 'return true;');
 // ★ ガードが止めなくなる変異（保存を拒否しなくなる）。静的 pin では殺せない。
-mut('R1', "名前を入力してから保存してください。');hasError=true;break;}", "名前を入力してから保存してください。');break;}");
-mut('R2', "別の名前に直してください。');hasError=true;break;", "別の名前に直してください。');break;");
+// ★ #889 でガードが1か所（空欄・重複をまとめて拒否する if）に集約された。
+//   R1 = 拒否そのものをやめる（空欄でも保存が通る）／R2 = 重複だけ拒否条件から外す。
+//   ガードが2つあった頃と同じ2方向（B1 側・B2 側）を保つ。
+mut('R1', "      showBulkEditError(blocks.join('\\n'));\n      return;\n", "      showBulkEditError(blocks.join('\\n'));\n");
+mut('R2', "    if(emptyNos.length||dupMsgs.length){", "    if(emptyNos.length){");
 
 // ★ ⑤（担当変異ゼロの pin を落とす段）が要求した追加分。
 //   これらが無いと Q4a / Q13a / Q13b は「一度も試されていない項」になる。

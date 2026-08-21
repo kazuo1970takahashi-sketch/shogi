@@ -67,7 +67,10 @@ Q5(){ grep -q 'class="bulk-err-head"' "$1"; }
 Q6(){ grep -qE "function showBulkEditError\(msg\)" "$1" && grep -qE "function clearBulkEditError\(\)" "$1"; }
 Q7(){ tr -d '\n' < "$1" | grep -qE "addEventListener\('input', *function\( *\) *[{] *clearBulkEditError\(\)"; }
 # ★ Q8 は entry_no（§5.1 の作者裁定）と「次の行動」の両方を見る。
-Q8(){ grep -qE "entryNoOf\(cls,players\[i\]\.id\)\+' の名前が空です。" "$1" \
+# ★ #889 で「空欄は全件を1回で出す」へ変わり、式が `emptyNos.push(...)` ＋ `join` に割れた。
+#   Q8 が見ているのは #887 の成果（**entry_no で名指しする**／**次の行動がある**）で不変。
+#   全件を出すこと自体は #889 の pin（test_bulk_all_errors_pins_889.sh）の担当。
+Q8(){ grep -qE "emptyNos\.push\(cls\+entryNoOf\(cls,players\[i\]\.id\)\)" "$1" \
    && grep -q "名前を入力してから保存してください。" "$1"; }
 Q9(){ grep -q 'が重複しています。' "$1" && grep -q '別の名前に直してください。' "$1"; }
 # ★ Q10: クラス側にあり、カードのインライン style には無いこと（両方向）。
@@ -109,7 +112,7 @@ anditem(){ case "$1" in
   Q4b) grep -qE "slotBody\.textContent=msg" "$2";;
   Q6a) grep -qE "function showBulkEditError\(msg\)" "$2";;
   Q6b) grep -qE "function clearBulkEditError\(\)" "$2";;
-  Q8a) grep -qE "entryNoOf\(cls,players\[i\]\.id\)\+' の名前が空です。" "$2";;
+  Q8a) grep -qE "emptyNos\.push\(cls\+entryNoOf\(cls,players\[i\]\.id\)\)" "$2";;
   Q8b) grep -q "名前を入力してから保存してください。" "$2";;
   Q9a) grep -q 'が重複しています。' "$2";;
   Q9b) grep -q '別の名前に直してください。' "$2";;

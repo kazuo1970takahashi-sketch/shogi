@@ -232,7 +232,9 @@ async function triggerDup(page) {
     await setNames(page, "function(is){ is[2].value='一郎'; is[2].dispatchEvent(new Event('input',{bubbles:true})); }");
     await clickSave(page);
     const r2 = await page.evaluate(probe);
-    ok(r2.文言 === '"一郎"が重複しています。\n別の名前に直してください。', '[B4] B2 の文言: ' + JSON.stringify(r2.文言));
+    // ★ #889: 重複は「どの行どうしか」を名指しするようになった（A01 と A05）。#887 が固定していた
+    //   「主文がある／次の行動がある／native alert を使わない」は不変。
+    ok(r2.文言 === 'A01 と A05 の "一郎" が重複しています。\n別の名前に直してください。', '[B4] B2 の文言: ' + JSON.stringify(r2.文言));
     ok(alerts.length === 0, '[B5] native alert は1件も出ない');
     ok(r2.slot可視, '[B6] スロットが見える');
     await page.close();
