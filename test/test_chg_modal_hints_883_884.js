@@ -80,7 +80,7 @@ const P884_WARN = `    var keepForReplace=(role==='p1')?match.p2:match.p1;
     }
 `;
 const P883_RSELF = `        if(k==='R-self')continue;`;
-const P883_CALL  = `  var emptyByWithdrawn=(!hasAlternative)&&_tableHasWithdrawn&&chgEmptyNoticeIsWithdrawnOnly([sel1,sel2]);`;
+const P883_CALL  = `  var emptyByWithdrawn=(!hasAlternative)&&_tableHasWithdrawn&&_regenCanRemove&&chgEmptyNoticeIsWithdrawnOnly([sel1,sel2]);`;
 const P884_LABEL = `        var okLabel=clf.warnLabel?(baseLabel+'（'+clf.warnLabel+'）'):baseLabel;`;
 const P884_ATTR  = `        var warnAttr=clf.warnId?(' data-warn-id="'+escapeHtml(clf.warnId)+'"'):'';`;
 
@@ -107,6 +107,8 @@ function buildSource(variant){
     case 'V-J': return patch(SRC, `'R-withdrawn':1,`, ``, 'V-J');                                  // ホワイトリストから R-withdrawn を落とす
     case 'V-K': return patch(SRC, `'R-withdrawn-stays':1,`, ``, 'V-K');
     case 'V-L': return patch(SRC, `'R-withdrawn-swap':1`, `'_x':1`, 'V-L');
+    // ★ Codex P1（2026-08-21）で足した。足す前は「再生成しても外れない盤面」で棄権を名指ししていた。
+    case 'V-M': return patch(SRC, `&&_regenCanRemove&&`, `&&`, 'V-M');                             // 再生成が効くかを見ない
     default: throw new Error('unknown variant '+variant);
   }
 }
@@ -362,6 +364,19 @@ assert(!nElse.なし, '[F1-0] この盤面でも候補ゼロ案内自体は出�
 assert(nElse.cause==='generic' && !/棄権/.test(nElse.文言||''),
   '[F1] ★ 卓に棄権者が座っていなければ棄権を名指ししない  ['+nElse.cause+']');
 
+// ★ Codex P1 (2026-08-21) の反例。案内文の最後の1節「「組み合わせを再生成」で外してください」は、
+//   再生成が実際にその棄権者を外せる盤面でしか真にならない。
+//   generatePairing は棄権者を除いた人数が 2 未満だと state.pairings[cls] を上書きせずに return するため、
+//   現役が1人以下のクラスでは押しても卓は変わらない（実測: 再生成の前後とも p1 × p2 のまま）。
+const ST_NO_REGEN = board(mkPlayers(3,['p2','p3']), [{p1:'p1',p2:'p2',winner:null}]);
+const nNoRegen = notice(envCur, ST_NO_REGEN, 0);
+assert(!nNoRegen.なし, '[F4-0] この盤面でも候補ゼロ案内自体は出る（前提）');
+assert(nNoRegen.cause==='generic' && !/棄権/.test(nNoRegen.文言||''),
+  '[F4] ★ 再生成しても外れない盤面（現役が1人以下）では棄権を名指ししない  ['+nNoRegen.cause+']');
+// この盤面で「棄権を名指ししない」理由が _regenCanRemove であること（他の条件が偶然倒しているのではない）
+assert(notice(loadEnv('V-M'), ST_NO_REGEN, 0).cause==='withdrawn',
+  '[F5] ★ 再生成の可否を見ない版では、この盤面が棄権と誤判定される＝F4 は空振りしていない');
+
 // ホワイトリスト3件がそれぞれ実際に発火すること（＝外すと赤にできる盤面が在ること）
 //   R-withdrawn-stays : 満席＋棄権（C1 の盤面）
 //   R-withdrawn-swap  : 同上（棄権者本人の役）
@@ -416,6 +431,10 @@ assert(notice(loadEnv('V-I'), ST_ELSEWHERE, 0).cause==='withdrawn',
   '[D-I] ★ 卓の棄権者を見ないと F1 が赤になる（＝この防護は空振りしていない）');
 
 // V-J / V-K / V-L: ホワイトリストの3件は、どれを外しても赤にできる（白紙票が無い）
+assert(notice(loadEnv('V-M'), ST_NO_REGEN, 0).cause==='withdrawn',
+  '[D-M] ★ 再生成の可否を見ないと F4 が赤になる（Codex P1・2026-08-21）');
+assert(notice(loadEnv('V-M'), ST_W, 0).cause==='withdrawn',
+  '[D-M2] 対照: V-M でも正しい盤面（満席＋棄権・現役5名）は withdrawn のまま＝F4 だけを動かす変異');
 assert(notice(loadEnv('V-J'), ST_TWO_W, 0).cause==='generic',  '[D-J] ★ R-withdrawn を外すと F2 が赤になる');
 assert(notice(loadEnv('V-K'), ST_W, 0).cause==='generic',      '[D-K] ★ R-withdrawn-stays を外すと C1 が赤になる');
 assert(notice(loadEnv('V-L'), ST_W, 0).cause==='generic',      '[D-L] ★ R-withdrawn-swap を外すと C1 が赤になる');

@@ -11254,7 +11254,20 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
   //     **この卓に棄権者は1人も居ない**。ここで棄権を名指しすると、文の3節すべてが偽になり、
   //     しかも「再生成」しても待機の棄権者は元から卓に入らない＝当日の幹事を破壊操作へ誤誘導する。
   var _tableHasWithdrawn=isWithdrawnPlayer(cls,match.p1)||isWithdrawnPlayer(cls,match.p2);
-  var emptyByWithdrawn=(!hasAlternative)&&_tableHasWithdrawn&&chgEmptyNoticeIsWithdrawnOnly([sel1,sel2]);
+  //   ★★ Codex P1 (2026-08-21): **再生成が本当にその棄権者を外せるときだけ**この文言を出す。
+  //     `generatePairing` は棄権者を除いた人数が 2 未満だと `state.pairings[cls]` を**上書きせずに return** する
+  //     （`if(players.length<2)return;`）。つまり案内どおり「組み合わせを再生成」を押しても棄権者は卓に残る。
+  //     実測（3名・p1 が現役／p2 が棄権して着席／p3 が棄権して待機）: 再生成の前後とも卓は `p1 × p2` のまま。
+  //     ＝ 案内文の最後の1節が偽になる。出口が成立しない盤面では汎用文へ倒す（安全側）。
+  //   ★ 数え方は `generatePairing` の filter と**同じ述語**（`p.withdrawn`）を使う。
+  //     ここだけ別の窓口を通すと、片方が真でもう片方が偽という取り違えが起きうる。
+  var _activePlayers=(state.players&&state.players[cls])||[];
+  var _activeCount=0;
+  for(var _ai=0;_ai<_activePlayers.length;_ai++){
+    if(_activePlayers[_ai]&&!_activePlayers[_ai].withdrawn)_activeCount++;
+  }
+  var _regenCanRemove=(_activeCount>=2);
+  var emptyByWithdrawn=(!hasAlternative)&&_tableHasWithdrawn&&_regenCanRemove&&chgEmptyNoticeIsWithdrawnOnly([sel1,sel2]);
   //   ★ 「全員が卓に入っているため」とは書かない。棄権者が待機に居ると偽になる（R-withdrawn が混じる形）。
   //     hasAlternative===false が保証しているのは「代わりに入れられる候補が無い」ことだけなので、そう書く。
   var emptyNoticeBody=emptyByWithdrawn
