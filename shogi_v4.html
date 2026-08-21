@@ -4995,7 +4995,11 @@ function buildMasterTabHtml(master){
   html+='<div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:8px">';
   html+='<button type="button" id="masterCloudPullBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ クラウドから取得</button>';
   html+='</div>';
-  html+='<div id="masterCloudPullStatus" class="cloud-status" role="status" style="margin:4px 0 12px;font-size:13px" aria-live="polite"></div>';
+  // MEMBER-CLOUD-STATUS-LOG-001 (#907 Codex P2): 見える方は3行の履歴ブロック（読み上げ領域にしない）。
+  //   role="status" は aria-atomic 既定 true なので、1行だけ変えても3行すべてが読み上げ直される。
+  //   読み上げは「今変わった1行」だけを持つ視覚非表示の要素に分ける。
+  html+='<div id="masterCloudPullStatus" class="cloud-status" style="margin:4px 0 12px;font-size:13px;white-space:pre-line"></div>';
+  html+='<div id="masterCloudPullStatusLive" role="status" aria-live="polite" style="position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0"></div>';
   // 削除済み表示中は折りたたみを開いたまま（トグル直後の再描画でメンテ操作を見失わない）。
   html+='<details class="master-maint" style="margin:0 0 12px"'+(_masterShowDeleted?' open':'')+'>';
   // MASTER-MIGRATE-RETIRE-001 (作者判断 2026-07-02): 「📥 過去大会を統合」はブートストラップ用で役目を終えたため
@@ -5927,7 +5931,7 @@ function masterSheetDeleteSelected(){
     renderMasterTab();
     if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
     // MASTER-CLOUD-DELETE-001: 成功分だけクラウドの deleted_at にも反映（fail-soft・結果は status 行 N4）。
-    pushMemberDeleteStateToCloud(doneMids,master,true,_masterCloudStatusFn());
+    pushMemberDeleteStateToCloud(doneMids,master,true,_masterCloudStatusFn(_masterSheetNamesFor(doneMids,master)));
   });
 }
 function masterSheetRestoreSelected(){
@@ -5947,13 +5951,87 @@ function masterSheetRestoreSelected(){
     showToast(okc+'名を復元しました');
     renderMasterTab();
     if(typeof renderPastParticipantsPanel==='function')renderPastParticipantsPanel();
-    pushMemberDeleteStateToCloud(doneMids,master,false,_masterCloudStatusFn());
+    pushMemberDeleteStateToCloud(doneMids,master,false,_masterCloudStatusFn(_masterSheetNamesFor(doneMids,master)));
   });
 }
-// MASTER-CLOUD-DELETE-001: 名簿タブの status 行（N4）へ書く setStatus を作る（closure 内で都度 getElementById）。
-function _masterCloudStatusFn(){
-  return function(msg){
-    if(typeof applyCloudStatus==='function')applyCloudStatus(document.getElementById('masterCloudPullStatus'),msg);
+// MEMBER-CLOUD-STATUS-LOG-001 (#907): 名簿タブのクラウド結果を **最大3行の履歴** にする。
+//   なぜ1行では足りないか（#907 の実測）:
+//     ・共有の status 行1本を **編集 push・削除/復元 push・☁取得・一括送信・再構築** が奪い合い、
+//       **遅い成功が後から着地して直近の失敗を塗り潰す**（成功 60ms vs 失敗 5ms で実測）
+//     ・⚠ が「**どの会員の話か**」を書いておらず、次の保存で消えて履歴もログも残らない
+//   ★ `renderMasterTab` は status 要素を HTML 文字列ごと作り直すので、履歴を DOM だけに持つと
+//     **再描画で消える**（保存は renderMasterTab → その後に push が着地する順序）。**JS 側に持つ。**
+//   ★ 同じ操作（同じ token）の続報は**その行を置き換える**（「反映中…」で3行が埋まらない）。
+//     別の操作は**新しい行を先頭に積む**。溢れた古い行は落ちる（3行だけという上限は目に見える）。
+var MASTER_CLOUD_LOG_MAX=3;
+var _masterCloudLog=[];        // 新しいものが先頭。[{token,label,text}]
+var _masterCloudLogSeq=0;
+// #907 Codex P1: 3行を溢れて落ちた操作の**続報**（例: 遅れて返ってきた「反映しました」）は捨てる。
+//   捨てないと、その続報が「見たことのない token」として先頭に積まれ、いま出ている新しい行
+//   （失敗かもしれない）を1つ押し出す＝この履歴が防ぎたかった上書きが復活する。
+// ★ Codex 2巡目 P1: 退役 token を**表**で覚えると、上限を付けた瞬間に「まだ飛んでいる古い操作」を
+//   忘れうる（忘れた頃に返ってきて、また新しい失敗行を押し出す）。表をやめて**水位線**にする。
+//   落ちるのは常に「いま出ている中でいちばん古い行」なので、token <= 水位線 ＝「すでに履歴から
+//   落ちた世代」と判定できる。定数メモリで、どれだけ時間が経っても忘れない。
+var _masterCloudLogGoneMax=0;
+function _masterCloudLogRetire(token){
+  if(token>_masterCloudLogGoneMax)_masterCloudLogGoneMax=token;
+}
+// 表示の重さの順。1行にまとめて色を付けるので、**いちばん重い行の色**をブロック全体に使う
+//   （失敗が1行でも残っていれば、ブロックは失敗の色で見える）。
+function _masterCloudLogKind(){
+  var order=['err','warn','pending','ok','info'];
+  var best='none';
+  for(var i=0;i<_masterCloudLog.length;i++){
+    var k=classifyCloudStatusKind(_masterCloudLog[i].text);
+    if(best==='none'||order.indexOf(k)<order.indexOf(best))best=k;
+  }
+  return best;
+}
+function renderMasterCloudLog(announce){
+  if(typeof document==='undefined'||!document.getElementById)return;
+  var el=document.getElementById('masterCloudPullStatus');
+  if(!el)return;
+  var lines=[];
+  for(var i=0;i<_masterCloudLog.length;i++){
+    var L=_masterCloudLog[i];
+    lines.push((L.label?L.label+'：':'')+L.text);
+  }
+  // innerHTML は使わない。改行は要素側の white-space:pre-line で見せる。
+  el.textContent=lines.join('\n');
+  el.className='cloud-status cloud-status-'+_masterCloudLogKind();
+  // #907 Codex P2: 読み上げは「今変わった1行」だけ。再描画（announce 省略）では触らない＝読み直さない。
+  if(announce!=null&&announce!==''){
+    var live=document.getElementById('masterCloudPullStatusLive');
+    if(live)live.textContent=String(announce);
+  }
+}
+function pushMasterCloudLine(token,label,msg){
+  var text=(msg==null)?'':String(msg);
+  if(text==='')return;
+  var line=null;
+  for(var i=0;i<_masterCloudLog.length;i++){ if(_masterCloudLog[i].token===token){ line=_masterCloudLog[i]; break; } }
+  if(line){ line.text=text; if(label)line.label=label; }
+  else{
+    // #907 Codex P1: 一度落ちた操作の続報は、新しい行を押し出してまで復活させない。
+    if(token<=_masterCloudLogGoneMax)return;
+    _masterCloudLog.unshift({token:token,label:label||'',text:text});
+    while(_masterCloudLog.length>MASTER_CLOUD_LOG_MAX){
+      var gone=_masterCloudLog.pop();
+      if(gone)_masterCloudLogRetire(gone.token);
+    }
+  }
+  renderMasterCloudLog((label?label+'：':'')+text);
+}
+// MASTER-CLOUD-DELETE-001 / #907: 名簿タブの status 行（N4）へ書く setStatus を作る。
+//   **1回の操作につき1回だけ呼ぶ**（返した関数が1行を所有する）。label は会員名（無ければ空）。
+function _masterCloudStatusFn(label){
+  var token=++_masterCloudLogSeq;
+  // ★ Codex 2巡目 P2: 第2引数でラベルだけ差し替えられる（待ち行列で新しい保存に合流したとき、
+  //   行を増やさずに会員名だけ最新にする）。渡さなければ従来どおり。
+  return function(msg,relabel){
+    if(relabel!=null&&relabel!=='')label=relabel;
+    pushMasterCloudLine(token,label||'',msg);
   };
 }
 function _masterSheetFindMember(mid,master){
@@ -5983,7 +6061,10 @@ function _msInputState(id){
   if(typeof document==='undefined'||!document.getElementById)return null;
   var el=document.getElementById(id); if(!el)return null;
   var init=el.getAttribute?el.getAttribute('data-init'):null;
-  return {el:el, init:(init==null?'':init), val:(typeof el.value==='string')?el.value:''};
+  // MEMBER-CITY-EDIT-001 (#906): セグメントと同じ「利用者がこの欄を操作したか」の印（input で立てる）。
+  //   打って戻した場合も印は残る＝ローカルが既に正しくクラウドだけ古いときに訂正を送れる（#901 と同型）。
+  var tch=(el.getAttribute&&el.getAttribute('data-touched')==='1');
+  return {el:el, init:(init==null?'':init), val:(typeof el.value==='string')?el.value:'', touched:!!tch};
 }
 // MASTER-EDIT-FORM-001: 以下2関数はセル結線を外し未使用（編集はフォームに集約）。互換のため残置。
 function masterSheetCycleMember(mid){
@@ -6014,7 +6095,23 @@ function masterSheetCycleGrade(mid){
 // MASTER-EDIT-UX-001: 氏名/ふりがな編集を、狭いセル内ではなく「行直下の全幅パネル」で行う。
 //   保存/取消は既存 masterSheetCommitNameEdit / masterSheetCancelNameEdit（#ms-edit-name/#ms-edit-yomi を
 //   ID で読む）をそのまま再利用＝データ層 applyMasterMemberEdit は不変。会員/級は従来どおりセルの tap 切替。
-function buildMasterEditPanelHtml(m){
+// MEMBER-CITY-EDIT-001 (#906): 名簿に実在する市町村を候補として列挙する（重複なし・空は除く・文字列順）。
+//   ★ 自由入力は残す。候補は「この支部でこれまで使われた表記」を見せて **表記ゆれ**（沼津市／沼津）を
+//     減らすためのもので、入力できる値を候補に**制限しない**（新しい市町村が入れられなくなるため）。
+//   ★ 削除済みの会員も対象に含める。候補は「過去に使われた表記」であって「いま誰かが住んでいる市町村」
+//     ではない。除くと、最後の1名を削除した瞬間にその表記だけ候補から消えて揺れが復活する。
+function masterCityCandidates(master){
+  var out=[],seen={};
+  var ms=(master&&Array.isArray(master.members))?master.members:[];
+  for(var i=0;i<ms.length;i++){
+    var c=normalizeCity(ms[i]&&ms[i].city);
+    if(!c||seen[c])continue;
+    seen[c]=true; out.push(c);
+  }
+  out.sort();
+  return out;
+}
+function buildMasterEditPanelHtml(m,cities){
   // MASTER-EDIT-FORM-001: 氏名/ふりがな/支部員区分/級 を1枚のフォームで明示編集（表のセルは表示専用化）。
   //   区分・級はタップ循環をやめ、押した状態が見えるセグメント選択に。commit で applyMasterMemberEdit の
   //   options.member/grade に渡す（apply は既に両者を検証付きで受理・データ層不変）。
@@ -6022,6 +6119,11 @@ function buildMasterEditPanelHtml(m){
   var n=escapeHtml((m&&m.name)||'');
   var mem=(m&&m.member==='other')?'other':'member';
   var grd=(m&&(m.grade==='chu'||m.grade==='josei'))?m.grade:'ippan';
+  // MEMBER-CITY-EDIT-001 (#906): 市町村（任意・自由入力・maxlength は normalizeCity の 20 と揃える）。
+  var ct=escapeHtml(normalizeCity(m&&m.city));
+  var ctOpts='';
+  var _cl=(cities&&cities.length)?cities:[];
+  for(var ci=0;ci<_cl.length;ci++)ctOpts+='<option value="'+escapeHtml(_cl[ci])+'"></option>';
   function segBtn(v,label,cur){
     var on=(v===cur)?' mep-seg-on':'';
     return '<button type="button" data-val="'+v+'" class="mep-seg-btn'+on+'" aria-pressed="'+(v===cur?'true':'false')+'">'+label+'</button>';
@@ -6031,6 +6133,9 @@ function buildMasterEditPanelHtml(m){
     +'<input type="text" id="ms-edit-yomi" inputmode="kana" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" value="'+y+'" data-init="'+y+'" placeholder="ふりがな"></div>'
     +'<div class="mep-fld"><label for="ms-edit-name">氏名</label>'
     +'<input type="text" id="ms-edit-name" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" value="'+n+'" data-init="'+n+'" placeholder="氏名"></div>'
+    +'<div class="mep-fld"><label for="ms-edit-city">市町村</label>'
+    +'<input type="text" id="ms-edit-city" list="ms-edit-city-list" maxlength="20" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" value="'+ct+'" data-init="'+ct+'" placeholder="市町村（任意）">'
+    +'<datalist id="ms-edit-city-list">'+ctOpts+'</datalist></div>'
     +'<div class="mep-fld"><label>支部員区分</label>'
     +'<div class="mep-seg" id="ms-edit-member" data-init="'+mem+'" role="group" aria-label="支部員区分">'+segBtn('member','支部員',mem)+segBtn('other','その他',mem)+'</div></div>'
     +'<div class="mep-fld"><label>級（会費区分）</label>'
@@ -6048,11 +6153,14 @@ function bindMasterEditPanel(){
     if(k==='Enter'||k===13){ if(e&&e.preventDefault)e.preventDefault(); masterSheetCommitNameEdit(); }
     else if(k==='Escape'||k===27){ masterSheetCancelNameEdit(); }
   };
-  var ids=['ms-edit-yomi','ms-edit-name'];
+  var ids=['ms-edit-yomi','ms-edit-name','ms-edit-city'];
   for(var i=0;i<ids.length;i++){
     var el=document.getElementById(ids[i]);
     if(el){ el.addEventListener('compositionstart',onComp(true)); el.addEventListener('compositionend',onComp(false)); el.addEventListener('keydown',onKey); }
   }
+  // MEMBER-CITY-EDIT-001 (#906): 市町村欄を触ったら印を付ける（セグメントの data-touched と同じ役目）。
+  var ctEl=document.getElementById('ms-edit-city');
+  if(ctEl)ctEl.addEventListener('input',function(){ if(ctEl.setAttribute)ctEl.setAttribute('data-touched','1'); });
   // MASTER-EDIT-FORM-001: 区分/級セグメントの単一選択トグル（グループ内で1つだけ mep-seg-on）。
   if(document.querySelectorAll){
     var segGroups=document.querySelectorAll('.master-edit-panel .mep-seg');
@@ -6094,7 +6202,7 @@ function masterSheetStartNameEdit(mid){
   var td=document.createElement('td');
   td.colSpan=(row.cells&&row.cells.length)?row.cells.length:4;
   td.className='master-edit-cell';
-  td.innerHTML=buildMasterEditPanelHtml(m);
+  td.innerHTML=buildMasterEditPanelHtml(m,masterCityCandidates(master));
   tr.appendChild(td);
   if(row.parentNode)row.parentNode.insertBefore(tr,row.nextSibling);
   bindMasterEditPanel();
@@ -6121,10 +6229,17 @@ function masterSheetCommitNameEdit(){
   // MEMBER-EDIT-TOUCHED-COLS-001 (#901): クラウドへ「ローカル優先で送ってよい欄」の判定は opts（＝ローカル
   //   マスタへの適用対象）ではなく **利用者が操作したか** を使う。ローカルが既に正しくクラウドだけ古い場合、
   //   opts は空（差分ゼロ）になるが、利用者は「一般」を押し直して訂正を送れる必要がある。
+  // MEMBER-CITY-EDIT-001 (#906): 市町村欄が生えたので、区分/級と同じ規則で配線する。
+  //   触った（input を打った or 値が変わった）なら、その入力を **ローカルにも適用し、クラウドへも送る**。
+  //   触っていなければ opts に載せない＝パネルを開いたまま☁取得された市町村を古い表示値で巻き戻さない。
+  var _ctSt=_msInputState('ms-edit-city');
+  var _cityChanged=!!_ctSt && normalizeCity(_ctSt.val)!==normalizeCity(_ctSt.init);
+  var _cityTouched=!!(_ctSt&&(_ctSt.touched||_cityChanged));
+  if(_cityTouched)opts.city=_ctSt.val;
   var _pushTouched={
     member:!!(_segM&&_segM.touched),
     grade:!!(_segG&&_segG.touched),
-    city:false   // 編集パネルに市町村の欄は無い＝常に「触っていない」（R6/R9 で固定）
+    city:_cityTouched
   };
   // MASTER-EDIT-FORM-001 (Codex P1/4849): 氏名/ふりがなも「初期値(data-init)から変わったフィールドだけ」適用。
   //   未編集のフィールドは現在のマスタ値を使い、パネルを開いたまま☁取得された値を古い表示値で巻き戻さない。
@@ -6157,9 +6272,7 @@ function masterSheetCommitNameEdit(){
     //   opts は上で「初期値から変わったグループだけ」を積んである（MASTER-EDIT-FORM-001）ので、
     //   その有無をそのまま touched として渡す。city はこのパネルに欄が無い＝常に触っていない
     //   （＝クラウドの市町村を編集のたびに NULL で潰さない・#901 の実害はここだった）。
-    pushMemberEditToCloud(editedMember,function(msg){
-      if(typeof applyCloudStatus==='function')applyCloudStatus(document.getElementById('masterCloudPullStatus'),msg);
-    },_pushTouched);
+    pushMemberEditToCloud(editedMember,_masterCloudStatusFn(editedMember.name||''),_pushTouched);
   }
 }
 function masterSheetCancelNameEdit(){
@@ -6187,8 +6300,7 @@ function bindMasterTabEvents(){
   // B-3c-wire (#343): 「☁ クラウドから取得」→ pullMembersToMasterUI（任意・非ブロッキング・status 表示のみ）。
   var cloudPullBtn=document.getElementById('masterCloudPullBtn');
   if(cloudPullBtn)cloudPullBtn.addEventListener('click',function(){
-    var setStatus=function(msg){ applyCloudStatus(document.getElementById('masterCloudPullStatus'),msg); };
-    pullMembersToMasterUI(setStatus);
+    pullMembersToMasterUI(_masterCloudStatusFn(''));
   });
   var btn=document.getElementById('masterMigrateBtn');
   if(btn)btn.addEventListener('click',openMigrationWizard); // MASTER-MIGRATE-RETIRE-001: ボタン非描画＝no-op（回帰資産として温存）
@@ -6399,6 +6511,8 @@ function renderMasterTab(){
   var master=loadBranchMaster();
   el.innerHTML=buildMasterTabHtml(master);
   bindMasterTabEvents();
+  // #907: status 要素は上の innerHTML で作り直されている。履歴は JS 側に持っているので描き直す。
+  if(typeof renderMasterCloudLog==='function')renderMasterCloudLog();
 }
 
 // ============================================================
@@ -13273,9 +13387,43 @@ function buildEntryAttrDisplay(entry, memberCurrent){
   return { parts:parts, fromCurrent:fromCurrent, text:parts.length?(parts.join(' / ')+(fromCurrent?'（※現在値）':'')):'' };
 }
 
+// MEMBER-CLOUD-STATUS-LOG-001 (#907-2): 保存連打の in-flight ガード。
+//   実測（#901 反証パネル）: 保存ボタン3連打で upsert 3回・claim_organizer_seat 3回・
+//   getSession 3回・トースト3回。行の中身は毎回同じで冪等なのでデータは壊れないが、
+//   **同じ会員に対する2本目以降は無意味な往復**で、会場の詰まった回線では実害になる。
+//   ★ 会員ごとに持つ（別の会員の保存は止めない）。fail-soft なので**必ず finally 相当で外す**。
+var _memberEditPushInFlight={};
+var _memberDeletePushInFlight={};
+// #907 Codex P1: touched は「この保存で利用者が触った欄」。待ち行列で2回分が1回にまとまるときは
+//   **論理和**を取る（片方だけ採ると、触ったのに set されない欄ができて誤徴収に戻る）。
+function _mergeTouchedFlags(a,b){
+  a=a||{}; b=b||{};
+  return {member:!!(a.member||b.member),grade:!!(a.grade||b.grade),city:!!(a.city||b.city)};
+}
 function pushMemberEditToCloud(member,setStatus,touched){
   setStatus=setStatus||function(){};
   if(!member||!member.id)return Promise.resolve({ok:false,step:'input'});
+  var _mid=member.id;
+  // #907 Codex P1: 飛行中の2本目を**捨てない**。捨てると、先に飛んだ古いスナップショットが
+  //   「反映しました」と言ったまま、あとから保存した内容がクラウドに永久に届かない。
+  //   直列化して、待ち行列には**いちばん新しいスナップショット1件だけ**を残す（合流）。
+  var _slot=_memberEditPushInFlight[_mid];
+  if(_slot){
+    if(_slot.pending){
+      _slot.pending.member=member;                                                   // 新しい方で置き換え
+      _slot.pending.touched=_mergeTouchedFlags(_slot.pending.touched,touched);       // 触った欄は足し合わせる
+      // Codex 2巡目 P2: 送る中身が新しい方に替わったので、行のラベル（会員名）も新しい方に合わせる。
+      //   行は増やさない（同じ token を持ち続ける）。
+      if(_slot.pending.setStatus)_slot.pending.setStatus('前の反映の完了を待機中…',(member&&member.name)||'');
+      return _slot.pending.promise;                                                  // 行は最初の待ち手が持つ
+    }
+    var _res=null;
+    var _pr=new Promise(function(r){ _res=r; });
+    _slot.pending={member:member,setStatus:setStatus,touched:touched,resolve:_res,promise:_pr};
+    setStatus('前の反映の完了を待機中…');
+    return _pr;
+  }
+  _memberEditPushInFlight[_mid]={pending:null};
   // MEMBER-EDIT-TOUCHED-COLS-001 (#901): touched＝この保存で利用者が実際に触った欄
   //   （{member:bool,grade:bool,city:bool}）。省略時は「何も触っていない」＝クラウドの実値を保全する側に倒す。
   var _touched=touched||{};
@@ -13340,6 +13488,15 @@ function pushMemberEditToCloud(member,setStatus,touched){
     if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 名簿編集の反映例外:',(e&&e.message)||e);
     setStatus('クラウドへの反映に失敗しました（端末には保存済み・名簿タブの「☁ 名簿全体をクラウドへ一括送信」で反映できます）');
     return {ok:false,step:'exception'};
+  }).then(function(r){
+    var s=_memberEditPushInFlight[_mid];
+    delete _memberEditPushInFlight[_mid];
+    var nx=s&&s.pending;
+    if(nx){
+      var q=pushMemberEditToCloud(nx.member,nx.setStatus,nx.touched);
+      if(nx.resolve)q.then(nx.resolve,nx.resolve);
+    }
+    return r;
   });
 }
 
@@ -13351,6 +13508,27 @@ function pushMemberEditToCloud(member,setStatus,touched){
 function pushMemberDeleteStateToCloud(mids,master,deleted,setStatus){
   setStatus=setStatus||function(){};
   if(!mids||!mids.length)return Promise.resolve({ok:false,step:'input'});
+  // #907-2: 同じ会員集合に対する2本目を出さない（編集 push と同じ理由）。
+  // #907 Codex P1: id は「空でない文字列」しか要求していない（外部マスタ取り込み経路でカンマも入る）。
+  //   join(',') だと ['a,b','c'] と ['a','b,c'] が同じキーになり、別の削除が in-flight と誤判定されて黙って消える。
+  // ★ Codex 2巡目 P1: キーに**向き（削除/復元）を含めてはいけない**。含めると「削除が飛行中に復元」が
+  //   別キーとして**同時に飛び**、さらにその後の削除だけが重複として捨てられる。着順次第で
+  //   クラウドの最終状態が「復元」になり、端末の「削除」と食い違う（黙って戻る）。
+  //   向きを外して**会員集合ごとに直列化**し、待ち行列には**最後に要求された状態だけ**を残す。
+  var _flightKey=JSON.stringify(mids.slice().sort());
+  var _dslot=_memberDeletePushInFlight[_flightKey];
+  if(_dslot){
+    if(_dslot.pending&&_dslot.pending.resolve)_dslot.pending.resolve({ok:false,step:'superseded'});
+    _dslot.pending=null;
+    // 飛行中と同じ状態を頼まれた＝文字どおりの重複。飛行中の1本が同じ結果を届ける。
+    if(!!deleted===_dslot.state)return Promise.resolve({ok:false,step:'inflight'});
+    var _dres=null;
+    var _dpr=new Promise(function(r){ _dres=r; });
+    _dslot.pending={master:master,deleted:!!deleted,setStatus:setStatus,resolve:_dres,promise:_dpr};
+    setStatus('前の反映の完了を待機中…');
+    return _dpr;
+  }
+  _memberDeletePushInFlight[_flightKey]={state:!!deleted,pending:null};
   var actLabel=deleted?'削除':'復元';
   setStatus('クラウドの名簿にも'+actLabel+'を反映中…');
   return loadCloudDeps().then(function(dep){
@@ -13414,6 +13592,15 @@ function pushMemberDeleteStateToCloud(mids,master,deleted,setStatus){
     if(typeof console!=='undefined'&&console.warn)console.warn('[cloud] 削除/復元の反映例外:',(e&&e.message)||e);
     setStatus('クラウドへの'+actLabel+'反映に失敗しました（この端末では'+actLabel+'済み）');
     return {ok:false,step:'exception'};
+  }).then(function(r){
+    var sD=_memberDeletePushInFlight[_flightKey];
+    delete _memberDeletePushInFlight[_flightKey];
+    var nxD=sD&&sD.pending;
+    if(nxD){
+      var qD=pushMemberDeleteStateToCloud(mids,nxD.master,nxD.deleted,nxD.setStatus);
+      if(nxD.resolve)qD.then(nxD.resolve,nxD.resolve);
+    }
+    return r;
   });
 }
 
@@ -13813,8 +14000,7 @@ function autoPullMembersOnStartup(){
                 var masterActive=tm&&String(tm.className||'').indexOf('active')>=0;
                 if(masterActive&&typeof renderMasterTab==='function'){
                   renderMasterTab();
-                  var el=document.getElementById('masterCloudPullStatus');
-                  applyCloudStatus(el,'クラウドから自動取得しました（新規 '+(res.counts.added||0)+' 名・更新 '+(res.counts.updated||0)+' 名'+((res.counts.restored||0)>0?'・復元 '+res.counts.restored+' 名':'')+'）'+((res.counts.possibleDuplicates||0)>0?'　⚠ 同名別IDの会員 '+res.counts.possibleDuplicates+' 件（app/ で確認）':''));
+                  _masterCloudStatusFn('')('クラウドから自動取得しました（新規 '+(res.counts.added||0)+' 名・更新 '+(res.counts.updated||0)+' 名'+((res.counts.restored||0)>0?'・復元 '+res.counts.restored+' 名':'')+'）'+((res.counts.possibleDuplicates||0)>0?'　⚠ 同名別IDの会員 '+res.counts.possibleDuplicates+' 件（app/ で確認）':''));
                 }
               }catch(eR){}
             }
