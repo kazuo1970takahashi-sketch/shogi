@@ -6932,6 +6932,24 @@ function allRegisteredPlayers(){
   return out;
 }
 
+// BULK-EDIT-ALL-ERRORS-001 (#889): 重複の相手を「どの行か」で名指しするための id→ラベル表。
+//   ★ allRegisteredPlayers() は**クラスを落として**連結するので、'A05' のようなラベルは
+//     連結後には作れない（他クラスの player に entryNoOf(cls,...) を当てても '--' になる）。
+//     ここでクラスを保ったまま1回で作る。state は読むだけ（mutate しない）。
+function registeredPlayerLabels(){
+  var out={};
+  var clsList=getRegistrationClassList();
+  for(var i=0;i<clsList.length;i++){
+    var cid=clsList[i].id;
+    var arr=state&&state.players&&state.players[cid];
+    if(!Array.isArray(arr))continue;
+    for(var k=0;k<arr.length;k++){
+      if(arr[k]&&arr[k].id)out[arr[k].id]=cid+entryNoOf(cid,arr[k].id);
+    }
+  }
+  return out;
+}
+
 // 次に使える classId を返す（C..Z を順に、尽きたら CLS1, CLS2…）。state は読むが mutate しない。
 function nextClassId(){
   var used={};
@@ -8839,30 +8857,67 @@ function bindBulkEditModalEvents(cls, players){
   document.getElementById('bulk-save').addEventListener('click',function(){
     // CLASS-VARIABLE-001 (CV-1): 重複名チェックを全クラス横断に汎用化（A/B のみなら従来と同一結果・C+ も保護）。
     var all=allRegisteredPlayers();
-    var hasError=false;
     var newNames={};
 
+    // BULK-EDIT-ALL-ERRORS-001 (#889): 空欄も重複も break で**1件目だけ**報告していた。
+    //   16名中5名が空欄でも出るのは「1件目」だけで、直して保存を5回繰り返すことになる
+    //   （32名クラスの当日運営では詰む）。→ 報告を全件に広げる。
+    //   ★ 変えるのは**報告だけ**。保存を拒否する条件（空欄が1つでもある／重複が1つでもある）は不変。
+    //   ★ 器（画面内スロット・§3 N5）は #887 で入っており、pre-line なので複数行を出せる。
+    var emptyNos=[];   // 空欄の行ラベル（例 'A03'）。編集中クラスのみ
+    var emptyIds={};   // 同上（id 引き）。重複判定から外すために使う
     for(var i=0;i<players.length;i++){
       var inp=document.getElementById('bulk-name-'+players[i].id);
       var newName=inp?inp.value.trim():'';
-      if(!newName){showBulkEditError(cls+entryNoOf(cls,players[i].id)+' の名前が空です。\n名前を入力してから保存してください。');hasError=true;break;}
+      if(!newName){
+        emptyNos.push(cls+entryNoOf(cls,players[i].id));
+        emptyIds[players[i].id]=1;
+        continue;   // ★ break しない＝残りの行も見る（#889 の本体）
+      }
       newNames[players[i].id]=newName;
     }
-    if(hasError)return;
 
+    // ★ 空欄の行は**これから入る名前が未定**なので、自分からも相手からも外す。旧名で照合すると
+    //   「空欄を埋めれば消える重複」を報告してしまう（保存の拒否は空欄側で既に決まっている＝判定は不変）。
+    // ★★ `if(!newName)continue;` は**飾りではない**。#889 以前は空欄があれば重複判定へ進まなかった
+    //   ので、この照合は起こり得なかった。全件報告にした結果、「名前を持たないレコード
+    //   （name 未設定の他クラス player 等）」と空欄の行が undefined 同士で一致し、
+    //   `"undefined" が重複しています` を出す経路が新たに生まれる。e2e の E9 がこれを踏む。
+    // ★★ 相手側にも `if(!otherName)continue;` を置いていたが、**2つは互いに冗長**で
+    //   片方を外しても e2e が緑のままだった（実測）。検査できないガードは残さない方針で
+    //   1つに絞ってある。外すと E9b が赤くなる＝この1行は実際に効いている。
+    // ★ 以下、`重複チェック` の見出しから `newNames[all[j].id]||all[j].name` までの距離を
+    //   10 行以内に保つこと。run_tests.sh の B10 は `grep -A10 "重複チェック"` で見ている
+    //   （実測: 説明をこの間に書き足したら B10 が「再発」で赤くなった）。
     // 重複チェック（他クラス含む、編集対象同士の新名前も比較）
+    var labelOf=registeredPlayerLabels();
+    var dupSeen={}, dupMsgs=[];
     for(var i=0;i<players.length;i++){
       var newName=newNames[players[i].id];
+      if(!newName)continue;   // ★ 空欄の行（新しい名前が未定）は照合しない
       for(var j=0;j<all.length;j++){
         if(all[j].id===players[i].id)continue;
+        if(emptyIds[all[j].id])continue;
         var otherName=newNames[all[j].id]||all[j].name;
         if(otherName===newName){
-          showBulkEditError('"'+newName+'"が重複しています。\n別の名前に直してください。');hasError=true;break;
+          // ★ 同じ組は i/j を入れ替えて2回見つかる（編集中クラス同士）。並び順を固定して1回にする。
+          var me=labelOf[players[i].id]||'--', you=labelOf[all[j].id]||'--';
+          var lo=(me<you?me:you), hi=(me<you?you:me);
+          var key=lo+'|'+hi;
+          if(dupSeen[key])continue;
+          dupSeen[key]=1;
+          dupMsgs.push(lo+' と '+hi+' の "'+newName+'" が重複しています。');
         }
       }
-      if(hasError)break;
     }
-    if(hasError)return;
+
+    if(emptyNos.length||dupMsgs.length){
+      var blocks=[];
+      if(emptyNos.length)blocks.push(emptyNos.join(' / ')+' の名前が空です。\n名前を入力してから保存してください。');
+      if(dupMsgs.length)blocks.push(dupMsgs.join('\n')+'\n別の名前に直してください。');
+      showBulkEditError(blocks.join('\n'));
+      return;
+    }
 
     for(var i=0;i<players.length;i++){
       players[i].name=newNames[players[i].id];
