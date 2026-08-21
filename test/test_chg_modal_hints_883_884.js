@@ -80,7 +80,9 @@ const P884_WARN = `    var keepForReplace=(role==='p1')?match.p2:match.p1;
     }
 `;
 const P883_RSELF = `        if(k==='R-self')continue;`;
-const P883_CALL  = `  var emptyByWithdrawn=(!hasAlternative)&&chgEmptyNoticeIsWithdrawnOnly([sel1,sel2]);`;
+const P883_CALL  = `  var emptyByWithdrawn=(!hasAlternative)&&_tableHasWithdrawn&&chgEmptyNoticeIsWithdrawnOnly([sel1,sel2]);`;
+const P884_LABEL = `        var okLabel=clf.warnLabel?(baseLabel+'（'+clf.warnLabel+'）'):baseLabel;`;
+const P884_ATTR  = `        var warnAttr=clf.warnId?(' data-warn-id="'+escapeHtml(clf.warnId)+'"'):'';`;
 
 function buildSource(variant){
   switch(variant){
@@ -89,12 +91,22 @@ function buildSource(variant){
     case 'BASE':
       return patch(patch(SRC, P884_WARN, '', 'base-884'),
                    P883_CALL, '  var emptyByWithdrawn=false;', 'base-883');
-    case 'V-A': return patch(SRC, P884_WARN, '', 'V-A');                      // 印を出さない
+    case 'V-A': return patch(SRC, P884_WARN, '', 'V-A');                      // 印を出さない（classify 側）
     case 'V-B': return patch(SRC, `    if(pairHasRematch(cls,keepForReplace,candidateId)){`,
                                   `    if(true){`, 'V-B');                     // 常に印を出す
     case 'V-C': return patch(SRC, P883_RSELF, '', 'V-C');                      // R-self を除かない
     case 'V-D': return patch(SRC, P883_CALL,
                              '  var emptyByWithdrawn=!hasAlternative;', 'V-D'); // 常に棄権扱い
+    // ★ 以下はレンズB（2026-08-21）の指摘で足した。足す前は「印を1文字も出さない版」が 22/22 緑だった。
+    case 'V-E': return patch(SRC, `      return {status:'ok',reasonId:null,reasonLabel:'',warnId:'W-rematch-replace'`,
+                                  `      return {status:'blocked',reasonId:'R-rematch-replace',reasonLabel:'',warnId:'W-rematch-replace'`, 'V-E'); // 印ではなく塞いでしまう
+    case 'V-F': return patch(SRC, P884_LABEL, `        var okLabel=baseLabel;`, 'V-F');            // 描画側で印を落とす
+    case 'V-G': return patch(SRC, P884_ATTR,  `        var warnAttr='';`, 'V-G');                  // data-warn-id を出さない
+    case 'V-H': return patch(SRC, `warnLabel:'対戦済み'`, `warnLabel:'再戦になる'`, 'V-H');         // blocked と同じ語にしてしまう
+    case 'V-I': return patch(SRC, `&&_tableHasWithdrawn&&`, `&&`, 'V-I');                          // 卓に棄権者が居るかを見ない
+    case 'V-J': return patch(SRC, `'R-withdrawn':1,`, ``, 'V-J');                                  // ホワイトリストから R-withdrawn を落とす
+    case 'V-K': return patch(SRC, `'R-withdrawn-stays':1,`, ``, 'V-K');
+    case 'V-L': return patch(SRC, `'R-withdrawn-swap':1`, `'_x':1`, 'V-L');
     default: throw new Error('unknown variant '+variant);
   }
 }
@@ -249,9 +261,13 @@ function mkPlayers(n, withdrawnIds){
 function notice(env, st, idx){
   env._setState(st);
   var html = env.buildChangePairingModalHtml('A', idx, st.players.A, st.pairings.A[idx]);
-  var m = html.match(/<div data-chg-empty-notice="1" data-chg-empty-cause="([a-z]+)"[^>]*>([\s\S]*?)<\/div>/);
+  // ★ data-chg-empty-cause は**任意**として読む。必須にすると、この便より前のツリーに
+  //   当てたとき「汎用文が正しく出ている」対照まで赤になり、前後比較が使えなくなる
+  //   （レンズB 2026-08-21 の指摘）。属性が無い＝差し替え前＝generic とみなす。
+  var m = html.match(/<div data-chg-empty-notice="1"([^>]*)>([\s\S]*?)<\/div>/);
   if(!m) return { なし:true, html:html };
-  return { cause:m[1], 文言:m[2].replace(/<br>/g,' ') };
+  var c = m[1].match(/data-chg-empty-cause="([a-z]+)"/);
+  return { cause:c?c[1]:'generic', 文言:m[2].replace(/<br>/g,' ') };
 }
 
 // C1: 満席（6名3卓）＋ p2 が棄権 → 塞ぐ理由はすべて棄権系 → 棄権を名指しする
@@ -286,6 +302,81 @@ const nWbase = notice(loadEnv('BASE'), ST_W, 0);
 assert(nWbase.cause==='generic', '[C5] 「前」では同じ盤面が汎用文だった（＝この便で言い分けが増えた根拠）');
 
 // =============================================================================
+// E. #884 の印を「描画された HTML」で測る
+//    ★ レンズB (2026-08-21) の指摘で足した群。ここが無かったとき、
+//      **UI に「（対戦済み）」が1文字も出ない版が 22/22 緑を通過した**（A 群は classify の
+//      戻り値しか読んでいなかった＝受け入れ基準の「印が付く」を誰も測っていなかった）。
+// =============================================================================
+console.log('=== [E] #884 印が option の HTML に実際に出ている ===');
+
+// 3名・卓「p1×p2」・p3 は待機。p2×p3 だけ対戦済み。
+//   先手 select（残る人 = p2）→ p3 は再戦     ＝印が付くはず
+//   後手 select（残る人 = p1）→ p3 は再戦でない＝印が付かないはず  ← 同じ盤面の中に対照がある
+const ST_R = board(mkPlayers(3), [{p1:'p1',p2:'p2',winner:null}], [[{p1:'p2',p2:'p3',winner:'p2'}]]);
+function selectsOf(env, st, idx){
+  env._setState(st);
+  var html = env.buildChangePairingModalHtml('A', idx, st.players.A, st.pairings.A[idx]);
+  var m1 = html.match(/<select id="chg-p1"[^>]*>([\s\S]*?)<\/select>/);
+  var m2 = html.match(/<select id="chg-p2"[^>]*>([\s\S]*?)<\/select>/);
+  return { p1:(m1&&m1[1])||'', p2:(m2&&m2[1])||'', html:html };
+}
+function optionOf(inner, pid){
+  var re = new RegExp('<option value="'+pid+'"[^>]*>[^<]*<\\/option>');
+  var m = inner.match(re);
+  return m?m[0]:null;
+}
+const selR = selectsOf(envCur, ST_R, 0);
+const optWarn = optionOf(selR.p1,'p3');
+const optPlain= optionOf(selR.p2,'p3');
+assert(!!optWarn && !!optPlain, '[E0] 両方の select に候補 p3 の option がある（前提）  ['+String(optWarn)+']');
+assert(/（対戦済み）<\/option>/.test(optWarn||''),
+  '[E1] ★ 再戦になる replace 候補のラベル末尾に「（対戦済み）」が出ている  ['+String(optWarn).slice(0,60)+']');
+assert(/data-warn-id="W-rematch-replace"/.test(optWarn||''),
+  '[E2] ★ その option に data-warn-id="W-rematch-replace" が出ている');
+assert(!/ disabled/.test(optWarn||''), '[E3] ★ 印は付くが disabled ではない（選べる状態を変えていない）');
+assert(selR.p1.indexOf('<optgroup label="選択可能">')>=0 && optWarn.indexOf('（対戦済み）')>0,
+  '[E4] 印付き候補は従来どおり「選択可能」optgroup に居る（3つ目の群を作っていない）');
+assert(!/（/.test(optPlain||'') && !/data-warn-id/.test(optPlain||''),
+  '[E5] ★ 対照: 同じ盤面でも再戦にならない側（後手）の p3 は無印  ['+String(optPlain).slice(0,60)+']');
+// blocked 側の語と取り違えていないこと（#884 論点1 の作者裁定＝別の語にする）
+assert(!/（再戦になる）/.test(optWarn||''),
+  '[E6] ★ 印の語が blocked 側の「（再戦になる）」と同じになっていない');
+// 参加者名は従来どおりエスケープされる（印を連結しても弱まらない）
+const ST_X = board([{id:'p1',name:'<img src=x onerror=alert(1)>',entry_no:1},{id:'p2',name:'選手2',entry_no:2},{id:'p3',name:'選手3',entry_no:3}],
+                   [{p1:'p1',p2:'p2',winner:null}], [[{p1:'p2',p2:'p3',winner:'p2'}]]);
+assert(selectsOf(envCur, ST_X, 0).html.indexOf('<img src=x')<0,
+  '[E7] 参加者名は印を足しても生タグのまま出ない（escapeHtml を通っている）');
+
+// =============================================================================
+// F. #883 の対照ふたつ（レンズA 2026-08-21 の指摘）
+// =============================================================================
+console.log('=== [F] #883 「棄権者は居るがこの卓には居ない」を棄権と呼ばない ===');
+
+// ★ レンズAが実測した反例。3名・卓「p1×p3」・p2 が棄権して**待機**。
+//   先手の内訳は R-self(p3) と R-withdrawn(p2) だけ＝「理由はすべて棄権系」に見えるが、
+//   **この卓に棄権者は1人も座っていない**。ここで棄権を名指しすると文の3節すべてが偽になり、
+//   しかも再生成しても待機の棄権者は元から卓に入らない＝幹事を破壊操作へ誤誘導する。
+const ST_ELSEWHERE = board(mkPlayers(3,['p2']), [{p1:'p1',p2:'p3',winner:null}]);
+const nElse = notice(envCur, ST_ELSEWHERE, 0);
+assert(!nElse.なし, '[F1-0] この盤面でも候補ゼロ案内自体は出る（前提）');
+assert(nElse.cause==='generic' && !/棄権/.test(nElse.文言||''),
+  '[F1] ★ 卓に棄権者が座っていなければ棄権を名指ししない  ['+nElse.cause+']');
+
+// ホワイトリスト3件がそれぞれ実際に発火すること（＝外すと赤にできる盤面が在ること）
+//   R-withdrawn-stays : 満席＋棄権（C1 の盤面）
+//   R-withdrawn-swap  : 同上（棄権者本人の役）
+//   R-withdrawn       : 卓に棄権者が座り、待機にも別の棄権者が居る
+//   ※ 待機の非棄権者が1人でも居ると、それが棄権者の役の replace 候補になって hasAlternative が
+//     真になり案内自体が出ない。R-withdrawn を混ぜるには「待機は棄権者だけ」の盤面が要る。
+const ST_TWO_W = board(mkPlayers(5,['p2','p5']),
+                       [{p1:'p1',p2:'p2',winner:null},{p1:'p3',p2:'p4',winner:null}]);
+const nTwoW = notice(envCur, ST_TWO_W, 0);
+assert(nTwoW.cause==='withdrawn',
+  '[F2] 卓に棄権者・待機にも棄権者（R-withdrawn が混じる形）でも棄権と判定する  ['+nTwoW.cause+']');
+assert(!/全員が卓に入っている/.test(nTwoW.文言||''),
+  '[F3] ★ その盤面で「全員が卓に入っている」とは書かない（待機に棄権者が居るので偽になる）');
+
+// =============================================================================
 // D. 変異: 「緑だが何も測っていない」を潰す
 // =============================================================================
 console.log('=== [D] 変異検査（当たらなければ patch() が例外で落ちる）===');
@@ -304,6 +395,30 @@ assert(vC.cause==='generic', '[D-C] ★ R-self を除外しないと C1 が赤�
 const envD = loadEnv('V-D');
 assert(notice(envD, ST_G, 0).cause==='withdrawn' && notice(envD, ST_2, 0).cause==='withdrawn',
   '[D-D] ★ 常に棄権扱いにすると C2 / C3（対照）が赤になる');
+
+// V-E: 印ではなく塞いでしまう → B1（前後で status/reasonId が同一）が赤になるはず
+//   ★ B1 が「緑か例外かの二択」で赤になり得ない検査でないことを、ここで実際に確かめる。
+const vE = sweep(loadEnv('V-E'));
+var diffE=0;
+for(var e=0;e<vE.cells.length;e++)if(vE.cells[e]!==base.cells[e])diffE++;
+assert(diffE>0, '[D-E] ★ replace を blocked に変えると B1 が赤になる（差 '+diffE+' セル）＝B1 は恒真ではない');
+
+// V-F / V-G / V-H: 描画側の変異（E 群が無かったときは3つとも全緑だった）
+const eF = selectsOf(loadEnv('V-F'), ST_R, 0);
+assert(!/（対戦済み）/.test(optionOf(eF.p1,'p3')||''), '[D-F] ★ 描画側で印を落とすと E1 が赤になる');
+const eG = selectsOf(loadEnv('V-G'), ST_R, 0);
+assert(!/data-warn-id/.test(optionOf(eG.p1,'p3')||''), '[D-G] ★ data-warn-id を出さないと E2 が赤になる');
+const eH = selectsOf(loadEnv('V-H'), ST_R, 0);
+assert(/（再戦になる）/.test(optionOf(eH.p1,'p3')||''), '[D-H] ★ blocked と同じ語にすると E6 が赤になる');
+
+// V-I: 卓に棄権者が居るかを見ない → F1（レンズAの反例）が赤になるはず
+assert(notice(loadEnv('V-I'), ST_ELSEWHERE, 0).cause==='withdrawn',
+  '[D-I] ★ 卓の棄権者を見ないと F1 が赤になる（＝この防護は空振りしていない）');
+
+// V-J / V-K / V-L: ホワイトリストの3件は、どれを外しても赤にできる（白紙票が無い）
+assert(notice(loadEnv('V-J'), ST_TWO_W, 0).cause==='generic',  '[D-J] ★ R-withdrawn を外すと F2 が赤になる');
+assert(notice(loadEnv('V-K'), ST_W, 0).cause==='generic',      '[D-K] ★ R-withdrawn-stays を外すと C1 が赤になる');
+assert(notice(loadEnv('V-L'), ST_W, 0).cause==='generic',      '[D-L] ★ R-withdrawn-swap を外すと C1 が赤になる');
 
 // =============================================================================
 console.log('  結果: PASS='+pass+' FAIL='+fail);

@@ -11230,7 +11230,11 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
   //     この分岐は永久に false になり、足した文言が一度も出ない（＝緑だが何も測っていない検査になる）。
   //   ★ 導線（「組み合わせを再生成」ボタン）はモーダル内に置かない（作者裁定 2026-08-21）。
   //     再生成は全卓を作り直す破壊操作で、既存の repairBtn_ 側に確認モーダルがある。
-  var _withdrawnReasons={'R-withdrawn':1,'R-withdrawn-stays':1,'R-withdrawn-swap':1,'R-withdrawn-partner':1};
+  //   ★ 除外した理由 'R-withdrawn-partner'（棄権者が**相手の卓**に居る）は、この文と同時に成立しない。
+  //     partner に到達するのは currentInRole も otherInRole も棄権でないときだけ＝**この卓に棄権者が居ない**
+  //     （棄権していれば手前の R-withdrawn-stays / R-withdrawn-swap で先に返る）。入れておくと
+  //     「白紙票」＝外しても誰も赤にできないホワイトリスト項目になるので入れない。
+  var _withdrawnReasons={'R-withdrawn':1,'R-withdrawn-stays':1,'R-withdrawn-swap':1};
   function chgEmptyNoticeIsWithdrawnOnly(sels){
     var seen=0;
     for(var i=0;i<sels.length;i++){
@@ -11238,15 +11242,23 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
       for(var k in m){
         if(!Object.prototype.hasOwnProperty.call(m,k))continue;
         if(k==='R-self')continue;
-        if(!_withdrawnReasons[k])return false;
+        if(!Object.prototype.hasOwnProperty.call(_withdrawnReasons,k))return false;
         seen+=m[k];
       }
     }
     return seen>0;
   }
-  var emptyByWithdrawn=(!hasAlternative)&&chgEmptyNoticeIsWithdrawnOnly([sel1,sel2]);
+  //   ★★ **この卓に棄権者が座っていること**を別途要求する。理由の内訳だけでは足りない。
+  //     反例（実測・3名）: 卓「選手1 × 選手3」／選手2 が棄権して**待機**。先手の内訳は
+  //     R-self（選手3）と R-withdrawn（選手2）だけ＝「棄権系のみ」に見えるが、
+  //     **この卓に棄権者は1人も居ない**。ここで棄権を名指しすると、文の3節すべてが偽になり、
+  //     しかも「再生成」しても待機の棄権者は元から卓に入らない＝当日の幹事を破壊操作へ誤誘導する。
+  var _tableHasWithdrawn=isWithdrawnPlayer(cls,match.p1)||isWithdrawnPlayer(cls,match.p2);
+  var emptyByWithdrawn=(!hasAlternative)&&_tableHasWithdrawn&&chgEmptyNoticeIsWithdrawnOnly([sel1,sel2]);
+  //   ★ 「全員が卓に入っているため」とは書かない。棄権者が待機に居ると偽になる（R-withdrawn が混じる形）。
+  //     hasAlternative===false が保証しているのは「代わりに入れられる候補が無い」ことだけなので、そう書く。
   var emptyNoticeBody=emptyByWithdrawn
-    ?'この卓には棄権した参加者がいます。全員が卓に入っているため、ここでは外せません。<br>「組み合わせを再生成」で外してください。'
+    ?'この卓には棄権した参加者がいます。代わりに入れられる参加者がいないため、ここでは外せません。<br>「組み合わせを再生成」で外してください。'
     :'現在の条件では、1人だけ入れ替えできる候補がありません。<br>別の対局を選ぶか、組み合わせ全体を見直してください。';
   var emptyNoticeHtml=hasAlternative?'':
     '<div data-chg-empty-notice="1" data-chg-empty-cause="'+(emptyByWithdrawn?'withdrawn':'generic')+'" style="margin-bottom:12px;padding:8px 10px;background:#fff7e6;border:1px solid #f5d490;border-radius:6px;font-size:12px;color:#7a4a00;line-height:1.5">'
