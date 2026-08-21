@@ -8823,6 +8823,131 @@ function clearBulkEditError(){
   slot.hidden=true;
 }
 
+// ============================================================
+// BULK-EDIT-DIALOG-001 (#888): 一括編集モーダルに dialog の作法と閉じ口を入れる。
+//
+//   実測（実 Chromium・dev e9e761f・375x667・4名）: role / aria-modal は null、背後に inert 無し、
+//   Esc も背景クリックも効かず、**Tab 6回でモーダルの外へ出た**。行き先は
+//   BODY → openScoreboardBtn → saveBtn → headerMenuBtn → tab-reg → … で、
+//   そこで Enter を押すと見えていない保存やタブ切り替えが動く（編集中の名前を抱えたまま）。
+//
+//   #837 (CHG-MODAL-FOCUS-TRAP-001) が chg-modal に入れた作法をそのまま移植する。
+//   ★ 変数名・関数名は _chg… と別にしてある（同じ名前にすると #881 の変異生成器が
+//     「置換元の出現回数=2」で落ちる＝先行便の反証パネルを壊す。#887 で実測済み）。
+//
+//   ★ 一括編集に固有の難しさ: **未保存の入力を大量に抱えている**。
+//     作者裁定（2026-08-21）:
+//       ・Esc … 触っていなければそのまま閉じる／触っていれば appConfirm で確認する
+//       ・背景クリック … 閉じない（スマホで指が当たりやすく、誤爆の代償が大きい）
+//       ・キャンセルボタン … **従来どおり確認なしで閉じる**（この便では挙動を変えない）
+// ============================================================
+var _bulkModalFocusReturn=null;    // 開いたときフォーカスがあった要素（閉じたら戻す）
+var _bulkModalInertedNodes=null;   // この便で inert を付けた body 直下の要素だけを覚える
+var _bulkModalBaseNames=null;      // 開いたときの名前＝「触ったか」を測る基準
+
+function _bulkModalFocusableIn(root){
+  if(!root||!root.querySelectorAll)return [];
+  var nodes=root.querySelectorAll('select,button,input,textarea,a[href],[tabindex]');
+  var out=[];
+  for(var i=0;i<nodes.length;i++){
+    var el=nodes[i];
+    if(el.disabled)continue;
+    if(el.getAttribute&&el.getAttribute('tabindex')==='-1')continue;
+    out.push(el);
+  }
+  return out;
+}
+
+// 開いたときの名前と、いま欄に入っている文字列を突き合わせる。
+//   ★ trim しない。末尾の空白1文字でも「触った」と見なして確認を出す側に倒す
+//     （黙って捨てるより、余計に1回訊く方が安い）。
+function bulkEditIsTouched(){
+  if(!_bulkModalBaseNames)return false;
+  for(var i=0;i<_bulkModalBaseNames.length;i++){
+    var rec=_bulkModalBaseNames[i];
+    var inp=document.getElementById('bulk-name-'+rec.id);
+    if(!inp)continue;
+    if(inp.value!==rec.name)return true;
+  }
+  return false;
+}
+
+function _bulkModalKeydown(e){
+  var modal=document.getElementById('bulk-edit-modal');
+  if(!modal){ closeBulkEditModal(); return; }   // 別経路で DOM だけ消された場合の自己修復
+  // ★ アプリ内モーダル（appConfirm）が手前にある間は一切割り込まない（#837 と同じ理由）。
+  //   Escape を横取りすると確認ではなく一括編集が閉じ、Tab を巻き取ると「はい」に届かない。
+  if(document.getElementById('app-modal'))return;
+  var k=e.keyCode||e.which;
+  if(k===27){ if(e.preventDefault)e.preventDefault(); requestCloseBulkEditModal(); return; }
+  if(k!==9)return;
+  var items=_bulkModalFocusableIn(modal);
+  if(!items.length)return;
+  var first=items[0], last=items[items.length-1], a=document.activeElement;
+  if(!modal.contains(a)){ if(e.preventDefault)e.preventDefault(); try{first.focus();}catch(err){} return; }
+  if(e.shiftKey&&a===first){ if(e.preventDefault)e.preventDefault(); try{last.focus();}catch(err){} }
+  else if(!e.shiftKey&&a===last){ if(e.preventDefault)e.preventDefault(); try{first.focus();}catch(err){} }
+}
+
+function openBulkEditModalDialog(players){
+  var modal=document.getElementById('bulk-edit-modal');
+  if(!modal)return;
+  var head=modal.querySelector('h3');
+  if(head&&!head.id)head.id='bulk-edit-title';
+  try{
+    modal.setAttribute('role','dialog');
+    modal.setAttribute('aria-modal','true');
+    if(head&&head.id)modal.setAttribute('aria-labelledby',head.id);
+  }catch(e){}
+  _bulkModalInertedNodes=[];
+  var kids=document.body.children;
+  for(var i=0;i<kids.length;i++){
+    var el=kids[i];
+    if(el===modal)continue;
+    if(el.hasAttribute&&el.hasAttribute('inert'))continue;   // 元から inert のものは触らない
+    try{ el.setAttribute('inert',''); _bulkModalInertedNodes.push(el); }catch(e){}
+  }
+  _bulkModalBaseNames=[];
+  for(var p=0;p<players.length;p++){
+    _bulkModalBaseNames.push({id:players[p].id,name:players[p].name});
+  }
+  try{ document.addEventListener('keydown',_bulkModalKeydown,true); }catch(e){}
+}
+
+// Esc の入口。触っていなければそのまま閉じ、触っていれば確認を挟む。
+function requestCloseBulkEditModal(){
+  if(!document.getElementById('bulk-edit-modal'))return;
+  if(!bulkEditIsTouched()){ closeBulkEditModal(); return; }
+  appConfirm('編集中の名前を破棄して閉じますか。\n入力した内容は保存されません。',function(yes){
+    if(yes){ closeBulkEditModal(); return; }
+    // 続けるなら、フォーカスをモーダルの中へ戻す（確認の裏に置き去りにしない）
+    var m=document.getElementById('bulk-edit-modal');
+    if(!m)return;
+    var items=_bulkModalFocusableIn(m);
+    try{ if(items.length)items[0].focus(); }catch(e){}
+  });
+}
+
+// 閉じ口を1本にする（DOM から消すだけでは inert / keydown / vv 追従が残る）。
+//   何も開いていないときに呼んでも安全＝開く前の掃除にも使う。
+function closeBulkEditModal(){
+  try{ document.removeEventListener('keydown',_bulkModalKeydown,true); }catch(e){}
+  if(_bulkModalInertedNodes){
+    for(var i=0;i<_bulkModalInertedNodes.length;i++){
+      try{ _bulkModalInertedNodes[i].removeAttribute('inert'); }catch(e){}
+    }
+  }
+  _bulkModalInertedNodes=null;
+  _bulkModalBaseNames=null;
+  unbindBulkViewportFollow();   // #887 の第3の閉じ口もここに畳む（bound=0 なら no-op）
+  var modal=document.getElementById('bulk-edit-modal');
+  if(modal&&modal.parentNode)modal.parentNode.removeChild(modal);
+  var back=_bulkModalFocusReturn;
+  _bulkModalFocusReturn=null;
+  // 戻し先が消えている（リセットで再描画された等）ときは何もしない＝例外にしない
+  try{ if(back&&document.body&&document.body.contains(back)&&back.focus)back.focus(); }catch(e){}
+}
+
 function bindBulkEditModalEvents(cls, players){
   bindBulkViewportFollow();   // ★ STYLE-GUIDE §10.4「表示直後＋visualViewport の resize/scroll」
   // 最初のinputにフォーカス
@@ -8850,8 +8975,9 @@ function bindBulkEditModalEvents(cls, players){
   }
 
   document.getElementById('bulk-cancel').addEventListener('click',function(){
-    unbindBulkViewportFollow();
-    document.getElementById('bulk-edit-modal').remove();
+    // ★ #888: キャンセルは**従来どおり確認なし**で閉じる（挙動を変えない）。
+    //   閉じ口だけ closeBulkEditModal へ一本化して inert / keydown / フォーカス戻しを取りこぼさない。
+    closeBulkEditModal();
   });
 
   document.getElementById('bulk-save').addEventListener('click',function(){
@@ -8922,8 +9048,7 @@ function bindBulkEditModalEvents(cls, players){
     for(var i=0;i<players.length;i++){
       players[i].name=newNames[players[i].id];
     }
-    unbindBulkViewportFollow();
-    document.getElementById('bulk-edit-modal').remove();
+    closeBulkEditModal();   // ★ #888: 閉じ口を一本化（inert / keydown / vv 追従 / フォーカス戻し）
     renderRegList();save();
     // A-5.1-SAVE-003b: save() は例外を握り潰すため書込み後に localStorage を再読込して検証。
     // 全件 verify し、未確認件数を集計。warn は件数集約して 1 回のみ（UI ノイズ回避）。
@@ -8950,8 +9075,13 @@ function bulkEditNames(cls){
   var players=state.players[cls];
   if(players.length===0){alert(cls+'クラスの参加者がいません');return;}
 
-  var existing=document.getElementById('bulk-edit-modal');
-  if(existing)existing.remove();
+  // ★ #888: 掃除を先に通してから戻し先を取る。**この順序でないと消える**:
+  //   closeBulkEditModal() は後片付けの一環で _bulkModalFocusReturn を null に戻すので、
+  //   先に代入すると掃除に食われてフォーカスが body へ落ちる（実測で踏んだ）。
+  //   掃除が先なら、開きっぱなしを畳んだ時点でフォーカスは元の呼び出し元に戻っており、
+  //   そこを改めて拾えば開き直しでも正しい戻し先になる。
+  closeBulkEditModal();   // 開きっぱなしがあれば inert / keydown ごと畳んでから開く
+  _bulkModalFocusReturn=(document.activeElement&&document.activeElement!==document.body)?document.activeElement:null;
 
   var modal=document.createElement('div');
   modal.id='bulk-edit-modal';
@@ -8959,6 +9089,7 @@ function bulkEditNames(cls){
   modal.innerHTML=buildBulkEditModalHtml(cls, players);
   document.body.appendChild(modal);
 
+  openBulkEditModalDialog(players);   // ★ #888: role / aria-modal / 背後 inert / Esc・Tab の結線
   bindBulkEditModalEvents(cls, players);
 }
 
@@ -15773,6 +15904,9 @@ function resetTournamentProgressOnly(){
   // CHG-MODAL-FOCUS-TRAP-001 (#837): chg-modal は DOM を消すだけでは inert と keydown が残るので
   //   専用の閉じ口を先に通す（開いていなければ何もしない）。下の一括除去はそのまま残す。
   closeChangePairingModal();
+  // BULK-EDIT-DIALOG-001 (#888): bulk-edit-modal も DOM を消すだけでは inert と keydown が残る。
+  //   専用の閉じ口を先に通す（開いていなければ何もしない）。下の一括除去はそのまま残す。
+  closeBulkEditModal();
   unbindBulkViewportFollow();   // #887: 第3の閉じ口。listener を取り残さない（bound=0 なら no-op）
   ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
     var m=document.getElementById(mid);if(m)m.remove();
@@ -15838,6 +15972,9 @@ function resetAll(){
   // 開きっぱなしのモーダルを閉じる
   // CHG-MODAL-FOCUS-TRAP-001 (#837): chg-modal は inert / keydown / フォーカス戻しがあるので専用の閉じ口を先に通す。
   closeChangePairingModal();
+  // BULK-EDIT-DIALOG-001 (#888): bulk-edit-modal も DOM を消すだけでは inert と keydown が残る。
+  //   専用の閉じ口を先に通す（開いていなければ何もしない）。下の一括除去はそのまま残す。
+  closeBulkEditModal();
   unbindBulkViewportFollow();   // #887: 第3の閉じ口。listener を取り残さない（bound=0 なら no-op）
   ['bulk-edit-modal','edit-past-modal','chg-modal','load-modal'].forEach(function(mid){
     var m=document.getElementById(mid);if(m)m.remove();
