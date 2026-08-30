@@ -35,7 +35,9 @@ function mut(name, old, neu) {
 //   onBulkViewportChange 側は `if(cardEl){ try{` の1行書きなので、4空白+try 始まりのこの行は一意。
 const SCROLL_SHOW = "    try{ cardEl.lastElementChild.scrollIntoView({block:'nearest'}); }catch(e){}\n";
 const SLOT = '<div id="bulk-err" class="bulk-err" role="alert" aria-live="assertive" hidden>';
-const CSS_ERR = '.bulk-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:13px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}';
+// FONT-FLOOR-001: 置換元の font-size を実物に追随（13px→15px の床上げ）。
+//   変異の中身＝「danger の意味色を warn 色に差し替える」は不変。
+const CSS_ERR = '.bulk-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:15px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}';
 const CSS_BODY = '.bulk-err-body{white-space:pre-line;overflow-wrap:anywhere}';
 const CSS_CARD = '.bulk-card{max-height:80vh;overflow-y:auto}';
 const CARD_TAG = 'return \'<div class="bulk-card" style="background:#fff;border-radius:12px;padding:24px;width:360px;">\'';

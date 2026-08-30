@@ -41,7 +41,9 @@ function tweak(name, old, neu) {
 
 const SCROLL = "    try{ card.lastElementChild.scrollIntoView({block:'nearest'}); }catch(e){}\n";
 const SLOT = '<div id="chg-err" class="chg-err" role="alert" aria-live="assertive" hidden>';
-const CSS_ERR = '.chg-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:13px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}';
+// FONT-FLOOR-001: 置換元の font-size を実物に追随（13px→15px の床上げ）。
+//   変異の中身＝「danger の意味色を warn 色に差し替える」は不変。
+const CSS_ERR = '.chg-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:15px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}';
 const CSS_CARD = '[data-chg-card="1"][data-chg-err="1"]{max-height:85vh;overflow-y:auto}';
 const HEAD = '<strong class="chg-err-head">⚠ 変更を保存しませんでした</strong>';
 
@@ -69,8 +71,9 @@ mut('M2b', "  if(_chgSel2)_chgSel2.addEventListener('change',function(){ clearCh
 mut('M4', '  if(!el){ alert(text); return; }\n', '  if(!el){ return; }\n');
 mut('M5', '変更がありません。\\n', '変更がありません.\\n');
 mut('M8', 'data-chg-empty-notice="1"', 'data-chg-empty-notice-removed="1"');
-mut('N4', 'background:#fff7e6;border:1px solid #f5d490;border-radius:6px;font-size:12px;color:#7a4a00',
-          'background:#fdecea;border:1px solid #d93025;border-radius:6px;font-size:12px;color:#a50e0e');
+// FONT-FLOOR-001: 置換元の font-size を実物に追随（12px→15px の床上げ）。変異の中身＝意味色の差し替えは不変。
+mut('N4', 'background:#fff7e6;border:1px solid #f5d490;border-radius:6px;font-size:15px;color:#7a4a00',
+          'background:#fdecea;border:1px solid #d93025;border-radius:6px;font-size:15px;color:#a50e0e');
 // X6: 器をカードの最上部へ移す（位置の pin が無いと生き残る）
 mut('X6', '<h3 style="margin-bottom:12px;font-size:16px;color:#1F3864">対戦相手の変更</h3>',
           '<h3 style="margin-bottom:12px;font-size:16px;color:#1F3864">対戦相手の変更</h3>');
