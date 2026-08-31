@@ -46,7 +46,9 @@ const RAW = fs.readFileSync(targetPath,'utf8');
 
 // S3: ヘルプボタン×6
 {
-  const helps=RAW.match(/style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ<\/button>/g)||[];
+  // FONT-FLOOR-001: 文字の床上げで font-size:12px→15px。この pin が見ているのは min-height:44px
+  //   （タップ標的）であって文字寸ではないので、実物に追随させて意味は変えない。
+  const helps=RAW.match(/style="font-size:15px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ<\/button>/g)||[];
   assert(helps.length===6, 'S3-1 「？ ヘルプ」6箇所すべて min-height:44px（実測 '+helps.length+'箇所）');
   const ids=['helpBtnReg','helpBtnTournament','helpBtnStandings','helpBtnReport','helpBtnMaster',"helpBtnFirstRound_'+escapeHtml(cls)+'"];
   let allBtnSm=true;

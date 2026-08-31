@@ -54,8 +54,12 @@ const RAW = fs.readFileSync(targetPath,'utf8');
   const mq = RAW.match(/@media\(max-width:480px\)\{[\s\S]*?\n\}/);
   assert(!!mq && /\.suggest-item\{padding:7px 12px\}/.test(mq[0]),
     'S4-1 スマホ幅で候補行 padding 圧縮（7px 12px）');
-  assert(!!mq && /\.suggest-item \.si-meta\{font-size:11px;margin-top:1px\}/.test(mq[0]),
-    'S4-2 スマホ幅で si-meta 11px 化');
+  // FONT-FLOOR-001: 文字の床を 15px にしたため、この規則の圧縮は「文字を小さくする」ぶんが無くなり
+  //   margin-top の詰めだけが残った（11px→15px）。行高の圧縮という S4 の狙いは padding(S4-1) と
+  //   margin-top で担保されるが、キーボード表示中の可視行数は当初設計より減る。
+  //   → 実物に追随させたうえで、可視行数の再確認は別スライスへ申し送る（RESULT §所見）。
+  assert(!!mq && /\.suggest-item \.si-meta\{font-size:15px;margin-top:1px\}/.test(mq[0]),
+    'S4-2 スマホ幅で si-meta の margin-top を詰める（文字寸は床 15px に追随）');
   assert(/\.suggest-list\{margin-top:6px;[^}]*max-height:280px;[^}]*box-shadow:0 6px 16px rgba\(0,0,0,0\.18\)\}/.test(RAW),
     'S5-1 .suggest-list: max-height 280px 不変＋オーバーレイ用の影');
   assert(/list\.style\.zIndex='30';/.test(RAW) && /\.tab-bar\{[^}]*z-index:40/.test(RAW),
