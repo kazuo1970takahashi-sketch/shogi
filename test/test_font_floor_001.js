@@ -39,6 +39,21 @@ const RUBY_PX = 10;
 const PRINT_FNS = ['buildPrintResultsHtml', 'printPairings', 'buildReportHtml', 'downloadReport'];
 // 星取表（#scoreboard-view）を組み立てる関数（実寸据え置き）
 const SB_FNS = ['buildScoreboardClassTableHtml', 'buildScoreboardPlayerViewHtml', 'renderScoreboard'];
+// 報告書専用 helper（5巡目・Codex P1 の cowork 裁定(a)）: buildReportHtml(:15631) の1箇所からしか
+//   呼ばれない A4 報告書の部品＝床の対象外。画面側の属性行は別関数 buildEntryAttrDisplayHtml（15px）。
+//   帳票面の同値性は golden（download_report_payload_001.json が base と byte 一致）が pin する。
+const REPORT_FNS = ['buildReportWinnerKindGradeHtml'];
+
+// 星取表の CSS 免除の判定（5巡目で狭めた・Codex 4巡目 P2-b の派生）:
+//   旧判定「セレクタのどこかに .sb- を含む」だと `#history-content .sb-table rt{11px}` のような
+//   **据え置き対象の外へのスコープ付き上書き**まで免除してしまう（実際 M12 が静的を素通りした）。
+//   → 「カンマ区切りの**全**セレクタが `.sb-` または `#scoreboard-view` で**始まる**」に限定する。
+//   既存の凍結規則（.sb-* / #scoreboard-view 始まり）は全部通り、他コンテナ起点の上書きは通らない。
+function sbSelectorExempt(selector) {
+  const parts = selector.split(',');
+  if (!parts.length) return false;
+  return parts.every(p => /^\s*(\.sb-|#scoreboard-view)/.test(p));
+}
 
 // --- 各行がどのトップレベル関数の中にいるか（`^function name(` を辿るだけの近似）
 function enclosingFns(lines) {
@@ -60,7 +75,7 @@ const styleEnd = LINES.findIndex((l, i) => i > styleStart && /<\/style>/.test(l)
 // --- font-size:<n>px の宣言を全部拾い、床未満のものを分類する
 const DECL = /font-size\s*:\s*([0-9]+(?:\.[0-9]+)?)px/g;
 const violations = [];
-const allowed = { scoreboard: [], print: [], ruby: [] };
+const allowed = { scoreboard: [], print: [], ruby: [], report: [] };
 let totalDecls = 0;
 
 for (let i = 0; i < LINES.length; i++) {
@@ -75,9 +90,10 @@ for (let i = 0; i < LINES.length; i++) {
     const selector = inStyle ? line.split('{')[0] : '';
     const isRt = /(^|[\s,>])rt\s*\{/.test(line) || /\brt\{/.test(line) || /<rt/.test(line);
 
-    if (inStyle && /(^|,)\s*[^,{]*(\.sb-|#scoreboard-view)/.test(selector)) { allowed.scoreboard.push(ln); continue; }
+    if (inStyle && sbSelectorExempt(selector)) { allowed.scoreboard.push(ln); continue; }
     if (!inStyle && SB_FNS.indexOf(FN[i]) >= 0) { allowed.scoreboard.push(ln); continue; }
     if (!inStyle && PRINT_FNS.indexOf(FN[i]) >= 0) { allowed.print.push(ln); continue; }
+    if (!inStyle && REPORT_FNS.indexOf(FN[i]) >= 0) { allowed.report.push(ln); continue; }
     if (isRt && v === RUBY_PX) { allowed.ruby.push(ln); continue; }
 
     violations.push({ ln: ln, px: v, fn: FN[i], text: line.trim().slice(0, 90) });
@@ -96,9 +112,10 @@ assert(violations.length === 0,
 assert(allowed.scoreboard.length > 0, '許可枠①星取表が実際に使われている（' + allowed.scoreboard.length + ' 件）');
 assert(allowed.print.length > 0, '許可枠②印刷/PDF が実際に使われている（' + allowed.print.length + ' 件）');
 assert(allowed.ruby.length > 0, 'ふりがな rt の ' + RUBY_PX + 'px 指定が在る（' + allowed.ruby.length + ' 件）');
+assert(allowed.report.length > 0, '許可枠③報告書 helper が実際に使われている（' + allowed.report.length + ' 件）');
 
 // --- 許可表に挙げた関数が実在すること（存在しない名前を並べて安心するのを防ぐ）
-PRINT_FNS.concat(SB_FNS).forEach(function (name) {
+PRINT_FNS.concat(SB_FNS).concat(REPORT_FNS).forEach(function (name) {
   assert(new RegExp('^function\\s+' + name + '\\s*\\(', 'm').test(SRC), '許可表の関数 ' + name + ' が実在する');
 });
 
@@ -143,7 +160,7 @@ for (let i = 0; i < LINES.length; i++) {
     const v = m[1].trim();
     if (/^[0-9]+(?:\.[0-9]+)?px$/.test(v)) continue;   // px は上の床検査が見る
     const selector = inStyle ? line.split('{')[0] : '';
-    if (inStyle && /(^|,)\s*[^,{]*(\.sb-|#scoreboard-view)/.test(selector)) { allowedNonPx.scoreboard.push(ln); continue; }
+    if (inStyle && sbSelectorExempt(selector)) { allowedNonPx.scoreboard.push(ln); continue; }
     if (!inStyle && SB_FNS.indexOf(FN[i]) >= 0) { allowedNonPx.scoreboard.push(ln); continue; }
     if (!inStyle && PRINT_FNS.indexOf(FN[i]) >= 0) { allowedNonPx.print.push(ln); continue; }
     unitViolations.push({ ln: ln, val: v, fn: FN[i], text: line.trim().slice(0, 90) });
@@ -187,7 +204,9 @@ assert(allowedNonPx.scoreboard.length > 0 && allowedNonPx.print.length > 0,
   assert(badInputs.length === 0,
     '<input> は type を問わず inline font-size 16px 以上（§10.1 は type=file を除外していない・実測 '
     + badInputs.length + ' 件' + (badInputs.length ? ' → ' + JSON.stringify(badInputs.slice(0, 3)) : '') + '）');
-  assert(visibleFileInputs > 0, '可視の file input を実際に走査している（' + visibleFileInputs + ' 件）');
+  // ★ 5巡目（cowork 裁定）: >0 だと「タグごと消える／display:none が付く」変異で緑のまま通る。
+  //   現物は mi-file / p2-file の2本（grep 実測）＝厳密件数で pin する。増減はこの数字の更新＝意図の宣言。
+  assert(visibleFileInputs === 2, '可視の file input はちょうど2本（mi-file / p2-file・実測 ' + visibleFileInputs + ' 件）');
   assert(fileInputsNoFs.length === 0,
     '可視の file input は inline font-size を**必ず**持つ（無ければ UA 既定 13.33px に落ちる・実測 '
     + fileInputsNoFs.length + ' 件' + (fileInputsNoFs.length ? ' → ' + JSON.stringify(fileInputsNoFs) : '') + '）');
@@ -221,6 +240,19 @@ const wb = SRC.match(/\.winner-btn\{[^}]*font-size:(\d+)px/g) || [];
 assert(wb.length === 2 && wb.every(s => /font-size:17px/.test(s)),
   '.winner-btn は既定・@media とも 17px（実測 ' + JSON.stringify(wb.map(s => (s.match(/font-size:\d+px/) || [])[0])) + '）');
 
+// --- 報告書 helper は 11px（5巡目・cowork 裁定(a)の値そのものを pin）
+//   免除枠は「床の違反にしない」だけなので、これが無いと 11px→15px に戻す変異が静的では緑のまま通る。
+//   （帳票 payload の byte 一致は test_download_report_characterization_001.js の golden が別途 pin する。）
+{
+  const fnStart = LINES.findIndex(l => /^function buildReportWinnerKindGradeHtml\(/.test(l));
+  let fnEnd = LINES.findIndex((l, i) => i > fnStart && /^function /.test(l));
+  if (fnEnd < 0) fnEnd = LINES.length;
+  const body = fnStart >= 0 ? LINES.slice(fnStart, fnEnd).join('\n') : '';
+  const sizes = (body.match(/font-size:\s*([0-9.]+)px/g) || []);
+  assert(fnStart >= 0 && sizes.length === 1 && /font-size:\s*11px/.test(sizes[0]),
+    'buildReportWinnerKindGradeHtml（報告書専用）は 11px＝A4 帳票の実寸のまま（実測 ' + JSON.stringify(sizes) + '）');
+}
+
 // --- 自己検査: 検査器が壊れていないこと（違反を仕込んだ文字列で必ず捕まえる）
 (function selfCheck() {
   const injected = LINES.slice();
@@ -235,7 +267,7 @@ assert(wb.length === 2 && wb.every(s => /font-size:17px/.test(s)),
       const inStyle = (ln > styleStart + 1 && ln < styleEnd + 1);
       const selector = inStyle ? injected[i].split('{')[0] : '';
       const isRt = /\brt\{/.test(injected[i]);
-      if (inStyle && /(^|,)\s*[^,{]*(\.sb-|#scoreboard-view)/.test(selector)) continue;
+      if (inStyle && sbSelectorExempt(selector)) continue;
       if (!inStyle && SB_FNS.indexOf(fn2[i]) >= 0) continue;
       if (!inStyle && PRINT_FNS.indexOf(fn2[i]) >= 0) continue;
       if (isRt && parseFloat(m[1]) === RUBY_PX) continue;

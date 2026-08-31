@@ -18649,7 +18649,11 @@ function buildReportWinnerKindGradeHtml(player){
   var parts=[]; var mk=memberKindLabelJa(s.member_kind); if(mk!=='')parts.push(mk);
   var gr=gradeLabelJa(s.grade); if(gr!=='')parts.push(gr);
   if(!parts.length)return '';
-  return '<div style="font-size:15px;color:#777;margin-top:2px">'+escapeHtml(parts.join(' / '))+'</div>';
+  // FONT-FLOOR-001 5巡目 (Codex P1・cowork 裁定(a)): この helper は buildReportHtml（A4 報告書）
+  //   :15631 の1箇所からしか呼ばれない**報告書専用**＝床（画面の可読性）の対象外に戻す（15px→11px）。
+  //   画面側の属性行は別関数 buildEntryAttrDisplayHtml（15px のまま）。同じ inline style を持つ
+  //   別関数が2本あるため「共有ビルダー」に見えるが、呼び出し元 grep で独立を確認済み。
+  return '<div style="font-size:11px;color:#777;margin-top:2px">'+escapeHtml(parts.join(' / '))+'</div>';
 }
 // スマホ用カード（縦に積む）。
 function _cloudResultCardsHtml(rows){
