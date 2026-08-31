@@ -54,12 +54,21 @@ const REPORT_FNS = ['buildReportWinnerKindGradeHtml'];
 //     → `~` / `+` を含むセレクタは免除しない。`>` と子孫結合子（空白）は部分木の中に
 //     留まるので可。:nth-child(2n+1) 等の括弧内の `+` は結合子ではないため、
 //     括弧の中身を剥がしてから判定する（現物の免除対象に `~`/`+` は 0 件＝狭めても全部通る）。
+//   → 7巡目 (Codex 4巡目 #5・偽陽性の修正): 6巡目の剥がしは括弧だけで、**属性セレクタと
+//     引用符の中**を剥がしていなかった。`.sb-table[data-mark="+"]` のような安全なセレクタの
+//     属性値の `+` を結合子と誤判定し、正当な星取表限定規則を床の違反として落とす退行。
+//     → 引用符内 → 角括弧内 → 括弧内の順に剥がしてから `~`/`+` を判定する
+//     （引用符を先に剥がすので `[data-x="]"]` のような値内の `]` にも引きずられない）。
+//     結合子としての `~`/`+` はこの3つの外にしか現れないため、本来の赤（M15）は残る。
 function sbSelectorExempt(selector) {
   const parts = selector.split(',');
   if (!parts.length) return false;
   return parts.every(function (p) {
     if (!/^\s*(\.sb-|#scoreboard-view)/.test(p)) return false;
-    if (/[~+]/.test(p.replace(/\([^)]*\)/g, ''))) return false;
+    const probe = p.replace(/"[^"]*"|'[^']*'/g, '')  // 引用符で囲まれた文字列（属性値）
+                   .replace(/\[[^\]]*\]/g, '')       // 属性セレクタ
+                   .replace(/\([^)]*\)/g, '');       // :nth-child() 等の関数記法
+    if (/[~+]/.test(probe)) return false;
     return true;
   });
 }
