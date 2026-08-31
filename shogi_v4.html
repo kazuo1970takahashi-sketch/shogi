@@ -34,22 +34,22 @@ body{font-family:'Hiragino Sans','Meiryo',sans-serif;font-size:15px;color:#222;b
 #header-menu-sheet{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9600}
 .hm-card{position:absolute;left:0;right:0;bottom:0;max-width:560px;margin:0 auto;background:#fff;border-radius:14px 14px 0 0;box-shadow:0 -6px 22px rgba(0,0,0,0.25);padding:12px 16px 16px}
 .hm-grab{width:38px;height:4px;border-radius:2px;background:#ccc;margin:0 auto 10px}
-.hm-label{font-size:11px;color:#888;font-weight:500;margin:10px 2px 6px;letter-spacing:.05em}
+.hm-label{font-size:15px;color:#888;font-weight:500;margin:10px 2px 6px;letter-spacing:.05em}
 .hm-label-danger{color:#A32D2D}
-.hm-item{display:block;width:100%;text-align:left;margin-bottom:6px;min-height:44px;padding:10px 12px;border:1px solid #ccc;border-radius:8px;background:#fff;color:#222;font-size:14px;font-family:inherit;cursor:pointer;text-decoration:none}
+.hm-item{display:block;width:100%;text-align:left;margin-bottom:6px;min-height:44px;padding:10px 12px;border:1px solid #ccc;border-radius:8px;background:#fff;color:#222;font-size:15px;font-family:inherit;cursor:pointer;text-decoration:none}
 a.hm-item{display:flex;align-items:center}
 .hm-item.btn-danger{background:#A32D2D;color:#fff;border-color:#A32D2D} /* 意味色（§1 danger）を定義順に依存せず明示固定（specificity 0,2,0） */
 .hm-close-row{margin-top:10px;padding-top:10px;border-top:1px solid #eee;text-align:center}
-.hm-close-row button{min-height:36px;padding:6px 22px;color:#555;font-size:14px}
+.hm-close-row button{min-height:36px;padding:6px 22px;color:#555;font-size:15px}
 .container{max-width:1100px;margin:0 auto;padding:10px 8px}
 .tab-bar{display:flex;gap:3px;margin-bottom:10px;background:#fff;border-radius:10px;padding:5px;border:1px solid #ddd;position:sticky;top:0;z-index:40;box-shadow:0 2px 6px rgba(0,0,0,0.05)}
-.tab{flex:1;padding:10px 4px;border-radius:8px;border:none;cursor:pointer;font-size:13px;background:transparent;color:#666;font-family:inherit}
+.tab{flex:1;padding:10px 4px;border-radius:8px;border:none;cursor:pointer;font-size:15px;background:transparent;color:#666;font-family:inherit}
 .tab.active{background:#1F3864;color:#fff;font-weight:500}
 .section{background:#fff;border-radius:10px;padding:12px 12px;margin-bottom:12px;border:1px solid #e0e0e0}
 h2{font-size:15px;font-weight:500;margin-bottom:10px;color:#1F3864;border-bottom:2px solid #1F3864;padding-bottom:6px}
 .section-head{display:flex;align-items:center;gap:8px;border-bottom:2px solid #1F3864;padding-bottom:6px;margin-bottom:12px}
 .section-head h2{border-bottom:none;padding-bottom:0}
-h3{font-size:14px;font-weight:500;margin-bottom:8px;color:#444}
+h3{font-size:15px;font-weight:500;margin-bottom:8px;color:#444}
 .flex{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
 input[type=text]{height:44px;padding:0 12px;border:1px solid #ccc;border-radius:8px;font-size:16px;font-family:inherit}
 select{height:44px;padding:0 8px;border:1px solid #ccc;border-radius:8px;font-size:16px;font-family:inherit;background:#fff} /* INPUT-STD-001 (#715): 16px 未満は iOS フォーカス時自動ズームの原因（15→16px） */
@@ -57,16 +57,16 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .btn-primary{background:#1F3864;color:#fff;border-color:#1F3864}
 .btn-success{background:#27500A;color:#fff;border-color:#27500A}
 .btn-danger{background:#A32D2D;color:#fff;border-color:#A32D2D}
-.btn-sm{padding:6px 12px;font-size:13px}
+.btn-sm{padding:6px 12px;font-size:15px}
 .btn-outline-primary{background:#fff;color:#1F3864;border:1.5px solid #1F3864} /* CLUB-PROFILE-001 (Codex P2): 新規ボタンの色・枠は class 系で定義（§1-2）。inline は layout のみ */
 /* CLUB-PROFILE-001 (Codex 2巡目 P2×2): disclosure の色は class 側（§1）、タップ目標は 44px 以上（§10.3）。 */
-.club-profile-summary{font-size:12px;color:#666;cursor:pointer;min-height:44px;display:flex;align-items:center;padding:4px 2px}
-.alert{padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px}
+.club-profile-summary{font-size:15px;color:#666;cursor:pointer;min-height:44px;display:flex;align-items:center;padding:4px 2px}
+.alert{padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:15px}
 .alert-err{background:#fcebeb;color:#A32D2D;border:1px solid #f09595}
 .alert-ok{background:#eaf3de;color:#27500A;border:1px solid #97c459}
 .alert-warn{background:#faeeda;color:#633806;border:1px solid #EF9F27}
 /* CHG-MODAL-INLINE-ERROR-001 (#881): N5=操作を止めた理由の提示（STYLE-GUIDE v1.2 §3）。danger の面色（§1）。 */
-.chg-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:13px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}
+.chg-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:15px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}
 /* BULK-EDIT-INLINE-ERROR-001 (#887): 名前一括編集モーダルの N5 スロット。
    ★ .bulk-card は「見た目の変更」ではなく**リセットを厳密にするための移設**。
      ビルダーが style 属性へ書くと、キーボード対応の card.style.maxHeight='' がビルダーの 80vh まで消す
@@ -74,7 +74,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
      実行時に触ってよいのは『ビルダーが書いていないプロパティ』だけ。
    ★ 80vh は #767 の標準（85vh・12箇所）と違うが、面の高さ変更は見た目スライスの領分なので据え置く。 */
 .bulk-card{max-height:80vh;overflow-y:auto}
-.bulk-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:13px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}
+.bulk-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:15px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}
 .bulk-err[hidden]{display:none}
 .bulk-err-head{display:block;margin-bottom:2px}
 /* ★ overflow-wrap:anywhere は必須。本文に利用者入力（氏名）が入るため。
@@ -85,8 +85,8 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .chg-err-body{white-space:pre-line}
 /* SCALE-MODAL-001 (#767) に揃える。★エラー表示中だけ＝出していないときは v140 と1pxも変えない。 */
 [data-chg-card="1"][data-chg-err="1"]{max-height:85vh;overflow-y:auto}
-.save-warn-pill{flex:0 0 auto;align-self:center;padding:4px 10px;border-radius:12px;background:#faeeda;color:#633806;border:1px solid #EF9F27;font-size:12px;font-weight:500}
-.auth-status-bar{align-items:center;gap:8px;flex-wrap:wrap;background:#f4f6f9;border-bottom:1px solid #d3dbe5;color:#555;padding:4px 14px;font-size:12px}
+.save-warn-pill{flex:0 0 auto;align-self:center;padding:4px 10px;border-radius:12px;background:#faeeda;color:#633806;border:1px solid #EF9F27;font-size:15px;font-weight:500}
+.auth-status-bar{align-items:center;gap:8px;flex-wrap:wrap;background:#f4f6f9;border-bottom:1px solid #d3dbe5;color:#555;padding:4px 14px;font-size:15px}
 .auth-chip-in{color:#27500A;font-weight:600}
 .auth-logout-btn{min-height:30px;background:#fff;border:1px solid #1F3864;color:#1F3864}
 .auth-login-btn{min-height:30px;background:#1F3864;border:1px solid #1F3864;color:#fff}
@@ -113,10 +113,10 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .app-toast.warn{background:#faeeda;color:#633806;border:1px solid #EF9F27}
 .app-modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
 .app-modal-box{background:#fff;border-radius:12px;max-width:420px;width:100%;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,0.28);max-height:85vh;overflow-y:auto}/* SCALE-MODAL-001 (#767): 長文でも OK/キャンセルへ到達できるよう箱内スクロール（個別モーダル群の 85vh+scroll と同値） */
-.app-modal-msg{font-size:14px;color:#222;line-height:1.65;white-space:pre-wrap;word-break:break-word}
+.app-modal-msg{font-size:15px;color:#222;line-height:1.65;white-space:pre-wrap;word-break:break-word}
 .app-modal-input{width:100%;box-sizing:border-box;height:42px;border:1px solid #ccc;border-radius:8px;padding:8px 10px;font-size:16px;margin-top:12px;font-family:inherit}
 .app-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
-.app-modal-actions button{min-height:44px;padding:0 18px;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit}
+.app-modal-actions button{min-height:44px;padding:0 18px;border-radius:8px;font-size:15px;cursor:pointer;font-family:inherit}
 .app-modal-cancel{background:#fff;border:1px solid #ccc;color:#333}
 /* PP-FULLSCREEN-001: 全画面ビュー内だけのスタイル上書き（scoped・追加のみ）。
    .pp-controls＝検索/50音/クイックフィルタをヘッダ（約56px）直下に sticky。
@@ -129,11 +129,11 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 /* U-3 (UX-P1): 受付一覧の操作ボタン（名前編集/ふりがな/削除）はタッチターゲット 44px を確保し誤タップを防ぐ。
    危険操作の削除も含め行内で高さを揃える。ヘッダの危険ボタン（全リセット等）は別グループで対象外。 */
 .player-row-buttons button{min-height:44px}
-.fee-bar{margin-top:12px;padding:10px 14px;background:#e8f0f8;border-radius:8px;font-size:14px}
+.fee-bar{margin-top:12px;padding:10px 14px;background:#e8f0f8;border-radius:8px;font-size:15px}
 /* SHOGI-TOUR-START-001: 受付クラス別「開始 readiness」バッジ（見出し直下・派生表示・保存しない）。
    色は既存 alert 系の意味色を流用（ready=alert-ok 緑 / warn=alert-warn 黄 / started=primary 紺 / empty=灰）。
    開始可否の判定は validateStartableClass に一元化（設計メモ §6）。本バッジは表示専用。 */
-.class-readiness{display:inline-block;margin:0 0 8px;padding:4px 10px;border-radius:8px;font-size:12px;font-weight:500;border:1px solid;line-height:1.5}
+.class-readiness{display:inline-block;margin:0 0 8px;padding:4px 10px;border-radius:8px;font-size:15px;font-weight:500;border:1px solid;line-height:1.5}
 .class-readiness-ready{background:#eaf3de;color:#27500A;border-color:#97c459}
 .class-readiness-warn{background:#faeeda;color:#633806;border-color:#EF9F27}
 .class-readiness-started{background:#e8f0f8;color:#1F3864;border-color:#9DB7D5}
@@ -168,15 +168,28 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
   .header>div:first-child{padding-right:56px}
   .header .header-menu-btn{position:absolute;top:8px;right:12px}
 }
-.player-name{font-weight:500;min-width:70px;font-size:14px}
+.player-name{font-weight:500;min-width:70px;font-size:15px}
 /* FURIGANA-MVP-001: 受付一覧のふりがなルビ表示（氏名の上に小さく）。MVP では受付一覧のみ。 */
 .player-name ruby{ruby-position:over}
-.player-name rt{font-size:.6em;font-weight:400;color:#555;line-height:1}
+.player-name rt{font-size:10px;font-weight:400;color:#555;line-height:1}
 /* FURIGANA-VIEW-002: 順位表 / 星取表 / 閲覧ビューへルビ展開（受付一覧と同じ流儀）。
    rt は氏名より小さく line-height:1 で行の伸びを抑える（設計メモ §A-4）。 */
 .sb-table ruby,#pane-result ruby{ruby-position:over}
-.sb-table rt,#pane-result rt{font-size:.6em;font-weight:400;color:#777;line-height:1}
-.player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:14px}
+.sb-table rt,#pane-result rt{font-size:10px;font-weight:400;color:#777;line-height:1}
+/* FONT-FLOOR-001: ふりがな rt は 10px へ引き上げるが、星取表(#scoreboard-view)だけは実寸据え置き。
+   星取表は横に列が多く、床を上げると右の列がさらに画面外へ押し出されるため、列の見せ方を決める
+   別スライスまで現状維持とする（ブリーフ §4）。値だけを戻す scoped 上書き＝セレクタ・カスケードは不変。 */
+#scoreboard-view .sb-table rt{font-size:.6em}
+/* FONT-FLOOR-001: 対局カードの氏名ボタン(.winner-btn)のルビだけは app 側の rt 規則がどれも当たらず、
+   ブラウザ既定の rt{font-size:50%} で描かれていた（実測 15px×50%=7.5px＝アプリ内で最小）。
+   ふりがなの床（§1-2）を他の rt と揃える。 */
+.winner-btn rt{font-size:10px}
+/* FONT-FLOOR-001 3巡目: 大会履歴タブのクラウド閲覧（renderCloudTournamentDetail → #history-content）の
+   ルビも app 側の rt 規則がどれも当たらず UA 既定 50%＝7.5px だった（base 8aac743 でも同値＝既存の欠落。
+   本 PR の床上げで顕在化しただけ）。ふりがなの床（§1-2）を他の rt と揃える。
+   クラウド星取表スナップショット（.sb-table）の rt は既に 10px（178行）で、本宣言（1,0,1）も同値＝変化なし。 */
+#history-content rt{font-size:10px}
+.player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:15px}
 /* WORLD-STD-ALIGN-002 (#717 作者決定 2026-07-09): 受付リストの固定列グリッド化（世界標準の揃え②）。
    .player-row を flex→grid に切替え、.player-row-main / .player-row-actions は display:contents で
    子要素（No./氏名/会員区分/会費区分/参加費/操作）を親 grid の item として直接参加させる
@@ -217,7 +230,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
   .player-row .player-row-main>select:nth-of-type(1),.player-row .player-row-main>select:nth-of-type(2),
   .player-row .player-fee,.player-row .player-row-buttons{grid-area:auto}
   .player-row .player-row-buttons{justify-content:flex-start}
-  .player-row-head{display:grid;grid-template-columns:34px minmax(120px,300px) 118px 92px 74px auto 1fr;gap:6px;align-items:center;padding:2px 10px;border:1px solid transparent;margin-bottom:2px;font-size:11px;font-weight:600;color:#555}
+  .player-row-head{display:grid;grid-template-columns:34px minmax(120px,300px) 118px 92px 74px auto 1fr;gap:6px;align-items:center;padding:2px 10px;border:1px solid transparent;margin-bottom:2px;font-size:15px;font-weight:600;color:#555}
   .player-row-head span:nth-child(5){text-align:right}
 }
 .sel-sm{height:44px;padding:0 6px;border:1px solid #ccc;border-radius:6px;font-size:16px;background:#fff;font-family:inherit} /* INPUT-STD-001 (#715): 会費区分等は当日最多用＝13px/34px→16px/44px（iOS 自動ズーム防止＋44px タップ標的） */
@@ -230,7 +243,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:700px){.grid2{grid-template-columns:1fr}}
 /* REPORT-FORM-UI-001: 報告書設定フォームの統一スタイル（.rep-form にスコープ＝他UIへ非干渉・見た目のみ）。 */
-.rep-form label{font-size:12px;color:#666;display:block;margin-bottom:4px}
+.rep-form label{font-size:15px;color:#666;display:block;margin-bottom:4px}
 .rep-form .rep-fld{margin-bottom:12px}
 .rep-form input,.rep-form select,.rep-form textarea{width:100%;box-sizing:border-box;height:40px;border:1px solid #ccc;border-radius:8px;padding:8px 10px;font-size:16px;background:#fff;font-family:inherit;color:#222}
 /* REPORT-FORM-UI-002 (モバイル慣例/NN-g): 日付・時刻・金額は内容幅に収め全幅ストレッチを避ける。金額は右寄せ＋数字スピナー除去。見た目のみ・.rep-form スコープ。 */
@@ -241,13 +254,13 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .master-edit-row>td{padding:0;background:#eef4fb;border-bottom:1px solid #d8e4f2}
 .master-edit-panel{padding:12px 14px}
 .master-edit-panel .mep-fld{margin-bottom:10px}
-.master-edit-panel label{display:block;font-size:11px;color:#556;margin-bottom:3px}
+.master-edit-panel label{display:block;font-size:15px;color:#556;margin-bottom:3px}
 .master-edit-panel input{width:100%;box-sizing:border-box;font-size:16px;padding:9px 11px;border:1px solid #185FA5;border-radius:8px;background:#fff}
 .master-edit-panel .mep-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:4px}
 .master-edit-panel .mep-actions button{min-height:44px;padding:0 18px;border-radius:8px;font-size:15px}
-.master-edit-panel .mep-hint{font-size:11px;color:#889;margin-top:8px}
+.master-edit-panel .mep-hint{font-size:15px;color:#889;margin-top:8px}
 .master-edit-panel .mep-seg{display:flex;gap:6px}
-.master-edit-panel .mep-seg button{flex:1;min-height:44px;font-size:14px;border:2px solid #dfe6ee;border-radius:8px;background:#fff;color:#556}
+.master-edit-panel .mep-seg button{flex:1;min-height:44px;font-size:15px;border:2px solid #dfe6ee;border-radius:8px;background:#fff;color:#556}
 .master-edit-panel .mep-seg button.mep-seg-on{border:2px solid #185FA5;background:#E6F1FB;color:#0C447C;font-weight:600}
 .rep-form textarea{height:auto;min-height:56px;resize:vertical;line-height:1.5}
 .rep-form .rep-g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
@@ -255,9 +268,9 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .rep-form .rep-tc{border:1px solid #e6ebf2;background:#f7f9fc;border-radius:8px;padding:12px;margin-bottom:12px}
 .rep-form .rep-tc select{width:auto;max-width:100%}
 .rep-form .rep-tc-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
-.rep-form .rep-tc-row span{font-size:13px;color:#555}
+.rep-form .rep-tc-row span{font-size:15px;color:#555}
 .rep-form .rep-num{width:80px;text-align:right}
-.rep-form .rep-hint{font-size:12px;color:#888;margin-top:8px}
+.rep-form .rep-hint{font-size:15px;color:#888;margin-top:8px}
 /* Codex Should Fix 2 (根本対処): 対局管理のクラスpane(#pane-tournament-grid 直下のグリッド項目)は
    既定の min-width:auto だとコンテンツ最小幅でトラックを突き破り、スマホ幅で pane ごと横あふれする
    （長い氏名の winner-btn / 暫定成績 / 対戦済みリストが原因になり得た）。min-width:0 でトラック幅に
@@ -271,7 +284,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
    省略に逃げず、氏名を折り返して全文を読めるようにする。番号プレフィックス（12｜）は
    getNameWithNo 由来でそのまま保持し、同姓・同姓同名の判別補助とする。
    タップ対象の高さを min-height で安定させ、勝敗入力の操作性は維持する。 */
-.winner-btn{padding:9px 10px;border-radius:8px;border:2px solid #ccc;background:#fff;font-size:15px;font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;min-width:7.5em;max-width:13em;min-height:2.9em;line-height:1.35;white-space:normal;word-break:break-word;overflow-wrap:anywhere;text-align:center;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center}
+.winner-btn{padding:9px 10px;border-radius:8px;border:2px solid #ccc;background:#fff;font-size:17px;font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;min-width:7.5em;max-width:13em;min-height:2.9em;line-height:1.35;white-space:normal;word-break:break-word;overflow-wrap:anywhere;text-align:center;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center}
 .winner-btn.selected{background:#1F3864;color:#fff;border-color:#1F3864}
 /* LIVE-MOBILE-SCOREBOARD-001 §2 / Codex Should Fix 2: 対局カードの氏名ボタン親flex(.winner-row)。
    旧実装は親が nowrap の横並びのままで、長い氏名2名だとスマホ幅で第2対局者ボタンが画面外へ
@@ -282,38 +295,38 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 @media(max-width:700px){.winner-row{justify-content:center;row-gap:8px}}
 .score-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:6px;margin-bottom:12px}
 .score-card{background:#f0f4f8;border-radius:8px;padding:8px 6px;text-align:center}
-.score-card .sname{font-weight:500;font-size:12px}
+.score-card .sname{font-weight:500;font-size:15px}
 /* PAIRING-UX-SCORE-LIST-READABILITY-IMPL-LIGHT (PR #104 §3.2 案 B):
    暫定成績カードで番号と氏名を別行表示するための class。 */
-.score-card .sno{font-size:11px;color:#1F3864;font-weight:500;white-space:nowrap;margin-bottom:2px}
-.score-card .snm{font-size:12px;font-weight:500;line-height:1.3;word-break:break-word;margin-bottom:2px}
+.score-card .sno{font-size:15px;color:#1F3864;font-weight:500;white-space:nowrap;margin-bottom:2px}
+.score-card .snm{font-size:15px;font-weight:500;line-height:1.3;word-break:break-word;margin-bottom:2px}
 .score-card .swins{font-size:22px;font-weight:bold;color:#1F3864}
-.badge{display:inline-block;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:500}
+.badge{display:inline-block;padding:3px 10px;border-radius:6px;font-size:15px;font-weight:500}
 .b1{background:#FAC775;color:#633806}
 .b2{background:#C8C8C8;color:#333}
 .b3{background:#B5D4F4;color:#042C53}
 .row-r1{background:#fef8e7}
 .row-r2{background:#f5f5f5}
 .row-r3{background:#eaf3fb}
-table{width:100%;border-collapse:collapse;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:15px}
 th{background:#e8f0f8;color:#1F3864;font-weight:500;padding:7px 6px;text-align:center;border-bottom:2px solid #2E75B6}
 td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align:middle}
-.history-tag{display:inline-block;background:#eee;border-radius:4px;padding:2px 6px;font-size:11px;color:#666;margin:2px}
+.history-tag{display:inline-block;background:#eee;border-radius:4px;padding:2px 6px;font-size:15px;color:#666;margin:2px}
 .final-done{background:#eaf3de;border:1px solid #97c459;border-radius:8px;padding:12px;color:#27500A;font-weight:500;margin-bottom:12px}
 .suggest-list{margin-top:6px;border:1px solid #ccc;border-radius:8px;background:#fff;max-height:280px;overflow-y:auto;overscroll-behavior:contain;box-shadow:0 6px 16px rgba(0,0,0,0.18)} /* INPUT-KBD-COEXIST-002: オーバーレイ化に伴い浮きが分かる影へ / INPUT-KBD-COEXIST-003 (#731): overscroll-behavior:contain＝リスト端到達時にページへスクロール連鎖させない（連鎖→vv scroll→高さ再計算で「戻る」実機不具合の遮断・非対応環境は従来挙動） */
 .suggest-item{padding:10px 12px;border-bottom:1px solid #eee;cursor:pointer;-webkit-tap-highlight-color:rgba(0,0,0,0.1)}
 .suggest-item:last-child{border-bottom:none}
 .suggest-item:active{background:#eaf3fb}
 .suggest-item .si-name{font-weight:500;font-size:15px;color:#1F3864}
-.suggest-item .si-meta{color:#666;font-size:12px;margin-top:2px}
+.suggest-item .si-meta{color:#666;font-size:15px;margin-top:2px}
 @media(max-width:480px){
   input[type=text]{font-size:16px}
-  .winner-btn{padding:10px 8px;font-size:14px}
-  .tab{font-size:12px;padding:10px 2px}
-  .header h1{font-size:13px}
+  .winner-btn{padding:10px 8px;font-size:17px}
+  .tab{font-size:15px;padding:10px 2px}
+  .header h1{font-size:15px}
   /* INPUT-KBD-COEXIST-002 (#728): キーボード表示中の可視行数確保のため候補行を圧縮（行高 約63px→約48px・44px タップ標的は維持・si-name 15px は可読性のため不変） */
   .suggest-item{padding:7px 12px}
-  .suggest-item .si-meta{font-size:11px;margin-top:1px}
+  .suggest-item .si-meta{font-size:15px;margin-top:1px}
 }
 /* MOBILE-TAB-001: 320px 級の極小幅で active タブ「参加者登録」(5文字) が2行に折り返す件の改善。
    .tab は flex:1 の等幅配分のため最長ラベルが基準になる。font-size を 11px に下げ、tab-bar の
@@ -323,7 +336,7 @@ td{padding:7px 6px;text-align:center;border-bottom:1px solid #eee;vertical-align
    あえて頼らず、想定外でも折り返しに留めて横スクロールは発生させない。361px 以上は従来表示のまま。 */
 @media(max-width:360px){
   .tab-bar{gap:2px;padding:3px}
-  .tab{font-size:11px;padding:10px 0}
+  .tab{font-size:15px;padding:10px 0}
 }
 /* ROUND-CLASS-START-007 (spec §15.1):
    #result-B 固定の page-break を .result-section + .result-section に汎用化。
@@ -420,7 +433,7 @@ body.live-qr-open{overflow:hidden}
 .sb-row-me .sb-col-name{background:#fde7c4}
 /* LIVE-BROADCAST-001 Phase3 (§5.1/§5.3): 配信中バー（運営ヘッダ直下）とキオスク用タップ目標。
    新規 id/class のみ追加（既存セレクタ無変更・拘束ルール3）。色は既存の意味色（#1F3864/#2E75B6/#2b6cb0/#b23030）に限定し新色なし。 */
-#live-bar{display:none;align-items:center;gap:10px;flex-wrap:wrap;background:#eaf1f8;border-bottom:1px solid #d3dbe5;color:#1F3864;padding:6px 14px;font-size:12px}
+#live-bar{display:none;align-items:center;gap:10px;flex-wrap:wrap;background:#eaf1f8;border-bottom:1px solid #d3dbe5;color:#1F3864;padding:6px 14px;font-size:15px}
 #live-bar .live-bar-badge{font-weight:600;color:#1F3864}
 .sb-active #live-bar{display:none !important} /* 閲覧ビュー（#scoreboard）では運営向けバーを出さない（read-only 徹底） */
 .sb-kiosk .sb-tab{min-height:44px}
@@ -445,7 +458,7 @@ body.live-qr-open{overflow:hidden}
 .sb-hrow-no{margin-left:auto;font-size:11px;color:#777}
 /* GUEST-TOURNAMENT-MODE-001 (#760): ヘッダの🎪ゲスト大会バッジ。既定 display:none（renderGuestModeUI が表示切替）。
    色は warn 意味色（STYLE-GUIDE §1: #633806 文字・#faeeda 地・#EF9F27 枠）＝紺ヘッダ上で視認性が高い。 */
-.guest-badge{display:none;font-size:12px;font-weight:600;color:#633806;background:#faeeda;border:1px solid #EF9F27;border-radius:6px;padding:2px 8px;margin-left:8px;vertical-align:middle;white-space:nowrap}
+.guest-badge{display:none;font-size:15px;font-weight:600;color:#633806;background:#faeeda;border:1px solid #EF9F27;border-radius:6px;padding:2px 8px;margin-left:8px;vertical-align:middle;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -453,7 +466,7 @@ body.live-qr-open{overflow:hidden}
 <div id="rotate-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#1F3864;z-index:99999;flex-direction:column;align-items:center;justify-content:center;color:#fff;text-align:center;padding:20px">
   <div style="font-size:60px;margin-bottom:20px">↩️</div>
   <div style="font-size:20px;font-weight:500;margin-bottom:12px">縦向きにしてください</div>
-  <div style="font-size:14px;opacity:0.8">このアプリは縦向き表示に最適化されています</div>
+  <div style="font-size:15px;opacity:0.8">このアプリは縦向き表示に最適化されています</div>
 </div>
 <!-- LIVE-MOBILE-SCOREBOARD-001 §1: スマホ閲覧用リアルタイム星取表ビュー（閲覧専用）。
      既定は display:none。#scoreboard / #viewer / #mobile-standings hash 時に renderScoreboard()
@@ -532,12 +545,12 @@ body.live-qr-open{overflow:hidden}
   </div>
   <div style="padding:16px 14px 40px;text-align:center">
     <div id="liveQrFs" style="margin:0 auto;line-height:0"></div>
-    <div style="font-size:14px;color:#1F3864;margin-top:14px;font-weight:600">順位・星取・手合せが見られます</div>
-    <div id="liveQrFsUrl" style="font-size:11px;color:#777;word-break:break-all;margin-top:8px"></div>
+    <div style="font-size:15px;color:#1F3864;margin-top:14px;font-weight:600">順位・星取・手合せが見られます</div>
+    <div id="liveQrFsUrl" style="font-size:15px;color:#777;word-break:break-all;margin-top:8px"></div>
   </div>
 </div>
 <!-- BACKUP-NUDGE (当日第2弾⑫): 節目（大会開始/クラス完了/全終了）で「今ひかえますか？」を非ブロッキングで促す。既定非表示・あとで可・端末事故の全損防止。 -->
-<div id="backup-nudge" class="no-print" role="status" aria-live="polite" style="display:none;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#faeeda;border:1px solid #EF9F27;color:#633806;padding:10px 14px;margin:0 12px 0;border-radius:0 0 8px 8px;font-size:13px">
+<div id="backup-nudge" class="no-print" role="status" aria-live="polite" style="display:none;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#faeeda;border:1px solid #EF9F27;color:#633806;padding:10px 14px;margin:0 12px 0;border-radius:0 0 8px 8px;font-size:15px">
   <span id="backup-nudge-msg"></span>
   <span style="display:flex;gap:6px;flex-wrap:wrap">
     <button type="button" class="btn-sm no-print" id="backup-nudge-do" style="min-height:36px;background:#EF9F27;color:#fff;border-color:#EF9F27">バックアップする</button>
@@ -545,7 +558,7 @@ body.live-qr-open{overflow:hidden}
   </span>
 </div>
 <!-- STORAGE-WARN (⑬): 起動時プローブで localStorage 書込不可（プライベートブラウズ/ストレージ無効）を検知したら常時警告。既定非表示・データ全損の予防。 -->
-<div id="storage-warn" class="no-print" role="alert" style="display:none;background:#fdecea;border:1px solid #d93025;color:#a50e0e;padding:10px 14px;margin:0 12px;border-radius:0 0 8px 8px;font-size:13px">
+<div id="storage-warn" class="no-print" role="alert" style="display:none;background:#fdecea;border:1px solid #d93025;color:#a50e0e;padding:10px 14px;margin:0 12px;border-radius:0 0 8px 8px;font-size:15px">
   <strong>⚠ この端末ではデータが保存されません</strong><br>
   プライベートブラウズ（シークレット）を解除するか、通常のブラウザ／ホーム画面アプリで開いてください。このまま使う場合は「バックアップ」でこまめに控えてください（ブラウザを閉じると消える場合があります）。
   <div style="margin-top:6px"><button type="button" class="btn-sm no-print" id="storage-warn-close" style="min-height:32px;background:#fff;color:#a50e0e;border:1px solid #d93025">閉じる</button></div>
@@ -556,7 +569,7 @@ body.live-qr-open{overflow:hidden}
      overlay 内では .pp-list-box の内側スクロール（max-height:280px）を scoped CSS で解除しスクロールを1本化する。 -->
 <div id="pp-fullscreen" class="no-print" aria-hidden="true" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#eef2f7;z-index:9500;overflow-y:auto;-webkit-overflow-scrolling:touch">
   <div style="position:sticky;top:0;z-index:5;background:#1F3864;color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px">
-    <span style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">過去参加者から選ぶ <span id="pp-summary-fs" style="font-weight:400;font-size:12px;opacity:.85"></span></span>
+    <span style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">過去参加者から選ぶ <span id="pp-summary-fs" style="font-weight:400;font-size:15px;opacity:.85"></span></span>
     <button type="button" class="btn-sm" id="ppFullscreenCloseBtn" style="background:#fff;color:#1F3864;min-height:36px;white-space:nowrap;flex-shrink:0">✕ 閉じる</button>
   </div>
   <div style="padding:10px 14px 60px;max-width:720px;margin:0 auto">
@@ -573,14 +586,14 @@ body.live-qr-open{overflow:hidden}
     <button type="button" class="btn-sm" id="bulkEntryCloseBtn" style="background:#fff;color:#1F3864;min-height:36px;white-space:nowrap;flex-shrink:0">✕ 閉じる</button>
   </div>
   <div style="padding:10px 14px 60px;max-width:720px;margin:0 auto">
-    <div style="font-size:12px;color:#555;line-height:1.6;margin:8px 0">1行に1人、<strong>氏名 → ふりがな → クラス</strong> の順で貼り付けてください（Excel からのコピー＝タブ区切りをそのまま貼れます。カンマ区切りも可）。ふりがな・クラスの列は省略できます。同姓同名の方は「名前(地域)」のように書き分けてください。ここで登録した参加者は名簿（会員名簿）には登録されません。</div>
+    <div style="font-size:15px;color:#555;line-height:1.6;margin:8px 0">1行に1人、<strong>氏名 → ふりがな → クラス</strong> の順で貼り付けてください（Excel からのコピー＝タブ区切りをそのまま貼れます。カンマ区切りも可）。ふりがな・クラスの列は省略できます。同姓同名の方は「名前(地域)」のように書き分けてください。ここで登録した参加者は名簿（会員名簿）には登録されません。</div>
     <textarea id="bulk-entry-text" rows="8" aria-label="参加者リストの貼り付け欄" placeholder="例：&#10;沼津太郎&#9;ぬまづたろう&#9;A&#10;三島花子&#9;みしまはなこ&#9;B" style="width:100%;box-sizing:border-box;font-size:16px;padding:8px;border:1px solid #c3ccd8;border-radius:6px;font-family:inherit" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin:10px 0">
-      <label style="font-size:12px;color:#1F3864;font-weight:600">クラス列が無い行のクラス<br><select id="bulk-entry-class" style="font-size:16px;padding:4px 8px;margin-top:4px"></select></label>
-      <label style="font-size:12px;color:#1F3864;font-weight:600">区分の既定（全行に適用）<br><select id="bulk-entry-member" style="font-size:16px;padding:4px 8px;margin-top:4px"><option value="member">支部員</option><option value="other">一般（支部員以外）</option></select></label>
+      <label style="font-size:15px;color:#1F3864;font-weight:600">クラス列が無い行のクラス<br><select id="bulk-entry-class" style="font-size:16px;padding:4px 8px;margin-top:4px"></select></label>
+      <label style="font-size:15px;color:#1F3864;font-weight:600">区分の既定（全行に適用）<br><select id="bulk-entry-member" style="font-size:16px;padding:4px 8px;margin-top:4px"><option value="member">支部員</option><option value="other">一般（支部員以外）</option></select></label>
     </div>
     <div id="bulk-entry-preview" style="margin-top:8px;overflow-x:auto"></div>
-    <div id="bulk-entry-summary" style="font-size:13px;font-weight:600;color:#1F3864;margin:10px 0;min-height:1.2em" role="status" aria-live="polite"></div>
+    <div id="bulk-entry-summary" style="font-size:15px;font-weight:600;color:#1F3864;margin:10px 0;min-height:1.2em" role="status" aria-live="polite"></div>
     <button type="button" class="btn-primary" id="bulkEntryConfirmBtn" style="width:100%;min-height:48px" disabled>登録を確定する</button>
   </div>
 </div>
@@ -601,7 +614,7 @@ body.live-qr-open{overflow:hidden}
          HTML 再配置のみ＝各 section/ボタンの id・bind・レンダラ（renderClassManager/renderRoundsControl/
          renderPastParticipantsPanel/bindPastParticipantsToggle）は全て不変。 -->
     <details id="reg-setup-details" style="margin-bottom:12px">
-      <summary style="font-size:14px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">⚙ 大会の設定（種類・クラス・回戦数）<span style="font-weight:400;font-size:11px;color:#888">　大会開始前に確認</span></summary>
+      <summary style="font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">⚙ 大会の設定（種類・クラス・回戦数）<span style="font-weight:400;font-size:15px;color:#888">　大会開始前に確認</span></summary>
       <!-- GUEST-TOURNAMENT-MODE-001 (#760): 大会の種類（入り口で選ぶ）。📘通常の大会（既定・名簿とつなぐ）／
            🎪ゲスト大会（参加者を名簿に記録しない・別大会/オープン大会向け）。開始後は renderTournamentKindControl が
            ロック（ROUNDS-CONFIG-001 と同型）。参加者登録後の切替は onChangeTournamentKind が confirm。
@@ -613,9 +626,9 @@ body.live-qr-open{overflow:hidden}
             <option value="normal">📘 通常の大会（名簿とつなぐ）</option>
             <option value="guest">🎪 ゲスト大会（名簿に記録しない）</option>
           </select>
-          <span id="tournament-kind-note" style="font-size:11px;color:#888"></span>
+          <span id="tournament-kind-note" style="font-size:15px;color:#888"></span>
         </div>
-        <div style="font-size:11px;color:#888;margin-top:6px">ゲスト大会では、参加者が名簿に登録されず、名簿の参加記録も変わりません。名簿からの受付・検索はどちらの種類でも使えます。</div>
+        <div style="font-size:15px;color:#888;margin-top:6px">ゲスト大会では、参加者が名簿に登録されず、名簿の参加記録も変わりません。名簿からの受付・検索はどちらの種類でも使えます。</div>
       </div>
       <!-- CLASS-VARIABLE-001 (CV-1): クラス管理UI。state.classes を runtime で追加/改名/削除する。
            A/B はアプリ既定クラス（normalizeClasses が読込毎に必ず補完するため）削除不可。
@@ -628,7 +641,7 @@ body.live-qr-open{overflow:hidden}
           <input type="text" id="inp-new-class" placeholder="クラス名（例: Cクラス）" style="width:200px" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" maxlength="20">
           <button type="button" class="btn-sm" id="addClassBtn" style="border-color:#2E75B6;color:#2E75B6">クラスを追加</button>
         </div>
-        <div style="font-size:11px;color:#888;margin-top:4px">A・Bクラスは削除できません。開始済み・参加者がいるクラスは削除できません。</div>
+        <div style="font-size:15px;color:#888;margin-top:4px">A・Bクラスは削除できません。開始済み・参加者がいるクラスは削除できません。</div>
       </div>
       <!-- ROUNDS-CONFIG-001: 回戦数の設定（既定4）。ペアリング/順位/星取/報告書は全て state.rounds を参照するため、
            ここを変えるだけで N 回戦制に対応する。開始後(state.started)は誤操作防止のため変更不可＝renderRoundsControl が
@@ -637,61 +650,61 @@ body.live-qr-open{overflow:hidden}
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <h2 style="margin:0;font-size:15px">回戦数（全クラス既定）</h2>
           <select id="inp-rounds" style="font-size:16px;padding:4px 8px"></select>
-          <span id="rounds-config-note" style="font-size:11px;color:#888"></span>
+          <span id="rounds-config-note" style="font-size:15px;color:#888"></span>
         </div>
-        <div style="font-size:11px;color:#888;margin-top:6px">クラスごとに変えたい場合は、上の「クラスを管理する」の各クラスで個別に設定できます。</div>
+        <div style="font-size:15px;color:#888;margin-top:6px">クラスごとに変えたい場合は、上の「クラスを管理する」の各クラスで個別に設定できます。</div>
       </div>
     </details>
     <!-- OPS-SHARED-KEY-REDESIGN-001 Phase B (#582): 2台で分担して入力するとき用の「運営共通キー」（4桁）。
          受付タブ（大会開始前）に独立した畳みセクションで置く＝1台運営なら開かない＝目に触れない。
          発行/合わせるは bindReportEvents で issueOpsSharedKey/applyOpsSharedKey に結線（追加のみ）。 -->
     <details id="ops-share-details" style="margin-bottom:12px">
-      <summary style="font-size:14px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">▷ 2台で分担して入力するとき<span style="font-weight:400;font-size:11px;color:#888">　１台で運営するなら不要</span></summary>
+      <summary style="font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">▷ 2台で分担して入力するとき<span style="font-weight:400;font-size:15px;color:#888">　１台で運営するなら不要</span></summary>
       <div style="border:1px solid #d3dbe5;border-top:none;border-radius:0 0 8px 8px;padding:12px">
-        <div style="font-size:12px;color:#555;line-height:1.6;margin-bottom:10px">A級・B級を別々の端末で入力するとき、両方で同じ「運営共通キー（4桁）」を使うと、送信した結果が１つの大会にまとまります。１台目でキーを発行し、２台目にその数字を伝えてください。</div>
+        <div style="font-size:15px;color:#555;line-height:1.6;margin-bottom:10px">A級・B級を別々の端末で入力するとき、両方で同じ「運営共通キー（4桁）」を使うと、送信した結果が１つの大会にまとまります。１台目でキーを発行し、２台目にその数字を伝えてください。</div>
         <div style="margin-bottom:12px">
-          <div style="font-size:12px;font-weight:600;color:#1F3864;margin-bottom:4px">① １台目（キーを配る側）</div>
+          <div style="font-size:15px;font-weight:600;color:#1F3864;margin-bottom:4px">① １台目（キーを配る側）</div>
           <button type="button" id="opsIssueBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">運営共通キーを発行</button>
           <div id="opsKeyDisplay" style="margin-top:8px;min-height:1.4em"></div>
         </div>
         <div>
-          <div style="font-size:12px;font-weight:600;color:#1F3864;margin-bottom:4px">② ２台目（キーを受け取る側）</div>
+          <div style="font-size:15px;font-weight:600;color:#1F3864;margin-bottom:4px">② ２台目（キーを受け取る側）</div>
           <span style="display:inline-flex;gap:6px;align-items:center">
             <input type="text" id="opsKeyInput" inputmode="numeric" enterkeyhint="done" autocomplete="off" maxlength="4" placeholder="例: 4821" aria-label="受け取った運営共通キー（4桁）" style="font-size:18px;letter-spacing:3px;width:104px;text-align:center;padding:6px 8px;border:1px solid #c3ccd8;border-radius:6px">
             <button type="button" id="opsApplyBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">このキーに合わせる</button>
           </span>
           <!-- OPS-SHARED-KEY-REDESIGN-001 Phase D (#588): １台目がキーを発行せず送信済みの大会へ、あとから合流する導線（設計 §8-2） -->
-          <div style="margin-top:8px;font-size:12px;color:#555">１台目がキーを発行していない（キーなしで送信済み）とき →
+          <div style="margin-top:8px;font-size:15px;color:#555">１台目がキーを発行していない（キーなしで送信済み）とき →
             <button type="button" id="opsKeylessJoinBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">今日の大会に合流</button>
           </div>
         </div>
-        <div id="opsShareStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:8px;min-height:1.2em"></div>
+        <div id="opsShareStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:15px;margin-top:8px;min-height:1.2em"></div>
       </div>
     </details>
     <div class="section">
       <div class="section-head">
         <h2 style="margin:0">参加者を登録する</h2>
-        <button type="button" id="helpBtnReg" class="btn-sm" title="登録・受付の使い方をヘルプで表示します" aria-label="登録・受付ヘルプ" style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>
+        <button type="button" id="helpBtnReg" class="btn-sm" title="登録・受付の使い方をヘルプで表示します" aria-label="登録・受付ヘルプ" style="font-size:15px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>
       </div>
       <!-- REG-TAB-IA-001 / PP-FULLSCREEN-001: 常連の主経路＝名簿から受付（全画面ピッカー）。登録セクション先頭の primary。
            #past-participants-section / #ppToggleBtn / #pp-summary の id は温存（renderPastParticipantsPanel が
            マスタ空なら section 非表示・件数を #pp-summary に同期／bindPastParticipantsToggle が openPpFullscreen へ結線＝全て無改変）。 -->
       <div id="past-participants-section" style="display:none;margin:10px 0 6px">
-        <button type="button" class="btn-primary" id="ppToggleBtn" style="width:100%">📋 名簿から受付（過去参加者から選ぶ）<span id="pp-summary" style="font-weight:400;font-size:12px;opacity:.85;margin-left:6px"></span></button>
+        <button type="button" class="btn-primary" id="ppToggleBtn" style="width:100%">📋 名簿から受付（過去参加者から選ぶ）<span id="pp-summary" style="font-weight:400;font-size:15px;opacity:.85;margin-left:6px"></span></button>
       </div>
       <!-- BULK-ENTRY-001 (#761): 事前リスト（Excel/CSV）貼り付けの一括登録導線。開始前限定＝renderBulkEntryButton が
            state.started で disabled＋注記を毎描画同期する（ROUNDS-CONFIG-001 と同型）。マスタ空でも表示する
            （名簿から受付と違いマスタ非依存＝ゲスト大会・初回利用でも使える）。 -->
       <div id="bulk-entry-section" style="margin:10px 0 6px">
         <button type="button" class="btn-sm" id="bulkEntryBtn" style="width:100%;border-color:#2E75B6;color:#2E75B6;min-height:44px">📥 まとめて登録（エクセルから貼り付け）</button>
-        <div id="bulk-entry-note" style="font-size:11px;color:#888;margin-top:4px;display:none">大会開始後はまとめて登録できません。途中参加は「＋ 名簿にない新規の方（手入力）」で1人ずつ追加してください。</div>
+        <div id="bulk-entry-note" style="font-size:15px;color:#888;margin-top:4px;display:none">大会開始後はまとめて登録できません。途中参加は「＋ 名簿にない新規の方（手入力）」で1人ずつ追加してください。</div>
       </div>
       <!-- REG-TAB-TIDY-001 (#743) ⑤b 案B: 手入力欄を details へ格納（既定閉・名簿未取込/0名時は renderPastParticipantsPanel が自動 open）。
            #inp-name / #inp-class / #addBtn / #inp-yomi / #suggest-list の id・bind 経路は不変（格納のみ）。
            #reg-msg は details の外に残す（⑤d notifyRegTapErr / showMsg が details 閉でも常時書けること）。 -->
       <details id="reg-manual-details" style="margin:10px 0 6px">
-        <summary style="font-size:14px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">＋ 名簿にない新規の方（手入力）<span style="font-weight:400;font-size:11px;color:#888">　タップで開く</span></summary>
-      <div style="font-size:11px;color:#888;margin:8px 0 4px">名簿にない新規の方は下の欄で手入力:</div>
+        <summary style="font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">＋ 名簿にない新規の方（手入力）<span style="font-weight:400;font-size:15px;color:#888">　タップで開く</span></summary>
+      <div style="font-size:15px;color:#888;margin:8px 0 4px">名簿にない新規の方は下の欄で手入力:</div>
       <div class="flex">
         <input type="text" id="inp-name" placeholder="氏名を入力" style="width:150px" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next">
         <select id="inp-class">
@@ -705,7 +718,7 @@ body.live-qr-open{overflow:hidden}
         <input type="text" id="inp-yomi" inputmode="kana" placeholder="ふりがな" style="width:200px;font-size:16px" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
         <!-- L2-SWEEP-01 ② (UX評価 P2-④): 補足文をブロック化して入力欄の下へ（390px で折返し2行目が
              欄外に孤立する崩れの修正・スタイルのみ・id/bind 非接触）。 -->
-        <span style="display:block;font-size:11px;color:#888;margin-top:4px">自動入力されない場合は手入力してください</span>
+        <span style="display:block;font-size:15px;color:#888;margin-top:4px">自動入力されない場合は手入力してください</span>
       </div>
       <div id="suggest-list" class="suggest-list" style="display:none"></div>
       </details>
@@ -718,11 +731,11 @@ body.live-qr-open{overflow:hidden}
       <!-- L2-SWEEP-01 ① (UX評価 P2-③): 一覧の区分 select×2 の視覚ラベル。狭幅では列見出し行
            (.player-row-head) が出ないため、タブ内に凡例を1行だけ置く（静的 HTML の純追加・
            行の DOM/レイアウト非接触＝WORLD-STD-ALIGN-002 の構造ピン無破壊）。 -->
-      <div style="font-size:11px;color:#888;margin-top:12px">一覧の各行: 左の選択=会員区分（支部員/支部員以外）／右の選択=会費区分（一般/中学生以下/女性・参加費に反映）</div>
+      <div style="font-size:15px;color:#888;margin-top:12px">一覧の各行: 左の選択=会員区分（支部員/支部員以外）／右の選択=会費区分（一般/中学生以下/女性・参加費に反映）</div>
       <div class="grid2" id="reg-class-grid" style="margin-top:12px">
         <div data-class-id="A">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <h3 style="margin-bottom:0"><span id="a-name">Aクラス</span> <span id="a-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
+            <h3 style="margin-bottom:0"><span id="a-name">Aクラス</span> <span id="a-count" style="color:#888;font-size:15px;font-weight:400"></span></h3>
             <button type="button" id="bulkEditA" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
           </div>
           <!-- SHOGI-TOUR-START-001: クラス別 開始 readiness バッジ（renderRegList が validateStartableClass から導出して描画・読み取り専用の情報表示）。初期は非表示。 -->
@@ -732,7 +745,7 @@ body.live-qr-open{overflow:hidden}
         </div>
         <div data-class-id="B">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <h3 style="margin-bottom:0"><span id="b-name">Bクラス</span> <span id="b-count" style="color:#888;font-size:12px;font-weight:400"></span></h3>
+            <h3 style="margin-bottom:0"><span id="b-name">Bクラス</span> <span id="b-count" style="color:#888;font-size:15px;font-weight:400"></span></h3>
             <button type="button" id="bulkEditB" class="btn-sm" style="border-color:#2E75B6;color:#2E75B6">名前を一括編集</button>
           </div>
           <!-- SHOGI-TOUR-START-001: クラス別 開始 readiness バッジ（renderRegList が validateStartableClass から導出して描画・読み取り専用の情報表示）。初期は非表示。 -->
@@ -747,8 +760,8 @@ body.live-qr-open{overflow:hidden}
            startBtn の id/文言/bind は不変（test_start_ux_consolidate SRC1/SRC3）。pane-reg 非表示時はバーも隠れる。 -->
       <div class="no-print" id="regActionBar" style="position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #e3e3e3;box-shadow:0 -2px 10px rgba(0,0,0,0.06);padding:9px 12px calc(9px + env(safe-area-inset-bottom)) 12px;z-index:50">
         <div style="max-width:860px;margin:0 auto">
-          <button type="button" class="btn-primary" style="width:100%;min-height:48px;font-size:14px;border-radius:8px" id="startBtn">登録内容を確認して対局管理へ</button>
-          <div style="font-size:11px;color:#888;text-align:center;margin-top:4px">※対局の開始は「対局管理」タブで行います</div>
+          <button type="button" class="btn-primary" style="width:100%;min-height:48px;font-size:15px;border-radius:8px" id="startBtn">登録内容を確認して対局管理へ</button>
+          <div style="font-size:15px;color:#888;text-align:center;margin-top:4px">※対局の開始は「対局管理」タブで行います</div>
         </div>
       </div>
     </div>
@@ -758,8 +771,8 @@ body.live-qr-open{overflow:hidden}
          対局画面は per-class 動的描画（buildCurrentPairingsHtml=golden 対象）のため、静的アンカーをここに置き
          click は bindReportEvents 側で openHelpModal('tournament') へ結線する（standings help #341 と同経路・golden 非接触）。 -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px" class="no-print">
-      <span style="font-size:14px;font-weight:600;color:#1F3864">対局管理の使い方</span>
-      <button type="button" id="helpBtnTournament" class="btn-sm" title="対局管理の使い方をヘルプで表示します" aria-label="対局管理の使い方ヘルプ" style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>
+      <span style="font-size:15px;font-weight:600;color:#1F3864">対局管理の使い方</span>
+      <button type="button" id="helpBtnTournament" class="btn-sm" title="対局管理の使い方をヘルプで表示します" aria-label="対局管理の使い方ヘルプ" style="font-size:15px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>
     </div>
     <!-- REPORT-PRINT-003: 全クラスの現ラウンド組み合わせを印刷するボタン。
          no-print: 印刷時はボタン自体を隠す（クリックはブラウザ印刷経路ではなく専用 HTML 経路）。
@@ -790,9 +803,9 @@ body.live-qr-open{overflow:hidden}
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <h2 style="margin:0;font-size:16px">📡 参加者向けライブ配信（任意）</h2>
       </div>
-      <div style="font-size:12px;color:#555;margin-top:4px">参加者が自分のスマホで順位・星取・手合せを見られるようにします（インターネット公開）。使わなくても大会運営・報告書には影響しません。QRの掲示物には「氏名・成績をインターネット公開する」旨の告知を含めてください。</div>
+      <div style="font-size:15px;color:#555;margin-top:4px">参加者が自分のスマホで順位・星取・手合せを見られるようにします（インターネット公開）。使わなくても大会運営・報告書には影響しません。QRの掲示物には「氏名・成績をインターネット公開する」旨の告知を含めてください。</div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <label for="liveDisplayMode" style="font-size:12px;color:#333">表示名</label>
+        <label for="liveDisplayMode" style="font-size:15px;color:#333">表示名</label>
         <!-- SB-LIVE-SELECT-WIDTH-001: native select は最長 option の intrinsic 幅（457px）に広がり、
              flex item の既定 min-width:auto と相まって <478px 画面でページ横スクロールを起こす。
              max-width:100% + min-width:0 で親行内に収める（広い画面では intrinsic 幅のまま＝見た目不変）。 -->
@@ -802,7 +815,7 @@ body.live-qr-open{overflow:hidden}
         </select>
         <button type="button" id="liveToggleBtn" class="btn-sm" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">📡 ライブ配信を開始</button>
       </div>
-      <div id="liveStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
+      <div id="liveStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:15px;margin-top:4px;min-height:1.2em"></div>
       <!-- LIVE-QR-SHOW-001 (#832 の続き・作者報告 2026-08-11): 配信を開始すると、このボックスが開いて
            下の順位表（途中経過）を 335〜393px 押し下げ、スマホでは初期表示から完全に外していた（実測）。
            掲示・印刷用の QR なので常時開いている必要はない＝<details> に格納して既定は閉じる。
@@ -811,17 +824,17 @@ body.live-qr-open{overflow:hidden}
       <details id="liveQrBox" style="display:none;margin-top:8px;padding:10px;border:1px dashed #2b6cb0;border-radius:8px;background:#fff;text-align:center">
         <summary class="club-profile-summary" style="justify-content:center">▸ QRコード・配信URL（印刷して会場に掲示する用）</summary>
         <div id="liveQr" style="margin:0 auto"></div>
-        <div id="liveUrlText" style="font-size:12px;word-break:break-all;margin-top:6px;color:#333"></div>
+        <div id="liveUrlText" style="font-size:15px;word-break:break-all;margin-top:6px;color:#333"></div>
         <button type="button" id="liveCopyUrlBtn" class="btn-sm" style="margin-top:6px;border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">URLをコピー</button>
-        <div style="font-size:11px;color:#777;margin-top:6px">このQRを印刷して会場に掲示してください。受付タブレット（キオスク）はURL末尾に <code>&amp;kiosk=1</code> を付けて開きます（無操作60秒で星取表へ自動リセット）。</div>
+        <div style="font-size:15px;color:#777;margin-top:6px">このQRを印刷して会場に掲示してください。受付タブレット（キオスク）はURL末尾に <code>&amp;kiosk=1</code> を付けて開きます（無操作60秒で星取表へ自動リセット）。</div>
       </details>
     </div>
     <!-- HELP-UX-004 (#341): 順位タブの迷子防止ヘルプ。#309/#323 のモーダル三層を流用し topic 追加のみ。
          順位表は per-class 動的描画（buildResultsClassHtml=golden 対象）のため、静的アンカーをここに置き
          click は bindReportEvents 側で openHelpModal('standings') へ結線する（report help と同経路・golden 非接触）。 -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px" class="no-print">
-      <span style="font-size:14px;font-weight:600;color:#1F3864">順位の見方</span>
-      <button type="button" id="helpBtnStandings" class="btn-sm" title="順位の決め方をヘルプで表示します" aria-label="順位の見方ヘルプ" style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>
+      <span style="font-size:15px;font-weight:600;color:#1F3864">順位の見方</span>
+      <button type="button" id="helpBtnStandings" class="btn-sm" title="順位の決め方をヘルプで表示します" aria-label="順位の見方ヘルプ" style="font-size:15px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>
     </div>
     <!-- ROUND-CLASS-START-005: result-{classId} を state.classes 駆動で append できるよう
          result-list ラッパーで囲む。A/B は既存互換のため静的に保持し、
@@ -839,14 +852,14 @@ body.live-qr-open{overflow:hidden}
          click は bindReportEvents で loadCloudMergedReportUI に結線。 -->
     <div style="margin-top:8px;text-align:right" class="no-print">
       <button type="button" id="cloudMergedReportBtn" class="btn-sm" title="現在の大会IDでクラウドから両級（全クラス）の結果をまとめて表示します（閲覧専用）" style="border:1px solid #2b6cb0;color:#2b6cb0;background:#fff">☁ 両級まとめて表示（統合レポート）</button>
-      <div id="cloudMergedReportStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-top:4px;min-height:1.2em"></div>
+      <div id="cloudMergedReportStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:15px;margin-top:4px;min-height:1.2em"></div>
       <div id="cloudMergedReport" style="margin-top:8px;text-align:left"></div>
     </div>
     <div class="section no-print rep-form" style="margin-top:16px">
       <!-- HELP-UX-002 (#322): 見出し脇「？ ヘルプ」。click は bindReportEvents で openHelpModal('report') に結線。 -->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
         <h2 style="margin:0">大会報告書</h2>
-        <button type="button" id="helpBtnReport" class="btn-sm" title="報告書の作り方をヘルプで表示します" aria-label="報告書の作り方ヘルプ" style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>
+        <button type="button" id="helpBtnReport" class="btn-sm" title="報告書の作り方をヘルプで表示します" aria-label="報告書の作り方ヘルプ" style="font-size:15px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>
       </div>
       <!-- REPORT-FORM-UI-001: 入力欄は .rep-form のスコープ CSS で幅/高さ/枠線/角丸/文字を統一（見た目のみ・id/保存復元/出力は不変）。 -->
       <!-- REPORT-UX-004: 大会名（state.report.title）。downloadReport の title/h2/ファイル名で参照。既定 '沼津支部月例将棋大会'。 -->
@@ -858,7 +871,7 @@ body.live-qr-open{overflow:hidden}
         <div><label>開催日</label><input type="date" id="rep-date"></div>
         <div><label>会場</label><input type="text" id="rep-place" value="労政会館"></div>
         <div><label>開始時間</label><input type="time" id="rep-start" step="300"></div>
-        <div><label>終了時間</label><input type="time" id="rep-end" step="300"><div id="rep-time-warning" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px"></div></div>
+        <div><label>終了時間</label><input type="time" id="rep-end" step="300"><div id="rep-time-warning" style="display:none;font-size:15px;color:#A32D2D;margin-top:4px"></div></div>
         <div><label>担当役員（正）</label><input type="text" id="rep-sei" placeholder="氏名" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
         <div><label>担当役員（副）</label><input type="text" id="rep-fuku" placeholder="氏名" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
         <!-- REPORT-UX-003A: 賞金額（円）。既定7000・0有効・負/不正は7000。downloadReport の収支で参照。 -->
@@ -896,7 +909,7 @@ body.live-qr-open{overflow:hidden}
         <summary class="club-profile-summary">⚙ クラブの既定（全リセット後の初期値）を保存する</summary>
         <div style="margin-top:8px">
           <button type="button" id="saveClubProfileBtn" class="btn-outline-primary" style="width:100%;min-height:44px">💾 この設定をクラブの既定として保存</button>
-          <div style="font-size:11px;color:#777;margin-top:5px;line-height:1.5">全リセット後も、この端末では上の報告書設定（大会名・主催・会場・開始/終了時刻・FAX・事務局名・会計提出文・賞金・持ち時間）と現在のクラス構成・回戦数が初期値になります。開催日・正副役員・申し送りは保存されません（大会ごとの値）。<br>※ 空欄のまま保存できるのは FAX・事務局名・会計提出文の3つです（そのクラブに無い項目は帳票にも出ません）。大会名・主催・会場・賞金は空欄にすると既定値に戻ります。</div>
+          <div style="font-size:15px;color:#777;margin-top:5px;line-height:1.5">全リセット後も、この端末では上の報告書設定（大会名・主催・会場・開始/終了時刻・FAX・事務局名・会計提出文・賞金・持ち時間）と現在のクラス構成・回戦数が初期値になります。開催日・正副役員・申し送りは保存されません（大会ごとの値）。<br>※ 空欄のまま保存できるのは FAX・事務局名・会計提出文の3つです（そのクラブに無い項目は帳票にも出ません）。大会名・主催・会場・賞金は空欄にすると既定値に戻ります。</div>
         </div>
       </details>
     </div>
@@ -909,16 +922,16 @@ body.live-qr-open{overflow:hidden}
          満たすよう配置。作者確認済み（クラスタごと集約・2026-07-06）。 -->
     <div class="no-print" id="resultActionBar" style="position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #e3e3e3;box-shadow:0 -2px 10px rgba(0,0,0,0.06);padding:9px 12px calc(9px + env(safe-area-inset-bottom)) 12px;z-index:50">
       <div style="max-width:860px;margin:0 auto">
-        <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;min-height:0;text-align:center;color:#1F3864"></div>
+        <div id="cloudSendStatus" class="cloud-status" role="status" aria-live="polite" style="font-size:15px;min-height:0;text-align:center;color:#1F3864"></div>
         <div class="rab-row">
-          <button type="button" class="btn-primary" onclick="printResults()" style="flex:1;min-height:46px;padding:8px 6px;font-size:13px;line-height:1.2;white-space:normal;border-radius:8px">対戦成績を印刷 / PDF保存</button>
+          <button type="button" class="btn-primary" onclick="printResults()" style="flex:1;min-height:46px;padding:8px 6px;font-size:15px;line-height:1.2;white-space:normal;border-radius:8px">対戦成績を印刷 / PDF保存</button>
           <div class="rab-cloud">
-            <button type="button" id="helpBtnCloud" class="btn-sm" title="クラウド送信・取得の意味をヘルプで表示します" aria-label="クラウド送信・取得ヘルプ" style="flex:0 0 auto;min-width:34px;padding:0 9px;font-size:14px;font-weight:600;color:#1F3864;background:#eef2f8;border:1px solid #cdd8ea;border-radius:8px">？</button>
-            <button type="button" id="cloudSendBtn" style="flex:1;min-height:46px;padding:8px 6px;font-size:13px;line-height:1.2;white-space:normal;color:#1F3864;background:#fff;border:1.5px solid #1F3864;border-radius:8px;font-family:inherit;cursor:pointer">☁ クラウドへ送信（任意）</button>
+            <button type="button" id="helpBtnCloud" class="btn-sm" title="クラウド送信・取得の意味をヘルプで表示します" aria-label="クラウド送信・取得ヘルプ" style="flex:0 0 auto;min-width:34px;padding:0 9px;font-size:15px;font-weight:600;color:#1F3864;background:#eef2f8;border:1px solid #cdd8ea;border-radius:8px">？</button>
+            <button type="button" id="cloudSendBtn" style="flex:1;min-height:46px;padding:8px 6px;font-size:15px;line-height:1.2;white-space:normal;color:#1F3864;background:#fff;border:1.5px solid #1F3864;border-radius:8px;font-family:inherit;cursor:pointer">☁ クラウドへ送信（任意）</button>
           </div>
-          <button type="button" class="btn-primary" id="downloadReportBtn" style="flex:1;min-height:46px;padding:8px 6px;font-size:13px;line-height:1.2;white-space:normal;border-radius:8px">報告書を印刷 / PDF保存</button>
+          <button type="button" class="btn-primary" id="downloadReportBtn" style="flex:1;min-height:46px;padding:8px 6px;font-size:15px;line-height:1.2;white-space:normal;border-radius:8px">報告書を印刷 / PDF保存</button>
         </div>
-        <div id="sendTargetLine" class="no-print" style="font-size:11px;margin-top:5px;color:#777;min-height:0;text-align:center"></div>
+        <div id="sendTargetLine" class="no-print" style="font-size:15px;margin-top:5px;color:#777;min-height:0;text-align:center"></div>
       </div>
     </div>
   </div>
@@ -2338,7 +2351,7 @@ function normalizeReportOfficeName(value){ return normalizeReportField(value,'of
 
 // REPORT-UX-007B-1: 会計提出文（footer 2行目）正規化 pure helper。
 //   既定値: '※役員会で会計長へ収支報告書として提出ください。'
-//   報告書 footer 2行目で参照される（'<p style="font-size:11px">...</p>'）。
+//   報告書 footer 2行目で参照される（'<p style="font-size:15px">...</p>'）。
 //   - 文字列なら value.trim() で **両端のみ** 除去（中間改行 '\n' は維持）
 //   - 空文字 / 空白のみ → default fallback（note と異なり「非表示にしない」ため）
 //   - null / undefined / 数値・配列等の非文字列もすべて既定値 fallback
@@ -3722,7 +3735,7 @@ function _buildPpControlsHtml(filter,row,qf){
   for(var ti=0;ti<PP_YOMI_TAB_DEFS.length;ti++){
     var td=PP_YOMI_TAB_DEFS[ti];
     var active=(td.key===row);
-    html+='<button type="button" class="pp-yomi-tab'+(active?' active':'')+'" data-row="'+escapeHtml(td.key)+'" style="min-height:44px;min-width:44px;padding:6px 10px;border:1px solid '+(active?'#1976d2':'#ccc')+';background:'+(active?'#e3f2fd':'#fff')+';color:'+(active?'#0d47a1':'#333')+';border-radius:6px;font-size:13px;cursor:pointer">'+escapeHtml(td.label)+'</button>';
+    html+='<button type="button" class="pp-yomi-tab'+(active?' active':'')+'" data-row="'+escapeHtml(td.key)+'" style="min-height:44px;min-width:44px;padding:6px 10px;border:1px solid '+(active?'#1976d2':'#ccc')+';background:'+(active?'#e3f2fd':'#fff')+';color:'+(active?'#0d47a1':'#333')+';border-radius:6px;font-size:15px;cursor:pointer">'+escapeHtml(td.label)+'</button>';
   }
   html+='</div>';
   // クイックフィルタ（A-3 §1-2）。排他選択・再タップで解除。
@@ -3736,11 +3749,11 @@ function _buildPpControlsHtml(filter,row,qf){
   for(var qi=0;qi<qfDefs.length;qi++){
     var qd=qfDefs[qi];
     var qActive=(qd.key===qf);
-    html+='<button type="button" class="pp-quick-filter-btn'+(qActive?' active':'')+'" data-qfkey="'+escapeHtml(qd.key)+'" style="min-height:44px;padding:6px 12px;border:1px solid '+(qActive?'#1976d2':'#ccc')+';background:'+(qActive?'#e3f2fd':'#fff')+';color:'+(qActive?'#0d47a1':'#333')+';border-radius:6px;font-size:13px;cursor:pointer">'+escapeHtml(qd.label)+'</button>';
+    html+='<button type="button" class="pp-quick-filter-btn'+(qActive?' active':'')+'" data-qfkey="'+escapeHtml(qd.key)+'" style="min-height:44px;padding:6px 12px;border:1px solid '+(qActive?'#1976d2':'#ccc')+';background:'+(qActive?'#e3f2fd':'#fff')+';color:'+(qActive?'#0d47a1':'#333')+';border-radius:6px;font-size:15px;cursor:pointer">'+escapeHtml(qd.label)+'</button>';
   }
   html+='</div>';
   // ChatGPT M3 反映: 「他」タブの意味補足（常時表示）
-  html+='<div class="yomi-tabs-note" style="font-size:11px;color:#888;margin-bottom:8px">他: ふりがな未登録・その他</div>';
+  html+='<div class="yomi-tabs-note" style="font-size:15px;color:#888;margin-bottom:8px">他: ふりがな未登録・その他</div>';
   html+='</div>';
   return html;
 }
@@ -3810,15 +3823,15 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   }
   var html=_buildPpControlsHtml(filter,row,qf);
   if(members.length===0){
-    html+='<div style="color:#888;font-size:13px;padding:8px 0">支部マスタが空です。「マスタ」タブの「☁ クラウドから取得」（要ログイン）またはインポートで名簿を用意できます。</div>';
+    html+='<div style="color:#888;font-size:15px;padding:8px 0">支部マスタが空です。「マスタ」タブの「☁ クラウドから取得」（要ログイン）またはインポートで名簿を用意できます。</div>';
     return html;
   }
   if(filtered.length===0){
-    html+='<div style="color:#888;font-size:13px;padding:8px 0">該当する参加者がいません。</div>';
+    html+='<div style="color:#888;font-size:15px;padding:8px 0">該当する参加者がいません。</div>';
     return html;
   }
   // A-4.2 §3.1.2: 「追加先を選択」ヒント（Should Fix 3 反映）
-  html+='<div id="pp-hint" style="font-size:11px;color:#888;margin-bottom:4px">追加先を選択（A/Bボタンで指定クラスへ追加）</div>';
+  html+='<div id="pp-hint" style="font-size:15px;color:#888;margin-bottom:4px">追加先を選択（A/Bボタンで指定クラスへ追加）</div>';
   // PP-FULLSCREEN-001: class="pp-list-box" を付与（全画面ビューでは scoped CSS が inline max-height を解除しスクロール1本化）。
   html+='<div class="pp-list-box" style="max-height:280px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;padding:6px;margin-bottom:8px">';
   // A-4.3 §2.1 / A-4.5 §2.1: state.players ベースで現在登録中クラスを判定し、3 セクション(A 済 / B 済 / 未エントリー)に分割
@@ -3843,7 +3856,7 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
     var currentCls=currentRegMap[fm.id]||null;
     var aActive=(currentCls==='A');
     var bActive=(currentCls==='B');
-    var btnBaseStyle='min-width:44px;min-height:44px;margin-left:8px;border-radius:6px;font-size:14px;cursor:pointer;flex-shrink:0';
+    var btnBaseStyle='min-width:44px;min-height:44px;margin-left:8px;border-radius:6px;font-size:15px;cursor:pointer;flex-shrink:0';
     var aStyle=btnBaseStyle
       +';font-weight:'+(aActive?'bold':'normal')
       +';background:'+(aActive?'#bbdefb':'#fff')
@@ -3864,14 +3877,14 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
     rowHtml+='<input type="hidden" class="pp-check">';
     // 1 段目: 氏名 + A/B ボタン(氏名は flex:1 で残り全幅、375px でも >= 230px 確保)
     rowHtml+='<div class="pp-row-main" style="display:flex;align-items:center;gap:8px">';
-    rowHtml+='<span class="pp-name" style="flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere;font-weight:500">'+nameSafe+'</span>';
+    rowHtml+='<span class="pp-name" style="flex:1;min-width:0;font-size:15px;overflow-wrap:anywhere;font-weight:500">'+nameSafe+'</span>';
     rowHtml+='<button type="button" class="'+aClass+'" data-cls="A" aria-label="'+aLabelSafe+'" title="Aクラスで追加" style="'+aStyle+'">'+aText+'</button>';
     rowHtml+='<button type="button" class="'+bClass+'" data-cls="B" aria-label="'+bLabelSafe+'" title="Bクラスで追加" style="'+bStyle+'">'+bText+'</button>';
     rowHtml+='</div>';
     // 2 段目: メタ情報(ふりがな + 前回:Xクラス + 日付)。値が無ければ要素自体を出さない
     var hasMeta=(!!fm.yomi)||(!!lastClassText)||(!!fm.last_attended);
     if(hasMeta){
-      rowHtml+='<div class="pp-row-meta" style="display:flex;align-items:center;gap:8px;font-size:12px;color:#666;padding-left:2px;flex-wrap:wrap">';
+      rowHtml+='<div class="pp-row-meta" style="display:flex;align-items:center;gap:8px;font-size:15px;color:#666;padding-left:2px;flex-wrap:wrap">';
       if(fm.yomi){rowHtml+='<span class="pp-yomi" style="color:#888">'+escapeHtml(normalizeYomi(fm.yomi))+'</span>';}
       if(lastClassText){rowHtml+='<span class="pp-last-class" style="font-weight:500">'+escapeHtml(lastClassText)+'</span>';}
       if(fm.last_attended){rowHtml+='<span style="color:#888;margin-left:auto">'+escapeHtml(fm.last_attended)+'</span>';}
@@ -3883,9 +3896,9 @@ function buildPastParticipantsPanelHtml(master,filter,yomiRow,quickFilter){
   // A-4.5 §3.1: セクション描画 helper(各セクション、ヘッダ + 行群 or 「該当なし」)
   function renderSection(headerLabel,list,cssClass){
     var secHtml='<div class="pp-section '+cssClass+'" style="margin-bottom:8px">';
-    secHtml+='<div class="pp-section-header" style="font-size:13px;font-weight:600;color:#1F3864;padding:4px 0;border-bottom:1px solid #d0d7e2;margin-bottom:4px">'+headerLabel+' ('+list.length+'名)</div>';
+    secHtml+='<div class="pp-section-header" style="font-size:15px;font-weight:600;color:#1F3864;padding:4px 0;border-bottom:1px solid #d0d7e2;margin-bottom:4px">'+headerLabel+' ('+list.length+'名)</div>';
     if(list.length===0){
-      secHtml+='<div class="pp-empty" style="color:#888;font-size:12px;padding:6px 4px">該当なし</div>';
+      secHtml+='<div class="pp-empty" style="color:#888;font-size:15px;padding:6px 4px">該当なし</div>';
     }else{
       for(var si=0;si<list.length;si++)secHtml+=renderPpRow(list[si]);
     }
@@ -3947,7 +3960,7 @@ function _buildPpModeBarHtml(){
   // DAYOF-UX-HINT-001 (作者依頼 2026-07-03): 「クラスを選んでから名前をタップ」の2段階操作を
   //   手順番号 ①② で伝える（行数は増やさない・既存バー内の文言のみ）。②側には選択中クラス名を
   //   動的に入れ、どのクラスに受付されるかを常時明示する（クラス名はユーザーデータ＝escapeHtml 必須）。
-  html+='<span style="font-size:12px;font-weight:600;color:'+pal.fg+';white-space:nowrap">① 受付するクラス:</span>';
+  html+='<span style="font-size:15px;font-weight:600;color:'+pal.fg+';white-space:nowrap">① 受付するクラス:</span>';
   for(var i=0;i<list.length;i++){
     var c=list[i];var p=ppDenseClsPalette(c.id);var on=(c.id===active);
     html+='<button type="button" class="pp-mode-btn" data-cls="'+escapeHtml(c.id)+'" style="min-height:40px;padding:6px 14px;border-radius:8px;font-size:15px;cursor:pointer;'
@@ -3955,7 +3968,7 @@ function _buildPpModeBarHtml(){
       +escapeHtml(c.name)+(on?' ✓':'')+'</button>';
   }
   // CLASS-VARIABLE-002 (#768): 旧 L3 P1-a の「A/B 以外は手入力へ」誘導注記は撤去（全クラス受付可＝恒久到達不能）。
-  html+='<span style="margin-left:auto;font-size:12px;font-weight:600;color:'+pal.fg+'">② 名前をタップ → '+escapeHtml(ppDenseClsName(active))+'に受付</span>';
+  html+='<span style="margin-left:auto;font-size:15px;font-weight:600;color:'+pal.fg+'">② 名前をタップ → '+escapeHtml(ppDenseClsName(active))+'に受付</span>';
   html+='</div>';
   return html;
 }
@@ -3981,13 +3994,13 @@ function buildPpDenseListHtml(master,filter,yomiRow,quickFilter){
   // L3 P1-b: 再描画（検索1文字ごと等）で details が閉じて検索が使えなくなる回帰を防ぐ＝
   //   ユーザーが開いた状態（_ppSearchOpen・toggle で追従）またはフィルタ活性中は open を維持する。
   var searchOpen=_ppSearchOpen||!!query||row!=='all'||!!qf;
-  html+='<details class="pp-search-details"'+(searchOpen?' open':'')+' style="margin-bottom:8px"><summary style="font-size:12px;color:#666;cursor:pointer;padding:4px 2px">🔍 検索・絞り込み（普段は不要）</summary>'+_buildPpControlsHtml(filter,row,qf)+'</details>';
+  html+='<details class="pp-search-details"'+(searchOpen?' open':'')+' style="margin-bottom:8px"><summary style="font-size:15px;color:#666;cursor:pointer;padding:4px 2px">🔍 検索・絞り込み（普段は不要）</summary>'+_buildPpControlsHtml(filter,row,qf)+'</details>';
   if(members.length===0){
-    html+='<div style="color:#888;font-size:13px;padding:8px 0">支部マスタが空です。「マスタ」タブの「☁ クラウドから取得」（要ログイン）またはインポートで名簿を用意できます。</div>';
+    html+='<div style="color:#888;font-size:15px;padding:8px 0">支部マスタが空です。「マスタ」タブの「☁ クラウドから取得」（要ログイン）またはインポートで名簿を用意できます。</div>';
     return html;
   }
   if(filtered.length===0){
-    html+='<div style="color:#888;font-size:13px;padding:8px 0">該当する参加者がいません。</div>';
+    html+='<div style="color:#888;font-size:15px;padding:8px 0">該当する参加者がいません。</div>';
     return html;
   }
   // ふりがな昇順の安定した1本リスト（50音グループ→グループ内 yomi 昇順・「他」は氏名昇順で末尾）。
@@ -4004,7 +4017,7 @@ function buildPpDenseListHtml(master,filter,yomiRow,quickFilter){
     var list=groups[td.key];
     if(!list||list.length===0)continue;
     list.sort(td.key==='other'?_ppCompareOtherRow:_ppCompareYomiRow);
-    html+='<div class="pp-kana-header" style="grid-column:1/-1;font-size:11px;font-weight:600;color:#556;background:#e9edf3;border-radius:4px;padding:2px 8px;margin-top:2px">'+escapeHtml(td.label)+'</div>';
+    html+='<div class="pp-kana-header" style="grid-column:1/-1;font-size:15px;font-weight:600;color:#556;background:#e9edf3;border-radius:4px;padding:2px 8px;margin-top:2px">'+escapeHtml(td.label)+'</div>';
     for(var li=0;li<list.length;li++){
       html+=_buildPpDenseCellHtml(list[li],currentRegMap[list[li].id]||null);
     }
@@ -4020,20 +4033,20 @@ function _buildPpDenseCellHtml(fm,registeredCls){
   var badges='';
   if(fm.last_class){
     var lp=ppDenseClsPalette(fm.last_class);
-    badges+=' <span style="font-size:10px;background:'+lp.light+';color:'+lp.fg+';border-radius:4px;padding:0 4px;font-weight:400;vertical-align:1px">前'+escapeHtml(fm.last_class)+'</span>';
+    badges+=' <span style="font-size:15px;background:'+lp.light+';color:'+lp.fg+';border-radius:4px;padding:0 4px;font-weight:400;vertical-align:1px">前'+escapeHtml(fm.last_class)+'</span>';
   }
   if(fm.member==='other'){
-    badges+=' <span style="font-size:10px;background:#f1efe8;color:#5f5e5a;border-radius:4px;padding:0 4px;font-weight:400;vertical-align:1px">支部外</span>';
+    badges+=' <span style="font-size:15px;background:#f1efe8;color:#5f5e5a;border-radius:4px;padding:0 4px;font-weight:400;vertical-align:1px">支部外</span>';
   }
   // 作者FB (2026-07-02): ふりがなはルビ位置＝漢字の上に置く（下ではない）。
   var yomiLine=fm.yomi?escapeHtml(normalizeYomi(fm.yomi)):'（ふりがな未登録）';
   var style='text-align:left;border-radius:8px;padding:5px 8px 6px;min-height:52px;cursor:pointer;'
     +(registeredCls?('background:'+pal.bg+';border:1px solid '+pal.bd):'background:#fff;border:1px solid #c9d2dd');
   var html='<button type="button" class="pp-cell" data-mid="'+midSafe+'" aria-label="'+nameSafe+(registeredCls?'（受付済）':'を受付')+'" style="'+style+'">';
-  html+='<div style="font-size:10px;color:'+(registeredCls?pal.fg:'#888')+';line-height:1.2">'+yomiLine+'</div>';
+  html+='<div style="font-size:15px;color:'+(registeredCls?pal.fg:'#888')+';line-height:1.2">'+yomiLine+'</div>';
   html+='<div style="font-size:16px;font-weight:500;color:'+(registeredCls?pal.fg:'#222')+';overflow-wrap:anywhere;line-height:1.3">'+nameSafe+badges+'</div>';
   if(registeredCls){
-    html+='<div style="font-size:11px;color:'+pal.fg+';margin-top:1px">✓ 受付済（'+escapeHtml(ppDenseClsName(registeredCls))+'）</div>';
+    html+='<div style="font-size:15px;color:'+pal.fg+';margin-top:1px">✓ 受付済（'+escapeHtml(ppDenseClsName(registeredCls))+'）</div>';
   }
   html+='</button>';
   return html;
@@ -4092,15 +4105,15 @@ function openPpDenseActionSheet(memberId,currentCls){
   }
   var html='<div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:320px">';
   html+='<div style="font-size:15px;font-weight:600;color:#1F3864;margin-bottom:4px">'+escapeHtml(name)+'</div>';
-  html+='<div style="font-size:12px;color:#666;margin-bottom:12px">受付済（'+escapeHtml(ppDenseClsName(currentCls))+'）</div>';
+  html+='<div style="font-size:15px;color:#666;margin-bottom:12px">受付済（'+escapeHtml(ppDenseClsName(currentCls))+'）</div>';
   // 変更先候補は ppDenseSelectableClasses()＝全クラス（CLASS-VARIABLE-002 #768 で CV-2 実装済み・changePlayerClass も全クラス受理）。
   var list=ppDenseSelectableClasses();
   for(var ci=0;ci<list.length;ci++){
     if(list[ci].id===currentCls)continue;
-    html+='<button type="button" class="pp-sheet-change" data-cls="'+escapeHtml(list[ci].id)+'" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">'+escapeHtml(list[ci].name)+'へ変更</button>';
+    html+='<button type="button" class="pp-sheet-change" data-cls="'+escapeHtml(list[ci].id)+'" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:15px;cursor:pointer">'+escapeHtml(list[ci].name)+'へ変更</button>';
   }
-  html+='<button type="button" id="pp-sheet-remove" class="btn-danger" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border-radius:8px;padding:8px 12px;font-size:14px">受付を取り消す（一覧から削除）</button>';
-  html+='<button type="button" id="pp-sheet-cancel" style="display:block;width:100%;min-height:44px;border:1px solid #ccc;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">キャンセル</button>';
+  html+='<button type="button" id="pp-sheet-remove" class="btn-danger" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border-radius:8px;padding:8px 12px;font-size:15px">受付を取り消す（一覧から削除）</button>';
+  html+='<button type="button" id="pp-sheet-cancel" style="display:block;width:100%;min-height:44px;border:1px solid #ccc;background:#fff;border-radius:8px;padding:8px 12px;font-size:15px;cursor:pointer">キャンセル</button>';
   html+='</div>';
   var modal=document.createElement('div');
   modal.id='pp-dense-sheet';
@@ -4363,23 +4376,23 @@ function buildYomiInputModalHtml(members){
   var html='<div style="background:#fff;border-radius:12px;padding:24px;width:380px;max-width:90vw;max-height:85vh;overflow-y:auto">';
   html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">ふりがなを入力してください</h3>';
   // ChatGPT M1 反映: 説明強化
-  html+='<p style="font-size:13px;color:#555;line-height:1.6;margin-bottom:12px">ふりがなを入れると、次回から50音タブ・ふりがな検索で探しやすくなります。空欄のままでも追加できます。</p>';
+  html+='<p style="font-size:15px;color:#555;line-height:1.6;margin-bottom:12px">ふりがなを入れると、次回から50音タブ・ふりがな検索で探しやすくなります。空欄のままでも追加できます。</p>';
   html+='<div style="margin-bottom:12px">';
   for(var i=0;i<ms.length;i++){
     var m=ms[i]||{};
     html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
-    html+='<span style="min-width:6em;font-size:14px">'+escapeHtml(m.name||'')+'</span>';
-    html+='<span style="color:#888;font-size:14px">→</span>';
+    html+='<span style="min-width:6em;font-size:15px">'+escapeHtml(m.name||'')+'</span>';
+    html+='<span style="color:#888;font-size:15px">→</span>';
     html+='<input type="text" inputmode="kana" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" class="yomi-input" data-mid="'+escapeHtml(m.id||'')+'" placeholder="さとうたろう" style="flex:1;min-width:8em;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:16px">';
     html+='</div>';
   }
   html+='</div>';
   html+='<div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:6px">';
-  html+='<button type="button" id="yomi-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>';
+  html+='<button type="button" id="yomi-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;cursor:pointer">キャンセル</button>';
   html+='<button type="button" class="btn-primary" id="yomi-add">追加する</button>';
   html+='</div>';
   // ChatGPT M1 反映: キャンセルの意味補足
-  html+='<p style="font-size:11px;color:#888;line-height:1.5;margin:0">キャンセルすると、選択した参加者は追加されません。</p>';
+  html+='<p style="font-size:15px;color:#888;line-height:1.5;margin:0">キャンセルすると、選択した参加者は追加されません。</p>';
   html+='</div>';
   return html;
 }
@@ -4834,7 +4847,7 @@ function updateBulkEntryPreview(){
   var okCount=0,ngCount=0;
   if(rows.length>0){
     var table=document.createElement('table');
-    table.style.cssText='width:100%;border-collapse:collapse;font-size:12px;background:#fff';
+    table.style.cssText='width:100%;border-collapse:collapse;font-size:15px;background:#fff';
     var headRow=document.createElement('tr');
     var heads=['行','氏名','ふりがな','クラス','状態'];
     for(var hi=0;hi<heads.length;hi++){
@@ -5000,7 +5013,7 @@ function buildMasterTabHtml(master){
   });
   // HELP-UX-005 (#342): 見出し脇に「？ ヘルプ」（id=helpBtnMaster）。click は bindMasterTabEvents 側で
   //   openHelpModal('master') へ結線（renderMasterTab 後に毎回 bind・#309/#323 と同じ build/bind 分離）。
-  var html='<div class="section"><div class="section-head"><h2 style="margin:0">沼津支部 参加者マスタ</h2><button type="button" id="helpBtnMaster" class="btn-sm" title="支部マスタの使い方をヘルプで表示します" aria-label="支部マスタヘルプ" style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button></div>';
+  var html='<div class="section"><div class="section-head"><h2 style="margin:0">沼津支部 参加者マスタ</h2><button type="button" id="helpBtnMaster" class="btn-sm" title="支部マスタの使い方をヘルプで表示します" aria-label="支部マスタヘルプ" style="font-size:15px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button></div>';
   // A-4 §3.5.2 → CLEANUP-P3-001: 旧サマリ行「登録: N名（うちふりがな未入力: N名）」は撤去（MASTER-SHEET-002 の
   //   シートヘッダサマリ「名簿 N名（ふりがな未入力 N名）」と重複＝?v=61 P3 申し送りの消化）。noYomiCount の算出は
   //   ヘッダサマリ側（下記）で使うため維持。
@@ -5014,7 +5027,7 @@ function buildMasterTabHtml(master){
   // MEMBER-CLOUD-STATUS-LOG-001 (#907 Codex P2): 見える方は3行の履歴ブロック（読み上げ領域にしない）。
   //   role="status" は aria-atomic 既定 true なので、1行だけ変えても3行すべてが読み上げ直される。
   //   読み上げは「今変わった1行」だけを持つ視覚非表示の要素に分ける。
-  html+='<div id="masterCloudPullStatus" class="cloud-status" style="margin:4px 0 12px;font-size:13px;white-space:pre-line"></div>';
+  html+='<div id="masterCloudPullStatus" class="cloud-status" style="margin:4px 0 12px;font-size:15px;white-space:pre-line"></div>';
   html+='<div id="masterCloudPullStatusLive" role="status" aria-live="polite" style="position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0"></div>';
   // 削除済み表示中は折りたたみを開いたまま（トグル直後の再描画でメンテ操作を見失わない）。
   html+='<details class="master-maint" style="margin:0 0 12px"'+(_masterShowDeleted?' open':'')+'>';
@@ -5023,7 +5036,7 @@ function buildMasterTabHtml(master){
   //   会員を回収したい場合は「バックアップ画面で復元→📋 参加者を名簿に反映」で代替できる（誘導文言も更新済み）。
   // MASTER-BULK-PUSH-001: 代わりに「☁ 名簿全体を一括送信」＝ローカル全会員（区分・市町村込み）をクラウドへ
   //   冪等 upsert する初期同期ボタンを置く（ローカルのみ会員の解消・CLOUD-MEMBER-FIELDS-001 とセット）。
-  html+='<summary style="cursor:pointer;font-size:13px;color:#1F3864;padding:6px 0">⚙ 名簿のメンテナンス（バックアップ・クラウド一括送信・削除済み・リセット）</summary>';
+  html+='<summary style="cursor:pointer;font-size:15px;color:#1F3864;padding:6px 0">⚙ 名簿のメンテナンス（バックアップ・クラウド一括送信・削除済み・リセット）</summary>';
   html+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
   html+='<button type="button" id="masterBulkPushBtn" style="background:#fff;border:1px solid #1F3864;color:#1F3864">☁ 名簿全体をクラウドへ一括送信</button>';
   // MASTER-REBUILD-FROM-CLOUD-001 Phase 3 (#551): クラウドの大会記録から前回クラス/最終参加/参加履歴を再計算して名簿へ反映（既存☁取得は軽いまま）。
@@ -5039,7 +5052,7 @@ function buildMasterTabHtml(master){
   html+='<button type="button" id="masterCloudMatchBtn"'+(_cmStarted?' disabled':'')+' title="'+(_cmStarted?'大会進行中は実行できません（終了後に）':'この端末の記録を破棄し、クラウドの状態に完全に合わせます（先にバックアップ推奨・要ログイン）')+'" style="background:#fff;border:1px solid #c33;color:#c33'+(_cmStarted?';opacity:.5;cursor:not-allowed':'')+'">☁ クラウドの状態に完全に合わせる（端末の記録を破棄）</button>';
   html+='</div></details>';
   // PWA 収束方針(docs/PWA-PLAN): 当日アプリ⇄app/ の相互リンク（同一ウィンドウ遷移・別タブを増やさない）。
-  html+='<div style="margin:0 0 12px"><a href="app/" style="font-size:13px;color:#1F3864">☁ クラウド管理ページ（名簿編集・ログイン）を開く →</a></div>';
+  html+='<div style="margin:0 0 12px"><a href="app/" style="font-size:15px;color:#1F3864">☁ クラウド管理ページ（名簿編集・ログイン）を開く →</a></div>';
   html+='<hr class="separator">';
   // MASTER-SHEET-001 (作者FB 2026-07-02): 簡易一覧をスプレッドシート型に刷新（案1・作者承認済）。
   //   行の編集/削除ボタンを全廃＝セルをタップで直接編集（氏名・ふりがな＝その場入力／支部員・会費＝タップで切替）、
@@ -5051,12 +5064,12 @@ function buildMasterTabHtml(master){
   html+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
   html+='<h3 style="margin:0">簡易一覧</h3>';
   html+='<select id="master-sort" style="font-size:16px;padding:4px 8px"><option value="yomi"'+(_masterSortMode!=='recent'?' selected':'')+'>ふりがな順</option><option value="recent"'+(_masterSortMode==='recent'?' selected':'')+'>最終参加順</option></select>';
-  html+='<span style="font-size:12px;color:#888">名簿 '+liveMembers.length+'名'+(noYomiCount>0?('（ふりがな未入力 '+noYomiCount+'名）'):'')+'</span>';
-  html+='<span style="font-size:11px;color:#aaa;margin-left:auto">セルをタップで編集／□で選択→削除</span>';
+  html+='<span style="font-size:15px;color:#888">名簿 '+liveMembers.length+'名'+(noYomiCount>0?('（ふりがな未入力 '+noYomiCount+'名）'):'')+'</span>';
+  html+='<span style="font-size:15px;color:#aaa;margin-left:auto">セルをタップで編集／□で選択→削除</span>';
   html+='</div>';
   var selInfo=masterSheetSelectedMids(members);
   if(selInfo.total>0){
-    html+='<div id="master-sel-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#E6F1FB;border:1px solid #B5D4F4;border-radius:8px;padding:6px 10px;margin-bottom:8px;font-size:13px;color:#0C447C">';
+    html+='<div id="master-sel-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#E6F1FB;border:1px solid #B5D4F4;border-radius:8px;padding:6px 10px;margin-bottom:8px;font-size:15px;color:#0C447C">';
     html+='<span>'+selInfo.total+'名 選択中</span>';
     if(selInfo.live.length>0)html+='<button type="button" id="masterSelDeleteBtn" class="btn-sm" style="border:1px solid #A32D2D;color:#A32D2D;background:#fff">削除（'+selInfo.live.length+'名）</button>';
     if(selInfo.del.length>0)html+='<button type="button" id="masterSelRestoreBtn" class="btn-sm" style="border:1px solid #1F3864;color:#1F3864;background:#fff">復元（'+selInfo.del.length+'名）</button>';
@@ -5064,15 +5077,15 @@ function buildMasterTabHtml(master){
     html+='</div>';
   }
   if(members.length===0){
-    html+='<div style="color:#888;font-size:13px;padding:8px 0">登録された参加者はいません。</div>';
+    html+='<div style="color:#888;font-size:15px;padding:8px 0">登録された参加者はいません。</div>';
   }else{
     // MASTER-SHEET-002: 角丸カードで包む（モック承認時の密度・overflow-x は狭幅端末のフォールバック）。
-    html+='<div style="overflow-x:auto"><div style="border:1px solid #d3dbe5;border-radius:10px;overflow:hidden"><table id="master-sheet" style="width:100%;border-collapse:collapse;font-size:13px">';
+    html+='<div style="overflow-x:auto"><div style="border:1px solid #d3dbe5;border-radius:10px;overflow:hidden"><table id="master-sheet" style="width:100%;border-collapse:collapse;font-size:15px">';
     html+='<thead><tr style="background:#f4f6f9">'
-      +'<th style="width:38px;padding:6px 2px;font-weight:400;font-size:11px;color:#888">選択</th>'
-      +'<th style="text-align:left;padding:6px 8px;font-size:12px;color:#556;font-weight:600">氏名（ふりがな）</th>'
-      +'<th style="width:64px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">支部員</th>'
-      +'<th style="width:78px;padding:6px 2px;font-size:12px;color:#556;font-weight:600">会費</th>'
+      +'<th style="width:38px;padding:6px 2px;font-weight:400;font-size:15px;color:#888">選択</th>'
+      +'<th style="text-align:left;padding:6px 8px;font-size:15px;color:#556;font-weight:600">氏名（ふりがな）</th>'
+      +'<th style="width:64px;padding:6px 2px;font-size:15px;color:#556;font-weight:600">支部員</th>'
+      +'<th style="width:78px;padding:6px 2px;font-size:15px;color:#556;font-weight:600">会費</th>'
       +'</tr></thead><tbody>';
     for(var i=0;i<members.length;i++){
       var m=members[i];
@@ -5088,27 +5101,27 @@ function buildMasterTabHtml(master){
       // 氏名セル（ふりがなはルビ位置）。live 行のみ editable（class 付与＝bind 対象）。
       var yomiN=normalizeYomi(m.yomi);
       var yomiHtml=yomiN
-        ?'<span style="font-size:10px;color:'+(isDel?'#aaa':'#888')+';display:block;line-height:1.15">'+escapeHtml(yomiN)+'</span>'
-        :'<span style="font-size:10px;color:'+(isDel?'#aaa':'#BA7517')+';display:block;line-height:1.15">（ふりがな未入力）</span>';
+        ?'<span style="font-size:15px;color:'+(isDel?'#aaa':'#888')+';display:block;line-height:1.15">'+escapeHtml(yomiN)+'</span>'
+        :'<span style="font-size:15px;color:'+(isDel?'#aaa':'#BA7517')+';display:block;line-height:1.15">（ふりがな未入力）</span>';
       // MASTER-LIST-UX-001: 前回クラス/最終参加/削除日は独立列をやめ、氏名セル内のサブ情報行（固定位置・
       //   空欄は「－」＝行高不変）に集約。削除行は同じ位置を「削除:日付」に差し替え（列構造は不変・
       //   取り消し線は text-decoration:none で解除＝旧削除日セルの挙動を踏襲）。title 生値も踏襲。
       var subInfo=isDel
-        ?'<span style="font-size:10.5px;color:#aaa;display:block;line-height:1.4;text-decoration:none" title="'+escapeHtml(m.deleted_at||'')+'">削除:'+escapeHtml(_masterSheetFmtDate(m.deleted_at))+'</span>'
-        :'<span style="font-size:10.5px;color:#888;display:block;line-height:1.4" title="'+escapeHtml(m.last_attended||'')+'">前回:'+escapeHtml(lastCls)+' ・ 最終:'+escapeHtml(_masterSheetFmtDate(m.last_attended))+'</span>';
+        ?'<span style="font-size:15px;color:#aaa;display:block;line-height:1.4;text-decoration:none" title="'+escapeHtml(m.deleted_at||'')+'">削除:'+escapeHtml(_masterSheetFmtDate(m.deleted_at))+'</span>'
+        :'<span style="font-size:15px;color:#888;display:block;line-height:1.4" title="'+escapeHtml(m.last_attended||'')+'">前回:'+escapeHtml(lastCls)+' ・ 最終:'+escapeHtml(_masterSheetFmtDate(m.last_attended))+'</span>';
       html+='<td'+(isDel?'':' class="master-cell-name" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:left;padding:5px 8px'+(isDel?'':';cursor:pointer')+'">'+yomiHtml+'<span style="font-weight:500">'+escapeHtml(m.name||'')+'</span>'+subInfo+'</td>';
       // 支部員セル（タップで編集フォームを開く）。MASTER-EDIT-FORM-001: 循環切替は廃止。
       var memberBadge=(m.member==='other')
-        ?'<span style="font-size:11px;background:#f1efe8;color:#5f5e5a;border-radius:5px;padding:2px 7px">その他</span>'
-        :'<span style="font-size:11px;background:#eaf3de;color:#27500A;border-radius:5px;padding:2px 7px">支部員</span>';
+        ?'<span style="font-size:15px;background:#f1efe8;color:#5f5e5a;border-radius:5px;padding:2px 7px">その他</span>'
+        :'<span style="font-size:15px;background:#eaf3de;color:#27500A;border-radius:5px;padding:2px 7px">支部員</span>';
       html+='<td'+(isDel?'':' class="master-cell-member" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:center;padding:4px 2px'+(isDel?'':';cursor:pointer')+'">'+memberBadge+'</td>';
       // 会費(級)セル（タップで編集フォームを開く）。MASTER-EDIT-FORM-001: 循環切替は廃止。
       // MASTER-LIST-UX-001: 会費も支部員と同型の文字入りチップに（色だけに頼らない・一般=グレー枠/中学以下=青地/女性=アンバー地）。
       var gradeChip=(m.grade==='chu')
-        ?'<span style="font-size:11px;background:#E6F1FB;color:#0C447C;border-radius:5px;padding:2px 7px">'+gradeLabel+'</span>'
+        ?'<span style="font-size:15px;background:#E6F1FB;color:#0C447C;border-radius:5px;padding:2px 7px">'+gradeLabel+'</span>'
         :(m.grade==='josei')
-        ?'<span style="font-size:11px;background:#FAEEDA;color:#633806;border-radius:5px;padding:2px 7px">'+gradeLabel+'</span>'
-        :'<span style="font-size:11px;background:#f4f6f9;color:#556;border:1px solid #dde3ea;border-radius:5px;padding:2px 7px">'+gradeLabel+'</span>';
+        ?'<span style="font-size:15px;background:#FAEEDA;color:#633806;border-radius:5px;padding:2px 7px">'+gradeLabel+'</span>'
+        :'<span style="font-size:15px;background:#f4f6f9;color:#556;border:1px solid #dde3ea;border-radius:5px;padding:2px 7px">'+gradeLabel+'</span>';
       html+='<td'+(isDel?'':' class="master-cell-grade" data-mid="'+mid+'" title="タップで編集"')+' style="text-align:center;padding:4px 2px'+(isDel?'':';cursor:pointer')+'">'+gradeChip+'</td>';
       html+='</tr>';
     }
@@ -5135,7 +5148,7 @@ function buildMasterTabHtml(master){
   //   したがって**主体を名乗らない**。どのクラブでも真になる文にする＝分岐も判定も持たない
   //   （分岐が無い＝将来どこかの経路から沼津が再混入する余地も無い）。同意を取る主体は、
   //   この画面を参加者に見せている運営者本人であって、文字列で名乗る必要は無い。
-  html+='<div style="font-size:13px;color:#444;line-height:1.6">'
+  html+='<div style="font-size:15px;color:#444;line-height:1.6">'
     +'本ツールは、大会運営の目的で参加者の氏名・参加履歴をこの端末内に保存します。'
     +'削除した参加者は一覧・サジェスト・過去参加者から非表示になりますが、参加履歴データは端末内に残ります（誤削除時はバックアップからの上書きインポートで復元できる予定）。'
     +'</div>';
@@ -5158,43 +5171,43 @@ function buildMasterEditModalHtml(member){
   html+='<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">マスタ編集</h3>';
   // Phase 3 §2.2: 説明文「氏名・ふりがな・区分が編集できます。参加履歴は変更されません。」を撤去
   // (後続フェーズで前回クラス・city が追加されたため不整合、各 label と placeholder で意図は伝わる)
-  html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">氏名</label>';
+  html+='<label style="display:block;font-size:15px;color:#444;margin-bottom:4px">氏名</label>';
   html+='<input type="text" id="me-name" value="'+escapeHtml(member.name||'')+'" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
-  html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">ふりがな</label>';
+  html+='<label style="display:block;font-size:15px;color:#444;margin-bottom:4px">ふりがな</label>';
   html+='<input type="text" inputmode="kana" id="me-yomi" value="'+escapeHtml(member.yomi||'')+'" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="やまだたろう" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
 
   // Phase 1 §3: 市町村(任意、maxlength=20、自由入力)。ふりがな直後配置で「個人属性 → 区分 → 履歴」の流れを維持
-  html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">市町村</label>';
+  html+='<label style="display:block;font-size:15px;color:#444;margin-bottom:4px">市町村</label>';
   html+='<input type="text" id="me-city" value="'+escapeHtml(member.city||'')+'" placeholder="例:沼津市" maxlength="20" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
 
-  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">支部員区分</legend>';
-  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-member" value="member"'+(memberCur==='member'?' checked':'')+' style="margin-right:6px">支部員</label>';
-  html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-member" value="other"'+(memberCur==='other'?' checked':'')+' style="margin-right:6px">他</label>';
+  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:15px;color:#444;padding:0 6px">支部員区分</legend>';
+  html+='<label style="display:inline-block;font-size:15px;margin-right:16px"><input type="radio" name="me-member" value="member"'+(memberCur==='member'?' checked':'')+' style="margin-right:6px">支部員</label>';
+  html+='<label style="display:inline-block;font-size:15px"><input type="radio" name="me-member" value="other"'+(memberCur==='other'?' checked':'')+' style="margin-right:6px">他</label>';
   html+='</fieldset>';
 
-  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">会費区分</legend>';
-  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-grade" value="ippan"'+(gradeCur==='ippan'?' checked':'')+' style="margin-right:6px">一般</label>';
-  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-grade" value="chu"'+(gradeCur==='chu'?' checked':'')+' style="margin-right:6px">中学</label>';
-  html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-grade" value="josei"'+(gradeCur==='josei'?' checked':'')+' style="margin-right:6px">女性</label>';
+  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:15px;color:#444;padding:0 6px">会費区分</legend>';
+  html+='<label style="display:inline-block;font-size:15px;margin-right:16px"><input type="radio" name="me-grade" value="ippan"'+(gradeCur==='ippan'?' checked':'')+' style="margin-right:6px">一般</label>';
+  html+='<label style="display:inline-block;font-size:15px;margin-right:16px"><input type="radio" name="me-grade" value="chu"'+(gradeCur==='chu'?' checked':'')+' style="margin-right:6px">中学</label>';
+  html+='<label style="display:inline-block;font-size:15px"><input type="radio" name="me-grade" value="josei"'+(gradeCur==='josei'?' checked':'')+' style="margin-right:6px">女性</label>';
   html+='</fieldset>';
 
   // A-4.5 §2.6: 前回クラス（A / B 2 択。null は未 checked で表現）
-  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">前回クラス</legend>';
-  html+='<label style="display:inline-block;font-size:14px;margin-right:16px"><input type="radio" name="me-last-class" value="A"'+(lastClassCur==='A'?' checked':'')+' style="margin-right:6px">A</label>';
-  html+='<label style="display:inline-block;font-size:14px"><input type="radio" name="me-last-class" value="B"'+(lastClassCur==='B'?' checked':'')+' style="margin-right:6px">B</label>';
+  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:15px;color:#444;padding:0 6px">前回クラス</legend>';
+  html+='<label style="display:inline-block;font-size:15px;margin-right:16px"><input type="radio" name="me-last-class" value="A"'+(lastClassCur==='A'?' checked':'')+' style="margin-right:6px">A</label>';
+  html+='<label style="display:inline-block;font-size:15px"><input type="radio" name="me-last-class" value="B"'+(lastClassCur==='B'?' checked':'')+' style="margin-right:6px">B</label>';
   html+='</fieldset>';
 
   // Phase 3 §2.1: 履歴情報をアコーディオン式(初期閉じ)に変更。F7 縦長を抑え保存/キャンセルを 375px viewport 内に収める
   // TAP-TARGET-DENSE-001 (#737 / スライス⑤a): 44px タップ標的（見た目の文字サイズ 12px は不変）。
-  html+='<div style="margin-bottom:8px"><button type="button" id="me-history-toggle" class="btn-sm" style="background:#fff;color:#444;font-size:12px;padding:4px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer;min-height:44px">▼ 履歴情報を開く</button></div>';
-  html+='<div id="me-history" style="display:none;margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:12px;color:#444;line-height:1.6">';
-  html+='<div style="font-size:11px;color:#888;margin-bottom:4px">履歴情報（読み取り専用）</div>';
+  html+='<div style="margin-bottom:8px"><button type="button" id="me-history-toggle" class="btn-sm" style="background:#fff;color:#444;font-size:15px;padding:4px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer;min-height:44px">▼ 履歴情報を開く</button></div>';
+  html+='<div id="me-history" style="display:none;margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:15px;color:#444;line-height:1.6">';
+  html+='<div style="font-size:15px;color:#888;margin-bottom:4px">履歴情報（読み取り専用）</div>';
   html+='<div>初回参加：'+escapeHtml(firstAt)+'</div>';
   html+='<div>最終参加：'+escapeHtml(lastAt)+'</div>';
   html+='<div>参加回数：'+(count|0)+'回</div>';
   html+='</div>';
 
-  html+='<div id="me-status" style="font-size:13px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
+  html+='<div id="me-status" style="font-size:15px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
   html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
   html+='<button type="button" id="me-cancel" class="btn-sm" style="background:#fff">キャンセル</button>';
   html+='<button type="button" class="btn-primary" id="me-save" data-mid="'+escapeHtml(member.id||'')+'">保存</button>';
@@ -5205,20 +5218,20 @@ function buildMasterEditModalHtml(member){
 function buildMasterImportModalHtml(){
   var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:600px;width:100%;max-height:85vh;overflow-y:auto">';
   html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">マスタをインポート</h3>';
-  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">エクスポートしたマスタファイルを取り込みます。<strong>過去大会データ（参加者の集計）はここでは扱いません</strong>（マイグレ機能をご利用ください）。</p>';
+  html+='<p style="font-size:15px;color:#444;line-height:1.6;margin-bottom:8px">エクスポートしたマスタファイルを取り込みます。<strong>過去大会データ（参加者の集計）はここでは扱いません</strong>（マイグレ機能をご利用ください）。</p>';
 
-  html+='<div style="margin-bottom:12px"><label style="display:block;font-size:13px;color:#444;margin-bottom:4px">① ファイル選択（端末移行・バックアップ）</label>';
-  html+='<input type="file" id="mi-file" accept="application/json,.json" style="font-size:14px"></div>';
+  html+='<div style="margin-bottom:12px"><label style="display:block;font-size:15px;color:#444;margin-bottom:4px">① ファイル選択（端末移行・バックアップ）</label>';
+  html+='<input type="file" id="mi-file" accept="application/json,.json" style="font-size:16px"></div>';/* FONT-FLOOR-001 2巡目 (Codex P2-①): input は type を問わず 16px（STYLE-GUIDE §10.1・iOS 自動ズーム）。base 時点で 14px＝元から §10.1 違反だった */
 
-  html+='<div style="margin-bottom:12px"><label style="display:block;font-size:13px;color:#444;margin-bottom:4px">② または、テキストを貼り付け</label>';
+  html+='<div style="margin-bottom:12px"><label style="display:block;font-size:15px;color:#444;margin-bottom:4px">② または、テキストを貼り付け</label>';
   html+='<textarea id="mi-paste-area" rows="6" style="width:100%;font-size:16px;font-family:monospace;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box" placeholder="ここにマスタ JSON を貼り付けてください"></textarea></div>';
 
-  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:13px;color:#444;padding:0 6px">インポート方式</legend>';
-  html+='<label style="display:block;font-size:14px;margin-bottom:4px"><input type="radio" name="mi-mode" value="overwrite" style="margin-right:6px"> このデータで上書き（既存マスタを破棄）</label>';
-  html+='<label style="display:block;font-size:14px"><input type="radio" name="mi-mode" value="merge" style="margin-right:6px"> 既存マスタに追加（マージ）<span style="color:#666;font-size:12px">※ id 一致のみ統合・既存側優先</span></label>';
+  html+='<fieldset style="margin-bottom:12px;padding:8px 12px;border:1px solid #ddd;border-radius:6px"><legend style="font-size:15px;color:#444;padding:0 6px">インポート方式</legend>';
+  html+='<label style="display:block;font-size:15px;margin-bottom:4px"><input type="radio" name="mi-mode" value="overwrite" style="margin-right:6px"> このデータで上書き（既存マスタを破棄）</label>';
+  html+='<label style="display:block;font-size:15px"><input type="radio" name="mi-mode" value="merge" style="margin-right:6px"> 既存マスタに追加（マージ）<span style="color:#666;font-size:15px">※ id 一致のみ統合・既存側優先</span></label>';
   html+='</fieldset>';
 
-  html+='<div id="mi-status" style="font-size:13px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
+  html+='<div id="mi-status" style="font-size:15px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
   html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
   html+='<button type="button" id="mi-cancel" class="btn-sm" style="background:#fff">キャンセル</button>';
   html+='<button type="button" class="btn-primary" id="mi-run">実行</button>';
@@ -5263,22 +5276,22 @@ function buildMasterResetModalHtml(master){
   }
   var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto">';
   html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#c33">📛 マスタをリセット</h3>';
-  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:12px">マスタの全 member(削除済み tombstone も含む)を消去します。<strong>この操作は取り消せません</strong>。</p>';
-  html+='<div style="margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:13px;color:#444;line-height:1.6">';
+  html+='<p style="font-size:15px;color:#444;line-height:1.6;margin-bottom:12px">マスタの全 member(削除済み tombstone も含む)を消去します。<strong>この操作は取り消せません</strong>。</p>';
+  html+='<div style="margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:15px;color:#444;line-height:1.6">';
   html+='<div>現在のマスタ件数:</div>';
   html+='<div>　• 生存 member: <strong id="mr-live-count">'+liveCount+'</strong> 名</div>';
   html+='<div>　• 削除済み(tombstone): <strong id="mr-tomb-count">'+tombCount+'</strong> 名</div>';
   html+='</div>';
-  html+='<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#444;margin-bottom:12px;cursor:pointer">';
+  html+='<label style="display:flex;align-items:flex-start;gap:8px;font-size:15px;color:#444;margin-bottom:12px;cursor:pointer">';
   html+='<input type="checkbox" id="mr-backup-checked" style="margin-top:3px"> ';
   html+='<span>「📤 マスタをエクスポート」でバックアップ JSON をダウンロード済みです(必須)</span>';
   html+='</label>';
-  html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">確認のため <strong style="color:#c33">リセット</strong> と入力してください</label>';
+  html+='<label style="display:block;font-size:15px;color:#444;margin-bottom:4px">確認のため <strong style="color:#c33">リセット</strong> と入力してください</label>';
   html+='<input type="text" id="mr-confirm-text" placeholder="リセット" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
-  html+='<div id="mr-status" style="font-size:13px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
+  html+='<div id="mr-status" style="font-size:15px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
   html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
   html+='<button type="button" id="mr-cancel" class="btn-sm" style="background:#fff">キャンセル</button>';
-  html+='<button type="button" id="mr-run" disabled style="background:#ccc;color:#fff;border:1px solid #999;border-radius:6px;padding:8px 14px;font-size:14px;cursor:not-allowed">実行</button>';
+  html+='<button type="button" id="mr-run" disabled style="background:#ccc;color:#fff;border:1px solid #999;border-radius:6px;padding:8px 14px;font-size:15px;cursor:not-allowed">実行</button>';
   html+='</div></div>';
   return html;
 }
@@ -5308,9 +5321,9 @@ function bindMasterResetModalEvents(){
     var ok=(checkbox&&checkbox.checked)&&(textInput&&textInput.value==='リセット');
     runBtn.disabled=!ok;
     if(ok){
-      runBtn.style.cssText='background:#c33;color:#fff;border:1px solid #c33;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer;font-weight:600';
+      runBtn.style.cssText='background:#c33;color:#fff;border:1px solid #c33;border-radius:6px;padding:8px 14px;font-size:15px;cursor:pointer;font-weight:600';
     }else{
-      runBtn.style.cssText='background:#ccc;color:#fff;border:1px solid #999;border-radius:6px;padding:8px 14px;font-size:14px;cursor:not-allowed';
+      runBtn.style.cssText='background:#ccc;color:#fff;border:1px solid #999;border-radius:6px;padding:8px 14px;font-size:15px;cursor:not-allowed';
     }
   }
   if(checkbox)checkbox.addEventListener('change',updateRunBtn);
@@ -5397,22 +5410,22 @@ function buildCloudFullMatchModalHtml(master){
   }
   var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto">';
   html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#c33">☁ クラウドの状態に完全に合わせる</h3>';
-  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:12px">この端末のマスタを<strong>一度すべて消去</strong>してから、クラウドの記録で再構築します。<strong>クラウドへ未送信の記録はこの操作で失われます</strong>。<strong>この操作は取り消せません</strong>。</p>';
-  html+='<div style="margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:13px;color:#444;line-height:1.6">';
+  html+='<p style="font-size:15px;color:#444;line-height:1.6;margin-bottom:12px">この端末のマスタを<strong>一度すべて消去</strong>してから、クラウドの記録で再構築します。<strong>クラウドへ未送信の記録はこの操作で失われます</strong>。<strong>この操作は取り消せません</strong>。</p>';
+  html+='<div style="margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:15px;color:#444;line-height:1.6">';
   html+='<div>現在のマスタ件数:</div>';
   html+='<div>　• 生存 member: <strong id="cm-live-count">'+liveCount+'</strong> 名</div>';
   html+='<div>　• 削除済み(tombstone): <strong id="cm-tomb-count">'+tombCount+'</strong> 名</div>';
   html+='</div>';
-  html+='<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#444;margin-bottom:12px;cursor:pointer">';
+  html+='<label style="display:flex;align-items:flex-start;gap:8px;font-size:15px;color:#444;margin-bottom:12px;cursor:pointer">';
   html+='<input type="checkbox" id="cm-backup-checked" style="margin-top:3px"> ';
   html+='<span>「📤 マスタをエクスポート」でバックアップ JSON をダウンロード済みです(必須)</span>';
   html+='</label>';
-  html+='<label style="display:block;font-size:13px;color:#444;margin-bottom:4px">確認のため <strong style="color:#c33">'+CLOUD_MATCH_CONFIRM_WORD+'</strong> と入力してください</label>';
+  html+='<label style="display:block;font-size:15px;color:#444;margin-bottom:4px">確認のため <strong style="color:#c33">'+CLOUD_MATCH_CONFIRM_WORD+'</strong> と入力してください</label>';
   html+='<input type="text" id="cm-confirm-text" placeholder="'+CLOUD_MATCH_CONFIRM_WORD+'" style="width:100%;font-size:16px;padding:8px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin-bottom:12px">';
-  html+='<div id="cm-status" style="font-size:13px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
+  html+='<div id="cm-status" style="font-size:15px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
   html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
   html+='<button type="button" id="cm-cancel" class="btn-sm" style="background:#fff">キャンセル</button>';
-  html+='<button type="button" id="cm-run" disabled style="background:#ccc;color:#fff;border:1px solid #999;border-radius:6px;padding:8px 14px;font-size:14px;cursor:not-allowed">実行</button>';
+  html+='<button type="button" id="cm-run" disabled style="background:#ccc;color:#fff;border:1px solid #999;border-radius:6px;padding:8px 14px;font-size:15px;cursor:not-allowed">実行</button>';
   html+='</div></div>';
   return html;
 }
@@ -5440,8 +5453,8 @@ function bindCloudFullMatchModalEvents(){
     var ok=(checkbox&&checkbox.checked)&&(textInput&&textInput.value===CLOUD_MATCH_CONFIRM_WORD);   // Must Fix#1: 厳密一致
     runBtn.disabled=!ok;
     runBtn.style.cssText=ok
-      ? 'background:#c33;color:#fff;border:1px solid #c33;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer;font-weight:600'
-      : 'background:#ccc;color:#fff;border:1px solid #999;border-radius:6px;padding:8px 14px;font-size:14px;cursor:not-allowed';
+      ? 'background:#c33;color:#fff;border:1px solid #c33;border-radius:6px;padding:8px 14px;font-size:15px;cursor:pointer;font-weight:600'
+      : 'background:#ccc;color:#fff;border:1px solid #999;border-radius:6px;padding:8px 14px;font-size:15px;cursor:not-allowed';
   }
   if(checkbox)checkbox.addEventListener('change',updateRunBtn);
   if(textInput)textInput.addEventListener('input',updateRunBtn);
@@ -5487,16 +5500,16 @@ function buildPhase2ImportModalHtml(master){
   }
   var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:560px;width:100%;max-height:85vh;overflow-y:auto">';
   html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">📥 22 名取込(5/10 大会用)</h3>';
-  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">2026-04-12 開催分の参加者 22 名(A 級 18 / B 級 4)を取り込みます。<strong>空マスタ専用</strong>です(既存マスタが 1 件以上ある場合は実行不可)。</p>';
+  html+='<p style="font-size:15px;color:#444;line-height:1.6;margin-bottom:8px">2026-04-12 開催分の参加者 22 名(A 級 18 / B 級 4)を取り込みます。<strong>空マスタ専用</strong>です(既存マスタが 1 件以上ある場合は実行不可)。</p>';
   if(liveCount>0){
-    html+='<div style="margin-bottom:12px;padding:8px 12px;background:#fff8c4;border:1px solid #f0e082;border-radius:6px;font-size:13px;color:#7a5d00">';
+    html+='<div style="margin-bottom:12px;padding:8px 12px;background:#fff8c4;border:1px solid #f0e082;border-radius:6px;font-size:15px;color:#7a5d00">';
     html+='⚠️ 既存マスタに <strong>'+liveCount+' 名</strong> いるため実行できません。先に「📤 マスタをエクスポート」でバックアップ後、「📛 マスタをリセット」を実施してください。';
     html+='</div>';
   }
-  html+='<div style="margin-bottom:12px"><label style="display:block;font-size:13px;color:#444;margin-bottom:4px">JSON ファイル選択</label>';
-  html+='<input type="file" id="p2-file" accept="application/json,.json" style="font-size:14px"></div>';
-  html+='<div id="p2-preview" style="display:none;margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:13px;color:#444;line-height:1.6"></div>';
-  html+='<div id="p2-status" style="font-size:13px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
+  html+='<div style="margin-bottom:12px"><label style="display:block;font-size:15px;color:#444;margin-bottom:4px">JSON ファイル選択</label>';
+  html+='<input type="file" id="p2-file" accept="application/json,.json" style="font-size:16px"></div>';/* FONT-FLOOR-001 2巡目 (Codex P2-①): 同上・§10.1 は type=file を除外していない */
+  html+='<div id="p2-preview" style="display:none;margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:15px;color:#444;line-height:1.6"></div>';
+  html+='<div id="p2-status" style="font-size:15px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
   html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
   html+='<button type="button" id="p2-cancel" class="btn-sm" style="background:#fff">キャンセル</button>';
   html+='<button type="button" class="btn-primary" id="p2-run" disabled style="opacity:0.5;cursor:not-allowed">実行</button>';
@@ -5583,10 +5596,10 @@ function bindPhase2ImportModalEvents(){
       }
       var prevHtml='<div style="font-weight:600;color:#1F3864;margin-bottom:4px">検証 OK ✅</div>';
       prevHtml+='<div>取り込み件数: <strong>'+validation.summary.total+'</strong> 名(A 級 <strong>'+validation.summary.classA+'</strong> / B 級 <strong>'+validation.summary.classB+'</strong>)</div>';
-      prevHtml+='<div style="margin-top:6px;font-size:12px;color:#666">サンプル 3 件:</div>';
+      prevHtml+='<div style="margin-top:6px;font-size:15px;color:#666">サンプル 3 件:</div>';
       function fmtSample(s,label){
         if(!s)return '';
-        return '<div style="margin-left:8px;font-size:12px;color:#444">・'+label+': '+escapeHtml(s.name)+'('+s.last_class+'、city='+escapeHtml(s.city||'')+')</div>';
+        return '<div style="margin-left:8px;font-size:15px;color:#444">・'+label+': '+escapeHtml(s.name)+'('+s.last_class+'、city='+escapeHtml(s.city||'')+')</div>';
       }
       prevHtml+=fmtSample(sampleA,'A 級');
       prevHtml+=fmtSample(sampleB,'B 級');
@@ -6541,17 +6554,17 @@ function buildMigrationModalHtml(opts){
   var corrupted=!!(opts&&opts.corrupted);
   var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:600px;width:100%;max-height:85vh;overflow-y:auto">';
   if(corrupted){
-    html+='<div class="mig-corrupt-warning" style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#92400e;line-height:1.5">⚠️ 既存の支部マスタが破損していました。このマイグレーションで再構築されます（既存マスタは破棄されます）。</div>';
+    html+='<div class="mig-corrupt-warning" style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px;margin-bottom:12px;font-size:15px;color:#92400e;line-height:1.5">⚠️ 既存の支部マスタが破損していました。このマイグレーションで再構築されます（既存マスタは破棄されます）。</div>';
   }
   html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">過去大会の統合（支部マスタへ）</h3>';
   // M5: 「読み込み」との違いを明記
-  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">過去大会の参加者を支部マスタに取り込みます。<strong>大会そのものを復元する機能ではありません。</strong></p>';
-  html+='<p style="font-size:13px;color:#444;line-height:1.6;margin-bottom:8px">以前に保存・バックアップした大会データ（JSON）を貼り付けてください：</p>';
+  html+='<p style="font-size:15px;color:#444;line-height:1.6;margin-bottom:8px">過去大会の参加者を支部マスタに取り込みます。<strong>大会そのものを復元する機能ではありません。</strong></p>';
+  html+='<p style="font-size:15px;color:#444;line-height:1.6;margin-bottom:8px">以前に保存・バックアップした大会データ（JSON）を貼り付けてください：</p>';
   html+='<textarea id="mig-paste-area" rows="8" style="width:100%;font-size:16px;font-family:monospace;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box" placeholder="ここに大会データを貼り付けてください"></textarea>';
-  html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-top:8px;margin-bottom:0">複数大会をまとめて取り込む場合は、1大会分を貼り付けたあとに空行を1行入れて、次の大会データを貼り付けてください。</p>';
+  html+='<p style="font-size:15px;color:#666;line-height:1.5;margin-top:8px;margin-bottom:0">複数大会をまとめて取り込む場合は、1大会分を貼り付けたあとに空行を1行入れて、次の大会データを貼り付けてください。</p>';
   // M3: 既存ファイル保有者向けの代替案内
-  html+='<p style="font-size:12px;color:#666;line-height:1.5;margin-top:4px;margin-bottom:12px">ファイルとして保存してある場合は、ファイルを開いて中身をコピーし、ここに貼り付けてください。</p>';
-  html+='<div id="mig-status" style="font-size:13px;color:#555;margin-bottom:12px;min-height:1.5em;line-height:1.6"></div>';
+  html+='<p style="font-size:15px;color:#666;line-height:1.5;margin-top:4px;margin-bottom:12px">ファイルとして保存してある場合は、ファイルを開いて中身をコピーし、ここに貼り付けてください。</p>';
+  html+='<div id="mig-status" style="font-size:15px;color:#555;margin-bottom:12px;min-height:1.5em;line-height:1.6"></div>';
   html+='<div style="display:flex;gap:8px;justify-content:flex-end">';
   html+='<button type="button" id="mig-cancel" class="btn-sm" style="background:#fff">閉じる</button>';
   html+='<button type="button" class="btn-primary" id="mig-run">統合を実行</button>';
@@ -6837,7 +6850,7 @@ function ensureClassRegDomNodes(){
     h3.appendChild(document.createTextNode(' '));
     var cnt=document.createElement('span');
     cnt.id=regClassCountId(c.id);
-    cnt.style.cssText='color:#888;font-size:12px;font-weight:400';
+    cnt.style.cssText='color:#888;font-size:15px;font-weight:400';
     h3.appendChild(cnt);
     header.appendChild(h3);
     var btn=document.createElement('button');
@@ -7115,7 +7128,7 @@ function renderClassManager(){
       nameSpan.style.cssText='flex:1;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       row.appendChild(nameSpan);
       var statusSpan=document.createElement('span');
-      statusSpan.style.cssText='font-size:12px;color:#888;white-space:nowrap';
+      statusSpan.style.cssText='font-size:15px;color:#888;white-space:nowrap';
       var n=(state&&state.players&&Array.isArray(state.players[c.id]))?state.players[c.id].length:0;
       statusSpan.textContent='('+n+'名'+(isClassStarted(c.id)?'・開始済み':'')+')';
       row.appendChild(statusSpan);
@@ -7865,7 +7878,7 @@ function withdrawMarkHtml(id,cls){
   var players=(state&&state.players&&state.players[cls])||[];
   for(var i=0;i<players.length;i++){
     if(players[i]&&players[i].id===id&&players[i].withdrawn){
-      return ' <span style="font-size:11px;color:#A32D2D;border:1px solid #A32D2D;border-radius:4px;padding:0 4px;vertical-align:middle">棄権</span>';
+      return ' <span style="font-size:15px;color:#A32D2D;border:1px solid #A32D2D;border-radius:4px;padding:0 4px;vertical-align:middle">棄権</span>';
     }
   }
   return '';
@@ -7882,7 +7895,7 @@ function makePlayerRow(p,cls,i){
   var num=document.createElement('span');
   // A-4 §2: 番号表示は 2 桁ゼロ埋めに統一（ペアリング・PDF と整合）
   // A-5.1 §11.8: index ではなく entryNoOf 経由で entry_no を表示（欠番維持）
-  num.style.cssText='color:#1F3864;font-size:12px;font-weight:bold;min-width:28px';
+  num.style.cssText='color:#1F3864;font-size:15px;font-weight:bold;min-width:28px';
   num.textContent=entryNoOf(cls,p.id);
   mainDiv.appendChild(num);
 
@@ -7895,7 +7908,7 @@ function makePlayerRow(p,cls,i){
     div.style.opacity='0.55';
     var wdBadge=document.createElement('span');
     wdBadge.textContent='棄権';
-    wdBadge.style.cssText='margin-left:6px;font-size:11px;color:#A32D2D;border:1px solid #A32D2D;border-radius:4px;padding:0 4px;vertical-align:middle';
+    wdBadge.style.cssText='margin-left:6px;font-size:15px;color:#A32D2D;border:1px solid #A32D2D;border-radius:4px;padding:0 4px;vertical-align:middle';
     name.appendChild(wdBadge);
   }
   mainDiv.appendChild(name);
@@ -7982,14 +7995,14 @@ function openPlayerEditSheet(playerId,cls){
   var fee=getFee(p.member||'member',p.grade||'ippan');
   var html='<div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:320px">';
   html+='<div style="font-size:15px;font-weight:600;color:#1F3864;margin-bottom:4px">'+escapeHtml(p.name||'')+'</div>';
-  html+='<div style="font-size:12px;color:#666;margin-bottom:12px">'+escapeHtml(clsName)+' '+escapeHtml(entryNoOf(cls,p.id))+'・'+escapeHtml(fee===0?'無料':fee.toLocaleString()+'円')+'</div>';
-  html+='<button type="button" id="pes-name" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">✏️ 名前を編集</button>';
-  html+='<button type="button" id="pes-yomi" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">ふりがなを編集</button>';
+  html+='<div style="font-size:15px;color:#666;margin-bottom:12px">'+escapeHtml(clsName)+' '+escapeHtml(entryNoOf(cls,p.id))+'・'+escapeHtml(fee===0?'無料':fee.toLocaleString()+'円')+'</div>';
+  html+='<button type="button" id="pes-name" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:15px;cursor:pointer">✏️ 名前を編集</button>';
+  html+='<button type="button" id="pes-yomi" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:15px;cursor:pointer">ふりがなを編集</button>';
   // PLAYER-SWAP-002 (#763・案B): 差し替えを独立ボタン化。editPlayer の同名 early-return により
   //   「表示名が差し替え先と同じ参加者」は名前編集経由では3択に到達できないため、
   //   名前入力プロンプトを経由せず openPlayerSwapPicker を直接開く（検索初期値は空＝回避入力を不要に）。
   //   名前編集→3択ダイアログ経由の既存導線は温存（bindMasterSyncModalEvents 側は無改変）。
-  html+='<button type="button" id="pes-swap" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">🔁 別の人に差し替える</button>';
+  html+='<button type="button" id="pes-swap" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:15px;cursor:pointer">🔁 別の人に差し替える</button>';
   // クラス変更（member_id 連携者のみ・全クラス対応=#768・handlePastParticipantClassAdd 経由＝confirm/master 更新は既存フロー）
   var selectable=(typeof ppDenseSelectableClasses==='function')?ppDenseSelectableClasses():[];
   var curSelectable=false;
@@ -7997,15 +8010,15 @@ function openPlayerEditSheet(playerId,cls){
   if(p.member_id&&curSelectable){
     for(var sj=0;sj<selectable.length;sj++){
       if(selectable[sj].id===cls)continue;
-      html+='<button type="button" class="pes-change" data-cls="'+escapeHtml(selectable[sj].id)+'" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">'+escapeHtml(selectable[sj].name)+'へ変更</button>';
+      html+='<button type="button" class="pes-change" data-cls="'+escapeHtml(selectable[sj].id)+'" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:15px;cursor:pointer">'+escapeHtml(selectable[sj].name)+'へ変更</button>';
     }
   }
   // WITHDRAW-001 と同条件（開始後のみ）: 棄権/復帰
   if(isClassStarted(cls)){
-    html+='<button type="button" id="pes-withdraw" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">'+(p.withdrawn?'復帰する（組み合わせに戻す）':'棄権にする（以降の組み合わせから外す）')+'</button>';
+    html+='<button type="button" id="pes-withdraw" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border:1px solid #2E75B6;color:#2E75B6;background:#fff;border-radius:8px;padding:8px 12px;font-size:15px;cursor:pointer">'+(p.withdrawn?'復帰する（組み合わせに戻す）':'棄権にする（以降の組み合わせから外す）')+'</button>';
   }
-  html+='<button type="button" id="pes-remove" class="btn-danger" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border-radius:8px;padding:8px 12px;font-size:14px">受付を取り消す（一覧から削除）</button>';
-  html+='<button type="button" id="pes-cancel" style="display:block;width:100%;min-height:44px;border:1px solid #ccc;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">キャンセル</button>';
+  html+='<button type="button" id="pes-remove" class="btn-danger" style="display:block;width:100%;text-align:left;margin-bottom:8px;min-height:44px;border-radius:8px;padding:8px 12px;font-size:15px">受付を取り消す（一覧から削除）</button>';
+  html+='<button type="button" id="pes-cancel" style="display:block;width:100%;min-height:44px;border:1px solid #ccc;background:#fff;border-radius:8px;padding:8px 12px;font-size:15px;cursor:pointer">キャンセル</button>';
   html+='</div>';
   var modal=document.createElement('div');
   modal.id='player-edit-sheet';
@@ -8705,7 +8718,7 @@ function buildBulkEditModalHtml(cls, players){
     // A-5.1 §11.8: 一括編集モーダルでも entry_no を表示（欠番維持を視覚化）。
     // A-4 §2: 番号表示は 2 桁ゼロ埋めに統一（参加者一覧・対戦相手変更・PDF と整合）。
     rows+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
-      +'<span style="font-size:12px;color:#888;min-width:28px">'+cls+entryNoOf(cls,players[i].id)+'</span>'
+      +'<span style="font-size:15px;color:#888;min-width:28px">'+cls+entryNoOf(cls,players[i].id)+'</span>'
       +'<input type="text" id="bulk-name-'+players[i].id+'" value="'+escapeHtml(players[i].name)+'" '
       +'autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" '
       +'style="flex:1;height:44px;padding:0 10px;border:1px solid #ccc;border-radius:6px;font-size:16px;font-family:inherit">'
@@ -8716,8 +8729,8 @@ function buildBulkEditModalHtml(cls, players){
     +rows
     +'<div id="bulk-err" class="bulk-err" role="alert" aria-live="assertive" hidden><strong class="bulk-err-head">\u26a0 変更を保存しませんでした</strong><span class="bulk-err-body"></span></div>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">'
-    +'<button id="bulk-cancel" style="min-height:44px;padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
-    +'<button id="bulk-save" style="min-height:44px;padding:8px 16px;border-radius:8px;border:none;background:#1F3864;color:#fff;font-size:14px;cursor:pointer">保存</button>'
+    +'<button id="bulk-cancel" style="min-height:44px;padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;cursor:pointer">キャンセル</button>'
+    +'<button id="bulk-save" style="min-height:44px;padding:8px 16px;border-radius:8px;border:none;background:#1F3864;color:#fff;font-size:15px;cursor:pointer">保存</button>'
     +'</div></div>';
 }
 
@@ -9649,25 +9662,25 @@ function renderPlayerSwapCandidates(p,query){
   var master=null;
   try{master=loadBranchMaster();}catch(e){master=null;}
   if(!master||master._loaded_with_corruption===true||!Array.isArray(master.members)){
-    box.innerHTML='<div style="font-size:12px;color:#a05000;padding:8px 0">名簿が利用できないため、「名簿にない新規の方として差し替え」のみ使えます。</div>';
+    box.innerHTML='<div style="font-size:15px;color:#a05000;padding:8px 0">名簿が利用できないため、「名簿にない新規の方として差し替え」のみ使えます。</div>';
     return;
   }
   var q=(typeof query==='string')?query:'';
   var list=findMasterSuggestions(q,master,getCurrentlyRegisteredMemberIds());
   var html='';
   if(!q.replace(/^\s+|\s+$/g,'')){
-    html='<div style="font-size:12px;color:#888;padding:8px 0">氏名またはふりがなで検索してください。</div>';
+    html='<div style="font-size:15px;color:#888;padding:8px 0">氏名またはふりがなで検索してください。</div>';
   } else if(list.length===0){
     // PLAYER-SWAP-002 (#763・同乗①): 名簿に居るはずの人を探している文脈で「名簿にない新規の方として…」を
     //   先に出すと誤誘導（未連携化→既存会員の二重登録）になるため、「検索語を短く」を先に案内する。
-    html='<div style="font-size:12px;color:#888;padding:8px 0">該当する会員がいません（参加済みの会員は表示されません）。まず検索語を短くしてみてください（姓だけ・ふりがなの一部など）。名簿にいない新規の方のときだけ、下の「名簿にない新規の方として差し替え」を使ってください。</div>';
+    html='<div style="font-size:15px;color:#888;padding:8px 0">該当する会員がいません（参加済みの会員は表示されません）。まず検索語を短くしてみてください（姓だけ・ふりがなの一部など）。名簿にいない新規の方のときだけ、下の「名簿にない新規の方として差し替え」を使ってください。</div>';
   } else {
     for(var i=0;i<list.length;i++){
       var m=list[i];
       var sub=[];
       if(m.yomi)sub.push(escapeHtml(m.yomi));
       if(m.city)sub.push(escapeHtml(m.city));
-      html+='<button type="button" class="ps-candidate" data-member-id="'+escapeHtml(m.id)+'" style="display:block;width:100%;text-align:left;margin-bottom:6px;min-height:44px;border:1px solid #2E75B6;color:#1F3864;background:#fff;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer">'+escapeHtml(m.name||'')+(sub.length?'<span style="color:#888;font-size:12px;margin-left:8px">'+sub.join('・')+'</span>':'')+'</button>';
+      html+='<button type="button" class="ps-candidate" data-member-id="'+escapeHtml(m.id)+'" style="display:block;width:100%;text-align:left;margin-bottom:6px;min-height:44px;border:1px solid #2E75B6;color:#1F3864;background:#fff;border-radius:8px;padding:8px 12px;font-size:15px;cursor:pointer">'+escapeHtml(m.name||'')+(sub.length?'<span style="color:#888;font-size:15px;margin-left:8px">'+sub.join('・')+'</span>':'')+'</button>';
     }
   }
   box.innerHTML=html;
@@ -9733,14 +9746,14 @@ function openPlayerSwapPicker(p,newName){
   var games=countPlayerDecidedGames(p.id,p.cls,state);
   var html='<div style="background:#fff;border-radius:12px;padding:24px;width:420px;max-width:90vw;max-height:85vh;overflow-y:auto">';
   html+='<h3 style="margin-bottom:8px;font-size:16px;font-weight:500;color:#1F3864">別の人に差し替える</h3>';
-  html+='<div style="font-size:12px;color:#666;line-height:1.7;margin-bottom:10px">現在：<strong>'+escapeHtml(p.name||'')+'</strong>（これまでの対局結果 '+games+'局）<br>席（参加枠）はそのままで、座っている人だけを入れ替えます。これまでの結果は差し替え先の方の成績になります。</div>';
+  html+='<div style="font-size:15px;color:#666;line-height:1.7;margin-bottom:10px">現在：<strong>'+escapeHtml(p.name||'')+'</strong>（これまでの対局結果 '+games+'局）<br>席（参加枠）はそのままで、座っている人だけを入れ替えます。これまでの結果は差し替え先の方の成績になります。</div>';
   html+='<input type="text" id="ps-search" value="'+escapeHtml(newName||'')+'" placeholder="氏名またはふりがなで検索" autocapitalize="off" autocorrect="off" spellcheck="false" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:16px;border:1px solid #ccc;border-radius:8px;margin-bottom:8px">';
   html+='<div id="ps-list" style="margin-bottom:8px"></div>';
   html+='<div style="border-top:1px solid #eee;padding-top:10px;display:flex;flex-direction:column;gap:8px">';
-  html+='<button type="button" id="ps-unlinked" style="padding:10px 16px;font-size:14px;border-radius:8px;background:#fff;color:#1F3864;border:1px solid #1F3864;cursor:pointer">名簿にない新規の方として差し替え</button>';
-  html+='<button type="button" id="ps-cancel" style="padding:10px 16px;font-size:14px;border-radius:8px;background:#fff;color:#666;border:1px solid #ccc;cursor:pointer">キャンセル</button>';
+  html+='<button type="button" id="ps-unlinked" style="padding:10px 16px;font-size:15px;border-radius:8px;background:#fff;color:#1F3864;border:1px solid #1F3864;cursor:pointer">名簿にない新規の方として差し替え</button>';
+  html+='<button type="button" id="ps-cancel" style="padding:10px 16px;font-size:15px;border-radius:8px;background:#fff;color:#666;border:1px solid #ccc;cursor:pointer">キャンセル</button>';
   html+='</div>';
-  html+='<p style="font-size:11px;color:#888;margin-top:10px;line-height:1.5">参加済みの会員は候補に出ません。Esc キー / 背景クリックでもキャンセルできます。</p>';
+  html+='<p style="font-size:15px;color:#888;margin-top:10px;line-height:1.5">参加済みの会員は候補に出ません。Esc キー / 背景クリックでもキャンセルできます。</p>';
   html+='</div>';
   modal.innerHTML=html;
   document.body.appendChild(modal);
@@ -9771,11 +9784,11 @@ function openPlayerSwapPicker(p,newName){
 function buildMasterSyncModalHtml(oldName,newName,targetInfo){
   var html='<div style="background:#fff;border-radius:12px;padding:24px;width:420px;max-width:90vw;max-height:85vh;overflow-y:auto">';
   html+='<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">参加者名の修正と会員マスタ反映</h3>';
-  html+='<div style="font-size:13px;color:#333;line-height:1.8;margin-bottom:12px">';
+  html+='<div style="font-size:15px;color:#333;line-height:1.8;margin-bottom:12px">';
   html+='<div><span style="color:#888">変更前：</span>'+escapeHtml(oldName)+'</div>';
   html+='<div><span style="color:#888">変更後：</span><strong>'+escapeHtml(newName)+'</strong></div>';
   html+='</div>';
-  html+='<div style="border-top:1px solid #eee;padding-top:12px;margin-bottom:12px;font-size:13px;line-height:1.7;color:#333">';
+  html+='<div style="border-top:1px solid #eee;padding-top:12px;margin-bottom:12px;font-size:15px;line-height:1.7;color:#333">';
   // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中は「会員マスタも更新する」を提示しない（非表示・MASTER-001 の意図的縮退）。
   //   残る選択肢＝「この大会のみ修正」＋「別の人に差し替える」（#758・マスタ読み取りのみ＝guest 中も使用可）＋キャンセル。
   var guestMode=(typeof isGuestTournament==='function')&&isGuestTournament(typeof state!=='undefined'?state:null);
@@ -9799,23 +9812,23 @@ function buildMasterSyncModalHtml(oldName,newName,targetInfo){
   }
   html+='</div>';
   html+='<div style="display:flex;flex-direction:column;gap:8px">';
-  html+='<button type="button" id="ms-tournament-only" class="btn-primary" style="padding:10px 16px;font-size:14px">この大会のみ修正</button>';
+  html+='<button type="button" id="ms-tournament-only" class="btn-primary" style="padding:10px 16px;font-size:15px">この大会のみ修正</button>';
   var disabledAttr=masterEnabled?'':' disabled';
   var enabledStyle='background:#fff;color:#1F3864;border:1px solid #1F3864;cursor:pointer';
   var disabledStyle='background:#eee;color:#999;border:1px solid #ddd;cursor:not-allowed';
   var btnStyle=masterEnabled?enabledStyle:disabledStyle;
   // GUEST-TOURNAMENT-MODE-001 (#760): ゲスト大会中は「会員マスタも更新する」ボタン自体を出さない
   //   （bindMasterSyncModalEvents は if(mBtn) ガード済み＝bind 側は無改変で安全）。
-  if(!guestMode)html+='<button type="button" id="ms-master-too" style="padding:10px 16px;font-size:14px;border-radius:8px;'+btnStyle+'"'+disabledAttr+'>会員マスタも更新する</button>';
+  if(!guestMode)html+='<button type="button" id="ms-master-too" style="padding:10px 16px;font-size:15px;border-radius:8px;'+btnStyle+'"'+disabledAttr+'>会員マスタも更新する</button>';
   // PLAYER-SWAP-001 (#758): 3択目。上2つは「同一人物の名前修正」、これは「座る人ごと入れ替える」。
-  html+='<button type="button" id="ms-swap-person" style="padding:10px 16px;font-size:14px;border-radius:8px;'+enabledStyle+'">別の人に差し替える（名簿から選ぶ）</button>';
-  html+='<button type="button" id="ms-cancel" style="padding:10px 16px;font-size:14px;border-radius:8px;background:#fff;color:#666;border:1px solid #ccc;cursor:pointer">キャンセル</button>';
+  html+='<button type="button" id="ms-swap-person" style="padding:10px 16px;font-size:15px;border-radius:8px;'+enabledStyle+'">別の人に差し替える（名簿から選ぶ）</button>';
+  html+='<button type="button" id="ms-cancel" style="padding:10px 16px;font-size:15px;border-radius:8px;background:#fff;color:#666;border:1px solid #ccc;cursor:pointer">キャンセル</button>';
   html+='</div>';
   // GUEST-TOURNAMENT-MODE-001 (#760): 注記もモードで出し分け（非表示ボタンの説明を残さない）。
   if(guestMode){
-    html+='<p style="font-size:11px;color:#888;margin-top:10px;line-height:1.5">席を譲るなど<strong>本当に別の人に変わった</strong>ときは「別の人に差し替える」を使ってください（これまでの結果ごと差し替え先の成績になります）。Esc キー / 背景クリックでもキャンセルできます。</p>';
+    html+='<p style="font-size:15px;color:#888;margin-top:10px;line-height:1.5">席を譲るなど<strong>本当に別の人に変わった</strong>ときは「別の人に差し替える」を使ってください（これまでの結果ごと差し替え先の成績になります）。Esc キー / 背景クリックでもキャンセルできます。</p>';
   } else {
-    html+='<p style="font-size:11px;color:#888;margin-top:10px;line-height:1.5">「会員マスタも更新する」は対象会員が安全に1件特定できる場合のみ有効です。席を譲るなど<strong>本当に別の人に変わった</strong>ときは「別の人に差し替える」を使ってください（これまでの結果ごと差し替え先の成績になります）。Esc キー / 背景クリックでもキャンセルできます。</p>';
+    html+='<p style="font-size:15px;color:#888;margin-top:10px;line-height:1.5">「会員マスタも更新する」は対象会員が安全に1件特定できる場合のみ有効です。席を譲るなど<strong>本当に別の人に変わった</strong>ときは「別の人に差し替える」を使ってください（これまでの結果ごと差し替え先の成績になります）。Esc キー / 背景クリックでもキャンセルできます。</p>';
   }
   html+='</div>';
   return html;
@@ -11274,32 +11287,32 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
     ?'この卓には棄権した参加者がいます。代わりに入れられる参加者がいないため、ここでは外せません。<br>「組み合わせを再生成」で外してください。'
     :'現在の条件では、1人だけ入れ替えできる候補がありません。<br>別の対局を選ぶか、組み合わせ全体を見直してください。';
   var emptyNoticeHtml=hasAlternative?'':
-    '<div data-chg-empty-notice="1" data-chg-empty-cause="'+(emptyByWithdrawn?'withdrawn':'generic')+'" style="margin-bottom:12px;padding:8px 10px;background:#fff7e6;border:1px solid #f5d490;border-radius:6px;font-size:12px;color:#7a4a00;line-height:1.5">'
+    '<div data-chg-empty-notice="1" data-chg-empty-cause="'+(emptyByWithdrawn?'withdrawn':'generic')+'" style="margin-bottom:12px;padding:8px 10px;background:#fff7e6;border:1px solid #f5d490;border-radius:6px;font-size:15px;color:#7a4a00;line-height:1.5">'
     +emptyNoticeBody
     +'</div>';
   var saveBtnAttr=hasAlternative?'':' disabled';
   var saveBtnStyle=hasAlternative
-    ?'padding:8px 16px;border-radius:8px;border:none;background:#1F3864;color:#fff;font-size:14px;cursor:pointer'
-    :'padding:8px 16px;border-radius:8px;border:none;background:#bbb;color:#fff;font-size:14px;cursor:not-allowed';
+    ?'padding:8px 16px;border-radius:8px;border:none;background:#1F3864;color:#fff;font-size:15px;cursor:pointer'
+    :'padding:8px 16px;border-radius:8px;border:none;background:#bbb;color:#fff;font-size:15px;cursor:not-allowed';
   return '<div style="background:rgba(0,0,0,0.5);position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;display:flex;align-items:center;justify-content:center;" id="chg-modal">'
     +'<div data-chg-card="1" style="background:#fff;border-radius:12px;padding:24px;width:320px;">'
     +'<h3 style="margin-bottom:12px;font-size:16px;color:#1F3864">対戦相手の変更</h3>'
-    +'<div data-chg-current="1" style="margin-bottom:16px;padding:8px 10px;background:#f5f7fa;border-radius:6px;font-size:13px;color:#333">'
-    +'<div style="font-size:11px;color:#888;margin-bottom:4px">現在の対局</div>'
+    +'<div data-chg-current="1" style="margin-bottom:16px;padding:8px 10px;background:#f5f7fa;border-radius:6px;font-size:15px;color:#333">'
+    +'<div style="font-size:15px;color:#888;margin-bottom:4px">現在の対局</div>'
     +'<div data-chg-current-role="p1">'+escapeHtml(currentP1Label)+'</div>'
-    +'<div style="font-size:11px;color:#888;margin:2px 0">対</div>'
+    +'<div style="font-size:15px;color:#888;margin:2px 0">対</div>'
     +'<div data-chg-current-role="p2">'+escapeHtml(currentP2Label)+'</div>'
     +'</div>'
     +emptyNoticeHtml
-    +'<div style="margin-bottom:12px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">先手</label>'
+    +'<div style="margin-bottom:12px"><label style="font-size:15px;color:#666;display:block;margin-bottom:4px">先手</label>'
     +'<select id="chg-p1" style="width:100%;min-height:44px;border:1px solid #ccc;border-radius:8px;font-size:16px">'+sel1.html+'</select></div>'
-    +'<div style="margin-bottom:20px"><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">後手</label>'
+    +'<div style="margin-bottom:20px"><label style="font-size:15px;color:#666;display:block;margin-bottom:4px">後手</label>'
     +'<select id="chg-p2" style="width:100%;min-height:44px;border:1px solid #ccc;border-radius:8px;font-size:16px">'+sel2.html+'</select></div>'
     // CHG-MODAL-INLINE-ERROR-001 (#881): 押した結果の返事はボタンの隣に出す（STYLE-GUIDE v1.2 §3.2）
     +'<div id="chg-err" class="chg-err" role="alert" aria-live="assertive" hidden><strong class="chg-err-head">⚠ 変更を保存しませんでした</strong><span class="chg-err-body"></span></div>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end">'
     // CHG-MODAL-FOCUS-TRAP-001 (#837): 閉じ口を closeChangePairingModal に一本化（inert / keydown / フォーカス戻しを取りこぼさない）
-    +'<button onclick="closeChangePairingModal()" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
+    +'<button onclick="closeChangePairingModal()" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;cursor:pointer">キャンセル</button>'
     +'<button id="chg-save" style="'+saveBtnStyle+'"'+saveBtnAttr+'>変更を保存</button>'
     +'</div></div></div>';
 }
@@ -11695,7 +11708,7 @@ function buildScoreGridHtml(cls, sorted, wins){
     //     成立しない。本ビューは番号・氏名・勝敗の別要素表示を従来どおり維持。
     var snoLabel=cls+'-'+entryNoOf(cls,p.id);
     var snmLabel=getName(p.id,cls);
-    html+='<div class="score-card"><div class="sno">'+escapeHtml(snoLabel)+'</div><div class="snm">'+escapeHtml(snmLabel)+'</div><div class="swins">'+w+'</div><div style="font-size:11px;color:#888">'+w+'勝'+(total-w)+'敗</div></div>';
+    html+='<div class="score-card"><div class="sno">'+escapeHtml(snoLabel)+'</div><div class="snm">'+escapeHtml(snmLabel)+'</div><div class="swins">'+w+'</div><div style="font-size:15px;color:#888">'+w+'勝'+(total-w)+'敗</div></div>';
   }
   html+='</div>';
   return html;
@@ -11712,14 +11725,14 @@ function buildPlayedHistoryHtml(cls, sorted, played, isSP){
   //   対戦相手タグは renderTournament の played[] 構築順 = ラウンド順を維持。
   //   切替 UI / 独自並び順は IMPL-LIGHT 範囲外。
   var html='<details class="played-history-details" style="margin-bottom:12px"'+(isSP?'':' open')+'>';
-  html+='<summary style="font-size:14px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">対戦済みリスト<span style="font-weight:400;font-size:11px;color:#888;margin-left:8px">（勝数順）　タップで開閉</span></summary>';
-  html+='<div style="font-size:11px;color:#888;margin:8px 0 6px">※ 暫定成績と同じ勝数順で表示しています。対戦相手はラウンド順です。</div>';
+  html+='<summary style="font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">対戦済みリスト<span style="font-weight:400;font-size:15px;color:#888;margin-left:8px">（勝数順）　タップで開閉</span></summary>';
+  html+='<div style="font-size:15px;color:#888;margin:8px 0 6px">※ 暫定成績と同じ勝数順で表示しています。対戦相手はラウンド順です。</div>';
   html+='<div style="margin-bottom:4px">';
   for(var i=0;i<sorted.length;i++){
     var p=sorted[i];
     var tags='';
     for(var j=0;j<played[p.id].length;j++)tags+='<span class="history-tag">'+escapeHtml(getNameWithNo(played[p.id][j],cls))+'</span>';
-    html+='<div style="margin-bottom:4px"><strong style="font-size:12px">'+escapeHtml(getNameWithNo(p.id,cls))+'</strong>：'+(tags||'なし')+'</div>';
+    html+='<div style="margin-bottom:4px"><strong style="font-size:15px">'+escapeHtml(getNameWithNo(p.id,cls))+'</strong>：'+(tags||'なし')+'</div>';
   }
   html+='</div>';
   html+='</details>';
@@ -11730,18 +11743,18 @@ function buildPastResultsHtml(cls){
   if(state.results[cls].length===0)return '';
   var html='<h3>過去の結果（クリックで修正）</h3>';
   for(var rr=0;rr<state.results[cls].length;rr++){
-    html+='<div style="margin-bottom:8px"><div style="font-size:12px;font-weight:500;color:#1F3864;margin-bottom:4px">'+(rr+1)+'回戦</div>';
+    html+='<div style="margin-bottom:8px"><div style="font-size:15px;font-weight:500;color:#1F3864;margin-bottom:4px">'+(rr+1)+'回戦</div>';
     for(var mm=0;mm<state.results[cls][rr].length;mm++){
       var pm=state.results[cls][rr][mm];
       var pn1=getNameWithNo(pm.p1,cls),pn2=getNameWithNo(pm.p2,cls);
       var pw=pm.winner?getNameWithNo(pm.winner,cls):'未入力';
       var pc=pm.winner?'#27500A':'#A32D2D';
       html+='<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:#f8f8f8;border-radius:6px;margin-bottom:3px">'
-        +'<span style="display:inline-block;width:8em;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ escapeHtml(pn1) +'</span>'
-        +'<span style="font-size:13px;color:#888">vs</span>'
-        +'<span style="display:inline-block;width:8em;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ escapeHtml(pn2) +'</span>'
-        +'<span style="font-size:12px;color:'+pc+';font-weight:500;white-space:nowrap;margin-left:4px">'+escapeHtml(pw)+'</span>'
-        +'<button id="editpast_'+cls+'_'+rr+'_'+mm+'" style="min-height:44px;padding:2px 12px;font-size:12px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;margin-left:auto;flex-shrink:0">修正</button>'
+        +'<span style="display:inline-block;width:8em;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ escapeHtml(pn1) +'</span>'
+        +'<span style="font-size:15px;color:#888">vs</span>'
+        +'<span style="display:inline-block;width:8em;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ escapeHtml(pn2) +'</span>'
+        +'<span style="font-size:15px;color:'+pc+';font-weight:500;white-space:nowrap;margin-left:4px">'+escapeHtml(pw)+'</span>'
+        +'<button id="editpast_'+cls+'_'+rr+'_'+mm+'" style="min-height:44px;padding:2px 12px;font-size:15px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;margin-left:auto;flex-shrink:0">修正</button>'
         +'</div>';
     }
     html+='</div>';
@@ -11756,7 +11769,7 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
   if(state.pairings[cls].length===0)return '';
   var html='';
   var duplicatePlayers=getDuplicatePlayersInPairings(cls);
-  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3>'+roundNum+'回戦 組み合わせ</h3><span style="background:#2E75B6;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px">'+roundNum+' / '+roundsForClass(cls)+'回戦</span></div>';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3>'+roundNum+'回戦 組み合わせ</h3><span style="background:#2E75B6;color:#fff;padding:4px 12px;border-radius:20px;font-size:15px">'+roundNum+' / '+roundsForClass(cls)+'回戦</span></div>';
   if(duplicatePlayers.length>0){
     html+='<div class="alert alert-err">同じ選手が複数の対局に入っています：'+escapeHtml(duplicatePlayers.map(function(pid){return getName(pid,cls);}).join('、'))+'</div>';
   }
@@ -11767,7 +11780,7 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
   var leftoverPlayers=getRoundLeftoverPlayers(cls);
   if(leftoverPlayers.length>0){
     var leftoverNames=leftoverPlayers.map(function(p){return getName(p.id,cls);}).join('、');
-    html+='<div class="alert alert-warn" style="margin-bottom:12px">⚠ 今回戦の組み合わせに入っていない待機者がいます（不戦勝にはなりません）：'+escapeHtml(leftoverNames)+'<div style="font-size:11px;color:#666;margin-top:4px">※ 待機者は勝敗に影響しません。確定すると次の回戦で組み合わせに戻ります。</div></div>';
+    html+='<div class="alert alert-warn" style="margin-bottom:12px">⚠ 今回戦の組み合わせに入っていない待機者がいます（不戦勝にはなりません）：'+escapeHtml(leftoverNames)+'<div style="font-size:15px;color:#666;margin-top:4px">※ 待機者は勝敗に影響しません。確定すると次の回戦で組み合わせに戻ります。</div></div>';
   }
 
   // A-4 §1, §6: ペアリング品質評価 → 警告バナー（表示のみ・ブロックしない）
@@ -11787,9 +11800,9 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
     //   rematch 単独警告には補足を出さない（記載すると勝敗で再戦警告を解決できると誤読される）。
     var winRelatedWarn=(quality.avoidableWinDiffPairs>0)||(quality.maxWinDiff>=2);
     var supplementHtml=winRelatedWarn
-      ?'<div style="font-size:11px;color:#666;margin-top:4px">勝敗数が異なるペアがあります。各対局カードに表示された勝敗数を確認してください。</div>'
+      ?'<div style="font-size:15px;color:#666;margin-top:4px">勝敗数が異なるペアがあります。各対局カードに表示された勝敗数を確認してください。</div>'
       :'';
-    html+='<div class="alert alert-warn" style="margin-bottom:12px">⚠ 要確認：'+escapeHtml(warns.join(' / '))+supplementHtml+'<div style="font-size:11px;color:#666;margin-top:4px">※ 操作はブロックされません。例外判断は現場運営に委ねます。</div></div>';
+    html+='<div class="alert alert-warn" style="margin-bottom:12px">⚠ 要確認：'+escapeHtml(warns.join(' / '))+supplementHtml+'<div style="font-size:15px;color:#666;margin-top:4px">※ 操作はブロックされません。例外判断は現場運営に委ねます。</div></div>';
   }
 
   // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT (PR #100 §5.1 Phase 1):
@@ -11849,7 +11862,7 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       // [要確認] は赤系、[手動変更] は青系、それ以外は灰系
       var labColor=(lab==='要確認')?'#A32D2D':(lab==='手動変更'?'#2E75B6':'#666');
       var labBg=(lab==='要確認')?'#FBEAEA':(lab==='手動変更'?'#E7F0FA':'#F0F0F0');
-      labelsHtml+='<span style="display:inline-block;padding:2px 6px;margin-right:4px;font-size:11px;color:'+labColor+';background:'+labBg+';border-radius:4px">['+escapeHtml(lab)+']</span>';
+      labelsHtml+='<span style="display:inline-block;padding:2px 6px;margin-right:4px;font-size:15px;color:'+labColor+';background:'+labBg+';border-radius:4px">['+escapeHtml(lab)+']</span>';
     }
     html+='<div class="pairing-card" style="position:relative">'
       // TAP-TARGET-DENSE-001 (#737 / スライス⑤a): absolute の卓バッジ＋「変更」を flow ヘッダ行へ再設計。
@@ -11857,22 +11870,22 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       //   winner-row の margin-top:28px（absolute 回避余白）は本行が flow に入ったため撤去。
       // A-4 §3 MF6-a: 卓番号バッジ（配列 index+1 から算出。永続化なし）
       +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">'
-      +'<div style="padding:2px 8px;border-radius:4px;background:#1F3864;color:#fff;font-size:11px;font-weight:bold">第 '+(i+1)+' 卓</div>'
-      +'<button style="min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:13px;color:#666;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
+      +'<div style="padding:2px 8px;border-radius:4px;background:#1F3864;color:#fff;font-size:15px;font-weight:bold">第 '+(i+1)+' 卓</div>'
+      +'<button style="min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
       +'</div>'
       +'<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
       +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+nameWithNoRubyHtml(m.p1,cls)+'</button>'
       // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT: formatParticipantLabel による勝敗数併記補助ラベル
-      +(aux1?'<div data-pairing-aux="p1" style="font-size:11px;color:#444;margin-top:3px;text-align:center;line-height:1.3;max-width:9em;word-break:break-word">'+escapeHtml(aux1)+'</div>':'')
-      +(m.winner===m.p1?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
+      +(aux1?'<div data-pairing-aux="p1" style="font-size:15px;color:#444;margin-top:3px;text-align:center;line-height:1.3;max-width:9em;word-break:break-word">'+escapeHtml(aux1)+'</div>':'')
+      +(m.winner===m.p1?'<div style="font-size:15px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
       +'</div>'
       +'<span style="font-weight:500;color:#888;padding-top:12px">vs</span>'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
       +'<button class="winner-btn'+(m.winner===m.p2?' selected':'')+'" id="wb_'+cls+'_'+i+'_p2">'+nameWithNoRubyHtml(m.p2,cls)+'</button>'
       // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT: formatParticipantLabel による勝敗数併記補助ラベル
-      +(aux2?'<div data-pairing-aux="p2" style="font-size:11px;color:#444;margin-top:3px;text-align:center;line-height:1.3;max-width:9em;word-break:break-word">'+escapeHtml(aux2)+'</div>':'')
-      +(m.winner===m.p2?'<div style="font-size:11px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
+      +(aux2?'<div data-pairing-aux="p2" style="font-size:15px;color:#444;margin-top:3px;text-align:center;line-height:1.3;max-width:9em;word-break:break-word">'+escapeHtml(aux2)+'</div>':'')
+      +(m.winner===m.p2?'<div style="font-size:15px;font-weight:bold;color:#27500A;text-align:center;margin-top:3px">▲ 勝</div>':'')
       +'</div>'
       +'</div>'
       // A-4 §2, §5: 理由ラベル（軽量ラベル方式）
@@ -11912,7 +11925,7 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
     // FRP-IMPL-004B (設計 §5.4 / §5.4.2): 部分手合い組成中（started・results 空・未割当>0）は
     //   再生成ボタンを出力しない（HTML に出さない＝bind 対象も存在しない）。未割当0 は由来を問わず従来どおり出力。
     +(shouldShowRegenerateButton(cls)
-      ?'<button style="min-height:44px;padding:8px 16px;border-radius:8px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:14px;cursor:pointer" id="repairBtn_'+cls+'">組み合わせを再生成</button>'
+      ?'<button style="min-height:44px;padding:8px 16px;border-radius:8px;border:1px solid #2E75B6;background:#fff;color:#2E75B6;font-size:15px;cursor:pointer" id="repairBtn_'+cls+'">組み合わせを再生成</button>'
       :'')
     +'</div>';
   return html;
@@ -11984,23 +11997,23 @@ function buildClassActionBarHtml(cls){
   //   （本変更は CSS クラスと状態ラベルの追加のみ。startBtnClass_/startBtnPartial_/resetBtnClass_ の id・文言は不変）。
   var html='<div class="class-action-bar" style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">';
   if(classStarted){
-    html+='<span class="class-status-started" style="font-size:13px;color:#1F3864;font-weight:bold">✓ '+escapeHtml(className)+' 開始済み</span>';
+    html+='<span class="class-status-started" style="font-size:15px;color:#1F3864;font-weight:bold">✓ '+escapeHtml(className)+' 開始済み</span>';
     html+='<button type="button" class="btn-danger btn-sm" id="resetBtnClass_'+escapeHtml(cls)+'">'+escapeHtml(className)+'をリセット</button>';
-    html+='<span style="font-size:12px;color:#888">※他クラスのデータは保持されます</span>';
+    html+='<span style="font-size:15px;color:#888">※他クラスのデータは保持されます</span>';
   } else if(players.length>=2 && players.length%2===0){
     // START-UX-CONSOLIDATE-001 (設計 §7): 正規の開始導線。文言を「<className>全員で1局目を開始」に明確化。
     //   「全員」は全クラスではなく、そのクラス内全員の意味。startTournamentForClass(cls) は当該クラスのみ開始する。
     //   START-FRP-UX-001: 主導線として full-size btn-primary にする（btn-sm を外す）。
     //   START-FRP-UX-003: 部分開始ボタンと縦積みで幅を揃える＝全幅(width:100%)。box-sizing:border-box はグローバル。
     html+='<button type="button" class="btn-primary" id="startBtnClass_'+escapeHtml(cls)+'" style="width:100%">'+escapeHtml(className)+'全員で1局目を開始</button>';
-    html+='<span style="font-size:12px;color:#888">※このクラス内の全員で開始します（他クラスは開始しません）</span>';
+    html+='<span style="font-size:15px;color:#888">※このクラス内の全員で開始します（他クラスは開始しません）</span>';
   } else if(players.length>=1){
     // START-FRP-UX-002: 未開始だが「全員で1局目を開始」が出せない理由と対処を明示する（黙って消さない）。
     //   条件は上の分岐(players>=2 かつ偶数)の補集合＝奇数(>=3) または 1名。id/文言/開始導線は不変・案内div の純追加。
     if(players.length===1){
-      html+='<div class="class-start-note" style="flex-basis:100%;font-size:12px;color:#7a5a00;background:#fff8e1;border:1px solid #ffe08a;border-radius:6px;padding:6px 10px">まだ1名です。もう1名到着すると「全員で1局目を開始」が使えます。下の「部分開始」でも始められます。</div>';
+      html+='<div class="class-start-note" style="flex-basis:100%;font-size:15px;color:#7a5a00;background:#fff8e1;border:1px solid #ffe08a;border-radius:6px;padding:6px 10px">まだ1名です。もう1名到着すると「全員で1局目を開始」が使えます。下の「部分開始」でも始められます。</div>';
     } else {
-      html+='<div class="class-start-note" style="flex-basis:100%;font-size:12px;color:#7a5a00;background:#fff8e1;border:1px solid #ffe08a;border-radius:6px;padding:6px 10px">奇数（'+players.length+'名）のため「'+escapeHtml(className)+'全員で1局目を開始」は表示されません。1名調整して偶数にするか、下の「部分開始」で来ている人から始められます。</div>';
+      html+='<div class="class-start-note" style="flex-basis:100%;font-size:15px;color:#7a5a00;background:#fff8e1;border:1px solid #ffe08a;border-radius:6px;padding:6px 10px">奇数（'+players.length+'名）のため「'+escapeHtml(className)+'全員で1局目を開始」は表示されません。1名調整して偶数にするか、下の「部分開始」で来ている人から始められます。</div>';
     }
   }
   // FRP-IMPL-002/003 (FRP-DESIGN-002 §2.3 / §8): 未開始かつ参加者1名以上なら「部分開始」導線を併置。
@@ -12010,7 +12023,7 @@ function buildClassActionBarHtml(cls){
   //   既存 startBtnClass_ / リセットボタンの出力条件・id・文言は一切変更しない（純追加）。
   if(!classStarted && players.length>=1){
     html+='<button type="button" class="btn-primary" id="startBtnPartial_'+escapeHtml(cls)+'" style="width:100%" title="来ている人だけで先に始めます。未到着者は未割当として残ります。">このクラスを部分開始（未割当者を表示）</button>';
-    html+='<span style="font-size:12px;color:#888">※部分開始にすると、1局目の未割当者から選んで対局を追加作成できます（既存の対局は変更しません）</span>';
+    html+='<span style="font-size:15px;color:#888">※部分開始にすると、1局目の未割当者から選んで対局を追加作成できます（既存の対局は変更しません）</span>';
   }
   html+='</div>';
   return html;
@@ -12185,7 +12198,7 @@ function buildHelpModalHtml(topic){
   var lines=(t&&t.lines)?t.lines:[];
   var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto">';
   html+='<h3 style="margin:0 0 12px;font-size:16px;font-weight:500;color:#1F3864">'+escapeHtml(title)+'</h3>';
-  html+='<ul style="margin:0 0 16px;padding-left:1.2em;font-size:13px;color:#444;line-height:1.7">';
+  html+='<ul style="margin:0 0 16px;padding-left:1.2em;font-size:15px;color:#444;line-height:1.7">';
   for(var i=0;i<lines.length;i++){
     html+='<li style="margin-bottom:6px">'+escapeHtml(lines[i])+'</li>';
   }
@@ -12239,8 +12252,8 @@ function buildFirstRoundPartialSectionHtml(cls){
   //   click は build/bind 分離のため bindClassActionBarEvents 側で openHelpModal('first-round') へ結線する。
   //   既存テスト pin '1局目 未割当参加者' は前方一致で維持（見出し本文は不変・flex で横並びにするだけ）。
   html+='<div style="display:flex;align-items:center;gap:8px;margin:0 0 4px">';
-  html+='<h3 style="margin:0;font-size:14px;color:#1F3864">1局目 未割当参加者（'+unassigned.length+'名）</h3>';
-  html+='<button type="button" id="helpBtnFirstRound_'+escapeHtml(cls)+'" class="btn-sm" title="1局目の作り方をヘルプで表示します" aria-label="1局目の作り方ヘルプ" style="font-size:12px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>';
+  html+='<h3 style="margin:0;font-size:15px;color:#1F3864">1局目 未割当参加者（'+unassigned.length+'名）</h3>';
+  html+='<button type="button" id="helpBtnFirstRound_'+escapeHtml(cls)+'" class="btn-sm" title="1局目の作り方をヘルプで表示します" aria-label="1局目の作り方ヘルプ" style="font-size:15px;padding:2px 12px;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button>';
   html+='</div>';
   // FRP-SMALL-UX-001 (post FRP-UNASSIGNED-COUNT-001 / #245): 未割当人数から「全員を1局目に入れると
   //   何組できて誰が待つか」を派生表示する1行。#245 の見出し人数を、運営が次に取る操作の結果（作れる
@@ -12258,7 +12271,7 @@ function buildFirstRoundPartialSectionHtml(cls){
     frpProjection='いま未割当の全員（'+unassigned.length+'名）を選ぶと、'+frpMaxPairs+'組の対局を1局目に追加できます。';
     frpProjectionColor='#1F3864';
   }
-  html+='<p class="frp-pairing-projection" style="margin:0 0 8px;font-size:12px;font-weight:600;color:'+frpProjectionColor+'">'+frpProjection+'</p>';
+  html+='<p class="frp-pairing-projection" style="margin:0 0 8px;font-size:15px;font-weight:600;color:'+frpProjectionColor+'">'+frpProjection+'</p>';
   // PROGRESSIVE-PAIRING-IMPL-P1 (CONFIRMED spec §1 / §2 / 受入1-4): 逐次手合いの主導線「1卓追加」。
   //   未手合い（受付順＝entry_no 昇順）の先頭2名で round=1 の1卓を作成する（押すたびに次の2名で1卓）。
   //   未手合いが2人未満（このセクションは未割当0 で '' を返すので実質「1名」）では disabled にする。
@@ -12274,21 +12287,21 @@ function buildFirstRoundPartialSectionHtml(cls){
   //   disabled 条件は P1 と同じ「未手合い2人未満」(canAddOneTable)。click の登録は onClickAddAllTables へ
   //   bindClassActionBarEvents 側で行う（この helper は表示専用・イベント登録を持たない）。
   html+='<button type="button" id="addAllTablesBtn_'+escapeHtml(cls)+'" class="btn-primary"'+(canAddOneTable?'':' disabled')+' style="width:100%" title="未割当の参加者から、作れる対局をまとめて作成します。">未手合いをまとめて1局目作成</button>';
-  html+='<p style="margin:6px 0 0;font-size:11px;color:#888">※いま未手合いの全員を受付順で2人ずつまとめて卓にします（受付が一段落したときに便利）。奇数なら末尾1人は次の参加者が来るまで待機します（不戦勝にはなりません）。既存の対局・結果は変更しません。</p>';
+  html+='<p style="margin:6px 0 0;font-size:15px;color:#888">※いま未手合いの全員を受付順で2人ずつまとめて卓にします（受付が一段落したときに便利）。奇数なら末尾1人は次の参加者が来るまで待機します（不戦勝にはなりません）。既存の対局・結果は変更しません。</p>';
   html+='</div>';
-  html+='<p style="margin:0 0 8px;font-size:12px;color:#666">このクラスは部分開始中です。まだ1局目に入っていない参加者から選んで「選択した参加者で1局目を追加作成」を押すと、既存の対局を変更せず選択者だけの対局を追加します（2人以上を選択。偶数は全員、奇数は末尾1人が未割当のまま残ります）。既に1局目対局がある参加者は表示されません。</p>';
+  html+='<p style="margin:0 0 8px;font-size:15px;color:#666">このクラスは部分開始中です。まだ1局目に入っていない参加者から選んで「選択した参加者で1局目を追加作成」を押すと、既存の対局を変更せず選択者だけの対局を追加します（2人以上を選択。偶数は全員、奇数は末尾1人が未割当のまま残ります）。既に1局目対局がある参加者は表示されません。</p>';
   html+='<div class="frp-unassigned-list">';
   for(var i=0;i<unassigned.length;i++){
     var p=unassigned[i];
     var no=escapeHtml(cls+'-'+entryNoOf(cls,p.id));
     var nm=escapeHtml(getName(p.id,cls));
-    html+='<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:#333;cursor:pointer">'
+    html+='<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:15px;color:#333;cursor:pointer">'
       +'<input type="checkbox" class="frp-unassigned-cb" data-frp-pid="'+escapeHtml(p.id)+'" value="'+escapeHtml(p.id)+'">'
       +'<span>'+no+'｜'+nm+'</span></label>';
   }
   html+='</div>';
   html+='<button type="button" id="frpAddBtn_'+escapeHtml(cls)+'" class="btn-primary" title="選んだ未割当者だけで1局目の対局を作成します（既存の対局・結果は変更しません）" style="width:100%;margin-top:8px">選択した参加者で1局目を追加作成</button>';
-  html+='<p style="margin:6px 0 0;font-size:11px;color:#888">※2人以上を選択してください。作成済みの対局・結果は変更されません。</p>';
+  html+='<p style="margin:6px 0 0;font-size:15px;color:#888">※2人以上を選択してください。作成済みの対局・結果は変更されません。</p>';
   html+='</div>';
   return html;
 }
@@ -12369,14 +12382,14 @@ function renderTournament(cls){
 function buildEditPastResultModalHtml(cls, roundIdx, matchIdx, n1, n2, match){
   return '<div style="background:#fff;border-radius:12px;padding:24px;width:320px;">'
     +'<h3 style="margin-bottom:16px;font-size:16px;font-weight:500;color:#1F3864">'+(roundIdx+1)+'回戦 結果の修正</h3>'
-    +'<p style="margin-bottom:16px;font-size:14px">'+escapeHtml(n1)+' vs '+escapeHtml(n2)+'</p>'
+    +'<p style="margin-bottom:16px;font-size:15px">'+escapeHtml(n1)+' vs '+escapeHtml(n2)+'</p>'
     +'<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">'
-    +'<button id="ep-p1" style="padding:10px;border-radius:8px;border:2px solid '+(match.winner===match.p1?'#1F3864':'#ccc')+';background:'+(match.winner===match.p1?'#1F3864':'#fff')+';color:'+(match.winner===match.p1?'#fff':'#222')+';font-size:14px;cursor:pointer">'+escapeHtml(n1)+' の勝ち</button>'
-    +'<button id="ep-p2" style="padding:10px;border-radius:8px;border:2px solid '+(match.winner===match.p2?'#1F3864':'#ccc')+';background:'+(match.winner===match.p2?'#1F3864':'#fff')+';color:'+(match.winner===match.p2?'#fff':'#222')+';font-size:14px;cursor:pointer">'+escapeHtml(n2)+' の勝ち</button>'
+    +'<button id="ep-p1" style="padding:10px;border-radius:8px;border:2px solid '+(match.winner===match.p1?'#1F3864':'#ccc')+';background:'+(match.winner===match.p1?'#1F3864':'#fff')+';color:'+(match.winner===match.p1?'#fff':'#222')+';font-size:15px;cursor:pointer">'+escapeHtml(n1)+' の勝ち</button>'
+    +'<button id="ep-p2" style="padding:10px;border-radius:8px;border:2px solid '+(match.winner===match.p2?'#1F3864':'#ccc')+';background:'+(match.winner===match.p2?'#1F3864':'#fff')+';color:'+(match.winner===match.p2?'#fff':'#222')+';font-size:15px;cursor:pointer">'+escapeHtml(n2)+' の勝ち</button>'
 
     +'</div>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end">'
-    +'<button id="ep-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
+    +'<button id="ep-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;cursor:pointer">キャンセル</button>'
     +'</div></div>';
 }
 
@@ -13408,12 +13421,12 @@ function refreshOpsKeyDisplay(){
     //   L3 P2-1 追補: tid が「当日の基本形 t_YYYY_MM_DD」であることも要求。suffix 付き（衝突 _n）や別日のIDで
     //   送信済みの端末に案内を出すと、2台目の合流（=当日基本形）と食い違い黙って別大会に割れるため表示しない。
     var sentKeyless=(typeof state!=='undefined'&&state&&typeof state.cloud_sent_tid==='string'&&!!state.cloud_sent_tid&&state.cloud_sent_tid===tid&&tid===opsKeylessTournamentId(opsReportYmd()));
-    if(sentKeyless){ disp.innerHTML='<span style="font-size:12px;color:#555">この端末はキーなしで送信済みです。２台目では「今日の大会に合流」を押すと同じ大会にまとまります</span>'; return; }
+    if(sentKeyless){ disp.innerHTML='<span style="font-size:15px;color:#555">この端末はキーなしで送信済みです。２台目では「今日の大会に合流」を押すと同じ大会にまとまります</span>'; return; }
     disp.innerHTML=''; return;
   }
   var note=opsKeyDateNote(tid,opsReportYmd());
-  disp.innerHTML='運営共通キー <strong style="font-size:24px;letter-spacing:4px;color:#1F3864">'+escapeHtml(key)+'</strong> <span style="font-size:12px;color:#555">を相手に伝えてください</span>'
-    +(note?'<div style="font-size:12px;color:#633806;background:#faeeda;border:1px solid #EF9F27;border-radius:6px;padding:4px 8px;margin-top:6px">'+escapeHtml(note)+'</div>':'');
+  disp.innerHTML='運営共通キー <strong style="font-size:24px;letter-spacing:4px;color:#1F3864">'+escapeHtml(key)+'</strong> <span style="font-size:15px;color:#555">を相手に伝えてください</span>'
+    +(note?'<div style="font-size:15px;color:#633806;background:#faeeda;border:1px solid #EF9F27;border-radius:6px;padding:4px 8px;margin-top:6px">'+escapeHtml(note)+'</div>':'');
 }
 // CLASS-SPLIT-CLOUD-MERGE-001 Phase 2 (#567): 送信対象＝players を持つ級の一覧（純関数）。
 //   getReportClassLabel で級ラベル化。state を引数で受け副作用なし（テスト可能）。
@@ -14315,12 +14328,12 @@ function buildResultsRoundCellMobileHtml(cls, playerId, roundIdx, wins){
   var core=_buildResultsRoundCellCore(cls, playerId, roundIdx, wins);
   // RESULT-CARD-6R-001 (#769): 両セルに min-width:0;overflow:hidden を統一（未対局セルは従来どちらも無し＝
   //   ruby の min-content が行を押し広げる一因）。flex:1 は grid 下で無効だが差分最小のため残置。
-  if(!core)return '<div style="background:#f8f8f8;border:1px solid #eee;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;min-width:0;overflow:hidden;color:#ccc"><div style="font-size:10px">'+(roundIdx+1)+'回戦</div><div>-</div></div>';
+  if(!core)return '<div style="background:#f8f8f8;border:1px solid #eee;border-radius:6px;padding:4px 2px;font-size:15px;text-align:center;flex:1;min-width:0;overflow:hidden;color:#ccc"><div style="font-size:15px">'+(roundIdx+1)+'回戦</div><div>-</div></div>';
   var markColor=core.won?'#27500A':'#A32D2D';
-  return '<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:4px 2px;font-size:12px;text-align:center;flex:1;min-width:0;overflow:hidden">'
-    +'<div style="color:#888;font-size:10px;margin-bottom:2px">'+(roundIdx+1)+'回戦</div>'
+  return '<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:4px 2px;font-size:15px;text-align:center;flex:1;min-width:0;overflow:hidden">'
+    +'<div style="color:#888;font-size:15px;margin-bottom:2px">'+(roundIdx+1)+'回戦</div>'
     +'<div style="font-weight:bold;color:'+markColor+';font-size:16px;line-height:1">'+core.markStr+'</div>'
-    +'<div style="color:#555;font-size:10px;margin-top:2px">'+nameWithNoRubyHtml(core.oppId,cls)+'('+core.oppWins+')</div>'
+    +'<div style="color:#555;font-size:15px;margin-top:2px">'+nameWithNoRubyHtml(core.oppId,cls)+'('+core.oppWins+')</div>'
     +'</div>';
 }
 
@@ -14329,7 +14342,9 @@ function buildResultsRoundCellDesktopHtml(cls, playerId, roundIdx, wins){
   var core=_buildResultsRoundCellCore(cls, playerId, roundIdx, wins);
   if(!core)return '<td style="color:#ccc">-</td>';
   var markColor=core.won?'#27500A':'#222';
-  return '<td><span style="font-weight:bold;color:'+markColor+'">'+core.markStr+'</span><br><small style="color:#333">'+nameWithNoRubyHtml(core.oppId,cls)+'('+core.oppWins+')</small></td>';
+  // FONT-FLOOR-001: <small> は font-size 未指定だとブラウザ既定の smaller（実測 12.5px）になる。
+  //   同じ表の B/C 見出しの <small> と同様に実寸を明示して床 15px を満たす（値の追加のみ）。
+  return '<td><span style="font-weight:bold;color:'+markColor+'">'+core.markStr+'</span><br><small style="color:#333;font-size:15px">'+nameWithNoRubyHtml(core.oppId,cls)+'('+core.oppWins+')</small></td>';
 }
 
 // スマホ向け表示全体(カードのリスト)
@@ -14349,7 +14364,7 @@ function buildResultsMobileHtml(cls, finals, wins){
     //   モバイル成績カード内のラベルを 4 項目すべて全角コロン「：」付きで揃える。
     //   表示: 勝：N　負：N　相手：N　勝相手：N
     //   旧実装はラベル間で半角コロン・コロンなしが混在していた（同 PR で解消）。
-    html+='<div style="font-size:12px;color:#555">勝：<strong>'+f.A+'</strong>　負：'+(f.played-f.A)+'　相手：'+f.B+'　勝相手：'+f.C+'</div>';
+    html+='<div style="font-size:15px;color:#555">勝：<strong>'+f.A+'</strong>　負：'+(f.played-f.A)+'　相手：'+f.B+'　勝相手：'+f.C+'</div>';
     html+=buildPlayerAttrDisplayHtml(f.p); // MEMBER-ATTR-SNAPSHOT-001 (#607) Phase2-2: 会員属性（当日＝当時値・注記なし）
     html+='</div>';
     html+='</div>';
@@ -14369,7 +14384,7 @@ function buildResultsMobileHtml(cls, finals, wins){
 function buildResultsDesktopHtml(cls, finals, wins){
   var html='<div style="overflow-x:auto"><table><thead><tr><th style="width:60px">順位</th><th style="text-align:left">氏名</th>';
   for(var r=1;r<=roundsForClass(cls);r++)html+='<th>'+r+'回戦</th>';
-  html+='<th>勝数(A)</th><th>負数</th><th>B<br><small style="font-weight:normal;font-size:10px">対戦相手<br>勝数合計</small></th><th>C<br><small style="font-weight:normal;font-size:10px">勝った相手<br>勝数合計</small></th></tr></thead><tbody>';
+  html+='<th>勝数(A)</th><th>負数</th><th>B<br><small style="font-weight:normal;font-size:15px">対戦相手<br>勝数合計</small></th><th>C<br><small style="font-weight:normal;font-size:15px">勝った相手<br>勝数合計</small></th></tr></thead><tbody>';
   var displayRanks=computeDisplayRanks(finals,cls);
   for(var idx=0;idx<finals.length;idx++){
     var f=finals[idx];var rank=displayRanks[idx];
@@ -14392,7 +14407,7 @@ function buildResultsClassHtml(cls, isSP){
   var finals=calcFinal(cls);
   var html='<div class="section"><h2>'+cls+'クラス '+(done?'最終結果':'（途中経過）')+'</h2>';
   html+=isSP?buildResultsMobileHtml(cls, finals, wins):buildResultsDesktopHtml(cls, finals, wins);
-  html+='<div style="margin-top:8px;font-size:12px;color:#666">※順位：①勝数(A)多い順　②B（対戦相手の勝数合計）多い順　③C（勝った相手の勝数合計）多い順　④直接対決　⑤くじ引き</div>';
+  html+='<div style="margin-top:8px;font-size:15px;color:#666">※順位：①勝数(A)多い順　②B（対戦相手の勝数合計）多い順　③C（勝った相手の勝数合計）多い順　④直接対決　⑤くじ引き</div>';
   html+='</div>';
   return html;
 }
@@ -14732,13 +14747,13 @@ function openLoadModal(){
   modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   modal.innerHTML='<div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:360px;max-height:90vh;overflow-y:auto">'
     +'<h3 style="margin-bottom:12px;font-size:16px;font-weight:500;color:#1F3864">データを読み込み</h3>'
-    +'<button id="load-pick-file" class="btn-primary" style="width:100%;padding:12px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-size:14px;cursor:pointer">ファイルから読み込み</button>'
-    +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:12px">─ または ─</div>'
-    +'<label style="font-size:12px;color:#666;display:block;margin-bottom:4px">大会データを貼り付け</label>'
+    +'<button id="load-pick-file" class="btn-primary" style="width:100%;padding:12px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-size:15px;cursor:pointer">ファイルから読み込み</button>'
+    +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:15px">─ または ─</div>'
+    +'<label style="font-size:15px;color:#666;display:block;margin-bottom:4px">大会データを貼り付け</label>'
     +'<textarea id="load-paste-area" placeholder="ここに大会データを貼り付けてください" style="width:100%;height:120px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:16px;font-family:monospace;resize:vertical"></textarea>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'
-    +'<button id="load-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">キャンセル</button>'
-    +'<button id="load-from-paste" disabled style="padding:8px 16px;border-radius:8px;border:none;background:#ccc;color:#fff;font-size:14px;cursor:not-allowed">貼り付けから読み込む</button>'
+    +'<button id="load-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;cursor:pointer">キャンセル</button>'
+    +'<button id="load-from-paste" disabled style="padding:8px 16px;border-radius:8px;border:none;background:#ccc;color:#fff;font-size:15px;cursor:not-allowed">貼り付けから読み込む</button>'
     +'</div></div>';
   document.body.appendChild(modal);
 
@@ -15064,19 +15079,19 @@ function buildBackupModalHtml(){
   try{ lastBackup=formatSaveStatusTime((loadSaveStatus()||{}).backup); }catch(eLb){}
   return '<div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:360px;max-height:90vh;overflow-y:auto">'
     +'<h3 style="margin-bottom:6px;font-size:16px;font-weight:500;color:#1F3864">バックアップ</h3>'
-    +'<div style="margin:0 0 8px;padding:6px 10px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;color:#1F3864;font-size:13px">最終バックアップ: <strong>'+lastBackup+'</strong>（この端末での実行時刻・「未」はまだ実行していません）</div>'
-    +'<p style="margin:0 0 12px;color:#888;font-size:12px;line-height:1.5">大会データを 1 つの JSON ファイルとして保存／復元します（自動バックアップ用）。</p>'
-    +'<button id="backup-export" class="btn-primary" style="width:100%;padding:12px;border-radius:8px;border:none;background:#27500A;color:#fff;font-size:14px;cursor:pointer">バックアップを保存（ダウンロード）</button>'
-    +'<div style="margin:8px 0 0;background:#eef4ea;border:1px solid #cfe0c2;border-radius:8px;padding:8px 10px;color:#3b5a26;font-size:12px;line-height:1.6">📁 保存先：iPhone は「ファイル」アプリ →「ダウンロード」、Android は「ダウンロード」フォルダに保存されます。ファイル名は <strong>shogi_backup_日付_時刻.json</strong> です。</div>'
-    +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:12px">─ または ─</div>'
-    +'<button id="backup-import-pick" style="width:100%;padding:12px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:14px;cursor:pointer">バックアップから復元（ファイル選択）</button>'
+    +'<div style="margin:0 0 8px;padding:6px 10px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;color:#1F3864;font-size:15px">最終バックアップ: <strong>'+lastBackup+'</strong>（この端末での実行時刻・「未」はまだ実行していません）</div>'
+    +'<p style="margin:0 0 12px;color:#888;font-size:15px;line-height:1.5">大会データを 1 つの JSON ファイルとして保存／復元します（自動バックアップ用）。</p>'
+    +'<button id="backup-export" class="btn-primary" style="width:100%;padding:12px;border-radius:8px;border:none;background:#27500A;color:#fff;font-size:15px;cursor:pointer">バックアップを保存（ダウンロード）</button>'
+    +'<div style="margin:8px 0 0;background:#eef4ea;border:1px solid #cfe0c2;border-radius:8px;padding:8px 10px;color:#3b5a26;font-size:15px;line-height:1.6">📁 保存先：iPhone は「ファイル」アプリ →「ダウンロード」、Android は「ダウンロード」フォルダに保存されます。ファイル名は <strong>shogi_backup_日付_時刻.json</strong> です。</div>'
+    +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:15px">─ または ─</div>'
+    +'<button id="backup-import-pick" style="width:100%;padding:12px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:15px;cursor:pointer">バックアップから復元（ファイル選択）</button>'
     +'<input type="file" id="backup-import-file" accept=".json,application/json" style="display:none">'
-    +'<div style="margin:8px 0 0;background:#eaf0f7;border:1px solid #c2d4e6;border-radius:8px;padding:8px 10px;color:#1F3864;font-size:12px;line-height:1.6">↩ 復元：上の「ファイル選択」を押し、保存した <strong>shogi_backup_….json</strong> を選ぶだけです（フォルダの指定は不要・iPhone はファイル画面の「ダウンロード」から選べます）。</div>'
-    +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:12px">─ または 貼り付けから復元 ─</div>'
+    +'<div style="margin:8px 0 0;background:#eaf0f7;border:1px solid #c2d4e6;border-radius:8px;padding:8px 10px;color:#1F3864;font-size:15px;line-height:1.6">↩ 復元：上の「ファイル選択」を押し、保存した <strong>shogi_backup_….json</strong> を選ぶだけです（フォルダの指定は不要・iPhone はファイル画面の「ダウンロード」から選べます）。</div>'
+    +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:15px">─ または 貼り付けから復元 ─</div>'
     +'<textarea id="backup-paste-area" placeholder="バックアップ/大会データのテキストを貼り付け" style="width:100%;height:90px;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:16px;font-family:monospace;resize:vertical;box-sizing:border-box"></textarea>'
-    +'<button id="backup-paste-btn" style="width:100%;margin-top:6px;padding:10px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:14px;cursor:pointer">貼り付けから復元</button>'
+    +'<button id="backup-paste-btn" style="width:100%;margin-top:6px;padding:10px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:15px;cursor:pointer">貼り付けから復元</button>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
-    +'<button id="backup-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:14px;cursor:pointer">閉じる</button>'
+    +'<button id="backup-cancel" style="padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;cursor:pointer">閉じる</button>'
     +'</div></div>';
 }
 
@@ -18598,8 +18613,8 @@ function buildCloudTournamentListHtml(tournaments){
     var sn=escapeHtml((t&&t.season)||'');
     // ローカル履歴カード(.history-row)と同じ2行レイアウトに統一。
     html+='<button type="button" class="cloud-history-row" data-tid="'+escapeHtml((t&&t.id)||'')+'" data-label="'+lbl+'" data-date="'+dt+'" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid #d3dbe5;border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer">'
-      +'<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="font-weight:600;color:#1F3864">'+disp+'</span><span style="font-size:11px;color:#999">'+sn+'</span></div>'
-      +'<div style="font-size:12px;color:#555;margin-top:4px">開催日 '+dt+'　/　タップで結果を表示</div>'
+      +'<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="font-weight:600;color:#1F3864">'+disp+'</span><span style="font-size:15px;color:#999">'+sn+'</span></div>'
+      +'<div style="font-size:15px;color:#555;margin-top:4px">開催日 '+dt+'　/　タップで結果を表示</div>'
       +'</button>';
   }
   return html;
@@ -18617,7 +18632,7 @@ function buildEntryAttrDisplayHtml(entry, memberCurrent){
   var d=buildEntryAttrDisplay(entry, memberCurrent);
   if(!d.parts.length)return '';
   var safe=[]; for(var i=0;i<d.parts.length;i++)safe.push(escapeHtml(d.parts[i]));
-  return '<div style="font-size:11px;color:#777;margin-top:2px">'+safe.join(' / ')+(d.fromCurrent?'<span style="color:#999">（※現在値）</span>':'')+'</div>';
+  return '<div style="font-size:15px;color:#777;margin-top:2px">'+safe.join(' / ')+(d.fromCurrent?'<span style="color:#999">（※現在値）</span>':'')+'</div>';
 }
 // MEMBER-ATTR-SNAPSHOT-001 (#607) Phase 2-2: 当日 player の会員属性（3属性）を補助行 HTML に整形。
 //   当日 player レコード＝登録時点値＝当時値（＝現在値・注記なし）。buildEntryAttrSnapshot で entry 形へ写し、
@@ -18634,6 +18649,10 @@ function buildReportWinnerKindGradeHtml(player){
   var parts=[]; var mk=memberKindLabelJa(s.member_kind); if(mk!=='')parts.push(mk);
   var gr=gradeLabelJa(s.grade); if(gr!=='')parts.push(gr);
   if(!parts.length)return '';
+  // FONT-FLOOR-001 5巡目 (Codex P1・cowork 裁定(a)): この helper は buildReportHtml（A4 報告書）
+  //   :15631 の1箇所からしか呼ばれない**報告書専用**＝床（画面の可読性）の対象外に戻す（15px→11px）。
+  //   画面側の属性行は別関数 buildEntryAttrDisplayHtml（15px のまま）。同じ inline style を持つ
+  //   別関数が2本あるため「共有ビルダー」に見えるが、呼び出し元 grep で独立を確認済み。
   return '<div style="font-size:11px;color:#777;margin-top:2px">'+escapeHtml(parts.join(' / '))+'</div>';
 }
 // スマホ用カード（縦に積む）。
@@ -18648,7 +18667,7 @@ function _cloudResultCardsHtml(rows){
     html+='<div style="min-width:46px;text-align:center;flex:0 0 auto">'+ri.badge+'</div>';
     html+='<div style="flex:1;min-width:0">';
     html+='<div style="font-weight:500;font-size:15px">'+playerNameRubyHtml(nm,ym)+'</div>';
-    html+='<div style="font-size:12px;color:#555;margin-top:2px">勝：<strong>'+escapeHtml(String(wins))+'</strong>　負：'+escapeHtml(String(losses))+'　相手(B)：'+escapeHtml(String(sos))+'　勝相手(C)：'+escapeHtml(String(sodos))+'</div>';
+    html+='<div style="font-size:15px;color:#555;margin-top:2px">勝：<strong>'+escapeHtml(String(wins))+'</strong>　負：'+escapeHtml(String(losses))+'　相手(B)：'+escapeHtml(String(sos))+'　勝相手(C)：'+escapeHtml(String(sodos))+'</div>';
     html+=buildEntryAttrDisplayHtml(e, m); // #607 Phase 2: 会員属性（当時値/現在値）
     html+='</div></div>';
   }
@@ -18656,7 +18675,7 @@ function _cloudResultCardsHtml(rows){
 }
 // PC/ワイド用テーブル（最終結果タブ buildResultsDesktopHtml と同型・全幅を使う）。
 function _cloudResultTableHtml(rows){
-  var html='<div style="overflow-x:auto"><table><thead><tr><th style="width:64px">順位</th><th style="text-align:left">氏名</th><th>勝数(A)</th><th>負数</th><th>B<br><small style="font-weight:normal;font-size:10px">対戦相手<br>勝数合計</small></th><th>C<br><small style="font-weight:normal;font-size:10px">勝った相手<br>勝数合計</small></th></tr></thead><tbody>';
+  var html='<div style="overflow-x:auto"><table><thead><tr><th style="width:64px">順位</th><th style="text-align:left">氏名</th><th>勝数(A)</th><th>負数</th><th>B<br><small style="font-weight:normal;font-size:15px">対戦相手<br>勝数合計</small></th><th>C<br><small style="font-weight:normal;font-size:15px">勝った相手<br>勝数合計</small></th></tr></thead><tbody>';
   for(var j=0;j<rows.length;j++){
     var e=rows[j]; var p=e&&e.players; var m=p&&p.members;
     var nm=(m&&m.name)||''; var ym=(m&&m.yomi)||''; var ri=_cloudResultRankInfo(e);
@@ -18687,7 +18706,7 @@ function buildCloudResultBlocksHtml(entries, isSP){
     rows.sort(function(a,b){ var ra=(a&&a.final_rank!=null)?a.final_rank:9999, rb=(b&&b.final_rank!=null)?b.final_rank:9999; return ra-rb; });
     html+='<div class="section"><h2>'+escapeHtml(key)+(key==='（クラス未設定）'?'':'クラス')+' 最終結果</h2>';
     html+= isSP ? _cloudResultCardsHtml(rows) : _cloudResultTableHtml(rows);
-    html+='<div style="margin-top:8px;font-size:12px;color:#666">※順位：①勝数(A)　②B（対戦相手の勝数合計）　③C（勝った相手の勝数合計）　④直接対決　⑤くじ引き</div>';
+    html+='<div style="margin-top:8px;font-size:15px;color:#666">※順位：①勝数(A)　②B（対戦相手の勝数合計）　③C（勝った相手の勝数合計）　④直接対決　⑤くじ引き</div>';
     html+='</div>';
   }
   return html;
@@ -18705,7 +18724,7 @@ function resolveReportTournamentId(state){
 //   ☁ 閲覧専用バナー＋既存 buildCloudResultBlocksHtml（class 別セクション）。空/未設定の扱いは
 //   buildCloudResultBlocksHtml に委譲（この大会の結果がありません、を出す）。isSP も委譲（省略時は window 幅）。
 function buildCloudMergedReportHtml(entries, isSP){
-  var html='<div style="background:#e8f0f8;border:1px solid #9DB7D5;color:#1F3864;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">☁ 成績発表・統合レポート（両級まとめ・閲覧専用・みんなで共有）</div>';
+  var html='<div style="background:#e8f0f8;border:1px solid #9DB7D5;color:#1F3864;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:15px;font-weight:600">☁ 成績発表・統合レポート（両級まとめ・閲覧専用・みんなで共有）</div>';
   html+=buildCloudResultBlocksHtml(entries, isSP);
   return html;
 }
@@ -18743,13 +18762,13 @@ function renderCloudTournamentDetail(client,clubId,tid,label,date){
     return fetchCloudSnapshotForTournament(client,tid).then(function(sr){
     var h=document.getElementById('history-content'); if(!h)return;
     var html='';
-    html+='<div style="margin-bottom:10px"><button type="button" class="btn-sm" id="cloud-history-back-btn" style="background:#fff;color:#444;font-size:13px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← クラウドの大会一覧へ戻る</button></div>';
-    html+='<div style="background:#e8f0f8;border:1px solid #9DB7D5;color:#1F3864;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">☁ クラウドの過去大会（閲覧専用・みんなで共有）</div>';
+    html+='<div style="margin-bottom:10px"><button type="button" class="btn-sm" id="cloud-history-back-btn" style="background:#fff;color:#444;font-size:15px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← クラウドの大会一覧へ戻る</button></div>';
+    html+='<div style="background:#e8f0f8;border:1px solid #9DB7D5;color:#1F3864;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:15px;font-weight:600">☁ クラウドの過去大会（閲覧専用・みんなで共有）</div>';
     var _head=(typeof buildCloudTournamentDisplayTitle==='function')?buildCloudTournamentDisplayTitle(label,date):(label||'');
-    html+='<div style="margin-bottom:10px"><div style="font-size:16px;font-weight:700;color:#1F3864">'+escapeHtml(_head||'(大会名未設定)')+'</div>'+(date?'<div style="font-size:12px;color:#666;margin-top:2px">開催日 '+escapeHtml(date)+'</div>':'')+'</div>';
+    html+='<div style="margin-bottom:10px"><div style="font-size:16px;font-weight:700;color:#1F3864">'+escapeHtml(_head||'(大会名未設定)')+'</div>'+(date?'<div style="font-size:15px;color:#666;margin-top:2px">開催日 '+escapeHtml(date)+'</div>':'')+'</div>';
     // #765: 2段構成＝星取表（snapshot ある送信済み大会のみ・上段）＋現行の順位表（下段・無改変＝#607 属性行を保持）。
     var _sb=''; try{ _sb=(r.ok&&sr&&sr.snapshot)?buildCloudSnapshotScoreboardHtml(sr.snapshot):''; }catch(eSb){ _sb=''; }
-    html+= r.ok ? (_sb+buildCloudResultBlocksHtml(r.entries)) : '<div class="alert alert-err" style="font-size:13px">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
+    html+= r.ok ? (_sb+buildCloudResultBlocksHtml(r.entries)) : '<div class="alert alert-err" style="font-size:15px">'+escapeHtml(r.message||'結果の取得に失敗しました')+'</div>';
     h.innerHTML=html;
     if(typeof window!=='undefined'&&window.scrollTo)window.scrollTo(0,0);
     var back=document.getElementById('cloud-history-back-btn');
@@ -18858,7 +18877,7 @@ function renderHistoryList(flashMessage){
   html+='<h2 style="font-size:16px;margin:0;color:#1F3864">大会履歴</h2>';
   html+='<button type="button" class="btn-primary" id="history-save-btn">現在の大会を履歴へ保存</button>';
   html+='</div>';
-  html+='<div style="font-size:12px;color:#888;margin-bottom:12px">過去に保存した大会を閲覧専用で確認できます（このブラウザ内にのみ保存。当日の大会データには影響しません）。</div>';
+  html+='<div style="font-size:15px;color:#888;margin-bottom:12px">過去に保存した大会を閲覧専用で確認できます（このブラウザ内にのみ保存。当日の大会データには影響しません）。</div>';
   if(list.length===0){
     html+='<div style="padding:24px;text-align:center;color:#888;background:#f7f7f7;border-radius:8px">保存された大会履歴はありません。<br>当日の大会を「現在の大会を履歴へ保存」で残せます。</div>';
   }else{
@@ -18875,8 +18894,8 @@ function renderHistoryList(flashMessage){
       // HISTORY-DELETE-001 (#550): 行本体（詳細遷移）と削除ボタンを横並びの兄弟要素にする（button 入れ子回避）。
       html+='<div style="display:flex;align-items:stretch;gap:6px;margin-bottom:8px">';
       html+='<button type="button" class="history-row" data-tid="'+tidAttr+'" style="flex:1;min-width:0;display:block;text-align:left;background:#fff;border:1px solid #d3dbe5;border-radius:8px;padding:10px 12px;cursor:pointer">';
-      html+='<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="font-weight:600;color:#1F3864">'+month+'　'+ttl+'</span><span style="font-size:11px;color:#999">保存 '+saved+'</span></div>';
-      html+='<div style="font-size:12px;color:#555;margin-top:4px">開催日 '+held+'　/　'+clsCount+'クラス　/　'+pcount+'名'+(champ?'　/　優勝 '+champ:'')+'</div>';
+      html+='<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="font-weight:600;color:#1F3864">'+month+'　'+ttl+'</span><span style="font-size:15px;color:#999">保存 '+saved+'</span></div>';
+      html+='<div style="font-size:15px;color:#555;margin-top:4px">開催日 '+held+'　/　'+clsCount+'クラス　/　'+pcount+'名'+(champ?'　/　優勝 '+champ:'')+'</div>';
       html+='</button>';
       html+='<button type="button" class="history-del-btn" data-tid="'+tidAttr+'" aria-label="この大会履歴を削除" title="この履歴を削除" style="flex-shrink:0;min-width:44px;background:#fff;border:1px solid #c33;color:#c33;border-radius:8px;font-size:16px;cursor:pointer">🗑</button>';
       html+='</div>';
@@ -18888,8 +18907,8 @@ function renderHistoryList(flashMessage){
   html+='<hr class="separator">';
   // HELP-UX-006 (STYLE-GUIDE §9 M2): クラウド見出し脇「？ ヘルプ」→ openHelpModal('cloud')（topic は順位タブ送信ボタン脇と共用・下で bind）。
   html+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px"><h2 style="font-size:16px;margin:0;color:#1F3864">☁ クラウドの過去大会（みんなで共有）</h2><span style="display:flex;gap:6px;align-items:center"><button type="button" class="btn-sm" id="history-cloud-help" title="クラウド送信・取得の意味をヘルプで表示します" aria-label="クラウド送信・取得ヘルプ" style="background:#fff;font-weight:400;white-space:nowrap;min-height:44px">？ ヘルプ</button><button type="button" class="btn-sm" id="history-cloud-load" style="background:#fff;border:1px solid #1F3864;color:#1F3864;min-height:44px">読み込む</button></span></div>';
-  html+='<div style="font-size:12px;color:#888;margin-bottom:6px">クラウドに保存された過去大会の結果一覧です（ログイン＋オンライン時）。</div>';
-  html+='<div id="history-cloud-status" class="cloud-status" role="status" aria-live="polite" style="font-size:12px;margin-bottom:6px"></div>';
+  html+='<div style="font-size:15px;color:#888;margin-bottom:6px">クラウドに保存された過去大会の結果一覧です（ログイン＋オンライン時）。</div>';
+  html+='<div id="history-cloud-status" class="cloud-status" role="status" aria-live="polite" style="font-size:15px;margin-bottom:6px"></div>';
   html+='<div id="history-cloud-list"></div>';
   host.innerHTML=html;
   var saveBtn=document.getElementById('history-save-btn');
@@ -18932,15 +18951,15 @@ function renderHistoryDetail(tid){
   var snap=entry.snapshot||{};
   var html='';
   // HISTORY-DELETE-001 (#550): 戻ると同じ上部バーに削除導線（危険色・confirm はハンドラ側）。
-  html+='<div style="margin-bottom:10px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><button type="button" class="btn-sm" id="history-back-btn" style="background:#fff;color:#444;font-size:13px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← 履歴一覧へ戻る</button><button type="button" class="btn-sm" id="history-delete-btn" style="background:#fff;color:#A32D2D;font-size:13px;padding:6px 12px;border:1px solid #A32D2D;border-radius:6px;cursor:pointer">🗑 この履歴を削除</button></div>';
-  html+='<div style="background:#fff3cd;border:1px solid #ffe08a;color:#7a5b00;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">閲覧専用：過去の大会です（編集できません）</div>';
+  html+='<div style="margin-bottom:10px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><button type="button" class="btn-sm" id="history-back-btn" style="background:#fff;color:#444;font-size:15px;padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer">← 履歴一覧へ戻る</button><button type="button" class="btn-sm" id="history-delete-btn" style="background:#fff;color:#A32D2D;font-size:15px;padding:6px 12px;border:1px solid #A32D2D;border-radius:6px;cursor:pointer">🗑 この履歴を削除</button></div>';
+  html+='<div style="background:#fff3cd;border:1px solid #ffe08a;color:#7a5b00;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:15px;font-weight:600">閲覧専用：過去の大会です（編集できません）</div>';
   html+='<div style="margin-bottom:10px">';
   html+='<div style="font-size:16px;font-weight:700;color:#1F3864">'+escapeHtml(id.title||'（大会名未設定）')+'</div>';
   var meta=[];
   if(id.targetMonthLabel)meta.push('対象月：'+id.targetMonthLabel);
   if(id.heldDate)meta.push('開催日：'+id.heldDate);
   meta.push('保存日時：'+formatArchiveSavedAt(entry.savedAt));
-  html+='<div style="font-size:12px;color:#666;margin-top:2px">'+escapeHtml(meta.join('　／　'))+'</div>';
+  html+='<div style="font-size:15px;color:#666;margin-top:2px">'+escapeHtml(meta.join('　／　'))+'</div>';
   html+='</div>';
   var classes=(id.classes&&id.classes.length)?id.classes:deriveArchiveClassesFromSnapshot(snap);
   var body='';
