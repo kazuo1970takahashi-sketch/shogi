@@ -162,11 +162,22 @@ assert(allowedNonPx.scoreboard.length > 0 && allowedNonPx.print.length > 0,
 {
   const INPUT_TAG = /<input\b[^>]*>/g;
   const badInputs = []; let inputsWithFs = 0;
+  const fileInputsNoFs = []; let visibleFileInputs = 0;
   for (let i = 0; i < LINES.length; i++) {
     let m; INPUT_TAG.lastIndex = 0;
     while ((m = INPUT_TAG.exec(LINES[i]))) {
       const tag = m[0];
       const fs = tag.match(/font-size\s*:\s*([0-9]+(?:\.[0-9]+)?)px/);
+      const isFile = /type="file"/.test(tag);
+      const isHidden = /display\s*:\s*none/.test(tag);
+      // ★ Codex 4巡目 P2: 「宣言を消す」変異にも赤を出す。
+      //   可視の file input はブラウザ既定が 16px 未満（Chromium 実測 13.33px）なので、
+      //   inline font-size が**無いこと自体**を違反にする（continue で黙って落とさない）。
+      //   display:none のもの（loadFile / backup-import-file＝ボタン経由で開く隠し input）は対象外。
+      if (isFile && !isHidden) {
+        visibleFileInputs++;
+        if (!fs) { fileInputsNoFs.push({ ln: i + 1, tag: tag.slice(0, 80) }); continue; }
+      }
       if (!fs) continue;
       inputsWithFs++;
       if (parseFloat(fs[1]) < 16) badInputs.push({ ln: i + 1, px: fs[1], tag: tag.slice(0, 80) });
@@ -176,6 +187,10 @@ assert(allowedNonPx.scoreboard.length > 0 && allowedNonPx.print.length > 0,
   assert(badInputs.length === 0,
     '<input> は type を問わず inline font-size 16px 以上（§10.1 は type=file を除外していない・実測 '
     + badInputs.length + ' 件' + (badInputs.length ? ' → ' + JSON.stringify(badInputs.slice(0, 3)) : '') + '）');
+  assert(visibleFileInputs > 0, '可視の file input を実際に走査している（' + visibleFileInputs + ' 件）');
+  assert(fileInputsNoFs.length === 0,
+    '可視の file input は inline font-size を**必ず**持つ（無ければ UA 既定 13.33px に落ちる・実測 '
+    + fileInputsNoFs.length + ' 件' + (fileInputsNoFs.length ? ' → ' + JSON.stringify(fileInputsNoFs) : '') + '）');
 }
 
 // --- ふりがな rt が「小さいまま」でないこと（.55em / .6em の残骸は星取表の据え置き1件だけ）

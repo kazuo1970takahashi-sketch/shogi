@@ -264,17 +264,37 @@ const SB_READ = (sel) => {
         { id: 'p1', member_id: 'm1', members: { name: '架空一郎', yomi: 'かくういちろう', member_kind: 'member', grade: 'ippan', city: '沼津市' } },
         { id: 'p2', member_id: 'm2', members: { name: '架空二郎', yomi: 'かくうじろう', member_kind: 'guest', grade: 'chu', city: '三島市' } }
       ],
-      tournament_snapshots: []
+      // ★ Codex 4巡目 P2: snapshot ありの経路も踏む。空配列だと星取表スナップショット
+      //   （buildCloudSnapshotScoreboardHtml → .sb-table）が #history-content に一度も出ず、
+      //   「snapshot の rt は 10px のまま」という主張が1文字も測られない
+      //   （静的側は .sb- を含むセレクタを免除しているので、履歴限定の 11px 上書きが素通りする穴）。
+      tournament_snapshots: [{
+        snapshot: { state: {
+          classes: [{ id: 'A', name: 'Aクラス', started: true }],
+          players: {
+            A: [
+              { id: 'p1', name: '架空一郎', yomi: 'かくういちろう', cls: 'A', member: 'member', grade: 'ippan', entry_no: 1 },
+              { id: 'p2', name: '架空二郎', yomi: 'かくうじろう', cls: 'A', member: 'guest', grade: 'chu', entry_no: 2 }
+            ]
+          },
+          results: { A: [[{ p1: 'p1', p2: 'p2', winner: 'p1' }]] },
+          pairings: { A: [] }, rounds: 1, report: {}
+        } }
+      }]
     };
     const client = { from: t => ({ select: () => ({ eq: () => Promise.resolve({ data: DATA[t] || [], error: null }) }) }) };
     showTab('history');
     renderCloudTournamentDetail(client, 'club1', 'tid1', '架空8月大会', '2026-08-24');
     await new Promise(r => setTimeout(r, 300));
     const host = document.getElementById('history-content');
+    const sbT = host ? host.querySelector('.sb-table') : null;
     return {
       opened: !!(host && host.querySelector('#cloud-history-back-btn')),
       hasName: !!host && host.textContent.indexOf('架空一郎') >= 0,
-      rts: host ? [...host.querySelectorAll('rt')].map(e => parseFloat(getComputedStyle(e).fontSize)) : []
+      // 結果ブロック側の rt（スナップショット .sb-table の外）と、スナップショット内の rt を分けて測る
+      rts: host ? [...host.querySelectorAll('rt')].filter(e => !e.closest('.sb-table')).map(e => parseFloat(getComputedStyle(e).fontSize)) : [],
+      snapshotShown: !!sbT,
+      snapRts: sbT ? [...sbT.querySelectorAll('rt')].map(e => parseFloat(getComputedStyle(e).fontSize)) : []
     };
   };
   for (const vp of [{ label: 'スマホ375', w: 375 }, { label: 'PC1024', w: 1024 }]) {
@@ -287,6 +307,10 @@ const SB_READ = (sel) => {
       '[' + vp.label + '] 大会履歴: クラウド閲覧が偽 client で実際に開く（正極性＝何かを測っている）');
     ok(ch.rts.length > 0 && ch.rts.every(v => v === RUBY_PX),
       '[' + vp.label + '] 大会履歴: クラウド閲覧のふりがな(rt) は ' + RUBY_PX + 'px（' + ch.rts.length + '個・実測 ' + JSON.stringify([...new Set(ch.rts)]) + '）');
+    ok(ch.snapshotShown,
+      '[' + vp.label + '] 大会履歴: 星取表スナップショット（.sb-table）も実際に描かれる（正極性）');
+    ok(ch.snapRts.length > 0 && ch.snapRts.every(v => v === RUBY_PX),
+      '[' + vp.label + '] 大会履歴: スナップショット内のふりがな(rt) も ' + RUBY_PX + 'px（' + ch.snapRts.length + '個・実測 ' + JSON.stringify([...new Set(ch.snapRts)]) + '）');
     await hp.close();
   }
 
