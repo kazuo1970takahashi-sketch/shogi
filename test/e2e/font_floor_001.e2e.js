@@ -245,6 +245,51 @@ const SB_READ = (sel) => {
     '個人ビュー 氏名ルビは据え置き ' + SB_PV_RT_EXPECT + 'px（UA 既定 50%・実測 ' + pvRt + '）');
   await sb.close();
 
+  // ---- ③ 大会履歴タブのクラウド閲覧（3巡目・cowork 指示）----
+  //   renderCloudTournamentDetail は #history-content へ描くが、ここは rt 規則
+  //   （.player-name / .sb-table / #pane-result / .winner-btn）のどれも当たらない場所で、
+  //   ルビが UA 既定 50%＝7.5px で描かれていた（base 8aac743 でも同値＝既存の欠落）。
+  //   Supabase には CI からもローカルからも依存しない: client.from().select().eq() が
+  //   {data,error} の Promise を返す偽 client を注入して**実物の描画経路**を通す
+  //   （fetchCloudEntriesForTournament → buildCloudResultBlocksHtml → playerNameRubyHtml）。
+  //   ★ 幅で builder が入れ替わる（スマホ=_cloudResultCardsHtml / 広幅=_cloudResultTableHtml）
+  //     ＝ M5 と同じ型の穴になるので、両方の幅で測る。
+  const CLOUD_HIST = async () => {
+    const DATA = {
+      entries: [
+        { final_rank: 1, class: 'A', wins: 3, losses: 0, sos: 5, sodos: 4, member_kind: 'member', grade: 'ippan', city: '沼津市', player_id: 'p1' },
+        { final_rank: 2, class: 'A', wins: 2, losses: 1, sos: 6, sodos: 3, member_kind: 'guest', grade: 'chu', city: '三島市', player_id: 'p2' }
+      ],
+      players: [
+        { id: 'p1', member_id: 'm1', members: { name: '架空一郎', yomi: 'かくういちろう', member_kind: 'member', grade: 'ippan', city: '沼津市' } },
+        { id: 'p2', member_id: 'm2', members: { name: '架空二郎', yomi: 'かくうじろう', member_kind: 'guest', grade: 'chu', city: '三島市' } }
+      ],
+      tournament_snapshots: []
+    };
+    const client = { from: t => ({ select: () => ({ eq: () => Promise.resolve({ data: DATA[t] || [], error: null }) }) }) };
+    showTab('history');
+    renderCloudTournamentDetail(client, 'club1', 'tid1', '架空8月大会', '2026-08-24');
+    await new Promise(r => setTimeout(r, 300));
+    const host = document.getElementById('history-content');
+    return {
+      opened: !!(host && host.querySelector('#cloud-history-back-btn')),
+      hasName: !!host && host.textContent.indexOf('架空一郎') >= 0,
+      rts: host ? [...host.querySelectorAll('rt')].map(e => parseFloat(getComputedStyle(e).fontSize)) : []
+    };
+  };
+  for (const vp of [{ label: 'スマホ375', w: 375 }, { label: 'PC1024', w: 1024 }]) {
+    const hp = await browser.newPage({ viewport: { width: vp.w, height: 812 } });
+    hp.on('pageerror', e => pageErrors.push(String(e && e.message || e)));
+    await hp.goto(TARGET, { waitUntil: 'domcontentloaded' });
+    await hp.waitForFunction(() => typeof renderCloudTournamentDetail === 'function', null, { timeout: 15000 });
+    const ch = await hp.evaluate(CLOUD_HIST);
+    ok(ch.opened && ch.hasName,
+      '[' + vp.label + '] 大会履歴: クラウド閲覧が偽 client で実際に開く（正極性＝何かを測っている）');
+    ok(ch.rts.length > 0 && ch.rts.every(v => v === RUBY_PX),
+      '[' + vp.label + '] 大会履歴: クラウド閲覧のふりがな(rt) は ' + RUBY_PX + 'px（' + ch.rts.length + '個・実測 ' + JSON.stringify([...new Set(ch.rts)]) + '）');
+    await hp.close();
+  }
+
   ok(pageErrors.length === 0, '未捕捉例外が出ない' + (pageErrors.length ? '（実際: ' + pageErrors[0] + '）' : ''));
 
   await browser.close();

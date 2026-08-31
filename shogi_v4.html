@@ -184,6 +184,11 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
    ブラウザ既定の rt{font-size:50%} で描かれていた（実測 15px×50%=7.5px＝アプリ内で最小）。
    ふりがなの床（§1-2）を他の rt と揃える。 */
 .winner-btn rt{font-size:10px}
+/* FONT-FLOOR-001 3巡目: 大会履歴タブのクラウド閲覧（renderCloudTournamentDetail → #history-content）の
+   ルビも app 側の rt 規則がどれも当たらず UA 既定 50%＝7.5px だった（base 8aac743 でも同値＝既存の欠落。
+   本 PR の床上げで顕在化しただけ）。ふりがなの床（§1-2）を他の rt と揃える。
+   クラウド星取表スナップショット（.sb-table）の rt は既に 10px（178行）で、本宣言（1,0,1）も同値＝変化なし。 */
+#history-content rt{font-size:10px}
 .player-fee{font-weight:500;color:#1F3864;min-width:55px;font-size:15px}
 /* WORLD-STD-ALIGN-002 (#717 作者決定 2026-07-09): 受付リストの固定列グリッド化（世界標準の揃え②）。
    .player-row を flex→grid に切替え、.player-row-main / .player-row-actions は display:contents で
