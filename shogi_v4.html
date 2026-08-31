@@ -5216,7 +5216,7 @@ function buildMasterImportModalHtml(){
   html+='<p style="font-size:15px;color:#444;line-height:1.6;margin-bottom:8px">エクスポートしたマスタファイルを取り込みます。<strong>過去大会データ（参加者の集計）はここでは扱いません</strong>（マイグレ機能をご利用ください）。</p>';
 
   html+='<div style="margin-bottom:12px"><label style="display:block;font-size:15px;color:#444;margin-bottom:4px">① ファイル選択（端末移行・バックアップ）</label>';
-  html+='<input type="file" id="mi-file" accept="application/json,.json" style="font-size:15px"></div>';
+  html+='<input type="file" id="mi-file" accept="application/json,.json" style="font-size:16px"></div>';/* FONT-FLOOR-001 2巡目 (Codex P2-①): input は type を問わず 16px（STYLE-GUIDE §10.1・iOS 自動ズーム）。base 時点で 14px＝元から §10.1 違反だった */
 
   html+='<div style="margin-bottom:12px"><label style="display:block;font-size:15px;color:#444;margin-bottom:4px">② または、テキストを貼り付け</label>';
   html+='<textarea id="mi-paste-area" rows="6" style="width:100%;font-size:16px;font-family:monospace;border:1px solid #ccc;border-radius:6px;padding:8px;box-sizing:border-box" placeholder="ここにマスタ JSON を貼り付けてください"></textarea></div>';
@@ -5502,7 +5502,7 @@ function buildPhase2ImportModalHtml(master){
     html+='</div>';
   }
   html+='<div style="margin-bottom:12px"><label style="display:block;font-size:15px;color:#444;margin-bottom:4px">JSON ファイル選択</label>';
-  html+='<input type="file" id="p2-file" accept="application/json,.json" style="font-size:15px"></div>';
+  html+='<input type="file" id="p2-file" accept="application/json,.json" style="font-size:16px"></div>';/* FONT-FLOOR-001 2巡目 (Codex P2-①): 同上・§10.1 は type=file を除外していない */
   html+='<div id="p2-preview" style="display:none;margin-bottom:12px;padding:8px 12px;background:#f7f7f7;border-radius:6px;font-size:15px;color:#444;line-height:1.6"></div>';
   html+='<div id="p2-status" style="font-size:15px;color:#a00;min-height:1.4em;line-height:1.4;margin-bottom:12px"></div>';
   html+='<div style="display:flex;gap:8px;justify-content:flex-end">';

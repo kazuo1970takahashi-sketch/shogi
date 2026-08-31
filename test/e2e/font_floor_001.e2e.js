@@ -135,6 +135,25 @@ const SB_EXPECT = {
 };
 const SB_RT_EXPECT = 7.8;   // .sb-table rt = .6em × 13px
 
+// 個人ビュー（行タップで開く画面）の据え置き確認（Codex P2-③）。
+//   1巡目の pin は表モードの代表10点しか見ておらず、`.sb-pv-sub` を 12px→15px にしても緑のまま
+//   通った（Codex が変異で実証）＝個人ビュー経路では1文字も測られていなかった。
+//   期待値はすべて据え置き前（base 8aac743）の実測値。
+const SB_PV_EXPECT = {
+  '.sb-pv-back': 13,
+  '.sb-pv-name': 17,
+  '.sb-pv-sub': 12,      // ← Codex の変異が突いた点
+  '.sb-pv-stats': 13,
+  '.sb-next-h': 12,
+  '.sb-history-h': 12,
+  '.sb-hrow': 14,
+  '.sb-hrow-r': 11,
+  '.sb-hrow-no': 11
+};
+// 個人ビューの氏名ルビ: app 側の rt 規則がどれも当たらず UA 既定 50%（17px×50%=8.5px）。
+//   床の対象外（星取表据え置き）だが、「変わっていないこと」の証拠として実寸を pin する。
+const SB_PV_RT_EXPECT = 8.5;
+
 const SB_READ = (sel) => {
   const e = document.querySelector('#scoreboard-view ' + sel);
   return e ? parseFloat(getComputedStyle(e).fontSize) : null;
@@ -200,6 +219,30 @@ const SB_READ = (sel) => {
     '星取表 rt は据え置き ' + SB_RT_EXPECT + 'px（.6em × 13px・実測 ' + sbRt + '）');
   const sbOvf = await sb.evaluate(OVERFLOW);
   ok(sbOvf.sw <= sbOvf.cw, '星取表: ページの横あふれ 0（表自身は .sb-scroll の内側で横スクロール）');
+
+  // ---- ②b クラス切替タブの経路（.sb-tab を実クリック）----
+  //   タブ切替は表を描き直す＝動的に生成し直された要素も据え置きであることを確かめる。
+  await sb.click('.sb-tab:nth-of-type(2)');
+  await sb.waitForTimeout(150);
+  const tabbedRows = await sb.evaluate(() => document.querySelectorAll('#scoreboard-view tr[data-sbpid]').length);
+  ok(tabbedRows > 0, '星取表: クラス切替タブで表が描き直される（' + tabbedRows + '行）');
+  const tabbedTable = await sb.evaluate(SB_READ, '.sb-table');
+  ok(tabbedTable === SB_EXPECT['.sb-table'],
+    '星取表: クラス切替後も .sb-table は据え置き ' + SB_EXPECT['.sb-table'] + 'px（実測 ' + tabbedTable + '）');
+
+  // ---- ②c 個人ビュー（行タップ）の経路 ----
+  await sb.click('#scoreboard-view tr[data-sbpid]');
+  await sb.waitForTimeout(200);
+  const pvOpen = await sb.evaluate(() => !!document.querySelector('#scoreboard-view .sb-pv-back'));
+  ok(pvOpen, '星取表: 行タップで個人ビューが開く');
+  for (const sel of Object.keys(SB_PV_EXPECT)) {
+    const got = await sb.evaluate(SB_READ, sel);
+    ok(got === SB_PV_EXPECT[sel],
+      '個人ビュー ' + sel + ' は据え置き ' + SB_PV_EXPECT[sel] + 'px（実測 ' + got + '）');
+  }
+  const pvRt = await sb.evaluate(SB_READ, '.sb-pv-name rt');
+  ok(pvRt !== null && Math.abs(pvRt - SB_PV_RT_EXPECT) < 0.05,
+    '個人ビュー 氏名ルビは据え置き ' + SB_PV_RT_EXPECT + 'px（UA 既定 50%・実測 ' + pvRt + '）');
   await sb.close();
 
   ok(pageErrors.length === 0, '未捕捉例外が出ない' + (pageErrors.length ? '（実際: ' + pageErrors[0] + '）' : ''));
