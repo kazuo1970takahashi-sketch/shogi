@@ -44,15 +44,24 @@ const SB_FNS = ['buildScoreboardClassTableHtml', 'buildScoreboardPlayerViewHtml'
 //   帳票面の同値性は golden（download_report_payload_001.json が base と byte 一致）が pin する。
 const REPORT_FNS = ['buildReportWinnerKindGradeHtml'];
 
-// 星取表の CSS 免除の判定（5巡目で狭めた・Codex 4巡目 P2-b の派生）:
+// 星取表の CSS 免除の判定（5巡目で狭めた・6巡目でさらに狭めた）:
 //   旧判定「セレクタのどこかに .sb- を含む」だと `#history-content .sb-table rt{11px}` のような
 //   **据え置き対象の外へのスコープ付き上書き**まで免除してしまう（実際 M12 が静的を素通りした）。
-//   → 「カンマ区切りの**全**セレクタが `.sb-` または `#scoreboard-view` で**始まる**」に限定する。
-//   既存の凍結規則（.sb-* / #scoreboard-view 始まり）は全部通り、他コンテナ起点の上書きは通らない。
+//   → 5巡目: 「カンマ区切りの**全**セレクタが `.sb-` または `#scoreboard-view` で**始まる**」に限定。
+//   → 6巡目 (Codex 3巡目 #1): 前方一致は「星取表の部分木の中に留まる」を保証しない。
+//     `~` / `+` は**兄弟**＝星取表の外の要素へ届く（Codex 実証:
+//     `#scoreboard-view ~ #master-import-modal p{11px}` が免除枠に入り緑のまま通った）。
+//     → `~` / `+` を含むセレクタは免除しない。`>` と子孫結合子（空白）は部分木の中に
+//     留まるので可。:nth-child(2n+1) 等の括弧内の `+` は結合子ではないため、
+//     括弧の中身を剥がしてから判定する（現物の免除対象に `~`/`+` は 0 件＝狭めても全部通る）。
 function sbSelectorExempt(selector) {
   const parts = selector.split(',');
   if (!parts.length) return false;
-  return parts.every(p => /^\s*(\.sb-|#scoreboard-view)/.test(p));
+  return parts.every(function (p) {
+    if (!/^\s*(\.sb-|#scoreboard-view)/.test(p)) return false;
+    if (/[~+]/.test(p.replace(/\([^)]*\)/g, ''))) return false;
+    return true;
+  });
 }
 
 // --- 各行がどのトップレベル関数の中にいるか（`^function name(` を辿るだけの近似）
@@ -186,7 +195,12 @@ assert(allowedNonPx.scoreboard.length > 0 && allowedNonPx.print.length > 0,
       const tag = m[0];
       const fs = tag.match(/font-size\s*:\s*([0-9]+(?:\.[0-9]+)?)px/);
       const isFile = /type="file"/.test(tag);
-      const isHidden = /display\s*:\s*none/.test(tag);
+      // ★ 6巡目 (Codex 3巡目 #2): 「消え方」は display:none の1種類ではない。`hidden` 属性でも
+      //   ピッカーは消えるのに旧判定は「可視」に数え、厳密件数 pin (===2) が緑のまま通った（Codex 実証）。
+      //   現物のタグ内の隠し方を grep で棚卸し: display:none（loadFile / backup-import-file）のみ。
+      //   visibility:hidden は shogi_v4.html 全体で 0 件（無いので扱わない）。`hidden` 属性も現物では
+      //   未使用だが変異経路として非可視扱いに足す（`\shidden` は `type="hidden"` に誤反応しない）。
+      const isHidden = /display\s*:\s*none/.test(tag) || /\shidden(?=[\s>=\/])/.test(tag);
       // ★ Codex 4巡目 P2: 「宣言を消す」変異にも赤を出す。
       //   可視の file input はブラウザ既定が 16px 未満（Chromium 実測 13.33px）なので、
       //   inline font-size が**無いこと自体**を違反にする（continue で黙って落とさない）。
@@ -251,6 +265,30 @@ assert(wb.length === 2 && wb.every(s => /font-size:17px/.test(s)),
   const sizes = (body.match(/font-size:\s*([0-9.]+)px/g) || []);
   assert(fnStart >= 0 && sizes.length === 1 && /font-size:\s*11px/.test(sizes[0]),
     'buildReportWinnerKindGradeHtml（報告書専用）は 11px＝A4 帳票の実寸のまま（実測 ' + JSON.stringify(sizes) + '）');
+}
+
+// --- 免除枠③の前提「報告書専用」そのものを pin（6巡目・Codex 3巡目 #3）:
+//   5巡目は「呼び出し元は buildReportHtml の1箇所だけ」という grep を免除の根拠にしたが、
+//   grep は書いた時点の事実であって pin ではない。画面側ビルダーから呼ぶ行が増えても、
+//   免除枠③と 11px 値 pin は「定義」しか見ないので全緑のまま通った
+//   （Codex 実証: buildMasterImportModalHtml から呼ぶとモーダルに 11px が出ても PASS=31）。
+//   → 裁定の根拠に使った事実をそのまま pin する: 呼び出しはちょうど1箇所・それが buildReportHtml の中。
+//   呼び出しが増える＝この2件の更新＝「画面に 11px を出してよいか」の意図の宣言になる。
+{
+  const calls = [];
+  for (let i = 0; i < LINES.length; i++) {
+    let line = LINES[i];
+    const sl = line.indexOf('//');
+    if (sl >= 0 && !/https?:\/\//.test(line.slice(0, sl + 8))) line = line.slice(0, sl);
+    if (/function\s+buildReportWinnerKindGradeHtml\s*\(/.test(line)) continue;   // 定義行は数えない
+    if (/buildReportWinnerKindGradeHtml\s*\(/.test(line)) calls.push({ ln: i + 1, fn: FN[i] });
+  }
+  assert(calls.length === 1,
+    'buildReportWinnerKindGradeHtml の呼び出しはちょうど1箇所（「報告書専用」の前提を pin・実測 '
+    + calls.length + ' 件' + (calls.length !== 1 ? ' → ' + JSON.stringify(calls.slice(0, 3)) : '') + '）');
+  assert(calls.length >= 1 && calls[0].fn === 'buildReportHtml',
+    'その唯一の呼び出し元は buildReportHtml（A4 帳票ビルダー）である（実測 '
+    + JSON.stringify(calls.map(function (c) { return c.fn; })) + '）');
 }
 
 // --- 自己検査: 検査器が壊れていないこと（違反を仕込んだ文字列で必ず捕まえる）
