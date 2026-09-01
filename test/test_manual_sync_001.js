@@ -31,8 +31,10 @@ const BOTH=[['manual_sp',SP],['manual_print',PR]];
 // ---- A1. タブ名: アプリの tab-bar から抽出→両マニュアルに全タブ名があること
 const tabLabels=[];
 {
-  const re=/<button[^>]*class="tab[^"]*"[^>]*id="tab-[^"]*"[^>]*>([^<]+)<\/button>/g;let m;
-  while((m=re.exec(RAW))!==null)tabLabels.push(m[1].trim());
+  // TAB-LABEL-WRAP-001: ラベル内に折れ位置を決める span が入るので、中身はタグを許容して
+  //   剥がしてから比較する（マニュアルに載っているのは可視文字列）。
+  const re=/<button[^>]*class="tab[^"]*"[^>]*id="tab-[^"]*"[^>]*>([\s\S]*?)<\/button>/g;let m;
+  while((m=re.exec(RAW))!==null)tabLabels.push(m[1].replace(/<[^>]*>/g,'').trim());
 }
 ok(tabLabels.length===5,'A1-0 タブは5本抽出できること（実際 '+tabLabels.length+'本: '+tabLabels.join('/')+'）');
 BOTH.forEach(([name,doc])=>{
