@@ -288,6 +288,18 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 /* PAIRING-CARD-COMPACT-001 (#942): カードの余白を詰める（padding 12→8px・margin-bottom 8→6px）。
    実測 182px → 174px（−8px/枚）。中身の並びは変えないので副作用が無い一番安い手。 */
 .pairing-card{background:#f8fbff;border:1px solid #d0e4f7;border-radius:10px;padding:8px 12px;margin-bottom:6px}
+/* FINISHED-MATCH-FOLD-001 (#943 / Codex 1巡目 P2): 畳んだ対局の行。
+   STYLE-GUIDE §1 と §2.2-4 に従い、色・フォント・枠は class で持つ
+   （インライン style は position/margin 等のレイアウト微調整のみ）。
+   色は既存値の流用のみ＝新色を足していない（#27500A=ok / #888=既存の補助グレー）。 */
+.fm-summary{font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside}
+.fm-summary .fm-count{font-weight:400;color:#888;margin-left:8px}
+.fm-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #e4eaf1}
+.fm-row:last-child{border-bottom:none}
+.fm-players{flex:1;font-size:15px;word-break:break-word}
+.fm-win{color:#27500A;font-weight:bold}
+.fm-vs{color:#888}
+.fm-fix{min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer}
 /* LIVE-MOBILE-SCOREBOARD-001 §2 対局管理の名前ボックス改善:
    旧実装は width:7em + white-space:nowrap + text-overflow:ellipsis で長い氏名を
    省略表示していた（「12｜長谷川さく…」のように末尾が切れて読めない）。
@@ -11899,13 +11911,13 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
     // 終わっていて、かつ「直前に操作した対局」でないものは下段へ1行で畳む。
     if(m&&m.winner&&!fmIsTouched(cls,m)){
       var fmLoser=(m.winner===m.p1)?m.p2:m.p1;
-      fmFoldedHtml+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #eef2f7">'
-        +'<div style="flex:1;font-size:15px;word-break:break-word">'
-        +escapeHtml(getName(m.winner,cls))+'<span style="color:#27500A;font-weight:bold">　○</span>'
-        +'<span style="color:#888">　−　</span>'
+      fmFoldedHtml+='<div class="fm-row">'
+        +'<div class="fm-players">'
+        +escapeHtml(getName(m.winner,cls))+'<span class="fm-win">　○</span>'
+        +'<span class="fm-vs">　−　</span>'
         +escapeHtml(getName(fmLoser,cls))
         +'</div>'
-        +'<button style="min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer" id="fixbtn_'+cls+'_'+i+'">直す</button>'
+        +'<button class="fm-fix" id="fixbtn_'+cls+'_'+i+'">直す</button>'
         +'</div>';
       fmFoldedCount++;
       continue;
@@ -11958,7 +11970,7 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
   //     直したくなったら「直す」でその対局だけ上段に戻る＝そこで全部見える。
   if(fmFoldedCount>0){
     html+='<details class="finished-matches-details" style="margin:8px 0 0">'
-      +'<summary style="font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">終わった対局<span style="font-weight:400;color:#888;margin-left:8px">（'+fmFoldedCount+'）　タップで開閉</span></summary>'
+      +'<summary class="fm-summary">終わった対局<span class="fm-count">（'+fmFoldedCount+'）　タップで開閉</span></summary>'
       +'<div style="padding:4px 12px 0">'+fmFoldedHtml+'</div>'
       +'</details>';
   }

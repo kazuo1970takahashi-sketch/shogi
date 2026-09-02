@@ -171,6 +171,33 @@ const SNAP = `(function(){
   ok(S.lower.indexOf(0) >= 0, 'F9 回戦が変われば同じ顔ぶれでも下段（実測 下段=[' + S.lower + ']）');
   ok(S.upper.join(',') === '2', 'F9b 上段は未入力の 2 だけ（実測 上段=[' + S.upper + ']）');
 
+  // ---- F10: ★色・フォント・枠は class で持つ（STYLE-GUIDE §1 / §2.2-4・Codex 1巡目 P2）
+  //   インライン style は position/margin 等のレイアウト微調整のみ許容。
+  //   ここは「class が付いているか」ではなく**実際に効いている値**を読む（宣言の grep にしない）。
+  await setup();
+  await click('wb_A_0_p1');
+  await click('wb_A_1_p1');
+  const style = await page.evaluate(() => {
+    const det = document.querySelector('.finished-matches-details');
+    const sum = det.querySelector('summary');
+    const row = det.querySelector('.fm-row');
+    const fix = det.querySelector('button[id^="fixbtn_"]');
+    const cs = e => getComputedStyle(e);
+    return {
+      sumInline: sum.getAttribute('style'), rowInline: row.getAttribute('style'),
+      fixInline: fix.getAttribute('style'),
+      sumColor: cs(sum).color, sumBg: cs(sum).backgroundColor,
+      fixH: Math.round(fix.getBoundingClientRect().height),
+      winColor: cs(row.querySelector('.fm-win')).color
+    };
+  });
+  ok(!style.sumInline && !style.rowInline && !style.fixInline,
+    'F10 畳んだ行・summary・「直す」に inline style を持たせていない（実測 ' +
+    JSON.stringify([style.sumInline, style.rowInline, style.fixInline]) + '）');
+  ok(style.sumColor === 'rgb(31, 56, 100)', 'F10b summary の文字色は primary #1F3864 が効いている（実測 ' + style.sumColor + '）');
+  ok(style.winColor === 'rgb(39, 80, 10)', 'F10c ○ は ok 色 #27500A が効いている（実測 ' + style.winColor + '）');
+  ok(style.fixH >= 44, 'F10d class 化しても「直す」は 44px 以上（実測 ' + style.fixH + 'px）');
+
   ok(pageErrors.length === 0, '未捕捉例外が出ない' + (pageErrors.length ? '（実際: ' + pageErrors[0] + '）' : ''));
 
   await browser.close();
