@@ -66,7 +66,7 @@ const SNAP = `(function(){
     summary:det?det.querySelector('summary').textContent.replace(/\\s+/g,''):null,
     counterText:counter?counter.textContent.replace(/\\s+/g,''):null,
     stateKeys:Object.keys(state).sort().join(','),
-    pairingKeys:Object.keys(state.pairings.A[0]).sort().join(',')
+    pairingKeys:[...new Set(state.pairings.A.reduce(function(a,m){return a.concat(Object.keys(m));},[]))].sort().join(',')
   };
 })()`;
 
@@ -109,6 +109,14 @@ const SNAP = `(function(){
   ok(S.upper.indexOf(1) >= 0, 'F3b いま操作した 1 は上段に残る（実測 上段=[' + S.upper + ']）');
   ok(S.upper.indexOf(2) >= 0, 'F3c 未入力の 2 は上段のまま');
   ok(S.hasDetails && S.detailsOpen === false, 'F3d 下段は既定で閉じている（native disclosure）');
+  // ★ Codex 2巡目 P2 の余波: 「match にキーを足していない」は**勝敗を入れた直後**に見ないと
+  //   意味がない。回戦確定のあとは generatePairing が match を作り直すので、
+  //   足したキーが消えていて変異を捕まえられなかった（実際に緑を通した）。
+  const CANON = ['p1', 'p2', 'winner', 'lastModifiedBy'];
+  const extraOf = keys => keys.split(',').filter(k => k && CANON.indexOf(k) < 0);
+  ok(extraOf(S.pairingKeys).length === 0,
+    'F3f 勝敗を入れた直後の match に正準形の外のキーが無い（実測 ' + S.pairingKeys +
+    ' / はみ出し: ' + (extraOf(S.pairingKeys).join(',') || 'なし') + '）');
   ok(/終わった対局（1）/.test(S.summary || ''), 'F3e 見出しに件数が出る（実測 ' + S.summary + '）');
 
   // ---- F4: 下段の「直す」でその対局が上段へ戻る
@@ -135,8 +143,13 @@ const SNAP = `(function(){
   // ---- F7: ★保存しない。state にも match にも新しいキーを足していない
   ok(S.stateKeys.indexOf('lastTouched') < 0 && S.stateKeys.indexOf('folded') < 0,
     'F7 state に畳み用のキーを足していない（実測 ' + S.stateKeys + '）');
-  ok(S.pairingKeys === 'p1,p2,winner' || S.pairingKeys.indexOf('touched') < 0,
-    'F7b match にも足していない（実測 ' + S.pairingKeys + '）');
+  // ★ Codex 2巡目 P2: 元は `=== 'p1,p2,winner' || indexOf('touched') < 0` と書いていた。
+  //   || のせいで「touched という文字を含まない任意のキー」が素通りする＝
+  //   folded / lastTouched 等を足しても緑のままだった。**正準形と完全一致**で見る。
+  //   正準形は docs/REFERENCE.md の {p1, p2, winner, lastModifiedBy}。
+  ok(extraOf(S.pairingKeys).length === 0,
+    'F7b 回戦確定後の match にも正準形の外のキーが無い（実測 ' + S.pairingKeys +
+    ' / はみ出し: ' + (extraOf(S.pairingKeys).join(',') || 'なし') + '）');
 
   // ---- F8: ★setWinner を経ずに「別の顔ぶれ」に差し替わったら、触った記憶は効かない
   //   バックアップ復元・取り込み・組み合わせの作り直しでは、勝敗の入った pairings が丸ごと差し替わる。
@@ -188,6 +201,7 @@ const SNAP = `(function(){
       fixInline: fix.getAttribute('style'),
       sumColor: cs(sum).color, sumBg: cs(sum).backgroundColor,
       fixH: Math.round(fix.getBoundingClientRect().height),
+      sumH: Math.round(sum.getBoundingClientRect().height),
       winColor: cs(row.querySelector('.fm-win')).color
     };
   });
@@ -197,6 +211,27 @@ const SNAP = `(function(){
   ok(style.sumColor === 'rgb(31, 56, 100)', 'F10b summary の文字色は primary #1F3864 が効いている（実測 ' + style.sumColor + '）');
   ok(style.winColor === 'rgb(39, 80, 10)', 'F10c ○ は ok 色 #27500A が効いている（実測 ' + style.winColor + '）');
   ok(style.fixH >= 44, 'F10d class 化しても「直す」は 44px 以上（実測 ' + style.fixH + 'px）');
+  // ★ Codex 2巡目 P2: summary は「終わった対局」を開く**唯一の操作**なのに 44px を測っていなかった。
+  //   15px の文字＋10px の padding＋1px の枠で 39〜40px にしかならず §10.3 を満たさない。
+  ok(style.sumH >= 44, 'F10e summary も 44px 以上（開く唯一の操作・実測 ' + style.sumH + 'px）');
+
+  // ---- F11: ★新色を足していないこと（STYLE-GUIDE §1・Codex 2巡目 P2）
+  //   「グレー系の補助色は既存値を流用」。cowork は #e4eaf1 という**既存にない値**を書いて
+  //   おきながら「新色を足していない」とコメントしていた。**自己申告を検査に変える**。
+  //   .fm-* の CSS ブロックに出てくる色が、それ以外の場所にも出てくることを確かめる。
+  const colors = await page.evaluate(() => {
+    // ★ コメントを先に落とす。落とさないと「#e4eaf1 は既存にない」と**書いた説明文**自体が
+    //   「他所にも出てくる色」として数えられ、検査が自分の説明で緑になる（実際に踏んだ）。
+    const css = [...document.querySelectorAll('style')].map(s => s.textContent).join('\n')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    const block = css.split(/\n/).filter(l => /^\.fm-/.test(l.trim())).join('\n');
+    const rest = css.split(/\n/).filter(l => !/^\.fm-/.test(l.trim())).join('\n');
+    const used = [...new Set((block.match(/#[0-9a-fA-F]{3,6}\b/g) || []).map(x => x.toLowerCase()))];
+    return { used: used, novel: used.filter(c => rest.toLowerCase().indexOf(c) < 0) };
+  });
+  ok(colors.used.length > 0, 'F11 .fm-* の CSS から色を採取できた（実測 ' + colors.used.join(' ') + '）');
+  ok(colors.novel.length === 0,
+    'F11b .fm-* に新色を足していない（他所に無い色: ' + (colors.novel.join(' ') || 'なし') + '）');
 
   ok(pageErrors.length === 0, '未捕捉例外が出ない' + (pageErrors.length ? '（実際: ' + pageErrors[0] + '）' : ''));
 

@@ -291,10 +291,14 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 /* FINISHED-MATCH-FOLD-001 (#943 / Codex 1巡目 P2): 畳んだ対局の行。
    STYLE-GUIDE §1 と §2.2-4 に従い、色・フォント・枠は class で持つ
    （インライン style は position/margin 等のレイアウト微調整のみ）。
-   色は既存値の流用のみ＝新色を足していない（#27500A=ok / #888=既存の補助グレー）。 */
-.fm-summary{font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside}
+   ★ 色は**既存値の流用のみ**（#1F3864=primary / #27500A=ok / #888・#eee・#f4f6f9・#d3dbe5=
+   既存の補助グレー）。Codex 2巡目 P2: 最初 #e4eaf1 という**既存にない値**を書いておきながら
+   「新色を足していない」とコメントしていた。指摘どおり既存の区切り線 #eee に直した。
+   ★ summary は「終わった対局」を開く唯一の操作なので min-height:44px（§10.3）。
+   .club-profile-summary（L63）と同じ形（flex + align-items:center）。 */
+.fm-summary{font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside;min-height:44px;display:flex;align-items:center;box-sizing:border-box}
 .fm-summary .fm-count{font-weight:400;color:#888;margin-left:8px}
-.fm-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #e4eaf1}
+.fm-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #eee}
 .fm-row:last-child{border-bottom:none}
 .fm-players{flex:1;font-size:15px;word-break:break-word}
 .fm-win{color:#27500A;font-weight:bold}
