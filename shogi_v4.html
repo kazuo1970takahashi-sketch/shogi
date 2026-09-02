@@ -11745,8 +11745,18 @@ function submitRound(cls){
 //   renderTournament: データ準備 → 連結 → DOM反映 → イベント登録
 // ============================================================
 
-function buildScoreGridHtml(cls, sorted, wins){
-  var html='<h3>暫定成績</h3><div class="score-grid">';
+function buildScoreGridHtml(cls, sorted, wins, isSP){
+  // SCORE-GRID-FOLD-001 (#944): 暫定成績は参照系ゆえ <details> 格納。isSP(モバイル)は既定折りたたみ・
+  //   PC は open で従来表示。★#661（buildPlayedHistoryHtml）と同じ型で、判定も同じ流儀を使う。
+  //   開閉は native disclosure＝JS/bind を足さない。
+  //   ★ 畳んでよい根拠: 同じ内容が**最終結果タブと星取表にもある**（対局管理では参照系）。
+  //     2026-08-24 に作者が「畳む」を承認済み（削り7件の1件目）。
+  //   ★ 効き: 対局管理の 16.9%（30名2クラス・375px の実測で 2,176px）。
+  //   ★ 見出しの h3 は summary が引き継ぐ（見出しが二重にならないよう h3 は出さない）。
+  if(isSP===undefined)isSP=(typeof window!=='undefined'&&window.innerWidth)?(window.innerWidth<600):false;
+  var html='<details class="score-grid-details" style="margin-bottom:12px"'+(isSP?'':' open')+'>';
+  html+='<summary style="font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">暫定成績<span style="font-weight:400;font-size:15px;color:#888;margin-left:8px">（勝数順）　タップで開閉</span></summary>';
+  html+='<div class="score-grid" style="margin-top:8px">';
   for(var i=0;i<sorted.length;i++){
     var p=sorted[i];var w=wins[p.id]||0;
     var total=0;for(var r=0;r<state.results[cls].length;r++){for(var m=0;m<state.results[cls][r].length;m++){var mm=state.results[cls][r][m];if(mm.p1===p.id||mm.p2===p.id)total++;}}
@@ -11761,7 +11771,7 @@ function buildScoreGridHtml(cls, sorted, wins){
     var snmLabel=getName(p.id,cls);
     html+='<div class="score-card"><div class="sno">'+escapeHtml(snoLabel)+'</div><div class="snm">'+escapeHtml(snmLabel)+'</div><div class="swins">'+w+'</div><div style="font-size:15px;color:#888">'+w+'勝'+(total-w)+'敗</div></div>';
   }
-  html+='</div>';
+  html+='</div></details>';
   return html;
 }
 
