@@ -22,6 +22,8 @@ function extractScripts(src){
   return out.join('\n');
 }
 const code = extractScripts(html);
+// ★ CSS は <style> 側にある。script だけを見る code では拾えないので HTML 全文も使う。
+const RAW = html;
 
 function extractFunction(src, name){
   const start = src.indexOf('function ' + name + '(');
@@ -47,9 +49,25 @@ ok(noSpace.indexOf("<detailsclass=\"score-grid-details\"") >= 0, 'A1: details �
 ok(noSpace.indexOf('<summary') >= 0 && /暫定成績/.test(fn || ''), 'A2: summary の見出しは「暫定成績」');
 ok(/タップで開閉/.test(fn || ''), 'A3: summary に開閉できることを書く（#661 と同じ文言の型）');
 ok(noSpace.indexOf("(isSP?'':'open')") >= 0, 'A4: open 属性は isSP で条件化（PC のみ open）');
-ok(/#1F3864/.test(fn || ''), 'A5: summary は primary #1F3864 を流用（新色を足さない）');
-// ★ 見出しが二重にならないこと。summary が h3 の役目を引き継ぐ。
-ok(!/<h3>/.test(fn || ''), 'A6: h3 の見出しは出さない（summary が引き継ぐ＝見出しが二重にならない）');
+// ★ Codex 1巡目 P2（2件）の反映後の命題。
+//   (a) 色・フォント・枠は class で持つ（STYLE-GUIDE §1 / §2.2-4）。
+//   (b) summary は disclosure のボタン意味しか持たない。元が <h3>暫定成績</h3> だったので、
+//       素のテキストにすると**見出しの構造から「暫定成績」が消える**。h3 を summary の中に入れる。
+// ★ §2.2-4 は inline style を全面禁止していない。「position/margin 等のレイアウト微調整のみ許容。
+//   色・フォント・枠は class で」。なので margin の inline は残してよい。
+//   ★ 中身（.score-card の勝敗数）の font-size/color は**このスライスより前からある**もので、
+//     #944 は「中身は1文字も変えない」ことが命題（D 参照）＝ここを直すのは M4 の別便。
+//   本スライスが新しく足したのは summary だけなので、**summary に inline style が無い**ことを見る。
+ok(!/<summary[^>]*style="/.test(fn || ''), 'A5: 新設した summary に inline style を持たせていない');
+ok(!/color:#1F3864/.test(fn || '') && !/background:#f4f6f9/.test(fn || ''),
+   'A5c: 色は関数側に書かない（class 側で持つ）');
+ok(/\.sg-summary\s*\{[^}]*background:#f4f6f9/.test(RAW) && /\.sg-summary\s+h3\s*\{[^}]*color:#1F3864/.test(RAW),
+   'A5b: .sg-summary / .sg-summary h3 の CSS が定義され、色は primary #1F3864 の流用');
+ok(/<summary class="sg-summary"><h3>暫定成績<\/h3>/.test(fn || ''),
+   'A6: h3 は summary の**中**に置く（見出しの意味を残す）');
+// ★ ソースの h3 を数えると説明コメント内の <h3> まで数えてしまう。**出力を数える**。
+ok(/\.sg-summary\s+h3\s*\{[^}]*display:inline/.test(RAW),
+   'A6c: summary 内の h3 は inline 化する（見た目は従来どおり1行）');
 // ★ 開閉は native disclosure。JS の開閉ハンドラを足していない。
 ok(!/addEventListener|onclick|\.open\s*=/.test(fn || ''), 'A7: 開閉の JS を足していない（native disclosure）');
 ok(/class="score-grid"/.test(fn || ''), 'A8: 中身の .score-grid は残っている（CSS の当たり先を変えない）');
@@ -89,6 +107,10 @@ try { rDefPC = run(undefined, { innerWidth: 1024 }); } catch(e){ rDefPC = { out:
 ok(!rSP.err && !rPC.err, 'C0: 純関数として実行できる' + (rSP.err ? '（' + rSP.err.message + '）' : ''));
 ok(/^<details class="score-grid-details"[^>]*>/.test(rSP.out) && rSP.out.indexOf(' open>') < 0,
    'C1: isSP=true は畳んだ状態（open を付けない）');
+ok(/<summary class="sg-summary"><h3>暫定成績<\/h3>/.test(rSP.out),
+   'C1b: 実行結果にも h3 入りの summary が出る');
+ok((rSP.out.match(/<h3>/g) || []).length === 1,
+   'C1c: 出力の h3 はちょうど1つ（見出しが二重にならない・実測 ' + (rSP.out.match(/<h3>/g) || []).length + '個）');
 ok(rPC.out.indexOf(' open>') >= 0, 'C2: isSP=false は open');
 ok(rDefSP.out.indexOf(' open>') < 0, 'C3: isSP 省略＋幅500 は畳む（window 幅で判定）');
 ok(rDefPC.out.indexOf(' open>') >= 0, 'C4: isSP 省略＋幅1024 は open');

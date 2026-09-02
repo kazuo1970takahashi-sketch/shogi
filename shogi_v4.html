@@ -304,6 +304,13 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 .fm-win{color:#27500A;font-weight:bold}
 .fm-vs{color:#888}
 .fm-fix{min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer}
+/* SCORE-GRID-FOLD-001 (#944 / Codex 1巡目 P2): 暫定成績の disclosure。
+   §1・§2.2-4 に従い色・フォント・枠は class で持つ。値は .fm-summary と同一（新色なし）。
+   ★ summary の中に h3 を置くので、h3 の既定マージンと文字寸を summary 側に合わせる
+   （見出しの意味は残しつつ、見た目は従来の1行のまま）。 */
+.sg-summary{padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside}
+.sg-summary h3{display:inline;margin:0;font-size:15px;font-weight:600;color:#1F3864}
+.sg-summary .sg-note{font-weight:400;font-size:15px;color:#888;margin-left:8px}
 /* LIVE-MOBILE-SCOREBOARD-001 §2 対局管理の名前ボックス改善:
    旧実装は width:7em + white-space:nowrap + text-overflow:ellipsis で長い氏名を
    省略表示していた（「12｜長谷川さく…」のように末尾が切れて読めない）。
@@ -11755,7 +11762,11 @@ function buildScoreGridHtml(cls, sorted, wins, isSP){
   //   ★ 見出しの h3 は summary が引き継ぐ（見出しが二重にならないよう h3 は出さない）。
   if(isSP===undefined)isSP=(typeof window!=='undefined'&&window.innerWidth)?(window.innerWidth<600):false;
   var html='<details class="score-grid-details" style="margin-bottom:12px"'+(isSP?'':' open')+'>';
-  html+='<summary style="font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">暫定成績<span style="font-weight:400;font-size:15px;color:#888;margin-left:8px">（勝数順）　タップで開閉</span></summary>';
+  // ★ Codex 1巡目 P2: summary は disclosure のボタン意味を持つだけで、見出しの意味は持たない。
+  //   元は <h3>暫定成績</h3> だったので、そのまま summary の素のテキストにすると
+  //   **見出しの構造から「暫定成績」が消える**（支援技術の見出しジャンプで辿れなくなる）。
+  //   → h3 を summary の中に入れる。見た目は1行のまま（.sg-summary h3 で inline 化）。
+  html+='<summary class="sg-summary"><h3>暫定成績</h3><span class="sg-note">（勝数順）　タップで開閉</span></summary>';
   html+='<div class="score-grid" style="margin-top:8px">';
   for(var i=0;i<sorted.length;i++){
     var p=sorted[i];var w=wins[p.id]||0;
