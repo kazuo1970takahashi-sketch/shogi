@@ -149,6 +149,14 @@ FRP の「選んだ人から1局目を開始」(部分開始ボタン `startBtnP
 - `bindClassActionBarEvents(cls)` … `startBtnClass_` → `startTournamentForClass`、`resetBtnClass_` → `resetClassForClass` を bind。
 - `isClassStarted(cls)` … 「そのクラスで 1 局目運用を開始したか」の述語（#224 §8.1）。クラス別全員開始だけでなく **将来の部分開始（`startClassPartial`）でも true** であるべき（`pairings[cls]` が 1 件以上あるか**だけ**で定義しない）。`setClassStarted(cls,true)` 経由で `classes[i].started` + 互換 `state.started` を同期。
 - `卓番号` … 描画時に `state.pairings[cls]` の **index + 1**（`第 (i+1) 卓`、永続化なし）。append で自然に連番が続く。
+
+> ★ **2026-09-01 追記（TABLE-NO-REMOVE-001 / #941）: 本節の卓番号に関する記述は失効**。
+> 作者裁定により**卓番という概念ごと廃止**した（沼津の運用で使っていないため）。
+> `buildCurrentPairingsHtml` は「第 N 卓」バッジを描かず、印刷の組み合わせ表・参加者の個人ビューからも撤去、
+> `sbFindCurrentMatch` の戻り値からも `table` を落とした。**残るのは `pairings` の配列順だけ**。
+> 「残り N 卓 未入力」等の**数・単位としての「卓」は据え置き**（番号ではない）。
+> 他所で必要になったらそのとき「卓番を使う/使わない」の設定として足す。詳細 → `docs/REFERENCE.md`。
+
 - `getDuplicatePlayersInPairings(cls)` … pairings 内で同一選手が複数対局に出ていないか検出。**append 後の重複 post-check に流用可能**。
 - 未割当者を保存する state は存在しない（§5 で派生）。
 - `save-verify` 作法 … 全 mutate 経路で `readPersistedState()` 再読込 → `pairingsMatchSnapshot(persisted, expected)`（p1/p2/winner、両側存在時のみ lastModifiedBy を比較）→ 不一致なら `notifySaveWarning({... severity:'warn', aggregateKey:'save-verify:core' ...})`。**rollback せず運営継続**。`classStartedInPersisted(persisted, cls)` で persisted 側の started を確認できる。
@@ -349,7 +357,8 @@ FRP の「選んだ人から1局目を開始」(部分開始ボタン `startBtnP
 ### 8.4 作成前の確認表示 / 作成後の結果表示 / append できない条件の表示
 
 - **作成前の確認（FRP-IMPL-003）**: インライン プレビュー（選択氏名・組数・奇数なら待機者）＋ native `confirm()`。
-- **作成後の結果（FRP-IMPL-003）**: `renderTournament(cls)` 再描画で、追加した対局が現ラウンドに連番（卓番号 index+1）で表示され、追加者が未割当一覧から消える。
+- **作成後の結果（FRP-IMPL-003）**: `renderTournament(cls)` 再描画で、追加した対局が現ラウンドの**末尾に配列順で**表示され、追加者が未割当一覧から消える。
+  ★ 旧記述は「連番（卓番号 index+1）で表示され」。**卓番号は #941 で廃止**したので、残るのは並び順だけ。
 - **append できない条件の表示**:
   - 未割当 0 名 → セクション自体を非表示（'' を返す）。
   - 選択 1 名以下 → 追加ボタン押下時に「2 名以上を選択してください」。
