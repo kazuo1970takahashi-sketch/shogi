@@ -308,7 +308,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
    §1・§2.2-4 に従い色・フォント・枠は class で持つ。値は .fm-summary と同一（新色なし）。
    ★ summary の中に h3 を置くので、h3 の既定マージンと文字寸を summary 側に合わせる
    （見出しの意味は残しつつ、見た目は従来の1行のまま）。 */
-.sg-summary{padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside}
+.sg-summary{padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside;min-height:44px;display:flex;align-items:center;box-sizing:border-box}
 .sg-summary h3{display:inline;margin:0;font-size:15px;font-weight:600;color:#1F3864}
 .sg-summary .sg-note{font-weight:400;font-size:15px;color:#888;margin-left:8px}
 /* LIVE-MOBILE-SCOREBOARD-001 §2 対局管理の名前ボックス改善:
@@ -11759,7 +11759,9 @@ function buildScoreGridHtml(cls, sorted, wins, isSP){
   //   ★ 畳んでよい根拠: 同じ内容が**最終結果タブと星取表にもある**（対局管理では参照系）。
   //     2026-08-24 に作者が「畳む」を承認済み（削り7件の1件目）。
   //   ★ 効き: 対局管理の 16.9%（30名2クラス・375px の実測で 2,176px）。
-  //   ★ 見出しの h3 は summary が引き継ぐ（見出しが二重にならないよう h3 は出さない）。
+  //   ★ 見出しは h3 のまま summary の**中**に置く（Codex 1巡目 P2）。summary は disclosure の
+  //     ボタンの意味しか持たず見出しの意味は継がないので、素のテキストにすると
+  //     見出しの構造から「暫定成績」が消える。.sg-summary h3 で inline 化＝見た目は1行のまま。
   if(isSP===undefined)isSP=(typeof window!=='undefined'&&window.innerWidth)?(window.innerWidth<600):false;
   var html='<details class="score-grid-details" style="margin-bottom:12px"'+(isSP?'':' open')+'>';
   // ★ Codex 1巡目 P2: summary は disclosure のボタン意味を持つだけで、見出しの意味は持たない。

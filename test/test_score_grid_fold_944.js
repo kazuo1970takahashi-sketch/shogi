@@ -68,6 +68,9 @@ ok(/<summary class="sg-summary"><h3>暫定成績<\/h3>/.test(fn || ''),
 // ★ ソースの h3 を数えると説明コメント内の <h3> まで数えてしまう。**出力を数える**。
 ok(/\.sg-summary\s+h3\s*\{[^}]*display:inline/.test(RAW),
    'A6c: summary 内の h3 は inline 化する（見た目は従来どおり1行）');
+// ★ #948 と同じ理由: summary は「暫定成績」を開く唯一の操作なので 44px が要る（§10.3）。
+ok(/\.sg-summary\s*\{[^}]*min-height:44px/.test(RAW),
+   'A6d: summary は min-height:44px（開く唯一の操作・§10.3）');
 // ★ 開閉は native disclosure。JS の開閉ハンドラを足していない。
 ok(!/addEventListener|onclick|\.open\s*=/.test(fn || ''), 'A7: 開閉の JS を足していない（native disclosure）');
 ok(/class="score-grid"/.test(fn || ''), 'A8: 中身の .score-grid は残っている（CSS の当たり先を変えない）');
