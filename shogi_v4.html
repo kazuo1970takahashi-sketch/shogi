@@ -15525,8 +15525,12 @@ function printPairings(){
     +'.cls-section{margin-bottom:16px}'
     +'.cls-h{font-size:15px;font-weight:bold;color:#1F3864;border-left:4px solid #1F3864;padding-left:10px;margin:0 0 8px}'
     +'.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}'
-    +'.card{border:1px solid #888;border-radius:6px;padding:10px 12px;page-break-inside:avoid;break-inside:avoid;position:relative}'
-    +'.card-body{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:22px}'
+    // #941: position:relative も .card-no の absolute の基準だったので外す。
+    +'.card{border:1px solid #888;border-radius:6px;padding:10px 12px;page-break-inside:avoid;break-inside:avoid}'
+    // TABLE-NO-REMOVE-001 (#941 / Codex 1巡目 P2): margin-top:22px は absolute の .card-no
+    //   （卓番バッジ）を避けるためだけの余白だった。バッジを外したので余白も外す。
+    //   ★ 残すとカード1枚ごとに 22px の空白が残り、人数が多い回で紙が1ページ増える。
+    +'.card-body{display:flex;align-items:center;justify-content:center;gap:14px}'
     +'.card-player{font-size:14px;font-weight:bold;color:#222;text-align:center;flex:1;word-break:break-word}'
     // FURIGANA-VIEW-002: 組み合わせカードの氏名ルビ（印刷時に <rt> が潰れない最小CSS）。
     +'.card-player ruby{ruby-position:over}.card-player rt{font-size:.55em;font-weight:normal;color:#333;line-height:1}'

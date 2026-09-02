@@ -53,7 +53,11 @@
 **match の正準形（`sanitizeMatch`）= `{ p1, p2, winner, lastModifiedBy }` の 4 フィールドのみ。**
 
 - `round` / `table` / `source` / `generatedBy` 等の**メタフィールドは保存しない**（FRP-IMPL-004 で確認）。
-- **卓番号** = 描画時の `index + 1`（派生・非保存）。**ラウンド番号** = `results.length + 1`（派生・非保存）。
+- **卓番号は廃止**（TABLE-NO-REMOVE-001 / #941・2026-09-01）。沼津の運用で使っていないため概念ごと外した。
+  残っているのは**手合せの並び順（`pairings` の配列順）**だけで、番号としては画面にも印刷にも出さない。
+  「残り N 卓 未入力」等の**数・単位としての「卓」は据え置き**（番号ではない）。
+  ★ 他所で必要になったら、そのとき「卓番を使う/使わない」の設定として足す（作者裁定）。
+- **ラウンド番号** = `results.length + 1`（派生・非保存）。
 - **未割当者 / leftover** = `players − pairings(p1,p2)` の**派生**（非保存）。
 - `normalizeState(loaded)` が JSON ロード時に欠落フィールドを補完。**normalize 往復は恒等**（保存復元で壊れない）— FRP-IMPL-004A で reload 不変条件として固定。
 - 新しい保存スキーマ/メタ情報を安易に足さない（`sanitizeMatch` が剥がすため反映されない）。
