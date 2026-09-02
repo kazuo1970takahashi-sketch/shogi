@@ -35,8 +35,15 @@ ok(/navigator\.storage&&navigator\.storage\.persist\)navigator\.storage\.persist
 ok(/typeof navigator!=='undefined'&&navigator\.storage/.test(RAW),'④ typeof navigator ガード（ハーネス移植性）');
 
 console.log('=== ⑦ タブ名 会員名簿 ===');
-ok(RAW.indexOf('id="tab-master">会員名簿</button>')>=0,'⑦ タブ名「会員名簿」');
-ok(RAW.indexOf('id="tab-master">マスタ</button>')<0,'⑦ 旧「マスタ」タブ名は撤去');
+// TAB-LABEL-WRAP-001: ラベルは折れ位置を決めるため span で2つに割った（文字そのものは不変）。
+//   生文字列の完全一致だと「割り方」の変更で偽の赤になるので、tab-master のボタンから
+//   タグを剥がした可視文字列で照合する。
+const tabMasterLabel = (function(){
+  const m = /id="tab-master"[^>]*>([\s\S]*?)<\/button>/.exec(RAW);
+  return m ? m[1].replace(/<[^>]*>/g, '').trim() : null;
+})();
+ok(tabMasterLabel === '会員名簿','⑦ タブ名「会員名簿」（実測: '+tabMasterLabel+'）');
+ok(tabMasterLabel !== 'マスタ','⑦ 旧「マスタ」タブ名は撤去');
 
 console.log('=== ⑧ 22名取込ボタン撤去 ===');
 ok(RAW.indexOf('masterPhase2ImportBtn')<0,'⑧ masterPhase2ImportBtn の参照なし（ボタン＋bind 撤去）');

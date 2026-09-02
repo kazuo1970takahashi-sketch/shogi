@@ -44,6 +44,14 @@ a.hm-item{display:flex;align-items:center}
 .container{max-width:1100px;margin:0 auto;padding:10px 8px}
 .tab-bar{display:flex;gap:3px;margin-bottom:10px;background:#fff;border-radius:10px;padding:5px;border:1px solid #ddd;position:sticky;top:0;z-index:40;box-shadow:0 2px 6px rgba(0,0,0,0.05)}
 .tab{flex:1;padding:10px 4px;border-radius:8px;border:none;cursor:pointer;font-size:15px;background:transparent;color:#666;font-family:inherit}
+/* TAB-LABEL-WRAP-001: タブ名が折り返すときの折れ位置を語の切れ目に固定する。
+   CJK は既定でどこでも折れるため「参加者登録」は幅が足りると「参加者登 / 録」になる
+   （床15px 化 FONT-FLOOR-001 以降は 360〜430px のすべてで必ず折り返す＝#932 の実測）。
+   語のまとまりを inline-block にすると、その内側では折れず、まとまりとまとまりの間で折れる
+   ＝「参加者 / 登録」。まとまり自体が入らないほど狭ければ従来どおり内側で折り返すので、
+   white-space:nowrap のように横スクロールを生む危険は無い（240px まで実測でページ横あふれ 0）。
+   ラベルの文字そのものは変えていない（呼称の変更は #932 の範囲）。 */
+.tab-w{display:inline-block}
 .tab.active{background:#1F3864;color:#fff;font-weight:500}
 .section{background:#fff;border-radius:10px;padding:12px 12px;margin-bottom:12px;border:1px solid #e0e0e0}
 h2{font-size:15px;font-weight:500;margin-bottom:10px;color:#1F3864;border-bottom:2px solid #1F3864;padding-bottom:6px}
@@ -599,11 +607,11 @@ body.live-qr-open{overflow:hidden}
 </div>
 <div class="container">
   <div class="tab-bar no-print">
-    <button type="button" class="tab active" id="tab-reg">参加者登録</button>
-    <button type="button" class="tab" id="tab-tournament">対局管理</button>
-    <button type="button" class="tab" id="tab-result">最終結果</button>
-    <button type="button" class="tab" id="tab-master">会員名簿</button>
-    <button type="button" class="tab" id="tab-history">大会履歴</button>
+    <button type="button" class="tab active" id="tab-reg"><span class="tab-w">参加者</span><span class="tab-w">登録</span></button>
+    <button type="button" class="tab" id="tab-tournament"><span class="tab-w">対局</span><span class="tab-w">管理</span></button>
+    <button type="button" class="tab" id="tab-result"><span class="tab-w">最終</span><span class="tab-w">結果</span></button>
+    <button type="button" class="tab" id="tab-master"><span class="tab-w">会員</span><span class="tab-w">名簿</span></button>
+    <button type="button" class="tab" id="tab-history"><span class="tab-w">大会</span><span class="tab-w">履歴</span></button>
     <!-- [html-validate-disable-next prefer-native-element -- PHASE0-B-CI-GREEN-001: タブ帯に並ぶ通知ピル。button 要素にすると .tab 系 CSS の適用範囲が変わるため、意図的に span + role="button" + tabindex="0" とする。この1要素だけ抑制し、ルール自体は有効のまま] -->
     <span id="save-warning-indicator" class="save-warn-pill" role="button" tabindex="0" title="押すと対処方法を表示します" hidden></span>
   </div>
