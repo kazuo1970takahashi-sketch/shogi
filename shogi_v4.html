@@ -11167,7 +11167,32 @@ function generatePairing(cls){
   }
 }
 
+// FINISHED-MATCH-FOLD-001 (#943): 「直前に操作した対局」を覚えておくための、クラス別の値1つ。
+//   ★ state には入れない・保存もしない（CLAUDE.md 項目4／作者裁定 2026-09-01「畳みの状態は保存しない」）。
+//   終わった対局は下段へ畳むが、**いま自分がいじった1件だけは上段に大きいまま残す**。
+//   すぐ畳むと押し間違いにその場で気づけないため（作者裁定）。
+//
+//   ★★ 覚えるのは index ではなく「回戦＋対戦の顔ぶれ」。
+//   index で覚えると、組み合わせが作り直される経路（回戦確定・再生成・リセット・バックアップ復元）の
+//   すべてで忘れる処理を置かないと、触ってもいない対局が上段に居座る。
+//   その「忘れる処理」は**変異を当てても赤にできなかった**（setWinner が必ず上書きするため）。
+//   [[redundant-guards-are-untestable]] の型そのものなので、**ガードを増やすのをやめて
+//   覚え方のほうを変えた**。回戦か顔ぶれが変われば古い値は自動的に一致しなくなる＝忘れる処理が要らない。
+var _fmTouchedKey = {};
+function fmTouchKey(cls, m){
+  if(!m)return null;
+  return ((state.results&&state.results[cls])||[]).length+'|'+m.p1+'|'+m.p2;
+}
+function fmRememberTouched(cls, idx){
+  var m=(state.pairings&&state.pairings[cls])?state.pairings[cls][idx]:null;
+  if(m)_fmTouchedKey[cls]=fmTouchKey(cls,m);
+}
+function fmIsTouched(cls, m){
+  return !!m && Object.prototype.hasOwnProperty.call(_fmTouchedKey, cls) && _fmTouchedKey[cls]===fmTouchKey(cls,m);
+}
+
 function setWinner(cls,idx,wid){
+  fmRememberTouched(cls,idx);
   if(state.pairings[cls][idx].winner===wid){
     state.pairings[cls][idx].winner=null;
   } else {
@@ -11860,8 +11885,31 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
     return w+'勝'+l+'敗';
   }
 
+  // FINISHED-MATCH-FOLD-001 (#943): 上段＝未入力のカード＋「直前に操作した対局」1件、
+  //   下段＝終わった対局を1行ずつ details に畳む（作者裁定 2026-09-01）。
+  //   ★ 実測の根拠: 大会が進んでも画面は短くならず、むしろ伸びていた
+  //     （30名2クラス・375px で進行 0%→100% が 12,905px→13,565px）。終わった対局が
+  //     終わる前と同じ大きさで残るため。いちばん疲れている終盤にいちばん長い、という作りだった。
+  //   ★ すぐ畳まない理由: 押し間違いにその場で気づけなくなる。いま自分がいじった1件だけは
+  //     上段に大きいまま残す（作者裁定）。次の対局を操作すると、その前のものが下段へ落ちる。
+  //   畳みは #661（buildPlayedHistoryHtml）と同じ native disclosure＝開閉の JS を足さない。
+  var fmFoldedHtml='', fmFoldedCount=0;
   for(var i=0;i<state.pairings[cls].length;i++){
     var m=state.pairings[cls][i];
+    // 終わっていて、かつ「直前に操作した対局」でないものは下段へ1行で畳む。
+    if(m&&m.winner&&!fmIsTouched(cls,m)){
+      var fmLoser=(m.winner===m.p1)?m.p2:m.p1;
+      fmFoldedHtml+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #eef2f7">'
+        +'<div style="flex:1;font-size:15px;word-break:break-word">'
+        +escapeHtml(getName(m.winner,cls))+'<span style="color:#27500A;font-weight:bold">　○</span>'
+        +'<span style="color:#888">　−　</span>'
+        +escapeHtml(getName(fmLoser,cls))
+        +'</div>'
+        +'<button style="min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer" id="fixbtn_'+cls+'_'+i+'">直す</button>'
+        +'</div>';
+      fmFoldedCount++;
+      continue;
+    }
     // PAIRING-RUBY-001 (#604): 手合いカードの氏名にふりがな併記（既存 nameWithNoRubyHtml を流用・
     //   未登録は名前のみ＝fail-soft）。番号部は素のまま・氏名部だけルビ化（playerNameRubyHtml 経由）。
     var aux1=pcBuildAuxLabel(m.p1),aux2=pcBuildAuxLabel(m.p2);
@@ -11904,6 +11952,15 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       +'<button style="min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
       +'</div>'
       +'</div>';
+  }
+  // #943: 畳んだ対局は下段の details へ。open にはしない（既定は閉じる）。
+  //   ★ 理由ラベル・勝敗数・ふりがなは畳んだ行には出さない（1行に収めるのが目的）。
+  //     直したくなったら「直す」でその対局だけ上段に戻る＝そこで全部見える。
+  if(fmFoldedCount>0){
+    html+='<details class="finished-matches-details" style="margin:8px 0 0">'
+      +'<summary style="font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">終わった対局<span style="font-weight:400;color:#888;margin-left:8px">（'+fmFoldedCount+'）　タップで開閉</span></summary>'
+      +'<div style="padding:4px 12px 0">'+fmFoldedHtml+'</div>'
+      +'</details>';
   }
   // DAYOF-UNENTERED-COUNTER (当日第2弾⑥): 未入力（勝者未選択）の卓を数えて表示し、未入力がある間は
   //   「確定して次へ」を無効化する（取りこぼし／事後 alert を減らす）。submitRound の既存ガードは温存（二重防御）。
@@ -11954,6 +12011,12 @@ function bindTournamentEvents(cls){
       if(b1)b1.addEventListener('click',function(){setWinner(c,idx,m.p1);});
       if(b2)b2.addEventListener('click',function(){setWinner(c,idx,m.p2);});
       if(cb)cb.addEventListener('click',function(){changePairing(c,idx);});
+      // FINISHED-MATCH-FOLD-001 (#943): 畳んだ行の「直す」＝その対局を上段へ戻すだけ。
+      //   ★ 新しいモーダルは足さない。上段に戻れば既存の勝者ボタンと「変更」がそのまま使える。
+      //   （設計の初稿では変更モーダルを直接開く案だったが、押し間違いの直しに必要なのは
+      //     「相手の入れ替え」ではなく「勝者の入れ直し」なので、上段へ戻すのが正しい。）
+      var fb=document.getElementById('fixbtn_'+c+'_'+idx);
+      if(fb)fb.addEventListener('click',function(){fmRememberTouched(c,idx);renderTournament(c);});
     })(i,cls);
   }
   var sb=document.getElementById('submitBtn_'+cls);
