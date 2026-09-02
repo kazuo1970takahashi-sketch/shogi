@@ -285,7 +285,9 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
    収め、内側の .winner-row(flex-wrap) や score-grid を折り返し可能にする。PC では 1fr トラックが十分
    広く min-width:auto でも破綻しないため、この指定による見た目変化はなく操作性も不変(PC最優先)。 */
 #pane-tournament-grid>div{min-width:0}
-.pairing-card{background:#f8fbff;border:1px solid #d0e4f7;border-radius:10px;padding:12px 12px;margin-bottom:8px}
+/* PAIRING-CARD-COMPACT-001 (#942): カードの余白を詰める（padding 12→8px・margin-bottom 8→6px）。
+   実測 182px → 174px（−8px/枚）。中身の並びは変えないので副作用が無い一番安い手。 */
+.pairing-card{background:#f8fbff;border:1px solid #d0e4f7;border-radius:10px;padding:8px 12px;margin-bottom:6px}
 /* LIVE-MOBILE-SCOREBOARD-001 §2 対局管理の名前ボックス改善:
    旧実装は width:7em + white-space:nowrap + text-overflow:ellipsis で長い氏名を
    省略表示していた（「12｜長谷川さく…」のように末尾が切れて読めない）。
@@ -11873,17 +11875,6 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       labelsHtml+='<span style="display:inline-block;padding:2px 6px;margin-right:4px;font-size:15px;color:'+labColor+';background:'+labBg+';border-radius:4px">['+escapeHtml(lab)+']</span>';
     }
     html+='<div class="pairing-card" style="position:relative">'
-      // TAP-TARGET-DENSE-001 (#737 / スライス⑤a): 「変更」は 44px タップ標的（STYLE-GUIDE §10.3・M6 本対応）。
-      //   id/bind/文言/confirm 導線は不変。winner-row の margin-top:28px（absolute 回避余白）は撤去済み。
-      // TABLE-NO-REMOVE-001 (#941): 卓番号バッジ（配列 index+1 の派生・非保存）を撤去した。
-      //   沼津の運用で卓番を使っていないため、概念ごと外す（作者裁定 2026-09-01）。
-      //   ★ このヘッダ行の高さを決めているのはバッジではなく「変更」ボタンの min-height:44px なので、
-      //     撤去してもカードは 1px も縮まない（実測: 182px → 182px）。高さの見直しは #942。
-      //   ★ 「変更」をこの行から対戦行へ移すのも #942。375px では対戦行が幅いっぱいで、
-      //     単に移すと名前が折り返してカードが 182px → 186px と**伸びる**（実測）。
-      +'<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:4px">'
-      +'<button style="min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
-      +'</div>'
       +'<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
       +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+nameWithNoRubyHtml(m.p1,cls)+'</button>'
@@ -11900,7 +11891,18 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       +'</div>'
       +'</div>'
       // A-4 §2, §5: 理由ラベル（軽量ラベル方式）
-      +(labelsHtml?'<div style="margin-top:4px">'+labelsHtml+'</div>':'')
+      // PAIRING-CARD-COMPACT-001 (#942): 「変更」ボタンをこの行の右端へ同居させ、専用のヘッダ行を1本無くした。
+      //   ★ 実測の根拠: 旧構成は「ヘッダ行 44px ＋ 下マージン 4px ＋ 理由ラベル行 23px = 71px」で、
+      //     ヘッダ行の中身は「変更」ボタン1つだけ・左は全部余白だった。同居させると行の高さは
+      //     max(44, 23) = 44px になり **−27px**（実測 182px → 155px）。
+      //   ★ 対戦行へ移すのは不可（実測で 186px と**伸びる**）。対戦行の横の余りは 21px しかなく、
+      //     ボタン（64px＋gap 8px）を入れると名前が折り返して行が 77px → 129px になる。律速は幅。
+      //   ★ 理由ラベルが1つも無いときも、この行は「変更」ボタンのために必ず出す（空でも高さは 44px）。
+      //   TAP-TARGET-DENSE-001 (#737): min-height:44px（STYLE-GUIDE §10.3）と id/bind/文言/confirm 導線は不変。
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px">'
+      +'<div>'+labelsHtml+'</div>'
+      +'<button style="min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
+      +'</div>'
       +'</div>';
   }
   // DAYOF-UNENTERED-COUNTER (当日第2弾⑥): 未入力（勝者未選択）の卓を数えて表示し、未入力がある間は
