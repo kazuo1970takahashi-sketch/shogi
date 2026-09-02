@@ -25,7 +25,9 @@ const SPEC_DIR = path.join(ROOT, 'docs', 'specs');
 // 「卓番号を出す」ことを要求している疑いのある行（数・単位としての「卓」は対象外）
 const DEMANDS = /第 ?\(?i ?\+ ?1\)? ?卓|第 N 卓|卓番号/;
 // 失効が明示されている行、または直後に失効注記が続くブロック
-const SUPERSEDED = /失効|#941|TABLE-NO-REMOVE|~~卓番号~~|廃止/;
+// ★ 「#941」「TABLE-NO-REMOVE」を引用しただけの行（例: 「#941: 卓番号を表示する」）を
+//   失効扱いにすると、要求を戻した行が素通りする（Codex 4巡目）。明示的な印だけを免除する。
+const SUPERSEDED = /失効|廃止|~~[^~]*卓番号[^~]*~~/;
 
 const files = fs.readdirSync(SPEC_DIR).filter(f => f.endsWith('.md'));
 ok(files.length > 0, 'docs/specs/ の md を読めること（実測 ' + files.length + '本）');

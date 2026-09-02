@@ -11,8 +11,15 @@ const files = fs.readdirSync(dir).filter(f => f.endsWith('.md') && /^\d{8}_/.tes
 const RE = /(test\/|e2e|検査|スイート)[^\n]*?(\d+\s*件|PASS=\d+|\b\d+\/0\b)|(\d+\s*件|PASS=\d+)[^\n]*?(test\/|\.e2e\.js|\.js）)/;
 let bad = [];
 for (const f of files) {
+  // ★ 行単位だと「テスト名」と「N件」が折り返しで別の行に割れたときに素通りする
+  //   （まさに落とした 39件 がその形だった・Codex 4巡目）。箇条書き1本＝継続行を連結して見る。
   const lines = fs.readFileSync(path.join(dir, f), 'utf8').split('\n');
-  lines.forEach((l, i) => { if (RE.test(l)) bad.push(f + ':' + (i + 1) + ' ' + l.trim().slice(0, 80)); });
+  const items = []; let cur = null;
+  lines.forEach((l, i) => {
+    if (/^\s*[-*]\s/.test(l) || /^#/.test(l) || !l.trim()) { cur = { start: i + 1, text: l }; items.push(cur); }
+    else if (cur) cur.text += ' ' + l.trim(); else { cur = { start: i + 1, text: l }; items.push(cur); }
+  });
+  items.forEach(it => { if (RE.test(it.text)) bad.push(f + ':' + it.start + ' ' + it.text.trim().slice(0, 80)); });
 }
 if (bad.length) { console.error('  x changelog にテストの件数が書かれている:\n      ' + bad.join('\n      ')); }
 console.log('CHANGELOG-NO-TEST-COUNTS: PASS=' + (bad.length ? 0 : 1) + ' FAIL=' + (bad.length ? 1 : 0) + '（対象 ' + files.length + ' 本）');
