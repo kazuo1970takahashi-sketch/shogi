@@ -91,7 +91,9 @@ console.log('=== M. MY-VIEW ===');
   const E=makeEnv();
   E._set(E.normalizeState(makeFix()));
   const cur=E.sbFindCurrentMatch('A','p1');
-  ok(cur&&cur.oppId==='p3'&&cur.table===2,'M1 sbFindCurrentMatch: p1 → 2卓 p3');
+  // TABLE-NO-REMOVE-001 (#941): 戻り値から table を落とした（唯一の読み手だった個人ビューが使わなくなったため）。
+  ok(cur&&cur.oppId==='p3','M1 sbFindCurrentMatch: p1 → p3');
+  ok(cur&&!('table' in cur),'M1b 戻り値に table を含めない（読み手のいない派生値を残さない）');
   ok(E.sbFindCurrentMatch('A','zzz')===null,'M2 sbFindCurrentMatch: 不在 → null');
   const hist=E.sbOpponentsByRound('A','p1');
   ok(hist.length===2&&hist[0].round===1&&hist[0].won===true&&hist[0].oppId==='p2'
@@ -101,7 +103,9 @@ console.log('=== M. MY-VIEW ===');
   ok(/No\.0?1/.test(pv)&&/架空A級/.test(pv),'M5 個人ビューにクラス・No');
   ok(/順位 <b>\d+<\/b> 位／4名/.test(pv),'M6 順位表示');
   ok(/<b>1<\/b> 勝 <b>1<\/b> 敗/.test(pv),'M7 勝敗表示');
-  ok(/次の対戦・3回戦/.test(pv)&&/2卓/.test(pv)&&/架空 三郎/.test(pv),'M8 次の対戦（卓・相手名）');
+  // #941: 卓番号を出さなくなった。★生きている命題は「次の対戦で**相手が誰か**が分かる」こと。
+  ok(/次の対戦・3回戦/.test(pv)&&/架空 三郎/.test(pv),'M8 次の対戦（回戦・相手名）');
+  ok(!/卓/.test(pv),'M8b 個人ビューに卓番号は出ない');
   ok(/1回戦/.test(pv)&&/2回戦/.test(pv)&&/架空 次郎/.test(pv)&&/架空 四郎/.test(pv),'M9 これまでの対戦（相手名）');
   ok(/← 星取表へ/.test(pv)&&!/運営画面/.test(pv),'M10 戻るは一覧まで（運営導線なし）');
   ok(E.buildScoreboardPlayerViewHtml('A','zzz')==='','M11 不在対局者 → 空文字（一覧へ復帰）');

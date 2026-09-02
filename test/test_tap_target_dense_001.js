@@ -3,7 +3,8 @@
 // TAP-TARGET-DENSE-001 (#737 / スライス⑤a): 密集部タップ標的の44px本対応
 //   検証内容:
 //   S1. 対局カード「変更」: position:absolute を撤去し flow ヘッダ行へ・min-height:44px・id 不変
-//   S2. 対局カードヘッダ行: 卓バッジ→変更ボタンの順で同一 flex 行・winner-row の margin-top:28px 撤去
+//   S2. 対局カードヘッダ行: 変更ボタンが flow ヘッダ行に居る・winner-row の margin-top:28px 撤去
+//       （#941 で卓バッジを撤去。「バッジ→変更の順」の命題はそこで消えた）
 //   S3. 「？ ヘルプ」×6: min-height:44px（btn-sm クラス維持＝test_help_002 H4 契約）
 //   S4. 履歴トグル(me-history-toggle): min-height:44px
 //   S5. ①既対応分の非劣化: .sel-sm 44px/16px・.winner-btn min-height:2.9em・50音タブ/QF 44px
@@ -36,8 +37,12 @@ const RAW = fs.readFileSync(targetPath,'utf8');
 
 // S2: ヘッダ行の構造と winner-row
 {
-  const headerRe=/\+'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">'\s*\n\s*\+'<div style="[^"]*background:#1F3864[^"]*">第 '\+\(i\+1\)\+' 卓<\/div>'\s*\n\s*\+'<button style="[^"]*" id="chgbtn_'\+cls\+'_'\+i\+'">変更<\/button>'\s*\n\s*\+'<\/div>'/;
-  assert(headerRe.test(RAW), 'S2-1 卓バッジ→変更ボタンの順で flow ヘッダ行を構成');
+  // TABLE-NO-REMOVE-001 (#941): 卓バッジを撤去したので「バッジ→変更ボタンの順」の命題は消えた。
+  //   ★ 生きている命題は「変更ボタンが flow のヘッダ行に居る（absolute ではない）」こと＝S1 とセットで
+  //     44px タップ標的を成立させている条件。行の中身が1つになっても、この条件は変わらない。
+  const headerRe=/\+'<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:4px">'\s*\n\s*\+'<button style="[^"]*" id="chgbtn_'\+cls\+'_'\+i\+'">変更<\/button>'\s*\n\s*\+'<\/div>'/;
+  assert(headerRe.test(RAW), 'S2-1 変更ボタンが flow ヘッダ行に居る（直後に行を閉じる）');
+  assert(!/background:#1F3864[^"]*">第 '\+\(i\+1\)\+' 卓/.test(RAW), 'S2-1b 卓番号バッジは残っていない');
   assert(/<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">/.test(RAW),
     'S2-2 winner-row の margin-top:28px（absolute 回避余白）を撤去');
   assert(RAW.indexOf('style="position:absolute;top:6px;right:6px;padding:4px 10px')<0,
