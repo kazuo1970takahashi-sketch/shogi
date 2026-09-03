@@ -44,6 +44,14 @@ a.hm-item{display:flex;align-items:center}
 .container{max-width:1100px;margin:0 auto;padding:10px 8px}
 .tab-bar{display:flex;gap:3px;margin-bottom:10px;background:#fff;border-radius:10px;padding:5px;border:1px solid #ddd;position:sticky;top:0;z-index:40;box-shadow:0 2px 6px rgba(0,0,0,0.05)}
 .tab{flex:1;padding:10px 4px;border-radius:8px;border:none;cursor:pointer;font-size:15px;background:transparent;color:#666;font-family:inherit}
+/* TAB-LABEL-WRAP-001: タブ名が折り返すときの折れ位置を語の切れ目に固定する。
+   CJK は既定でどこでも折れるため「参加者登録」は幅が足りると「参加者登 / 録」になる
+   （床15px 化 FONT-FLOOR-001 以降は 360〜430px のすべてで必ず折り返す＝#932 の実測）。
+   語のまとまりを inline-block にすると、その内側では折れず、まとまりとまとまりの間で折れる
+   ＝「参加者 / 登録」。まとまり自体が入らないほど狭ければ従来どおり内側で折り返すので、
+   white-space:nowrap のように横スクロールを生む危険は無い（240px まで実測でページ横あふれ 0）。
+   ラベルの文字そのものは変えていない（呼称の変更は #932 の範囲）。 */
+.tab-w{display:inline-block}
 .tab.active{background:#1F3864;color:#fff;font-weight:500}
 .section{background:#fff;border-radius:10px;padding:12px 12px;margin-bottom:12px;border:1px solid #e0e0e0}
 h2{font-size:15px;font-weight:500;margin-bottom:10px;color:#1F3864;border-bottom:2px solid #1F3864;padding-bottom:6px}
@@ -277,7 +285,32 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
    収め、内側の .winner-row(flex-wrap) や score-grid を折り返し可能にする。PC では 1fr トラックが十分
    広く min-width:auto でも破綻しないため、この指定による見た目変化はなく操作性も不変(PC最優先)。 */
 #pane-tournament-grid>div{min-width:0}
-.pairing-card{background:#f8fbff;border:1px solid #d0e4f7;border-radius:10px;padding:12px 12px;margin-bottom:8px}
+/* PAIRING-CARD-COMPACT-001 (#942): カードの余白を詰める（padding 12→8px・margin-bottom 8→6px）。
+   実測 182px → 174px（−8px/枚）。中身の並びは変えないので副作用が無い一番安い手。 */
+.pairing-card{background:#f8fbff;border:1px solid #d0e4f7;border-radius:10px;padding:8px 12px;margin-bottom:6px}
+/* FINISHED-MATCH-FOLD-001 (#943 / Codex 1巡目 P2): 畳んだ対局の行。
+   STYLE-GUIDE §1 と §2.2-4 に従い、色・フォント・枠は class で持つ
+   （インライン style は position/margin 等のレイアウト微調整のみ）。
+   ★ 色は**既存値の流用のみ**（#1F3864=primary / #27500A=ok / #888・#eee・#f4f6f9・#d3dbe5=
+   既存の補助グレー）。Codex 2巡目 P2: 最初 #e4eaf1 という**既存にない値**を書いておきながら
+   「新色を足していない」とコメントしていた。指摘どおり既存の区切り線 #eee に直した。
+   ★ summary は「終わった対局」を開く唯一の操作なので min-height:44px（§10.3）。
+   .club-profile-summary（L63）と同じ形（flex + align-items:center）。 */
+.fm-summary{font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside;min-height:44px;display:flex;align-items:center;box-sizing:border-box}
+.fm-summary .fm-count{font-weight:400;color:#888;margin-left:8px}
+.fm-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #eee}
+.fm-row:last-child{border-bottom:none}
+.fm-players{flex:1;font-size:15px;word-break:break-word}
+.fm-win{color:#27500A;font-weight:bold}
+.fm-vs{color:#888}
+.fm-fix{min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer}
+/* SCORE-GRID-FOLD-001 (#944 / Codex 1巡目 P2): 暫定成績の disclosure。
+   §1・§2.2-4 に従い色・フォント・枠は class で持つ。値は .fm-summary と同一（新色なし）。
+   ★ summary の中に h3 を置くので、h3 の既定マージンと文字寸を summary 側に合わせる
+   （見出しの意味は残しつつ、見た目は従来の1行のまま）。 */
+.sg-summary{padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside;min-height:44px;display:flex;align-items:center;box-sizing:border-box}
+.sg-summary h3{display:inline;margin:0;font-size:15px;font-weight:600;color:#1F3864}
+.sg-summary .sg-note{font-weight:400;font-size:15px;color:#888;margin-left:8px}
 /* LIVE-MOBILE-SCOREBOARD-001 §2 対局管理の名前ボックス改善:
    旧実装は width:7em + white-space:nowrap + text-overflow:ellipsis で長い氏名を
    省略表示していた（「12｜長谷川さく…」のように末尾が切れて読めない）。
@@ -599,11 +632,11 @@ body.live-qr-open{overflow:hidden}
 </div>
 <div class="container">
   <div class="tab-bar no-print">
-    <button type="button" class="tab active" id="tab-reg">参加者登録</button>
-    <button type="button" class="tab" id="tab-tournament">対局管理</button>
-    <button type="button" class="tab" id="tab-result">最終結果</button>
-    <button type="button" class="tab" id="tab-master">会員名簿</button>
-    <button type="button" class="tab" id="tab-history">大会履歴</button>
+    <button type="button" class="tab active" id="tab-reg"><span class="tab-w">参加者</span><span class="tab-w">登録</span></button>
+    <button type="button" class="tab" id="tab-tournament"><span class="tab-w">対局</span><span class="tab-w">管理</span></button>
+    <button type="button" class="tab" id="tab-result"><span class="tab-w">最終</span><span class="tab-w">結果</span></button>
+    <button type="button" class="tab" id="tab-master"><span class="tab-w">会員</span><span class="tab-w">名簿</span></button>
+    <button type="button" class="tab" id="tab-history"><span class="tab-w">大会</span><span class="tab-w">履歴</span></button>
     <!-- [html-validate-disable-next prefer-native-element -- PHASE0-B-CI-GREEN-001: タブ帯に並ぶ通知ピル。button 要素にすると .tab 系 CSS の適用範囲が変わるため、意図的に span + role="button" + tabindex="0" とする。この1要素だけ抑制し、ルール自体は有効のまま] -->
     <span id="save-warning-indicator" class="save-warn-pill" role="button" tabindex="0" title="押すと対処方法を表示します" hidden></span>
   </div>
@@ -11157,7 +11190,32 @@ function generatePairing(cls){
   }
 }
 
+// FINISHED-MATCH-FOLD-001 (#943): 「直前に操作した対局」を覚えておくための、クラス別の値1つ。
+//   ★ state には入れない・保存もしない（CLAUDE.md 項目4／作者裁定 2026-09-01「畳みの状態は保存しない」）。
+//   終わった対局は下段へ畳むが、**いま自分がいじった1件だけは上段に大きいまま残す**。
+//   すぐ畳むと押し間違いにその場で気づけないため（作者裁定）。
+//
+//   ★★ 覚えるのは index ではなく「回戦＋対戦の顔ぶれ」。
+//   index で覚えると、組み合わせが作り直される経路（回戦確定・再生成・リセット・バックアップ復元）の
+//   すべてで忘れる処理を置かないと、触ってもいない対局が上段に居座る。
+//   その「忘れる処理」は**変異を当てても赤にできなかった**（setWinner が必ず上書きするため）。
+//   [[redundant-guards-are-untestable]] の型そのものなので、**ガードを増やすのをやめて
+//   覚え方のほうを変えた**。回戦か顔ぶれが変われば古い値は自動的に一致しなくなる＝忘れる処理が要らない。
+var _fmTouchedKey = {};
+function fmTouchKey(cls, m){
+  if(!m)return null;
+  return ((state.results&&state.results[cls])||[]).length+'|'+m.p1+'|'+m.p2;
+}
+function fmRememberTouched(cls, idx){
+  var m=(state.pairings&&state.pairings[cls])?state.pairings[cls][idx]:null;
+  if(m)_fmTouchedKey[cls]=fmTouchKey(cls,m);
+}
+function fmIsTouched(cls, m){
+  return !!m && Object.prototype.hasOwnProperty.call(_fmTouchedKey, cls) && _fmTouchedKey[cls]===fmTouchKey(cls,m);
+}
+
 function setWinner(cls,idx,wid){
+  fmRememberTouched(cls,idx);
   if(state.pairings[cls][idx].winner===wid){
     state.pairings[cls][idx].winner=null;
   } else {
@@ -11694,8 +11752,24 @@ function submitRound(cls){
 //   renderTournament: データ準備 → 連結 → DOM反映 → イベント登録
 // ============================================================
 
-function buildScoreGridHtml(cls, sorted, wins){
-  var html='<h3>暫定成績</h3><div class="score-grid">';
+function buildScoreGridHtml(cls, sorted, wins, isSP){
+  // SCORE-GRID-FOLD-001 (#944): 暫定成績は参照系ゆえ <details> 格納。isSP(モバイル)は既定折りたたみ・
+  //   PC は open で従来表示。★#661（buildPlayedHistoryHtml）と同じ型で、判定も同じ流儀を使う。
+  //   開閉は native disclosure＝JS/bind を足さない。
+  //   ★ 畳んでよい根拠: 同じ内容が**最終結果タブと星取表にもある**（対局管理では参照系）。
+  //     2026-08-24 に作者が「畳む」を承認済み（削り7件の1件目）。
+  //   ★ 効き: 対局管理の 16.9%（30名2クラス・375px の実測で 2,176px）。
+  //   ★ 見出しは h3 のまま summary の**中**に置く（Codex 1巡目 P2）。summary は disclosure の
+  //     ボタンの意味しか持たず見出しの意味は継がないので、素のテキストにすると
+  //     見出しの構造から「暫定成績」が消える。.sg-summary h3 で inline 化＝見た目は1行のまま。
+  if(isSP===undefined)isSP=(typeof window!=='undefined'&&window.innerWidth)?(window.innerWidth<600):false;
+  var html='<details class="score-grid-details" style="margin-bottom:12px"'+(isSP?'':' open')+'>';
+  // ★ Codex 1巡目 P2: summary は disclosure のボタン意味を持つだけで、見出しの意味は持たない。
+  //   元は <h3>暫定成績</h3> だったので、そのまま summary の素のテキストにすると
+  //   **見出しの構造から「暫定成績」が消える**（支援技術の見出しジャンプで辿れなくなる）。
+  //   → h3 を summary の中に入れる。見た目は1行のまま（.sg-summary h3 で inline 化）。
+  html+='<summary class="sg-summary"><h3>暫定成績</h3><span class="sg-note">（勝数順）　タップで開閉</span></summary>';
+  html+='<div class="score-grid" style="margin-top:8px">';
   for(var i=0;i<sorted.length;i++){
     var p=sorted[i];var w=wins[p.id]||0;
     var total=0;for(var r=0;r<state.results[cls].length;r++){for(var m=0;m<state.results[cls][r].length;m++){var mm=state.results[cls][r][m];if(mm.p1===p.id||mm.p2===p.id)total++;}}
@@ -11710,7 +11784,7 @@ function buildScoreGridHtml(cls, sorted, wins){
     var snmLabel=getName(p.id,cls);
     html+='<div class="score-card"><div class="sno">'+escapeHtml(snoLabel)+'</div><div class="snm">'+escapeHtml(snmLabel)+'</div><div class="swins">'+w+'</div><div style="font-size:15px;color:#888">'+w+'勝'+(total-w)+'敗</div></div>';
   }
-  html+='</div>';
+  html+='</div></details>';
   return html;
 }
 
@@ -11850,8 +11924,31 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
     return w+'勝'+l+'敗';
   }
 
+  // FINISHED-MATCH-FOLD-001 (#943): 上段＝未入力のカード＋「直前に操作した対局」1件、
+  //   下段＝終わった対局を1行ずつ details に畳む（作者裁定 2026-09-01）。
+  //   ★ 実測の根拠: 大会が進んでも画面は短くならず、むしろ伸びていた
+  //     （30名2クラス・375px で進行 0%→100% が 12,905px→13,565px）。終わった対局が
+  //     終わる前と同じ大きさで残るため。いちばん疲れている終盤にいちばん長い、という作りだった。
+  //   ★ すぐ畳まない理由: 押し間違いにその場で気づけなくなる。いま自分がいじった1件だけは
+  //     上段に大きいまま残す（作者裁定）。次の対局を操作すると、その前のものが下段へ落ちる。
+  //   畳みは #661（buildPlayedHistoryHtml）と同じ native disclosure＝開閉の JS を足さない。
+  var fmFoldedHtml='', fmFoldedCount=0;
   for(var i=0;i<state.pairings[cls].length;i++){
     var m=state.pairings[cls][i];
+    // 終わっていて、かつ「直前に操作した対局」でないものは下段へ1行で畳む。
+    if(m&&m.winner&&!fmIsTouched(cls,m)){
+      var fmLoser=(m.winner===m.p1)?m.p2:m.p1;
+      fmFoldedHtml+='<div class="fm-row">'
+        +'<div class="fm-players">'
+        +escapeHtml(getName(m.winner,cls))+'<span class="fm-win">　○</span>'
+        +'<span class="fm-vs">　−　</span>'
+        +escapeHtml(getName(fmLoser,cls))
+        +'</div>'
+        +'<button class="fm-fix" id="fixbtn_'+cls+'_'+i+'">直す</button>'
+        +'</div>';
+      fmFoldedCount++;
+      continue;
+    }
     // PAIRING-RUBY-001 (#604): 手合いカードの氏名にふりがな併記（既存 nameWithNoRubyHtml を流用・
     //   未登録は名前のみ＝fail-soft）。番号部は素のまま・氏名部だけルビ化（playerNameRubyHtml 経由）。
     var aux1=pcBuildAuxLabel(m.p1),aux2=pcBuildAuxLabel(m.p2);
@@ -11865,14 +11962,6 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       labelsHtml+='<span style="display:inline-block;padding:2px 6px;margin-right:4px;font-size:15px;color:'+labColor+';background:'+labBg+';border-radius:4px">['+escapeHtml(lab)+']</span>';
     }
     html+='<div class="pairing-card" style="position:relative">'
-      // TAP-TARGET-DENSE-001 (#737 / スライス⑤a): absolute の卓バッジ＋「変更」を flow ヘッダ行へ再設計。
-      //   「変更」は 44px タップ標的（STYLE-GUIDE §10.3・M6 本対応）。id/bind/文言/confirm 導線は不変。
-      //   winner-row の margin-top:28px（absolute 回避余白）は本行が flow に入ったため撤去。
-      // A-4 §3 MF6-a: 卓番号バッジ（配列 index+1 から算出。永続化なし）
-      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">'
-      +'<div style="padding:2px 8px;border-radius:4px;background:#1F3864;color:#fff;font-size:15px;font-weight:bold">第 '+(i+1)+' 卓</div>'
-      +'<button style="min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
-      +'</div>'
       +'<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
       +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+nameWithNoRubyHtml(m.p1,cls)+'</button>'
@@ -11889,8 +11978,28 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       +'</div>'
       +'</div>'
       // A-4 §2, §5: 理由ラベル（軽量ラベル方式）
-      +(labelsHtml?'<div style="margin-top:4px">'+labelsHtml+'</div>':'')
+      // PAIRING-CARD-COMPACT-001 (#942): 「変更」ボタンをこの行の右端へ同居させ、専用のヘッダ行を1本無くした。
+      //   ★ 実測の根拠: 旧構成は「ヘッダ行 44px ＋ 下マージン 4px ＋ 理由ラベル行 23px = 71px」で、
+      //     ヘッダ行の中身は「変更」ボタン1つだけ・左は全部余白だった。同居させると行の高さは
+      //     max(44, 23) = 44px になり **−27px**（実測 182px → 155px）。
+      //   ★ 対戦行へ移すのは不可（実測で 186px と**伸びる**）。対戦行の横の余りは 21px しかなく、
+      //     ボタン（64px＋gap 8px）を入れると名前が折り返して行が 77px → 129px になる。律速は幅。
+      //   ★ 理由ラベルが1つも無いときも、この行は「変更」ボタンのために必ず出す（空でも高さは 44px）。
+      //   TAP-TARGET-DENSE-001 (#737): min-height:44px（STYLE-GUIDE §10.3）と id/bind/文言/confirm 導線は不変。
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px">'
+      +'<div>'+labelsHtml+'</div>'
+      +'<button style="min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
+      +'</div>'
       +'</div>';
+  }
+  // #943: 畳んだ対局は下段の details へ。open にはしない（既定は閉じる）。
+  //   ★ 理由ラベル・勝敗数・ふりがなは畳んだ行には出さない（1行に収めるのが目的）。
+  //     直したくなったら「直す」でその対局だけ上段に戻る＝そこで全部見える。
+  if(fmFoldedCount>0){
+    html+='<details class="finished-matches-details" style="margin:8px 0 0">'
+      +'<summary class="fm-summary">終わった対局<span class="fm-count">（'+fmFoldedCount+'）　タップで開閉</span></summary>'
+      +'<div style="padding:4px 12px 0">'+fmFoldedHtml+'</div>'
+      +'</details>';
   }
   // DAYOF-UNENTERED-COUNTER (当日第2弾⑥): 未入力（勝者未選択）の卓を数えて表示し、未入力がある間は
   //   「確定して次へ」を無効化する（取りこぼし／事後 alert を減らす）。submitRound の既存ガードは温存（二重防御）。
@@ -11941,6 +12050,12 @@ function bindTournamentEvents(cls){
       if(b1)b1.addEventListener('click',function(){setWinner(c,idx,m.p1);});
       if(b2)b2.addEventListener('click',function(){setWinner(c,idx,m.p2);});
       if(cb)cb.addEventListener('click',function(){changePairing(c,idx);});
+      // FINISHED-MATCH-FOLD-001 (#943): 畳んだ行の「直す」＝その対局を上段へ戻すだけ。
+      //   ★ 新しいモーダルは足さない。上段に戻れば既存の勝者ボタンと「変更」がそのまま使える。
+      //   （設計の初稿では変更モーダルを直接開く案だったが、押し間違いの直しに必要なのは
+      //     「相手の入れ替え」ではなく「勝者の入れ直し」なので、上段へ戻すのが正しい。）
+      var fb=document.getElementById('fixbtn_'+c+'_'+idx);
+      if(fb)fb.addEventListener('click',function(){fmRememberTouched(c,idx);renderTournament(c);});
     })(i,cls);
   }
   var sb=document.getElementById('submitBtn_'+cls);
@@ -15432,7 +15547,8 @@ function printResults(){
 //   classes-driven: getRegistrationClassList() で全クラスを走査し、A/B 固定 literal を避ける。
 //   印刷対象クラスの条件: isClassStarted(cls) かつ done でなく state.pairings[cls].length>0。
 //   全クラスに印刷対象がない場合は alert で通知して return（空 HTML を開かない）。
-//   出力内容: 大会名 / 日付 / クラス名 / ラウンド番号 / 第 N 卓 / entry_no｜氏名 / vs。
+//   出力内容: 大会名 / 日付 / クラス名 / ラウンド番号 / entry_no｜氏名 / vs。
+//   TABLE-NO-REMOVE-001 (#941): 「第 N 卓」の見出しは撤去（.card-no ごと）。紙面は氏名だけになる。
 //   含めないもの: 勝敗入力 / 変更 / ▲勝 / submit/repair ボタン / class-action-bar /
 //     暫定成績 / 対戦履歴 / 過去結果 / 結果記入欄 / 市町村など個人情報。
 function printPairings(){
@@ -15483,7 +15599,6 @@ function printPairings(){
       // FURIGANA-VIEW-002: 組み合わせ印刷の氏名にルビ（番号は素のまま・氏名のみルビ）。
       //   nameWithNoRubyHtml は escape 済み HTML を返すため、ここで再 escape せず直挿しする。
       sec+='<div class="card">'
-        +'<div class="card-no">第 '+(i+1)+' 卓</div>'
         +'<div class="card-body">'
         +'<div class="card-player">'+nameWithNoRubyHtml(m.p1,cl.id)+'</div>'
         +'<div class="card-vs">vs</div>'
@@ -15514,9 +15629,12 @@ function printPairings(){
     +'.cls-section{margin-bottom:16px}'
     +'.cls-h{font-size:15px;font-weight:bold;color:#1F3864;border-left:4px solid #1F3864;padding-left:10px;margin:0 0 8px}'
     +'.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}'
-    +'.card{border:1px solid #888;border-radius:6px;padding:10px 12px;page-break-inside:avoid;break-inside:avoid;position:relative}'
-    +'.card-no{position:absolute;top:6px;left:6px;background:#1F3864;color:#fff;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:4px}'
-    +'.card-body{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:22px}'
+    // #941: position:relative も .card-no の absolute の基準だったので外す。
+    +'.card{border:1px solid #888;border-radius:6px;padding:10px 12px;page-break-inside:avoid;break-inside:avoid}'
+    // TABLE-NO-REMOVE-001 (#941 / Codex 1巡目 P2): margin-top:22px は absolute の .card-no
+    //   （卓番バッジ）を避けるためだけの余白だった。バッジを外したので余白も外す。
+    //   ★ 残すとカード1枚ごとに 22px の空白が残り、人数が多い回で紙が1ページ増える。
+    +'.card-body{display:flex;align-items:center;justify-content:center;gap:14px}'
     +'.card-player{font-size:14px;font-weight:bold;color:#222;text-align:center;flex:1;word-break:break-word}'
     // FURIGANA-VIEW-002: 組み合わせカードの氏名ルビ（印刷時に <rt> が潰れない最小CSS）。
     +'.card-player ruby{ruby-position:over}.card-player rt{font-size:.55em;font-weight:normal;color:#333;line-height:1}'
@@ -17709,13 +17827,15 @@ function buildScoreboardClassTableHtml(cls,sourceState,focusId,showInProgress){
 // ============================================================
 // SCOREBOARD-MY-VIEW-001: 対局者を探す＋個人ビュー（read-only・memory-only）
 //   設計 = docs/specs/20260704_scoreboard_my_view_001_design.md（§3〜§5）。
-//   順位・勝敗・相手・卓番号はすべて既存派生関数（calcFinal / computeDisplayRanks /
+//   順位・勝敗・相手はすべて既存派生関数（calcFinal / computeDisplayRanks /
 //   getName / yomiOf / entryNoOf / roundsForClass）を再利用し、ロジックを複製しない。
 //   state への書き込み・運営画面への導線は一切追加しない（read-only 不変）。
 // ============================================================
 
 // 現手合せ（state.pairings[cls]）から当該対局者の対局を探す（pure helper）。
-//   戻り値 {oppId, table}（卓番号 = index+1 の派生・非保存）または null。
+//   戻り値 {oppId, won} または null。
+//   TABLE-NO-REMOVE-001 (#941): 卓番号 table（index+1 の派生・非保存）は撤去した。
+//   個人ビューが唯一の読み手だったため、残すと「読み手のいない派生値」だけが残る。
 function sbFindCurrentMatch(cls,id){
   var pa=(state.pairings&&state.pairings[cls])||[];
   for(var i=0;i<pa.length;i++){
@@ -17724,7 +17844,7 @@ function sbFindCurrentMatch(cls,id){
     // SCOREBOARD-INPROGRESS-MARKS-001 (#832 論点2): 勝敗が入っていれば won も返す。
     //   星取表に進行中の○×が出るのに個人ビューだけ「次の対戦」と言い続ける不整合を消すため。
     //   winner 未入力なら won=null＝従来どおり「次の対戦」。
-    if(m.p1===id||m.p2===id)return {oppId:(m.p1===id?m.p2:m.p1),table:i+1,won:(m.winner==null?null:(m.winner===id))};
+    if(m.p1===id||m.p2===id)return {oppId:(m.p1===id?m.p2:m.p1),won:(m.winner==null?null:(m.winner===id))};
   }
   return null;
 }
@@ -17799,7 +17919,7 @@ function buildScoreboardFinderHtml(activeClasses){
 }
 
 // 個人ビュー HTML（build・pure・設計 §3.3/§3.4）。
-//   現在順位・勝敗・次の対戦（卓・相手名）・これまでの対戦（相手名で縦に）。
+//   現在順位・勝敗・次の対戦（相手名）・これまでの対戦（相手名で縦に）。
 //   対局者が見つからない場合は '' を返す（呼び出し側が一覧へ復帰＝受入 §6-8）。
 function buildScoreboardPlayerViewHtml(cls,focusId){
   var players=(state.players&&state.players[cls])||[];
@@ -17832,7 +17952,7 @@ function buildScoreboardPlayerViewHtml(cls,focusId){
     var curMark=(cur.won===null)?''
       :('<span class="sb-mark '+(cur.won?'sb-mark-win':'sb-mark-lose')+' sb-mark-live">'+(cur.won?'○':'×')+'</span>　');
     html+='<div class="sb-next"><div class="sb-next-h">'+curHead+'</div>'
-      +'<div class="sb-next-b">'+curMark+'♟ '+cur.table+'卓　'+playerNameRubyHtml(getName(cur.oppId,cls),yomiOf(cur.oppId,cls))
+      +'<div class="sb-next-b">'+curMark+'♟ '+playerNameRubyHtml(getName(cur.oppId,cls),yomiOf(cur.oppId,cls))
       +'<span class="sb-fres-no">　'+escapeHtml('No.'+entryNoOf(cls,cur.oppId))+'</span></div>'
       +(cur.won===null?'':'<div style="font-size:11px;color:#667;margin-top:4px">まだ確定していません。幹事が回戦を確定すると勝敗数と順位に反映されます。</div>')
       +'</div>';
