@@ -221,7 +221,9 @@ console.log('\n[C6] 個人ビューとの整合（論点2）');
   assert(waiting.indexOf('まだ確定していません')<0, 'C6-7 その場合は補足を出さない');
 
   const cur = env.sbFindCurrentMatch('A','p1');
-  assert(cur && cur.won===true && cur.oppId==='p3' && cur.table===1, 'C6-8 sbFindCurrentMatch が won を返す（既存の oppId / table は不変）');
+  // TABLE-NO-REMOVE-001 (#941): table は撤去。won と oppId の命題はそのまま生きている。
+  assert(cur && cur.won===true && cur.oppId==='p3', 'C6-8 sbFindCurrentMatch が won を返す（既存の oppId は不変）');
+  assert(cur && !('table' in cur), 'C6-8b 戻り値に table を含めない');
   assert(env.sbFindCurrentMatch('A','p2').won===null, 'C6-9 winner 未入力は won=null');
 })();
 

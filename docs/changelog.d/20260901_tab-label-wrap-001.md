@@ -21,7 +21,7 @@
   **39px**＝44px 未満。**base でも 39px** で本便は 1px も動かしていないため、e2e では
   「39px のまま」を対照として固定した。直すならタブ帯の設計の話＝別便。
 - テスト: `test/e2e/tab_label_wrap_001.e2e.js`（実 Chromium・7幅で `Range.getClientRects()` から
-  **実際の行box** を組み立てて折れ位置を読む＝39件）。CSS 宣言の有無では折れ位置は測れない。
+  **実際の行box** を組み立てて折れ位置を読む）。CSS 宣言の有無では折れ位置は測れない。
   変異3本すべてで赤を実測（`.tab-w` の display を消す／span を外す／`white-space:nowrap` を足す）。
   `test/test_dayof_quickwins.js` ⑦ と `test/test_manual_sync_001.js` A1 のタブ名照合を
   **タグを剥がした可視文字列**で行うように直した（生文字列の完全一致だと「割り方」の変更で偽の赤になる）。

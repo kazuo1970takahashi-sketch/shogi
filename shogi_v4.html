@@ -11873,12 +11873,15 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       labelsHtml+='<span style="display:inline-block;padding:2px 6px;margin-right:4px;font-size:15px;color:'+labColor+';background:'+labBg+';border-radius:4px">['+escapeHtml(lab)+']</span>';
     }
     html+='<div class="pairing-card" style="position:relative">'
-      // TAP-TARGET-DENSE-001 (#737 / スライス⑤a): absolute の卓バッジ＋「変更」を flow ヘッダ行へ再設計。
-      //   「変更」は 44px タップ標的（STYLE-GUIDE §10.3・M6 本対応）。id/bind/文言/confirm 導線は不変。
-      //   winner-row の margin-top:28px（absolute 回避余白）は本行が flow に入ったため撤去。
-      // A-4 §3 MF6-a: 卓番号バッジ（配列 index+1 から算出。永続化なし）
-      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">'
-      +'<div style="padding:2px 8px;border-radius:4px;background:#1F3864;color:#fff;font-size:15px;font-weight:bold">第 '+(i+1)+' 卓</div>'
+      // TAP-TARGET-DENSE-001 (#737 / スライス⑤a): 「変更」は 44px タップ標的（STYLE-GUIDE §10.3・M6 本対応）。
+      //   id/bind/文言/confirm 導線は不変。winner-row の margin-top:28px（absolute 回避余白）は撤去済み。
+      // TABLE-NO-REMOVE-001 (#941): 卓番号バッジ（配列 index+1 の派生・非保存）を撤去した。
+      //   沼津の運用で卓番を使っていないため、概念ごと外す（作者裁定 2026-09-01）。
+      //   ★ このヘッダ行の高さを決めているのはバッジではなく「変更」ボタンの min-height:44px なので、
+      //     撤去してもカードは 1px も縮まない（実測: 182px → 182px）。高さの見直しは #942。
+      //   ★ 「変更」をこの行から対戦行へ移すのも #942。375px では対戦行が幅いっぱいで、
+      //     単に移すと名前が折り返してカードが 182px → 186px と**伸びる**（実測）。
+      +'<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:4px">'
       +'<button style="min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
       +'</div>'
       +'<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">'
@@ -15440,7 +15443,8 @@ function printResults(){
 //   classes-driven: getRegistrationClassList() で全クラスを走査し、A/B 固定 literal を避ける。
 //   印刷対象クラスの条件: isClassStarted(cls) かつ done でなく state.pairings[cls].length>0。
 //   全クラスに印刷対象がない場合は alert で通知して return（空 HTML を開かない）。
-//   出力内容: 大会名 / 日付 / クラス名 / ラウンド番号 / 第 N 卓 / entry_no｜氏名 / vs。
+//   出力内容: 大会名 / 日付 / クラス名 / ラウンド番号 / entry_no｜氏名 / vs。
+//   TABLE-NO-REMOVE-001 (#941): 「第 N 卓」の見出しは撤去（.card-no ごと）。紙面は氏名だけになる。
 //   含めないもの: 勝敗入力 / 変更 / ▲勝 / submit/repair ボタン / class-action-bar /
 //     暫定成績 / 対戦履歴 / 過去結果 / 結果記入欄 / 市町村など個人情報。
 function printPairings(){
@@ -15491,7 +15495,6 @@ function printPairings(){
       // FURIGANA-VIEW-002: 組み合わせ印刷の氏名にルビ（番号は素のまま・氏名のみルビ）。
       //   nameWithNoRubyHtml は escape 済み HTML を返すため、ここで再 escape せず直挿しする。
       sec+='<div class="card">'
-        +'<div class="card-no">第 '+(i+1)+' 卓</div>'
         +'<div class="card-body">'
         +'<div class="card-player">'+nameWithNoRubyHtml(m.p1,cl.id)+'</div>'
         +'<div class="card-vs">vs</div>'
@@ -15522,9 +15525,12 @@ function printPairings(){
     +'.cls-section{margin-bottom:16px}'
     +'.cls-h{font-size:15px;font-weight:bold;color:#1F3864;border-left:4px solid #1F3864;padding-left:10px;margin:0 0 8px}'
     +'.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}'
-    +'.card{border:1px solid #888;border-radius:6px;padding:10px 12px;page-break-inside:avoid;break-inside:avoid;position:relative}'
-    +'.card-no{position:absolute;top:6px;left:6px;background:#1F3864;color:#fff;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:4px}'
-    +'.card-body{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:22px}'
+    // #941: position:relative も .card-no の absolute の基準だったので外す。
+    +'.card{border:1px solid #888;border-radius:6px;padding:10px 12px;page-break-inside:avoid;break-inside:avoid}'
+    // TABLE-NO-REMOVE-001 (#941 / Codex 1巡目 P2): margin-top:22px は absolute の .card-no
+    //   （卓番バッジ）を避けるためだけの余白だった。バッジを外したので余白も外す。
+    //   ★ 残すとカード1枚ごとに 22px の空白が残り、人数が多い回で紙が1ページ増える。
+    +'.card-body{display:flex;align-items:center;justify-content:center;gap:14px}'
     +'.card-player{font-size:14px;font-weight:bold;color:#222;text-align:center;flex:1;word-break:break-word}'
     // FURIGANA-VIEW-002: 組み合わせカードの氏名ルビ（印刷時に <rt> が潰れない最小CSS）。
     +'.card-player ruby{ruby-position:over}.card-player rt{font-size:.55em;font-weight:normal;color:#333;line-height:1}'
@@ -17717,13 +17723,15 @@ function buildScoreboardClassTableHtml(cls,sourceState,focusId,showInProgress){
 // ============================================================
 // SCOREBOARD-MY-VIEW-001: 対局者を探す＋個人ビュー（read-only・memory-only）
 //   設計 = docs/specs/20260704_scoreboard_my_view_001_design.md（§3〜§5）。
-//   順位・勝敗・相手・卓番号はすべて既存派生関数（calcFinal / computeDisplayRanks /
+//   順位・勝敗・相手はすべて既存派生関数（calcFinal / computeDisplayRanks /
 //   getName / yomiOf / entryNoOf / roundsForClass）を再利用し、ロジックを複製しない。
 //   state への書き込み・運営画面への導線は一切追加しない（read-only 不変）。
 // ============================================================
 
 // 現手合せ（state.pairings[cls]）から当該対局者の対局を探す（pure helper）。
-//   戻り値 {oppId, table}（卓番号 = index+1 の派生・非保存）または null。
+//   戻り値 {oppId, won} または null。
+//   TABLE-NO-REMOVE-001 (#941): 卓番号 table（index+1 の派生・非保存）は撤去した。
+//   個人ビューが唯一の読み手だったため、残すと「読み手のいない派生値」だけが残る。
 function sbFindCurrentMatch(cls,id){
   var pa=(state.pairings&&state.pairings[cls])||[];
   for(var i=0;i<pa.length;i++){
@@ -17732,7 +17740,7 @@ function sbFindCurrentMatch(cls,id){
     // SCOREBOARD-INPROGRESS-MARKS-001 (#832 論点2): 勝敗が入っていれば won も返す。
     //   星取表に進行中の○×が出るのに個人ビューだけ「次の対戦」と言い続ける不整合を消すため。
     //   winner 未入力なら won=null＝従来どおり「次の対戦」。
-    if(m.p1===id||m.p2===id)return {oppId:(m.p1===id?m.p2:m.p1),table:i+1,won:(m.winner==null?null:(m.winner===id))};
+    if(m.p1===id||m.p2===id)return {oppId:(m.p1===id?m.p2:m.p1),won:(m.winner==null?null:(m.winner===id))};
   }
   return null;
 }
@@ -17807,7 +17815,7 @@ function buildScoreboardFinderHtml(activeClasses){
 }
 
 // 個人ビュー HTML（build・pure・設計 §3.3/§3.4）。
-//   現在順位・勝敗・次の対戦（卓・相手名）・これまでの対戦（相手名で縦に）。
+//   現在順位・勝敗・次の対戦（相手名）・これまでの対戦（相手名で縦に）。
 //   対局者が見つからない場合は '' を返す（呼び出し側が一覧へ復帰＝受入 §6-8）。
 function buildScoreboardPlayerViewHtml(cls,focusId){
   var players=(state.players&&state.players[cls])||[];
@@ -17840,7 +17848,7 @@ function buildScoreboardPlayerViewHtml(cls,focusId){
     var curMark=(cur.won===null)?''
       :('<span class="sb-mark '+(cur.won?'sb-mark-win':'sb-mark-lose')+' sb-mark-live">'+(cur.won?'○':'×')+'</span>　');
     html+='<div class="sb-next"><div class="sb-next-h">'+curHead+'</div>'
-      +'<div class="sb-next-b">'+curMark+'♟ '+cur.table+'卓　'+playerNameRubyHtml(getName(cur.oppId,cls),yomiOf(cur.oppId,cls))
+      +'<div class="sb-next-b">'+curMark+'♟ '+playerNameRubyHtml(getName(cur.oppId,cls),yomiOf(cur.oppId,cls))
       +'<span class="sb-fres-no">　'+escapeHtml('No.'+entryNoOf(cls,cur.oppId))+'</span></div>'
       +(cur.won===null?'':'<div style="font-size:11px;color:#667;margin-top:4px">まだ確定していません。幹事が回戦を確定すると勝敗数と順位に反映されます。</div>')
       +'</div>';

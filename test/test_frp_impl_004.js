@@ -206,7 +206,7 @@ function ids(arr){ return arr.map(function(p){return p.id;}); }
 }
 
 // ============================================================
-// M. 派生メタ情報: 卓番号=index+1、round=results.length+1
+// M. 派生メタ情報: 手合せの並び順（pairings の配列順・#941 で卓番号は廃止）、round=results.length+1
 // ============================================================
 {
   const env = loadEnv();
@@ -217,7 +217,12 @@ function ids(arr){ return arr.map(function(p){return p.id;}); }
   assert(roundNum===1, 'M1 現 round は保存値でなく results.length+1 (=1) から派生');
   const html = env.buildCurrentPairingsHtml('A', roundNum, false);
   assert(html.indexOf('1回戦 組み合わせ')>=0 && html.indexOf('1 / 4回戦')>=0, 'M2 round 表示は派生 roundNum から描画される');
-  assert(html.indexOf('第 1 卓')>=0 && html.indexOf('第 2 卓')>=0, 'M3 卓番号は pairings 配列 index+1 から描画される');
+  // TABLE-NO-REMOVE-001 (#941): 卓番号を撤去したので「第 N 卓」の命題は消えた。
+  //   ★ 生きている命題は「カードが pairings 配列の順に index 付きで描かれる」ことそのもの。
+  //     id の連番（wb_A_0_p1 / wb_A_1_p1）で測る＝index が描画に効いていることを見る。
+  assert(html.indexOf('第 ')<0 && html.indexOf(' 卓</div>')<0, 'M3a 卓番号バッジは描画されない');
+  const i0 = html.indexOf('id="wb_A_0_p1"'), i1 = html.indexOf('id="wb_A_1_p1"');
+  assert(i0>=0 && i1>=0 && i0<i1, 'M3 カードは pairings 配列の順に index 付きで描画される');
   const saved = JSON.parse(env._ctx.localStorage.getItem(env.STORAGE_KEY));
   assert(!Object.prototype.hasOwnProperty.call(saved.pairings.A[0],'table') && !Object.prototype.hasOwnProperty.call(saved.pairings.A[1],'table'), 'M4 卓番号 table は match に保存しない');
   assert(!Object.prototype.hasOwnProperty.call(saved.pairings.A[0],'round') && !Object.prototype.hasOwnProperty.call(saved.pairings.A[1],'round'), 'M5 round は match に保存しない');

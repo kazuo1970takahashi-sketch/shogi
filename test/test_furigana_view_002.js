@@ -263,6 +263,18 @@ function lastBlob(env){ var b=env._ctx._blobs; return b.length?b[b.length-1]._co
     'P2-b printPairings: カード氏名の print ルビ CSS が含まれる');
   assert(h.indexOf('佐藤')>=0,
     'P2-c printPairings: yomi 空の対戦者も氏名表示される');
+  // TABLE-NO-REMOVE-001 (#941 / Codex 1巡目 P2): 卓番バッジ（absolute の .card-no）と、
+  //   ★**そのバッジを避けるためだけに置かれていた余白**を両方外したことを見る。
+  //   バッジだけ消して余白を残すと、カード1枚ごとに 22px の空白が残り、
+  //   人数が多い回で紙が1ページ増える（Codex が指摘するまで消し忘れていた）。
+  assert(h.indexOf('card-no')<0,
+    'P2-d printPairings: 卓番バッジ（.card-no）は出力にも CSS にも残っていない');
+  assert(h.indexOf('margin-top:22px')<0,
+    'P2-e printPairings: バッジ避けの margin-top:22px を残していない');
+  assert(/\.card\{[^}]*\}/.test(h) && !/\.card\{[^}]*position:relative/.test(h),
+    'P2-f printPairings: .card の position:relative（absolute の基準）も残っていない');
+  assert(/\.card-body\{[^}]*display:flex/.test(h),
+    'P2-g printPairings: .card-body 自体は従来どおり（消したのは余白だけ）');
 }
 {
   // P3. downloadReport（報告書 = 最終結果/入賞者）

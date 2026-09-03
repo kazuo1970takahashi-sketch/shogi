@@ -96,7 +96,15 @@ append → `save()` → ブラウザ reload（`load()` = normalizeState）後に
 タスク要件に「appended match の round / table / source / generatedBy 等、既存実装で持っているメタ情報」とあるが、**match オブジェクトにはこれらのフィールドは存在しない**。ここで「存在しない」と言うのは **match-level の保存メタ情報** に限った主張である。アプリ全体には別文脈の `source` / `sourceState` 等があり得る（例: 大会履歴 Step1 の `buildScoreboardClassTableHtml(cls, sourceState)` の `sourceState` は閲覧用の状態スナップショット引数であって、match の保存フィールドではない）。混同を避けるため、本書での `source` は **match-level の保存メタ情報** を指す。実測:
 
 - **match オブジェクトには `round` / `table` / `source` / `generatedBy` は存在しない**。match の正準形（`sanitizeMatch` L794）は **`{p1, p2, winner, lastModifiedBy}` の 4 つだけ**。
-- **卓番号** は `pairings` 配列の **index+1 による描画上の派生**（表示バッジ。`buildCurrentPairingsHtml` L6825「第 N 卓」）。**保存されない**。
+- ~~**卓番号** は `pairings` 配列の **index+1 による描画上の派生**（表示バッジ。`buildCurrentPairingsHtml` L6825「第 N 卓」）。**保存されない**。~~ ← #941 で廃止
+
+> ★ **2026-09-01 追記（TABLE-NO-REMOVE-001 / #941）: 上の行の卓番号に関する記述は失効。**
+> 作者裁定により卓番号は**廃止**（沼津の運用で使っていないため概念ごと）。
+> `buildCurrentPairingsHtml` の卓番号バッジ・印刷の組み合わせ表の卓番号・参加者の個人ビューの卓番号はいずれも廃止、
+> `sbFindCurrentMatch` の戻り値の `table` も廃止。**残るのは `pairings` の配列順だけ**。
+> 「残り N 卓 未入力」等の**数・単位としての「卓」は据え置き**（番号ではない）。
+> 他所で必要になったらそのとき「卓番を使う/使わない」の設定として足す。詳細 → `docs/REFERENCE.md`。
+
 - **ラウンド番号** は `state.results[cls].length+1` による **派生**（L7011）。**保存されない**。
 
 → **FRP-IMPL-004 は match スキーマ拡張を行わない**。`sanitizeMatch` は未知フィールドを **必ず捨てる** ため、もし将来 match にメタ情報を足すなら **`sanitizeMatch` にも同じ復元規則を足さない限り reload で消える**（§10 リスク）。本スライスでは match スキーマを拡張しない。この「持っていない」事実は、§5.4.1 の **再生成制御の識別限界**（FRP 由来か通常開始由来かを state から判別できない）の根拠でもある。
@@ -110,7 +118,7 @@ append → `save()` → ブラウザ reload（`load()` = normalizeState）後に
 | 区分 | 対象 | 方針 |
 |---|---|---|
 | **保存する（state）** | `pairings[cls]`（既存＋append 済み match）/ `results[cls]` / `players[cls]` / `classes[i].started` / 互換 `state.started` | 既存 `save()` のまま。append は末尾追加のみ。**新フィールドを足さない** |
-| **派生（保存しない）** | 1局目 未割当者リスト / 奇数 leftover / 卓番号 / 現ラウンド番号 / append 可否 / 再生成可否 | 毎描画・reload 後に `getUnassignedFirstRoundPlayers` 等で再計算 |
+| **派生（保存しない）** | 1局目 未割当者リスト / 奇数 leftover / ~~卓番号~~（#941 で廃止） / 現ラウンド番号 / append 可否 / 再生成可否 | 毎描画・reload 後に `getUnassignedFirstRoundPlayers` 等で再計算 |
 
 ### 4.2 append 後 reload しても同じ未割当者が残る条件
 
@@ -172,7 +180,8 @@ I9 の通り、`getUnassignedFirstRoundPlayers(cls)` の入力（`players[cls]` 
 > **注（通常開始は未割当0が保証される）**: 通常開始（B1=`startBtnClass_`）の validator `validateStartableClass` は **偶数を要求**する（`cnt%2!==0` で `odd` を返す・L5517）。`generatePairing` は偶数なら全員ペア化する（backtrack で全員消化）。よって **通常開始クラスは常に未割当0** であり、**非表示ガード（未割当>0）が通常開始クラスに発火することはない**＝再生成ボタンは通常どおり表示される。未割当>0 が発生するのは FRP 部分手合い（奇数 leftover や未受付者を待機させた状態）に固有。これにより「未割当の有無」軸だけで **通常運用を壊さずに** FRP 組成中だけを hide できる。
 
 - **判定ロジック（実装イメージ・004B）**: `buildCurrentPairingsHtml` の再生成ボタン出力を `shouldShowRegenerateButton(cls)`（§5.4.2）で gate する純 helper を新設（reader・副作用なし）。**未割当0の場合は由来を問わず非表示条件に含めない**（§5.4.1）。表示時の confirm 文言は `results 空 && 未割当0` のとき（由来を問わず）強化版（§6）。
-- **実装制約**: `generatePairing` 本体・`buildCurrentPairingsHtml` の既存出力（卓番号・winner ボタン・submit ボタン）・既存テスト pin は変えない。**再生成ボタンの “出力可否” と “confirm 文言” のみを純追加 helper で制御**する（純追加・既存 id/文言は不変）。
+- **実装制約**: `generatePairing` 本体・`buildCurrentPairingsHtml` の既存出力（~~卓番号~~・winner ボタン・submit ボタン）・既存テスト pin は変えない。
+  ★ **卓番号の部分は #941 で失効**（本節の追記を参照）。winner ボタンと submit ボタンの制約は生きている。**再生成ボタンの “出力可否” と “confirm 文言” のみを純追加 helper で制御**する（純追加・既存 id/文言は不変）。
 - **保険（二重防御）**: `generatePairing` を **FRP 由来で誤って呼んだ場合に備えた no-op ガードは入れない**（generatePairing は通常開始 round1 再生成という正規用途があるため、関数本体に FRP 判定を入れると通常運用に影響する）。制御は **UI 層（ボタン gate）に閉じる**。これは「制御は UI に閉じ、汎用 mutate 関数の意味を変えない」既存方針（FRP-DESIGN-002 §10.3）と整合。コンソール/テストからの直接呼出しは依然として上書きし得る（§10 R10）。
 
 #### 5.4.1 識別限界（Must Fix）: 由来は現行 state から判別できない
