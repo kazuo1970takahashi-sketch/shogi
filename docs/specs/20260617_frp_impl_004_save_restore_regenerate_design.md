@@ -96,12 +96,12 @@ append → `save()` → ブラウザ reload（`load()` = normalizeState）後に
 タスク要件に「appended match の round / table / source / generatedBy 等、既存実装で持っているメタ情報」とあるが、**match オブジェクトにはこれらのフィールドは存在しない**。ここで「存在しない」と言うのは **match-level の保存メタ情報** に限った主張である。アプリ全体には別文脈の `source` / `sourceState` 等があり得る（例: 大会履歴 Step1 の `buildScoreboardClassTableHtml(cls, sourceState)` の `sourceState` は閲覧用の状態スナップショット引数であって、match の保存フィールドではない）。混同を避けるため、本書での `source` は **match-level の保存メタ情報** を指す。実測:
 
 - **match オブジェクトには `round` / `table` / `source` / `generatedBy` は存在しない**。match の正準形（`sanitizeMatch` L794）は **`{p1, p2, winner, lastModifiedBy}` の 4 つだけ**。
-- **卓番号** は `pairings` 配列の **index+1 による描画上の派生**（表示バッジ。`buildCurrentPairingsHtml` L6825「第 N 卓」）。**保存されない**。
+- ~~**卓番号** は `pairings` 配列の **index+1 による描画上の派生**（表示バッジ。`buildCurrentPairingsHtml` L6825「第 N 卓」）。**保存されない**。~~ ← #941 で廃止
 
-> ★ **2026-09-01 追記（TABLE-NO-REMOVE-001 / #941）: 本節の卓番号に関する記述は失効**。
-> 作者裁定により**卓番という概念ごと廃止**した（沼津の運用で使っていないため）。
-> `buildCurrentPairingsHtml` は「第 N 卓」バッジを描かず、印刷の組み合わせ表・参加者の個人ビューからも撤去、
-> `sbFindCurrentMatch` の戻り値からも `table` を落とした。**残るのは `pairings` の配列順だけ**。
+> ★ **2026-09-01 追記（TABLE-NO-REMOVE-001 / #941）: 上の行の卓番号に関する記述は失効。**
+> 作者裁定により卓番号は**廃止**（沼津の運用で使っていないため概念ごと）。
+> `buildCurrentPairingsHtml` の卓番号バッジ・印刷の組み合わせ表の卓番号・参加者の個人ビューの卓番号はいずれも廃止、
+> `sbFindCurrentMatch` の戻り値の `table` も廃止。**残るのは `pairings` の配列順だけ**。
 > 「残り N 卓 未入力」等の**数・単位としての「卓」は据え置き**（番号ではない）。
 > 他所で必要になったらそのとき「卓番を使う/使わない」の設定として足す。詳細 → `docs/REFERENCE.md`。
 

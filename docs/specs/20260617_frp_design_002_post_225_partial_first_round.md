@@ -148,12 +148,12 @@ FRP の「選んだ人から1局目を開始」(部分開始ボタン `startBtnP
 - `buildClassActionBarHtml(cls)` … §2.3 の通り（reset / 全員開始ボタンを出す view helper / reader）。
 - `bindClassActionBarEvents(cls)` … `startBtnClass_` → `startTournamentForClass`、`resetBtnClass_` → `resetClassForClass` を bind。
 - `isClassStarted(cls)` … 「そのクラスで 1 局目運用を開始したか」の述語（#224 §8.1）。クラス別全員開始だけでなく **将来の部分開始（`startClassPartial`）でも true** であるべき（`pairings[cls]` が 1 件以上あるか**だけ**で定義しない）。`setClassStarted(cls,true)` 経由で `classes[i].started` + 互換 `state.started` を同期。
-- `卓番号` … 描画時に `state.pairings[cls]` の **index + 1**（`第 (i+1) 卓`、永続化なし）。append で自然に連番が続く。
+- ~~`卓番号` … 描画時に `state.pairings[cls]` の **index + 1**（`第 (i+1) 卓`、永続化なし）。append で自然に連番が続く。~~ ← #941 で廃止
 
-> ★ **2026-09-01 追記（TABLE-NO-REMOVE-001 / #941）: 本節の卓番号に関する記述は失効**。
-> 作者裁定により**卓番という概念ごと廃止**した（沼津の運用で使っていないため）。
-> `buildCurrentPairingsHtml` は「第 N 卓」バッジを描かず、印刷の組み合わせ表・参加者の個人ビューからも撤去、
-> `sbFindCurrentMatch` の戻り値からも `table` を落とした。**残るのは `pairings` の配列順だけ**。
+> ★ **2026-09-01 追記（TABLE-NO-REMOVE-001 / #941）: 上の行の卓番号に関する記述は失効。**
+> 作者裁定により卓番号は**廃止**（沼津の運用で使っていないため概念ごと）。
+> `buildCurrentPairingsHtml` の卓番号バッジ・印刷の組み合わせ表の卓番号・参加者の個人ビューの卓番号はいずれも廃止、
+> `sbFindCurrentMatch` の戻り値の `table` も廃止。**残るのは `pairings` の配列順だけ**。
 > 「残り N 卓 未入力」等の**数・単位としての「卓」は据え置き**（番号ではない）。
 > 他所で必要になったらそのとき「卓番を使う/使わない」の設定として足す。詳細 → `docs/REFERENCE.md`。
 

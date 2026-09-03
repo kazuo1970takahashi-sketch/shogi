@@ -8,7 +8,7 @@ const dir = path.join(__dirname, '..', 'docs', 'changelog.d');
 // 対象は 2026-09-01 以降の断片（それ以前は CHANGELOG.md へ連結済みの履歴なので触らない）
 const files = fs.readdirSync(dir).filter(f => f.endsWith('.md') && /^\d{8}_/.test(f) && f >= '20260901');
 // テスト名の近く（同じ行）に「N件」「PASS=N」「N/0」が出たら件数の記載とみなす
-const RE = /(test\/|e2e|検査|スイート)[^\n]*?(\d+\s*件|PASS=\d+|\b\d+\/0\b)|(\d+\s*件|PASS=\d+)[^\n]*?(test\/|\.e2e\.js|\.js）)/;
+const RE = /(test\/|e2e|検査|スイート|テスト)[^\n]*?(\d+\s*件|PASS=\d+|\b\d+\/0\b)|(\d+\s*件|PASS=\d+)[^\n]*?(test\/|\.e2e\.js|\.js）|テスト)/;
 let bad = [];
 for (const f of files) {
   // ★ 行単位だと「テスト名」と「N件」が折り返しで別の行に割れたときに素通りする
