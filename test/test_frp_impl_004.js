@@ -206,7 +206,7 @@ function ids(arr){ return arr.map(function(p){return p.id;}); }
 }
 
 // ============================================================
-// M. 派生メタ情報: 卓番号=index+1、round=results.length+1
+// M. 派生メタ情報: 手合せの並び順（pairings の配列順・#941 で卓番号は廃止）、round=results.length+1
 // ============================================================
 {
   const env = loadEnv();
