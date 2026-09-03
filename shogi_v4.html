@@ -11201,6 +11201,43 @@ function generatePairing(cls){
 //   その「忘れる処理」は**変異を当てても赤にできなかった**（setWinner が必ず上書きするため）。
 //   [[redundant-guards-are-untestable]] の型そのものなので、**ガードを増やすのをやめて
 //   覚え方のほうを変えた**。回戦か顔ぶれが変われば古い値は自動的に一致しなくなる＝忘れる処理が要らない。
+// DISCLOSURE-STATE-001 (#950): 対局管理の <details>（対戦済みリスト #661・暫定成績 #944・終わった対局 #943）の
+//   開閉を再描画をまたいで覚える。renderTournament は innerHTML を組み直すので、覚えないと
+//   利用者が開いた一覧が勝敗入力のたびに閉じる（いちばん見たいタイミングで閉じる）。
+//   ★ 覚え方は #943 と同じ型＝index ではなく「種別＋クラス＋回戦」。回戦が変わればキーが変わり
+//     自動的に既定へ戻る＝回戦確定・リセット・復元に「忘れる処理」を置かない。
+//   ★ メモリ上だけ。state にも保存データにも入れない。既定（初回は畳む／PC は開く）は変えない。
+var _dsOpen = {};
+function dsKey(kind, cls){
+  return kind+'|'+cls+'|'+((state.results&&state.results[cls])||[]).length;
+}
+function dsOpenAttr(kind, cls, defaultOpen){
+  var k=dsKey(kind,cls);
+  var open=Object.prototype.hasOwnProperty.call(_dsOpen,k)?_dsOpen[k]:!!defaultOpen;
+  return open?' open':'';
+}
+function dsRemember(kind, cls, open){
+  _dsOpen[dsKey(kind,cls)]=!!open;
+}
+function dsBind(cls){
+  var el=document.getElementById('pane-'+cls);
+  if(!el)return;
+  var list=el.querySelectorAll('details[data-ds]');
+  for(var i=0;i<list.length;i++){
+    (function(d){
+      // ★ Chromium は open 付きで挿入した details にも toggle を1回投げる（実測・利用者の操作ではない）。
+      //   それを覚えると「描画時の幅の既定」が固定され、幅が変わっても既定に収束しなくなる。
+      //   → 描画時の値と同じ最初の1回だけは読み飛ばす。以降は利用者の操作なので必ず覚える。
+      var rendered=d.open, armed=false;
+      d.addEventListener('toggle',function(){
+        if(!armed&&d.open===rendered){armed=true;return;}
+        armed=true;
+        dsRemember(d.getAttribute('data-ds'),cls,d.open);
+      });
+    })(list[i]);
+  }
+}
+
 var _fmTouchedKey = {};
 function fmTouchKey(cls, m){
   if(!m)return null;
@@ -11763,7 +11800,7 @@ function buildScoreGridHtml(cls, sorted, wins, isSP){
   //     ボタンの意味しか持たず見出しの意味は継がないので、素のテキストにすると
   //     見出しの構造から「暫定成績」が消える。.sg-summary h3 で inline 化＝見た目は1行のまま。
   if(isSP===undefined)isSP=(typeof window!=='undefined'&&window.innerWidth)?(window.innerWidth<600):false;
-  var html='<details class="score-grid-details" style="margin-bottom:12px"'+(isSP?'':' open')+'>';
+  var html='<details class="score-grid-details" data-ds="score" style="margin-bottom:12px"'+dsOpenAttr('score',cls,!isSP)+'>';
   // ★ Codex 1巡目 P2: summary は disclosure のボタン意味を持つだけで、見出しの意味は持たない。
   //   元は <h3>暫定成績</h3> だったので、そのまま summary の素のテキストにすると
   //   **見出しの構造から「暫定成績」が消える**（支援技術の見出しジャンプで辿れなくなる）。
@@ -11798,7 +11835,7 @@ function buildPlayedHistoryHtml(cls, sorted, played, isSP){
   //   同勝数内エントリー番号順となる。並び順を見出しと補足で明示。
   //   対戦相手タグは renderTournament の played[] 構築順 = ラウンド順を維持。
   //   切替 UI / 独自並び順は IMPL-LIGHT 範囲外。
-  var html='<details class="played-history-details" style="margin-bottom:12px"'+(isSP?'':' open')+'>';
+  var html='<details class="played-history-details" data-ds="played" style="margin-bottom:12px"'+dsOpenAttr('played',cls,!isSP)+'>';
   html+='<summary style="font-size:15px;font-weight:600;color:#1F3864;padding:10px 12px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;cursor:pointer;list-style-position:inside">対戦済みリスト<span style="font-weight:400;font-size:15px;color:#888;margin-left:8px">（勝数順）　タップで開閉</span></summary>';
   html+='<div style="font-size:15px;color:#888;margin:8px 0 6px">※ 暫定成績と同じ勝数順で表示しています。対戦相手はラウンド順です。</div>';
   html+='<div style="margin-bottom:4px">';
@@ -11992,11 +12029,11 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       +'</div>'
       +'</div>';
   }
-  // #943: 畳んだ対局は下段の details へ。open にはしない（既定は閉じる）。
+  // #943: 畳んだ対局は下段の details へ。既定は閉じる（#950: 利用者が開いたあとは再描画をまたいで保つ）。
   //   ★ 理由ラベル・勝敗数・ふりがなは畳んだ行には出さない（1行に収めるのが目的）。
   //     直したくなったら「直す」でその対局だけ上段に戻る＝そこで全部見える。
   if(fmFoldedCount>0){
-    html+='<details class="finished-matches-details" style="margin:8px 0 0">'
+    html+='<details class="finished-matches-details" data-ds="finished" style="margin:8px 0 0"'+dsOpenAttr('finished',cls,false)+'>'
       +'<summary class="fm-summary">終わった対局<span class="fm-count">（'+fmFoldedCount+'）　タップで開閉</span></summary>'
       +'<div style="padding:4px 12px 0">'+fmFoldedHtml+'</div>'
       +'</details>';
@@ -12041,6 +12078,7 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
 }
 
 function bindTournamentEvents(cls){
+  dsBind(cls); // DISCLOSURE-STATE-001 (#950)
   for(var i=0;i<state.pairings[cls].length;i++){
     (function(idx,c){
       var m=state.pairings[cls][idx];
