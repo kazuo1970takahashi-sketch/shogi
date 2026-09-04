@@ -12449,9 +12449,10 @@ function buildFirstRoundPartialSectionHtml(cls){
   //   disabled 条件は P1 と同じ「未手合い2人未満」(canAddOneTable)。click の登録は onClickAddAllTables へ
   //   bindClassActionBarEvents 側で行う（この helper は表示専用・イベント登録を持たない）。
   html+='<button type="button" id="addAllTablesBtn_'+escapeHtml(cls)+'" class="btn-primary"'+(canAddOneTable?'':' disabled')+' style="width:100%" title="未割当の参加者から、作れる対局をまとめて作成します。">未手合いをまとめて1局目作成</button>';
-  html+='<p style="margin:6px 0 0;font-size:15px;color:#888">※いま未手合いの全員を受付順で2人ずつまとめて卓にします（受付が一段落したときに便利）。奇数なら末尾1人は次の参加者が来るまで待機します（不戦勝にはなりません）。既存の対局・結果は変更しません。</p>';
+  // FRP-PANEL-DECLUTTER-001 (#957): ここに在った説明文3本（受付順で2人ずつ／部分開始中の説明／2人以上を選択）は
+  //   消した。1回理解したらもう読まないものが 375px でパネルの 48%（266px）を占めていた（作者の実機確認）。
+  //   同じ内容は「？ ヘルプ」（HELP_TEXTS['first-round']）に全部あり、「2人以上」は押したときの showMsg で出る。
   html+='</div>';
-  html+='<p style="margin:0 0 8px;font-size:15px;color:#666">このクラスは部分開始中です。まだ1局目に入っていない参加者から選んで「選択した参加者で1局目を追加作成」を押すと、既存の対局を変更せず選択者だけの対局を追加します（2人以上を選択。偶数は全員、奇数は末尾1人が未割当のまま残ります）。既に1局目対局がある参加者は表示されません。</p>';
   html+='<div class="frp-unassigned-list">';
   for(var i=0;i<unassigned.length;i++){
     var p=unassigned[i];
@@ -12463,7 +12464,6 @@ function buildFirstRoundPartialSectionHtml(cls){
   }
   html+='</div>';
   html+='<button type="button" id="frpAddBtn_'+escapeHtml(cls)+'" class="btn-primary" title="選んだ未割当者だけで1局目の対局を作成します（既存の対局・結果は変更しません）" style="width:100%;margin-top:8px">選択した参加者で1局目を追加作成</button>';
-  html+='<p style="margin:6px 0 0;font-size:15px;color:#888">※2人以上を選択してください。作成済みの対局・結果は変更されません。</p>';
   html+='</div>';
   return html;
 }
