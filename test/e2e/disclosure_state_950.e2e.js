@@ -52,7 +52,7 @@ const SNAP = `(function(){
     played: o('.played-history-details'),
     finished: o('.finished-matches-details'),
     stateKeys: Object.keys(state).sort().join(','),
-    memKeys: (typeof _dsOpen==='object' && _dsOpen) ? Object.keys(_dsOpen).sort().join(',') : null,
+    memKeys: (function(){ if(typeof _dsMem!=='object'||!_dsMem)return null; var out=[]; for(var c in _dsMem){ for(var k in _dsMem[c].open){ out.push(c+':'+k); } } return out.sort().join(','); })(),
     roundCount: (state.results.A||[]).length
   };
 })()`;
@@ -128,8 +128,8 @@ const SNAP = `(function(){
       for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); out.push(k + '=' + (localStorage.getItem(k) || '')); }
       return out.join('\n');
     });
-    ok(saved.indexOf('_dsOpen') < 0 && saved.indexOf('dsOpen') < 0, 'G5b 保存データ（localStorage）に開閉の記憶は入らない');
-    ok(S.memKeys.split(',').every(k => /^(score|played|finished)\|A\|0$/.test(k)), 'G5c 覚えているキーは 種別|クラス|回戦 の形（実測 ' + S.memKeys + '）');
+    ok(saved.indexOf('_dsMem') < 0 && saved.indexOf('dsMem') < 0, 'G5b 保存データ（localStorage）に開閉の記憶は入らない');
+    ok(S.memKeys.split(',').every(k => /^A:(score|played|finished)\|0$/.test(k)), 'G5c 覚えているキーは クラス:種別|回戦 の形（実測 ' + S.memKeys + '）');
 
     // ---- G6: 回戦を確定すると既定へ戻る（覚え方が回戦を含む＝設計判断をここで固定）
     await page.evaluate(() => { document.getElementById('wb_A_0_p1') && document.getElementById('wb_A_0_p1').click(); });
@@ -142,6 +142,59 @@ const SNAP = `(function(){
     ok(S.score === false, 'G6c 暫定成績も既定（閉）（実測 open=' + S.score + '）');
 
     ok(pageErrors.length === 0, 'G7 未捕捉例外なし' + (pageErrors.length ? '（' + pageErrors[0] + '）' : ''));
+
+    // ---- R: リセット・復元では既定へ戻る（Codex 1巡目 P1）
+    //   記憶の持ち主は state.results[cls] の配列そのもの。リセット・復元はどれも配列を置き換えるので、
+    //   同じ回戦数に戻っても古い記憶は効かない。★ 各経路を**本物の関数**で通す（fixture の差し替えで真似しない）。
+    const okModal = () => page.evaluate(() => { const b = document.querySelector('#app-modal .app-modal-ok'); if (b) { b.click(); return true; } return false; });
+    const reFixture = async () => { await page.evaluate((s) => { Object.assign(state, s); document.getElementById('tab-tournament').click(); }, FIXTURE()); };
+
+    // R1: クラス単位のリセット（resetClassForClass）
+    await reFixture();
+    await tapSummary('.score-grid-details');
+    S = await snap();
+    ok(S.score === true && S.roundCount === 0, 'R1 準備: 0回戦で暫定成績を開いた（実測 open=' + S.score + '）');
+    await page.evaluate(() => resetClassForClass('A'));
+    ok(await okModal(), 'R1a 確認モーダルを OK');
+    await page.waitForTimeout(100);
+    await page.evaluate(() => startTournamentForClass('A'));   // 本物の再開始＝同じ 0 回戦へ戻る
+    await page.waitForTimeout(100);
+    S = await snap();
+    ok(S.roundCount === 0 && S.score === false, 'R1b クラスをリセットして再開始（同じ回戦数）しても暫定成績は既定（閉）（実測 open=' + S.score + '）');
+
+    // R2: 進行だけのリセット（resetTournamentProgressOnly）
+    await tapSummary('.played-history-details');
+    S = await snap();
+    ok(S.played === true, 'R2 準備: 対戦済みリストを開いた');
+    await page.evaluate(() => resetTournamentProgressOnly());
+    ok(await okModal(), 'R2a 確認モーダルを OK');
+    await page.waitForTimeout(100);
+    await page.evaluate(() => startTournamentForClass('A'));
+    await page.waitForTimeout(100);
+    S = await snap();
+    ok(S.roundCount === 0 && S.played === false, 'R2b 進行リセット後に再開始しても対戦済みリストは既定（閉）（実測 open=' + S.played + '）');
+
+    // R3: バックアップ／保存データの復元（applyLoadedJson）
+    await tapSummary('.score-grid-details');
+    S = await snap();
+    ok(S.score === true, 'R3 準備: 暫定成績を開いた');
+    const dump = await page.evaluate(() => JSON.stringify(state));
+    await page.evaluate((txt) => applyLoadedJson(txt), dump);
+    await page.waitForTimeout(100);
+    await page.evaluate(() => { document.getElementById('tab-tournament').click(); });
+    S = await snap();
+    ok(S.roundCount === 0 && S.score === false, 'R3b 同じ内容を復元しても暫定成績は既定（閉）＝復元は別の大会として扱う（実測 open=' + S.score + '）');
+
+    // R4: 全リセット（resetAll）
+    await tapSummary('.score-grid-details');
+    await page.evaluate(() => resetAll());
+    ok(await okModal(), 'R4a 確認モーダルを OK');
+    await page.waitForTimeout(100);
+    await reFixture();
+    S = await snap();
+    ok(S.score === false, 'R4b 全リセット後も既定（閉）（実測 open=' + S.score + '）');
+
+    ok(pageErrors.length === 0, 'R5 リセット・復元の経路でも未捕捉例外なし' + (pageErrors.length ? '（' + pageErrors[0] + '）' : ''));
     await ctx.close();
   }
 

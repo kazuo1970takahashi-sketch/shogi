@@ -11204,20 +11204,29 @@ function generatePairing(cls){
 // DISCLOSURE-STATE-001 (#950): 対局管理の <details>（対戦済みリスト #661・暫定成績 #944・終わった対局 #943）の
 //   開閉を再描画をまたいで覚える。renderTournament は innerHTML を組み直すので、覚えないと
 //   利用者が開いた一覧が勝敗入力のたびに閉じる（いちばん見たいタイミングで閉じる）。
-//   ★ 覚え方は #943 と同じ型＝index ではなく「種別＋クラス＋回戦」。回戦が変わればキーが変わり
-//     自動的に既定へ戻る＝回戦確定・リセット・復元に「忘れる処理」を置かない。
+//   ★ 覚え方は #943 と同じ型＝index ではなく「その大会のその回戦」。
+//     - 記憶の持ち主は state.results[cls] の**配列そのもの**（参照の同一性）。リセット・復元・別大会の読込は
+//       どれも results[cls] を新しい配列に置き換えるので、記憶は自動的に無効になる＝「忘れる処理」を置かない。
+//       （Codex 1巡目 P1: 回戦数だけをキーにすると、リセット後に同じ回戦数へ戻ったとき古い記憶が効いてしまう）
+//     - 回戦が変わればキーが変わり既定へ戻る。
 //   ★ メモリ上だけ。state にも保存データにも入れない。既定（初回は畳む／PC は開く）は変えない。
-var _dsOpen = {};
+var _dsMem = {};
+function dsSlot(cls){
+  var owner=(state&&state.results&&state.results[cls])||null;
+  var slot=_dsMem[cls];
+  if(!slot||slot.owner!==owner){slot=_dsMem[cls]={owner:owner,open:{}};}
+  return slot.open;
+}
 function dsKey(kind, cls){
-  return kind+'|'+cls+'|'+((state.results&&state.results[cls])||[]).length;
+  return kind+'|'+((state.results&&state.results[cls])||[]).length;
 }
 function dsOpenAttr(kind, cls, defaultOpen){
-  var k=dsKey(kind,cls);
-  var open=Object.prototype.hasOwnProperty.call(_dsOpen,k)?_dsOpen[k]:!!defaultOpen;
-  return open?' open':'';
+  var open=dsSlot(cls), k=dsKey(kind,cls);
+  var v=Object.prototype.hasOwnProperty.call(open,k)?open[k]:!!defaultOpen;
+  return v?' open':'';
 }
 function dsRemember(kind, cls, open){
-  _dsOpen[dsKey(kind,cls)]=!!open;
+  dsSlot(cls)[dsKey(kind,cls)]=!!open;
 }
 function dsBind(cls){
   var el=document.getElementById('pane-'+cls);

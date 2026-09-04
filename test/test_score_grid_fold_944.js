@@ -42,9 +42,10 @@ function ok(cond, label){ if(cond){ PASS++; } else { FAIL++; console.error('  x 
 
 const fn = extractFunction(code, 'buildScoreGridHtml');
 // #950: open 属性の決定は dsKey/dsOpenAttr（本物を取り出して sandbox に入れる＝スタブで真似しない）
+const dsSlotFn = extractFunction(code, 'dsSlot');
 const dsKeyFn = extractFunction(code, 'dsKey');
 const dsOpenAttrFn = extractFunction(code, 'dsOpenAttr');
-ok(!!dsKeyFn && !!dsOpenAttrFn, 'A0b: dsKey / dsOpenAttr が定義されている（#950）');
+ok(!!dsSlotFn && !!dsKeyFn && !!dsOpenAttrFn, 'A0b: dsSlot / dsKey / dsOpenAttr が定義されている（#950）');
 const noSpace = (fn || '').replace(/\s+/g, '');
 ok(!!fn, 'buildScoreGridHtml 関数が存在する');
 
@@ -95,11 +96,11 @@ function run(isSP, win){
     getName: function(id, cls){ return '氏名' + id; },
     entryNoOf: function(cls, id){ return id; },
     state: { results: { A: [ [ {p1:1,p2:2,winner:1} ] ] } },
-    _dsOpen: {}
+    _dsMem: {}
   };
   if(win !== undefined) sandbox.window = win;
   vm.createContext(sandbox);
-  vm.runInContext(dsKeyFn + '\n' + dsOpenAttrFn, sandbox);
+  vm.runInContext(dsSlotFn + '\n' + dsKeyFn + '\n' + dsOpenAttrFn, sandbox);
   const f = vm.runInContext('(' + fn + ')', sandbox);
   const sorted = [{ id: 1 }, { id: 2 }];
   const wins = { 1: 1, 2: 0 };

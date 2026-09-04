@@ -42,6 +42,7 @@ function ok(cond, label){ if(cond){ PASS++; } else { FAIL++; console.error('  x 
 // ---- A. 対戦済みリストの折りたたみ（構造） ----
 const playedFn = extractFunction(code, 'buildPlayedHistoryHtml');
 // #950: open 属性の決定は dsKey/dsOpenAttr（本物を取り出して sandbox に入れる）
+const dsSlotFn = extractFunction(code, 'dsSlot');
 const dsKeyFn = extractFunction(code, 'dsKey');
 const dsOpenAttrFn = extractFunction(code, 'dsOpenAttr');
 const playedNoSpace = (playedFn || '').replace(/\s+/g, '');
@@ -77,11 +78,11 @@ function runPlayed(isSP, win){
     escapeHtml: function(x){ return String(x == null ? '' : x); },
     getNameWithNo: function(id, cls){ return cls + '-' + id; },
     state: { results: { A: [] } },
-    _dsOpen: {}
+    _dsMem: {}
   };
   if(win !== undefined) sandbox.window = win;
   vm.createContext(sandbox);
-  vm.runInContext(dsKeyFn + '\n' + dsOpenAttrFn, sandbox);
+  vm.runInContext(dsSlotFn + '\n' + dsKeyFn + '\n' + dsOpenAttrFn, sandbox);
   const fn = vm.runInContext('(' + playedFn + ')', sandbox);
   const sorted = [{ id: 1 }, { id: 2 }];
   const played = { 1: [2], 2: [1] };
