@@ -99,30 +99,36 @@ const SNAP = `(function(){
   ok(/奇数/.test(help) && /不戦勝にはなりません/.test(help), 'D4c ヘルプに「奇数」「不戦勝にはなりません」（待機の説明）');
   ok(/チェックして組みます/.test(help), 'D4d ヘルプに「チェックして組みます」（選択して作成の説明）');
 
-  // ---- D5: 「2人以上」は押したときに出る（文を消しても案内は失われない）
+  // ---- D5: 「2人以上」は押したときに**発生元のパネルの中**に出る（N5・STYLE-GUIDE §3.2）
+  //   ★ Codex 1巡目 P1: showMsg の出力先 #reg-msg は受付ペインの中＝対局管理タブでは見えない。
+  //   ★ Codex 2巡目 P2: 止めた理由はトースト（3秒で消える）ではなく、同じ面の role=alert・danger 面色のスロットへ。
+  //   body.textContent に文字が在るかではなく、**可視な要素**を読み、**パネルの中**に在り、**消えない**ことまで見る。
   await page.evaluate(() => { var b = document.getElementById('help-modal-close'); if (b) b.click(); });
   await page.waitForTimeout(100);
-  //   ★ Codex 1巡目 P1: showMsg の出力先 #reg-msg は受付ペインの中＝対局管理タブでは見えない。
-  //   body.textContent に文字が在るかではなく、**対局管理タブで実際に可視な要素**に出ているかを読む。
+  const errBefore = await page.evaluate(() => { var e = document.getElementById('frpErr_A'); return e ? { hidden: e.hidden, h: e.getBoundingClientRect().height } : null; });
+  ok(errBefore && errBefore.hidden && errBefore.h === 0, 'D5 押す前はスロットが hidden＝高さ 0（パネルを伸ばさない・実測 ' + JSON.stringify(errBefore) + '）');
   await page.evaluate(() => { document.getElementById('frpAddBtn_A').click(); });
   await page.waitForTimeout(100);
-  const vis = await page.evaluate(() => {
-    var hits = [];
-    var all = document.querySelectorAll('*');
-    for (var i = 0; i < all.length; i++) {
-      var e = all[i];
-      if (e.children.length) continue;
-      if ((e.textContent || '').indexOf('2人以上を選択してください') < 0) continue;
-      var r = e.getBoundingClientRect();
-      var cs = getComputedStyle(e);
-      var visible = r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.opacity !== '0';
-      // 祖先が display:none なら getBoundingClientRect は 0 になる＝非可視として落ちる
-      hits.push({ id: e.id || e.className, visible: visible, inRegPane: !!e.closest('#pane-reg') });
-    }
-    return hits;
+  const err = await page.evaluate(() => {
+    var e = document.getElementById('frpErr_A');
+    if (!e) return null;
+    var r = e.getBoundingClientRect(); var cs = getComputedStyle(e);
+    return { hidden: e.hidden, h: r.height, role: e.getAttribute('role'), inPanel: !!e.closest('.frp-partial-section'),
+             text: e.textContent, bg: cs.backgroundColor, color: cs.color, border: cs.borderTopColor, inReg: !!e.closest('#pane-reg') };
   });
-  const visibleOutsideReg = vis.filter(h => h.visible && !h.inRegPane);
-  ok(visibleOutsideReg.length >= 1, 'D5 未選択で「選択して作成」を押すと「2人以上を選択してください」が**対局管理タブで見える**（実測 ' + JSON.stringify(vis) + '）');
+  ok(err && !err.hidden && err.h > 0 && !err.inReg, 'D5b 押すと対局管理タブで**見える**（実測 ' + JSON.stringify(err && { h: err.h, hidden: err.hidden }) + '）');
+  ok(err && err.inPanel && err.role === 'alert', 'D5c 発生元のパネルの中・role=alert（§3.2）');
+  ok(err && /2人以上を選択してください/.test(err.text) && /もう一度押して/.test(err.text), 'D5d 文に「止めた理由」と「次の行動」がある（§4.3・実測 ' + (err && err.text) + '）');
+  ok(err && err.bg === 'rgb(253, 236, 234)' && err.color === 'rgb(165, 14, 14)' && err.border === 'rgb(217, 48, 37)', 'D5e danger 面色が効いている（実測 bg=' + (err && err.bg) + ' color=' + (err && err.color) + '）');
+  await page.waitForTimeout(3200);
+  const still = await page.evaluate(() => { var e = document.getElementById('frpErr_A'); return e && !e.hidden && e.getBoundingClientRect().height > 0; });
+  ok(still, 'D5f 3秒経っても消えない（トーストではない）');
+  await page.click('.frp-unassigned-cb');
+  await page.waitForTimeout(50);
+  const cleared = await page.evaluate(() => { var e = document.getElementById('frpErr_A'); return e && e.hidden; });
+  ok(cleared, 'D5g チェックを1つ触ると消える（次の行動を取ったら止めた理由は役目を終える）');
+  const toast = await page.evaluate(() => { var t = document.getElementById('app-toast'); return t ? t.className : ''; });
+  ok(!/show/.test(toast), 'D5h トーストは出していない（実測 class=' + toast + '）');
 
   ok(pageErrors.length === 0, 'D6 未捕捉例外なし' + (pageErrors.length ? '（' + pageErrors[0] + '）' : ''));
 

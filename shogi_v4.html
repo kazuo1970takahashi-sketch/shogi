@@ -83,6 +83,9 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
    ★ 80vh は #767 の標準（85vh・12箇所）と違うが、面の高さ変更は見た目スライスの領分なので据え置く。 */
 .bulk-card{max-height:80vh;overflow-y:auto}
 .bulk-err{margin:0 0 12px;padding:8px 10px;border-radius:6px;font-size:15px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}
+/* FRP-PANEL-DECLUTTER-001 (#957 / Codex 2巡目 P2): 「1局目 未割当参加者」パネルの N5 スロット（STYLE-GUIDE §3.2＝発生元と同じ面・danger 面色）。
+   色は .chg-err / .bulk-err と同じ値の流用（新色なし）。 */
+.frp-err{margin:8px 0 0;padding:8px 10px;border-radius:6px;font-size:15px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}
 .bulk-err[hidden]{display:none}
 .bulk-err-head{display:block;margin-bottom:2px}
 /* ★ overflow-wrap:anywhere は必須。本文に利用者入力（氏名）が入るため。
@@ -10703,6 +10706,12 @@ var firstRoundAppendInFlight=false;
 // FRP-IMPL-003 (FRP-DESIGN-002 §6 / §8): 「選択した参加者で1局目を追加作成」ボタンの click handler。
 //   再入防止（confirm 中の二重発火・double-click 対策）→ 実行時再検証 → 候補ペア生成 → confirm → append。
 //   appendFirstRoundPairs 内でも再検証するため二重に安全（UI のチェック状態を信用しない §8）。
+// FRP-PANEL-DECLUTTER-001 (#957): パネル内 N5 スロットの出し入れ。text 無しで隠す。
+function frpShowErr(cls, text){
+  var el=document.getElementById('frpErr_'+cls);
+  if(!el)return;
+  if(text){el.textContent=text;el.hidden=false;}else{el.textContent='';el.hidden=true;}
+}
 function onClickAppendFirstRound(cls){
   if(firstRoundAppendInFlight)return;   // 再入防止: 共有フラグ（#274・クロス再入も弾く）
   firstRoundAppendInFlight=true;
@@ -10727,12 +10736,12 @@ function onClickAppendFirstRound(cls){
       picked[pid]=true;
       if(byId[pid])selected.push(byId[pid]);
     }
-    // FRP-PANEL-DECLUTTER-001 (#957 / Codex 1巡目 P1): showMsg の出力先 #reg-msg は受付ペインの中なので、
-    //   対局管理タブでは見えない。パネルの補助文を消したぶん、押した瞬間に見える形（warn トースト）で案内する。
+    // FRP-PANEL-DECLUTTER-001 (#957 / Codex 1巡目 P1・2巡目 P2): showMsg の出力先 #reg-msg は受付ペインの中なので
+    //   対局管理タブでは見えない。止めた理由（N5）は発生元のパネル内スロット（frpErr_）へ出す（STYLE-GUIDE §3.2）。
     //   showMsg は履歴として残す（既存 pin が #reg-msg を読む）。
-    if(selected.length<2){showMsg('2人以上を選択してください','warn');showToast('2人以上を選択してください',{kind:'warn'});return;}
+    if(selected.length<2){showMsg('2人以上を選択してください','warn');frpShowErr(cls,'2人以上を選択してください。チェックを2つ以上つけてから、もう一度押してください。');return;}
     var built=buildFirstRoundPartialPairs(selected);
-    if(!built.pairs.length){showMsg('2人以上を選択してください','warn');showToast('2人以上を選択してください',{kind:'warn'});return;}
+    if(!built.pairs.length){showMsg('2人以上を選択してください','warn');frpShowErr(cls,'2人以上を選択してください。チェックを2つ以上つけてから、もう一度押してください。');return;}
     // OK 時のみ append＝旧 confirm false で return と同値。append/例外いずれの経路でも finally で再入ガードを解除。
     appConfirm(buildFrpAppendConfirmMessage(cls,built.pairs,built.leftover),function(_ok){
       try{ if(_ok)appendFirstRoundPairs(cls,built.pairs); }
@@ -12217,6 +12226,12 @@ function bindClassActionBarEvents(cls){
   if(addBtn){
     addBtn.addEventListener('click',(function(c){return function(){onClickAppendFirstRound(c);};})(cls));
   }
+  // FRP-PANEL-DECLUTTER-001 (#957): チェックを触ったら N5 スロットを消す（次の行動を取った＝止めた理由は役目を終える）。
+  var frpPane=document.getElementById('pane-'+cls);
+  var frpCbs=frpPane?frpPane.querySelectorAll('.frp-unassigned-cb'):[];
+  for(var fi=0;fi<frpCbs.length;fi++){
+    frpCbs[fi].addEventListener('change',(function(c){return function(){frpShowErr(c,'');};})(cls));
+  }
   // PROGRESSIVE-PAIRING-IMPL-P2 (CONFIRMED spec §P2): 「未手合いをまとめて1局目作成」を onClickAddAllTables に bind（追加のみ）。
   var addAllTablesBtn=document.getElementById('addAllTablesBtn_'+cls);
   if(addAllTablesBtn){
@@ -12467,6 +12482,9 @@ function buildFirstRoundPartialSectionHtml(cls){
   }
   html+='</div>';
   html+='<button type="button" id="frpAddBtn_'+escapeHtml(cls)+'" class="btn-primary" title="選んだ未割当者だけで1局目の対局を作成します（既存の対局・結果は変更しません）" style="width:100%;margin-top:8px">選択した参加者で1局目を追加作成</button>';
+  // FRP-PANEL-DECLUTTER-001 (#957 / Codex 2巡目 P2): 止めた理由（2人未満）を出す N5 スロット。既定は hidden＝高さゼロ。
+  //   showMsg（#reg-msg・受付ペインの中）は対局管理タブでは見えず、トーストは3秒で消えるので、発生元のパネルに置く。
+  html+='<div id="frpErr_'+escapeHtml(cls)+'" class="frp-err" role="alert" aria-live="assertive" hidden></div>';
   html+='</div>';
   return html;
 }
