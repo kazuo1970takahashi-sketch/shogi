@@ -41,13 +41,18 @@ function ok(cond, label){ if(cond){ PASS++; } else { FAIL++; console.error('  x 
 
 // ---- A. 対戦済みリストの折りたたみ（構造） ----
 const playedFn = extractFunction(code, 'buildPlayedHistoryHtml');
+// #950: open 属性の決定は dsKey/dsOpenAttr（本物を取り出して sandbox に入れる）
+const dsSlotFn = extractFunction(code, 'dsSlot');
+const dsKeyFn = extractFunction(code, 'dsKey');
+const dsOpenAttrFn = extractFunction(code, 'dsOpenAttr');
 const playedNoSpace = (playedFn || '').replace(/\s+/g, '');
 ok(!!playedFn, 'buildPlayedHistoryHtml 関数が存在する');
 ok(/function buildPlayedHistoryHtml\(cls, sorted, played, isSP\)/.test(playedFn || ''), 'A1: isSP 引数を受け取る');
 ok(/<details/.test(playedFn || ''), 'A2: <details> で折りたたむ');
 ok(/<summary/.test(playedFn || ''), 'A3: <summary> を持つ');
 ok(/対戦済みリスト/.test(playedFn || ''), 'A4: summary に「対戦済みリスト」を含む');
-ok(playedNoSpace.indexOf("(isSP?'':'open')") >= 0, 'A5: open 属性は isSP で条件化（PC のみ open）');
+// DISCLOSURE-STATE-001 (#950): open は dsOpenAttr('played', cls, !isSP) に委ねる（既定は isSP で決め、利用者の開閉を再描画をまたいで保つ）
+ok(playedNoSpace.indexOf("dsOpenAttr('played',cls,!isSP)") >= 0, 'A5: open 属性は dsOpenAttr(\'played\', cls, !isSP) で決める（既定は PC のみ open・#950）');
 ok(/#1F3864/.test(playedFn || ''), 'A6: summary は primary #1F3864 を流用（新色を足さない）');
 
 // ---- B. データ非改変（read-only） ----
@@ -71,10 +76,13 @@ ok(iCurrent < iPast,   'C3: 現在の組み合わせ < 過去の結果');
 function runPlayed(isSP, win){
   const sandbox = {
     escapeHtml: function(x){ return String(x == null ? '' : x); },
-    getNameWithNo: function(id, cls){ return cls + '-' + id; }
+    getNameWithNo: function(id, cls){ return cls + '-' + id; },
+    state: { results: { A: [] } },
+    _dsMem: {}
   };
   if(win !== undefined) sandbox.window = win;
   vm.createContext(sandbox);
+  vm.runInContext(dsSlotFn + '\n' + dsKeyFn + '\n' + dsOpenAttrFn, sandbox);
   const fn = vm.runInContext('(' + playedFn + ')', sandbox);
   const sorted = [{ id: 1 }, { id: 2 }];
   const played = { 1: [2], 2: [1] };

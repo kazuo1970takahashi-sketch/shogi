@@ -41,6 +41,11 @@ let PASS = 0, FAIL = 0;
 function ok(cond, label){ if(cond){ PASS++; } else { FAIL++; console.error('  x ' + label); } }
 
 const fn = extractFunction(code, 'buildScoreGridHtml');
+// #950: open 属性の決定は dsKey/dsOpenAttr（本物を取り出して sandbox に入れる＝スタブで真似しない）
+const dsSlotFn = extractFunction(code, 'dsSlot');
+const dsKeyFn = extractFunction(code, 'dsKey');
+const dsOpenAttrFn = extractFunction(code, 'dsOpenAttr');
+ok(!!dsSlotFn && !!dsKeyFn && !!dsOpenAttrFn, 'A0b: dsSlot / dsKey / dsOpenAttr が定義されている（#950）');
 const noSpace = (fn || '').replace(/\s+/g, '');
 ok(!!fn, 'buildScoreGridHtml 関数が存在する');
 
@@ -48,7 +53,8 @@ ok(!!fn, 'buildScoreGridHtml 関数が存在する');
 ok(noSpace.indexOf("<detailsclass=\"score-grid-details\"") >= 0, 'A1: details に格納（class=score-grid-details）');
 ok(noSpace.indexOf('<summary') >= 0 && /暫定成績/.test(fn || ''), 'A2: summary の見出しは「暫定成績」');
 ok(/タップで開閉/.test(fn || ''), 'A3: summary に開閉できることを書く（#661 と同じ文言の型）');
-ok(noSpace.indexOf("(isSP?'':'open')") >= 0, 'A4: open 属性は isSP で条件化（PC のみ open）');
+// DISCLOSURE-STATE-001 (#950): open は dsOpenAttr('score', cls, !isSP) に委ねる（既定は isSP で決め、利用者の開閉を再描画をまたいで保つ）
+ok(noSpace.indexOf("dsOpenAttr('score',cls,!isSP)") >= 0, 'A4: open 属性は dsOpenAttr(\'score\', cls, !isSP) で決める（既定は PC のみ open・#950）');
 // ★ Codex 1巡目 P2（2件）の反映後の命題。
 //   (a) 色・フォント・枠は class で持つ（STYLE-GUIDE §1 / §2.2-4）。
 //   (b) summary は disclosure のボタン意味しか持たない。元が <h3>暫定成績</h3> だったので、
@@ -89,10 +95,12 @@ function run(isSP, win){
     escapeHtml: function(x){ return String(x == null ? '' : x); },
     getName: function(id, cls){ return '氏名' + id; },
     entryNoOf: function(cls, id){ return id; },
-    state: { results: { A: [ [ {p1:1,p2:2,winner:1} ] ] } }
+    state: { results: { A: [ [ {p1:1,p2:2,winner:1} ] ] } },
+    _dsMem: {}
   };
   if(win !== undefined) sandbox.window = win;
   vm.createContext(sandbox);
+  vm.runInContext(dsSlotFn + '\n' + dsKeyFn + '\n' + dsOpenAttrFn, sandbox);
   const f = vm.runInContext('(' + fn + ')', sandbox);
   const sorted = [{ id: 1 }, { id: 2 }];
   const wins = { 1: 1, 2: 0 };
