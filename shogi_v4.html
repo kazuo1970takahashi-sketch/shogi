@@ -10727,9 +10727,12 @@ function onClickAppendFirstRound(cls){
       picked[pid]=true;
       if(byId[pid])selected.push(byId[pid]);
     }
-    if(selected.length<2){showMsg('2人以上を選択してください','warn');return;}
+    // FRP-PANEL-DECLUTTER-001 (#957 / Codex 1巡目 P1): showMsg の出力先 #reg-msg は受付ペインの中なので、
+    //   対局管理タブでは見えない。パネルの補助文を消したぶん、押した瞬間に見える形（warn トースト）で案内する。
+    //   showMsg は履歴として残す（既存 pin が #reg-msg を読む）。
+    if(selected.length<2){showMsg('2人以上を選択してください','warn');showToast('2人以上を選択してください',{kind:'warn'});return;}
     var built=buildFirstRoundPartialPairs(selected);
-    if(!built.pairs.length){showMsg('2人以上を選択してください','warn');return;}
+    if(!built.pairs.length){showMsg('2人以上を選択してください','warn');showToast('2人以上を選択してください',{kind:'warn'});return;}
     // OK 時のみ append＝旧 confirm false で return と同値。append/例外いずれの経路でも finally で再入ガードを解除。
     appConfirm(buildFrpAppendConfirmMessage(cls,built.pairs,built.leftover),function(_ok){
       try{ if(_ok)appendFirstRoundPairs(cls,built.pairs); }
@@ -12236,7 +12239,7 @@ var HELP_TEXTS={
     title:'1局目の作り方ヘルプ',
     lines:[
       '「選択した参加者で1局目を追加作成」：来た人をチェックして組みます。奇数で待っている1人＋新たに来た1人を組むときに便利です。',
-      '「未手合いをまとめて1局目作成」：いま未割当の全員を2人ずつ一気に組みます。受付が一段落したときに便利です。',
+      '「未手合いをまとめて1局目作成」：いま未割当の全員を受付順（番号順）に隣どうし2人ずつ一気に組みます。受付が一段落したときに便利です。',
       '待機（leftover）：今回は対局に入らず、次の作成対象として残る人です。',
       '参加人数が奇数のときは、1人が待機になります（不戦勝にはなりません）。次の参加者が来たら組めます。',
       '勝敗を入力済みの対局は、組み合わせを不用意に再生成しないでください（入力済みの結果が失われることがあります）。'

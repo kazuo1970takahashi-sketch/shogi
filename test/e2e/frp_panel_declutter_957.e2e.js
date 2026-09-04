@@ -95,17 +95,34 @@ const SNAP = `(function(){
     return m.textContent.replace(/\s+/g, '');
   });
   ok(/1局目の作り方ヘルプ/.test(help), 'D4 ヘルプが開く（#help-modal が可視・見出し「1局目の作り方ヘルプ」）');
-  ok(/2人ずつ/.test(help), 'D4b ヘルプに「2人ずつ」（まとめて作成の説明）');
+  ok(/受付順/.test(help) && /2人ずつ/.test(help), 'D4b ヘルプに「受付順」「2人ずつ」（まとめて作成の組成順序・Codex 1巡目 P2）');
   ok(/奇数/.test(help) && /不戦勝にはなりません/.test(help), 'D4c ヘルプに「奇数」「不戦勝にはなりません」（待機の説明）');
   ok(/チェックして組みます/.test(help), 'D4d ヘルプに「チェックして組みます」（選択して作成の説明）');
 
   // ---- D5: 「2人以上」は押したときに出る（文を消しても案内は失われない）
   await page.evaluate(() => { var b = document.getElementById('help-modal-close'); if (b) b.click(); });
   await page.waitForTimeout(100);
+  //   ★ Codex 1巡目 P1: showMsg の出力先 #reg-msg は受付ペインの中＝対局管理タブでは見えない。
+  //   body.textContent に文字が在るかではなく、**対局管理タブで実際に可視な要素**に出ているかを読む。
   await page.evaluate(() => { document.getElementById('frpAddBtn_A').click(); });
   await page.waitForTimeout(100);
-  const msg = await page.evaluate(() => (document.body.textContent || '').indexOf('2人以上を選択してください') >= 0);
-  ok(msg, 'D5 未選択で「選択して作成」を押すと「2人以上を選択してください」が出る（showMsg・従来どおり）');
+  const vis = await page.evaluate(() => {
+    var hits = [];
+    var all = document.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) {
+      var e = all[i];
+      if (e.children.length) continue;
+      if ((e.textContent || '').indexOf('2人以上を選択してください') < 0) continue;
+      var r = e.getBoundingClientRect();
+      var cs = getComputedStyle(e);
+      var visible = r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.opacity !== '0';
+      // 祖先が display:none なら getBoundingClientRect は 0 になる＝非可視として落ちる
+      hits.push({ id: e.id || e.className, visible: visible, inRegPane: !!e.closest('#pane-reg') });
+    }
+    return hits;
+  });
+  const visibleOutsideReg = vis.filter(h => h.visible && !h.inRegPane);
+  ok(visibleOutsideReg.length >= 1, 'D5 未選択で「選択して作成」を押すと「2人以上を選択してください」が**対局管理タブで見える**（実測 ' + JSON.stringify(vis) + '）');
 
   ok(pageErrors.length === 0, 'D6 未捕捉例外なし' + (pageErrors.length ? '（' + pageErrors[0] + '）' : ''));
 
