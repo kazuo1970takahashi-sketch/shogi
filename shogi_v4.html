@@ -11076,6 +11076,86 @@ function evaluatePairingQuality(pairings, results, players){
   };
 }
 
+// WARNBANNER-846-ONE-STEP-001 (#846・作者裁定 2026-09-05 案A):
+//   ⚠ バナーに「『変更』1回で縮められる手が有るか」を出すための探索。
+//   到達可能＝「変更」モーダルで実際にできる手（classifyChangePairingCandidate が ok を返す候補）だけ。
+//   これで設計B（Blossom で到達可能な最小を一般解）が抱えた穴＝到達不能 82〜89%・棄権者・#272 との衝突を
+//   定義上持たない。2手以上の改善は見ない（バナーの文言もそう書く）。
+//   目的関数＝ evaluatePairingQuality の (再戦数, 最大勝数差, 勝数差合計) を辞書順。厳密に縮む手だけ提案。
+//   ★ evaluatePairingQuality・generatePairing・warningHit は無改変。読み取り専用（state を書かない）。
+var ONE_STEP_EVAL_CAP=3000;
+function qualityKey(q){ return [q.rematchCount||0,q.maxWinDiff||0,q.totalWinDiff||0]; }
+function qualityKeyLess(a,b){
+  for(var i=0;i<3;i++){ if(a[i]<b[i])return true; if(a[i]>b[i])return false; }
+  return false;
+}
+// 1手を適用した pairings のコピーを返す（モーダルの保存処理と同じ形: swap は相手卓の同じ席に外れる人を入れる）
+function applyOneStepMove(pairings, idx, role, candidateId, otherIdx){
+  var out=[];
+  for(var i=0;i<pairings.length;i++){ var m=pairings[i]; out.push(m?{p1:m.p1,p2:m.p2,winner:m.winner}:m); }
+  var t=out[idx];
+  var dropped=(role==='p1')?t.p1:t.p2;
+  if(role==='p1')t.p1=candidateId; else t.p2=candidateId;
+  if(otherIdx>=0){
+    var o=out[otherIdx];
+    if(o.p1===candidateId)o.p1=dropped; else if(o.p2===candidateId)o.p2=dropped;
+  }
+  return out;
+}
+function findOneStepImprovement(cls){
+  var pairings=state.pairings&&state.pairings[cls];
+  var results=state.results&&state.results[cls];
+  var players=state.players&&state.players[cls];
+  if(!Array.isArray(pairings)||!Array.isArray(players)||pairings.length===0)return null;
+  // 上限（実測 2026-09-05・node）: 30名 22ms／60名 109ms（モバイルは約6倍）。renderTournament のたびに走るので
+  //   評価回数（結果未入力の卓×2×候補）が 3000 を超える規模では探索を省略し、省略したことをバナーに出す。
+  //   30名2クラスの実運用（15卓×2×30＝900）は上限の内側。
+  var openTables=0;
+  for(var oi=0;oi<pairings.length;oi++){ var om=pairings[oi]; if(om&&om.p1&&om.p2&&!om.winner)openTables++; }
+  if(openTables*2*players.length>ONE_STEP_EVAL_CAP)return {skipped:true};
+  var base=evaluatePairingQuality(pairings,results,players);
+  var baseKey=qualityKey(base);
+  var best=null;
+  for(var idx=0;idx<pairings.length;idx++){
+    var m=pairings[idx];
+    if(!m||!m.p1||!m.p2||m.winner)continue;
+    for(var ri=0;ri<2;ri++){
+      var role=ri===0?'p1':'p2';
+      var current=(role==='p1')?m.p1:m.p2;
+      for(var ci=0;ci<players.length;ci++){
+        var cid=players[ci]&&players[ci].id;
+        if(!cid||cid===current)continue;
+        var clf=classifyChangePairingCandidate(cls,idx,cid,role);
+        if(!clf||clf.status!=='ok')continue;
+        var otherIdx=findPairContainingPlayer(cls,cid,idx);
+        var next=applyOneStepMove(pairings,idx,role,cid,otherIdx);
+        var q=evaluatePairingQuality(next,results,players);
+        var key=qualityKey(q);
+        if(!qualityKeyLess(key,baseKey))continue;
+        if(!best||qualityKeyLess(key,best.afterKey)){
+          best={idx:idx,role:role,candidateId:cid,otherIdx:otherIdx,dropped:current,
+                kind:(otherIdx>=0?'swap':'replace'),beforeKey:baseKey,afterKey:key};
+        }
+      }
+    }
+  }
+  return best;
+}
+// 提案文（カッコ内は縮まる指標を 1 つだけ・辞書順で最初に縮んだもの）。生文字列＝呼び出し側で escapeHtml する。
+function buildOneStepHintText(cls,mv){
+  if(!mv)return '';
+  var what;
+  if(mv.beforeKey[0]!==mv.afterKey[0])what='再戦 '+mv.beforeKey[0]+' → '+mv.afterKey[0]+' 件';
+  else if(mv.beforeKey[1]!==mv.afterKey[1])what='勝数差 '+mv.beforeKey[1]+' → '+mv.afterKey[1];
+  else what='勝数差の合計 '+mv.beforeKey[2]+' → '+mv.afterKey[2];
+  // ★ 氏名を含む生文字列を返す。唯一の行き先は renderTournament のバナー（escapeHtml で包む）。
+  //   裏づけは test_warnbanner_one_step_846.js [H4]（氏名に < を含めてバナーが &lt; になること）。
+  var nd=getName(mv.dropped,cls), nc=getName(mv.candidateId,cls);
+  var head='第'+(mv.idx+1)+'卓の '+nd+' を ';
+  var tail=(mv.kind==='swap')?('第'+(mv.otherIdx+1)+'卓の '+nc+' と入れ替える'):('待機の '+nc+' に替える');
+  return head+tail+'（'+what+'）';
+}
+
 function generatePairing(cls){
   // WITHDRAW-001: 棄権者は以降の組み合わせ対象から除外（過去成績・results は不変）。残りが奇数なら
   //   既存の Issue #272 待機ローテーションがそのまま回る（待機者は不戦勝にしない）。
@@ -11972,7 +12052,15 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
     var supplementHtml=winRelatedWarn
       ?'<div style="font-size:15px;color:#666;margin-top:4px">勝敗数が異なるペアがあります。各対局カードに表示された勝敗数を確認してください。</div>'
       :'';
-    html+='<div class="alert alert-warn" style="margin-bottom:12px">⚠ 要確認：'+escapeHtml(warns.join(' / '))+supplementHtml+'<div style="font-size:15px;color:#666;margin-top:4px">※ 操作はブロックされません。例外判断は現場運営に委ねます。</div></div>';
+    // WARNBANNER-846-ONE-STEP-001 (#846): 「『変更』1回で縮められる手」の有無を 1 行で出す（§4.3 次の行動を1つ）。
+    //   有る→その手を名指す／無い→無いと書く（多手先は主張しない）。色・見出し・ブロックしない原則は不変。
+    var oneStep=findOneStepImprovement(cls);
+    var oneStepHtml='<div style="font-size:15px;color:#666;margin-top:4px">'+((oneStep&&oneStep.skipped)
+      ?'↪ 「変更」1回で縮められる手の探索は、人数が多いため省略しました'
+      :(oneStep
+        ?('↪ 「変更」1回で縮められます：'+escapeHtml(buildOneStepHintText(cls,oneStep)))
+        :'↪ 「変更」1回で縮められる手はありません'))+'</div>';
+    html+='<div class="alert alert-warn" style="margin-bottom:12px">⚠ 要確認：'+escapeHtml(warns.join(' / '))+supplementHtml+oneStepHtml+'<div style="font-size:15px;color:#666;margin-top:4px">※ 操作はブロックされません。例外判断は現場運営に委ねます。</div></div>';
   }
 
   // PAIRING-UX-WARNING-DECISION-SUPPORT-IMPL-LIGHT (PR #100 §5.1 Phase 1):
