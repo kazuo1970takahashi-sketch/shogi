@@ -56,6 +56,9 @@ const files = []
 ok(files.length > 0, 'S0 対象ファイルが 1 本以上あること');
 
 // ---- 2. 4 条件
+function stripCode(s) {
+  return s.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '');
+}
 const DECL_RE = /<!--\s*deprecated:\s*([a-z0-9-]+(?:\s*,\s*[a-z0-9-]+)*)\s*-->/g;
 files.forEach(f => {
   const rel = path.relative(ROOT, f);
@@ -70,7 +73,9 @@ files.forEach(f => {
   while ((m = DECL_RE.exec(head)) !== null) m[1].split(',').forEach(s => declared.add(s.trim()));
 
   // (d) 11 行目以降にある宣言は無効＝それ自体を赤にする（見つけにくい位置に置かせない）
-  const tail = lines.slice(HEAD_LINES).join('\n');
+  //     ただしコードフェンス／インラインコードの中は「書き方の例示」なので数えない
+  //     （Codex 1巡目 P2: 例示で (d) が誤爆する）。語彙の照合 (a)(b) には影響しない。
+  const tail = stripCode(lines.slice(HEAD_LINES).join('\n'));
   DECL_RE.lastIndex = 0;
   const late = DECL_RE.exec(tail);
   ok(!late, '(d) ' + rel + ': 宣言は先頭 ' + HEAD_LINES + ' 行に置くこと（11 行目以降に ' + late + ' がある）');
