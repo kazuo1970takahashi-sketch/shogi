@@ -4,9 +4,9 @@
 //   先頭 10 行に `<!-- deprecated: <id> -->` の宣言を持つ。
 // 保証しないこと: 行ごとの生死（引用・取り消し線・近接の失効注記）。免除規則は
 //   「ファイル先頭の宣言」以外に持たない（#946 で Codex が示した抜け道を持ち込まない）。
-// 赤にする条件は 4 つだけ: (a) 語彙あり・宣言なし／(b) 宣言あり・語彙なし／
-//   (c) 宣言の id が一覧に無い／(d) 宣言が 11 行目以降。
-// コード文脈（フェンス／インライン）は宣言として数えない。語彙の照合からは宣言コメントだけ除く。
+// 赤にする条件は 3 つだけ: (a) 語彙あり・宣言なし／(b) 宣言あり・語彙なし／
+//   (c) 宣言の id が一覧に無い。
+// Markdown のコード文脈は認識しない（先頭 10 行にあれば例示でも宣言）。語彙の照合からは宣言コメントだけ除く。
 // 読み取り専用・実データ不使用。
 const fs = require('fs');
 const path = require('path');
@@ -56,40 +56,26 @@ const files = []
   .sort();
 ok(files.length > 0, 'S0 対象ファイルが 1 本以上あること');
 
-// ---- 2. 4 条件
-// コード文脈（```／~~~ フェンス・`インライン`）は「書き方の例示」であって宣言でも要求でもない。
-// 全文に対して改行を保ったまま空白に置き換える（行番号が動かない＝10 行境界をまたぐフェンスも
-// 正しく除ける・Codex 2巡目 P2）。宣言の収集は maskCode 後の本文から行う。
-function maskCode(s) {
-  const blank = m => m.replace(/[^\n]/g, ' ');
-  // フェンスは ``` と ~~~ の両方（Markdown 仕様・Codex 3巡目 P2）。開いたのと同じ記号で閉じる。
-  return s.replace(/(`{3,}|~{3,})[\s\S]*?\1/g, blank).replace(/`[^`\n]*`/g, blank);
-}
+// ---- 2. 3 条件
+// 宣言 = 先頭 10 行に現れる `<!-- deprecated: id -->`。Markdown のコード文脈は**認識しない**
+// （作者裁定 2026-09-05・案A）。先頭 10 行にあれば例示でも読者に見えるので宣言として数える。
+// 検査器が Markdown パーサになる道（```/~~~/行頭/入れ子…）をここで閉じる。
 const DECL_RE = /<!--\s*deprecated:\s*([a-z0-9-]+(?:\s*,\s*[a-z0-9-]+)*)\s*-->/g;
 files.forEach(f => {
   const rel = path.relative(ROOT, f);
   const text = fs.readFileSync(f, 'utf8');
-  const masked = maskCode(text);
-  const mLines = masked.split('\n');
-  const head = mLines.slice(0, HEAD_LINES).join('\n');
-  const tail = mLines.slice(HEAD_LINES).join('\n');
+  const head = text.split('\n').slice(0, HEAD_LINES).join('\n');
 
-  // 宣言: 先頭 10 行（コード文脈を除く）にあるものだけを有効とする
   const declared = new Set();
   let m;
   DECL_RE.lastIndex = 0;
   while ((m = DECL_RE.exec(head)) !== null) m[1].split(',').forEach(s => declared.add(s.trim()));
 
-  // (d) 11 行目以降にある宣言は無効＝それ自体を赤にする（見つけにくい位置に置かせない）
-  DECL_RE.lastIndex = 0;
-  const late = DECL_RE.exec(tail);
-  ok(!late, '(d) ' + rel + ': 宣言は先頭 ' + HEAD_LINES + ' 行に置くこと（11 行目以降に ' + late + ' がある）');
-
   // (c) 一覧に無い id
   declared.forEach(id => ok(ids.has(id), '(c) ' + rel + ': 宣言 id "' + id + '" が docs/DEPRECATED.md に無い'));
 
-  // 語彙の照合は本文全体（コード文脈も含む＝要求はコードで書かれても要求）から、
-  // 宣言コメントそのものだけを除いて行う（id が語彙と重なっても (b) が生きる・Codex 2巡目 P2）。
+  // 語彙の照合は本文全体から、宣言コメントそのものだけを除いて行う
+  // （id が語彙と重なっても (b) が生きる・Codex 2巡目 P2）。
   const body = text.replace(DECL_RE, '');
   registry.forEach(e => {
     const hit = e.re.find(re => re.test(body));
