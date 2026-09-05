@@ -447,7 +447,9 @@ function fnBody(name){
   // 表示: 有効なチェックボックス・ボタン・確定文言が出る
   const secA = env.buildFirstRoundPartialSectionHtml('A');
   assert(secA.indexOf('選択した参加者で1局目を追加作成')>=0, 'BIND2 ボタン文言「選択した参加者で1局目を追加作成」');
-  assert(secA.indexOf('既に1局目対局がある参加者は表示されません')>=0, 'BIND3 補助文「既に1局目対局がある参加者は表示されません」');
+  // FRP-PANEL-DECLUTTER-001 (#957): 補助文「既に1局目対局がある参加者は表示されません」は消した（ヘルプに一本化）。
+  //   命題は「文が在る」から「説明の p は projection の1本だけ」へ。
+  assert((secA.match(/<p\b/g)||[]).length===1 && secA.indexOf('frp-pairing-projection')>=0, 'BIND3 パネル内の p は projection の1本だけ（説明文3本は #957 で撤去）');
   assert(!/frp-unassigned-cb[^>]*disabled/.test(secA) && !/frpAddBtn_A[^>]*disabled/.test(secA), 'BIND4 checkbox/ボタンは有効（disabled でない）');
 }
 
