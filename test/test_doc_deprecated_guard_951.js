@@ -6,6 +6,7 @@
 //   「ファイル先頭の宣言」以外に持たない（#946 で Codex が示した抜け道を持ち込まない）。
 // 赤にする条件は 4 つだけ: (a) 語彙あり・宣言なし／(b) 宣言あり・語彙なし／
 //   (c) 宣言の id が一覧に無い／(d) 宣言が 11 行目以降。
+// コード文脈（フェンス／インライン）は宣言として数えない。語彙の照合からは宣言コメントだけ除く。
 // 読み取り専用・実データ不使用。
 const fs = require('fs');
 const path = require('path');
@@ -56,26 +57,29 @@ const files = []
 ok(files.length > 0, 'S0 対象ファイルが 1 本以上あること');
 
 // ---- 2. 4 条件
-function stripCode(s) {
-  return s.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '');
+// コード文脈（```フェンス／`インライン`）は「書き方の例示」であって宣言でも要求でもない。
+// 全文に対して改行を保ったまま空白に置き換える（行番号が動かない＝10 行境界をまたぐフェンスも
+// 正しく除ける・Codex 2巡目 P2）。宣言の収集は maskCode 後の本文から行う。
+function maskCode(s) {
+  const blank = m => m.replace(/[^\n]/g, ' ');
+  return s.replace(/```[\s\S]*?```/g, blank).replace(/`[^`\n]*`/g, blank);
 }
 const DECL_RE = /<!--\s*deprecated:\s*([a-z0-9-]+(?:\s*,\s*[a-z0-9-]+)*)\s*-->/g;
 files.forEach(f => {
   const rel = path.relative(ROOT, f);
   const text = fs.readFileSync(f, 'utf8');
-  const lines = text.split('\n');
-  const head = lines.slice(0, HEAD_LINES).join('\n');
+  const masked = maskCode(text);
+  const mLines = masked.split('\n');
+  const head = mLines.slice(0, HEAD_LINES).join('\n');
+  const tail = mLines.slice(HEAD_LINES).join('\n');
 
-  // 宣言: 先頭 10 行にあるものだけを有効とする
+  // 宣言: 先頭 10 行（コード文脈を除く）にあるものだけを有効とする
   const declared = new Set();
   let m;
   DECL_RE.lastIndex = 0;
   while ((m = DECL_RE.exec(head)) !== null) m[1].split(',').forEach(s => declared.add(s.trim()));
 
   // (d) 11 行目以降にある宣言は無効＝それ自体を赤にする（見つけにくい位置に置かせない）
-  //     ただしコードフェンス／インラインコードの中は「書き方の例示」なので数えない
-  //     （Codex 1巡目 P2: 例示で (d) が誤爆する）。語彙の照合 (a)(b) には影響しない。
-  const tail = stripCode(lines.slice(HEAD_LINES).join('\n'));
   DECL_RE.lastIndex = 0;
   const late = DECL_RE.exec(tail);
   ok(!late, '(d) ' + rel + ': 宣言は先頭 ' + HEAD_LINES + ' 行に置くこと（11 行目以降に ' + late + ' がある）');
@@ -83,8 +87,11 @@ files.forEach(f => {
   // (c) 一覧に無い id
   declared.forEach(id => ok(ids.has(id), '(c) ' + rel + ': 宣言 id "' + id + '" が docs/DEPRECATED.md に無い'));
 
+  // 語彙の照合は本文全体（コード文脈も含む＝要求はコードで書かれても要求）から、
+  // 宣言コメントそのものだけを除いて行う（id が語彙と重なっても (b) が生きる・Codex 2巡目 P2）。
+  const body = text.replace(DECL_RE, '');
   registry.forEach(e => {
-    const hit = e.re.find(re => re.test(text));
+    const hit = e.re.find(re => re.test(body));
     const has = declared.has(e.id);
     // (a) 語彙あり・宣言なし
     ok(!(hit && !has), '(a) ' + rel + ': 廃止概念 "' + e.id + '" の語彙 ' + hit + ' を含むのに先頭に <!-- deprecated: ' + e.id + ' --> が無い');
