@@ -119,6 +119,9 @@ const SNAP = `(function(){
   ok(err && !err.hidden && err.h > 0 && !err.inReg, 'D5b 押すと対局管理タブで**見える**（実測 ' + JSON.stringify(err && { h: err.h, hidden: err.hidden }) + '）');
   ok(err && err.inPanel && err.role === 'alert', 'D5c 発生元のパネルの中・role=alert（§3.2）');
   ok(err && /2人以上を選択してください/.test(err.text) && /もう一度押して/.test(err.text), 'D5d 文に「止めた理由」と「次の行動」がある（§4.3・実測 ' + (err && err.text) + '）');
+  //   ★ Codex 3巡目 P2: 色だけに意味を載せない（§3.1）＝見出し語（またはアイコン）を必ず添える。
+  const head = await page.evaluate(() => { var h = document.querySelector('#frpErr_A .frp-err-head'); return h ? { text: h.textContent, display: getComputedStyle(h).display } : null; });
+  ok(head && /作成できません/.test(head.text) && /\u26a0/.test(head.text) && head.display === 'block', 'D5d2 見出し語「⚠ 作成できません」が独立した行で付いている（§3.1・実測 ' + JSON.stringify(head) + '）');
   ok(err && err.bg === 'rgb(253, 236, 234)' && err.color === 'rgb(165, 14, 14)' && err.border === 'rgb(217, 48, 37)', 'D5e danger 面色が効いている（実測 bg=' + (err && err.bg) + ' color=' + (err && err.color) + '）');
   await page.waitForTimeout(3200);
   const still = await page.evaluate(() => { var e = document.getElementById('frpErr_A'); return e && !e.hidden && e.getBoundingClientRect().height > 0; });

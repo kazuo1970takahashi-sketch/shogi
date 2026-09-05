@@ -86,6 +86,7 @@ button{cursor:pointer;padding:10px 16px;border-radius:8px;border:1px solid #ccc;
 /* FRP-PANEL-DECLUTTER-001 (#957 / Codex 2巡目 P2): 「1局目 未割当参加者」パネルの N5 スロット（STYLE-GUIDE §3.2＝発生元と同じ面・danger 面色）。
    色は .chg-err / .bulk-err と同じ値の流用（新色なし）。 */
 .frp-err{margin:8px 0 0;padding:8px 10px;border-radius:6px;font-size:15px;line-height:1.5;background:#fdecea;color:#a50e0e;border:1px solid #d93025}
+.frp-err-head{display:block;margin-bottom:2px}
 .bulk-err[hidden]{display:none}
 .bulk-err-head{display:block;margin-bottom:2px}
 /* ★ overflow-wrap:anywhere は必須。本文に利用者入力（氏名）が入るため。
@@ -10707,10 +10708,14 @@ var firstRoundAppendInFlight=false;
 //   再入防止（confirm 中の二重発火・double-click 対策）→ 実行時再検証 → 候補ペア生成 → confirm → append。
 //   appendFirstRoundPairs 内でも再検証するため二重に安全（UI のチェック状態を信用しない §8）。
 // FRP-PANEL-DECLUTTER-001 (#957): パネル内 N5 スロットの出し入れ。text 無しで隠す。
+//   ★ 見出し語「⚠ 作成できません」を必ず添える（STYLE-GUIDE §3.1: 色だけに意味を載せない・.chg-err と同じ形）。
 function frpShowErr(cls, text){
   var el=document.getElementById('frpErr_'+cls);
   if(!el)return;
-  if(text){el.textContent=text;el.hidden=false;}else{el.textContent='';el.hidden=true;}
+  if(text){
+    el.innerHTML='<strong class="frp-err-head">\u26a0 作成できません</strong><span class="frp-err-body">'+escapeHtml(text)+'</span>';
+    el.hidden=false;
+  }else{el.innerHTML='';el.hidden=true;}
 }
 function onClickAppendFirstRound(cls){
   if(firstRoundAppendInFlight)return;   // 再入防止: 共有フラグ（#274・クロス再入も弾く）
