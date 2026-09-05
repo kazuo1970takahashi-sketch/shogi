@@ -17,6 +17,11 @@
 #   ★ 検査に使う「本番の印」は production ブランチ自身の config から取る（ハードコードしない）。
 #     本番の URL が変わっても勝手に追従する。
 #
+#   ★ この道具が守るのは「config の取り違え」だけ（保証しないことは runbook の同名の節に列挙）:
+#     - 守る: 配信 tree に本番の印が残る／staging を名乗らない config を配る → 検査で止める
+#     - 守らない: 悪意ある tree（repo は作者の管理下）・共有マシンの /tmp を狙う攻撃・ブラウザ側の状態
+#       symlink は中身を検査できないので「うっかり」の範囲として tree 内の全部を拒否する（それ以上は見ない）
+#
 #   使い方:
 #     bash scripts/serve_for_verify.sh <repo> <ref> <port> <staging-config-dir>
 #       repo               : git リポジトリ（例 /tmp/shogi-dev）
@@ -58,36 +63,39 @@ if [ -z "$REF_OID" ]; then
   exit 2
 fi
 
+#   作業ディレクトリは mktemp が作る1つだけ。配信する tree は その下の site/、ログと pid は同じ
+#   ディレクトリ直下（配信されない・予測可能な /tmp パスに書かない＝★Codex P1 PR #938 4巡目）。
 WORK="$(mktemp -d /tmp/serve_verify.XXXXXX)"
-echo "作業ディレクトリ: $WORK"
+SITE="$WORK/site"
+LOG="$WORK/server.log"
+PIDFILE="$WORK/server.pid"
+mkdir "$SITE"
+echo "作業ディレクトリ: ${WORK}（配信するのは site/）"
 
 # ---- 1) 検証対象のツリーを取り出す（コードは触らない）----
-git -C "$REPO" archive "$REF_OID" | tar -x -C "$WORK"
+git -C "$REPO" archive "$REF_OID" | tar -x -C "$SITE"
 echo "取り出し: $REF = $REF_OID"
 
-# ---- 2) config だけ staging に差し替える ----
-#   ★Codex P1（PR #938 2巡目）: 取り出した tree の app/ や app/config.js が symlink だと、
-#     cp が symlink をたどって $WORK の外を上書きしうる。→ 置き先が symlink なら中止し、
-#     既存の config は先に消してから普通のファイルとして置く。
-if [ -L "$WORK/app" ]; then
-  echo "✗ 取り出した tree の app/ が symlink です（配信ディレクトリの外に書く恐れがあるので中止）" >&2
+#   ★Codex P1（PR #938 2巡目・4巡目）: tree に symlink があると、cp はたどって外を上書きしうるし、
+#     http.server はたどって外の中身を配る（grep は中身を見ない）。→ 種類を問わず tree 内の symlink は
+#     1本でもあれば中止（この道具は中身を検査できないものを配らない）。
+SYMLINKS="$(find "$SITE" -type l 2>/dev/null)"
+if [ -n "$SYMLINKS" ]; then
+  echo "✗ 取り出した tree に symlink があります（中身を検査できないので配信しない）:" >&2
+  printf '%s\n' "$SYMLINKS" | sed "s#^$SITE/#    #" >&2
   exit 3
 fi
-mkdir -p "$WORK/app"
-for f in config.js config.public.js; do
-  if [ -L "$WORK/app/$f" ]; then
-    echo "✗ 取り出した tree の app/$f が symlink です（中止）" >&2
-    exit 3
-  fi
-done
-rm -f "$WORK/app/config.js"
-cp "$SCFG/config.js" "$WORK/app/config.js"
+
+# ---- 2) config だけ staging に差し替える ----
+mkdir -p "$SITE/app"
+rm -f "$SITE/app/config.js"
+cp "$SCFG/config.js" "$SITE/app/config.js"
 if [ -f "$SCFG/config.public.js" ]; then
-  rm -f "$WORK/app/config.public.js"
-  cp "$SCFG/config.public.js" "$WORK/app/config.public.js"
-elif [ -f "$WORK/app/config.public.js" ]; then
+  rm -f "$SITE/app/config.public.js"
+  cp "$SCFG/config.public.js" "$SITE/app/config.public.js"
+elif [ -f "$SITE/app/config.public.js" ]; then
   # staging 側に公開 config が無いなら、本番の実値を**残さない**（消す方が安全）
-  rm -f "$WORK/app/config.public.js"
+  rm -f "$SITE/app/config.public.js"
   echo "注意: staging 側に config.public.js が無いので、取り出したものを削除しました（ライブ配信は試せません）"
 fi
 
@@ -120,9 +128,9 @@ elif [ -z "$PROD_REF" ]; then
   echo "✗ 本番の project ref を production ブランチから読めませんでした（検査できないので中止）" >&2
   fail=1
 else
-  if grep -rqF "$PROD_REF" "$WORK" 2>/dev/null; then
+  if grep -rqF "$PROD_REF" "$SITE" 2>/dev/null; then
     echo "✗ 配信ディレクトリに **本番の project ref** が残っています:" >&2
-    grep -rlF "$PROD_REF" "$WORK" 2>/dev/null | sed "s#^$WORK/#    #" >&2
+    grep -rlF "$PROD_REF" "$SITE" 2>/dev/null | sed "s#^$SITE/#    #" >&2
     fail=1
   else
     echo "✓ 本番の project ref はどこにも無い"
@@ -135,7 +143,7 @@ fi
 ENV_MATCHES="$(sed -n \
     -e "s/^[[:space:]]*env:[[:space:]]*'\([^']*\)'[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p" \
     -e 's/^[[:space:]]*env:[[:space:]]*"\([^"]*\)"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p' \
-    "$WORK/app/config.js")"
+    "$SITE/app/config.js")"
 ENV_COUNT="$(printf '%s\n' "$ENV_MATCHES" | awk 'NF { n++ } END { print n + 0 }')"
 if [ "$ENV_COUNT" = "1" ] && [ "$ENV_MATCHES" = "staging" ]; then
   echo "✓ app/config.js は env:'staging'（property 行・1件）"
@@ -154,30 +162,32 @@ fi
 #   ★Codex P1（PR #938 初巡）: 起動を待たずに exit 0 にすると、ポートが占有済みでも「配信開始」と出て
 #     古い配信（production ツリーかもしれない）へ誘導する。→ 起動した PID が生きていて、かつ
 #     このディレクトリだけに置いた目印ファイルがそのポートから読めることを確かめてから 0 を返す。
-cd "$WORK"
+cd "$SITE"
 MARK=".serve_verify_$$_$(date +%s)"
-printf 'serve_for_verify %s\n' "$WORK" > "$MARK"
+printf 'serve_for_verify %s\n' "$SITE" > "$MARK"
 #   ★Codex P1（PR #938 2巡目）: setsid は util-linux＝素の macOS に無い。作者機（bash 3.2）で動くのが
 #     この道具の前提なので nohup だけで起こす（親シェルが終わっても HUP で死なない）。
-nohup python3 -m http.server "$PORT" --bind 127.0.0.1 < /dev/null > /tmp/serve_verify_"$PORT".log 2>&1 &
+nohup python3 -m http.server "$PORT" --bind 127.0.0.1 < /dev/null > "$LOG" 2>&1 &
 SRV_PID=$!
 disown 2>/dev/null || true
+printf '%s\n' "$SRV_PID" > "$PIDFILE"
 ok=0
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   sleep 0.3
   if ! kill -0 "$SRV_PID" 2>/dev/null; then break; fi
-  if curl -fsS --noproxy "*" --max-time 2 "http://127.0.0.1:$PORT/$MARK" 2>/dev/null | grep -qF "$WORK"; then ok=1; break; fi
+  if curl -fsS --noproxy "*" --max-time 2 "http://127.0.0.1:$PORT/$MARK" 2>/dev/null | grep -qF "$SITE"; then ok=1; break; fi
 done
 rm -f "$MARK"
 if [ "$ok" -ne 1 ]; then
   kill "$SRV_PID" 2>/dev/null || true
-  echo "✗ ポート $PORT でこのディレクトリを配信できませんでした（占有済みか起動失敗。ログ: /tmp/serve_verify_$PORT.log）" >&2
+  rm -f "$PIDFILE"
+  echo "✗ ポート ${PORT} でこのディレクトリを配信できませんでした（占有済みか起動失敗。ログ: ${LOG}）" >&2
   echo "★ 配信していません。別のポートで再実行してください。" >&2
   exit 4
 fi
-echo "✓ 配信開始: http://127.0.0.1:$PORT/shogi_v4.html"
-echo "  ディレクトリ: ${WORK}（${REF} = ${REF_OID}・config だけ staging）"
-echo "  PID: ${SRV_PID}（止めるとき: kill ${SRV_PID}）"
+echo "✓ 配信開始: http://127.0.0.1:${PORT}/shogi_v4.html"
+echo "  配信ディレクトリ: ${SITE}（${REF} = ${REF_OID}・config だけ staging）"
+echo "  PID: ${SRV_PID}（止めるとき: kill ${SRV_PID}／同じ値を ${PIDFILE} に書いた・ログ: ${LOG}）"
 #   ★Codex P1（PR #938 2巡目・runbook）: ブラウザは origin（127.0.0.1:ポート）ごとに SW キャッシュを持つ。
 #     以前このポートで本番 config を配信していたなら、そのキャッシュが残っていて網羅できない。
 echo "  ⚠ このポートで以前に別のツリーを配信したことがあるなら、開く前にブラウザのこの origin のサイトデータ（SW とキャッシュ）を消すこと。runbook 参照。"

@@ -1,6 +1,6 @@
 # 実機確認の手順（正本）— 配信は必ず staging を向ける
 
-STAGING-ENV-001 ⑤。**2026-08-31 起稿・2026-09-06 に Codex 初巡4件・2巡目5件・3巡目3件を反映。この文書が実機確認の手順の正本です。**
+STAGING-ENV-001 ⑤。**2026-08-31 起稿・2026-09-06 に Codex 初巡4件・2巡目5件・3巡目3件・4巡目4件を反映（4巡目で「保証しないこと」の節を置いて範囲を閉じた）。この文書が実機確認の手順の正本です。**
 
 ## なぜ手順を変えたか
 
@@ -33,13 +33,15 @@ publishable key も public repo にはコミットしません。
 
 1. **配信ディレクトリに本番の project ref が1文字も無いこと**
    - 本番の印は **production ブランチ自身の `app/config.public.js` から実行時に読む**（ハードコードしない＝本番の URL が変わっても追従する）
-   - 読む前に **`git fetch origin production` を必ず行う**。remote-tracking の `origin/production` は fetch しなければ古いままなので、fetch できなければ「印が新しい」と言えず**中止**（fail-closed）
+   - 読む前に **refspec を明示して fetch する**: `git fetch origin +refs/heads/production:refs/remotes/origin/production`（`<ref>` が `origin/<枝>` ならその枝の refspec も並べる）。refspec 無しの `git fetch origin` や `git fetch origin production` は、`remote.origin.fetch` が絞られた clone（single-branch 等）だと `origin/production` を更新しないまま 0 を返す。fetch できなければ「印が新しい」と言えず**中止**（fail-closed）
    - 印は **`url: '…'` の property 行だけ**から取り、**ちょうど1件**でなければ中止（コメントに旧 URL が残っていても拾わない。`.github/workflows/supabase-keepalive.yml` と同じ形）
    - production ブランチから読めなければ**検査できないので中止**（fail-closed）
 2. **配信する `app/config.js` が `env:'staging'` を名乗っていること**
    - こちらも **`env: '…'` の property 行だけ**を読み、**ちょうど1件で値が `staging`** のときだけ ✓（コメント行の `// env:'staging'` では通らない・`env:'production'` は ✗）
 
-`<ref>` は取り出す前に `git fetch origin` してから **不変の commit ID に解決**して使います（`origin/production` を指定しても古い tree を配らない・出力に ID が出る）。取り出した tree の `app/` や `app/config.js` が symlink なら、配信ディレクトリの外へ書く恐れがあるので置き換える前に中止します。
+`<ref>` は上の fetch のあとで **不変の commit ID に解決**して使います（`origin/production` を指定しても古い tree を配らない・出力に ID が出る）。取り出した tree に **symlink が1本でもあれば中止**します（種類・場所を問わない。`cp` はたどって外を上書きしうるし、`http.server` はたどって外の中身を配るのに `grep` は中身を見ない＝この道具は中身を検査できないものを配らない）。
+
+作業ディレクトリは `mktemp` が作る `/tmp/serve_verify.XXXXXX` の1つだけで、配信するのはその下の `site/`、`server.log` と `server.pid` は同じディレクトリ直下（配信されない・予測可能な `/tmp` のパスには何も書かない）。
 
 検査を通ったあとも、**配信が本当に立ったこと**を確かめてから 0 を返します（起動した PID が生きていて、この配信ディレクトリだけに置いた目印ファイルがそのポートから読める）。ポートが占有済みなら exit 4 で止まり、**古い配信へ誘導しません**。
 
@@ -59,7 +61,8 @@ staging 側に `config.public.js` が無いときは、取り出した**本番�
 | 変異G | production の `config.public.js` に `url:` の property 行が**2本** | `✗ url: が一意でない（url=2）` → **exit=3**（fail-closed） |
 | 変異H | config にコメント行 `// env: 'staging'` があり、実体は `env: 'production'` | `✗ env: property が 'staging' 1件ではありません（env=1 件・値=production）` → **exit=3**（旧版の unanchored grep は ✓ にしていた） |
 | 変異I | `<ref>`=`origin/production` を指定し、remote だけ進んでローカルの tracking ref が古い | 取り出しの前に fetch → **新しい tree を配る**（出力の commit ID が新しい方・旧版は古い tree を配って検査だけ新しい印で通していた） |
-| 変異J | 取り出した tree の `app/config.js` が symlink | `✗ app/config.js が symlink です（中止）` → **exit=3**（symlink 先のファイルは無傷） |
+| 変異J | 取り出した tree の `app/config.js` が symlink | `✗ 取り出した tree に symlink があります: app/config.js` → **exit=3**（symlink 先のファイルは無傷） |
+| 変異L | 取り出した tree の **config 以外**（`outside.js`）が、本番 URL を含む外部ファイルへの symlink | `✗ 取り出した tree に symlink があります: outside.js` → **exit=3**（旧版は grep が中身を見ず exit 0 で配り、`http.server` がリンク先を返していた） |
 | 変異K | `remote.origin.fetch` を別枝だけに絞った clone（single-branch 相当）で、remote の production だけ project が変わった | refspec 明示の fetch で `origin/production` が更新され、今の印を含む config は検査1 ✗ → **exit=3**（refspec 無しの fetch は更新せず exit 0 だった） |
 
 ★ 変異Aは両方の検査が赤なので単独性の根拠になりません。**検査1だけで止まる根拠は変異C、検査2だけで止まる根拠は変異B**です。
@@ -76,6 +79,18 @@ staging 側に `config.public.js` が無いときは、取り出した**本番�
 - script は配信開始時にこの注意を1行出します
 
 ★ macOS で動くこと: 配信の起こし方は `nohup` だけ（`setsid` は util-linux＝素の macOS に無い。旧版は cloud でしか動かしておらず、作者機では常に exit 4 になっていた）。
+
+## この道具が保証しないこと（範囲を先に決める）
+
+この道具が守るのは **config の取り違え**＝「配信する tree に本番の印が残っている」「staging を名乗らない config を配る」の2つだけで、
+それは上の検査2つで止めます。次は**対象外**で、検査も増やしません:
+
+- **悪意ある tree**。repo の中身は作者の管理下にあります。symlink は「うっかり」の範囲として tree 内の全部を拒否しますが、それ以上（hard link・巧妙な名前・実行時に外へ出るコード）は見ません。
+- **共有マシンの `/tmp` を狙う攻撃**。作者機は単一利用者です。ログ・pid・配信 tree は `mktemp` が作った作業ディレクトリの中にだけ置き、予測可能なパスには書きません。それ以上の hardening はしません。
+- **ブラウザ側の状態**（SW キャッシュ・localStorage）。「ポートを再利用しない」の手順で人が守ります（下の節）。
+- **cloud／`device_bash` からの Supabase 到達**（次の節）。
+
+★ この節が在る理由: Codex のレビューは「検査器が守れる範囲」を広げ続ける（PR #938 で 4→5→3→4 件と続いた）。#951 と同じで、**守らないことを先に書いた方が、検査器を小さく保てる**。
 
 ## この手順で「できること」と「できないこと」
 
@@ -108,10 +123,10 @@ staging 側に `config.public.js` が無いときは、取り出した**本番�
 
 - **`pkill -f "http.server"` は使わない。** 呼び出し元のコマンドラインにその文字列が含まれると（`bash -c` や自動化の包み）
   自分自身にマッチして呼び出し元のシェルごと落ちる（exit 143/144）。サブシェルで包んでも出力を捨てても防げない。
-  **止めるときは script が配信開始時に印字する PID を `kill <PID>` する**（`/tmp/serve_verify_<port>.log` にも残る）
+  **止めるときは script が配信開始時に印字する PID を `kill <PID>` する**（同じ値を作業ディレクトリの `server.pid` に書いてある。ログは同じ場所の `server.log`）
 - 配信は `nohup … &` ＋ `disown` で起こしている（`setsid` は使わない＝素の macOS に無い）。呼び出し側のシェルが先に
   終わっても配信は残る（実測済み）
-- **作業ディレクトリ `/tmp/serve_verify.XXXXXX` は検査に落ちても残します**（何が入っていたか調べるため）。
+- **作業ディレクトリ `/tmp/serve_verify.XXXXXX` は検査に落ちても残します**（`site/` に何が入っていたか調べるため）。
   溜まるので、確認が終わったら消す
 
 ## 関連
