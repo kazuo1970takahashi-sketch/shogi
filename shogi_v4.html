@@ -1574,6 +1574,8 @@ function isWithdrawnPlayer(cls,playerId){
 //   role='p1' は先手 select、'p2' は後手 select。現 p1/p2 は status:'ok' 扱いで
 //   reasonId=null（PR #108 §7.1.1 確定）。
 //   戻り値: { status:'ok'|'blocked', reasonId, reasonLabel }
+//   CHG-MODAL-REMATCH-SUBJECT-001 (#838): R-rematch-swap のときだけ rematchPairs:[[a,b],…] を追加で載せ、
+//   reasonLabel は buildRematchReasonLabel でそのペアを氏名で名指す（「再戦になる」の定数はやめた）。
 //   CHG-MODAL-REPLACE-REMATCH-001 (#884): replace 経路が再戦になるときだけ warnId / warnLabel を
 //   追加で載せる（status は 'ok' のまま＝選べる状態は変えない・印だけ出す）。他の経路では未定義。
 function classifyChangePairingCandidate(cls, idx, candidateId, role){
@@ -1654,10 +1656,41 @@ function classifyChangePairingCandidate(cls, idx, candidateId, role){
   if(Y&&isWithdrawnPlayer(cls,Y)){
     return {status:'blocked',reasonId:'R-withdrawn-partner',reasonLabel:'相手の卓に棄権者'};
   }
-  if(pairHasRematch(cls,keepPlayer,candidateId)||(Y&&pairHasRematch(cls,droppedFromTarget,Y))){
-    return {status:'blocked',reasonId:'R-rematch-swap',reasonLabel:'再戦になる'};
+  // CHG-MODAL-REMATCH-SUBJECT-001 (#838): 短絡 OR をやめて両項を評価し、実際に再戦になるペアを
+  //   rematchPairs に全部載せる（1〜2組）。ラベルはそのペアを氏名で名指す（作者決定 2026-08-13）。
+  //   ★ 8/9 当日の実測: R-rematch-swap の 34% は「候補本人は再戦と無関係」（玉突きで動く相手ペア側が原因）。
+  //     旧ラベル「再戦になる」は候補の行に貼られるため、幹事は「候補×卓の相手が再戦」と読んで誤る。
+  //   ★ rematchPairs は R-rematch-swap のときだけ載せる（#884 の warnId と同じ流儀）。判定条件は不変。
+  var rematchPairs=[];
+  if(pairHasRematch(cls,keepPlayer,candidateId))rematchPairs.push([keepPlayer,candidateId]);
+  if(Y&&pairHasRematch(cls,droppedFromTarget,Y))rematchPairs.push([droppedFromTarget,Y]);
+  if(rematchPairs.length){
+    return {status:'blocked',reasonId:'R-rematch-swap',reasonLabel:buildRematchReasonLabel(cls,candidateId,rematchPairs),rematchPairs:rematchPairs};
   }
   return {status:'ok',reasonId:null,reasonLabel:''};
+}
+
+// CHG-MODAL-REMATCH-SUBJECT-001 (#838): 再戦ラベルを「実際に再戦になるペア」で組み立てる純関数。
+//   カッコ無しで返す（callsite の buildChangePairingModalHtml が「（…）」で包む＝二重カッコ回避）。
+//   - 候補本人が当事者（残る人×候補）: 「<残る人>と再戦」
+//   - 候補が無関係（外れる人×相手卓の残り）: 「<a>×<b>が再戦」
+//   - 2組: 「・」で連結
+//   長さは設計目標にしない（option の行頭は候補氏名なので、末尾が切れても「誰を選ぶか」は読める）。
+//   ★ 戻り値は生文字列（氏名を含む）。唯一の行き先は buildChangePairingModalHtml の
+//     escapeHtml(blockedLabel)＝そこで一括エスケープされる。ここで escapeHtml すると二重エスケープになる。
+//     裏づけは test_chg_modal_rematch_subject_838.js [E4]（氏名に < を含めて option が &lt; になること）。
+function buildRematchReasonLabel(cls,candidateId,pairs){
+  var parts=[];
+  for(var i=0;i<(pairs||[]).length;i++){
+    var a=pairs[i][0],b=pairs[i][1];
+    var na=getName(a,cls),nb=getName(b,cls);
+    if(a===candidateId||b===candidateId){
+      parts.push((a===candidateId?nb:na)+'と再戦');
+    }else{
+      parts.push(na+'×'+nb+'が再戦');
+    }
+  }
+  return parts.join('・');
 }
 
 // ROUND-CLASS-START-003: 旧データ/現行/将来データから「class 一覧」を安全に正規化する。
@@ -11305,7 +11338,7 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
   // PAIRING-UX-MANUAL-CHANGE-CANDIDATE-FILTER-IMPL-LIGHT (PR #108 §5.1 / §9.1):
   //   候補を classifyChangePairingCandidate で事前分類し、native select 内で
   //   「選択可能」/「選択できない候補」optgroup に分けて出力する。
-  //   選択不可候補は disabled + 短い理由ラベル（「結果入力済」「再戦になる」「同じ選手」）。
+  //   選択不可候補は disabled + 短い理由ラベル（「結果入力済」「同じ選手」・再戦は #838 で実ペアを氏名で名指す）。
   //   現 p1 / p2 は status:'ok' + selected + 非 disabled + 理由ラベルなし（§7.1.1）。
   //   表示文字列は escapeHtml を通す（個人情報保護）。
   function buildSelectInner(role,selectedId){
