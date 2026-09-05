@@ -184,7 +184,12 @@ ROLES.forEach(function(role){
   setBoard(role,{p1:'y1',p2:'y2'},history([['x2','y1']]));
   var r=classify('A',0,'y1',role);
   assert(is(r,'blocked','R-rematch-swap'),'[6a-1/'+role+'] 残る人と候補が再戦 → blocked/R-rematch-swap');
-  assert(r.reasonLabel==='再戦になる','[6a-2/'+role+'] reasonLabel は 再戦になる');
+  // CHG-MODAL-REMATCH-SUBJECT-001 (#838): characterization の意図的更新。定数「再戦になる」をやめ、
+  //   実際に再戦になるペアを氏名で名指す（この fixture は名前なし＝ name は undefined を文字列化した形になる）。
+  //   形の検証は test_chg_modal_rematch_subject_838.js が担う。ここでは「旧定数ではない」と「当事者の名指し」だけ。
+  assert(r.reasonLabel!=='再戦になる','[6a-2/'+role+'] reasonLabel は旧定数「再戦になる」ではない（#838）');
+  assert(/と再戦$/.test(r.reasonLabel),'[6a-2b/'+role+'] 候補本人が当事者のとき「…と再戦」の形');
+  assert(Array.isArray(r.rematchPairs)&&r.rematchPairs.length===1&&r.rematchPairs[0][0]==='x2'&&r.rematchPairs[0][1]==='y1','[6a-2c/'+role+'] rematchPairs は [[残る人 x2, 候補 y1]] の1組');
   assert(env.pairHasRematch('A','x1','y2')===false,'[6a-3/'+role+'] このケースで条件2（外れる人×Y）は成立していない（条件1だけで blocked）');
   // 候補が相手ペアの p2 側にいる場合も同じ（keepPlayer 側の判定は Y の決め方に依存しない）
   setBoard(role,{p1:'y1',p2:'y2'},history([['x2','y2']]));
