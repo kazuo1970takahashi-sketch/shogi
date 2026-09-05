@@ -1,6 +1,6 @@
 # 実機確認の手順（正本）— 配信は必ず staging を向ける
 
-STAGING-ENV-001 ⑤。**2026-08-31 起稿・2026-09-06 に Codex 初巡の指摘4件を反映。この文書が実機確認の手順の正本です。**
+STAGING-ENV-001 ⑤。**2026-08-31 起稿・2026-09-06 に Codex 初巡4件・2巡目5件を反映。この文書が実機確認の手順の正本です。**
 
 ## なぜ手順を変えたか
 
@@ -19,8 +19,8 @@ bash scripts/serve_for_verify.sh <repo> <ref> <port> <staging-config-dir>
 
 # 例: 開発本流を 8351 番で
 bash scripts/serve_for_verify.sh "$PWD" origin/chore/shogi-tour-apphq-003h-2d-orphan-clean-base 8351 /tmp/stgcfg
-# 例: production の byte をそのまま（config だけ staging）
-bash scripts/serve_for_verify.sh "$PWD" origin/production 8351 /tmp/stgcfg
+# 例: production の byte をそのまま（config だけ staging）。★ポートは前の配信と別にする（下の「ポートを再利用しない」）
+bash scripts/serve_for_verify.sh "$PWD" origin/production 8352 /tmp/stgcfg
 ```
 
 `<staging-config-dir>` には `config.js` を置きます。実体は作者機の `~/projects/shogi/app/config.js`
@@ -37,6 +37,9 @@ publishable key も public repo にはコミットしません。
    - 印は **`url: '…'` の property 行だけ**から取り、**ちょうど1件**でなければ中止（コメントに旧 URL が残っていても拾わない。`.github/workflows/supabase-keepalive.yml` と同じ形）
    - production ブランチから読めなければ**検査できないので中止**（fail-closed）
 2. **配信する `app/config.js` が `env:'staging'` を名乗っていること**
+   - こちらも **`env: '…'` の property 行だけ**を読み、**ちょうど1件で値が `staging`** のときだけ ✓（コメント行の `// env:'staging'` では通らない・`env:'production'` は ✗）
+
+`<ref>` は取り出す前に `git fetch origin` してから **不変の commit ID に解決**して使います（`origin/production` を指定しても古い tree を配らない・出力に ID が出る）。取り出した tree の `app/` や `app/config.js` が symlink なら、配信ディレクトリの外へ書く恐れがあるので置き換える前に中止します。
 
 検査を通ったあとも、**配信が本当に立ったこと**を確かめてから 0 を返します（起動した PID が生きていて、この配信ディレクトリだけに置いた目印ファイルがそのポートから読める）。ポートが占有済みなら exit 4 で止まり、**古い配信へ誘導しません**。
 
@@ -54,8 +57,24 @@ staging 側に `config.public.js` が無いときは、取り出した**本番�
 | 変異E | production が別 project に移り、ローカルの `origin/production` が古い | fetch で今の印を読むので、今の印を含む config は検査1 ✗ → **exit=3**（旧版は古い印で検査して exit 0） |
 | 変異F | production の `config.public.js` に**コメント行**で旧 URL が残る | property 行は1本なので今の印で検査 → **exit=0** |
 | 変異G | production の `config.public.js` に `url:` の property 行が**2本** | `✗ url: が一意でない（url=2）` → **exit=3**（fail-closed） |
+| 変異H | config にコメント行 `// env: 'staging'` があり、実体は `env: 'production'` | `✗ env: property が 'staging' 1件ではありません（env=1 件・値=production）` → **exit=3**（旧版の unanchored grep は ✓ にしていた） |
+| 変異I | `<ref>`=`origin/production` を指定し、remote だけ進んでローカルの tracking ref が古い | 取り出しの前に fetch → **新しい tree を配る**（出力の commit ID が新しい方・旧版は古い tree を配って検査だけ新しい印で通していた） |
+| 変異J | 取り出した tree の `app/config.js` が symlink | `✗ app/config.js が symlink です（中止）` → **exit=3**（symlink 先のファイルは無傷） |
 
 ★ 変異Aは両方の検査が赤なので単独性の根拠になりません。**検査1だけで止まる根拠は変異C、検査2だけで止まる根拠は変異B**です。
+
+### ポートを再利用しない（ブラウザ側の落とし穴）
+
+ブラウザは **origin（`127.0.0.1:ポート`）ごとに Service Worker とキャッシュを持ちます**。`sw.js` は JS の成功応答をキャッシュし、
+ネットワークが落ちたときは `caches.match()` に退避します。したがって **以前そのポートで production ツリーを配信していた**なら、
+配信ディレクトリが新しくても、その origin に残った**本番の `app/config.js` がキャッシュから蘇る**経路があります
+（`app/config.js` はクラウド操作を押した瞬間に読まれる）。
+
+- **毎回、これまで使っていないポートを使う**（例に 8351/8352 と分けてあるのはこのため）
+- 同じポートを使わざるを得ないときは、開く前にブラウザの **その origin のサイトデータ（SW・キャッシュ・localStorage）を消す**
+- script は配信開始時にこの注意を1行出します
+
+★ macOS で動くこと: 配信の起こし方は `nohup` だけ（`setsid` は util-linux＝素の macOS に無い。旧版は cloud でしか動かしておらず、作者機では常に exit 4 になっていた）。
 
 ## この手順で「できること」と「できないこと」
 

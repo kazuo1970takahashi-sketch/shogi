@@ -35,17 +35,46 @@ if [ -z "$REPO" ] || [ -z "$REF" ] || [ -z "$PORT" ] || [ -z "$SCFG" ]; then
 fi
 [ -f "$SCFG/config.js" ] || { echo "✗ $SCFG/config.js が無い" >&2; exit 2; }
 
+# ---- 0) origin を先に更新する（取り出しも検査も、新しい ref で行う）----
+#   ★Codex P1（PR #938 2巡目）: fetch を検査の直前に置くと、<ref> が origin/production のとき
+#     取り出しは古い tree・検査は新しい印、という食い違いが起きる。→ 取り出す前に fetch し、
+#     <ref> は不変の commit ID に解決してから使う（報告にも ID を出す）。
+if ! git -C "$REPO" fetch --quiet origin 2>/dev/null; then
+  echo "✗ origin を fetch できませんでした（取り出す ref も本番の印も新しいと言えないので中止）" >&2
+  exit 3
+fi
+REF_OID="$(git -C "$REPO" rev-parse --verify --quiet "$REF^{commit}" || true)"
+if [ -z "$REF_OID" ]; then
+  echo "✗ ref を解決できませんでした: $REF" >&2
+  exit 2
+fi
+
 WORK="$(mktemp -d /tmp/serve_verify.XXXXXX)"
 echo "作業ディレクトリ: $WORK"
 
 # ---- 1) 検証対象のツリーを取り出す（コードは触らない）----
-git -C "$REPO" archive "$REF" | tar -x -C "$WORK"
-echo "取り出し: $REF"
+git -C "$REPO" archive "$REF_OID" | tar -x -C "$WORK"
+echo "取り出し: $REF = $REF_OID"
 
 # ---- 2) config だけ staging に差し替える ----
+#   ★Codex P1（PR #938 2巡目）: 取り出した tree の app/ や app/config.js が symlink だと、
+#     cp が symlink をたどって $WORK の外を上書きしうる。→ 置き先が symlink なら中止し、
+#     既存の config は先に消してから普通のファイルとして置く。
+if [ -L "$WORK/app" ]; then
+  echo "✗ 取り出した tree の app/ が symlink です（配信ディレクトリの外に書く恐れがあるので中止）" >&2
+  exit 3
+fi
 mkdir -p "$WORK/app"
+for f in config.js config.public.js; do
+  if [ -L "$WORK/app/$f" ]; then
+    echo "✗ 取り出した tree の app/$f が symlink です（中止）" >&2
+    exit 3
+  fi
+done
+rm -f "$WORK/app/config.js"
 cp "$SCFG/config.js" "$WORK/app/config.js"
 if [ -f "$SCFG/config.public.js" ]; then
+  rm -f "$WORK/app/config.public.js"
   cp "$SCFG/config.public.js" "$WORK/app/config.public.js"
 elif [ -f "$WORK/app/config.public.js" ]; then
   # staging 側に公開 config が無いなら、本番の実値を**残さない**（消す方が安全）
@@ -58,16 +87,13 @@ fail=0
 
 # 3-a) 本番の印を production ブランチ自身から取る（ハードコードしない）
 #   ★Codex P1（PR #938 初巡）: origin/production は remote-tracking ref＝fetch しなければ古いまま。
-#     古い印で検査すると、今の本番 URL を含むツリーが緑で通る。→ 検査の直前に必ず fetch し、
-#     fetch できなければ「印が新しいと言えない」ので中止（fail-closed）。
+#     古い印で検査すると、今の本番 URL を含むツリーが緑で通る。→ 冒頭 0) で必ず fetch してから読む
+#     （fetch できなければそこで中止＝fail-closed）。
 #   ★Codex P1（同）: 印の抽出は「url: '…'」の property 行に限定し、ちょうど1件でなければ中止。
 #     コメントに旧 URL が残っていると head -1 が旧の印を拾う（`.github/workflows/supabase-keepalive.yml` と同じ形）。
 PROD_REF=""
-if ! git -C "$REPO" fetch --quiet origin production 2>/dev/null; then
-  echo "✗ origin/production を fetch できませんでした（本番の印が新しいと言えないので中止）" >&2
-  fail=1
-elif git -C "$REPO" cat-file -e "FETCH_HEAD:app/config.public.js" 2>/dev/null; then
-  URL_MATCHES="$(git -C "$REPO" show FETCH_HEAD:app/config.public.js \
+if git -C "$REPO" cat-file -e "origin/production:app/config.public.js" 2>/dev/null; then
+  URL_MATCHES="$(git -C "$REPO" show origin/production:app/config.public.js \
     | sed -n \
         -e "s/^[[:space:]]*url:[[:space:]]*'\([^']*\)'[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p" \
         -e 's/^[[:space:]]*url:[[:space:]]*"\([^"]*\)"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p')"
@@ -95,10 +121,17 @@ else
 fi
 
 # 3-b) 配信する config が staging を名乗っていること
-if grep -qE "env:[[:space:]]*['\"]staging['\"]" "$WORK/app/config.js"; then
-  echo "✓ app/config.js は env:'staging'"
+#   ★Codex P1（PR #938 2巡目）: unanchored grep だとコメント行の // env:'staging' でも通る。
+#     → url: と同じく property 行だけを読み、値がちょうど1件で 'staging' のときだけ ✓。
+ENV_MATCHES="$(sed -n \
+    -e "s/^[[:space:]]*env:[[:space:]]*'\([^']*\)'[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p" \
+    -e 's/^[[:space:]]*env:[[:space:]]*"\([^"]*\)"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p' \
+    "$WORK/app/config.js")"
+ENV_COUNT="$(printf '%s\n' "$ENV_MATCHES" | awk 'NF { n++ } END { print n + 0 }')"
+if [ "$ENV_COUNT" = "1" ] && [ "$ENV_MATCHES" = "staging" ]; then
+  echo "✓ app/config.js は env:'staging'（property 行・1件）"
 else
-  echo "✗ app/config.js に env:'staging' がありません（staging 用の config ではない）" >&2
+  echo "✗ app/config.js の env: property が 'staging' 1件ではありません（env=${ENV_COUNT} 件・値=${ENV_MATCHES:-無し}）＝staging 用の config ではない" >&2
   fail=1
 fi
 
@@ -115,9 +148,11 @@ fi
 cd "$WORK"
 MARK=".serve_verify_$$_$(date +%s)"
 printf 'serve_for_verify %s\n' "$WORK" > "$MARK"
-setsid nohup python3 -m http.server "$PORT" --bind 127.0.0.1 < /dev/null > /tmp/serve_verify_"$PORT".log 2>&1 &
+#   ★Codex P1（PR #938 2巡目）: setsid は util-linux＝素の macOS に無い。作者機（bash 3.2）で動くのが
+#     この道具の前提なので nohup だけで起こす（親シェルが終わっても HUP で死なない）。
+nohup python3 -m http.server "$PORT" --bind 127.0.0.1 < /dev/null > /tmp/serve_verify_"$PORT".log 2>&1 &
 SRV_PID=$!
-disown || true
+disown 2>/dev/null || true
 ok=0
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   sleep 0.3
@@ -132,4 +167,8 @@ if [ "$ok" -ne 1 ]; then
   exit 4
 fi
 echo "✓ 配信開始: http://127.0.0.1:$PORT/shogi_v4.html"
-echo "  ディレクトリ: $WORK"
+echo "  ディレクトリ: ${WORK}（${REF} = ${REF_OID}・config だけ staging）"
+echo "  PID: ${SRV_PID}（止めるとき: kill ${SRV_PID}）"
+#   ★Codex P1（PR #938 2巡目・runbook）: ブラウザは origin（127.0.0.1:ポート）ごとに SW キャッシュを持つ。
+#     以前このポートで本番 config を配信していたなら、そのキャッシュが残っていて網羅できない。
+echo "  ⚠ このポートで以前に別のツリーを配信したことがあるなら、開く前にブラウザのこの origin のサイトデータ（SW とキャッシュ）を消すこと。runbook 参照。"
