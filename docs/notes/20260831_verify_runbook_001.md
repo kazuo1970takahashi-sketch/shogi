@@ -1,6 +1,6 @@
 # 実機確認の手順（正本）— 配信は必ず staging を向ける
 
-STAGING-ENV-001 ⑤。**2026-08-31 時点。この文書が実機確認の手順の正本です。**
+STAGING-ENV-001 ⑤。**2026-08-31 起稿・2026-09-06 に Codex 初巡の指摘4件を反映。この文書が実機確認の手順の正本です。**
 
 ## なぜ手順を変えたか
 
@@ -27,27 +27,35 @@ bash scripts/serve_for_verify.sh "$PWD" origin/production 8351 /tmp/stgcfg
 （**`.gitignore` 済＝非コミット**。`env:'staging'` を名乗る版）。`supabase/README.md` の方針どおり、
 publishable key も public repo にはコミットしません。
 
-終了コード: **0=配信開始 / 2=引数不正 / 3=検査に落ちた（配信していない）**
+終了コード: **0=配信開始 / 2=引数不正 / 3=検査に落ちた（配信していない） / 4=配信を立てられなかった（ポート占有・起動失敗＝配信していない）**
 
 ## 検査は2つ。落ちたら配信しない
 
 1. **配信ディレクトリに本番の project ref が1文字も無いこと**
    - 本番の印は **production ブランチ自身の `app/config.public.js` から実行時に読む**（ハードコードしない＝本番の URL が変わっても追従する）
+   - 読む前に **`git fetch origin production` を必ず行う**。remote-tracking の `origin/production` は fetch しなければ古いままなので、fetch できなければ「印が新しい」と言えず**中止**（fail-closed）
+   - 印は **`url: '…'` の property 行だけ**から取り、**ちょうど1件**でなければ中止（コメントに旧 URL が残っていても拾わない。`.github/workflows/supabase-keepalive.yml` と同じ形）
    - production ブランチから読めなければ**検査できないので中止**（fail-closed）
 2. **配信する `app/config.js` が `env:'staging'` を名乗っていること**
 
+検査を通ったあとも、**配信が本当に立ったこと**を確かめてから 0 を返します（起動した PID が生きていて、この配信ディレクトリだけに置いた目印ファイルがそのポートから読める）。ポートが占有済みなら exit 4 で止まり、**古い配信へ誘導しません**。
+
 staging 側に `config.public.js` が無いときは、取り出した**本番の実値を削除**します（ライブ配信は試せなくなるが、残すより安全）。
 
-### 変異で赤になることの実測（2026-08-31・cowork）
+### 変異で赤になることの実測（2026-08-31 起稿・2026-09-06 に架空の production を持つ使い捨て repo で再実測）
 
-| | 渡したもの | 結果 |
+| | 渡したもの／状況 | 結果 |
 |---|---|---|
 | 素 | staging config | `✓ 本番の project ref はどこにも無い` / `✓ env:'staging'` → **exit=0**（配信開始） |
-| 変異A | **本番の config** | `✗ 本番の project ref が残っています: app/config.js` ＋ `✗ env:'staging' がありません` → **exit=3** |
-| 変異B | `env:'staging'` を消した config | `✓ project ref は無い` / `✗ env:'staging' がありません` → **exit=3** |
+| 変異A | **本番の config** | 検査1 ✗ ＋ 検査2 ✗ → **exit=3** |
+| 変異B | `env:'staging'` を消した config | 検査1 ✓ / 検査2 ✗ → **exit=3**（**検査2だけで止まる**） |
+| 変異C | **本番の印を残したまま `env:'staging'` を足した** config | 検査1 ✗ / 検査2 ✓ → **exit=3**（**検査1だけで止まる**） |
+| 変異D | 指定ポートを別の `http.server` が占有 | 検査1・2 ✓ → `✗ ポート N でこのディレクトリを配信できませんでした` → **exit=4**（旧版は exit 0 で「配信開始」と出て古い配信へ誘導していた） |
+| 変異E | production が別 project に移り、ローカルの `origin/production` が古い | fetch で今の印を読むので、今の印を含む config は検査1 ✗ → **exit=3**（旧版は古い印で検査して exit 0） |
+| 変異F | production の `config.public.js` に**コメント行**で旧 URL が残る | property 行は1本なので今の印で検査 → **exit=0** |
+| 変異G | production の `config.public.js` に `url:` の property 行が**2本** | `✗ url: が一意でない（url=2）` → **exit=3**（fail-closed） |
 
-★ 変異Aは**検査1と2の両方**が赤になります。検査1だけでも止まることを確かめたい場合は変異Bを見てください
-（検査2だけが赤で exit=3）。**どちらの検査も単独で配信を止められます。**
+★ 変異Aは両方の検査が赤なので単独性の根拠になりません。**検査1だけで止まる根拠は変異C、検査2だけで止まる根拠は変異B**です。
 
 ## この手順で「できること」と「できないこと」
 

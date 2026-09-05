@@ -24,7 +24,7 @@
 #       port               : 配信ポート（例 8140）
 #       staging-config-dir : config.js（必要なら config.public.js）が入ったディレクトリ
 #
-#   終了コード: 0=配信開始 / 2=引数不正 / 3=★検査に落ちた（配信していない）
+#   終了コード: 0=配信開始 / 2=引数不正 / 3=★検査に落ちた（配信していない） / 4=★配信を立てられなかった（ポート占有など・配信していない）
 # =============================================================================
 set -eu
 
@@ -57,12 +57,31 @@ fi
 fail=0
 
 # 3-a) 本番の印を production ブランチ自身から取る（ハードコードしない）
+#   ★Codex P1（PR #938 初巡）: origin/production は remote-tracking ref＝fetch しなければ古いまま。
+#     古い印で検査すると、今の本番 URL を含むツリーが緑で通る。→ 検査の直前に必ず fetch し、
+#     fetch できなければ「印が新しいと言えない」ので中止（fail-closed）。
+#   ★Codex P1（同）: 印の抽出は「url: '…'」の property 行に限定し、ちょうど1件でなければ中止。
+#     コメントに旧 URL が残っていると head -1 が旧の印を拾う（`.github/workflows/supabase-keepalive.yml` と同じ形）。
 PROD_REF=""
-if git -C "$REPO" cat-file -e "origin/production:app/config.public.js" 2>/dev/null; then
-  PROD_REF="$(git -C "$REPO" show origin/production:app/config.public.js \
-              | sed -nE "s#.*https://([a-z0-9]+)\.supabase\.co.*#\1#p" | head -1)"
+if ! git -C "$REPO" fetch --quiet origin production 2>/dev/null; then
+  echo "✗ origin/production を fetch できませんでした（本番の印が新しいと言えないので中止）" >&2
+  fail=1
+elif git -C "$REPO" cat-file -e "FETCH_HEAD:app/config.public.js" 2>/dev/null; then
+  URL_MATCHES="$(git -C "$REPO" show FETCH_HEAD:app/config.public.js \
+    | sed -n \
+        -e "s/^[[:space:]]*url:[[:space:]]*'\([^']*\)'[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p" \
+        -e 's/^[[:space:]]*url:[[:space:]]*"\([^"]*\)"[[:space:]]*,\{0,1\}[[:space:]]*$/\1/p')"
+  URL_COUNT="$(printf '%s\n' "$URL_MATCHES" | awk 'NF { n++ } END { print n + 0 }')"
+  if [ "$URL_COUNT" != "1" ]; then
+    echo "✗ production の app/config.public.js で url: が一意でない（url=${URL_COUNT}）＝印を決められないので中止" >&2
+    fail=1
+  else
+    PROD_REF="$(printf '%s\n' "$URL_MATCHES" | sed -nE 's#^https://([a-z0-9]+)\.supabase\.co/?$#\1#p')"
+  fi
 fi
-if [ -z "$PROD_REF" ]; then
+if [ "$fail" -ne 0 ]; then
+  :
+elif [ -z "$PROD_REF" ]; then
   echo "✗ 本番の project ref を production ブランチから読めませんでした（検査できないので中止）" >&2
   fail=1
 else
@@ -90,9 +109,27 @@ if [ "$fail" -ne 0 ]; then
 fi
 
 # ---- 4) 配信 ----
+#   ★Codex P1（PR #938 初巡）: 起動を待たずに exit 0 にすると、ポートが占有済みでも「配信開始」と出て
+#     古い配信（production ツリーかもしれない）へ誘導する。→ 起動した PID が生きていて、かつ
+#     このディレクトリだけに置いた目印ファイルがそのポートから読めることを確かめてから 0 を返す。
 cd "$WORK"
+MARK=".serve_verify_$$_$(date +%s)"
+printf 'serve_for_verify %s\n' "$WORK" > "$MARK"
 setsid nohup python3 -m http.server "$PORT" --bind 127.0.0.1 < /dev/null > /tmp/serve_verify_"$PORT".log 2>&1 &
+SRV_PID=$!
 disown || true
-sleep 1
+ok=0
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  sleep 0.3
+  if ! kill -0 "$SRV_PID" 2>/dev/null; then break; fi
+  if curl -fsS --noproxy "*" --max-time 2 "http://127.0.0.1:$PORT/$MARK" 2>/dev/null | grep -qF "$WORK"; then ok=1; break; fi
+done
+rm -f "$MARK"
+if [ "$ok" -ne 1 ]; then
+  kill "$SRV_PID" 2>/dev/null || true
+  echo "✗ ポート $PORT でこのディレクトリを配信できませんでした（占有済みか起動失敗。ログ: /tmp/serve_verify_$PORT.log）" >&2
+  echo "★ 配信していません。別のポートで再実行してください。" >&2
+  exit 4
+fi
 echo "✓ 配信開始: http://127.0.0.1:$PORT/shogi_v4.html"
 echo "  ディレクトリ: $WORK"
