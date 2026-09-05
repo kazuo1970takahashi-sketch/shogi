@@ -1,4 +1,5 @@
 # FRP-IMPL-004 完了レビュー / 手動確認メモ
+<!-- deprecated: table-no -->
 
 | 項目 | 内容 |
 |---|---|
@@ -35,7 +36,7 @@ FRP append の保存構造は、既に `{p1,p2,winner,lastModifiedBy}` の正準
 - `players[cls]` の `id` / `name` / `entry_no` が reload 後の派生計算に使える形で保持される。
 - leftover / 未割当者は保存値ではなく、`players - pairings(p1/p2)` から再派生される。
 - match-level の `round` / `table` / `source` / `generatedBy` / `leftover` は保存しない。
-- 卓番号は `pairings` の index+1、round は `results.length+1` の描画派生であり、保存フィールドではない。
+- ~~卓番号は `pairings` の index+1~~（#941 で廃止・[`docs/DEPRECATED.md`](../DEPRECATED.md)）、round は `results.length+1` の描画派生であり、保存フィールドではない。
 - A/B クラスの `pairings` / `results` / 未割当派生が混線しない。
 - `results` 空の初回 round 状態でも、保存復元で `pairings` が消えない。
 
