@@ -2460,3 +2460,27 @@ kill-after を env とシェルで食い違わせる／再試行を増やして�
 - **やらないこと**: 選択して作る導線を畳む（案B）。9/12 の実運用で「選ぶ」の頻度を見てから決める。
 - テスト: `test/e2e/frp_panel_declutter_957.e2e.js`（実 Chromium・375px・実寸／残す要素／ヘルプ本文／showMsg）。`test_frp_impl_003.js` BIND3 は「文が在る」から「p は projection の1本だけ」へ。
 
+## CHG-MODAL-REMATCH-SUBJECT-001: 対戦相手変更の「（再戦になる）」を実際に再戦になるペアの氏名で名指す（#838）
+
+- **問題**: 8/9 当日、卓「04×01」の後手候補 07 に「（再戦になる）」が出たが 04 と 07 は未対戦。真因は玉突きで動く 01×03 の再戦。`classifyChangePairingCandidate` の swap 判定が短絡 OR で「どちらの項で落ちたか」を持たず、ラベルが候補の行に貼られるため幹事が誤読する（R-rematch-swap の 34% がこの形）。
+- **修正**: swap 経路で両項を評価し、該当した実ペアを `rematchPairs:[[a,b],…]` で返す（`R-rematch-swap` のときだけ）。新設の純関数 `buildRematchReasonLabel` がそのペアを氏名で名指す（候補本人が当事者＝「<残る人>と再戦」／無関係＝「<a>×<b>が再戦」／2組＝「・」連結・カッコ無し）。判定条件・replace 経路（#884）・到達不能 alert とその pin は不変。
+- テスト: `test/test_chg_modal_rematch_subject_838.js`（`test_pairing_classify_001.js` の `[6a-2]` は characterization の意図的更新）
+
+## DOC-GUARDS-001: 廃止概念の文書ガードを構造で持つ／件数ガードはやめる（#951）
+
+- **問題**: PR #946 で足したテキストガード 2 本（specs の卓番号要求・changelog の件数）は、免除規則を足すたびに Codex の指摘が 2→3→6 と増えた（検査器がパーサになりかけた・#939 と同型）。
+- **修正**: (1) `docs/DEPRECATED.md` を新設し、廃止概念（初期値: 卓番号 `table-no` / #941）と語彙を 1 か所に集約（json ブロックが唯一の一覧）。廃止概念の語彙を含む文書ファイルは先頭 10 行に `<!-- deprecated: <id> -->` を置く。検査器が赤にするのは「語彙あり・宣言なし」「宣言あり・語彙なし」「未登録 id」の 3 条件だけで、行ごとの免除規則も Markdown のコード文脈の認識も持たない（作者裁定・案A）。(2) 件数ガードは作らず、`docs/changelog.d/README.md` と PR テンプレに「件数は書かない」を明記。
+- テスト: `test/test_doc_deprecated_guard_951.js`
+
+## MANUAL-FIRST-TIME-001: 「はじめての月例大会 運営マニュアル（1から解説）」を repo に載せる
+
+- **問題**: 幹事向けに 2026-08-09 に作った `docs/manual_first_time.html`（自己完結・スクショ入り・練習ファースト）が作者機のローカルにだけあり git 未追跡だった。
+- **修正**: v134 で撮ったスクショのうち対局管理の 3 枚（勝者を押した状態／確定して次へ／勝数差の警告）を v154 で撮り直し、本文 2 か所（「終わった対局」の畳み・「変更」ボタンの位置）を追随させて追加。`index.html` からの導線は付けていない（別判断）。
+- テスト: 既存の `test_doc_deprecated_guard_951.js` の対象（`docs/manual_*.html`）に自動で入る
+
+## WARNBANNER-846-ONE-STEP-001: ⚠バナーに「『変更』1回で縮められる手」の有無と、その手を出す（#846・案A）
+
+- **問題**: 8/9 当日、Aクラスで ⚠「要確認」が実 UI で選べる全 160 手のどれを選んでも消えず、幹事の判断材料にならなかった。設計B（到達可能な最小を Blossom で一般解）は到達不能 82〜89%・棄権者・#272 との衝突で 8/11 に中断。
+- **修正**: 作者裁定（2026-09-05 案A）で到達可能＝「変更」モーダルで実際にできる手（`classifyChangePairingCandidate` が ok の候補・swap と待機者との replace）と定義し直し、1 手の全探索で `evaluatePairingQuality` の (再戦数, 最大勝数差, 勝数差合計) が辞書順で厳密に縮む最良の手を `findOneStepImprovement` が返す。バナーに「↪ 『変更』1回で縮められます：第N卓の ◯◯ を 第M卓の △△ と入れ替える（勝数差 2 → 1）」／無ければ「↪ 『変更』1回で縮められる手はありません」を 1 行追加。2 手以上は主張しない。評価回数 3000 超（60名級）は省略してその旨を出す。`evaluatePairingQuality`・`warningHit`・`generatePairing` は無改変。
+- テスト: `test/test_warnbanner_one_step_846.js`（golden は当該 1 行の追加ぶんを再採取）
+
