@@ -57,12 +57,13 @@ const files = []
 ok(files.length > 0, 'S0 対象ファイルが 1 本以上あること');
 
 // ---- 2. 4 条件
-// コード文脈（```フェンス／`インライン`）は「書き方の例示」であって宣言でも要求でもない。
+// コード文脈（```／~~~ フェンス・`インライン`）は「書き方の例示」であって宣言でも要求でもない。
 // 全文に対して改行を保ったまま空白に置き換える（行番号が動かない＝10 行境界をまたぐフェンスも
 // 正しく除ける・Codex 2巡目 P2）。宣言の収集は maskCode 後の本文から行う。
 function maskCode(s) {
   const blank = m => m.replace(/[^\n]/g, ' ');
-  return s.replace(/```[\s\S]*?```/g, blank).replace(/`[^`\n]*`/g, blank);
+  // フェンスは ``` と ~~~ の両方（Markdown 仕様・Codex 3巡目 P2）。開いたのと同じ記号で閉じる。
+  return s.replace(/(`{3,}|~{3,})[\s\S]*?\1/g, blank).replace(/`[^`\n]*`/g, blank);
 }
 const DECL_RE = /<!--\s*deprecated:\s*([a-z0-9-]+(?:\s*,\s*[a-z0-9-]+)*)\s*-->/g;
 files.forEach(f => {
