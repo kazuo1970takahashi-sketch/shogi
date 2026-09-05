@@ -1,4 +1,5 @@
 # REFERENCE — SHOGI-TOUR コード設計マップ（`shogi_v4.html`）
+<!-- deprecated: table-no -->
 
 > このファイルは、`shogi_v4.html` の**設計マップ・関数構造・データ構造**を1か所にまとめた
 > リファレンスです。Issue #267（HANDOFF 軽量化）で、履歴は [`./CHANGELOG.md`](./CHANGELOG.md) に、

@@ -12,6 +12,7 @@
 
 ## 検証
 <!-- npm test の PASS/FAIL/WARN、html-validate、ブラウザ確認など。固定 head SHA を明記。 -->
+<!-- 件数はここ（PR）にだけ書く。docs/changelog.d/ の断片・docs/ の文書には件数を書かない（腐る・DOC-GUARDS-001 #951）。 -->
 
 ## 構造化フィールド（reconciler が関係を機械的に辿る・該当行のみ残す）
 <!-- docs/ai-ops/AI-DEV-PIPELINE.md §8-1。不要な行は削除可。 -->
