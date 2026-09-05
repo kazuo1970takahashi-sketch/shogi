@@ -39,8 +39,17 @@ fi
 #   ★Codex P1（PR #938 2巡目）: fetch を検査の直前に置くと、<ref> が origin/production のとき
 #     取り出しは古い tree・検査は新しい印、という食い違いが起きる。→ 取り出す前に fetch し、
 #     <ref> は不変の commit ID に解決してから使う（報告にも ID を出す）。
-if ! git -C "$REPO" fetch --quiet origin 2>/dev/null; then
-  echo "✗ origin を fetch できませんでした（取り出す ref も本番の印も新しいと言えないので中止）" >&2
+#   ★Codex P1（PR #938 3巡目）: refspec 無しの fetch は remote.origin.fetch が絞られた clone
+#     （single-branch 等）だと production を更新せずに 0 を返す。→ refspec を明示して
+#     origin/production と、<ref> が origin/<枝> ならその枝も名指しで更新する。
+REFSPECS="+refs/heads/production:refs/remotes/origin/production"
+case "$REF" in
+  origin/*) REF_BRANCH="${REF#origin/}"
+            [ "$REF_BRANCH" = "production" ] || REFSPECS="$REFSPECS +refs/heads/$REF_BRANCH:refs/remotes/origin/$REF_BRANCH" ;;
+esac
+# shellcheck disable=SC2086  # REFSPECS は空白区切りで複数渡す
+if ! git -C "$REPO" fetch --quiet origin $REFSPECS 2>/dev/null; then
+  echo "✗ origin の production（と指定の枝）を fetch できませんでした（取り出す ref も本番の印も新しいと言えないので中止）" >&2
   exit 3
 fi
 REF_OID="$(git -C "$REPO" rev-parse --verify --quiet "$REF^{commit}" || true)"

@@ -1,6 +1,6 @@
 # 実機確認の手順（正本）— 配信は必ず staging を向ける
 
-STAGING-ENV-001 ⑤。**2026-08-31 起稿・2026-09-06 に Codex 初巡4件・2巡目5件を反映。この文書が実機確認の手順の正本です。**
+STAGING-ENV-001 ⑤。**2026-08-31 起稿・2026-09-06 に Codex 初巡4件・2巡目5件・3巡目3件を反映。この文書が実機確認の手順の正本です。**
 
 ## なぜ手順を変えたか
 
@@ -60,6 +60,7 @@ staging 側に `config.public.js` が無いときは、取り出した**本番�
 | 変異H | config にコメント行 `// env: 'staging'` があり、実体は `env: 'production'` | `✗ env: property が 'staging' 1件ではありません（env=1 件・値=production）` → **exit=3**（旧版の unanchored grep は ✓ にしていた） |
 | 変異I | `<ref>`=`origin/production` を指定し、remote だけ進んでローカルの tracking ref が古い | 取り出しの前に fetch → **新しい tree を配る**（出力の commit ID が新しい方・旧版は古い tree を配って検査だけ新しい印で通していた） |
 | 変異J | 取り出した tree の `app/config.js` が symlink | `✗ app/config.js が symlink です（中止）` → **exit=3**（symlink 先のファイルは無傷） |
+| 変異K | `remote.origin.fetch` を別枝だけに絞った clone（single-branch 相当）で、remote の production だけ project が変わった | refspec 明示の fetch で `origin/production` が更新され、今の印を含む config は検査1 ✗ → **exit=3**（refspec 無しの fetch は更新せず exit 0 だった） |
 
 ★ 変異Aは両方の検査が赤なので単独性の根拠になりません。**検査1だけで止まる根拠は変異C、検査2だけで止まる根拠は変異B**です。
 
@@ -105,11 +106,11 @@ staging 側に `config.public.js` が無いときは、取り出した**本番�
 
 ## 罠
 
-- **`pkill -f "http.server"` は自分自身にマッチして呼び出し元のシェルごと落とすことがあります**
-  （コマンドラインにその文字列が含まれるため。exit 143）。ポート番号まで含めた
-  `pkill -f "http.server 8351"` でも同じ。`(pkill ... || true) >/dev/null 2>&1` で包むか、
-  `/tmp/serve_verify_<port>.log` の親 PID を控えて `kill` する
-- `nohup ... &` 単体だと呼び出し側が exit 144 を返すことがある（本スクリプトは `setsid` + `disown` 済み）
+- **`pkill -f "http.server"` は使わない。** 呼び出し元のコマンドラインにその文字列が含まれると（`bash -c` や自動化の包み）
+  自分自身にマッチして呼び出し元のシェルごと落ちる（exit 143/144）。サブシェルで包んでも出力を捨てても防げない。
+  **止めるときは script が配信開始時に印字する PID を `kill <PID>` する**（`/tmp/serve_verify_<port>.log` にも残る）
+- 配信は `nohup … &` ＋ `disown` で起こしている（`setsid` は使わない＝素の macOS に無い）。呼び出し側のシェルが先に
+  終わっても配信は残る（実測済み）
 - **作業ディレクトリ `/tmp/serve_verify.XXXXXX` は検査に落ちても残します**（何が入っていたか調べるため）。
   溜まるので、確認が終わったら消す
 
