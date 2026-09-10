@@ -1571,7 +1571,7 @@ function isWithdrawnPlayer(cls,playerId){
 //   事後判定（bindChangePairingModalEvents）と同じ helper（pairHasRematch /
 //   findPairContainingPlayer）を内部で呼ぶことで、表示と保存時の判定を一致させる。
 //   既存事後判定は安全網として残す（fail-safe）。
-//   role='p1' は先手 select、'p2' は後手 select。現 p1/p2 は status:'ok' 扱いで
+//   role='p1' は p1（カードの左）の select、'p2' は p2（右）の select。先手/後手ではない（#971）。現 p1/p2 は status:'ok' 扱いで
 //   reasonId=null（PR #108 §7.1.1 確定）。
 //   戻り値: { status:'ok'|'blocked', reasonId, reasonLabel }
 //   CHG-MODAL-REMATCH-SUBJECT-001 (#838): R-rematch-swap のときだけ rematchPairs:[[a,b],…] を追加で載せ、
@@ -11468,6 +11468,22 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
   }
   var currentP1Label=buildChgCurrentLabel(match.p1);
   var currentP2Label=buildChgCurrentLabel(match.p2);
+  // CHG-MODAL-NAME-LABELS-001 (#971): 2 つの select の見出しは「先手」「後手」ではなく**今その席に居る参加者の氏名**。
+  //   アプリはどちらが先手かを管理していない（p1/p2 はカード上の並びの位置だけ）ので、役の名を出すと嘘になる
+  //   （作者指摘 2026-09-10「どっちが先手かどうかまで管理する必要はない」）。番号・左右も役を作るのでやめ、
+  //   幹事の頭にある「◯◯さんを替えたい」に合わせる。氏名は escape は callsite（下の HTML 組立）で通す。
+  //   候補に居ない（削除済み）場合は「現在の対局」と同じ fallback 文字列にそろえる。
+  function buildChgSeatName(pid){
+    for(var j=0;j<candidates.length;j++){
+      if(candidates[j].id===pid){
+        var nm=candidates[j].name;
+        return (typeof nm==='string'&&nm)?nm:(cls+'-?? (削除)');
+      }
+    }
+    return cls+'-?? (削除)';
+  }
+  var seatName1=buildChgSeatName(match.p1);
+  var seatName2=buildChgSeatName(match.p2);
   // 候補 0 人時の案内（PR #108 §8.2 推奨）と保存ボタン disabled
   // CHG-MODAL-FULLHOUSE-HINT-001 (#883): 候補ゼロの**理由**を内訳で言い分ける。
   //   ★ 「この案内が出ている＝棄権が原因」ではない。実測で、棄権ゼロでも候補ゼロになる盤面がある
@@ -11538,9 +11554,10 @@ function buildChangePairingModalHtml(cls, idx, candidates, match){
     +'<div data-chg-current-role="p2">'+escapeHtml(currentP2Label)+'</div>'
     +'</div>'
     +emptyNoticeHtml
-    +'<div style="margin-bottom:12px"><label style="font-size:15px;color:#666;display:block;margin-bottom:4px">先手</label>'
+    // CHG-MODAL-NAME-LABELS-001 (#971): 見出し＝「<今の参加者名> → 替える相手」。役（先手/後手）・番号・左右は出さない。
+    +'<div style="margin-bottom:12px"><label data-chg-seat-label="p1" style="font-size:15px;color:#666;display:block;margin-bottom:4px">'+escapeHtml(seatName1)+' → 替える相手</label>'
     +'<select id="chg-p1" style="width:100%;min-height:44px;border:1px solid #ccc;border-radius:8px;font-size:16px">'+sel1.html+'</select></div>'
-    +'<div style="margin-bottom:20px"><label style="font-size:15px;color:#666;display:block;margin-bottom:4px">後手</label>'
+    +'<div style="margin-bottom:20px"><label data-chg-seat-label="p2" style="font-size:15px;color:#666;display:block;margin-bottom:4px">'+escapeHtml(seatName2)+' → 替える相手</label>'
     +'<select id="chg-p2" style="width:100%;min-height:44px;border:1px solid #ccc;border-radius:8px;font-size:16px">'+sel2.html+'</select></div>'
     // CHG-MODAL-INLINE-ERROR-001 (#881): 押した結果の返事はボタンの隣に出す（STYLE-GUIDE v1.2 §3.2）
     +'<div id="chg-err" class="chg-err" role="alert" aria-live="assertive" hidden><strong class="chg-err-head">⚠ 変更を保存しませんでした</strong><span class="chg-err-body"></span></div>'
@@ -11670,7 +11687,7 @@ function clearChangePairingError(){
 }
 
 function bindChangePairingModalEvents(cls, idx){
-  // 選び直したら前のエラーは消す（先手・後手の両方）
+  // 選び直したら前のエラーは消す（p1・p2 の両方）
   var _chgSel1=document.getElementById('chg-p1');
   if(_chgSel1)_chgSel1.addEventListener('change',function(){ clearChangePairingError(); });
   var _chgSel2=document.getElementById('chg-p2');
@@ -11691,8 +11708,8 @@ function bindChangePairingModalEvents(cls, idx){
       if(s2)s2.value=oldP2;
     }
 
-    if(newP1===newP2){showChangePairingError('同じ参加者を先手・後手の両方には選べません。\nどちらか一方を別の参加者に選び直してください。');return;}
-    if(newP1===oldP1 && newP2===oldP2){showChangePairingError('変更がありません。\n先手か後手を選び直してください。');return;}
+    if(newP1===newP2){showChangePairingError('同じ参加者を両方の欄には選べません。\nどちらか一方を別の参加者に選び直してください。');return;}
+    if(newP1===oldP1 && newP2===oldP2){showChangePairingError('変更がありません。\nどちらかの欄を選び直してください。');return;}
 
     var keepPlayer, X;
     if(newP1===oldP1 && newP2!==oldP2){ keepPlayer=oldP1; X=newP2; }
@@ -11867,7 +11884,7 @@ function submitRound(cls){
     if(!playerMap[m.p1]||!playerMap[m.p2]){alert((i+1)+'試合目に登録されていない選手が含まれています。「対戦相手変更」または「組み合わせを再生成」で修正してください。');return;}
     if(usedIds[m.p1]){alert(getName(m.p1,cls)+'が複数の対局に登録されています。対戦相手を修正してください。');return;}
     if(usedIds[m.p2]){alert(getName(m.p2,cls)+'が複数の対局に登録されています。対戦相手を修正してください。');return;}
-    if(m.p1===m.p2){alert(getName(m.p1,cls)+'が同じ対局の先手・後手に登録されています。対戦相手を修正してください。');return;}
+    if(m.p1===m.p2){alert(getName(m.p1,cls)+'が同じ対局の両方の欄に登録されています。対戦相手を修正してください。');return;}
     usedIds[m.p1]=true;
     usedIds[m.p2]=true;
   }
