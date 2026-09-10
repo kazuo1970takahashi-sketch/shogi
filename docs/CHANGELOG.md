@@ -2484,3 +2484,15 @@ kill-after を env とシェルで食い違わせる／再試行を増やして�
 - **修正**: 作者裁定（2026-09-05 案A）で到達可能＝「変更」モーダルで実際にできる手（`classifyChangePairingCandidate` が ok の候補・swap と待機者との replace）と定義し直し、1 手の全探索で `evaluatePairingQuality` の (再戦数, 最大勝数差, 勝数差合計) が辞書順で厳密に縮む最良の手を `findOneStepImprovement` が返す。バナーに「↪ 『変更』1回で縮められます：第N卓の ◯◯ を 第M卓の △△ と入れ替える（勝数差 2 → 1）」／無ければ「↪ 『変更』1回で縮められる手はありません」を 1 行追加。2 手以上は主張しない。評価回数 3000 超（60名級）は省略してその旨を出す。`evaluatePairingQuality`・`warningHit`・`generatePairing` は無改変。
 - テスト: `test/test_warnbanner_one_step_846.js`（golden は当該 1 行の追加ぶんを再採取）
 
+## STAGING-ENV-001-⑤: 実機確認の配信を staging 固定にする道具と手順を repo に載せる（PR #938）
+
+- **問題**: 実機確認は production のツリーをそのまま配信していた。production には実値の `app/config.js` / `app/config.public.js` がコミットされているため、配信した画面でログインや ☁送信を 1 回押すと本番 Supabase に届く（#800 の本番データ破損はこの構造から出た）。道具と手順は作者機のローカルにだけあり git 未追跡だった。
+- **修正**: `scripts/serve_for_verify.sh`（指定 ref のツリーを取り出し、config だけ staging に差し替え、「本番の project ref がどこにも無い」「`env:'staging'` を名乗る」の 2 検査に落ちたら配信しない・exit 3。取り出す前に `git fetch origin` して `<ref>` を commit ID に解決し、印は production の `url:` property 行ちょうど1件から、`env:` も property 行ちょうど1件＝`staging` で判定する。tree 内の symlink は1本でも中止。ログ・pid は mktemp の作業ディレクトリ内。runbook に「この道具が保証しないこと」（悪意ある tree・共有 /tmp・ブラウザ側の状態は対象外）を明記。起こし方は `nohup` のみ（macOS に `setsid` は無い）。配信は目印ファイルがそのポートから読めるまで「開始」と言わない・占有済みなら exit 4）と `docs/notes/20260831_verify_runbook_001.md`（手順の正本・限界・罠）を追加。`shogi_v4.html` 無改変。効果は「事故の可能性を消す」であって、cloud から Supabase へ到達できるようになるわけではない。
+- テスト: 手動（架空の production を持つ使い捨て repo で変異 A〜L を当て、runbook の表どおりの exit code になることを 2026-09-06 に実測）
+
+## CHG-MODAL-OPEN-FOCUS-001: 変更モーダルを開いた直後のフォーカスを先手の select から器（dialog 自身）へ移す（#967）
+
+- **問題**: CHG-MODAL-FOCUS-TRAP-001（#837）は開いた直後に先頭の focusable＝先手の select へ focus していた。iPhone Safari はクリック中の `select.focus()` でピッカーを開くため、「変更」を押した瞬間に先手の候補が開き、モーダルの「先手」「後手」の 2 欄はその下に隠れる。後手を変えるには一度閉じてから後手の欄を押すしかなかった（2026-09-10 作者の実機報告・v155）。
+- **修正**: `openChangePairingModalFocus` が器（`#chg-modal`・`tabindex=-1` を付与）に focus する。select には触らない＝ピッカーは幹事が欄を押したときだけ開く。`_chgModalKeydown` に「activeElement が器のとき Tab は先頭（先手）へ・Shift+Tab は最後へ」の分岐を足した（既定挙動に任せると Shift+Tab は inert の背後を遡って body へ抜ける＝実 Chromium で実測）。`buildChangePairingModalHtml`・保存処理・#837 の他の守り（背後 inert・Escape・多重表示ガード・フォーカス戻し）は無改変。
+- テスト: `test/e2e/chg_modal_open_focus_967.e2e.js`（新規・実 Chromium。開いた直後の activeElement が器／開く過程で select が focus を受けない／器からの Tab・Shift+Tab がモーダルの外へ出ない／Enter で背後に勝敗が入らない／Escape・入れ替えの対照）。`test/e2e/chg_modal_focus_837.e2e.js` は無改変で緑。
+
