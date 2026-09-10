@@ -11377,33 +11377,47 @@ function dsBind(cls){
   }
 }
 
-var _fmTouchedKey = {};
-// FM-FIX-INPLACE-001 (#976): 「直前に操作した対局」を**どこに大きく出すか**（'top' = 上段／'inplace' = 終わった対局の中・その場）。
-//   ★ 記憶の持ち主は _fmTouchedKey と同じ（回戦＋顔ぶれ）＝別の対局に移れば自動的に既定 'top' へ戻る。
-//   ★ 'inplace' になるのは下段の「直す」を押したときだけ。上段で勝者を押した対局は従来どおり上段に残る。
+// FM-FIX-INPLACE-001 (#976): 「直前に操作した対局」の記憶＝クラス別の値1つ {owner, key, where}。
+//   - key   : 回戦＋顔ぶれ（#943 のまま）。
+//   - where : その対局を**どこに大きく出すか**（'top' = 上段／'inplace' = 終わった対局の中・その場）。
+//             'inplace' になるのは下段の「直す」を押したときだけ。上段で勝者を押した対局は従来どおり上段に残る。
+//   - owner : state.results[cls] の**配列そのもの**（参照の同一性・#950 の dsSlot と同じ型）。
+//             リセット・バックアップ復元・別大会の読込はどれも results[cls] を新しい配列に置き換えるので、
+//             同じ回戦数・同じ顔ぶれを復元しても記憶は自動的に無効になる＝「忘れる処理」を置かない。
+//             ★ Codex 1巡目 P1 (PR #977): key が文字列だけだと、同じ回戦・同じ顔ぶれの復元で古い 'inplace' が
+//               引き継がれ、閉じた「終わった対局」の中に大きいカードが出る（＝画面から消えたように見える）。
 //   出どころ: 作者「直すを押すと目の前から消えて上に出る。分かりづらい」（2026-09-10）＝操作の結果が
 //   操作した場所から見えていなかった（ui-result-visibility）。
-var _fmTouchedWhere = {};
+var _fmTouched = {};
 function fmTouchKey(cls, m){
   if(!m)return null;
   return ((state.results&&state.results[cls])||[]).length+'|'+m.p1+'|'+m.p2;
 }
+function fmSlot(cls){
+  var owner=(state&&state.results&&state.results[cls])||null;
+  var slot=_fmTouched[cls];
+  if(!slot||slot.owner!==owner){slot=_fmTouched[cls]={owner:owner,key:null,where:'top'};}
+  return slot;
+}
 function fmRememberTouched(cls, idx, where){
   var m=(state.pairings&&state.pairings[cls])?state.pairings[cls][idx]:null;
   if(!m)return;
+  var slot=fmSlot(cls);
   var k=fmTouchKey(cls,m);
   // where を明示されたらそれに従う。明示が無ければ「同じ対局のまま」なら今の置き場を保ち、
   // 別の対局に移ったら既定の 'top'（上段）へ。＝その場で開いたカードの勝者を押し直しても飛ばない。
-  if(where){ _fmTouchedWhere[cls]=where; }
-  else if(_fmTouchedKey[cls]!==k){ _fmTouchedWhere[cls]='top'; }
-  _fmTouchedKey[cls]=k;
+  if(where){ slot.where=where; }
+  else if(slot.key!==k){ slot.where='top'; }
+  slot.key=k;
 }
 function fmIsTouched(cls, m){
-  return !!m && Object.prototype.hasOwnProperty.call(_fmTouchedKey, cls) && _fmTouchedKey[cls]===fmTouchKey(cls,m);
+  if(!m)return false;
+  var slot=fmSlot(cls);
+  return slot.key!==null && slot.key===fmTouchKey(cls,m);
 }
 // 「直す」でその場に開いた対局か（終わっていて・直前に操作した対局で・置き場が 'inplace'）。
 function fmTouchedInPlace(cls, m){
-  return !!m && !!m.winner && fmIsTouched(cls,m) && _fmTouchedWhere[cls]==='inplace';
+  return !!m && !!m.winner && fmIsTouched(cls,m) && fmSlot(cls).where==='inplace';
 }
 
 function setWinner(cls,idx,wid){
