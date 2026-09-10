@@ -11594,6 +11594,10 @@ function _chgModalKeydown(e){
   if(!items.length)return;
   var first=items[0], last=items[items.length-1], a=document.activeElement;
   if(!modal.contains(a)){ if(e.preventDefault)e.preventDefault(); try{first.focus();}catch(err){} return; }
+  // CHG-MODAL-OPEN-FOCUS-001 (#967): 開いた直後は器（modal 自身）にフォーカスがある。
+  //   器からの Tab は先頭（先手）へ・Shift+Tab は最後へ送る。既定挙動に任せると Shift+Tab は
+  //   背後（inert）を遡って body へ抜ける＝#837 の「モーダルの外へ出ない」が崩れる。
+  if(a===modal){ if(e.preventDefault)e.preventDefault(); try{(e.shiftKey?last:first).focus();}catch(err){} return; }
   if(e.shiftKey&&a===first){ if(e.preventDefault)e.preventDefault(); try{last.focus();}catch(err){} }
   else if(!e.shiftKey&&a===last){ if(e.preventDefault)e.preventDefault(); try{first.focus();}catch(err){} }
 }
@@ -11601,7 +11605,7 @@ function _chgModalKeydown(e){
 function openChangePairingModalFocus(){
   var modal=document.getElementById('chg-modal');
   if(!modal)return;
-  try{ modal.setAttribute('role','dialog'); modal.setAttribute('aria-modal','true'); }catch(e){}
+  try{ modal.setAttribute('role','dialog'); modal.setAttribute('aria-modal','true'); modal.setAttribute('tabindex','-1'); }catch(e){}
   _chgModalInertedNodes=[];
   var kids=document.body.children;
   for(var i=0;i<kids.length;i++){
@@ -11611,8 +11615,13 @@ function openChangePairingModalFocus(){
     try{ el.setAttribute('inert',''); _chgModalInertedNodes.push(el); }catch(e){}
   }
   try{ document.addEventListener('keydown',_chgModalKeydown,true); }catch(e){}
-  var items=_chgModalFocusableIn(modal);
-  try{ if(items.length)items[0].focus(); }catch(e){}
+  // CHG-MODAL-OPEN-FOCUS-001 (#967): フォーカスは器（dialog 自身・tabindex=-1）へ置く。
+  //   #837 は先頭の focusable（先手の select）へ置いていたが、iPhone Safari はクリック中の
+  //   select.focus() でピッカーを開く＝「変更」を押した瞬間に先手の候補が開き、後手を変えるには
+  //   一度閉じてから後手の欄を押すしかなかった（2026-09-10 作者の実機報告・v155）。
+  //   器に置けばフォーカスは背後に残らず（#837 の守りは不変）、ピッカーは幹事が欄を押したときだけ開く。
+  //   Tab / Shift+Tab の行き先は _chgModalKeydown の a===modal 分岐が持つ。
+  try{ modal.focus(); }catch(e){}
 }
 
 // 閉じ口を1本にする（DOM から消すだけでは inert と keydown が残る）。
