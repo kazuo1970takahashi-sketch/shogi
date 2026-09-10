@@ -2496,3 +2496,9 @@ kill-after を env とシェルで食い違わせる／再試行を増やして�
 - **修正**: `openChangePairingModalFocus` が器（`#chg-modal`・`tabindex=-1` を付与）に focus する。select には触らない＝ピッカーは幹事が欄を押したときだけ開く。`_chgModalKeydown` に「activeElement が器のとき Tab は先頭（先手）へ・Shift+Tab は最後へ」の分岐を足した（既定挙動に任せると Shift+Tab は inert の背後を遡って body へ抜ける＝実 Chromium で実測）。`buildChangePairingModalHtml`・保存処理・#837 の他の守り（背後 inert・Escape・多重表示ガード・フォーカス戻し）は無改変。
 - テスト: `test/e2e/chg_modal_open_focus_967.e2e.js`（新規・実 Chromium。開いた直後の activeElement が器／開く過程で select が focus を受けない／器からの Tab・Shift+Tab がモーダルの外へ出ない／Enter で背後に勝敗が入らない／Escape・入れ替えの対照）。`test/e2e/chg_modal_focus_837.e2e.js` は無改変で緑。
 
+## CHG-MODAL-NAME-LABELS-001: 変更モーダルの見出しを「先手」「後手」から今の参加者名にする（#971）
+
+- **問題**: アプリはどちらが先手かを管理していない（p1/p2 はカード上の並びの位置だけ）のに、変更モーダルの 2 つの select は元コードから「先手」「後手」を名乗っていた（作者指摘 2026-09-10「どっちが先手かどうかまで管理する必要はない」）。番号や左右も「管理していない役」を作る点は同じ。
+- **修正**: 見出しを「<今その席に居る参加者名> → 替える相手」にした（`buildChangePairingModalHtml`・氏名は callsite で `escapeHtml`・候補に居ない id は「現在の対局」と同じ fallback）。利用者に見えるエラー文 3 件も役の名を使わない文言へ（`同じ参加者を両方の欄には選べません。…`／`変更がありません。どちらかの欄を選び直してください。`／`…が同じ対局の両方の欄に登録されています。…`）。select の id・候補・保存処理・#837/#967 のフォーカスの守りは無改変。
+- テスト: `test/test_chg_modal_name_labels_971.js`（新規）。`test/e2e/chg_modal_inline_error_881.e2e.js` と `test/tools/chg_inline_error_881_mutants.js` は文言の pin を意図的に更新。
+
