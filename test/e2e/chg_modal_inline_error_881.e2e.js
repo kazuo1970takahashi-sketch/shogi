@@ -30,9 +30,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail
 // ---- 9件の期待文言（★ 実装から抽出せず、設計 v5 §4 の verbatim を持つ）--------
 //   6件は現行のまま／3件（E1・E2・E6）は「次の行動」が無かったので v4/v5 で追記した
 const MSG = {
-  E1: '同じ参加者を先手・後手の両方には選べません。\n' +
-      'どちらか一方を別の参加者に選び直してください。',
-  E2: '変更がありません。\n先手か後手を選び直してください。',
+  E1: '同じ参加者を両方の欄には選べません。\n' +
+      'どちらか一方を別の参加者に選び直してください。',   // CHG-MODAL-NAME-LABELS-001 (#971) で文言を意図的に更新
+  E2: '変更がありません。\nどちらかの欄を選び直してください。',   // 同上（#971）
   E3: 'この変更では、2人を同時に入れ替える必要があります。\n' +
       '現在は1人ずつの変更に対応しています。\n' +
       '選択を元に戻しました。もう一度、変更したい参加者を1人だけ選んでください。',
@@ -194,7 +194,7 @@ const mk = (players, tables, withdrawn, winners) => `
   ok(c1.attr === '1' && c1.ovf === 'auto', '[C5] エラー表示中は data-chg-err が付きスクロール可能  [' + c1.maxH + ']');
 
   // =====================================================================
-  console.log('\n=== D. 消えるタイミング（先手・後手の両方）===');
+  console.log('\n=== D. 消えるタイミング（p1・p2 の両方）===');
   for (const sel of ['chg-p1', 'chg-p2']) {
     await build(mk(6, [['p1', 'p2'], ['p3', 'p4'], ['p5', 'p6']], [], {}));
     await page.click('#chgbtn_A_0'); await page.waitForTimeout(120);
@@ -204,7 +204,7 @@ const mk = (players, tables, withdrawn, winners) => `
     await page.waitForTimeout(150);
     const after = await probe();
     ok(shown.hidden === false && after.hidden === true,
-       '[D-' + sel + '] ' + (sel === 'chg-p1' ? '先手' : '後手') + '側を選び直すと消える');
+       '[D-' + sel + '] ' + (sel === 'chg-p1' ? 'p1' : 'p2') + ' 側を選び直すと消える');
     ok(after.attr === null && after.maxH === 'none',
        '[D-' + sel + '-attr] ★ data-chg-err も消える（消し忘れるとスクロール可能なまま残る）');
   }
