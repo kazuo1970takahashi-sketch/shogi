@@ -46,13 +46,16 @@ function FIXTURE() {
   };
 }
 
-// 上段（.pairing-card として描かれている idx）と下段（畳まれている idx）を読む。
+// 上段（details の外に .pairing-card として描かれている idx）／その場（details の中に .pairing-card として
+// 開いている idx・FM-FIX-INPLACE-001 #976）／下段（1行に畳まれている idx）を読む。
 const SNAP = `(function(){
-  var upper=[], lower=[];
+  var upper=[], inplace=[], lower=[];
   var cards=document.querySelectorAll('.pairing-card');
   for(var i=0;i<cards.length;i++){
     var b=cards[i].querySelector('button[id^="wb_A_"]');
-    if(b)upper.push(parseInt(b.id.split('_')[2],10));
+    if(!b)continue;
+    var idx=parseInt(b.id.split('_')[2],10);
+    if(cards[i].closest('.finished-matches-details'))inplace.push(idx); else upper.push(idx);
   }
   var det=document.querySelector('.finished-matches-details');
   if(det){
@@ -61,7 +64,7 @@ const SNAP = `(function(){
   }
   var counter=document.querySelector('.alert-warn,.alert-ok');
   return {
-    upper:upper, lower:lower,
+    upper:upper, inplace:inplace, lower:lower,
     hasDetails:!!det, detailsOpen:det?det.open:null,
     summary:det?det.querySelector('summary').textContent.replace(/\\s+/g,''):null,
     counterText:counter?counter.textContent.replace(/\\s+/g,''):null,
@@ -119,13 +122,32 @@ const SNAP = `(function(){
     ' / はみ出し: ' + (extraOf(S.pairingKeys).join(',') || 'なし') + '）');
   ok(/終わった対局（1）/.test(S.summary || ''), 'F3e 見出しに件数が出る（実測 ' + S.summary + '）');
 
-  // ---- F4: 下段の「直す」でその対局が上段へ戻る
+  // ---- F4: 下段の「直す」でその対局が**その場**（終わった対局の中）で大きいカードに開く（FM-FIX-INPLACE-001 #976）
+  //   ★ 以前（#943 初版）は上段へ戻していた。押した行が目の前から消えて画面の上に出るのが分かりづらかった
+  //     （作者 2026-09-10）ので、行き先をその場に変えた。上段には現れないことまで見る。
   await click('fixbtn_A_0');
   S = await snap();
-  ok(S.upper.indexOf(0) >= 0, 'F4 「直す」で 0 が上段へ戻った（実測 上段=[' + S.upper + ']）');
-  ok(S.lower.join(',') === '1', 'F4b 入れ替わりに 1 が下段へ（実測 下段=[' + S.lower + ']）');
+  ok(S.inplace.indexOf(0) >= 0, 'F4 「直す」で 0 が終わった対局の中でカードに開いた（実測 その場=[' + S.inplace + ']）');
+  ok(S.upper.indexOf(0) < 0, 'F4a ★ 0 は上段には現れない（実測 上段=[' + S.upper + ']）');
+  ok(S.lower.join(',') === '1', 'F4b 1 は 1 行のまま下段（実測 下段=[' + S.lower + ']）');
   const hasWb0 = await page.evaluate(() => !!document.getElementById('wb_A_0_p1'));
-  ok(hasWb0, 'F4c 上段へ戻った 0 には勝者ボタンがある＝勝敗を入れ直せる（新しいモーダルは足していない）');
+  ok(hasWb0, 'F4c その場に開いた 0 には勝者ボタンがある＝勝敗を入れ直せる（新しいモーダルは足していない）');
+  ok(/終わった対局（2）/.test(S.summary || ''), 'F4d 見出しの件数はその場のカードも数える（実測 ' + S.summary + '）');
+  // その場のカードで勝者を押し直しても、その場に留まる（上段へ飛ばない）
+  await click('wb_A_0_p2');
+  S = await snap();
+  ok(S.inplace.indexOf(0) >= 0 && S.upper.indexOf(0) < 0,
+    'F4e その場のカードで勝者を押し直してもその場に留まる（実測 その場=[' + S.inplace + '] 上段=[' + S.upper + ']）');
+  const w0 = await page.evaluate(() => state.pairings.A[0].winner);
+  ok(w0 === 'a1', 'F4f 押し直した勝者が入っている（実測 ' + w0 + '）');
+  // 別の対局を操作すると（ここでは 1 の「直す」）、その場のカードは 1 行に畳まれる
+  await click('fixbtn_A_1');
+  S = await snap();
+  ok(S.lower.indexOf(0) >= 0 && S.inplace.indexOf(0) < 0 && S.inplace.indexOf(1) >= 0,
+    'F4g 別の対局を操作したら 0 は 1 行に畳まれ、いま操作した 1 がその場に開く（実測 下段=[' + S.lower + '] その場=[' + S.inplace + ']）');
+  // 元の形（0 が直前に操作した対局・上段には未入力の 2 だけ）に戻して F5 以降へ
+  await click('fixbtn_A_0');
+  S = await snap();
 
   // ---- F5: カウンタは畳んでも全対局を数える（DAYOF-UNENTERED-COUNTER を壊していない）
   ok(/残り1卓未入力です（全3卓）/.test(S.counterText || ''),

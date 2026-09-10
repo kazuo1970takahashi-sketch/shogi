@@ -11378,16 +11378,32 @@ function dsBind(cls){
 }
 
 var _fmTouchedKey = {};
+// FM-FIX-INPLACE-001 (#976): 「直前に操作した対局」を**どこに大きく出すか**（'top' = 上段／'inplace' = 終わった対局の中・その場）。
+//   ★ 記憶の持ち主は _fmTouchedKey と同じ（回戦＋顔ぶれ）＝別の対局に移れば自動的に既定 'top' へ戻る。
+//   ★ 'inplace' になるのは下段の「直す」を押したときだけ。上段で勝者を押した対局は従来どおり上段に残る。
+//   出どころ: 作者「直すを押すと目の前から消えて上に出る。分かりづらい」（2026-09-10）＝操作の結果が
+//   操作した場所から見えていなかった（ui-result-visibility）。
+var _fmTouchedWhere = {};
 function fmTouchKey(cls, m){
   if(!m)return null;
   return ((state.results&&state.results[cls])||[]).length+'|'+m.p1+'|'+m.p2;
 }
-function fmRememberTouched(cls, idx){
+function fmRememberTouched(cls, idx, where){
   var m=(state.pairings&&state.pairings[cls])?state.pairings[cls][idx]:null;
-  if(m)_fmTouchedKey[cls]=fmTouchKey(cls,m);
+  if(!m)return;
+  var k=fmTouchKey(cls,m);
+  // where を明示されたらそれに従う。明示が無ければ「同じ対局のまま」なら今の置き場を保ち、
+  // 別の対局に移ったら既定の 'top'（上段）へ。＝その場で開いたカードの勝者を押し直しても飛ばない。
+  if(where){ _fmTouchedWhere[cls]=where; }
+  else if(_fmTouchedKey[cls]!==k){ _fmTouchedWhere[cls]='top'; }
+  _fmTouchedKey[cls]=k;
 }
 function fmIsTouched(cls, m){
   return !!m && Object.prototype.hasOwnProperty.call(_fmTouchedKey, cls) && _fmTouchedKey[cls]===fmTouchKey(cls,m);
+}
+// 「直す」でその場に開いた対局か（終わっていて・直前に操作した対局で・置き場が 'inplace'）。
+function fmTouchedInPlace(cls, m){
+  return !!m && !!m.winner && fmIsTouched(cls,m) && _fmTouchedWhere[cls]==='inplace';
 }
 
 function setWinner(cls,idx,wid){
@@ -12171,7 +12187,11 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       var labBg=(lab==='要確認')?'#FBEAEA':(lab==='手動変更'?'#E7F0FA':'#F0F0F0');
       labelsHtml+='<span style="display:inline-block;padding:2px 6px;margin-right:4px;font-size:15px;color:'+labColor+';background:'+labBg+';border-radius:4px">['+escapeHtml(lab)+']</span>';
     }
-    html+='<div class="pairing-card" style="position:relative">'
+    // FM-FIX-INPLACE-001 (#976): 「直す」で開いた対局は、上段ではなく「終わった対局」の中の**その場**に
+    //   大きいカードで出す（下の fmInPlace の分岐）。カードの中身（勝者ボタン・補助ラベル・理由ラベル・
+    //   「変更」・id）は上段と同一＝bind は id 参照なので結線は不変。
+    var fmInPlace=fmTouchedInPlace(cls,m);
+    var fmCardHtml='<div class="pairing-card" style="position:relative"'+(fmInPlace?' data-fm-inplace="1"':'')+'>'
       +'<div class="winner-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">'
       +'<div style="display:flex;flex-direction:column;align-items:center">'
       +'<button class="winner-btn'+(m.winner===m.p1?' selected':'')+'" id="wb_'+cls+'_'+i+'_p1">'+nameWithNoRubyHtml(m.p1,cls)+'</button>'
@@ -12201,10 +12221,15 @@ function buildCurrentPairingsHtml(cls, roundNum, done){
       +'<button style="min-height:44px;min-width:64px;padding:8px 14px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:15px;color:#666;cursor:pointer" id="chgbtn_'+cls+'_'+i+'">変更</button>'
       +'</div>'
       +'</div>';
+    // FM-FIX-INPLACE-001 (#976): 「直す」で開いた対局は下段（終わった対局の中）のその場へ。件数にも数える
+    //   （終わった対局であることに変わりはない）。それ以外は従来どおり上段へ。
+    if(fmInPlace){ fmFoldedHtml+=fmCardHtml; fmFoldedCount++; }
+    else { html+=fmCardHtml; }
   }
   // #943: 畳んだ対局は下段の details へ。既定は閉じる（#950: 利用者が開いたあとは再描画をまたいで保つ）。
   //   ★ 理由ラベル・勝敗数・ふりがなは畳んだ行には出さない（1行に収めるのが目的）。
-  //     直したくなったら「直す」でその対局だけ上段に戻る＝そこで全部見える。
+  //     直したくなったら「直す」でその対局だけ**その場で**大きいカードに開く（FM-FIX-INPLACE-001 #976。
+  //     以前は上段へ戻していたが、押した行が目の前から消えて画面の上に出るのが分かりづらかった）。
   if(fmFoldedCount>0){
     html+='<details class="finished-matches-details" data-ds="finished" style="margin:8px 0 0"'+dsOpenAttr('finished',cls,false)+'>'
       +'<summary class="fm-summary">終わった対局<span class="fm-count">（'+fmFoldedCount+'）　タップで開閉</span></summary>'
@@ -12261,12 +12286,13 @@ function bindTournamentEvents(cls){
       if(b1)b1.addEventListener('click',function(){setWinner(c,idx,m.p1);});
       if(b2)b2.addEventListener('click',function(){setWinner(c,idx,m.p2);});
       if(cb)cb.addEventListener('click',function(){changePairing(c,idx);});
-      // FINISHED-MATCH-FOLD-001 (#943): 畳んだ行の「直す」＝その対局を上段へ戻すだけ。
-      //   ★ 新しいモーダルは足さない。上段に戻れば既存の勝者ボタンと「変更」がそのまま使える。
+      // FINISHED-MATCH-FOLD-001 (#943): 畳んだ行の「直す」＝その対局を大きいカードに戻すだけ。
+      //   ★ 新しいモーダルは足さない。カードに戻れば既存の勝者ボタンと「変更」がそのまま使える。
       //   （設計の初稿では変更モーダルを直接開く案だったが、押し間違いの直しに必要なのは
-      //     「相手の入れ替え」ではなく「勝者の入れ直し」なので、上段へ戻すのが正しい。）
+      //     「相手の入れ替え」ではなく「勝者の入れ直し」なので、カードに戻すのが正しい。）
+      // FM-FIX-INPLACE-001 (#976): 戻す先は上段ではなく**押した行のその場**（'inplace'）。
       var fb=document.getElementById('fixbtn_'+c+'_'+idx);
-      if(fb)fb.addEventListener('click',function(){fmRememberTouched(c,idx);renderTournament(c);});
+      if(fb)fb.addEventListener('click',function(){fmRememberTouched(c,idx,'inplace');renderTournament(c);});
     })(i,cls);
   }
   var sb=document.getElementById('submitBtn_'+cls);
