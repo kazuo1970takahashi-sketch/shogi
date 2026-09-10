@@ -11381,11 +11381,16 @@ function dsBind(cls){
 //   - key   : 回戦＋顔ぶれ（#943 のまま）。
 //   - where : その対局を**どこに大きく出すか**（'top' = 上段／'inplace' = 終わった対局の中・その場）。
 //             'inplace' になるのは下段の「直す」を押したときだけ。上段で勝者を押した対局は従来どおり上段に残る。
-//   - owner : state.results[cls] の**配列そのもの**（参照の同一性・#950 の dsSlot と同じ型）。
-//             リセット・バックアップ復元・別大会の読込はどれも results[cls] を新しい配列に置き換えるので、
-//             同じ回戦数・同じ顔ぶれを復元しても記憶は自動的に無効になる＝「忘れる処理」を置かない。
+//   - owner : state.pairings[cls] の**配列そのもの**（参照の同一性・#950 の dsSlot と同じ型）。
+//             組み合わせの再生成（generatePairing）・回戦確定・リセット・バックアップ復元・別大会の読込は
+//             どれも pairings[cls] を新しい配列に置き換えるので、同じ回戦数・同じ顔ぶれが再び組まれても
+//             記憶は自動的に無効になる＝「忘れる処理」を置かない。setWinner・対戦相手の変更は配列を
+//             置き換えない（要素を書き換えるだけ）ので記憶は保たれる。
 //             ★ Codex 1巡目 P1 (PR #977): key が文字列だけだと、同じ回戦・同じ顔ぶれの復元で古い 'inplace' が
 //               引き継がれ、閉じた「終わった対局」の中に大きいカードが出る（＝画面から消えたように見える）。
+//             ★ Codex 2巡目 P1: owner を results[cls] にすると「組み合わせを再生成」（results は維持・
+//               pairings だけ新しい配列）で同じ順序の p1/p2 が再び組まれたとき古い 'inplace' が残る
+//               → owner は pairings[cls] にする（再生成・復元・リセットのすべてで置き換わる唯一の配列）。
 //   出どころ: 作者「直すを押すと目の前から消えて上に出る。分かりづらい」（2026-09-10）＝操作の結果が
 //   操作した場所から見えていなかった（ui-result-visibility）。
 var _fmTouched = {};
@@ -11394,7 +11399,7 @@ function fmTouchKey(cls, m){
   return ((state.results&&state.results[cls])||[]).length+'|'+m.p1+'|'+m.p2;
 }
 function fmSlot(cls){
-  var owner=(state&&state.results&&state.results[cls])||null;
+  var owner=(state&&state.pairings&&state.pairings[cls])||null;
   var slot=_fmTouched[cls];
   if(!slot||slot.owner!==owner){slot=_fmTouched[cls]={owner:owner,key:null,where:'top'};}
   return slot;

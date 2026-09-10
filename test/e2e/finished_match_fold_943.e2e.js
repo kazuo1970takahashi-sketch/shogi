@@ -145,13 +145,17 @@ const SNAP = `(function(){
   S = await snap();
   ok(S.lower.indexOf(0) >= 0 && S.inplace.indexOf(0) < 0 && S.inplace.indexOf(1) >= 0,
     'F4g 別の対局を操作したら 0 は 1 行に畳まれ、いま操作した 1 がその場に開く（実測 下段=[' + S.lower + '] その場=[' + S.inplace + ']）');
-  // ★ Codex 1巡目 P1 (PR #977): 同じ回戦数・同じ顔ぶれをバックアップから復元しても、古い 'inplace' は
-  //   引き継がれない（記憶の持ち主は state.results[cls] の配列そのもの＝復元・リセットで置き換わる）。
-  //   applyLoadedJson 相当＝results を新しい配列に置き換えて再描画する（pairings の顔ぶれと勝敗はそのまま）。
-  await page.evaluate(() => { state.results = { A: [] }; renderTournament('A'); });
+  // ★ Codex 1巡目 P1 / 2巡目 P1 (PR #977): 同じ回戦数・同じ顔ぶれが「組み合わせの再生成」や
+  //   バックアップ復元で再び組まれても、古い 'inplace' は引き継がれない。
+  //   記憶の持ち主は state.pairings[cls] の**配列そのもの**＝再生成（generatePairing）・回戦確定・リセット・
+  //   復元のすべてで新しい配列に置き換わる。ここでは再生成相当＝同じ中身の新しい配列に差し替えて再描画する。
+  await page.evaluate(() => {
+    state.pairings.A = state.pairings.A.map(m => ({ p1: m.p1, p2: m.p2, winner: m.winner, lastModifiedBy: m.lastModifiedBy }));
+    renderTournament('A');
+  });
   S = await snap();
   ok(S.inplace.length === 0 && S.lower.indexOf(0) >= 0 && S.lower.indexOf(1) >= 0 && S.upper.join(',') === '2',
-    'F4h ★ 復元（results の配列が置き換わる）後は、その場に開いていた 1 も 1 行に畳まれる（実測 その場=[' + S.inplace + '] 下段=[' + S.lower + '] 上段=[' + S.upper + ']）');
+    'F4h ★ 再生成／復元（pairings の配列が置き換わる）後は、その場に開いていた 1 も 1 行に畳まれる（実測 その場=[' + S.inplace + '] 下段=[' + S.lower + '] 上段=[' + S.upper + ']）');
   // 元の形（0 が直前に操作した対局・上段には未入力の 2 だけ）に戻して F5 以降へ
   await click('fixbtn_A_0');
   S = await snap();
