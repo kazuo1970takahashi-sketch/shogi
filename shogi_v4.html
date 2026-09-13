@@ -12574,7 +12574,11 @@ function buildHelpModalHtml(topic){
   var title=(t&&t.title)?t.title:'ヘルプ';
   var lines=(t&&t.lines)?t.lines:[];
   var html='<div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto">';
-  html+='<h3 style="margin:0 0 12px;font-size:16px;font-weight:500;color:#1F3864">'+escapeHtml(title)+'</h3>';
+  // HELP-MODAL-CLOSE-X-001: 見出し右端に常設の「✕ 閉じる」（本文が長いと下の「閉じる」は初期表示で隠れる）。
+  html+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin:0 0 12px">';
+  html+='<h3 style="margin:0;font-size:16px;font-weight:500;color:#1F3864">'+escapeHtml(title)+'</h3>';
+  html+='<button type="button" id="help-modal-close-x" class="btn-sm" aria-label="このヘルプを閉じる" style="background:#fff;color:#1F3864;min-height:36px;white-space:nowrap;flex-shrink:0">✕ 閉じる</button>';
+  html+='</div>';
   html+='<ul style="margin:0 0 16px;padding-left:1.2em;font-size:15px;color:#444;line-height:1.7">';
   for(var i=0;i<lines.length;i++){
     html+='<li style="margin-bottom:6px">'+escapeHtml(lines[i])+'</li>';
@@ -12598,10 +12602,12 @@ function openHelpModal(topic){
 }
 
 function bindHelpModalEvents(){
+  var closeFn=function(){var m=document.getElementById('help-modal');if(m&&m.remove)m.remove();};
   var closeBtn=document.getElementById('help-modal-close');
-  if(closeBtn)closeBtn.addEventListener('click',function(){
-    var m=document.getElementById('help-modal');if(m&&m.remove)m.remove();
-  });
+  if(closeBtn)closeBtn.addEventListener('click',closeFn);
+  // HELP-MODAL-CLOSE-X-001: 見出し右端の「✕ 閉じる」も同じ閉じ方。
+  var closeX=document.getElementById('help-modal-close-x');
+  if(closeX)closeX.addEventListener('click',closeFn);
   // overlay（背景）クリックでも閉じる。カード内クリックでは閉じない（e.target===modalEl のときだけ）。
   var modalEl=document.getElementById('help-modal');
   if(modalEl)modalEl.addEventListener('click',function(e){
