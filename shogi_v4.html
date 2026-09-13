@@ -6442,18 +6442,18 @@ function bindMasterTabEvents(){
     }
     var filename=buildMasterExportFilename(todayYmd());
     try{
-      var blob=new Blob([json],{type:'application/json'});
-      var url=URL.createObjectURL(blob);
-      var a=document.createElement('a');
-      a.href=url;
-      a.download=filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      // CLEANUP-P3-001 (NOTIFY-N2 第2スライス・#476 L3 申し送りの消化): 成功通知を alert → showToast に
-      //   （STYLE-GUIDE 通知4分類 N2=成功は toast・成功に alert 禁止）。失敗系 showMsg('err') は不変。
-      showToast(filename+' に保存しました');
+      // FILE-DOWNLOAD-STANDALONE-001: 保存経路を共通化（download 経路は同期・従来と同じ順序で toast）。
+      deliverTextFile(json,filename,'application/json',function(r){
+        if(r&&r.ok){
+          // CLEANUP-P3-001 (NOTIFY-N2 第2スライス・#476 L3 申し送りの消化): 成功通知を alert → showToast に
+          //   （STYLE-GUIDE 通知4分類 N2=成功は toast・成功に alert 禁止）。失敗系 showMsg('err') は不変。
+          if(r.route==='share')showToast(filename+' を共有先に保存しました');
+          else showToast(filename+' に保存しました');
+          return;
+        }
+        if(r&&r.cancelled){ showToast(filename+' は保存していません（共有画面を閉じました）'); return; }
+        if(typeof showMsg==='function')showMsg('マスタの共有に失敗しました（Safari で開いて「📤 マスタをエクスポート」でも保存できます）','err');
+      });
     }catch(e){
       if(typeof showMsg==='function')showMsg('マスタの書き出しに失敗しました','err');
     }
@@ -14995,6 +14995,66 @@ function saveData(){
   });
 }
 
+// ============================================================
+// FILE-DOWNLOAD-STANDALONE-001: ファイル保存の共通経路（バックアップ／マスタ書き出し／大会データ保存）。
+//   問題（2026-09-12 大会当日・作者報告）: iPhone の「ホーム画面に追加」したアプリ（standalone 表示）では
+//   `<a download>` が効かず、WebKit が JSON をそのまま同じ画面に表示する。standalone にはブラウザの
+//   「戻る」が無いので、利用者はアプリを強制終了するしかなかった（データは localStorage に残るが、
+//   バックアップは保存されない）。Safari で開けば従来どおりダウンロードされる＝環境依存。
+//   対処: standalone 表示かつ Web Share API でファイル共有ができる環境だけ、共有シート
+//   （navigator.share({files})）で渡す。iOS では「ファイルに保存」を選ぶとダウンロードへ置ける。
+//   それ以外（Safari/Chrome/Android/PC）は従来の `<a download>` のまま＝1バイトも挙動を変えない。
+//   構成: 判定は純関数 pickFileDeliveryRoute（テスト対象）、環境の読み取りは _fileDeliveryEnv、
+//   実行は deliverTextFile（coordinator）。呼び出し側は done(result) で結果を受ける
+//   （download 経路は同期に呼ばれる＝既存の同期挙動を維持／share 経路は利用者が共有先を選んだ後）。
+//   result = {ok:bool, route:'download'|'share', cancelled:bool}。cancelled は共有シートを閉じた場合
+//   （AbortError）＝失敗ではなく「保存していない」として案内する。
+function pickFileDeliveryRoute(env){
+  env=env||{};
+  return (env.standalone===true&&env.canShareFiles===true)?'share':'download';
+}
+function _fileDeliveryEnv(file){
+  var nav=(typeof navigator!=='undefined')?navigator:null;
+  var win=(typeof window!=='undefined')?window:null;
+  var standalone=false;
+  try{
+    if(nav&&nav.standalone===true)standalone=true;
+    else if(win&&typeof win.matchMedia==='function'){ var mq=win.matchMedia('(display-mode: standalone)'); if(mq&&mq.matches===true)standalone=true; }
+  }catch(eS){ standalone=false; }
+  var canShareFiles=false;
+  try{
+    canShareFiles=!!(file&&nav&&typeof nav.share==='function'&&typeof nav.canShare==='function'&&nav.canShare({files:[file]})===true);
+  }catch(eC){ canShareFiles=false; }
+  return {standalone:standalone, canShareFiles:canShareFiles};
+}
+function deliverTextFile(text, filename, mime, done){
+  mime=mime||'application/json';
+  done=(typeof done==='function')?done:function(){};
+  var file=null;
+  try{ if(typeof File==='function')file=new File([text],filename,{type:mime}); }catch(eF){ file=null; }
+  var route=pickFileDeliveryRoute(_fileDeliveryEnv(file));
+  if(route==='share'){
+    // 共有シートは利用者操作（click）の直後でないと開けない。ここは同期に呼ばれる前提（各 bind の click 内）。
+    navigator.share({files:[file],title:filename}).then(function(){
+      done({ok:true,route:'share',cancelled:false});
+    },function(e){
+      var cancelled=!!(e&&e.name==='AbortError');
+      done({ok:false,route:'share',cancelled:cancelled});
+    });
+    return;
+  }
+  var blob=new Blob([text],{type:mime});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  done({ok:true,route:'download',cancelled:false});
+}
+
 function saveDataAsFile(json){
   try{
     var now=new Date();
@@ -15004,16 +15064,12 @@ function saveDataAsFile(json){
     var hh=('0'+now.getHours()).slice(-2);
     var mm=('0'+now.getMinutes()).slice(-2);
     var filename='shogi_taikai_'+y+m+d+'_'+hh+mm+'.json';
-    var blob=new Blob([json],{type:'application/json'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');
-    a.href=url;
-    a.download=filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    alert(filename+' に保存しました（端末のダウンロードフォルダ）');
+    // FILE-DOWNLOAD-STANDALONE-001: 保存経路を共通化（download 経路は同期・従来と同じ順序で alert）。
+    deliverTextFile(json,filename,'application/json',function(r){
+      if(r&&r.ok){ alert(r.route==='share'?filename+' を共有先に保存しました':filename+' に保存しました（端末のダウンロードフォルダ）'); return; }
+      if(r&&r.cancelled){ alert('保存していません（共有画面を閉じました。もう一度お試しください）'); return; }
+      alert('保存に失敗しました');
+    });
   }catch(e){
     alert('保存に失敗しました');
   }
@@ -15290,17 +15346,22 @@ function exportTournamentBackup(){
     var hh=('0'+now.getHours()).slice(-2);
     var mm=('0'+now.getMinutes()).slice(-2);
     var filename='shogi_backup_'+y+mo+d+'_'+hh+mm+'.json';
-    var blob=new Blob([json],{type:'application/json'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');
-    a.href=url; a.download=filename;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ。ファイル名は toast(1.8秒)では読み切れないため
-    //   省略（保存先はバックアップ画面の常設案内に記載済み・実行時刻はバックアップ画面冒頭の「最終バックアップ」に表示される）。
-    showToast('バックアップを保存しました（ダウンロードフォルダ）');
-    // SAVE-STATUS-BAR-001: バックアップ成功の時刻を記録（fail-soft）。
-    markSaveStatus('backup');
+    // FILE-DOWNLOAD-STANDALONE-001: 保存経路を共通化。download 経路は同期に done が呼ばれる＝従来と同じ順序で
+    //   toast → markSaveStatus。share 経路（ホーム画面アプリ）は利用者が共有先を選んだ後に done が呼ばれる。
+    deliverTextFile(json,filename,'application/json',function(r){
+      if(r&&r.ok){
+        // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ。ファイル名は toast(1.8秒)では読み切れないため
+        //   省略（保存先はバックアップ画面の常設案内に記載済み・実行時刻はバックアップ画面冒頭の「最終バックアップ」に表示される）。
+        if(r.route==='share')showToast('バックアップを共有先に保存しました');
+        else showToast('バックアップを保存しました（ダウンロードフォルダ）');
+        // SAVE-STATUS-BAR-001: バックアップ成功の時刻を記録（fail-soft）。
+        markSaveStatus('backup');
+        return;
+      }
+      // 共有シートを閉じた＝保存していない（失敗ではない）。「最終バックアップ」も更新しない。
+      if(r&&r.cancelled){ showToast('バックアップは保存していません（共有画面を閉じました）'); return; }
+      alert('バックアップの保存に失敗しました');
+    });
     return true;
   }catch(e){
     alert('バックアップの保存に失敗しました');
@@ -15462,7 +15523,7 @@ function buildBackupModalHtml(){
     +'<div style="margin:0 0 8px;padding:6px 10px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;color:#1F3864;font-size:15px">最終バックアップ: <strong>'+lastBackup+'</strong>（この端末での実行時刻・「未」はまだ実行していません）</div>'
     +'<p style="margin:0 0 12px;color:#888;font-size:15px;line-height:1.5">大会データを 1 つの JSON ファイルとして保存／復元します（自動バックアップ用）。</p>'
     +'<button id="backup-export" class="btn-primary" style="width:100%;padding:12px;border-radius:8px;border:none;background:#27500A;color:#fff;font-size:15px;cursor:pointer">バックアップを保存（ダウンロード）</button>'
-    +'<div style="margin:8px 0 0;background:#eef4ea;border:1px solid #cfe0c2;border-radius:8px;padding:8px 10px;color:#3b5a26;font-size:15px;line-height:1.6">📁 保存先：iPhone は「ファイル」アプリ →「ダウンロード」、Android は「ダウンロード」フォルダに保存されます。ファイル名は <strong>shogi_backup_日付_時刻.json</strong> です。</div>'
+    +'<div style="margin:8px 0 0;background:#eef4ea;border:1px solid #cfe0c2;border-radius:8px;padding:8px 10px;color:#3b5a26;font-size:15px;line-height:1.6">📁 保存先：iPhone は「ファイル」アプリ →「ダウンロード」、Android は「ダウンロード」フォルダに保存されます。ファイル名は <strong>shogi_backup_日付_時刻.json</strong> です。ホーム画面に追加したアプリから押すと共有画面が開くので「ファイルに保存」を選んでください。</div>'
     +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:15px">─ または ─</div>'
     +'<button id="backup-import-pick" style="width:100%;padding:12px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:15px;cursor:pointer">バックアップから復元（ファイル選択）</button>'
     +'<input type="file" id="backup-import-file" accept=".json,application/json" style="display:none">'
