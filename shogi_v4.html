@@ -12577,7 +12577,7 @@ function buildHelpModalHtml(topic){
   // HELP-MODAL-CLOSE-X-001: 見出し右端に常設の「✕ 閉じる」（本文が長いと下の「閉じる」は初期表示で隠れる）。
   html+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin:0 0 12px">';
   html+='<h3 style="margin:0;font-size:16px;font-weight:500;color:#1F3864">'+escapeHtml(title)+'</h3>';
-  html+='<button type="button" id="help-modal-close-x" class="btn-sm" aria-label="このヘルプを閉じる" style="background:#fff;color:#1F3864;min-height:36px;white-space:nowrap;flex-shrink:0">✕ 閉じる</button>';
+  html+='<button type="button" id="help-modal-close-x" class="btn-sm btn-outline-primary" aria-label="このヘルプを閉じる" style="min-height:36px;white-space:nowrap;flex-shrink:0">✕ 閉じる</button>';
   html+='</div>';
   html+='<ul style="margin:0 0 16px;padding-left:1.2em;font-size:15px;color:#444;line-height:1.7">';
   for(var i=0;i<lines.length;i++){
@@ -15562,7 +15562,11 @@ function buildBackupModalHtml(){
   var lastBackup='未';
   try{ lastBackup=formatSaveStatusTime((loadSaveStatus()||{}).backup); }catch(eLb){}
   return '<div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:360px;max-height:90vh;overflow-y:auto">'
-    +'<h3 style="margin-bottom:6px;font-size:16px;font-weight:500;color:#1F3864">バックアップ</h3>'
+    // MODAL-CLOSE-X-002: 見出し右端に常設の「✕ 閉じる」（本文が 90vh を超えると下の「閉じる」は初期表示で隠れる）。色は class（§2.2(4)）。
+    +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">'
+    +'<h3 style="margin:0;font-size:16px;font-weight:500;color:#1F3864">バックアップ</h3>'
+    +'<button type="button" id="backup-close-x" class="btn-sm btn-outline-primary" aria-label="バックアップ画面を閉じる" style="min-height:36px;white-space:nowrap;flex-shrink:0">✕ 閉じる</button>'
+    +'</div>'
     +'<div style="margin:0 0 8px;padding:6px 10px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;color:#1F3864;font-size:15px">最終バックアップ: <strong>'+lastBackup+'</strong>（この端末での実行時刻・「未」はまだ実行していません）</div>'
     +'<p style="margin:0 0 12px;color:#888;font-size:15px;line-height:1.5">大会データを 1 つの JSON ファイルとして保存／復元します（自動バックアップ用）。</p>'
     +'<button id="backup-export" class="btn-primary" style="width:100%;padding:12px;border-radius:8px;border:none;background:#27500A;color:#fff;font-size:15px;cursor:pointer">バックアップを保存（ダウンロード）</button>'
@@ -15592,6 +15596,9 @@ function bindBackupModalEvents(modal){
   if(pasteBtn)pasteBtn.addEventListener('click',loadFromPaste);
   var cancel=document.getElementById('backup-cancel');
   if(cancel)cancel.addEventListener('click',function(){ if(modal)modal.remove(); });
+  // MODAL-CLOSE-X-002: 見出し右端の「✕ 閉じる」も同じ閉じ方。
+  var closeX=document.getElementById('backup-close-x');
+  if(closeX)closeX.addEventListener('click',function(){ if(modal)modal.remove(); });
 }
 
 // coordinator: バックアップ modal を開く（既存 openLoadModal と同方針）。
