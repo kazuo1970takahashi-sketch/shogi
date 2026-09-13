@@ -15008,8 +15008,9 @@ function saveData(){
 //   構成: 判定は純関数 pickFileDeliveryRoute（テスト対象）、環境の読み取りは _fileDeliveryEnv、
 //   実行は deliverTextFile（coordinator）。呼び出し側は done(result) で結果を受ける
 //   （download 経路は同期に呼ばれる＝既存の同期挙動を維持／share 経路は利用者が共有先を選んだ後）。
-//   result = {ok:bool, route:'download'|'share', cancelled:bool}。cancelled は共有シートを閉じた場合
-//   （AbortError）＝失敗ではなく「保存していない」として案内する。
+//   result = {ok:bool, route:'download'|'share', aborted:bool}。aborted は navigator.share が AbortError で
+//   終わった場合＝利用者が共有シートを閉じたときのほか、共有先が無いときも同じ名前で返る（Web Share の仕様上
+//   区別できない）ので、呼び出し側は「閉じた」と断定せず「保存していない」として案内する。
 function pickFileDeliveryRoute(env){
   env=env||{};
   return (env.standalone===true&&env.canShareFiles===true)?'share':'download';
@@ -15037,10 +15038,10 @@ function deliverTextFile(text, filename, mime, done){
   if(route==='share'){
     // 共有シートは利用者操作（click）の直後でないと開けない。ここは同期に呼ばれる前提（各 bind の click 内）。
     navigator.share({files:[file],title:filename}).then(function(){
-      done({ok:true,route:'share',cancelled:false});
+      done({ok:true,route:'share',aborted:false});
     },function(e){
-      var cancelled=!!(e&&e.name==='AbortError');
-      done({ok:false,route:'share',cancelled:cancelled});
+      var aborted=!!(e&&e.name==='AbortError');
+      done({ok:false,route:'share',aborted:aborted});
     });
     return;
   }
@@ -15053,7 +15054,7 @@ function deliverTextFile(text, filename, mime, done){
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  done({ok:true,route:'download',cancelled:false});
+  done({ok:true,route:'download',aborted:false});
 }
 
 function saveDataAsFile(json){
@@ -15357,14 +15358,14 @@ function exportTournamentBackup(){
         // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ。ファイル名は toast(1.8秒)では読み切れないため
         //   省略（保存先はバックアップ画面の常設案内に記載済み・実行時刻はバックアップ画面冒頭の「最終バックアップ」に表示される）。
         // share 経路の結果は欄へ（§3.2）。download 経路は従来どおり toast。
-        if(r.route==='share')_setBackupExportMsg('共有先に保存しました。','✅');
+        if(r.route==='share')_setBackupExportMsg(_BACKUP_SHARE_MSG.ok,'ok');
         else{ _setBackupExportMsg(''); showToast('バックアップを保存しました（ダウンロードフォルダ）'); }
         // SAVE-STATUS-BAR-001: バックアップ成功の時刻を記録（fail-soft）。
         markSaveStatus('backup');
         return;
       }
-      // 共有シートを閉じた＝保存していない（失敗ではない）。「最終バックアップ」は更新しない。
-      if(r&&r.cancelled){ _setBackupExportMsg('保存していません：共有画面を閉じました。保存するには、もう一度「バックアップを保存」を押してください。'); return; }
+      // AbortError＝閉じた／共有先なし（失敗ではない）。「最終バックアップ」は更新しない。
+      if(r&&r.aborted){ _setBackupExportMsg(_BACKUP_SHARE_MSG.aborted,'warn'); return; }
       alert('バックアップの保存に失敗しました');
     });
     return true;
@@ -15521,12 +15522,19 @@ function importTournamentBackupFile(e){
 // SAVE-STATUS-BAR-REMOVE-001: 冒頭に「最終バックアップ: 時刻」を1行表示（旧保存状態バーの backup 時刻の移設先）。
 //   時刻は markSaveStatus('backup') の記録（SAVE_STATUS_KEY）＝固定文言＋formatSaveStatusTime の出力のみで XSS 面なし。
 // FILE-DOWNLOAD-STANDALONE-001: バックアップ画面内の案内欄（保存ボタンの直下・role=status）。空文字で消す。
-//   share 経路の結果（保存した／保存していない）は押した面（モーダル）に出す（STYLE-GUIDE §3.2）。icon 既定 ℹ️。
-function _setBackupExportMsg(text,icon){
+//   share 経路の結果は押した面（モーダル）に出す（STYLE-GUIDE §3.2）。色は class 側（§1: 完了=alert-ok／
+//   未完了=alert-warn）。色だけに意味を載せない（§3.1）＝見出し語とアイコンを文頭に付ける。
+var _BACKUP_SHARE_MSG={
+  ok:'保存しました：共有先にバックアップを保存しました。',
+  aborted:'保存していません：共有画面を閉じたか、共有先を選べませんでした。もう一度「バックアップを保存」を押すか、Safari などのブラウザで開いて保存してください。'
+};
+function _setBackupExportMsg(text,kind){
   var el=document.getElementById('backup-export-msg');
   if(!el)return false;
-  if(!text){ el.textContent=''; el.style.display='none'; return true; }
-  el.textContent=(icon||'ℹ️')+' '+text;
+  if(!text){ el.textContent=''; el.className='alert'; el.style.display='none'; return true; }
+  var warn=(kind==='warn');
+  el.className='alert '+(warn?'alert-warn':'alert-ok');
+  el.textContent=(warn?'⚠ ':'✅ ')+text;
   el.style.display='block';
   return true;
 }
@@ -15540,7 +15548,8 @@ function _backupDeliveryHintHtml(){
     env=_fileDeliveryEnv(probe);
   }catch(eE){ env={standalone:false,canShareFiles:false}; }
   if(env.standalone!==true)return base;
-  if(pickFileDeliveryRoute(env)==='share')return base+'ホーム画面に追加したアプリから押すと共有画面が開くので「ファイルに保存」を選んでください。';
+  // share 経路は保存先を「ダウンロード」と断定しない（共有先は利用者が選ぶ・§4.3）
+  if(pickFileDeliveryRoute(env)==='share')return '📁 保存先：ホーム画面に追加したアプリから押すと共有画面が開きます。「ファイルに保存」を選ぶと「ファイル」アプリに保存されます（保存先は共有画面で選べます）。ファイル名は <strong>shogi_backup_日付_時刻.json</strong> です。';
   return base+'ホーム画面に追加したアプリでは、この端末ではファイルを保存できないことがあります。保存できないときは Safari などのブラウザで開いて、もう一度お試しください。';
 }
 function buildBackupModalHtml(){
@@ -15551,7 +15560,7 @@ function buildBackupModalHtml(){
     +'<div style="margin:0 0 8px;padding:6px 10px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;color:#1F3864;font-size:15px">最終バックアップ: <strong>'+lastBackup+'</strong>（この端末での実行時刻・「未」はまだ実行していません）</div>'
     +'<p style="margin:0 0 12px;color:#888;font-size:15px;line-height:1.5">大会データを 1 つの JSON ファイルとして保存／復元します（自動バックアップ用）。</p>'
     +'<button id="backup-export" class="btn-primary" style="width:100%;padding:12px;border-radius:8px;border:none;background:#27500A;color:#fff;font-size:15px;cursor:pointer">バックアップを保存（ダウンロード）</button>'
-    +'<div id="backup-export-msg" role="status" aria-live="polite" style="display:none;margin:8px 0 0;padding:8px 10px;background:#f4f6f9;border:1px solid #d3dbe5;border-radius:8px;color:#1F3864;font-size:15px;line-height:1.6"></div>'
+    +'<div id="backup-export-msg" class="alert" role="status" aria-live="polite" style="display:none;margin:8px 0 0;line-height:1.6"></div>'
     +'<div style="margin:8px 0 0;background:#eef4ea;border:1px solid #cfe0c2;border-radius:8px;padding:8px 10px;color:#3b5a26;font-size:15px;line-height:1.6">'+_backupDeliveryHintHtml()+'</div>'
     +'<div style="margin:14px 0 6px;color:#888;text-align:center;font-size:15px">─ または ─</div>'
     +'<button id="backup-import-pick" style="width:100%;padding:12px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:15px;cursor:pointer">バックアップから復元（ファイル選択）</button>'

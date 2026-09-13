@@ -39,7 +39,7 @@ console.log('=== 通常ブラウザ（navigator.standalone 無し）＝従来の
   var got=null;
   api.deliverTextFile('{"x":1}','t.json','application/json',function(r){got=r;});
   ok(got&&got.ok===true&&got.route==='download','D1 download 経路で ok');
-  ok(got&&got.cancelled===false,'D2 cancelled=false');
+  ok(got&&got.aborted===false,'D2 aborted=false');
   ok(clicked.length===1&&clicked[0]==='t.json','D3 <a download="t.json"> が 1 回 click された');
 }
 
@@ -85,20 +85,20 @@ console.log('=== standalone（navigator.standalone=true）かつ共有可＝navi
   await new Promise(function(res){setTimeout(res,0);});
   ok(got2&&got2.route==='share'&&shared2.length===1,'M1 matchMedia(display-mode: standalone) でも share');
 
-  console.log('=== 共有シートを閉じた（AbortError）＝失敗ではなく「保存していない」 ===');
+  console.log('=== AbortError（閉じた／共有先なし）＝失敗ではなく「保存していない」 ===');
   const app3=makeEnv({onLine:true,standalone:true,canShare:function(){return true;},
     share:function(){ var e=new Error('abort'); e.name='AbortError'; return Promise.reject(e); }});
   var got3=null;
   app3.ctx.deliverTextFile('{}','d.json','application/json',function(r){got3=r;});
   await new Promise(function(res){setTimeout(res,0);});
-  ok(got3&&got3.ok===false&&got3.cancelled===true&&got3.route==='share','C1 AbortError → ok=false/cancelled=true');
+  ok(got3&&got3.ok===false&&got3.aborted===true&&got3.route==='share','C1 AbortError → ok=false/aborted=true');
 
   const app4=makeEnv({onLine:true,standalone:true,canShare:function(){return true;},
     share:function(){ return Promise.reject(new Error('NotAllowed')); }});
   var got4=null;
   app4.ctx.deliverTextFile('{}','e.json','application/json',function(r){got4=r;});
   await new Promise(function(res){setTimeout(res,0);});
-  ok(got4&&got4.ok===false&&got4.cancelled===false,'C2 その他の失敗 → ok=false/cancelled=false');
+  ok(got4&&got4.ok===false&&got4.aborted===false,'C2 その他の失敗 → ok=false/aborted=false');
 
   console.log('=== 呼び出し側の結線（バックアップのみ） ===');
   {
@@ -126,8 +126,10 @@ console.log('=== standalone（navigator.standalone=true）かつ共有可＝navi
     await new Promise(function(res){setTimeout(res,0);});
     var slot6=app6.el('backup-export-msg');
     ok(toasts6.length===0,'B3 キャンセル時は toast を出さない（モーダル表示中＝STYLE-GUIDE §3.2）');
-    ok(slot6.style.display==='block'&&slot6.textContent.indexOf('保存していません')>=0,'B3a キャンセル案内はバックアップ画面内の欄（#backup-export-msg）に出る');
-    ok(slot6.textContent.indexOf('バックアップを保存')>=0,'B3b 案内に次の行動（もう一度「バックアップを保存」）を含む');
+    ok(slot6.style.display==='block'&&slot6.textContent.indexOf('保存していません')>=0,'B3a 中断の案内はバックアップ画面内の欄（#backup-export-msg）に出る');
+    ok(slot6.textContent.indexOf('バックアップを保存')>=0&&slot6.textContent.indexOf('Safari')>=0,'B3b 案内に次の行動（もう一度「バックアップを保存」／Safari で開く）を含む');
+    ok(/\balert-warn\b/.test(slot6.className)&&!/\balert-ok\b/.test(slot6.className)&&slot6.textContent.indexOf('⚠')===0,'B3d 未完了は warn の class＋⚠（色だけに意味を載せない・§3.1）');
+    ok(slot6.textContent.indexOf('閉じました')<0,'B3e AbortError を「閉じた」と断定しない（共有先なしでも同じエラー名）');
     ok(marks6.length===0,'B4 キャンセル時は「最終バックアップ」を更新しない');
     ok(app6.record.alert.length===0,'B5 キャンセルは alert しない（失敗ではない）');
     // キャンセルのあとに保存し直したら欄は消える
@@ -135,7 +137,8 @@ console.log('=== standalone（navigator.standalone=true）かつ共有可＝navi
     api6.navigator.share=function(){return Promise.resolve();};
     api6.exportTournamentBackup();
     await new Promise(function(res){setTimeout(res,0);});
-    ok(slot6.style.display==='block'&&slot6.textContent.indexOf('保存していません')<0&&slot6.textContent.indexOf('保存しました')>=0,'B3c 保存し直すと案内欄は「保存しました」に置き換わる（キャンセル文は残らない）');
+    ok(slot6.style.display==='block'&&slot6.textContent.indexOf('保存していません')<0&&slot6.textContent.indexOf('保存しました')>=0,'B3c 保存し直すと案内欄は「保存しました」に置き換わる（中断文は残らない）');
+    ok(/\balert-ok\b/.test(slot6.className)&&!/\balert-warn\b/.test(slot6.className)&&slot6.textContent.indexOf('✅')===0,'B3f 完了は ok の class＋✅（warn は外れる）');
   }
   {
     // share 経路で成功: markSaveStatus('backup') が呼ばれる
@@ -148,7 +151,7 @@ console.log('=== standalone（navigator.standalone=true）かつ共有可＝navi
     ok(marks7.length===1&&marks7[0]==='backup','B6 共有成功で markSaveStatus(backup)');
     var slot7=app7.el('backup-export-msg');
     ok(toasts7.length===0,'B7 共有成功は toast を出さない（モーダル表示中＝STYLE-GUIDE §3.2）');
-    ok(slot7.style.display==='block'&&slot7.textContent.indexOf('共有先に保存しました')>=0&&slot7.textContent.indexOf('ダウンロードフォルダ')<0,'B7a 共有成功の案内はモーダル内の欄・保存先を断定しない');
+    ok(slot7.style.display==='block'&&slot7.textContent.indexOf('共有先にバックアップを保存しました')>=0&&slot7.textContent.indexOf('ダウンロード')<0&&/\balert-ok\b/.test(slot7.className),'B7a 共有成功の案内はモーダル内の欄（ok class）・保存先を「ダウンロード」と断定しない');
   }
   {
     // download 経路の成功: 欄に残っていた案内は消え、toast は従来文言（B1 と同じ経路で欄だけ見る）
@@ -161,7 +164,7 @@ console.log('=== standalone（navigator.standalone=true）かつ共有可＝navi
     api9._setBackupExportMsg('前回の案内');
     api9.exportTournamentBackup();
     var slot9=app9.el('backup-export-msg');
-    ok(slot9.style.display==='none'&&slot9.textContent==='','B8 download 経路の成功で欄は消える');
+    ok(slot9.style.display==='none'&&slot9.textContent===''&&slot9.className==='alert','B8 download 経路の成功で欄は消える（class も素に戻る）');
   }
   {
     // 静的: 切り替えたのはバックアップ経路だけ。マスタ書き出し／大会データ保存の <a download> 直書きは残る
@@ -173,7 +176,9 @@ console.log('=== standalone（navigator.standalone=true）かつ共有可＝navi
     ok(bodyExport.indexOf('deliverTextFile(')>=0&&bodyExport.indexOf('a.download=')<0,'W1a exportTournamentBackup だけが deliverTextFile を通る');
     const bodySave=RAW.slice(RAW.indexOf('function saveDataAsFile('),RAW.indexOf('function exportTournamentBackup('));
     ok(bodySave.indexOf('deliverTextFile(')<0,'W1b saveDataAsFile は deliverTextFile を通らない（無改変）');
-    ok(/id="backup-export-msg"[^>]*role="status"/.test(RAW),'W2 バックアップ画面に role=status の案内欄がある');
+    const slotTag=(RAW.match(/<div id="backup-export-msg"[^>]*>/)||[''])[0];
+    ok(/role="status"/.test(slotTag)&&/class="alert"/.test(slotTag),'W2 バックアップ画面に role=status・class=alert の案内欄がある');
+    ok(!/background|color|border|font/.test(slotTag),'W2a 案内欄の inline style は配置だけ（色・罫線・フォントは class 側・§1〜2）');
   }
   {
     // 案内文は実際に選ばれる経路に合わせて出し分ける（断定しない）
@@ -182,7 +187,8 @@ console.log('=== standalone（navigator.standalone=true）かつ共有可＝navi
     ok(hN.indexOf('📁 保存先：iPhone')>=0&&hN.indexOf('共有画面')<0&&hN.indexOf('Safari')<0,'H1 通常ブラウザの案内は従来文言のまま');
     const appS=makeEnv({onLine:true,standalone:true,canShare:function(){return true;},share:function(){return Promise.resolve();}});
     const hS=appS.ctx.buildBackupModalHtml();
-    ok(hS.indexOf('📁 保存先：iPhone')>=0&&hS.indexOf('共有画面が開くので「ファイルに保存」')>=0,'H2 ホーム画面アプリ＋共有可＝共有画面の手順');
+    ok(hS.indexOf('共有画面が開きます')>=0&&hS.indexOf('「ファイルに保存」')>=0&&hS.indexOf('shogi_backup_')>=0,'H2 ホーム画面アプリ＋共有可＝共有画面の手順＋ファイル名');
+    ok(hS.indexOf('📁 保存先：iPhone は「ファイル」アプリ →「ダウンロード」')<0&&hS.indexOf('Android は「ダウンロード」')<0,'H2a share 経路の案内は保存先を「ダウンロード」と断定しない（§4.3）');
     const appX=makeEnv({onLine:true,standalone:true,share:undefined});
     const hX=appX.ctx.buildBackupModalHtml();
     ok(hX.indexOf('共有画面が開く')<0&&hX.indexOf('Safari')>=0,'H3 ホーム画面アプリ＋共有不可＝共有画面を約束せず Safari へ誘導');
