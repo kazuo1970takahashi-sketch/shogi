@@ -135,7 +135,7 @@ console.log('=== standalone（navigator.standalone=true）かつ共有可＝navi
     api6.navigator.share=function(){return Promise.resolve();};
     api6.exportTournamentBackup();
     await new Promise(function(res){setTimeout(res,0);});
-    ok(slot6.style.display==='none'&&slot6.textContent==='','B3c 保存し直すと案内欄は消える');
+    ok(slot6.style.display==='block'&&slot6.textContent.indexOf('保存していません')<0&&slot6.textContent.indexOf('保存しました')>=0,'B3c 保存し直すと案内欄は「保存しました」に置き換わる（キャンセル文は残らない）');
   }
   {
     // share 経路で成功: markSaveStatus('backup') が呼ばれる
@@ -146,7 +146,22 @@ console.log('=== standalone（navigator.standalone=true）かつ共有可＝navi
     app7.ctx.exportTournamentBackup();
     await new Promise(function(res){setTimeout(res,0);});
     ok(marks7.length===1&&marks7[0]==='backup','B6 共有成功で markSaveStatus(backup)');
-    ok(toasts7.length===1&&toasts7[0].indexOf('ダウンロードフォルダ')<0,'B7 共有成功の toast は保存先を断定しない');
+    var slot7=app7.el('backup-export-msg');
+    ok(toasts7.length===0,'B7 共有成功は toast を出さない（モーダル表示中＝STYLE-GUIDE §3.2）');
+    ok(slot7.style.display==='block'&&slot7.textContent.indexOf('共有先に保存しました')>=0&&slot7.textContent.indexOf('ダウンロードフォルダ')<0,'B7a 共有成功の案内はモーダル内の欄・保存先を断定しない');
+  }
+  {
+    // download 経路の成功: 欄に残っていた案内は消え、toast は従来文言（B1 と同じ経路で欄だけ見る）
+    const app9=makeEnv({onLine:true,share:undefined});
+    const api9=app9.ctx;
+    const origCreate9=api9.document.createElement;
+    api9.document.createElement=function(tag){ var el=origCreate9.call(api9.document,tag); if(String(tag).toLowerCase()==='a')el.click=function(){}; return el; };
+    app9.stub('showToast',function(){});
+    app9.stub('markSaveStatus',function(){});
+    api9._setBackupExportMsg('前回の案内');
+    api9.exportTournamentBackup();
+    var slot9=app9.el('backup-export-msg');
+    ok(slot9.style.display==='none'&&slot9.textContent==='','B8 download 経路の成功で欄は消える');
   }
   {
     // 静的: 切り替えたのはバックアップ経路だけ。マスタ書き出し／大会データ保存の <a download> 直書きは残る

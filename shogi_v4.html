@@ -15354,17 +15354,16 @@ function exportTournamentBackup(){
     // FILE-DOWNLOAD-STANDALONE-001: download 経路は done が同期（従来順序で toast→markSaveStatus）／share 経路は共有先を選んだ後。
     deliverTextFile(json,filename,'application/json',function(r){
       if(r&&r.ok){
-        _setBackupExportMsg('');
         // NOTIFY-N2-SAVE-001 (STYLE-GUIDE §3 N2): 成功通知は toast へ。ファイル名は toast(1.8秒)では読み切れないため
         //   省略（保存先はバックアップ画面の常設案内に記載済み・実行時刻はバックアップ画面冒頭の「最終バックアップ」に表示される）。
-        if(r.route==='share')showToast('バックアップを共有先に保存しました');
-        else showToast('バックアップを保存しました（ダウンロードフォルダ）');
+        // share 経路の結果は欄へ（§3.2）。download 経路は従来どおり toast。
+        if(r.route==='share')_setBackupExportMsg('共有先に保存しました。','✅');
+        else{ _setBackupExportMsg(''); showToast('バックアップを保存しました（ダウンロードフォルダ）'); }
         // SAVE-STATUS-BAR-001: バックアップ成功の時刻を記録（fail-soft）。
         markSaveStatus('backup');
         return;
       }
-      // 共有シートを閉じた＝保存していない（失敗ではない）。「最終バックアップ」も更新しない。
-      //   案内はモーダル内の欄へ（STYLE-GUIDE §3.2: モーダル表示中は toast を使わない）。
+      // 共有シートを閉じた＝保存していない（失敗ではない）。「最終バックアップ」は更新しない。
       if(r&&r.cancelled){ _setBackupExportMsg('保存していません：共有画面を閉じました。保存するには、もう一度「バックアップを保存」を押してください。'); return; }
       alert('バックアップの保存に失敗しました');
     });
@@ -15521,13 +15520,13 @@ function importTournamentBackupFile(e){
 // build: バックアップ modal の HTML（pure 文字列・動的なユーザ入力を埋め込まない）。
 // SAVE-STATUS-BAR-REMOVE-001: 冒頭に「最終バックアップ: 時刻」を1行表示（旧保存状態バーの backup 時刻の移設先）。
 //   時刻は markSaveStatus('backup') の記録（SAVE_STATUS_KEY）＝固定文言＋formatSaveStatusTime の出力のみで XSS 面なし。
-// FILE-DOWNLOAD-STANDALONE-001: バックアップ画面内の案内欄（保存ボタンの直下・role=status）。
-//   空文字で消す。ボタンを押した結果の案内は押した面（モーダル）に出す（STYLE-GUIDE §3.2）。
-function _setBackupExportMsg(text){
+// FILE-DOWNLOAD-STANDALONE-001: バックアップ画面内の案内欄（保存ボタンの直下・role=status）。空文字で消す。
+//   share 経路の結果（保存した／保存していない）は押した面（モーダル）に出す（STYLE-GUIDE §3.2）。icon 既定 ℹ️。
+function _setBackupExportMsg(text,icon){
   var el=document.getElementById('backup-export-msg');
   if(!el)return false;
   if(!text){ el.textContent=''; el.style.display='none'; return true; }
-  el.textContent='ℹ️ '+text;
+  el.textContent=(icon||'ℹ️')+' '+text;
   el.style.display='block';
   return true;
 }
