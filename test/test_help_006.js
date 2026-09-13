@@ -142,6 +142,9 @@ assert(allC, 'B4 cloud の全ヘルプ文が present');
 assert(mt.indexOf('id="help-modal-close"')>=0 && mc.indexOf('id="help-modal-close"')>=0, 'B5 両 topic とも閉じるボタンを持つ');
 const bhmBody = RAW.slice(RAW.indexOf('function buildHelpModalHtml'), RAW.indexOf('function buildHelpModalHtml')+1200);
 assert(bhmBody.indexOf('escapeHtml(title)')>=0 && bhmBody.indexOf('escapeHtml(lines[i])')>=0, 'B6 タイトル/本文とも escapeHtml 経由（安全表示）');
+// HELP-MODAL-CLOSE-X-001: 見出し右端の常設「✕ 閉じる」（本文が長い cloud で下の「閉じる」が初期表示で隠れる対策）
+assert(mc.indexOf('id="help-modal-close-x"')>=0 && mc.indexOf('id="help-modal-close-x"')<mc.indexOf('<ul'), 'B7 cloud のカード見出し行（本文 ul より前）に help-modal-close-x がある');
+assert(mc.indexOf('id="help-modal-close"')>mc.indexOf('</ul>'), 'B8 本文の後ろの「閉じる」も残る（両端から閉じられる）');
 
 // X XSS
 const ex = loadEnv();
@@ -166,6 +169,12 @@ modalNode._listeners.click[0]({ target:{} });
 assert(eo2._ctx.document.body.childNodes.length===1, 'O5 カード内クリックでは閉じない');
 modalNode._listeners.click[0]({ target:modalNode });
 assert(eo2._ctx.document.body.childNodes.length===0, 'O6 背景クリックで閉じる');
+const eo3 = loadEnv();
+eo3.openHelpModal('cloud');
+const closeX = eo3._ctx._elements['help-modal-close-x'];
+assert(closeX && closeX._listeners.click && closeX._listeners.click.length>0, 'O7 見出し右端の ✕ 閉じるに click ハンドラ');
+closeX._listeners.click[0]();
+assert(eo3._ctx.document.body.childNodes.length===0, 'O8 見出し右端の ✕ 閉じるで除去される');
 
 // H 静的アンカー
 assert(RAW.indexOf('id="helpBtnTournament"')>=0, 'H1 helpBtnTournament が静的 HTML に build される');
